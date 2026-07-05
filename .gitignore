@@ -1,0 +1,34 @@
+# Root copied reference material is local-only unless explicitly approved.
+/references/
+
+# Skill-local runtime state and databases.
+/task-governance-tool/state/
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Python caches and local environments.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Build and packaging outputs.
+build/
+dist/
+*.egg-info/
+
+# Local logs, scratch outputs, and editor/OS files.
+*.log
+*.tmp
+*.bak
+.codex/
+.agents/
+.DS_Store
+Thumbs.db

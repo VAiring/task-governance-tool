@@ -1,0 +1,679 @@
+# task-governance-tool Initial Plan
+
+Status: formal MVP specification and design introduced; implementation not
+started.
+
+This document captures early ideas for a reusable task-governance-tool Codex
+skill/tooling project. Product behavior is now governed by
+`docs/specification.md`, and implementation structure is governed by
+`docs/design.md`. This file remains the roadmap, decision log, and open-issue
+holding area. The previous working name `task-governance` is superseded by
+`task-governance-tool`.
+
+## Goal
+
+Build a reusable local-first assistant layer that helps Codex and the user run
+high-quality project work with explicit task boundaries, governing-doc rereads,
+verification gates, review gates, and durable but non-authoritative local
+history.
+
+The key product promise:
+
+```text
+Given a project, identify its governance rules, plan the next bounded execution
+unit, run or suggest the right verification gates, generate review requests,
+and record sanitized task history without becoming the project's source of
+truth.
+```
+
+## Initial Product Shape
+
+- `task-governance-tool` Codex skill
+  - concise `SKILL.md`
+  - one-level `references/` for deeper workflow guidance
+  - `scripts/` for deterministic helper commands
+- Python CLI named `taskgov`
+  - stdlib-first implementation
+  - SQLite through `sqlite3`
+  - JSON output mode for Codex
+  - human-readable text output mode for users
+- SQLite state store
+  - configurable path
+  - default skill-local runtime state under the installed skill folder
+  - separate SQLite database per target project
+  - task records and concise task event history
+  - migration history
+- Optional install/export path later
+  - copy or install skill into Codex skill directory
+  - keep source project and installed skill distinguishable
+
+## Design Principles
+
+- The target project's own docs remain the source of truth.
+- The database stores helper state, indexes, hashes, timestamps, and sanitized
+  summaries, not raw private project content by default.
+- Read-only inspection is the default.
+- Target-project mutation requires explicit user intent.
+- Verification should be runnable offline by default.
+- Skill instructions should be concise; scripts should handle repeated and
+  fragile tasks.
+- Project-specific rules should be profiles, not hard-coded assumptions.
+- Large Markdown task-status files are reference examples, not the preferred
+  working state. The tool should store structured task state in SQLite and
+  retrieve only the task slices needed for the current turn.
+
+## Task Ordering Model
+
+The tool should support both sequence-sensitive and free-order work so one
+blocked task does not halt all productive task consumption.
+
+- Sequential tasks capture work that must proceed in a declared order or within
+  a dependency chain. They may be grouped into an ordered lane or milestone.
+- Optional tasks capture work that can be selected in any order when its own
+  dependencies, verification expectations, and review gate are clear.
+- Task selection should prefer explicit dependencies and readiness over a
+  single global implementation order. A blocked sequential lane must not hide
+  ready optional tasks or ready tasks in other lanes.
+- SQLite queries should be able to return a compact "next actionable tasks"
+  view filtered by project, status, readiness, task kind, lane, priority, and
+  dependency state.
+- Reference files such as `references/KuraKoma_TASK_STATUS.md` may inform the
+  quality bar and granularity, but their implied implementation order is not
+  authority for this project.
+
+## TASK_STATUS.md Replacement MVP Requirements
+
+The first implementation should focus on replacing the practical functions that
+large `TASK_STATUS.md` files served: explicitly register tasks, inspect current
+and next work, mark blockers, and keep concise local task history. It should
+not start as a general project-management system.
+
+### MVP Scope
+
+- Store task state in SQLite and retrieve compact slices instead of reading a
+  large Markdown status file into context.
+- Treat `task add` as an explicit user-approved registration step. Do not add
+  separate draft, import, or approval workflows in the first version.
+- Use `lane` plus `order` for sequence-sensitive tasks. Do not require a full
+  task dependency graph in the first version.
+- Keep verification and review as task fields in the first version, not as full
+  workflow engines.
+- Support JSON output for Codex and short text output for humans.
+- Keep all commands local-first and offline-capable by default.
+- Do not modify target projects; the MVP only writes to the
+  task-governance-tool SQLite database.
+- By default, create project-specific SQLite databases under a runtime state
+  directory inside the installed `task-governance-tool` skill folder. This keeps
+  the skill self-contained after installation while still keeping each target
+  project's task state separate.
+- Treat the skill-local runtime state directory as generated local data. It must
+  not be part of committed source, exported skill packages, or static skill
+  instructions.
+
+### Deferred From MVP
+
+- `task import` from Markdown or planning documents.
+- A standalone `task depend` command or general dependency graph.
+- `profile register` or persistent project profile authoring.
+- `task approve` or draft-to-approved state transitions.
+- Full `verify record`, review request generation, Git integration, dashboards,
+  or automatic target-project mutation.
+
+### Common CLI Options
+
+All MVP commands should support:
+
+```powershell
+taskgov <command> --repo . --json
+taskgov <command> --db C:\path\to\taskgov.sqlite
+```
+
+- `--repo`: target project root. Defaults to the current directory.
+- `--db`: SQLite database path. Overrides the default skill-local project DB.
+- `--json`: emit machine-readable output for Codex. Without it, emit concise
+  human-readable text.
+- `--read-only`: prohibit database creation, migration, or writes. Inspection
+  commands behave as read-only by default even when this flag is omitted.
+
+Default database path:
+
+```text
+<installed-skill-root>/state/projects/<project-id>/taskgov.sqlite
+```
+
+`<project-id>` should be deterministic from the canonical target project path:
+use a sanitized project directory basename plus a short stable SHA-256 hash of
+the canonical project path, such as `kurakoma-a1b2c3d4e5f6`. The computed path
+should avoid leaking unnecessary path details while remaining stable across
+turns.
+
+### MVP Task Fields
+
+The initial `tasks` model should include:
+
+- `task_id`: stable ID such as `tg_task_...`.
+- `project_id`: stable project ID.
+- `title`: required short task title.
+- `description`: optional task detail.
+- `kind`: `sequential` or `optional`.
+- `lane`: optional grouping string; required or auto-created for ordered
+  sequential work.
+- `lane_order`: integer order within a lane.
+- `priority`: `low`, `normal`, `high`, or `urgent`.
+- `status`: `ready`, `in_progress`, `blocked`, `review_pending`, `done`, or
+  `cancelled`.
+- `blocked_reason`: required when status is `blocked`.
+- `review_tier`: integer `0`, `1`, or `2`.
+- `verification`: short verification expectation or command label.
+- `tags`: simple comma-separated labels.
+- `created_at`, `updated_at`, and optional `completed_at` timestamps.
+
+### MVP Commands
+
+#### `taskgov db init`
+
+Purpose: explicitly create or migrate the current project database.
+
+Example:
+
+```powershell
+taskgov db init --repo . --json
+```
+
+Output should include database path, project ID, whether the database was
+created, migration versions applied, and final schema version.
+
+#### `taskgov db status`
+
+Purpose: show whether the database and current project task state are usable.
+
+Example:
+
+```powershell
+taskgov db status --repo . --json
+```
+
+This command is read-only by default. If the database is missing or needs
+migration, it should report `needs_init` or `needs_migration` without creating
+or changing the database. Output should include database path, schema version,
+project ID, active task counts, blocked count, review-pending count, done count,
+and next-actionable task count.
+
+#### `taskgov task add`
+
+Purpose: register one explicit task as current task-governance-tool state.
+
+Examples:
+
+```powershell
+taskgov task add --title "SQLite schema baseline" --kind sequential --lane TG-M1 --order 10 --priority high
+taskgov task add --title "Review CLI help text" --kind optional --priority normal
+```
+
+Arguments:
+
+- `--title`: required.
+- `--description`: optional.
+- `--kind`: `sequential` or `optional`; default `optional`.
+- `--lane`: optional grouping string. Sequential tasks should normally provide
+  one.
+- `--order`: integer order within the lane. If omitted for sequential work, the
+  CLI may append after the last task in the lane.
+- `--priority`: `low`, `normal`, `high`, or `urgent`; default `normal`.
+- `--status`: initial status; default `ready`.
+- `--review-tier`: `0`, `1`, or `2`; default may be `1` until project rules
+  say otherwise.
+- `--verification`: short verification expectation or command label.
+- `--tags`: comma-separated tags.
+
+If a sequential task omits `--lane` or `--order`, the CLI may store a
+deterministic default lane and append order. Output must include the stored
+`lane` and `lane_order` so any auto-filled ordering is visible.
+
+#### `taskgov task list`
+
+Purpose: return a compact filtered list instead of a full status document.
+
+Examples:
+
+```powershell
+taskgov task list --status ready
+taskgov task list --kind optional --status ready --limit 10
+taskgov task list --lane TG-M1
+```
+
+Arguments:
+
+- `--status`: filter by task status.
+- `--kind`: filter by `sequential` or `optional`.
+- `--lane`: filter by lane.
+- `--priority`: filter by priority.
+- `--tag`: filter by one tag.
+- `--limit`: maximum rows; default around 20.
+- `--include-done`: include completed tasks.
+
+#### `taskgov task next`
+
+Purpose: return the next ready tasks Codex can work on without reading the
+whole task history.
+
+Examples:
+
+```powershell
+taskgov task next --limit 5
+taskgov task next --kind optional
+taskgov task next --lane TG-M1
+```
+
+Initial selection rules:
+
+- Include only tasks with `status=ready`.
+- Include ready `optional` tasks directly.
+- Include a ready `sequential` task only when earlier tasks in the same `lane`
+  are `done` or `cancelled`.
+- Exclude `in_progress`, `blocked`, `review_pending`, `done`, and `cancelled`
+  tasks.
+- Supported filters are `--kind`, `--lane`, `--priority`, and `--limit`.
+- Default limit is `5`.
+- Priority order is `urgent`, `high`, `normal`, `low`.
+- Sort by priority rank, lane, lane order with nulls last, creation time, and
+  task ID.
+- If a sequential lane is blocked, still return ready optional tasks and ready
+  tasks in other lanes.
+
+#### `taskgov task show`
+
+Purpose: show one task and its immediate context.
+
+Example:
+
+```powershell
+taskgov task show tg_task_abc123 --json
+```
+
+Output should include title, description, kind, lane, lane order, priority,
+status, blocked reason, review tier, verification expectation, tags, recent
+notes or events, timestamps, and a suggested next action.
+
+#### `taskgov task edit`
+
+Purpose: update task state or metadata with one command instead of separate
+specialized commands.
+
+Examples:
+
+```powershell
+taskgov task edit tg_task_abc123 --status blocked --blocked-reason "User decision needed"
+taskgov task edit tg_task_abc123 --status done
+taskgov task edit tg_task_abc123 --priority high --review-tier 2
+```
+
+Arguments:
+
+- `--title`, `--description`, `--kind`, `--lane`, `--order`, `--priority`.
+- `--status`: one of the MVP statuses.
+- `--blocked-reason`: required when setting `--status blocked`.
+- `--review-tier`, `--verification`, `--tags`.
+- `--add-note`: append a short local note or event.
+
+`task block`, `task done`, and similar commands may be added later as aliases,
+but they are not required for the first version.
+
+## Candidate User Flows
+
+The MVP user flows should stay close to the old `TASK_STATUS.md` role.
+
+1. Check task database status
+   - Input: repo path.
+   - Output: database path, schema status, project ID, and compact task counts.
+
+2. Register an explicit task
+   - Input: title, optional description, task kind, lane/order, priority,
+     review tier, verification expectation, and tags.
+   - Output: stable task ID and the stored task summary.
+
+3. Inspect current task state
+   - Input: status, kind, lane, priority, or tag filters.
+   - Output: a compact task list or one task's detail without loading all task
+     history into context.
+
+4. Select next actionable work
+   - Input: repo path, optional kind, lane, priority, status, and limit filters.
+   - Output: ready tasks only, with blocked lanes excluded while unrelated
+     optional work remains visible.
+
+5. Update task state
+   - Input: task ID plus edited fields, status, blocked reason, or local note.
+   - Output: updated task summary and event/history row.
+
+6. Continue around blockers
+   - Input: a task marked blocked, then a `task next` query.
+   - Output: ready optional tasks or ready tasks in other lanes so work does not
+     stop on one blocked chain.
+
+Future flows may include project governance detection, richer execution-unit
+start/close records, verification recording, review request generation, and
+profile comparison after the MVP proves useful.
+
+## Candidate CLI Commands
+
+Names are placeholders. The first implementation should prioritize the
+`TASK_STATUS.md` replacement MVP commands above.
+
+```powershell
+taskgov db init --repo . --json
+taskgov db status --repo . --json
+taskgov task add --repo . --title "Add migration gate" --kind sequential --lane TG-M1 --order 10 --review-tier 2 --json
+taskgov task list --repo . --kind optional --status ready --json
+taskgov task next --repo . --limit 5 --json
+taskgov task show tg_task_... --json
+taskgov task edit tg_task_... --status blocked --blocked-reason "User decision needed" --json
+```
+
+Later candidate commands may include:
+
+```powershell
+taskgov detect --repo C:\WorkSpace\KuraKoma --json
+taskgov profile show --repo C:\WorkSpace\KuraKoma
+taskgov verify record --task-id tg_task_... --command "python -m unittest"
+taskgov review-template --task-id tg_task_... --json
+taskgov db migrate --dry-run
+```
+
+## Candidate SQLite Tables
+
+Early sketch only. The MVP may start with a smaller schema:
+
+- `schema_migrations`
+- `project_meta`
+- `tasks`
+- `task_events`
+- `tool_events`
+
+Later candidate tables may include:
+
+- `project_profiles`
+- `project_governing_docs`
+- `profile_verification_commands`
+- `task_lanes`
+- `task_dependencies`
+- `execution_units`
+- `verification_runs`
+- `review_requests`
+- `review_findings`
+
+MVP stable IDs:
+
+- `project_id`
+- `task_id`
+- `task_event_id`
+
+Later stable IDs may include:
+
+- `profile_id`
+- `execution_unit_id`
+- `verification_run_id`
+- `review_request_id`
+- `review_finding_id`
+
+## Project Profile Sketch
+
+A project profile should capture:
+
+- repository root
+- governance docs and read order
+- docs that are reference-only
+- default task-start checklist
+- review tier definitions
+- verification commands by scope
+- forbidden or approval-required operations
+- privacy/logging constraints
+- git behavior expectations
+- generated/local artifact ignore patterns
+
+Profile data may be stored in SQLite and exported to JSON/YAML later. The
+profile must point to source docs rather than duplicating them as authority.
+
+## Skill Package Sketch
+
+Potential MVP skill layout after requirements are approved:
+
+```text
+task-governance-tool/
+  SKILL.md
+  agents/
+    openai.yaml
+  scripts/
+    taskgov.py
+    task_governance_tool/
+      __init__.py
+      cli.py
+      storage.py
+      tasks.py
+      selection.py
+  references/
+    task_workflow.md
+    cli_contracts.md
+  state/              # generated local runtime state; not exported/committed
+    projects/
+      <project-id>/
+        taskgov.sqlite
+```
+
+The source repository should also contain normal development files outside the
+installable skill package:
+
+```text
+tests/
+docs/
+fixtures/
+  task-status-mvp/
+```
+
+Runtime modules should remain inside the installable skill folder so the
+installed skill is self-contained. Tests may import those modules by adding
+`task-governance-tool/scripts/` to `sys.path`.
+
+Later versions may add profile, verification, and review-template modules after
+the MVP task-status replacement is stable.
+
+## Initial Milestone Candidates
+
+### TG-M0 Requirements Baseline
+
+Goal: settle the product boundary, privacy model, and
+`TASK_STATUS.md` replacement MVP state model.
+
+Included:
+
+- AGENTS and plan baseline
+- reference handling rules
+- MVP task fields, statuses, command list, and selection rules
+- first pass at simplified SQLite schema sketch
+- open issues list
+
+Verification:
+
+- docs are internally consistent
+- no reference file is treated as current project authority
+
+Review:
+
+- Tier 2 once the MVP requirements are treated as implementation-facing CLI and
+  storage contracts
+
+### TG-M1 Skill, CLI, And DB Skeleton
+
+Goal: create the minimal installable skill shape, CLI scaffold, and initialized
+local database boundary.
+
+Included:
+
+- `SKILL.md` with trigger metadata
+- CLI help commands
+- JSON/text output envelope
+- configurable DB path
+- skill-local per-project default DB path
+- schema migrations and repository boundary
+- `db init`
+- `db status`
+- tests for help, explicit DB initialization, and read-only `db status`
+
+Excluded:
+
+- task registration or mutation beyond initialization
+- target-project mutation
+- automatic installation into Codex skills directory
+
+Verification:
+
+- skill validation if helper scripts are available
+- tests for JSON/text output envelopes
+- CLI unit tests for help and `db status`
+- temp-database initialization test through `db init`
+- test that `db status` does not initialize or migrate a missing database
+- test that default DB resolution creates separate DB paths for separate
+  project roots
+- no network dependency
+
+Review:
+
+- Tier 2 because skill trigger behavior and DB initialization are
+  implementation-facing
+
+### TG-M2 Task Registry MVP
+
+Goal: implement the old `TASK_STATUS.md` task registration and inspection
+functions in SQLite.
+
+Included:
+
+- `task add`
+- `task list`
+- `task show`
+- `task edit`
+- `tasks` and `task_events` repository behavior
+- temp-database tests for status updates, blocked reasons, notes, and filtering
+
+Excluded:
+
+- target-project mutation
+- import, approval, dependency graph, profiles, verification recording, review
+  request generation, and Git integration
+
+Verification:
+
+- CLI contract tests for add/list/show/edit
+- repository tests
+- privacy tests for rejected or redacted fields
+- no network dependency
+
+Review:
+
+- Tier 2
+
+### TG-M3 Next Task Selection
+
+Goal: implement the compact "what can I work on now?" query that avoids reading
+large status files and works around blocked sequential lanes.
+
+Included:
+
+- `task next`
+- sequential `lane` plus `lane_order` readiness rules
+- optional task readiness
+- priority/lane/order sorting
+- blocked-lane behavior
+- skill guidance for using `task next` at execution-unit boundaries
+
+Excluded:
+
+- standalone `task depend`
+- general dependency graph
+- automatic task selection without user/Codex judgment
+- target-project mutation
+
+Verification:
+
+- CLI contract tests for `task next`
+- fixture tests with blocked lanes and ready optional tasks
+- end-to-end temp-db flow for add/edit/next/show
+- no network dependency
+
+Review:
+
+- Tier 2
+
+### TG-M4 Hardening And Forward Test
+
+Goal: prove the skill and MVP CLI are useful on realistic tasks without leaking
+private data or mutating targets unexpectedly.
+
+Included:
+
+- forward-test prompts
+- privacy/logging audit
+- docs closeout
+- install/export decision
+- representative dry-run on a small KuraKoma-style task set, with copied
+  reference files treated as non-authoritative examples only
+- small synthetic fixture under `fixtures/task-status-mvp/`
+
+Excluded:
+
+- full project profile system
+- dashboards
+- automatic review-agent spawning
+- Git commits or PRs
+
+Verification:
+
+- full MVP test suite
+- manual review of `task next` and `task show` outputs
+- no target-project mutation
+
+Review:
+
+- Tier 2
+
+## Decisions And Open Issues
+
+Confirmed decisions:
+
+- Formal MVP documents exist:
+  - `docs/specification.md`
+  - `docs/design.md`
+- Skill name is `task-governance-tool`; CLI command is `taskgov`.
+- The source workspace is Git-managed on the `main` branch. Generated state,
+  local caches, SQLite databases, and root copied reference material are ignored
+  by default.
+- The source repository should contain the installable skill folder directly.
+  Runtime modules live inside that skill folder; docs, tests, and fixtures live
+  outside it as development and review surfaces.
+- Default SQLite storage is skill-local and per-project:
+  `<installed-skill-root>/state/projects/<project-id>/taskgov.sqlite`.
+- `taskgov db init` is the explicit create/migrate command; `taskgov db status`
+  is read-only by default and reports missing or migration-needed state without
+  changing the database.
+- Project IDs should use a sanitized project directory basename plus a short
+  stable hash of the canonical project path.
+- Tags stay as a simple comma-separated field in the MVP.
+- `task block` and `task done` aliases are postponed; use `task edit` in the
+  MVP.
+- Raw command output retention is not supported in the MVP. Reconsider only
+  after verification recording exists.
+- Use a small synthetic KuraKoma-style fixture for MVP dry-runs without treating
+  copied KuraKoma reference material as current project authority.
+
+Open issues:
+
+- Decide how to validate skills if Codex skill helper scripts are unavailable.
+- Decide after the MVP whether to add profile detection, verification recording,
+  review-template generation, dependency graphs, or Git integration.
+
+## Reference Material
+
+- `references/KuraKoma_TASK_STATUS.md` is a copied reference example from
+  `C:\WorkSpace\KuraKoma\TASK_STATUS.md`. It is intentionally not named
+  `TASK_STATUS.md` at the root to avoid confusing it with this project's own
+  task status.

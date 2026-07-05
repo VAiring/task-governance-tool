@@ -3,9 +3,9 @@
 Status: formal MVP specification baseline.
 
 This document defines the first product contract for `task-governance-tool`.
-It supersedes `plan.md` for MVP product behavior. `plan.md` remains the
-roadmap, decision log, and open-issue holding area until a later implementation
-task document replaces it.
+It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
+governs implementation order and execution-unit boundaries. `plan.md` remains
+the decision log and open-issue holding area.
 
 ## Product Goal
 
@@ -205,6 +205,7 @@ Optional arguments:
 - `--order`
 - `--priority`, default `normal`
 - `--status`, default `ready`
+- `--blocked-reason`, required when initial `--status` is `blocked`
 - `--review-tier`, default `1` unless project rules later say otherwise
 - `--verification`
 - `--tags`
@@ -213,6 +214,10 @@ Adding a task is an explicit registration action. The MVP does not create draft
 tasks. If a sequential task omits `--lane` or `--order`, the CLI may store a
 deterministic default lane and append order; command output must include the
 stored `lane` and `lane_order` so the auto-filled ordering is visible.
+
+If `task add` sets initial `--status blocked`, it must require
+`--blocked-reason`. The CLI must reject blocked task creation without a blocked
+reason before any row is stored.
 
 ### `taskgov task list`
 
@@ -327,6 +332,10 @@ Required `data` payloads:
 
 Task objects in JSON must use the same field names as the task model. The
 `review_tier` value must be an integer, not a string.
+
+In `db.status`, `counts.active` means tasks with status `ready`,
+`in_progress`, `blocked`, or `review_pending`. It excludes `done` and
+`cancelled`.
 
 Required error codes:
 

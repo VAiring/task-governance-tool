@@ -58,15 +58,18 @@ Before design or implementation work, read and follow:
 1. `AGENTS.md`
 2. `docs/specification.md`
 3. `docs/design.md`
-4. `plan.md`
-5. directly coupled code, config, schemas, tests, examples, and fixtures
-6. files under root `references/` as reference only
+4. `docs/implementation-roadmap.md`
+5. `plan.md`
+6. directly coupled code, config, schemas, tests, examples, and fixtures
+7. files under root `references/` as reference only
 
 If these documents conflict:
 
 - Follow `AGENTS.md` for agent behavior, safety, and workflow discipline.
 - For product behavior, prefer `docs/specification.md`.
 - For implementation structure, prefer `docs/design.md`.
+- For implementation order, execution-unit boundaries, verification gates, and
+  review gates, prefer `docs/implementation-roadmap.md`.
 - Use `plan.md` for roadmap candidates, decisions not yet promoted to formal
   docs, and open issues.
 - If a required product decision is missing, record it as an open issue in
@@ -77,7 +80,8 @@ If these documents conflict:
 - Re-read `AGENTS.md` at the start of each new task.
 - Re-read `AGENTS.md` at the start of every milestone and execution unit before
   planning, editing, verification, or review.
-- Re-read `docs/specification.md`, `docs/design.md`, and `plan.md` before
+- Re-read `docs/specification.md`, `docs/design.md`,
+  `docs/implementation-roadmap.md`, and `plan.md` before
   implementation-affecting decisions.
 - If remembered context and current documents differ, follow the current
   documents.
@@ -219,8 +223,9 @@ The product must not become:
 
 - Keep this project documentation-driven until the first implementation roadmap
   is approved.
-- Record initial ideas, open issues, and roadmap candidates in `plan.md` until
-  formal docs are introduced.
+- Record initial ideas and open issues in `plan.md`. Use formal documents such
+  as `docs/implementation-roadmap.md` once they are introduced for approved
+  implementation-facing roadmaps.
 - If formal requirements, specification, DB design, or implementation-task
   documents are introduced later, update this file's Source Of Truth section in
   the same task.

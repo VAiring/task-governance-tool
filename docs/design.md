@@ -249,11 +249,13 @@ this flow:
 
 1. Parse arguments.
 2. Resolve repo and database path.
-3. Initialize or migrate the database when needed.
-4. Validate inputs.
-5. Execute repository operation.
-6. Emit JSON or concise text.
-7. Return a stable exit code.
+3. If `--read-only` is present, reject the command before creating,
+   migrating, or writing.
+4. Initialize or migrate the database when needed.
+5. Validate inputs.
+6. Execute repository operation.
+7. Emit JSON or concise text.
+8. Return a stable exit code.
 
 Write commands must clearly say what they recorded in text mode and in JSON
 payloads.
@@ -317,6 +319,8 @@ Task validation:
 - `status` must be one of the MVP statuses.
 - `review_tier` must be integer `0`, `1`, or `2`.
 - `blocked_reason` is required when status is `blocked`.
+- `task add --status blocked` must reject before storage unless
+  `--blocked-reason` is provided.
 - `completed_at` is set when status becomes `done` and cleared when moving back
   to an active status.
 

@@ -1,14 +1,15 @@
 # task-governance-tool Initial Plan
 
-Status: formal MVP specification and design introduced; implementation not
-started.
+Status: formal MVP specification, design, and implementation roadmap
+introduced; implementation not started.
 
 This document captures early ideas for a reusable task-governance-tool Codex
 skill/tooling project. Product behavior is now governed by
-`docs/specification.md`, and implementation structure is governed by
-`docs/design.md`. This file remains the roadmap, decision log, and open-issue
-holding area. The previous working name `task-governance` is superseded by
-`task-governance-tool`.
+`docs/specification.md`, implementation structure is governed by
+`docs/design.md`, and implementation order is governed by
+`docs/implementation-roadmap.md`. This file remains the decision log and
+open-issue holding area. The previous working name `task-governance` is
+superseded by `task-governance-tool`.
 
 ## Goal
 
@@ -199,6 +200,9 @@ or changing the database. Output should include database path, schema version,
 project ID, active task counts, blocked count, review-pending count, done count,
 and next-actionable task count.
 
+Active task counts include `ready`, `in_progress`, `blocked`, and
+`review_pending`. They exclude `done` and `cancelled`.
+
 #### `taskgov task add`
 
 Purpose: register one explicit task as current task-governance-tool state.
@@ -221,6 +225,7 @@ Arguments:
   CLI may append after the last task in the lane.
 - `--priority`: `low`, `normal`, `high`, or `urgent`; default `normal`.
 - `--status`: initial status; default `ready`.
+- `--blocked-reason`: required when initial `--status` is `blocked`.
 - `--review-tier`: `0`, `1`, or `2`; default may be `1` until project rules
   say otherwise.
 - `--verification`: short verification expectation or command label.
@@ -229,6 +234,10 @@ Arguments:
 If a sequential task omits `--lane` or `--order`, the CLI may store a
 deterministic default lane and append order. Output must include the stored
 `lane` and `lane_order` so any auto-filled ordering is visible.
+
+If `task add` sets initial `--status blocked`, it must require
+`--blocked-reason` and reject the command before storing any task when the
+reason is missing.
 
 #### `taskgov task list`
 
@@ -479,6 +488,10 @@ the MVP task-status replacement is stable.
 
 ## Initial Milestone Candidates
 
+The detailed implementation roadmap is now maintained in
+`docs/implementation-roadmap.md`. The milestone candidates below are retained
+as historical planning context and high-level summary only.
+
 ### TG-M0 Requirements Baseline
 
 Goal: settle the product boundary, privacy model, and
@@ -643,6 +656,7 @@ Confirmed decisions:
 - Formal MVP documents exist:
   - `docs/specification.md`
   - `docs/design.md`
+  - `docs/implementation-roadmap.md`
 - Skill name is `task-governance-tool`; CLI command is `taskgov`.
 - The source workspace is Git-managed on the `main` branch. Generated state,
   local caches, SQLite databases, and root copied reference material are ignored
@@ -664,10 +678,11 @@ Confirmed decisions:
   after verification recording exists.
 - Use a small synthetic KuraKoma-style fixture for MVP dry-runs without treating
   copied KuraKoma reference material as current project authority.
+- If Codex skill helper scripts are unavailable, validate the skill with the
+  documented self-check in `docs/implementation-roadmap.md`.
 
 Open issues:
 
-- Decide how to validate skills if Codex skill helper scripts are unavailable.
 - Decide after the MVP whether to add profile detection, verification recording,
   review-template generation, dependency graphs, or Git integration.
 

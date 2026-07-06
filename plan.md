@@ -722,6 +722,22 @@ Current execution unit:
   - review tier: Tier 2
   - review result: two sub-agent reviews PASS, no blocking findings
 
+- `TG-M1.3 Project ID And DB Path Resolution`
+  - status: completed
+  - intended outcome: resolve canonical repo identity, deterministic project
+    ID, skill-local default DB path, and explicit `--db` override without
+    creating files
+  - write scope:
+    `task-governance-tool/scripts/task_governance_tool/storage.py`,
+    path-resolution tests, and this status section
+  - verification gate: separate repo roots produce separate default DB paths;
+    project IDs do not include private parent path details; explicit `--db`
+    path resolution does not create files during read-only inspection
+  - verification run: `python -m unittest discover -s tests` (17 tests);
+    confirmed `task-governance-tool/state` does not exist
+  - review tier: Tier 2
+  - review result: two sub-agent reviews PASS, no blocking findings
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

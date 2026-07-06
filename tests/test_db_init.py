@@ -10,8 +10,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
-STATE_DIR = SKILL_ROOT / "state"
-
 
 def run_taskgov(*args):
     return subprocess.run(
@@ -109,7 +107,15 @@ class DbInitTests(unittest.TestCase):
             self.assertEqual(payload["data"]["schema_version"], 1)
             self.assertEqual(Path(payload["db_path"]), db.resolve())
             self.assertTrue(db.exists())
-            self.assertFalse(STATE_DIR.exists())
+            default_db = (
+                SKILL_ROOT.resolve()
+                / "state"
+                / "projects"
+                / payload["project_id"]
+                / "taskgov.sqlite"
+            )
+            self.assertFalse(default_db.exists())
+            self.assertFalse(default_db.parent.exists())
 
             with closing(sqlite3.connect(db)) as connection:
                 version = connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
@@ -142,6 +148,7 @@ class DbInitTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 2)
             self.assertEqual(result.stderr, "")
+            self.assertNotIn("Traceback", result.stdout + result.stderr)
             payload = json.loads(result.stdout)
             self.assertFalse(payload["ok"])
             self.assertEqual(payload["command"], "db.init")

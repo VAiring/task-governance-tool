@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -50,20 +51,24 @@ class CliEnvelopeTests(unittest.TestCase):
         self.assertIn("--unknown-option", payload["errors"][0]["message"])
 
     def test_common_options_work_after_leaf_command(self):
-        result = run_taskgov("db", "status", "--json", "--read-only", "--repo", ".")
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "missing" / "taskgov.sqlite"
+            result = run_taskgov("db", "status", "--json", "--read-only", "--repo", ".", "--db", str(db))
 
         self.assertEqual(result.returncode, 2)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["command"], "db.status")
-        self.assertEqual(payload["errors"][0]["code"], "internal_error")
+        self.assertEqual(payload["errors"][0]["code"], "db_not_initialized")
 
     def test_common_options_work_before_command_group(self):
-        result = run_taskgov("--json", "--read-only", "db", "status")
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "missing" / "taskgov.sqlite"
+            result = run_taskgov("--json", "--read-only", "--db", str(db), "db", "status")
 
         self.assertEqual(result.returncode, 2)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["command"], "db.status")
-        self.assertEqual(payload["errors"][0]["code"], "internal_error")
+        self.assertEqual(payload["errors"][0]["code"], "db_not_initialized")
 
     def test_missing_db_subcommand_is_validation_error(self):
         result = run_taskgov("--json", "db")
@@ -93,12 +98,12 @@ class CliEnvelopeTests(unittest.TestCase):
         self.assertEqual(result.stderr.strip(), "task.next: handler not implemented yet")
 
     def test_not_implemented_json_command_uses_tool_error_exit(self):
-        result = run_taskgov("--json", "db", "status")
+        result = run_taskgov("--json", "task", "next")
 
         self.assertEqual(result.returncode, 2)
         payload = json.loads(result.stdout)
         self.assertFalse(payload["ok"])
-        self.assertEqual(payload["command"], "db.status")
+        self.assertEqual(payload["command"], "task.next")
         self.assertEqual(payload["errors"][0]["code"], "internal_error")
 
     def test_read_only_reaches_command_context(self):

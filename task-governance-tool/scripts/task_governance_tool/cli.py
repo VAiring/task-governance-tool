@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from task_governance_tool import __version__
-from task_governance_tool.storage import StorageError, initialize_database, resolve_database_target
+from task_governance_tool.storage import (
+    StatusResult,
+    StorageError,
+    initialize_database,
+    inspect_database,
+    resolve_database_target,
+)
 
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
@@ -162,6 +168,8 @@ def make_context(args: argparse.Namespace) -> CommandContext:
 def handle_command(context: CommandContext) -> CommandResult:
     if context.command == "db.init":
         return handle_db_init(context)
+    if context.command == "db.status":
+        return handle_db_status(context)
     return error_result(
         context.command,
         "internal_error",
@@ -221,6 +229,64 @@ def handle_db_init(context: CommandContext) -> CommandResult:
             f"Schema version: {result.schema_version}\n"
             f"Migrations applied: {', '.join(str(v) for v in result.migrations_applied) or 'none'}"
         ),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
+def status_data(status: StatusResult) -> dict[str, Any]:
+    return {
+        "exists": status.exists,
+        "needs_init": status.needs_init,
+        "needs_migration": status.needs_migration,
+        "schema_version": status.schema_version,
+        "counts": status.counts,
+    }
+
+
+def status_text(status: StatusResult) -> str:
+    schema_version = status.schema_version if status.schema_version is not None else "none"
+    if status.needs_init:
+        state = "needs init"
+    elif status.needs_migration:
+        state = "needs migration"
+    elif status.error_code:
+        state = status.error_code.replace("_", " ")
+    else:
+        state = "ready"
+    counts = status.counts
+    return (
+        f"DB: {status.target.db_path}\n"
+        f"Project: {status.target.project.project_id}\n"
+        f"Status: {state}\n"
+        f"Schema version: {schema_version}\n"
+        f"Active: {counts['active']}  Blocked: {counts['blocked']}  "
+        f"Review pending: {counts['review_pending']}  Done: {counts['done']}\n"
+        f"Next actionable: {counts['next_actionable']}"
+    )
+
+
+def handle_db_status(context: CommandContext) -> CommandResult:
+    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    status = inspect_database(target)
+    if status.error_code:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data=status_data(status),
+            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
+            text=status_text(status),
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=target.project.project_id,
+        db_path=str(target.db_path),
+        data=status_data(status),
+        text=status_text(status),
         exit_code=EXIT_SUCCESS,
     )
 

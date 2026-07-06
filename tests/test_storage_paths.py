@@ -7,7 +7,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
 SCRIPT = SKILL_ROOT / "scripts" / "taskgov.py"
-STATE_DIR = SKILL_ROOT / "state"
 SCRIPTS_PATH = SKILL_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_PATH))
 try:
@@ -63,7 +62,9 @@ class StoragePathTests(unittest.TestCase):
             self.assertEqual(target.db_path, db.resolve())
             self.assertFalse(db.exists())
             self.assertFalse(db.parent.exists())
-            self.assertFalse(STATE_DIR.exists())
+            default_path = default_db_path(SKILL_ROOT, target.project.project_id)
+            self.assertFalse(default_path.exists())
+            self.assertFalse(default_path.parent.exists())
 
     def test_sanitize_project_basename_has_stable_fallback(self):
         self.assertEqual(sanitize_project_basename("___"), "project")

@@ -10,8 +10,18 @@ SCRIPT = SKILL_ROOT / "scripts" / "taskgov.py"
 STATE_DIR = SKILL_ROOT / "state"
 
 
+def state_snapshot():
+    if not STATE_DIR.exists():
+        return []
+    entries = ["."]
+    entries.extend(sorted(str(path.relative_to(STATE_DIR)) for path in STATE_DIR.rglob("*")))
+    return entries
+
+
 class CliHelpTests(unittest.TestCase):
     def test_help_runs_from_skill_folder(self):
+        before_state = state_snapshot()
+
         result = subprocess.run(
             [sys.executable, "scripts/taskgov.py", "--help"],
             cwd=SKILL_ROOT,
@@ -27,7 +37,7 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("--db", result.stdout)
         self.assertIn("--json", result.stdout)
         self.assertIn("--read-only", result.stdout)
-        self.assertFalse(STATE_DIR.exists())
+        self.assertEqual(state_snapshot(), before_state)
 
     def test_runtime_package_imports_from_scripts_path(self):
         sys.path.insert(0, str(SKILL_ROOT / "scripts"))

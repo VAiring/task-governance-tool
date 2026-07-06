@@ -761,6 +761,33 @@ Current execution unit:
     traceback leakage on invalid DB paths; fixed in the same execution unit;
     two follow-up sub-agent reviews PASS, no blocking findings
 
+- `TG-M1.5 Read-Only db status`
+  - status: completed
+  - intended outcome: inspect database existence, schema usability, project
+    metadata, task counts, and provisional next-actionable count without
+    creating, migrating, or writing files
+  - write scope:
+    `task-governance-tool/scripts/task_governance_tool/storage.py`,
+    `task-governance-tool/scripts/task_governance_tool/cli.py`, `db status`
+    tests, and this status section
+  - verification gate: missing DB status does not create a database or parent
+    state directory; initialized DB status returns the required JSON payload;
+    migration-required and project-mismatch states are reported without
+    mutation; text output remains concise
+  - verification run: `python -m unittest discover -s tests` (33 tests);
+    `git diff --check`; manual smoke check confirmed missing default DB
+    reports `db_not_initialized` without creating `task-governance-tool/state`,
+    initialized DB status returns schema version 1, text output is six concise
+    lines, and WAL-mode status inspection creates no `-wal` or `-shm` sidecar
+    files; regression coverage confirms an existing active WAL sidecar returns
+    a structured non-success result instead of stale success counts
+  - review tier: Tier 2
+  - review result: initial sub-agent review found a medium issue for WAL
+    sidecar creation; fixed in the same execution unit; follow-up review found
+    a medium issue for stale success counts when existing WAL sidecars were
+    present; fixed in the same execution unit; two final sub-agent reviews
+    PASS, no blocking findings
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

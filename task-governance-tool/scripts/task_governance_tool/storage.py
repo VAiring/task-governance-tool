@@ -47,6 +47,18 @@ class InitResult:
     schema_version: int
 
 
+@dataclass(frozen=True)
+class StatusResult:
+    target: DatabaseTarget
+    exists: bool
+    needs_init: bool
+    needs_migration: bool
+    schema_version: int | None
+    counts: dict[str, int]
+    error_code: str | None = None
+    error_message: str | None = None
+
+
 def skill_root_from_script(script_path: str | os.PathLike[str]) -> Path:
     script = Path(script_path).resolve()
     return script.parent.parent
@@ -114,6 +126,22 @@ def connect(db_path: Path) -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
+
+
+def connect_readonly(db_path: Path) -> sqlite3.Connection:
+    uri = db_path.resolve(strict=False).as_uri() + "?mode=ro&immutable=1"
+    connection = sqlite3.connect(uri, uri=True)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    return connection
+
+
+def sqlite_sidecar_paths(db_path: Path) -> list[Path]:
+    return [Path(str(db_path) + suffix) for suffix in ("-wal", "-shm")]
+
+
+def existing_sqlite_sidecars(db_path: Path) -> list[Path]:
+    return [path for path in sqlite_sidecar_paths(db_path) if path.exists()]
 
 
 def table_exists(connection: sqlite3.Connection, table_name: str) -> bool:
@@ -207,6 +235,40 @@ CREATE INDEX IF NOT EXISTS idx_task_events_task_created ON task_events(task_id, 
 """
 
 
+def empty_counts() -> dict[str, int]:
+    return {
+        "active": 0,
+        "blocked": 0,
+        "review_pending": 0,
+        "done": 0,
+        "next_actionable": 0,
+    }
+
+
+def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]:
+    required_tables = {
+        "schema_migrations",
+        "project_meta",
+        "tasks",
+        "task_events",
+        "tool_events",
+    }
+    required_indexes = {
+        "idx_tasks_project_status",
+        "idx_tasks_project_kind",
+        "idx_tasks_project_lane_order",
+        "idx_tasks_project_lane_order_unique",
+        "idx_task_events_task_created",
+    }
+    table_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    index_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
+    tables = {str(row["name"]) for row in table_rows}
+    indexes = {str(row["name"]) for row in index_rows}
+    missing = [f"table:{name}" for name in sorted(required_tables - tables)]
+    missing.extend(f"index:{name}" for name in sorted(required_indexes - indexes))
+    return missing
+
+
 def apply_migrations(connection: sqlite3.Connection) -> list[int]:
     version = current_schema_version(connection)
     if version > SCHEMA_VERSION:
@@ -253,6 +315,182 @@ def ensure_project_meta(connection: sqlite3.Connection, project: ProjectIdentity
         """,
         (project.project_id, project.canonical_path_hash, project.display_name, now, now),
     )
+
+
+def read_project_meta_id(connection: sqlite3.Connection) -> str | None:
+    row = connection.execute("SELECT project_id FROM project_meta ORDER BY project_id LIMIT 1").fetchone()
+    if row is None:
+        return None
+    return str(row["project_id"])
+
+
+def count_tasks(connection: sqlite3.Connection, project_id: str) -> dict[str, int]:
+    counts = empty_counts()
+    counts["active"] = int(
+        connection.execute(
+            """
+            SELECT COUNT(*) AS count
+              FROM tasks
+             WHERE project_id = ?
+               AND status IN ('ready', 'in_progress', 'blocked', 'review_pending')
+            """,
+            (project_id,),
+        ).fetchone()["count"]
+    )
+    for status, key in (
+        ("blocked", "blocked"),
+        ("review_pending", "review_pending"),
+        ("done", "done"),
+    ):
+        counts[key] = int(
+            connection.execute(
+                "SELECT COUNT(*) AS count FROM tasks WHERE project_id = ? AND status = ?",
+                (project_id, status),
+            ).fetchone()["count"]
+        )
+    counts["next_actionable"] = int(
+        connection.execute(
+            """
+            SELECT COUNT(*) AS count
+              FROM tasks AS task
+             WHERE task.project_id = ?
+               AND task.status = 'ready'
+               AND (
+                 task.kind = 'optional'
+                 OR NOT EXISTS (
+                   SELECT 1
+                     FROM tasks AS earlier
+                    WHERE earlier.project_id = task.project_id
+                      AND earlier.kind = 'sequential'
+                      AND earlier.lane = task.lane
+                      AND earlier.lane_order < task.lane_order
+                      AND earlier.status NOT IN ('done', 'cancelled')
+                 )
+               )
+            """,
+            (project_id,),
+        ).fetchone()["count"]
+    )
+    return counts
+
+
+def status_error(
+    target: DatabaseTarget,
+    *,
+    exists: bool,
+    needs_init: bool,
+    needs_migration: bool,
+    schema_version: int | None,
+    code: str,
+    message: str,
+) -> StatusResult:
+    return StatusResult(
+        target=target,
+        exists=exists,
+        needs_init=needs_init,
+        needs_migration=needs_migration,
+        schema_version=schema_version,
+        counts=empty_counts(),
+        error_code=code,
+        error_message=message,
+    )
+
+
+def inspect_database(target: DatabaseTarget) -> StatusResult:
+    if not target.db_path.exists():
+        return status_error(
+            target,
+            exists=False,
+            needs_init=True,
+            needs_migration=False,
+            schema_version=None,
+            code="db_not_initialized",
+            message="database is not initialized; run db init first",
+        )
+
+    if existing_sqlite_sidecars(target.db_path):
+        return status_error(
+            target,
+            exists=True,
+            needs_init=False,
+            needs_migration=False,
+            schema_version=None,
+            code="internal_error",
+            message="database has active WAL sidecar files; close writers or checkpoint before status",
+        )
+
+    try:
+        with closing(connect_readonly(target.db_path)) as connection:
+            version = current_schema_version(connection)
+            if version != SCHEMA_VERSION:
+                return status_error(
+                    target,
+                    exists=True,
+                    needs_init=False,
+                    needs_migration=True,
+                    schema_version=version,
+                    code="migration_required",
+                    message=(
+                        f"database schema version {version} does not match supported "
+                        f"version {SCHEMA_VERSION}; run db init to migrate"
+                    ),
+                )
+
+            missing_schema_objects = required_schema_objects_missing(connection)
+            if missing_schema_objects:
+                return status_error(
+                    target,
+                    exists=True,
+                    needs_init=False,
+                    needs_migration=True,
+                    schema_version=version,
+                    code="migration_required",
+                    message="database schema is incomplete; run db init to migrate",
+                )
+
+            existing_project_id = read_project_meta_id(connection)
+            if existing_project_id is None:
+                return status_error(
+                    target,
+                    exists=True,
+                    needs_init=False,
+                    needs_migration=True,
+                    schema_version=version,
+                    code="migration_required",
+                    message="database project metadata is missing; run db init to repair",
+                )
+            if existing_project_id != target.project.project_id:
+                return status_error(
+                    target,
+                    exists=True,
+                    needs_init=False,
+                    needs_migration=False,
+                    schema_version=version,
+                    code="project_mismatch",
+                    message=(
+                        f"database belongs to project {existing_project_id}, "
+                        f"not {target.project.project_id}"
+                    ),
+                )
+
+            return StatusResult(
+                target=target,
+                exists=True,
+                needs_init=False,
+                needs_migration=False,
+                schema_version=version,
+                counts=count_tasks(connection, target.project.project_id),
+            )
+    except sqlite3.Error as exc:
+        return status_error(
+            target,
+            exists=True,
+            needs_init=False,
+            needs_migration=False,
+            schema_version=None,
+            code="internal_error",
+            message="could not inspect database",
+        )
 
 
 def initialize_database(target: DatabaseTarget) -> InitResult:

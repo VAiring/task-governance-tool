@@ -7,9 +7,11 @@ import json
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from task_governance_tool import __version__
+from task_governance_tool.storage import StorageError, initialize_database, resolve_database_target
 
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
@@ -158,11 +160,68 @@ def make_context(args: argparse.Namespace) -> CommandContext:
 
 
 def handle_command(context: CommandContext) -> CommandResult:
+    if context.command == "db.init":
+        return handle_db_init(context)
     return error_result(
         context.command,
         "internal_error",
         f"{context.command}: handler not implemented yet",
         EXIT_TOOL_ERROR,
+    )
+
+
+def cli_script_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "taskgov.py"
+
+
+def handle_db_init(context: CommandContext) -> CommandResult:
+    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    if context.read_only:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            errors=[
+                {
+                    "code": "invalid_argument",
+                    "message": "db init cannot run with --read-only because it writes the database",
+                }
+            ],
+            exit_code=EXIT_USAGE,
+        )
+
+    try:
+        result = initialize_database(target)
+    except StorageError as exc:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            errors=[{"code": exc.code, "message": exc.message}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    data = {
+        "created": result.created,
+        "migrations_applied": result.migrations_applied,
+        "schema_version": result.schema_version,
+    }
+    action = "created" if result.created else "initialized"
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=target.project.project_id,
+        db_path=str(target.db_path),
+        data=data,
+        text=(
+            f"DB {action}: {target.db_path}\n"
+            f"Project: {target.project.project_id}\n"
+            f"Schema version: {result.schema_version}\n"
+            f"Migrations applied: {', '.join(str(v) for v in result.migrations_applied) or 'none'}"
+        ),
+        exit_code=EXIT_SUCCESS,
     )
 
 

@@ -738,6 +738,29 @@ Current execution unit:
   - review tier: Tier 2
   - review result: two sub-agent reviews PASS, no blocking findings
 
+- `TG-M1.4 Schema Migration And db init`
+  - status: completed
+  - intended outcome: initialize a migration-managed SQLite database through
+    explicit `db init`, enforce the baseline schema constraints, and reject
+    `--read-only` or project-mismatched writes safely
+  - write scope:
+    `task-governance-tool/scripts/task_governance_tool/storage.py`,
+    `task-governance-tool/scripts/task_governance_tool/cli.py`,
+    migration/repository tests, and this status section
+  - verification gate: temp DB initialization; idempotent migration; schema
+    constraint tests; project mismatch using explicit `--db`; `db init
+    --read-only` does not create or modify files
+  - verification run: `python -m unittest discover -s tests` (24 tests);
+    `git diff --check`; manual temp-DB smoke check confirmed first init
+    creates schema version 1, second init applies no migrations, `db init
+    --read-only` creates no file or parent directory, invalid DB paths return
+    structured JSON errors without traceback, and source
+    `task-governance-tool/state` remains absent
+  - review tier: Tier 2
+  - review result: initial sub-agent review found a medium issue for raw
+    traceback leakage on invalid DB paths; fixed in the same execution unit;
+    two follow-up sub-agent reviews PASS, no blocking findings
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

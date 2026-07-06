@@ -175,6 +175,13 @@ class TaskListResult:
     limit: int
 
 
+@dataclass(frozen=True)
+class TaskShowResult:
+    task: dict[str, Any]
+    events: list[dict[str, Any]]
+    suggested_next_action: str
+
+
 def validation_error(code: str, message: str, field: str | None = None) -> TaskValidationError:
     return TaskValidationError(code=code, message=message, field=field)
 
@@ -379,6 +386,10 @@ def row_to_task(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 
 
+def row_to_event(row: sqlite3.Row) -> dict[str, Any]:
+    return dict(row)
+
+
 def split_tags(tags: str) -> list[str]:
     return [tag.strip() for tag in tags.split(",") if tag.strip()]
 
@@ -577,3 +588,63 @@ def list_tasks(
         rows = [row for row in rows if task_matches_tag(str(row["tags"]), requested_tag)]
     tasks = rows[:row_limit]
     return TaskListResult(tasks=tasks, count=len(tasks), limit=row_limit)
+
+
+def validate_task_id(value: Any) -> str:
+    return validate_text("task_id", value, required=True, limit=128)
+
+
+def suggested_next_action(task: dict[str, Any]) -> str:
+    status = task["status"]
+    if status == "ready":
+        return "Start work, then update the task state when work begins or the status changes."
+    if status == "in_progress":
+        return "Continue work, or update the task status when the execution unit changes."
+    if status == "blocked":
+        return "Resolve the blocker, or choose another ready task."
+    if status == "review_pending":
+        return "Complete the required review gate, then update the task status."
+    if status == "done":
+        return "No next action; the task is done."
+    if status == "cancelled":
+        return "No next action; the task is cancelled."
+    return "Inspect the task status before choosing the next action."
+
+
+def show_task(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    task_id: Any,
+    *,
+    event_limit: int = 10,
+) -> TaskShowResult:
+    normalized_task_id = validate_task_id(task_id)
+    task_row = connection.execute(
+        """
+        SELECT *
+          FROM tasks
+         WHERE project_id = ?
+           AND task_id = ?
+        """,
+        (project.project_id, normalized_task_id),
+    ).fetchone()
+    if task_row is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+
+    task = row_to_task(task_row)
+    event_rows = connection.execute(
+        """
+        SELECT *
+          FROM task_events
+         WHERE project_id = ?
+           AND task_id = ?
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT ?
+        """,
+        (project.project_id, normalized_task_id, event_limit),
+    ).fetchall()
+    return TaskShowResult(
+        task=task,
+        events=[row_to_event(row) for row in event_rows],
+        suggested_next_action=suggested_next_action(task),
+    )

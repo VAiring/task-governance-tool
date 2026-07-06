@@ -27,6 +27,7 @@ from task_governance_tool.tasks import (
     TaskValidationError,
     add_task,
     list_tasks,
+    show_task,
     validate_task_input,
 )
 
@@ -171,7 +172,9 @@ def build_parser() -> argparse.ArgumentParser:
     task_list_parser.add_argument("--limit", default=None)
     task_list_parser.add_argument("--include-done", action="store_true", default=False)
     add_common_options(task_subparsers.add_parser("next", help="show next actionable tasks"))
-    add_common_options(task_subparsers.add_parser("show", help="show one task and recent events"))
+    task_show_parser = task_subparsers.add_parser("show", help="show one task and recent events")
+    add_common_options(task_show_parser)
+    task_show_parser.add_argument("task_id")
     add_common_options(task_subparsers.add_parser("edit", help="update task state or metadata"))
 
     return parser
@@ -207,6 +210,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_task_add(context)
     if context.command == "task.list":
         return handle_task_list(context)
+    if context.command == "task.show":
+        return handle_task_show(context)
     return error_result(
         context.command,
         "internal_error",
@@ -521,6 +526,96 @@ def handle_task_list(context: CommandContext) -> CommandResult:
         db_path=str(target.db_path),
         data=data,
         text=task_list_text(result.tasks, result.count, result.limit),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
+def task_show_text(task: dict[str, Any], events: list[dict[str, Any]], suggested_next_action: str) -> str:
+    lines = [
+        f"Task: {task['task_id']}",
+        f"Title: {task['title']}",
+        f"Status: {task['status']}  Priority: {task['priority']}  Kind: {task['kind']}",
+    ]
+    if task["lane"]:
+        lane = f"Lane: {task['lane']}"
+        if task["lane_order"] is not None:
+            lane += f"  Order: {task['lane_order']}"
+        lines.append(lane)
+    lines.append(f"Review tier: {task['review_tier']}")
+    if task["verification"]:
+        lines.append(f"Verification: {task['verification']}")
+    if task["blocked_reason"]:
+        lines.append(f"Blocked: {task['blocked_reason']}")
+    lines.append(f"Suggested next action: {suggested_next_action}")
+    if events:
+        latest = events[0]
+        lines.append(f"Latest event: {latest['event_type']} - {latest['summary']}")
+    return "\n".join(lines)
+
+
+def handle_task_show(context: CommandContext) -> CommandResult:
+    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    status = inspect_database(target)
+    if status.error_code:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data={"task": None, "events": [], "suggested_next_action": ""},
+            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    try:
+        with closing(connect_readonly(target.db_path)) as connection:
+            result = show_task(connection, target.project, getattr(context.args, "task_id", ""))
+    except TaskValidationError as exc:
+        return validation_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            exc=exc,
+        )
+    except TaskRepositoryError as exc:
+        if exc.code == "not_found":
+            return CommandResult(
+                ok=False,
+                command=context.command,
+                project_id=target.project.project_id,
+                db_path=str(target.db_path),
+                data={"task": None, "events": [], "suggested_next_action": ""},
+                errors=[{"code": exc.code, "message": exc.message}],
+                exit_code=EXIT_USAGE,
+            )
+        return validation_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            exc=exc,
+        )
+    except sqlite3.Error as exc:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            errors=[{"code": "internal_error", "message": "could not show task"}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    data = {
+        "task": result.task,
+        "events": result.events,
+        "suggested_next_action": result.suggested_next_action,
+    }
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=target.project.project_id,
+        db_path=str(target.db_path),
+        data=data,
+        text=task_show_text(result.task, result.events, result.suggested_next_action),
         exit_code=EXIT_SUCCESS,
     )
 

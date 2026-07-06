@@ -894,6 +894,34 @@ Current execution unit:
     fetching matching rows, which may do extra read work on very large local
     databases
 
+- `TG-M2.4 task show`
+  - status: completed
+  - intended outcome: implement read-only single-task inspection with recent
+    events, timestamps, and a suggested next action
+  - write scope:
+    `task-governance-tool/scripts/task_governance_tool/tasks.py`,
+    `task-governance-tool/scripts/task_governance_tool/cli.py`, show/event
+    tests, and this status section
+  - verification gate: show existing task with events; unknown task returns
+    structured `not_found`; missing DB does not create files; `task show` is
+    read-only and returns JSON data with `task`, `events`, and
+    `suggested_next_action`; text output remains concise
+  - verification run: `python -m unittest tests.test_task_show` (8 tests);
+    `python -m unittest discover -s tests` (74 tests); `git diff --check`;
+    coverage includes existing task detail with recent events and timestamps,
+    status-specific suggested actions, structured `not_found`, missing DB
+    no-create behavior, migration-required and project-mismatch propagation
+    without mutation, explicit `--read-only` success, concise text output,
+    command-specific error payload shape for `not_found`, same-timestamp event
+    ordering by insertion order, and no suggested action that names unimplemented
+    commands
+  - review tier: Tier 2
+  - review result: initial sub-agent review found medium issues for missing
+    command-specific `not_found` payload shape, same-timestamp event ordering,
+    and suggested actions naming unimplemented commands; fixed in the same
+    execution unit; two final independent sub-agent reviews PASS, no blocking
+    findings
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Entry point for the task-governance-tool CLI."""
 
+import sys
+from pathlib import Path
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from task_governance_tool.cli import main
 
 

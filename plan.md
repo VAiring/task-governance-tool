@@ -1055,6 +1055,33 @@ Current execution unit:
     aligning `SKILL.md` MVP wording with explicit local task-state updates; two
     final independent sub-agent reviews PASS, no blocking findings
 
+- `TG-M4.2 Installed Skill Self-Containment Smoke Test`
+  - status: completed
+  - intended outcome: verify the installable skill folder can run its bundled
+    CLI from an isolated copy and generated state/SQLite artifacts remain out of
+    commits
+  - write scope: self-containment smoke tests, `task-governance-tool/scripts/taskgov.py`
+    if entrypoint path bootstrapping is needed, `.gitignore` only if generated
+    SQLite sidecar ignore coverage is incomplete, and this status section
+  - verification gate: isolated copied skill folder runs `scripts/taskgov.py
+    --help`; runtime imports are satisfied by `task-governance-tool/scripts/`;
+    generated `state/` and SQLite files are ignored by Git
+  - verification run: `python -m unittest tests.test_skill_self_containment` (3
+    tests); `python task-governance-tool\scripts\taskgov.py --help`; `python -m
+    unittest discover -s tests` (102 tests); `git diff --check`;
+    `git check-ignore -v` confirmed root `references/`, skill-local `state/`,
+    SQLite DB files, WAL/SHM sidecars, and rollback journal sidecars are ignored
+  - review tier: Tier 2
+  - review result: initial independent reviews found medium issues where the
+    smoke test could pass with site packages on `sys.path` and the static-copy
+    test wrote temporary state into the real source skill tree; fixed in the
+    same execution unit by running the isolated help smoke test with `python -I
+    -S`, bootstrapping the entrypoint from its own `scripts/` folder, using only
+    temporary skill-source copies for generated state exclusion tests, and
+    expanding SQLite sidecar ignore coverage; two final independent sub-agent
+    reviews PASS, no blocking findings; low-risk ignore-source and rollback
+    journal coverage were also hardened
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

@@ -24,6 +24,10 @@ Run from the installed skill folder:
 python scripts/taskgov.py <command> [options]
 ```
 
+For a new target project, start with `db status`. It reports missing or
+outdated databases without creating files. Use `db init` only when local task
+tracking should be created or migrated for that project.
+
 Common options:
 
 - `--repo <path>`: target project root; defaults to the current directory.

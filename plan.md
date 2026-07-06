@@ -1138,6 +1138,27 @@ Current execution unit:
     low-risk notes are that read-only row-count checks do not detect in-place
     updates and the deterministic selection helper is schema-coupled by design
 
+- `TG-M5.O2 Skill Usage Clarity`
+  - status: completed
+  - intended outcome: make the skill description and first-use guidance clearer
+    for real operation without expanding MVP behavior or advertising deferred
+    features
+  - write scope: `task-governance-tool/SKILL.md`,
+    `task-governance-tool/agents/openai.yaml`,
+    `task-governance-tool/references/task_workflow.md`,
+    `task-governance-tool/references/cli_contracts.md`, and this status
+    section
+  - verification gate: skill metadata/self-check; reference links resolve;
+    no unsupported MVP triggers or deferred features are advertised; docs-only
+    diff check
+  - review tier: Tier 2
+  - verification run: skill usage clarity self-check passed for frontmatter
+    keys, folder/name match, MVP trigger terms, deferred-trigger exclusions,
+    reference links, and ASCII content; `python
+    task-governance-tool\scripts\taskgov.py --help`; `git diff --check`;
+    `python -m unittest discover -s tests` (103 tests)
+  - review result: two independent sub-agent reviews PASS, no blocking findings
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

@@ -1,6 +1,6 @@
 ---
 name: task-governance-tool
-description: Local-first task governance for Codex using the bundled taskgov CLI and SQLite state. Use when planning or consuming project tasks, inspecting task status, selecting next actionable work, handling blockers, or updating local task state during high-discipline task execution.
+description: Local-first task-status replacement for Codex using the bundled taskgov CLI and skill-local SQLite state. Use when planning explicit tasks, initializing or inspecting local task state, selecting next actionable work, handling blockers, registering explicit tasks, or updating task status during high-discipline execution.
 ---
 
 # Task Governance Tool
@@ -12,13 +12,22 @@ only a local task-state helper.
 
 ## Quick Start
 
-Run the bundled CLI from this skill folder:
+Run the bundled CLI from the installed skill folder:
 
 ```powershell
 python scripts/taskgov.py db status --repo <target-project> --json
 python scripts/taskgov.py task next --repo <target-project> --json
 python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 ```
+
+First-use flow:
+
+1. Run `db status` to inspect without creating files.
+2. If the database is missing and the user intends to use local task tracking,
+   run `db init`.
+3. If there are no tasks yet, register explicit user-approved tasks with
+   `task add`; do not import large task files or invent dependency graphs.
+4. Use `task next` and `task show` to choose and inspect work before acting.
 
 Use `--db <path>` only when the user or project explicitly needs a database
 outside the skill-local default. The default database lives under this installed

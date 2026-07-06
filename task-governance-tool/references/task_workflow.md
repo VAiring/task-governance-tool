@@ -6,6 +6,7 @@ tasks with `task-governance-tool`.
 ## Contents
 
 - [Source Of Truth](#source-of-truth)
+- [Minimal Operating Loop](#minimal-operating-loop)
 - [Inspect Ready Work](#inspect-ready-work)
 - [Selection Semantics](#selection-semantics)
 - [Execution Unit Boundary](#execution-unit-boundary)
@@ -21,6 +22,20 @@ project's applicable `AGENTS.md`, specs, design docs, tests, and local rules.
 
 The task database stores compact execution state only. Do not treat it as a
 hidden authority for product decisions.
+
+## Minimal Operating Loop
+
+Use this loop when the user asks to work from local task state:
+
+1. Inspect: `db status`.
+2. Initialize only if needed and explicitly intended: `db init`.
+3. Register only explicit tasks: `task add`.
+4. Choose work: `task next`.
+5. Inspect the chosen task: `task show`.
+6. Update local state: `task edit`.
+
+If a task blocks, mark that task `blocked` with a concise reason, then return to
+`task next` for unrelated ready work.
 
 ## Inspect Ready Work
 
@@ -107,8 +122,9 @@ logs.
 
 ## Register Tasks
 
-Register only explicit tasks. The MVP does not import large task files or create
-draft dependency graphs.
+Register only explicit user-approved tasks. The MVP does not import large task
+files, create draft dependency graphs, run approval workflows, or register
+persistent project profiles.
 
 ```powershell
 python scripts/taskgov.py task add --repo <target-project> --title "Implement task next" --kind sequential --lane TG-M3 --order 20 --priority high --review-tier 2 --json

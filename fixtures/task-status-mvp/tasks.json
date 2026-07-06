@@ -1,0 +1,92 @@
+{
+  "fixture": "task-status-mvp",
+  "description": "Synthetic local-only task set for task-governance-tool MVP dry runs.",
+  "tasks": [
+    {
+      "key": "core-schema-done",
+      "title": "Finalize schema baseline",
+      "description": "Confirm the initial task table fields and migration expectations.",
+      "kind": "sequential",
+      "lane": "CORE",
+      "order": 10,
+      "priority": "high",
+      "status": "done",
+      "review_tier": 2,
+      "verification": "python -m unittest tests.test_db_init",
+      "tags": "schema,sequential,complete"
+    },
+    {
+      "key": "core-edit-blocked",
+      "title": "Resolve blocked edit semantics",
+      "description": "Decide how blocked task edits should clear stale blocker text.",
+      "kind": "sequential",
+      "lane": "CORE",
+      "order": 20,
+      "priority": "urgent",
+      "status": "blocked",
+      "blocked_reason": "User decision needed on blocker-clearing wording",
+      "review_tier": 2,
+      "verification": "python -m unittest tests.test_task_edit",
+      "tags": "blocked,sequential"
+    },
+    {
+      "key": "core-next-ready",
+      "title": "Implement next-task selection",
+      "description": "Return ready work while respecting earlier sequential lane state.",
+      "kind": "sequential",
+      "lane": "CORE",
+      "order": 30,
+      "priority": "high",
+      "status": "ready",
+      "review_tier": 2,
+      "verification": "python -m unittest tests.test_task_next",
+      "tags": "next,sequential,ready"
+    },
+    {
+      "key": "docs-ready",
+      "title": "Draft task workflow reference",
+      "description": "Document how to inspect, select, block, and complete tasks.",
+      "kind": "sequential",
+      "lane": "DOCS",
+      "order": 10,
+      "priority": "normal",
+      "status": "ready",
+      "review_tier": 1,
+      "verification": "docs consistency review",
+      "tags": "docs,sequential,ready"
+    },
+    {
+      "key": "optional-polish-ready",
+      "title": "Polish concise text output",
+      "description": "Tighten human-readable output for repeated task inspection.",
+      "kind": "optional",
+      "priority": "normal",
+      "status": "ready",
+      "review_tier": 1,
+      "verification": "python -m unittest discover -s tests",
+      "tags": "optional,cli,ready"
+    },
+    {
+      "key": "optional-review-pending",
+      "title": "Review fixture naming",
+      "description": "Check that fixture labels are clear and synthetic.",
+      "kind": "optional",
+      "priority": "low",
+      "status": "review_pending",
+      "review_tier": 1,
+      "verification": "fixture review",
+      "tags": "optional,review"
+    },
+    {
+      "key": "optional-cancelled",
+      "title": "Try abandoned dashboard sketch",
+      "description": "Cancelled MVP idea retained only to exercise terminal status handling.",
+      "kind": "optional",
+      "priority": "low",
+      "status": "cancelled",
+      "review_tier": 0,
+      "verification": "not required",
+      "tags": "optional,cancelled"
+    }
+  ]
+}

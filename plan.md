@@ -956,6 +956,27 @@ Current execution unit:
     may still refresh existing `project_meta.updated_at`, while task/event rows
     remain rolled back
 
+- `TG-M2.O1 Synthetic Task Fixture`
+  - status: completed
+  - intended outcome: add a small synthetic task-status fixture that can seed a
+    temporary task-governance-tool database through public CLI commands
+  - write scope: `fixtures/task-status-mvp/`, fixture tests, and this status
+    section
+  - verification gate: fixture contains optional tasks, sequential lanes,
+    blocked tasks, review-pending tasks, and completed tasks; fixture can seed
+    a temp DB through public CLI commands without target-project mutation
+  - verification run: `python -m unittest tests.test_task_fixture` (1 test);
+    `python -m unittest discover -s tests` (87 tests); `git diff --check`;
+    `python -m json.tool fixtures/task-status-mvp/tasks.json`; coverage
+    confirms the fixture seeds seven tasks through public `task add` CLI calls,
+    includes ready/blocked/review-pending/done/cancelled statuses, includes
+    optional and sequential tasks across `CORE` and `DOCS` lanes, and does not
+    create the synthetic repo directory
+  - review tier: Tier 1
+  - review result: sub-agent review PASS, no blocking findings; remaining risk
+    is that the fixture supports later `task next` validation but does not yet
+    validate TG-M3 selection behavior
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

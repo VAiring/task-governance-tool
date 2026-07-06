@@ -1082,6 +1082,27 @@ Current execution unit:
     reviews PASS, no blocking findings; low-risk ignore-source and rollback
     journal coverage were also hardened
 
+- `TG-M4.3 Full MVP Contract Test Pass`
+  - status: completed
+  - intended outcome: run the full MVP acceptance pass and representative
+    text/JSON CLI checks against temporary databases only
+  - write scope: tests, fixtures, docs updates only if behavior clarifications
+    are required, and this status section
+  - verification gate: full offline test suite; representative `db status`,
+    `task list`, `task next`, and `task show` text/JSON outputs; temp DBs only;
+    no target-project mutation
+  - verification run: `python -m unittest discover -s tests` (102 tests);
+    representative temp-DB smoke flow using only a temporary DB and synthetic
+    target repo path: `db init`, `task add`, `db status`, `task list`, `task
+    next`, and `task show` in JSON and text modes; smoke result confirmed
+    `db status` next-actionable count `2`, `task list` count `5`, `task next`
+    titles `Optional ready, First sequential`, `task show` title `First
+    sequential`, and target repo path was not created; `git diff --check`
+  - review tier: Tier 2
+  - review result: two independent sub-agent reviews PASS, no blocking findings;
+    reviewers confirmed the plan-only acceptance record matches TG-M4.3 roadmap
+    gates and `docs/specification.md` acceptance criteria
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

@@ -977,6 +977,27 @@ Current execution unit:
     is that the fixture supports later `task next` validation but does not yet
     validate TG-M3 selection behavior
 
+- `TG-M3.1 Selection Service`
+  - status: completed
+  - intended outcome: isolate next-actionable task selection from generic task
+    list filtering
+  - write scope: `task-governance-tool/scripts/task_governance_tool/selection.py`,
+    selection service tests, and this status section
+  - verification gate: ready optional tasks remain selectable when a sequential
+    lane is blocked; later sequential tasks remain hidden until earlier lane
+    tasks are `done` or `cancelled`; priority/lane/order sorting is
+    deterministic
+  - verification run: `python -m unittest tests.test_selection` (3 tests);
+    `python -m unittest discover -s tests` (90 tests); `git diff --check`;
+    coverage includes lane-local blocking, done/cancelled prior sequential
+    tasks, default limit handling in the service, filters for kind/lane/priority,
+    and deterministic priority/lane/order sorting
+  - review tier: Tier 2
+  - review result: two independent sub-agent reviews PASS, no blocking findings;
+    remaining low risks are that tie-break sorting by `created_at`/`task_id` and
+    earlier `in_progress`/`review_pending` sequential blockers could receive
+    narrower regression tests later, while the implemented SQL covers them
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

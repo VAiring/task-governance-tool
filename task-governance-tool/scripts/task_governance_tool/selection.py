@@ -1,0 +1,113 @@
+"""Next-actionable task selection helpers."""
+
+from __future__ import annotations
+
+import sqlite3
+from dataclasses import dataclass
+from typing import Any
+
+from task_governance_tool.storage import ProjectIdentity
+from task_governance_tool.tasks import (
+    KINDS,
+    PRIORITIES,
+    row_to_task,
+    validate_choice,
+    validate_limit,
+    validate_text,
+)
+
+
+PRIORITY_ORDER = ("urgent", "high", "normal", "low")
+
+
+@dataclass(frozen=True)
+class TaskNextResult:
+    tasks: list[dict[str, Any]]
+    count: int
+    limit: int
+    selection_rules: dict[str, Any]
+
+
+def selection_rules() -> dict[str, Any]:
+    return {
+        "status": "ready",
+        "optional": "ready optional tasks are actionable",
+        "sequential": "ready sequential tasks require earlier lane tasks to be done or cancelled",
+        "blocked_lanes": "blocked or incomplete earlier sequential tasks block only their lane",
+        "priority_order": list(PRIORITY_ORDER),
+    }
+
+
+def next_task_filters(
+    project: ProjectIdentity,
+    *,
+    kind: Any = None,
+    lane: Any = None,
+    priority: Any = None,
+) -> tuple[list[str], list[Any]]:
+    filters = ["task.project_id = ?", "task.status = 'ready'"]
+    values: list[Any] = [project.project_id]
+    if kind is not None:
+        filters.append("task.kind = ?")
+        values.append(validate_choice("kind", kind, KINDS, "invalid_kind"))
+    if lane is not None:
+        filters.append("task.lane = ?")
+        values.append(validate_text("lane", lane))
+    if priority is not None:
+        filters.append("task.priority = ?")
+        values.append(validate_choice("priority", priority, PRIORITIES, "invalid_priority"))
+    return filters, values
+
+
+def select_next_tasks(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    *,
+    kind: Any = None,
+    lane: Any = None,
+    priority: Any = None,
+    limit: Any = None,
+) -> TaskNextResult:
+    filters, values = next_task_filters(project, kind=kind, lane=lane, priority=priority)
+    row_limit = validate_limit(limit, default=5)
+    values.append(row_limit)
+    rows = connection.execute(
+        f"""
+        SELECT task.*
+          FROM tasks AS task
+         WHERE {" AND ".join(filters)}
+           AND (
+             task.kind = 'optional'
+             OR NOT EXISTS (
+               SELECT 1
+                 FROM tasks AS earlier
+                WHERE earlier.project_id = task.project_id
+                  AND earlier.kind = 'sequential'
+                  AND earlier.lane = task.lane
+                  AND earlier.lane_order < task.lane_order
+                  AND earlier.status NOT IN ('done', 'cancelled')
+             )
+           )
+         ORDER BY
+           CASE task.priority
+             WHEN 'urgent' THEN 0
+             WHEN 'high' THEN 1
+             WHEN 'normal' THEN 2
+             ELSE 3
+           END,
+           task.lane,
+           task.lane_order IS NULL,
+           task.lane_order,
+           task.created_at,
+           task.task_id
+         LIMIT ?
+        """,
+        values,
+    ).fetchall()
+    tasks = [row_to_task(row) for row in rows]
+    return TaskNextResult(
+        tasks=tasks,
+        count=len(tasks),
+        limit=row_limit,
+        selection_rules=selection_rules(),
+    )

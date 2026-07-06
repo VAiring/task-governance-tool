@@ -22,6 +22,7 @@ from task_governance_tool.storage import (
     inspect_database,
     resolve_database_target,
 )
+from task_governance_tool.selection import select_next_tasks
 from task_governance_tool.tasks import (
     TaskRepositoryError,
     TaskValidationError,
@@ -173,7 +174,12 @@ def build_parser() -> argparse.ArgumentParser:
     task_list_parser.add_argument("--tag", default=None)
     task_list_parser.add_argument("--limit", default=None)
     task_list_parser.add_argument("--include-done", action="store_true", default=False)
-    add_common_options(task_subparsers.add_parser("next", help="show next actionable tasks"))
+    task_next_parser = task_subparsers.add_parser("next", help="show next actionable tasks")
+    add_common_options(task_next_parser)
+    task_next_parser.add_argument("--kind", default=None)
+    task_next_parser.add_argument("--lane", default=None)
+    task_next_parser.add_argument("--priority", default=None)
+    task_next_parser.add_argument("--limit", default=None)
     task_show_parser = task_subparsers.add_parser("show", help="show one task and recent events")
     add_common_options(task_show_parser)
     task_show_parser.add_argument("task_id")
@@ -226,6 +232,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_task_add(context)
     if context.command == "task.list":
         return handle_task_list(context)
+    if context.command == "task.next":
+        return handle_task_next(context)
     if context.command == "task.show":
         return handle_task_show(context)
     if context.command == "task.edit":
@@ -544,6 +552,105 @@ def handle_task_list(context: CommandContext) -> CommandResult:
         db_path=str(target.db_path),
         data=data,
         text=task_list_text(result.tasks, result.count, result.limit),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
+def task_next_input(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "kind": getattr(args, "kind", None),
+        "lane": getattr(args, "lane", None),
+        "priority": getattr(args, "priority", None),
+        "limit": getattr(args, "limit", None),
+    }
+
+
+def task_next_empty_data() -> dict[str, Any]:
+    return {"tasks": [], "count": 0, "limit": 0, "selection_rules": {}}
+
+
+def task_next_failure_result(
+    context: CommandContext,
+    *,
+    project_id: str | None,
+    db_path: str | None,
+    code: str,
+    message: str,
+    exit_code: int,
+) -> CommandResult:
+    return CommandResult(
+        ok=False,
+        command=context.command,
+        project_id=project_id,
+        db_path=db_path,
+        data=task_next_empty_data(),
+        errors=[{"code": code, "message": message}],
+        exit_code=exit_code,
+    )
+
+
+def task_next_text(tasks: list[dict[str, Any]], count: int, limit: int) -> str:
+    lines = [f"Next tasks: {count} (limit {limit})"]
+    for task in tasks:
+        lane = ""
+        if task["lane"]:
+            lane = f" {task['lane']}"
+            if task["lane_order"] is not None:
+                lane += f"#{task['lane_order']}"
+        lines.append(
+            f"{task['task_id']} [{task['status']}] {task['priority']} {task['kind']}{lane} - {task['title']}"
+        )
+    return "\n".join(lines)
+
+
+def handle_task_next(context: CommandContext) -> CommandResult:
+    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    status = inspect_database(target)
+    if status.error_code:
+        return task_next_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            code=status.error_code,
+            message=status.error_message or status.error_code,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    try:
+        with closing(connect_readonly(target.db_path)) as connection:
+            result = select_next_tasks(connection, target.project, **task_next_input(context.args))
+    except TaskValidationError as exc:
+        return task_next_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_USAGE,
+        )
+    except sqlite3.Error:
+        return task_next_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            code="internal_error",
+            message="could not select next tasks",
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    data = {
+        "tasks": result.tasks,
+        "count": result.count,
+        "limit": result.limit,
+        "selection_rules": result.selection_rules,
+    }
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=target.project.project_id,
+        db_path=str(target.db_path),
+        data=data,
+        text=task_next_text(result.tasks, result.count, result.limit),
         exit_code=EXIT_SUCCESS,
     )
 

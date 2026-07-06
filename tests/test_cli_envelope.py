@@ -90,21 +90,26 @@ class CliEnvelopeTests(unittest.TestCase):
         self.assertEqual(payload["errors"][0]["code"], "invalid_argument")
         self.assertIn("task requires a subcommand", payload["errors"][0]["message"])
 
-    def test_text_output_is_concise(self):
-        result = run_taskgov("task", "next")
+    def test_task_next_missing_db_text_output_is_concise(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "missing" / "taskgov.sqlite"
+            result = run_taskgov("task", "next", "--db", str(db))
 
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
-        self.assertEqual(result.stderr.strip(), "task.next: handler not implemented yet")
+        self.assertEqual(result.stderr.strip(), "database is not initialized; run db init first")
 
-    def test_not_implemented_json_command_uses_tool_error_exit(self):
-        result = run_taskgov("--json", "task", "next")
+    def test_task_next_missing_db_json_uses_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "missing" / "taskgov.sqlite"
+            result = run_taskgov("--json", "task", "next", "--db", str(db))
 
         self.assertEqual(result.returncode, 2)
         payload = json.loads(result.stdout)
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["command"], "task.next")
-        self.assertEqual(payload["errors"][0]["code"], "internal_error")
+        self.assertEqual(payload["errors"][0]["code"], "db_not_initialized")
+        self.assertEqual(payload["data"], {"tasks": [], "count": 0, "limit": 0, "selection_rules": {}})
 
     def test_read_only_reaches_command_context(self):
         sys.path.insert(0, str(SKILL_ROOT / "scripts"))

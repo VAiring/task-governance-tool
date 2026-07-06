@@ -998,6 +998,35 @@ Current execution unit:
     earlier `in_progress`/`review_pending` sequential blockers could receive
     narrower regression tests later, while the implemented SQL covers them
 
+- `TG-M3.2 task next`
+  - status: completed
+  - intended outcome: expose next-actionable task selection through the CLI and
+    use the same selection service for `db status` next-actionable counts
+  - write scope: `task-governance-tool/scripts/task_governance_tool/cli.py`,
+    `task-governance-tool/scripts/task_governance_tool/selection.py`,
+    `task-governance-tool/scripts/task_governance_tool/storage.py`, CLI tests,
+    and this status section
+  - verification gate: CLI filters and default limit; missing DB no-create
+    behavior; end-to-end temp DB flow through init/add/edit/next/show; `db
+    status` next-actionable count matches the selection service
+  - verification run: `python -m unittest tests.test_task_next` (9 tests);
+    `python -m unittest tests.test_cli_envelope tests.test_db_status
+    tests.test_selection` (21 tests); `python
+    task-governance-tool\scripts\taskgov.py task next --help`; `python -m
+    unittest discover -s tests` (99 tests); `git diff --check`; coverage
+    includes default limit and JSON contract, filters, blocked-lane behavior,
+    `in_progress`/`review_pending` prior sequential blockers, missing DB
+    no-create behavior, read-only no-event behavior, validation error payload
+    shape, end-to-end temp DB init/add/edit/next/show flow, and `db status`
+    total next-actionable count exceeding the default `task next` page limit
+  - review tier: Tier 2
+  - review result: initial independent reviews found one medium issue where
+    `task.next` validation errors returned generic empty data instead of the
+    command-specific `tasks`/`count`/`limit`/`selection_rules` shape; fixed in
+    the same execution unit with a command-specific failure helper and
+    regression tests; two final independent sub-agent reviews PASS, no blocking
+    findings
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

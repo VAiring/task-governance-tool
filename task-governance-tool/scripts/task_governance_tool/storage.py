@@ -325,6 +325,8 @@ def read_project_meta_id(connection: sqlite3.Connection) -> str | None:
 
 
 def count_tasks(connection: sqlite3.Connection, project_id: str) -> dict[str, int]:
+    from task_governance_tool.selection import count_next_tasks
+
     counts = empty_counts()
     counts["active"] = int(
         connection.execute(
@@ -348,29 +350,7 @@ def count_tasks(connection: sqlite3.Connection, project_id: str) -> dict[str, in
                 (project_id, status),
             ).fetchone()["count"]
         )
-    counts["next_actionable"] = int(
-        connection.execute(
-            """
-            SELECT COUNT(*) AS count
-              FROM tasks AS task
-             WHERE task.project_id = ?
-               AND task.status = 'ready'
-               AND (
-                 task.kind = 'optional'
-                 OR NOT EXISTS (
-                   SELECT 1
-                     FROM tasks AS earlier
-                    WHERE earlier.project_id = task.project_id
-                      AND earlier.kind = 'sequential'
-                      AND earlier.lane = task.lane
-                      AND earlier.lane_order < task.lane_order
-                      AND earlier.status NOT IN ('done', 'cancelled')
-                 )
-               )
-            """,
-            (project_id,),
-        ).fetchone()["count"]
-    )
+    counts["next_actionable"] = count_next_tasks(connection, project_id)
     return counts
 
 

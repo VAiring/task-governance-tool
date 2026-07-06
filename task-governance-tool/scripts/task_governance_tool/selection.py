@@ -38,6 +38,23 @@ def selection_rules() -> dict[str, Any]:
     }
 
 
+def next_task_readiness_sql(task_alias: str = "task") -> str:
+    return f"""
+    (
+      {task_alias}.kind = 'optional'
+      OR NOT EXISTS (
+        SELECT 1
+          FROM tasks AS earlier
+         WHERE earlier.project_id = {task_alias}.project_id
+           AND earlier.kind = 'sequential'
+           AND earlier.lane = {task_alias}.lane
+           AND earlier.lane_order < {task_alias}.lane_order
+           AND earlier.status NOT IN ('done', 'cancelled')
+      )
+    )
+    """
+
+
 def next_task_filters(
     project: ProjectIdentity,
     *,
@@ -59,6 +76,24 @@ def next_task_filters(
     return filters, values
 
 
+def count_next_tasks(connection: sqlite3.Connection, project_id: str) -> int:
+    row = connection.execute(
+        f"""
+        SELECT COUNT(*) AS count
+          FROM tasks AS task
+         WHERE task.project_id = ?
+           AND task.status = 'ready'
+           AND {next_task_readiness_sql("task")}
+        """,
+        (project_id,),
+    ).fetchone()
+    if row is None:
+        return 0
+    if isinstance(row, sqlite3.Row):
+        return int(row["count"])
+    return int(row[0])
+
+
 def select_next_tasks(
     connection: sqlite3.Connection,
     project: ProjectIdentity,
@@ -76,18 +111,7 @@ def select_next_tasks(
         SELECT task.*
           FROM tasks AS task
          WHERE {" AND ".join(filters)}
-           AND (
-             task.kind = 'optional'
-             OR NOT EXISTS (
-               SELECT 1
-                 FROM tasks AS earlier
-                WHERE earlier.project_id = task.project_id
-                  AND earlier.kind = 'sequential'
-                  AND earlier.lane = task.lane
-                  AND earlier.lane_order < task.lane_order
-                  AND earlier.status NOT IN ('done', 'cancelled')
-             )
-           )
+           AND {next_task_readiness_sql("task")}
          ORDER BY
            CASE task.priority
              WHEN 'urgent' THEN 0

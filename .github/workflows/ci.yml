@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Windows skill checks
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests
+
+      - name: Check CLI help
+        run: |
+          python task-governance-tool/scripts/taskgov.py --help
+          python task-governance-tool/scripts/taskgov.py task next --help
+
+      - name: Skill package self-check
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $skillRoot = 'task-governance-tool'
+          $skillMd = Get-Content -Raw "$skillRoot/SKILL.md"
+          $frontmatter = [regex]::Match($skillMd, '(?s)\A---\r?\n(.*?)\r?\n---')
+          if (-not $frontmatter.Success) {
+            throw 'SKILL.md is missing YAML frontmatter'
+          }
+
+          $keys = @()
+          $name = $null
+          $description = $null
+          foreach ($line in ($frontmatter.Groups[1].Value -split "\r?\n")) {
+            if ($line -match '^([^:]+):\s*(.*)$') {
+              $keys += $Matches[1]
+              if ($Matches[1] -eq 'name') {
+                $name = $Matches[2]
+              }
+              if ($Matches[1] -eq 'description') {
+                $description = $Matches[2]
+              }
+            }
+          }
+
+          if (($keys -join ',') -ne 'name,description') {
+            throw "Unexpected frontmatter keys: $($keys -join ',')"
+          }
+          if ($name -ne 'task-governance-tool') {
+            throw "Skill name mismatch: $name"
+          }
+          if (-not $description -or $description -notmatch 'task') {
+            throw 'Skill description is missing task trigger context'
+          }
+
+          $requiredFiles = @(
+            "$skillRoot/SKILL.md",
+            "$skillRoot/agents/openai.yaml",
+            "$skillRoot/scripts/taskgov.py",
+            "$skillRoot/scripts/task_governance_tool/cli.py",
+            "$skillRoot/scripts/task_governance_tool/storage.py",
+            "$skillRoot/scripts/task_governance_tool/tasks.py",
+            "$skillRoot/scripts/task_governance_tool/selection.py",
+            "$skillRoot/references/task_workflow.md",
+            "$skillRoot/references/cli_contracts.md"
+          )
+          foreach ($file in $requiredFiles) {
+            if (-not (Test-Path $file)) {
+              throw "Missing required skill package file: $file"
+            }
+          }
+
+      - name: Guard generated artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tracked = git ls-files
+          $forbidden = $tracked | Where-Object {
+            $_ -match '(^references/)' -or
+            $_ -match '(^task-governance-tool/state/)' -or
+            $_ -match '(\.sqlite3?$|\.sqlite3?-(shm|wal|journal)$)' -or
+            $_ -match '(\.db$|\.db-(shm|wal|journal)$)' -or
+            $_ -match '(__pycache__/|\.pyc$|\.log$|\.tmp$)'
+          }
+          if ($forbidden) {
+            $forbidden | ForEach-Object { Write-Error "Forbidden tracked artifact: $_" }
+            throw 'Forbidden generated artifacts are tracked'
+          }

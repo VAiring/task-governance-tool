@@ -1159,6 +1159,26 @@ Current execution unit:
     `python -m unittest discover -s tests` (103 tests)
   - review result: two independent sub-agent reviews PASS, no blocking findings
 
+- `TG-M5.O3 Public README And CI`
+  - status: completed
+  - intended outcome: add a repository-level LLM/human entry point and minimal
+    GitHub Actions checks for public publication without changing the
+    installable skill package behavior
+  - write scope: root `README.md`, `.github/workflows/ci.yml`, and this status
+    section
+  - verification gate: README consistency with MVP scope and release install
+    decision; CI workflow syntax/intent self-check; local full unittest suite;
+    CLI help checks; generated artifact guard; `git diff --check`
+  - review tier: Tier 1
+  - verification run: README and CI self-check passed; `python
+    task-governance-tool\scripts\taskgov.py --help`; `python
+    task-governance-tool\scripts\taskgov.py task next --help`; `git diff
+    --check`; `python -m unittest discover -s tests` (103 tests); CI skill
+    package self-check passed; generated artifact guard passed
+  - review result: sub-agent review PASS, no blocking findings; remaining
+    low-risk note is that CI artifact guard covers the main publish risks but
+    is not a complete mirror of every `.gitignore` pattern
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

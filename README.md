@@ -7,7 +7,7 @@ LLM quick read:
   root.
 - Use it to replace large `TASK_STATUS.md` files with local SQLite task state.
 - It supports explicit task registration, task inspection, next-work selection,
-  blocker handling, and local task status updates.
+  blocker handling, local task status updates, and completion commit evidence.
 - It does not import planning files, manage dependency graphs, write Git state,
   create PRs/issues, run a service, or store raw logs/secrets.
 
@@ -42,12 +42,16 @@ python scripts/taskgov.py db init --repo <target-project> --json
 python scripts/taskgov.py task add --repo <target-project> --title "Example task" --json
 python scripts/taskgov.py task next --repo <target-project> --json
 python scripts/taskgov.py task show --repo <target-project> <task-id> --json
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --json
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
 ```
 
 Start with `db status`. It inspects without creating files. Use `db init` only
 when local task tracking should be created or migrated for that target project.
 Register only explicit user-approved tasks.
+
+When no managed materials changed, complete with `--commit-not-required`
+instead of `--completion-commit-hash <hash>`. `taskgov` records commit state but
+does not create commits, branches, PRs, or issue comments.
 
 By default, runtime state is stored under the installed skill folder:
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Task Governance Tool"
-  short_description: "Local task-state tracking and next-work selection"
-  default_prompt: "Use $task-governance-tool to inspect or initialize local task state, choose next ready work, and update explicit task status."
+  short_description: "Local task tracking, next-work selection, and completion evidence"
+  default_prompt: "Use $task-governance-tool to inspect or initialize local task state, choose next ready work, update explicit task status, and complete tasks with verification, review, and commit evidence."

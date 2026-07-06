@@ -110,10 +110,39 @@ review gate is not complete:
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status review_pending --json
 ```
 
-Mark a task `done` only after the required verification and review gate pass:
+Mark a task `done` only after:
+
+- the task's required verification has passed or has a documented
+  user-approved exception
+- the required review gate has passed, or a valid fallback/not-required review
+  decision exists for the task's review tier
+- there are no unresolved high or medium review findings
+- the completion commit gate is satisfied
+
+For changed managed materials, after an explicitly approved project commit or
+durable revision already exists outside `taskgov`, record its hash or revision
+ID:
 
 ```powershell
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --json
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
+```
+
+If no managed materials changed, explicitly record that no completion commit is
+required:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --commit-not-required --json
+```
+
+If a commit hash or no-commit decision was already recorded, the later done
+transition still requires `--verification-complete` and `--review-complete`.
+
+`taskgov` records the commit state but does not create commits, branches, PRs,
+or issue comments. To trace changed materials for a completed Git task, inspect
+the target project's history from the stored hash:
+
+```powershell
+git show --name-only <completion_commit_hash>
 ```
 
 Use `--add-note` for concise local notes. Keep notes sanitized and short; do not
@@ -125,6 +154,10 @@ logs.
 Register only explicit user-approved tasks. The MVP does not import large task
 files, create draft dependency graphs, run approval workflows, or register
 persistent project profiles.
+
+Do not use `task add` to close current work. Register the task first, then use
+`task edit --status done` with the required verification, review, and completion
+commit flags when the task is actually complete.
 
 ```powershell
 python scripts/taskgov.py task add --repo <target-project> --title "Implement task next" --kind sequential --lane TG-M3 --order 20 --priority high --review-tier 2 --json

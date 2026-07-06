@@ -222,6 +222,26 @@ Editable options:
 `--completion-commit-hash`, unless `--commit-not-required` explicitly marks the
 task as having no changed managed materials.
 
+Complete with a commit hash or durable revision ID:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
+```
+
+Complete when no managed materials changed:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --commit-not-required --json
+```
+
+`taskgov` records commit state only. It does not create commits or mutate the
+target project. For Git projects, inspect changed materials from the stored
+hash:
+
+```powershell
+git show --name-only <completion_commit_hash>
+```
+
 ## Error Codes
 
 Known error codes include:

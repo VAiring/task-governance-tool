@@ -38,6 +38,27 @@ def git_check_ignore(path: str) -> str:
 
 
 class SkillSelfContainmentTests(unittest.TestCase):
+    def test_skill_guidance_mentions_completion_commit_gate(self):
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(encoding="utf-8")
+        contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        forward_note = (ROOT / "docs" / "forward-tests" / "completion-commit-flow.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("completing tasks with verification, review, and completion commit evidence", skill_md)
+        for text in (workflow, contracts, readme):
+            self.assertIn("--verification-complete", text)
+            self.assertIn("--review-complete", text)
+            self.assertIn("--completion-commit-hash", text)
+            self.assertIn("--commit-not-required", text)
+            self.assertIn("does not create commits", text)
+        self.assertIn("after an explicitly approved project commit or", workflow)
+        self.assertIn("git show --name-only <completion_commit_hash>", workflow)
+        self.assertIn("done transition without commit evidence failed with `commit_required`", forward_note)
+        self.assertIn("the synthetic target project path was not created", forward_note)
+
     def test_copied_skill_folder_help_runs_without_repo_python_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             copied = copy_skill_to(Path(tmp))

@@ -1103,6 +1103,20 @@ Current execution unit:
     reviewers confirmed the plan-only acceptance record matches TG-M4.3 roadmap
     gates and `docs/specification.md` acceptance criteria
 
+- `TG-M4.O1 Release/Install Decision Note`
+  - status: completed
+  - intended outcome: record how the completed skill should be published and
+    installed without mutating user skill directories
+  - write scope: `docs/release-install.md` and this status section
+  - verification gate: documentation consistency check with release packaging
+    rules, install safety rules, and generated-state exclusions
+  - verification run: documentation consistency self-check passed for required
+    publication/install/exclusion terms and ASCII content; `git diff --check`
+  - review tier: Tier 1
+  - review result: sub-agent review PASS, no blocking findings; low-risk
+    recommendation to distinguish source publication from installable release
+    artifact was addressed before completion
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

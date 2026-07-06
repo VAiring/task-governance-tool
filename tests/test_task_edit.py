@@ -122,7 +122,16 @@ class TaskEditTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             task = add_task(db, repo, "Status task")
 
-            done = edit_task(db, repo, task["task_id"], "--status", "done")
+            done = edit_task(
+                db,
+                repo,
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+                "--commit-not-required",
+            )
             completed_at = done["data"]["task"]["completed_at"]
 
             self.assertIsNotNone(completed_at)

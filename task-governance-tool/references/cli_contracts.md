@@ -178,6 +178,11 @@ python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 
 `data`: `task`, `events`, `suggested_next_action`.
 
+`task` includes completion commit trace fields:
+
+- `completion_commit_required`
+- `completion_commit_hash`
+
 ### `task edit`
 
 Update task state or metadata.
@@ -212,8 +217,10 @@ Editable options:
 `data`: `task`, `changed_fields`, `event`.
 
 `--completion-commit-hash` and `--commit-not-required` are mutually exclusive.
-`task edit --status done` enforcement for missing verification, review, or
-commit state is introduced by the later completion gate enforcement unit.
+`task edit --status done` requires both `--verification-complete` and
+`--review-complete`. It also requires either a stored or newly supplied
+`--completion-commit-hash`, unless `--commit-not-required` explicitly marks the
+task as having no changed managed materials.
 
 ## Error Codes
 
@@ -225,6 +232,9 @@ Known error codes include:
 - `invalid_priority`
 - `invalid_review_tier`
 - `blocked_reason_required`
+- `verification_required`
+- `review_required`
+- `commit_required`
 - `completion_commit_conflict`
 - `privacy_rejected`
 - `not_found`

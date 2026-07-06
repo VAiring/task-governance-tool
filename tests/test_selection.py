@@ -187,7 +187,15 @@ class SelectionTests(unittest.TestCase):
                 before_done = select_next_tasks(connection, target.project, limit=10)
 
                 with connection:
-                    edit_task(connection, target.project, first["task_id"], status="done")
+                    edit_task(
+                        connection,
+                        target.project,
+                        first["task_id"],
+                        status="done",
+                        verification_complete=True,
+                        review_complete=True,
+                        commit_not_required=True,
+                    )
 
                 after_done = select_next_tasks(connection, target.project, limit=10)
 

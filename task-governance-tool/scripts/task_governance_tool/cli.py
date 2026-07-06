@@ -673,6 +673,12 @@ def task_show_text(task: dict[str, Any], events: list[dict[str, Any]], suggested
     lines.append(f"Review tier: {task['review_tier']}")
     if task["verification"]:
         lines.append(f"Verification: {task['verification']}")
+    if "completion_commit_required" in task:
+        if task["completion_commit_required"]:
+            commit_hash = task["completion_commit_hash"] or "hash not set"
+            lines.append(f"Completion commit: required, {commit_hash}")
+        else:
+            lines.append("Completion commit: not required")
     if task["blocked_reason"]:
         lines.append(f"Blocked: {task['blocked_reason']}")
     lines.append(f"Suggested next action: {suggested_next_action}")

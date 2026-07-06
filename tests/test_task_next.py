@@ -369,7 +369,16 @@ class TaskNextTests(unittest.TestCase):
             )
 
             before = next_tasks(db, repo, "--limit", "10")
-            edit_task(db, repo, first["task_id"], "--status", "done")
+            edit_task(
+                db,
+                repo,
+                first["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+                "--commit-not-required",
+            )
             after = next_tasks(db, repo, "--limit", "10")
             shown = show_task(db, repo, second["task_id"])
 

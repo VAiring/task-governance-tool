@@ -37,6 +37,11 @@ PUBLIC_TASK_FIELDS = (
     "completed_at",
 )
 
+TASK_SHOW_FIELDS = PUBLIC_TASK_FIELDS + (
+    "completion_commit_required",
+    "completion_commit_hash",
+)
+
 TEXT_LIMITS = {
     "title": 200,
     "description": 4000,
@@ -414,6 +419,11 @@ def row_to_task(row: sqlite3.Row) -> dict[str, Any]:
     return {field: row[field] for field in PUBLIC_TASK_FIELDS if field in row_keys}
 
 
+def row_to_show_task(row: sqlite3.Row) -> dict[str, Any]:
+    row_keys = set(row.keys())
+    return {field: row[field] for field in TASK_SHOW_FIELDS if field in row_keys}
+
+
 def row_to_internal_task(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 
@@ -764,7 +774,7 @@ def show_task(
     if task_row is None:
         raise TaskRepositoryError("not_found", "task was not found")
 
-    task = row_to_task(task_row)
+    task = row_to_show_task(task_row)
     event_rows = connection.execute(
         """
         SELECT *
@@ -835,6 +845,43 @@ def update_task_row(
     )
 
 
+def enforce_done_transition_gates(
+    task: dict[str, Any],
+    *,
+    status_was_provided: bool,
+    verification_complete: bool,
+    review_complete: bool,
+) -> None:
+    if not status_was_provided or task["status"] != "done":
+        return
+    if not verification_complete:
+        raise validation_error(
+            "verification_required",
+            "task edit --status done requires --verification-complete",
+            "verification_complete",
+        )
+    if not review_complete:
+        raise validation_error(
+            "review_required",
+            "task edit --status done requires --review-complete",
+            "review_complete",
+        )
+    commit_required = bool(task["completion_commit_required"])
+    commit_hash = str(task["completion_commit_hash"])
+    if not commit_required and commit_hash:
+        raise validation_error(
+            "completion_commit_conflict",
+            "completion_commit_hash must be empty when commit is marked not required",
+            "completion_commit_hash",
+        )
+    if commit_required and not commit_hash:
+        raise validation_error(
+            "commit_required",
+            "task edit --status done requires --completion-commit-hash or a previously recorded commit hash",
+            "completion_commit_hash",
+        )
+
+
 def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id: Any, **edit_input: Any) -> EditTaskResult:
     normalized_task_id = validate_task_id(task_id)
     normalized = validate_task_edit_input(**edit_input)
@@ -890,6 +937,12 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
             updated["completed_at"] = existing["completed_at"] or now
         elif existing["completed_at"] is not None:
             updated["completed_at"] = None
+    enforce_done_transition_gates(
+        updated,
+        status_was_provided=status_was_provided,
+        verification_complete=verification_complete,
+        review_complete=review_complete,
+    )
 
     comparable_fields = (
         "title",

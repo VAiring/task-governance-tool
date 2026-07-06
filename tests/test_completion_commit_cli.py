@@ -88,6 +88,20 @@ def fetch_completion_state(db, task_id):
         return dict(row)
 
 
+def fetch_task_state(db, task_id):
+    with closing(sqlite3.connect(db)) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT status, completed_at, completion_commit_required, completion_commit_hash
+              FROM tasks
+             WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+        return dict(row)
+
+
 def table_count(db, table):
     with closing(sqlite3.connect(db)) as connection:
         return connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -276,7 +290,131 @@ class CompletionCommitCliTests(unittest.TestCase):
             self.assertTrue(summary.startswith("Note added: "))
             self.assertTrue(summary.endswith("; Recorded: verification complete"))
 
-    def test_task_edit_done_accepts_confirmations_and_commit_hash_before_enforcement(self):
+    def test_task_edit_done_rejects_missing_verification_confirmation_without_storage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Missing verification confirmation")
+
+            result = run_taskgov(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--status",
+                "done",
+                "--review-complete",
+                "--completion-commit-hash",
+                "abc123def456",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "verification_required")
+            self.assertEqual(fetch_task_state(db, task["task_id"])["status"], "ready")
+            self.assertEqual(fetch_task_state(db, task["task_id"])["completion_commit_hash"], "")
+            self.assertEqual(table_count(db, "task_events"), 1)
+
+    def test_task_edit_done_rejects_missing_review_confirmation_without_storage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Missing review confirmation")
+
+            result = run_taskgov(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--completion-commit-hash",
+                "abc123def456",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "review_required")
+            self.assertEqual(fetch_task_state(db, task["task_id"])["status"], "ready")
+            self.assertEqual(fetch_task_state(db, task["task_id"])["completion_commit_hash"], "")
+            self.assertEqual(table_count(db, "task_events"), 1)
+
+    def test_task_edit_done_rejects_missing_required_commit_hash_without_storage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Missing completion commit")
+
+            result = run_taskgov(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "commit_required")
+            self.assertEqual(fetch_task_state(db, task["task_id"])["status"], "ready")
+            self.assertIsNone(fetch_task_state(db, task["task_id"])["completed_at"])
+            self.assertEqual(table_count(db, "task_events"), 1)
+
+    def test_task_edit_done_rejects_inconsistent_commit_not_required_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Inconsistent commit state")
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    """
+                    UPDATE tasks
+                       SET completion_commit_required = 0,
+                           completion_commit_hash = ?
+                     WHERE task_id = ?
+                    """,
+                    ("abc123def456", task["task_id"]),
+                )
+                connection.commit()
+
+            result = run_taskgov(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "completion_commit_conflict")
+            self.assertEqual(fetch_task_state(db, task["task_id"])["status"], "ready")
+            self.assertEqual(table_count(db, "task_events"), 1)
+
+    def test_task_edit_done_accepts_confirmations_and_commit_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
@@ -301,18 +439,95 @@ class CompletionCommitCliTests(unittest.TestCase):
             self.assertIn("completion_commit_hash", payload["data"]["changed_fields"])
             self.assertEqual(fetch_completion_state(db, task["task_id"])["completion_commit_hash"], "abc123def456")
 
-    def test_public_task_read_commands_do_not_expose_completion_commit_fields_yet(self):
+    def test_task_edit_done_accepts_previously_recorded_commit_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            task = add_task(db, repo, "Hidden completion metadata")
+            task = add_task(db, repo, "Done with earlier commit metadata")
+            edit_task(db, repo, task["task_id"], "--completion-commit-hash", "abc123def456")
+
+            payload = edit_task(
+                db,
+                repo,
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+            )
+
+            self.assertEqual(payload["data"]["task"]["status"], "done")
+            self.assertIsNotNone(payload["data"]["task"]["completed_at"])
+            self.assertEqual(fetch_completion_state(db, task["task_id"])["completion_commit_hash"], "abc123def456")
+
+    def test_task_edit_done_accepts_commit_not_required_with_confirmations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Done without managed material")
+
+            payload = edit_task(
+                db,
+                repo,
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+                "--commit-not-required",
+            )
+
+            self.assertEqual(payload["data"]["task"]["status"], "done")
+            self.assertIsNotNone(payload["data"]["task"]["completed_at"])
+            self.assertEqual(
+                fetch_completion_state(db, task["task_id"]),
+                {
+                    "completion_commit_required": 0,
+                    "completion_commit_hash": "",
+                },
+            )
+
+    def test_task_edit_done_accepts_previously_recorded_commit_not_required(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Done with earlier no-commit decision")
+            edit_task(db, repo, task["task_id"], "--commit-not-required")
+
+            payload = edit_task(
+                db,
+                repo,
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+            )
+
+            self.assertEqual(payload["data"]["task"]["status"], "done")
+            self.assertIsNotNone(payload["data"]["task"]["completed_at"])
+            self.assertEqual(
+                fetch_completion_state(db, task["task_id"]),
+                {
+                    "completion_commit_required": 0,
+                    "completion_commit_hash": "",
+                },
+            )
+
+    def test_task_show_exposes_completion_commit_fields_but_list_and_next_do_not(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Completion metadata visibility")
             edit_task(db, repo, task["task_id"], "--completion-commit-hash", "abc123def456")
 
             shown = task_payload("show", db, repo, task["task_id"])["data"]["task"]
             listed = task_payload("list", db, repo)["data"]["tasks"][0]
             next_task = task_payload("next", db, repo)["data"]["tasks"][0]
 
-            for public_task in (shown, listed, next_task):
+            self.assertEqual(shown["completion_commit_required"], 1)
+            self.assertEqual(shown["completion_commit_hash"], "abc123def456")
+            for public_task in (listed, next_task):
                 self.assertNotIn("completion_commit_required", public_task)
                 self.assertNotIn("completion_commit_hash", public_task)
 

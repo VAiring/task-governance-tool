@@ -108,6 +108,8 @@ class TaskShowTests(unittest.TestCase):
             self.assertEqual(data["task"]["lane"], "TG-M2")
             self.assertEqual(data["task"]["lane_order"], 20)
             self.assertEqual(data["task"]["review_tier"], 2)
+            self.assertEqual(data["task"]["completion_commit_required"], 1)
+            self.assertEqual(data["task"]["completion_commit_hash"], "")
             self.assertIn("created_at", data["task"])
             self.assertIn("updated_at", data["task"])
             self.assertEqual(len(data["events"]), 1)
@@ -302,9 +304,10 @@ class TaskShowTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stderr, "")
             lines = result.stdout.strip().splitlines()
-            self.assertLessEqual(len(lines), 6)
+            self.assertLessEqual(len(lines), 7)
             self.assertIn(f"Task: {task['task_id']}", result.stdout)
             self.assertIn("Title: Ready optional", result.stdout)
+            self.assertIn("Completion commit: required, hash not set", result.stdout)
             self.assertIn("Latest event: task_added - Task registered", result.stdout)
 
 

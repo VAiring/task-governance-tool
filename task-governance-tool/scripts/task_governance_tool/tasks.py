@@ -5,8 +5,12 @@ from __future__ import annotations
 import re
 import base64
 import binascii
+import secrets
+import sqlite3
 from dataclasses import dataclass
 from typing import Any
+
+from task_governance_tool.storage import ProjectIdentity, utc_now
 
 
 KINDS = ("sequential", "optional")
@@ -147,6 +151,21 @@ class TaskValidationError(Exception):
 
     def __str__(self) -> str:
         return self.message
+
+
+@dataclass(frozen=True)
+class TaskRepositoryError(Exception):
+    code: str
+    message: str
+
+    def __str__(self) -> str:
+        return self.message
+
+
+@dataclass(frozen=True)
+class AddTaskResult:
+    task: dict[str, Any]
+    event: dict[str, Any]
 
 
 def validation_error(code: str, message: str, field: str | None = None) -> TaskValidationError:
@@ -327,3 +346,146 @@ def validate_task_input(
     if add_note is not None:
         normalized["add_note"] = validate_text("add_note", add_note, limit=TEXT_LIMITS["add_note"])
     return normalized
+
+
+def generate_id(prefix: str) -> str:
+    return f"{prefix}_{secrets.token_hex(8)}"
+
+
+def next_lane_order(connection: sqlite3.Connection, project_id: str, lane: str) -> int:
+    row = connection.execute(
+        """
+        SELECT MAX(lane_order) AS max_order
+          FROM tasks
+         WHERE project_id = ?
+           AND kind = 'sequential'
+           AND lane = ?
+        """,
+        (project_id, lane),
+    ).fetchone()
+    if row is None or row["max_order"] is None:
+        return 1
+    return int(row["max_order"]) + 1
+
+
+def row_to_task(row: sqlite3.Row) -> dict[str, Any]:
+    return dict(row)
+
+
+def create_task_event(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    event_type: str,
+    summary: str,
+    created_at: str,
+) -> dict[str, Any]:
+    event = {
+        "task_event_id": generate_id("tg_event"),
+        "task_id": task_id,
+        "project_id": project_id,
+        "event_type": event_type,
+        "summary": validate_event_summary(summary),
+        "created_at": created_at,
+    }
+    connection.execute(
+        """
+        INSERT INTO task_events(task_event_id, task_id, project_id, event_type, summary, created_at)
+        VALUES (:task_event_id, :task_id, :project_id, :event_type, :summary, :created_at)
+        """,
+        event,
+    )
+    return event
+
+
+def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_input: Any) -> AddTaskResult:
+    normalized = validate_task_input(**task_input)
+    lane = normalized["lane"].strip()
+    lane_order = normalized["lane_order"]
+    if normalized["kind"] == "sequential":
+        lane = lane or "default"
+        if lane_order is None:
+            lane_order = next_lane_order(connection, project.project_id, lane)
+
+    now = utc_now()
+    completed_at = now if normalized["status"] == "done" else None
+    task_id = generate_id("tg_task")
+    row = {
+        "task_id": task_id,
+        "project_id": project.project_id,
+        "title": normalized["title"],
+        "description": normalized["description"],
+        "kind": normalized["kind"],
+        "lane": lane,
+        "lane_order": lane_order,
+        "priority": normalized["priority"],
+        "status": normalized["status"],
+        "blocked_reason": normalized["blocked_reason"],
+        "review_tier": normalized["review_tier"],
+        "verification": normalized["verification"],
+        "tags": normalized["tags"],
+        "created_at": now,
+        "updated_at": now,
+        "completed_at": completed_at,
+    }
+    try:
+        connection.execute(
+            """
+            INSERT INTO tasks(
+              task_id,
+              project_id,
+              title,
+              description,
+              kind,
+              lane,
+              lane_order,
+              priority,
+              status,
+              blocked_reason,
+              review_tier,
+              verification,
+              tags,
+              created_at,
+              updated_at,
+              completed_at
+            )
+            VALUES (
+              :task_id,
+              :project_id,
+              :title,
+              :description,
+              :kind,
+              :lane,
+              :lane_order,
+              :priority,
+              :status,
+              :blocked_reason,
+              :review_tier,
+              :verification,
+              :tags,
+              :created_at,
+              :updated_at,
+              :completed_at
+            )
+            """,
+            row,
+        )
+    except sqlite3.IntegrityError as exc:
+        raise TaskRepositoryError(
+            "invalid_argument",
+            "task violates database constraints, such as duplicate sequential lane order",
+        ) from exc
+
+    event = create_task_event(
+        connection,
+        project_id=project.project_id,
+        task_id=task_id,
+        event_type="task_added",
+        summary="Task registered",
+        created_at=now,
+    )
+    task = connection.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+    if task is None:
+        raise TaskRepositoryError("internal_error", "task was not readable after insert")
+    return AddTaskResult(task=row_to_task(task), event=event)

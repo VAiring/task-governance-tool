@@ -840,6 +840,35 @@ Current execution unit:
     values; all valid medium findings were fixed in the same execution unit;
     two final independent sub-agent reviews PASS, no blocking findings
 
+- `TG-M2.2 task add`
+  - status: completed
+  - intended outcome: implement explicit task registration through
+    `taskgov task add`, including validation reuse, default values, sequential
+    lane/order auto-fill, task event creation, and structured JSON/text output
+  - write scope:
+    `task-governance-tool/scripts/task_governance_tool/tasks.py`,
+    `task-governance-tool/scripts/task_governance_tool/cli.py`, task-add
+    CLI/repository tests, and this status section
+  - verification gate: add optional and sequential tasks through temp DBs;
+    auto-filled lane/order; blocked initial status requires blocked reason;
+    duplicate sequential lane/order is rejected; privacy rejection prevents
+    storage; `task add --read-only` does not create or modify rows
+  - verification run: `python -m unittest tests.test_task_add` (9 tests);
+    `python -m unittest discover -s tests` (57 tests); `git diff --check`;
+    coverage includes optional default registration, explicit sequential fields
+    with blocked reason, sequential default lane/order append behavior,
+    duplicate sequential lane/order rollback for task/event rows, privacy
+    rejection without rows, read-only no-create/no-modify behavior, concise
+    text output, and benign raw-output-related titles not being rejected by
+    generated event summaries
+  - review tier: Tier 2
+  - review result: initial review found a medium issue where generated event
+    summaries could re-reject benign accepted titles; fixed in the same
+    execution unit; two final independent sub-agent reviews PASS, no blocking
+    findings; remaining low risk is that duplicate-add failure can still update
+    existing `project_meta.updated_at` during initialization, while task/event
+    rows remain rolled back
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

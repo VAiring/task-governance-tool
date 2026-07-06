@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from collections.abc import Sequence
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -14,10 +16,12 @@ from task_governance_tool import __version__
 from task_governance_tool.storage import (
     StatusResult,
     StorageError,
+    connect,
     initialize_database,
     inspect_database,
     resolve_database_target,
 )
+from task_governance_tool.tasks import TaskRepositoryError, TaskValidationError, add_task, validate_task_input
 
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
@@ -31,6 +35,7 @@ class CommandContext:
     db: str | None
     json_output: bool
     read_only: bool
+    args: argparse.Namespace
 
 
 @dataclass(frozen=True)
@@ -136,7 +141,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     task_parser = subparsers.add_parser("task", help="task commands")
     task_subparsers = task_parser.add_subparsers(dest="task_command")
-    add_common_options(task_subparsers.add_parser("add", help="register an explicit task"))
+    task_add_parser = task_subparsers.add_parser("add", help="register an explicit task")
+    add_common_options(task_add_parser)
+    task_add_parser.add_argument("--title", default="")
+    task_add_parser.add_argument("--description", default="")
+    task_add_parser.add_argument("--kind", default="optional")
+    task_add_parser.add_argument("--lane", default="")
+    task_add_parser.add_argument("--order", dest="lane_order", default=None)
+    task_add_parser.add_argument("--priority", default="normal")
+    task_add_parser.add_argument("--status", default="ready")
+    task_add_parser.add_argument("--blocked-reason", default="")
+    task_add_parser.add_argument("--review-tier", default=1)
+    task_add_parser.add_argument("--verification", default="")
+    task_add_parser.add_argument("--tags", default="")
     add_common_options(task_subparsers.add_parser("list", help="list compact task slices"))
     add_common_options(task_subparsers.add_parser("next", help="show next actionable tasks"))
     add_common_options(task_subparsers.add_parser("show", help="show one task and recent events"))
@@ -162,6 +179,7 @@ def make_context(args: argparse.Namespace) -> CommandContext:
         db=getattr(args, "db", None),
         json_output=bool(getattr(args, "json", False)),
         read_only=bool(getattr(args, "read_only", False)),
+        args=args,
     )
 
 
@@ -170,6 +188,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_db_init(context)
     if context.command == "db.status":
         return handle_db_status(context)
+    if context.command == "task.add":
+        return handle_task_add(context)
     return error_result(
         context.command,
         "internal_error",
@@ -287,6 +307,131 @@ def handle_db_status(context: CommandContext) -> CommandResult:
         db_path=str(target.db_path),
         data=status_data(status),
         text=status_text(status),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
+def task_add_input(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "title": getattr(args, "title", ""),
+        "description": getattr(args, "description", ""),
+        "kind": getattr(args, "kind", "optional"),
+        "lane": getattr(args, "lane", ""),
+        "lane_order": getattr(args, "lane_order", None),
+        "priority": getattr(args, "priority", "normal"),
+        "status": getattr(args, "status", "ready"),
+        "blocked_reason": getattr(args, "blocked_reason", ""),
+        "review_tier": getattr(args, "review_tier", 1),
+        "verification": getattr(args, "verification", ""),
+        "tags": getattr(args, "tags", ""),
+    }
+
+
+def validation_failure_result(
+    context: CommandContext,
+    *,
+    project_id: str | None,
+    db_path: str | None,
+    exc: TaskValidationError | TaskRepositoryError,
+) -> CommandResult:
+    exit_code = EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE
+    return CommandResult(
+        ok=False,
+        command=context.command,
+        project_id=project_id,
+        db_path=db_path,
+        errors=[{"code": exc.code, "message": exc.message}],
+        exit_code=exit_code,
+    )
+
+
+def task_add_text(task: dict[str, Any], event: dict[str, Any]) -> str:
+    lines = [
+        f"Task added: {task['task_id']}",
+        f"Title: {task['title']}",
+        f"Kind: {task['kind']}  Status: {task['status']}  Priority: {task['priority']}",
+        f"Review tier: {task['review_tier']}",
+        f"Event: {event['event_type']}",
+    ]
+    if task["kind"] == "sequential":
+        lines.insert(3, f"Lane: {task['lane']}  Order: {task['lane_order']}")
+    return "\n".join(lines)
+
+
+def handle_task_add(context: CommandContext) -> CommandResult:
+    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    if context.read_only:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            errors=[
+                {
+                    "code": "invalid_argument",
+                    "message": "task add cannot run with --read-only because it writes the database",
+                }
+            ],
+            exit_code=EXIT_USAGE,
+        )
+
+    task_input = task_add_input(context.args)
+    try:
+        validate_task_input(**task_input)
+    except TaskValidationError as exc:
+        return validation_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            exc=exc,
+        )
+
+    try:
+        initialize_database(target)
+        with closing(connect(target.db_path)) as connection:
+            with connection:
+                result = add_task(connection, target.project, **task_input)
+    except TaskValidationError as exc:
+        return validation_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            exc=exc,
+        )
+    except TaskRepositoryError as exc:
+        return validation_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            exc=exc,
+        )
+    except StorageError as exc:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            errors=[{"code": exc.code, "message": exc.message}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error as exc:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            errors=[{"code": "internal_error", "message": "could not add task"}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    data = {"task": result.task, "event": result.event}
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=target.project.project_id,
+        db_path=str(target.db_path),
+        data=data,
+        text=task_add_text(result.task, result.event),
         exit_code=EXIT_SUCCESS,
     )
 

@@ -788,6 +788,58 @@ Current execution unit:
     present; fixed in the same execution unit; two final sub-agent reviews
     PASS, no blocking findings
 
+- `TG-M2.1 Task Domain Validation`
+  - status: completed
+  - intended outcome: provide a shared task-domain validation layer for future
+    task write paths, covering required fields, enum values, size limits, and
+    deterministic privacy rejection before storage
+  - write scope:
+    `task-governance-tool/scripts/task_governance_tool/tasks.py`, validation
+    tests, and this status section
+  - verification gate: validation tests for each enum, required title, review
+    tier integer/range, size limits, blocked reason requirement, privacy
+    rejection patterns, and no raw command-output acceptance
+  - verification run: `python -m unittest discover -s tests` (48 tests);
+    `git diff --check`; regression coverage now includes prefixed secret keys,
+    same-line stdout/stderr dumps, single raw diffs, and event-summary privacy
+    rejection; header-shaped cookies, tokens, API keys, and obvious environment
+    dump headings are also rejected; broader raw output/environment dump
+    markers, indented raw diffs, and common JavaScript/Java stack traces are
+    rejected; cookie assignments, password/client-secret/secret-key
+    assignments, and delimiter-free stdout/environment dump headings are
+    rejected; hyphenated secret-key assignments, command output/log headings,
+    bare environment headings, standard output/error headings, async JavaScript
+    and Java module stack frames, and spaced credential labels such as
+    `api key` or `client secret key` are rejected; private-key assignments,
+    environment dump/ENV VARS headings, stack-trace/log-output headings, Go
+    panic/goroutine dumps, case-insensitive PEM markers, authorization
+    assignments, delimiter-free stack/log headings, stdout/stderr dump
+    headings, JSON-style credential/header keys, embedded one-line dump
+    markers, generic authorization headers/assignments, raw stdout/stderr
+    one-line markers, inline env assignments, and event-summary raw markers are
+    rejected; JSON spaced credential keys and dash-delimited raw output/log
+    markers are rejected; bearer/basic assignment forms, bare Basic auth
+    values, bare multiline environment assignments, colon-delimited
+    environment variable dumps, same-line stdout/stderr/standard output/error
+    raw markers, hunk-only raw diffs, and .NET stack frames are rejected, while
+    benign task wording containing these terms, including auth-related and raw
+    heading-related prose titles, is accepted; trailing-punctuation
+    Basic/Bearer auth values, all-alpha bearer tokens, mixed-case Windows-style
+    environment dumps, and one-line raw output/log headings with ordinary
+    payloads are rejected in stored free-form fields; title raw-output values
+    such as `stdout: hello world` are rejected without blocking task-wording
+    titles such as `Command output: improve formatting`; privacy rejection
+    takes precedence over size-limit errors when both apply; short obvious
+    Bearer values such as `Bearer secret`, `Bearer abc123`, and
+    `Bearer sk-test` are rejected without blocking normal authentication
+    wording such as `Bearer authentication support`; headed colon-delimited
+    environment dumps and colon-trailing Basic/Bearer values are rejected
+  - review tier: Tier 2
+  - review result: multiple review rounds found privacy coverage gaps and
+    false-positive risks for raw output, environment dumps, and auth-shaped
+    values; all valid medium findings were fixed in the same execution unit;
+    two final independent sub-agent reviews PASS, no blocking findings
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

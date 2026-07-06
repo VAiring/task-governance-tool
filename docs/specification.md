@@ -131,9 +131,10 @@ The MVP task record includes:
 
 The MVP may store task notes and state changes in a concise task event history.
 
-## Required Post-MVP Extension: Completion Evidence And Commit Trace
+## Required Post-MVP Extension: Completion Commit Gate
 
-The next required extension after the MVP must make task completion auditable.
+The next required extension after the MVP must make task completion auditable
+without adding a heavy material-tracking schema.
 It supersedes the current lightweight `task edit --status done` behavior once
 implemented.
 
@@ -150,8 +151,7 @@ A task may be marked `done` only after all of these gates are satisfied:
   self-review must be run and the user must explicitly approve treating that
   fallback as completion evidence before the task can be marked `done`.
 - No valid high or medium review finding remains unresolved.
-- If managed materials were changed, the changed materials have been committed
-  or otherwise assigned a durable unique revision identifier.
+- The commit gate has passed according to the task's commit requirement fields.
 
 Managed materials are source-controlled files or user-approved durable assets
 whose final state should be traceable after task completion. Generated local
@@ -159,27 +159,36 @@ runtime state, caches, logs, temporary files, SQLite databases, and ignored
 scratch artifacts are not managed materials unless a governing document or user
 explicitly says they are.
 
-The database must store completion evidence without becoming the authority for
-project decisions. It should record compact, sanitized metadata only:
+The database must keep commit evidence intentionally simple. Store commit state
+directly on the task row:
 
-- review result status, review tier, reviewer count, completion timestamp, and
-  a short summary
-- verification status, verification label, completion timestamp, and a short
-  summary or user-approved exception marker
-- commit or revision identifier, commit system such as `git` or `manual`,
-  optional branch/ref, timestamp, and short summary
-- changed managed material paths linked to the task and commit/revision record
-- enough IDs to answer "which task changed this material?" and "which materials
-  did this task change?"
+- `completion_commit_required`: boolean-like value, default true.
+- `completion_commit_hash`: concise commit hash or unique revision identifier,
+  empty by default.
 
-The commit or revision identifier must be unique within the target project. A
-Git commit hash is preferred when the target project uses Git. For non-Git
-managed materials, a user-provided unique revision ID is acceptable.
+Completion commit rules:
 
-Managed material paths must be normalized project-relative paths when they refer
-to files in the target project. Absolute local paths should not be stored unless
-the managed material is explicitly outside the target project and the user
-approved storing that path.
+- If `completion_commit_required=true`, `completion_commit_hash` is required
+  before the task can be marked `done`.
+- If no managed materials changed, the user or agent must explicitly set
+  `completion_commit_required=false`; then `completion_commit_hash` must stay
+  empty. This is the explicit commit-not-required decision.
+- `completion_commit_required=false` with a non-empty
+  `completion_commit_hash` is invalid.
+- A Git commit hash is preferred for Git projects. For non-Git managed
+  materials, a user-approved unique revision ID may be stored in
+  `completion_commit_hash`.
+- The hash or revision ID must be unique enough to identify the final material
+  state in the target project's durable history.
+
+The database does not store changed material paths in this simplified design.
+To trace changed materials for a completed historical task, read the task's
+`completion_commit_hash` and inspect the target project's version-control
+history, for example:
+
+```powershell
+git show --name-only <completion_commit_hash>
+```
 
 Valid review evidence by tier:
 
@@ -194,15 +203,35 @@ Valid review evidence by tier:
   behavior, schema, API, privacy, setup, persistence, or documentation contract
   risk.
 
+This simplified extension does not add separate verification or review tables.
+The `done` transition must still require explicit command-time confirmation
+that required verification and review gates have passed or have an approved
+fallback. The CLI may record those confirmations as concise task events, but it
+must not store full transcripts or raw command output.
+
+Completion transition interface:
+
+- `task edit --status done` must require `--verification-complete`.
+- `task edit --status done` must require `--review-complete`.
+- `--verification-complete` means required verification passed or a documented
+  user-approved exception exists.
+- `--review-complete` means the required review gate passed, or a valid
+  documented fallback/not-required decision exists for the task's review tier.
+- `--completion-commit-hash <hash>` records the commit hash or unique revision
+  ID used when `completion_commit_required=true`.
+- `--commit-not-required` explicitly sets `completion_commit_required=false`
+  for a task with no managed material changes.
+
 The extension must not store raw diffs, raw command output, full review
 transcripts, full prompts, secrets, stack traces, environment dumps, or large
 logs by default.
 
 When this extension is implemented, `task edit --status done` must reject
 completion with structured errors if required verification, review, or commit
-evidence is missing. The error codes should include `verification_required`,
-`review_required`, `commit_required`, and `completion_evidence_required` unless
-a later approved CLI contract chooses narrower names.
+state is missing or inconsistent. The error codes should include
+`verification_required`, `review_required`, `commit_required`, and
+`completion_commit_conflict` unless a later approved CLI contract chooses
+narrower names.
 
 ## Task Ordering
 

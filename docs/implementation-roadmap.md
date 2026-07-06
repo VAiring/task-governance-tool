@@ -652,13 +652,16 @@ Do not implement these in the MVP unless `docs/specification.md`,
 - automatic target-project mutation
 - raw command output retention
 
-## Required Post-MVP Extension: TG-M6 Completion Evidence
+## Required Post-MVP Extension: TG-M6 Completion Commit Gate
 
-TG-M6 is the next required product extension. It adds review completion
-evidence, commit/revision evidence, managed-material tracing, and enforcement
-before a task can become `done`.
+TG-M6 is the next required product extension. It adds a simple completion
+commit gate: each task records whether a commit is required and, when required,
+the commit hash or unique revision ID that closes the task. Review and
+verification gates continue to be governed by the task workflow and skill
+instructions; this extension does not add structured review or verification
+evidence tables.
 
-### TG-M6.1 Completion Evidence Schema
+### TG-M6.1 Completion Commit Columns
 
 Kind: sequential
 Lane: `COMPLETE`
@@ -675,22 +678,23 @@ Write scope:
 Implementation notes:
 
 - Add schema version 2.
-- Add verification, review, commit, commit-link, and artifact-change tables.
-- Add indexes for task-to-commit and artifact-path trace queries.
-- Keep raw diffs, raw logs, full prompts, and full review transcripts out of
-  the database.
+- Add `completion_commit_required` to `tasks`, default true.
+- Add `completion_commit_hash` to `tasks`, default empty string.
+- Add an index for non-empty `completion_commit_hash` lookups.
+- Do not add commit, artifact, verification, or review evidence tables in this
+  simplified design.
+- Keep raw diffs, raw logs, full prompts, full review transcripts, and changed
+  material path lists out of the database.
 
 Verification gate:
 
 - Migration tests from schema version 1 to 2.
 - Idempotent `db init` migration tests.
-- Repository tests for verification, review, commit, commit-link, and artifact
-  trace rows.
-- Repository tests for one commit/revision linked to multiple tasks.
-- Repository tests that artifact rows with a commit ID are linked to the same
-  task through `task_commit_links`.
+- Repository tests confirming migrated tasks default to commit required with an
+  empty hash.
+- Repository tests for non-empty hash lookup.
 
-### TG-M6.2 Completion Evidence CLI
+### TG-M6.2 Completion Commit CLI
 
 Kind: sequential
 Lane: `COMPLETE`
@@ -706,22 +710,28 @@ Write scope:
 
 Implementation notes:
 
-- Add explicit commands or `task edit` options for recording verification
-  evidence, review evidence, commit/revision evidence, and managed-material
-  paths.
-- Prefer Git commit hashes for Git projects, but allow user-provided unique
-  revision IDs for non-Git materials.
+- Add explicit `task edit` options for setting the completion commit hash and
+  marking the commit gate not required.
+- Add `task edit --status done` confirmation options:
+  `--verification-complete` and `--review-complete`.
+- Add commit options: `--completion-commit-hash <hash>` and
+  `--commit-not-required`.
+- Prefer Git commit hashes for Git projects, but allow user-approved unique
+  revision IDs for non-Git durable materials.
+- Reject a non-empty commit hash when commit is marked not required.
+- Keep changed material discovery outside the database; users can trace
+  materials from the stored hash through Git or an equivalent VCS.
 - Keep command outputs compact and JSON-contract stable.
 
 Verification gate:
 
-- JSON shape tests for each evidence recording path.
-- Privacy rejection tests for verification labels, commit/revision IDs,
-  commit refs, evidence summaries, and material paths.
-- Path normalization tests for project-relative managed material paths.
+- JSON shape tests for commit-required and commit-not-required update paths.
+- CLI contract tests for `--verification-complete`, `--review-complete`,
+  `--completion-commit-hash`, and `--commit-not-required`.
+- Privacy rejection tests for completion commit hashes or revision IDs.
 - Missing database and migration-required behavior tests.
 
-### TG-M6.3 Done Enforcement And Trace Queries
+### TG-M6.3 Done Enforcement And Hash Trace
 
 Kind: sequential
 Lane: `COMPLETE`
@@ -730,34 +740,38 @@ Review tier: Tier 2
 
 Write scope:
 
+- `task-governance-tool/scripts/task_governance_tool/cli.py`
 - task mutation service
 - selection/show/list output as needed
+- `task-governance-tool/references/cli_contracts.md`
 - tests
 - skill references
 
 Implementation notes:
 
-- `task edit --status done` rejects when required review evidence is missing.
-- `task edit --status done` rejects when required verification evidence is
-  missing.
-- `task edit --status done` rejects when managed materials exist without commit
-  or unique revision evidence.
-- Tier 2 review fallback is accepted only after documented self-review and
-  explicit user approval when review tooling is unavailable.
-- Valid high or medium review findings block completion until fixed or the task
-  is explicitly left non-done.
-- `task show` exposes compact completion evidence.
-- Add a trace path from task to commit/revision IDs and changed managed
-  materials.
+- `task edit --status done` rejects when
+  `completion_commit_required=true` and `completion_commit_hash` is empty.
+- `task edit --status done` accepts an explicitly not-required commit gate only
+  when `completion_commit_required=false` and `completion_commit_hash` is empty.
+- Review and verification gates must still pass before a task is marked `done`
+  under the workflow rules. Require explicit command-time confirmation for
+  those gates, but do not store detailed review or verification records.
+- `task show` exposes `completion_commit_required` and
+  `completion_commit_hash`.
+- Document that changed materials are traced through the target project's VCS,
+  for example with `git show --name-only <completion_commit_hash>`.
 
 Verification gate:
 
-- Done-transition blocking tests for missing verification evidence, missing
-  review evidence, invalid Tier 2 fallback evidence, blocking review findings,
-  and missing commit evidence.
-- Successful done-transition test with verification, review, and commit
-  evidence.
-- Artifact-to-task trace tests.
+- Done-transition blocking tests for missing verification confirmation, missing
+  review confirmation, and missing required commit hash.
+- Done-transition success test with review/verification confirmations and a
+  required commit hash.
+- Done-transition success test with review/verification confirmations and
+  commit explicitly not required.
+- Conflict test for `completion_commit_conflict` when commit is not required
+  but a non-empty hash is supplied.
+- `task show` output tests for commit requirement and hash fields.
 
 ### TG-M6.4 Skill Guidance And Forward Test
 
@@ -776,11 +790,13 @@ Write scope:
 
 Implementation notes:
 
-- Advertise completion evidence only after the CLI implements it.
-- Explain that task completion requires verification, required sub-agent
-  review, and commit/revision evidence for changed managed materials.
-- Preserve the rule that the tool records evidence but does not create commits
-  or mutate target projects by default.
+- Advertise the completion commit gate only after the CLI implements it.
+- Explain that task completion still requires verification, required sub-agent
+  review, and either a commit hash or an explicit commit-not-required decision.
+- Explain that changed materials are traced through Git or another VCS from the
+  stored hash, not through separate database artifact rows.
+- Preserve the rule that the tool records commit state but does not create
+  commits or mutate target projects by default.
 
 Verification gate:
 

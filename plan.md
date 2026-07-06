@@ -1202,6 +1202,26 @@ Current execution unit:
     findings; remaining implementation risk is that TG-M6 must prove the schema
     relationships and completion semantics with repository and CLI tests
 
+- `TG-M5.O5 Simplified Completion Commit Design`
+  - status: completed
+  - intended outcome: redefine completion commit tracking so each task stores
+    only a commit-required flag and a commit hash/revision ID directly on the
+    task row, with explicit commit-not-required handling for tasks that change
+    no managed materials
+  - write scope: `docs/specification.md`, `docs/design.md`,
+    `docs/implementation-roadmap.md`, and this status section
+  - verification gate: documentation consistency check; confirm complex
+    commit/artifact evidence tables are removed from the design; confirm
+    current skill/README do not advertise unimplemented completion commit
+    behavior; full offline unittest suite; `git diff --check`
+  - review tier: Tier 2
+  - verification run: simplified completion commit documentation self-check
+    passed; `git diff --check`; `python -m unittest discover -s tests` (103
+    tests)
+  - review result: two independent sub-agent reviews PASS, no blocking
+    findings; both noted a non-blocking wording softness in `docs/design.md`,
+    which was tightened from should to must before completion
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

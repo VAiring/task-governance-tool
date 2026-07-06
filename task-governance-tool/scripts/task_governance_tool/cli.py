@@ -17,11 +17,18 @@ from task_governance_tool.storage import (
     StatusResult,
     StorageError,
     connect,
+    connect_readonly,
     initialize_database,
     inspect_database,
     resolve_database_target,
 )
-from task_governance_tool.tasks import TaskRepositoryError, TaskValidationError, add_task, validate_task_input
+from task_governance_tool.tasks import (
+    TaskRepositoryError,
+    TaskValidationError,
+    add_task,
+    list_tasks,
+    validate_task_input,
+)
 
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
@@ -154,7 +161,15 @@ def build_parser() -> argparse.ArgumentParser:
     task_add_parser.add_argument("--review-tier", default=1)
     task_add_parser.add_argument("--verification", default="")
     task_add_parser.add_argument("--tags", default="")
-    add_common_options(task_subparsers.add_parser("list", help="list compact task slices"))
+    task_list_parser = task_subparsers.add_parser("list", help="list compact task slices")
+    add_common_options(task_list_parser)
+    task_list_parser.add_argument("--status", default=None)
+    task_list_parser.add_argument("--kind", default=None)
+    task_list_parser.add_argument("--lane", default=None)
+    task_list_parser.add_argument("--priority", default=None)
+    task_list_parser.add_argument("--tag", default=None)
+    task_list_parser.add_argument("--limit", default=None)
+    task_list_parser.add_argument("--include-done", action="store_true", default=False)
     add_common_options(task_subparsers.add_parser("next", help="show next actionable tasks"))
     add_common_options(task_subparsers.add_parser("show", help="show one task and recent events"))
     add_common_options(task_subparsers.add_parser("edit", help="update task state or metadata"))
@@ -190,6 +205,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_db_status(context)
     if context.command == "task.add":
         return handle_task_add(context)
+    if context.command == "task.list":
+        return handle_task_list(context)
     return error_result(
         context.command,
         "internal_error",
@@ -432,6 +449,78 @@ def handle_task_add(context: CommandContext) -> CommandResult:
         db_path=str(target.db_path),
         data=data,
         text=task_add_text(result.task, result.event),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
+def task_list_input(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "status": getattr(args, "status", None),
+        "kind": getattr(args, "kind", None),
+        "lane": getattr(args, "lane", None),
+        "priority": getattr(args, "priority", None),
+        "tag": getattr(args, "tag", None),
+        "limit": getattr(args, "limit", None),
+        "include_done": bool(getattr(args, "include_done", False)),
+    }
+
+
+def task_list_text(tasks: list[dict[str, Any]], count: int, limit: int) -> str:
+    lines = [f"Tasks: {count} (limit {limit})"]
+    for task in tasks:
+        lane = ""
+        if task["lane"]:
+            lane = f" {task['lane']}"
+            if task["lane_order"] is not None:
+                lane += f"#{task['lane_order']}"
+        lines.append(
+            f"{task['task_id']} [{task['status']}] {task['priority']} {task['kind']}{lane} - {task['title']}"
+        )
+    return "\n".join(lines)
+
+
+def handle_task_list(context: CommandContext) -> CommandResult:
+    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    status = inspect_database(target)
+    if status.error_code:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data={"tasks": [], "count": 0, "limit": 0},
+            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    try:
+        with closing(connect_readonly(target.db_path)) as connection:
+            result = list_tasks(connection, target.project, **task_list_input(context.args))
+    except TaskValidationError as exc:
+        return validation_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            exc=exc,
+        )
+    except sqlite3.Error as exc:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            errors=[{"code": "internal_error", "message": "could not list tasks"}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    data = {"tasks": result.tasks, "count": result.count, "limit": result.limit}
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=target.project.project_id,
+        db_path=str(target.db_path),
+        data=data,
+        text=task_list_text(result.tasks, result.count, result.limit),
         exit_code=EXIT_SUCCESS,
     )
 

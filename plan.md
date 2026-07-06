@@ -869,6 +869,31 @@ Current execution unit:
     existing `project_meta.updated_at` during initialization, while task/event
     rows remain rolled back
 
+- `TG-M2.3 task list`
+  - status: completed
+  - intended outcome: implement read-only compact task listing with supported
+    filters and stable JSON/text output
+  - write scope:
+    `task-governance-tool/scripts/task_governance_tool/tasks.py`,
+    `task-governance-tool/scripts/task_governance_tool/cli.py`, list/filter
+    tests, and this status section
+  - verification gate: filters for status, kind, lane, priority, tag, limit,
+    and include-done; missing DB does not create files; task list is read-only
+    and returns JSON data with `tasks`, `count`, and `limit`
+  - verification run: `python -m unittest tests.test_task_list` (9 tests);
+    `python -m unittest discover -s tests` (66 tests); `git diff --check`;
+    coverage includes default active-only listing, status/kind/lane/priority/tag
+    filters, limit and include-done behavior, structured validation errors,
+    missing DB no-create behavior, migration-required and project-mismatch
+    propagation without mutation, limit validation/clamping, and concise text
+    output; implemented limit values are clamped to 100 rows, and
+    `--include-done` includes terminal `done` and `cancelled` tasks
+  - review tier: Tier 2
+  - review result: two final independent sub-agent reviews PASS, no blocking
+    findings; remaining low risk is that tag filtering is applied after
+    fetching matching rows, which may do extra read work on very large local
+    databases
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

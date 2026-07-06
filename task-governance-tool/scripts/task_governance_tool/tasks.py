@@ -168,6 +168,13 @@ class AddTaskResult:
     event: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class TaskListResult:
+    tasks: list[dict[str, Any]]
+    count: int
+    limit: int
+
+
 def validation_error(code: str, message: str, field: str | None = None) -> TaskValidationError:
     return TaskValidationError(code=code, message=message, field=field)
 
@@ -372,6 +379,14 @@ def row_to_task(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 
 
+def split_tags(tags: str) -> list[str]:
+    return [tag.strip() for tag in tags.split(",") if tag.strip()]
+
+
+def task_matches_tag(tags: str, requested: str) -> bool:
+    return requested in split_tags(tags)
+
+
 def create_task_event(
     connection: sqlite3.Connection,
     *,
@@ -489,3 +504,76 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
     if task is None:
         raise TaskRepositoryError("internal_error", "task was not readable after insert")
     return AddTaskResult(task=row_to_task(task), event=event)
+
+
+def validate_limit(value: Any, *, default: int = 20) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        raise validation_error("invalid_argument", "limit must be a positive integer", "limit")
+    if isinstance(value, int):
+        limit = value
+    elif isinstance(value, str) and value.strip().isdigit():
+        limit = int(value.strip())
+    else:
+        raise validation_error("invalid_argument", "limit must be a positive integer", "limit")
+    if limit < 1:
+        raise validation_error("invalid_argument", "limit must be a positive integer", "limit")
+    return min(limit, 100)
+
+
+def list_tasks(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    *,
+    status: Any = None,
+    kind: Any = None,
+    lane: Any = None,
+    priority: Any = None,
+    tag: Any = None,
+    limit: Any = None,
+    include_done: bool = False,
+) -> TaskListResult:
+    filters: list[str] = ["project_id = ?"]
+    values: list[Any] = [project.project_id]
+    if status is not None:
+        filters.append("status = ?")
+        values.append(validate_choice("status", status, STATUSES, "invalid_status"))
+    elif not include_done:
+        filters.append("status NOT IN ('done', 'cancelled')")
+    if kind is not None:
+        filters.append("kind = ?")
+        values.append(validate_choice("kind", kind, KINDS, "invalid_kind"))
+    if lane is not None:
+        filters.append("lane = ?")
+        values.append(validate_text("lane", lane))
+    if priority is not None:
+        filters.append("priority = ?")
+        values.append(validate_choice("priority", priority, PRIORITIES, "invalid_priority"))
+    requested_tag = None
+    if tag is not None:
+        requested_tag = validate_text("tag", tag, required=True, limit=TEXT_LIMITS["tags"])
+
+    row_limit = validate_limit(limit)
+    query = f"""
+        SELECT *
+          FROM tasks
+         WHERE {" AND ".join(filters)}
+         ORDER BY
+           CASE priority
+             WHEN 'urgent' THEN 0
+             WHEN 'high' THEN 1
+             WHEN 'normal' THEN 2
+             ELSE 3
+           END,
+           lane,
+           lane_order IS NULL,
+           lane_order,
+           created_at,
+           task_id
+    """
+    rows = [row_to_task(row) for row in connection.execute(query, values).fetchall()]
+    if requested_tag is not None:
+        rows = [row for row in rows if task_matches_tag(str(row["tags"]), requested_tag)]
+    tasks = rows[:row_limit]
+    return TaskListResult(tasks=tasks, count=len(tasks), limit=row_limit)

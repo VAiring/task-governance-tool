@@ -1,0 +1,44 @@
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = ROOT / "task-governance-tool"
+SCRIPT = SKILL_ROOT / "scripts" / "taskgov.py"
+STATE_DIR = SKILL_ROOT / "state"
+
+
+class CliHelpTests(unittest.TestCase):
+    def test_help_runs_from_skill_folder(self):
+        result = subprocess.run(
+            [sys.executable, "scripts/taskgov.py", "--help"],
+            cwd=SKILL_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("taskgov", result.stdout)
+        self.assertIn("--repo", result.stdout)
+        self.assertIn("--db", result.stdout)
+        self.assertIn("--json", result.stdout)
+        self.assertIn("--read-only", result.stdout)
+        self.assertFalse(STATE_DIR.exists())
+
+    def test_runtime_package_imports_from_scripts_path(self):
+        sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+        try:
+            from task_governance_tool.cli import build_parser
+        finally:
+            sys.path.pop(0)
+
+        parser = build_parser()
+        self.assertEqual(parser.prog, "taskgov")
+
+
+if __name__ == "__main__":
+    unittest.main()

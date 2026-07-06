@@ -686,6 +686,28 @@ Open issues:
 - Decide after the MVP whether to add profile detection, verification recording,
   review-template generation, dependency graphs, or Git integration.
 
+## Implementation Execution Status
+
+The approved implementation loop is consuming
+`docs/implementation-roadmap.md`.
+
+Current execution unit:
+
+- `TG-M1.1 Repository And Test Harness`
+  - status: completed
+  - intended outcome: create the skill-local CLI entry point and unittest
+    harness without database creation
+  - write scope: `task-governance-tool/scripts/taskgov.py`,
+    `task-governance-tool/scripts/task_governance_tool/__init__.py`,
+    `task-governance-tool/scripts/task_governance_tool/cli.py`, `tests/`, and
+    this status section
+  - verification gate: CLI help exits successfully; unit test harness runs
+    without network access
+  - verification run: `python task-governance-tool\scripts\taskgov.py --help`;
+    `python -m unittest discover -s tests`
+  - review tier: Tier 1
+  - review result: sub-agent review PASS, no blocking findings
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

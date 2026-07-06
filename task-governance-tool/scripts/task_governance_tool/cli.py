@@ -198,6 +198,10 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--verification", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--tags", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--add-note", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--completion-commit-hash", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--commit-not-required", action="store_true", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--verification-complete", action="store_true", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--review-complete", action="store_true", default=argparse.SUPPRESS)
 
     return parser
 
@@ -758,6 +762,10 @@ EDIT_ARGUMENT_FIELDS = (
     "verification",
     "tags",
     "add_note",
+    "completion_commit_hash",
+    "commit_not_required",
+    "verification_complete",
+    "review_complete",
 )
 
 
@@ -791,13 +799,14 @@ def task_edit_failure_result(
 
 def task_edit_text(task: dict[str, Any], changed_fields: list[str], event: dict[str, Any]) -> str:
     changed = ", ".join(changed_fields) if changed_fields else "none"
+    event_summary = event["summary"]
     return "\n".join(
         [
             f"Task updated: {task['task_id']}",
             f"Title: {task['title']}",
             f"Status: {task['status']}  Priority: {task['priority']}  Kind: {task['kind']}",
             f"Changed: {changed}",
-            f"Event: {event['event_type']}",
+            f"Event: {event['event_type']} - {event_summary}",
         ]
     )
 

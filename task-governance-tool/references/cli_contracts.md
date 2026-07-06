@@ -69,8 +69,8 @@ python scripts/taskgov.py db init --repo <target-project> --json
 ```json
 {
   "created": true,
-  "migrations_applied": [1],
-  "schema_version": 1
+  "migrations_applied": [1, 2],
+  "schema_version": 2
 }
 ```
 
@@ -89,7 +89,7 @@ python scripts/taskgov.py db status --repo <target-project> --json
   "exists": true,
   "needs_init": false,
   "needs_migration": false,
-  "schema_version": 1,
+  "schema_version": 2,
   "counts": {
     "active": 3,
     "blocked": 1,
@@ -200,8 +200,20 @@ Editable options:
 - `--verification`
 - `--tags`
 - `--add-note`
+- `--completion-commit-hash <hash>`: record the commit hash or unique revision
+  ID that closes the task, and mark the task as requiring a completion commit.
+- `--commit-not-required`: explicitly mark that no managed materials changed;
+  this clears any stored completion commit hash.
+- `--verification-complete`: record a concise command-time confirmation that
+  required verification passed or has an approved exception.
+- `--review-complete`: record a concise command-time confirmation that the
+  required review gate passed or has a valid fallback.
 
 `data`: `task`, `changed_fields`, `event`.
+
+`--completion-commit-hash` and `--commit-not-required` are mutually exclusive.
+`task edit --status done` enforcement for missing verification, review, or
+commit state is introduced by the later completion gate enforcement unit.
 
 ## Error Codes
 
@@ -213,6 +225,7 @@ Known error codes include:
 - `invalid_priority`
 - `invalid_review_tier`
 - `blocked_reason_required`
+- `completion_commit_conflict`
 - `privacy_rejected`
 - `not_found`
 - `db_not_initialized`

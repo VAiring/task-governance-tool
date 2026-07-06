@@ -414,6 +414,10 @@ def row_to_task(row: sqlite3.Row) -> dict[str, Any]:
     return {field: row[field] for field in PUBLIC_TASK_FIELDS if field in row_keys}
 
 
+def row_to_internal_task(row: sqlite3.Row) -> dict[str, Any]:
+    return dict(row)
+
+
 def row_to_event(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 
@@ -646,12 +650,29 @@ def validate_task_id(value: Any) -> str:
     return validate_text("task_id", value, required=True, limit=128)
 
 
-def note_event_summary(note: str) -> str:
+def validate_completion_commit_hash(value: Any) -> str:
+    return validate_text(
+        "completion_commit_hash",
+        value,
+        required=True,
+        limit=TEXT_LIMITS["completion_commit_hash"],
+    )
+
+
+def note_event_summary(note: str, recorded_markers: list[str] | None = None) -> str:
     prefix = "Note added: "
+    suffix = ""
+    if recorded_markers:
+        suffix = f"; Recorded: {', '.join(recorded_markers)}"
     limit = TEXT_LIMITS["event_summary"]
-    if len(prefix) + len(note) <= limit:
-        return prefix + note
-    return prefix + note[: limit - len(prefix) - 3] + "..."
+    note_limit = limit - len(prefix) - len(suffix)
+    if note_limit <= 0:
+        return prefix + suffix[: limit - len(prefix)]
+    if len(note) <= note_limit:
+        return prefix + note + suffix
+    if note_limit <= 3:
+        return prefix + note[:note_limit] + suffix
+    return prefix + note[: note_limit - 3] + "..." + suffix
 
 
 def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
@@ -681,8 +702,20 @@ def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
             normalized[field] = validate_text(field, value, limit=TEXT_LIMITS["tags"])
         elif field == "add_note":
             normalized[field] = validate_text(field, value, required=True, limit=TEXT_LIMITS["add_note"])
+        elif field == "completion_commit_hash":
+            normalized[field] = validate_completion_commit_hash(value)
+        elif field in {"commit_not_required", "verification_complete", "review_complete"}:
+            if value is not True:
+                raise validation_error("invalid_argument", f"{field} must be true when provided", field)
+            normalized[field] = True
         else:
             raise validation_error("invalid_argument", f"{field} is not editable", field)
+    if normalized.get("commit_not_required") and "completion_commit_hash" in normalized:
+        raise validation_error(
+            "completion_commit_conflict",
+            "completion_commit_hash cannot be supplied when commit is marked not required",
+            "completion_commit_hash",
+        )
     if not normalized:
         raise validation_error("invalid_argument", "at least one editable field or add_note is required")
     if normalized.get("status") == "blocked" and not str(normalized.get("blocked_reason", "")).strip():
@@ -765,6 +798,21 @@ def read_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> 
     return row_to_task(row)
 
 
+def read_internal_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> dict[str, Any] | None:
+    row = connection.execute(
+        """
+        SELECT *
+          FROM tasks
+         WHERE project_id = ?
+           AND task_id = ?
+        """,
+        (project_id, task_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return row_to_internal_task(row)
+
+
 def update_task_row(
     connection: sqlite3.Connection,
     *,
@@ -791,8 +839,12 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
     normalized_task_id = validate_task_id(task_id)
     normalized = validate_task_edit_input(**edit_input)
     add_note = normalized.pop("add_note", None)
+    completion_commit_hash = normalized.pop("completion_commit_hash", None)
+    commit_not_required = bool(normalized.pop("commit_not_required", False))
+    verification_complete = bool(normalized.pop("verification_complete", False))
+    review_complete = bool(normalized.pop("review_complete", False))
 
-    existing = read_task(connection, project.project_id, normalized_task_id)
+    existing = read_internal_task(connection, project.project_id, normalized_task_id)
     if existing is None:
         raise TaskRepositoryError("not_found", "task was not found")
 
@@ -802,6 +854,12 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
     order_was_provided = "lane_order" in normalized
     for field, value in normalized.items():
         updated[field] = value
+    if completion_commit_hash is not None:
+        updated["completion_commit_required"] = 1
+        updated["completion_commit_hash"] = completion_commit_hash
+    if commit_not_required:
+        updated["completion_commit_required"] = 0
+        updated["completion_commit_hash"] = ""
 
     if updated["kind"] == "sequential":
         if not str(updated["lane"]).strip():
@@ -846,9 +904,20 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
         "verification",
         "tags",
         "completed_at",
+        "completion_commit_required",
+        "completion_commit_hash",
     )
     changed_fields = [field for field in comparable_fields if updated[field] != existing[field]]
-    if not changed_fields and add_note is None:
+    recorded_markers = []
+    if commit_not_required:
+        recorded_markers.append("commit not required")
+    elif completion_commit_hash is not None:
+        recorded_markers.append("completion commit hash")
+    if verification_complete:
+        recorded_markers.append("verification complete")
+    if review_complete:
+        recorded_markers.append("review complete")
+    if not changed_fields and add_note is None and not recorded_markers:
         raise validation_error("invalid_argument", "task edit did not change any fields")
 
     update_values = {field: updated[field] for field in changed_fields}
@@ -867,8 +936,11 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
         ) from exc
 
     if add_note is not None:
-        event_type = "note_added" if not changed_fields else "task_updated"
-        summary = note_event_summary(add_note)
+        event_type = "note_added" if not changed_fields and not recorded_markers else "task_updated"
+        summary = note_event_summary(add_note, recorded_markers)
+    elif recorded_markers:
+        event_type = "task_updated"
+        summary = f"Recorded: {', '.join(recorded_markers)}"
     else:
         event_type = "task_updated"
         summary = f"Updated fields: {', '.join(changed_fields)}"

@@ -304,8 +304,151 @@ Recommended prefixes:
 - `tg_task_`
 - `tg_event_`
 - `tg_tool_event_`
+- `tg_verification_`
+- `tg_review_`
+- `tg_commit_`
+- `tg_artifact_`
 
 IDs must not encode private path details.
+
+## Completion Evidence Extension Design
+
+The post-MVP completion-evidence extension should add schema version 2 and keep
+completion evidence separate from the MVP `tasks` row. This preserves the task
+record as compact current state while allowing audit queries across reviews,
+commits, and managed materials.
+
+Recommended schema additions:
+
+```sql
+CREATE TABLE task_verification_records (
+  verification_record_id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  verification_status TEXT NOT NULL CHECK (verification_status IN (
+    'not_required',
+    'passed',
+    'failed',
+    'user_approved_exception'
+  )),
+  verification_label TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  verified_at TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+);
+
+CREATE TABLE task_review_records (
+  review_record_id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  review_tier INTEGER NOT NULL CHECK (review_tier IN (0, 1, 2)),
+  review_status TEXT NOT NULL CHECK (review_status IN (
+    'not_required',
+    'passed',
+    'blocked',
+    'unavailable_fallback'
+  )),
+  reviewer_count INTEGER NOT NULL DEFAULT 0,
+  blocking_findings_count INTEGER NOT NULL DEFAULT 0,
+  fallback_approved INTEGER NOT NULL DEFAULT 0 CHECK (fallback_approved IN (0, 1)),
+  summary TEXT NOT NULL DEFAULT '',
+  completed_at TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+);
+
+CREATE TABLE task_commit_records (
+  commit_record_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  commit_system TEXT NOT NULL,
+  commit_identifier TEXT NOT NULL,
+  commit_ref TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  committed_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (project_id, commit_identifier)
+);
+
+CREATE TABLE task_commit_links (
+  task_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  commit_record_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (task_id, commit_record_id),
+  FOREIGN KEY (task_id) REFERENCES tasks(task_id),
+  FOREIGN KEY (commit_record_id) REFERENCES task_commit_records(commit_record_id)
+);
+
+CREATE TABLE task_artifact_changes (
+  artifact_change_id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  commit_record_id TEXT,
+  artifact_path TEXT NOT NULL,
+  artifact_kind TEXT NOT NULL DEFAULT 'file',
+  change_type TEXT NOT NULL DEFAULT 'modified',
+  content_hash TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(task_id),
+  FOREIGN KEY (commit_record_id) REFERENCES task_commit_records(commit_record_id),
+  FOREIGN KEY (task_id, commit_record_id)
+    REFERENCES task_commit_links(task_id, commit_record_id)
+);
+```
+
+Recommended indexes:
+
+```sql
+CREATE INDEX idx_verification_records_task ON task_verification_records(task_id, created_at);
+CREATE INDEX idx_review_records_task ON task_review_records(task_id, created_at);
+CREATE INDEX idx_commit_links_task ON task_commit_links(task_id, created_at);
+CREATE INDEX idx_commit_links_commit ON task_commit_links(commit_record_id);
+CREATE INDEX idx_artifact_changes_path ON task_artifact_changes(project_id, artifact_path);
+CREATE INDEX idx_artifact_changes_task ON task_artifact_changes(task_id, created_at);
+```
+
+Implementation rules:
+
+- Record review and commit evidence through explicit CLI commands or explicit
+  `task edit` options; do not infer evidence from chat history.
+- Record verification evidence explicitly. A user-approved verification
+  exception is valid evidence only when the user approval is recorded as compact
+  sanitized metadata.
+- Treat Tier 2 review evidence as valid only when `review_status='passed'` and
+  `reviewer_count >= 2`, or when `review_status='unavailable_fallback'`,
+  `fallback_approved=1`, review tooling is unavailable, and the summary records
+  the documented self-review and user approval.
+- Treat Tier 1 review evidence as valid when `review_status='passed'` and
+  `reviewer_count >= 1`, or when `review_status='unavailable_fallback'` records
+  the documented self-review used because review tooling was unavailable.
+- Treat Tier 0 review evidence as valid with `review_status='not_required'`
+  only for purely mechanical changes.
+- `blocking_findings_count` must be zero before a task can become `done`.
+- Treat a Git commit hash as the preferred `commit_identifier`. Accept a
+  user-provided unique revision ID for non-Git managed materials.
+- Validate `verification_label`, `commit_identifier`, `commit_ref`, summaries,
+  and artifact paths as concise sanitized evidence fields.
+- Normalize file `artifact_path` values as project-relative paths using forward
+  slashes. Store absolute paths only for explicitly approved managed materials
+  outside the target project.
+- Store only paths, IDs, timestamps, short summaries, and optional content
+  hashes. Do not store raw diffs, full review transcripts, full prompts, raw
+  logs, stack traces, or secrets.
+- `task edit --status done` must check completion evidence before setting
+  `completed_at` once schema version 2 is active.
+- Missing verification evidence should produce `verification_required`.
+- Missing review evidence should produce `review_required`; missing commit or
+  managed-material revision evidence should produce `commit_required`; mixed or
+  incomplete evidence should produce `completion_evidence_required`.
+- The tool may advise that a commit is required, but it must not create commits
+  or mutate target projects without an explicit future command and updated
+  target-project safety rules.
+- `task show` should include compact completion evidence when present.
+- A future query should support tracing from an artifact path to the tasks and
+  commit/revision IDs that changed it.
+- A commit/revision record may link to multiple tasks; avoid requiring one
+  commit per task.
 
 ## Validation Rules
 

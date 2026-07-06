@@ -48,7 +48,9 @@ The MVP does not include:
 - Persistent project profile authoring or `profile register`.
 - Verification-run recording beyond short task fields.
 - Review request generation.
-- Git commits, branches, PRs, issue comments, or other target-project mutation.
+- Creating Git commits, branches, PRs, issue comments, or other target-project
+  mutation. A later completion-evidence extension may require and record an
+  existing commit identifier, but `taskgov` must not create commits by default.
 - Dashboards, services, network sync, or cloud workflows.
 - Raw command-output retention.
 
@@ -128,6 +130,79 @@ The MVP task record includes:
 - `created_at`, `updated_at`, and optional `completed_at` timestamps.
 
 The MVP may store task notes and state changes in a concise task event history.
+
+## Required Post-MVP Extension: Completion Evidence And Commit Trace
+
+The next required extension after the MVP must make task completion auditable.
+It supersedes the current lightweight `task edit --status done` behavior once
+implemented.
+
+A task may be marked `done` only after all of these gates are satisfied:
+
+- Required verification for the task has passed or has an explicit documented
+  user-approved exception.
+- Required sub-agent review has completed under the same tiered review rules
+  used by this project: Tier 2 requires two independent review passes when
+  review tooling is available; Tier 1 requires one independent review or the
+  documented fallback when tooling is unavailable; Tier 0 may skip review only
+  for purely mechanical changes.
+- If Tier 2 review tooling is unavailable, the strongest feasible documented
+  self-review must be run and the user must explicitly approve treating that
+  fallback as completion evidence before the task can be marked `done`.
+- No valid high or medium review finding remains unresolved.
+- If managed materials were changed, the changed materials have been committed
+  or otherwise assigned a durable unique revision identifier.
+
+Managed materials are source-controlled files or user-approved durable assets
+whose final state should be traceable after task completion. Generated local
+runtime state, caches, logs, temporary files, SQLite databases, and ignored
+scratch artifacts are not managed materials unless a governing document or user
+explicitly says they are.
+
+The database must store completion evidence without becoming the authority for
+project decisions. It should record compact, sanitized metadata only:
+
+- review result status, review tier, reviewer count, completion timestamp, and
+  a short summary
+- verification status, verification label, completion timestamp, and a short
+  summary or user-approved exception marker
+- commit or revision identifier, commit system such as `git` or `manual`,
+  optional branch/ref, timestamp, and short summary
+- changed managed material paths linked to the task and commit/revision record
+- enough IDs to answer "which task changed this material?" and "which materials
+  did this task change?"
+
+The commit or revision identifier must be unique within the target project. A
+Git commit hash is preferred when the target project uses Git. For non-Git
+managed materials, a user-provided unique revision ID is acceptable.
+
+Managed material paths must be normalized project-relative paths when they refer
+to files in the target project. Absolute local paths should not be stored unless
+the managed material is explicitly outside the target project and the user
+approved storing that path.
+
+Valid review evidence by tier:
+
+- Tier 2: `passed` with at least two independent reviewers, or
+  `unavailable_fallback` only when review tooling is unavailable, the strongest
+  feasible documented self-review was completed, and the user explicitly
+  approved the fallback.
+- Tier 1: `passed` with at least one independent reviewer, or
+  `unavailable_fallback` with a documented self-review when review tooling is
+  unavailable.
+- Tier 0: `not_required` is valid only for purely mechanical changes with no
+  behavior, schema, API, privacy, setup, persistence, or documentation contract
+  risk.
+
+The extension must not store raw diffs, raw command output, full review
+transcripts, full prompts, secrets, stack traces, environment dumps, or large
+logs by default.
+
+When this extension is implemented, `task edit --status done` must reject
+completion with structured errors if required verification, review, or commit
+evidence is missing. The error codes should include `verification_required`,
+`review_required`, `commit_required`, and `completion_evidence_required` unless
+a later approved CLI contract chooses narrower names.
 
 ## Task Ordering
 

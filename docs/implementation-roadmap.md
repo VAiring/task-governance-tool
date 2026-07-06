@@ -652,6 +652,142 @@ Do not implement these in the MVP unless `docs/specification.md`,
 - automatic target-project mutation
 - raw command output retention
 
+## Required Post-MVP Extension: TG-M6 Completion Evidence
+
+TG-M6 is the next required product extension. It adds review completion
+evidence, commit/revision evidence, managed-material tracing, and enforcement
+before a task can become `done`.
+
+### TG-M6.1 Completion Evidence Schema
+
+Kind: sequential
+Lane: `COMPLETE`
+Depends on: TG-M4.3
+Review tier: Tier 2
+
+Write scope:
+
+- `task-governance-tool/scripts/task_governance_tool/storage.py`
+- repository helpers
+- schema/migration tests
+- docs updates if the schema differs from `docs/design.md`
+
+Implementation notes:
+
+- Add schema version 2.
+- Add verification, review, commit, commit-link, and artifact-change tables.
+- Add indexes for task-to-commit and artifact-path trace queries.
+- Keep raw diffs, raw logs, full prompts, and full review transcripts out of
+  the database.
+
+Verification gate:
+
+- Migration tests from schema version 1 to 2.
+- Idempotent `db init` migration tests.
+- Repository tests for verification, review, commit, commit-link, and artifact
+  trace rows.
+- Repository tests for one commit/revision linked to multiple tasks.
+- Repository tests that artifact rows with a commit ID are linked to the same
+  task through `task_commit_links`.
+
+### TG-M6.2 Completion Evidence CLI
+
+Kind: sequential
+Lane: `COMPLETE`
+Depends on: TG-M6.1
+Review tier: Tier 2
+
+Write scope:
+
+- `task-governance-tool/scripts/task_governance_tool/cli.py`
+- task/completion service modules
+- CLI contract tests
+- `task-governance-tool/references/cli_contracts.md`
+
+Implementation notes:
+
+- Add explicit commands or `task edit` options for recording verification
+  evidence, review evidence, commit/revision evidence, and managed-material
+  paths.
+- Prefer Git commit hashes for Git projects, but allow user-provided unique
+  revision IDs for non-Git materials.
+- Keep command outputs compact and JSON-contract stable.
+
+Verification gate:
+
+- JSON shape tests for each evidence recording path.
+- Privacy rejection tests for verification labels, commit/revision IDs,
+  commit refs, evidence summaries, and material paths.
+- Path normalization tests for project-relative managed material paths.
+- Missing database and migration-required behavior tests.
+
+### TG-M6.3 Done Enforcement And Trace Queries
+
+Kind: sequential
+Lane: `COMPLETE`
+Depends on: TG-M6.2
+Review tier: Tier 2
+
+Write scope:
+
+- task mutation service
+- selection/show/list output as needed
+- tests
+- skill references
+
+Implementation notes:
+
+- `task edit --status done` rejects when required review evidence is missing.
+- `task edit --status done` rejects when required verification evidence is
+  missing.
+- `task edit --status done` rejects when managed materials exist without commit
+  or unique revision evidence.
+- Tier 2 review fallback is accepted only after documented self-review and
+  explicit user approval when review tooling is unavailable.
+- Valid high or medium review findings block completion until fixed or the task
+  is explicitly left non-done.
+- `task show` exposes compact completion evidence.
+- Add a trace path from task to commit/revision IDs and changed managed
+  materials.
+
+Verification gate:
+
+- Done-transition blocking tests for missing verification evidence, missing
+  review evidence, invalid Tier 2 fallback evidence, blocking review findings,
+  and missing commit evidence.
+- Successful done-transition test with verification, review, and commit
+  evidence.
+- Artifact-to-task trace tests.
+
+### TG-M6.4 Skill Guidance And Forward Test
+
+Kind: sequential
+Lane: `COMPLETE`
+Depends on: TG-M6.3
+Review tier: Tier 2
+
+Write scope:
+
+- `task-governance-tool/SKILL.md`
+- `task-governance-tool/agents/openai.yaml`
+- `task-governance-tool/references/task_workflow.md`
+- `task-governance-tool/references/cli_contracts.md`
+- representative fixture or forward-test notes
+
+Implementation notes:
+
+- Advertise completion evidence only after the CLI implements it.
+- Explain that task completion requires verification, required sub-agent
+  review, and commit/revision evidence for changed managed materials.
+- Preserve the rule that the tool records evidence but does not create commits
+  or mutate target projects by default.
+
+Verification gate:
+
+- Skill metadata/self-check.
+- Full offline test suite.
+- Forward-test or documented representative dry run of a task completion flow.
+
 ## Roadmap Completion Criteria
 
 The MVP implementation roadmap is complete when:

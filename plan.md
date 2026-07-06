@@ -1179,6 +1179,29 @@ Current execution unit:
     low-risk note is that CI artifact guard covers the main publish risks but
     is not a complete mirror of every `.gitignore` pattern
 
+- `TG-M5.O4 Completion Evidence Requirement`
+  - status: completed
+  - intended outcome: record the new requirement that task completion requires
+    required sub-agent review completion and commit/revision evidence for
+    changed managed materials, with DB traceability from tasks to commits and
+    changed materials
+  - write scope: `docs/specification.md`, `docs/design.md`,
+    `docs/implementation-roadmap.md`, and this status section
+  - verification gate: documentation consistency check; confirm the current
+    MVP skill/README do not advertise unimplemented completion evidence; full
+    offline unittest suite; `git diff --check`
+  - review tier: Tier 2
+  - verification run: completion evidence documentation self-check passed;
+    `git diff --check`; `python -m unittest discover -s tests` (103 tests);
+    after an initial review found medium issues, the docs were updated to add
+    Tier 2 review-tooling fallback semantics, verification evidence modeling,
+    commit-link consistency, artifact path normalization, and corresponding
+    TG-M6 tests; the self-check, `git diff --check`, and full unittest suite
+    were rerun successfully
+  - review result: two final independent sub-agent reviews PASS, no blocking
+    findings; remaining implementation risk is that TG-M6 must prove the schema
+    relationships and completion semantics with repository and CLI tests
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

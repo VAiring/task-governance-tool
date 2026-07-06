@@ -383,12 +383,21 @@ class TaskNextTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             init_db(db, repo)
             add_task(db, repo, "Ready optional")
-            before_events = table_count(db, "task_events")
+            before_counts = {
+                table: table_count(db, table)
+                for table in ("tasks", "task_events", "tool_events")
+            }
 
             payload = next_tasks(db, repo, "--read-only")
 
             self.assertEqual(payload["data"]["count"], 1)
-            self.assertEqual(table_count(db, "task_events"), before_events)
+            self.assertEqual(
+                {
+                    table: table_count(db, table)
+                    for table in ("tasks", "task_events", "tool_events")
+                },
+                before_counts,
+            )
 
     def test_task_next_validation_errors_are_structured(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -396,24 +405,30 @@ class TaskNextTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             init_db(db, repo)
 
-            result = run_taskgov(
-                "task",
-                "next",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
-                "--kind",
-                "dependency",
-                "--json",
+            cases = (
+                (("--kind", "dependency"), "invalid_kind"),
+                (("--priority", "soon"), "invalid_priority"),
+                (("--limit", "0"), "invalid_argument"),
             )
+            for extra, error_code in cases:
+                with self.subTest(extra=extra):
+                    result = run_taskgov(
+                        "task",
+                        "next",
+                        "--repo",
+                        str(repo),
+                        "--db",
+                        str(db),
+                        *extra,
+                        "--json",
+                    )
 
-            self.assertEqual(result.returncode, 1)
-            payload = json.loads(result.stdout)
-            self.assertFalse(payload["ok"])
-            self.assertEqual(payload["command"], "task.next")
-            self.assertEqual(payload["errors"][0]["code"], "invalid_kind")
-            self.assertEqual(payload["data"], {"tasks": [], "count": 0, "limit": 0, "selection_rules": {}})
+                    self.assertEqual(result.returncode, 1)
+                    payload = json.loads(result.stdout)
+                    self.assertFalse(payload["ok"])
+                    self.assertEqual(payload["command"], "task.next")
+                    self.assertEqual(payload["errors"][0]["code"], error_code)
+                    self.assertEqual(payload["data"], {"tasks": [], "count": 0, "limit": 0, "selection_rules": {}})
 
     def test_task_next_text_output_is_concise(self):
         with tempfile.TemporaryDirectory() as tmp:

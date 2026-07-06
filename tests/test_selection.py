@@ -30,6 +30,74 @@ def add(connection, project, title, **kwargs):
     return add_task(connection, project, title=title, **kwargs).task
 
 
+def task_row(project_id, **overrides):
+    row = {
+        "task_id": "tg_task_test",
+        "project_id": project_id,
+        "title": "Test task",
+        "description": "",
+        "kind": "optional",
+        "lane": "",
+        "lane_order": None,
+        "priority": "normal",
+        "status": "ready",
+        "blocked_reason": "",
+        "review_tier": 1,
+        "verification": "",
+        "tags": "",
+        "created_at": "2026-07-06T00:00:00Z",
+        "updated_at": "2026-07-06T00:00:00Z",
+        "completed_at": None,
+    }
+    row.update(overrides)
+    return row
+
+
+def insert_task(connection, project_id, **overrides):
+    row = task_row(project_id, **overrides)
+    connection.execute(
+        """
+        INSERT INTO tasks(
+          task_id,
+          project_id,
+          title,
+          description,
+          kind,
+          lane,
+          lane_order,
+          priority,
+          status,
+          blocked_reason,
+          review_tier,
+          verification,
+          tags,
+          created_at,
+          updated_at,
+          completed_at
+        )
+        VALUES (
+          :task_id,
+          :project_id,
+          :title,
+          :description,
+          :kind,
+          :lane,
+          :lane_order,
+          :priority,
+          :status,
+          :blocked_reason,
+          :review_tier,
+          :verification,
+          :tags,
+          :created_at,
+          :updated_at,
+          :completed_at
+        )
+        """,
+        row,
+    )
+
+
 def titles(result):
     return [task["title"] for task in result.tasks]
 
@@ -185,6 +253,74 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(titles(limited), ["Urgent optional", "Alpha first"])
             self.assertEqual(limited.count, 2)
             self.assertEqual(limited.limit, 2)
+
+    def test_selection_tie_breakers_are_deterministic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = initialized_target(tmp)
+            with closing(connect(target.db_path)) as connection:
+                with connection:
+                    insert_task(
+                        connection,
+                        target.project.project_id,
+                        task_id="tg_task_null_order",
+                        title="Null order",
+                        lane="TIE",
+                        lane_order=None,
+                        priority="low",
+                        created_at="2026-07-06T00:00:00Z",
+                        updated_at="2026-07-06T00:00:00Z",
+                    )
+                    insert_task(
+                        connection,
+                        target.project.project_id,
+                        task_id="tg_task_earlier",
+                        title="Earlier created",
+                        lane="TIE",
+                        lane_order=1,
+                        priority="low",
+                        created_at="2026-07-06T00:00:01Z",
+                        updated_at="2026-07-06T00:00:01Z",
+                    )
+                    insert_task(
+                        connection,
+                        target.project.project_id,
+                        task_id="tg_task_beta",
+                        title="Tie beta",
+                        lane="TIE",
+                        lane_order=1,
+                        priority="low",
+                        created_at="2026-07-06T00:00:02Z",
+                        updated_at="2026-07-06T00:00:02Z",
+                    )
+                    insert_task(
+                        connection,
+                        target.project.project_id,
+                        task_id="tg_task_alpha",
+                        title="Tie alpha",
+                        lane="TIE",
+                        lane_order=1,
+                        priority="low",
+                        created_at="2026-07-06T00:00:02Z",
+                        updated_at="2026-07-06T00:00:02Z",
+                    )
+                    insert_task(
+                        connection,
+                        target.project.project_id,
+                        task_id="tg_task_later",
+                        title="Later created",
+                        lane="TIE",
+                        lane_order=1,
+                        priority="low",
+                        created_at="2026-07-06T00:00:03Z",
+                        updated_at="2026-07-06T00:00:03Z",
+                    )
+
+                result = select_next_tasks(connection, target.project, lane="TIE", priority="low", limit=10)
+
+            self.assertEqual(
+                titles(result),
+                ["Earlier created", "Tie alpha", "Tie beta", "Later created", "Null order"],
+            )
 
 
 if __name__ == "__main__":

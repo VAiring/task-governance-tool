@@ -1117,6 +1117,27 @@ Current execution unit:
     recommendation to distinguish source publication from installable release
     artifact was addressed before completion
 
+- `TG-M5.O1 Conservative Regression Hardening`
+  - status: completed
+  - intended outcome: conservatively harden known low-risk gaps before real
+    operation, without changing CLI behavior, SQLite schema, or skill trigger
+    behavior, privacy behavior, or persistence semantics
+  - write scope: `tests/test_selection.py`, `tests/test_task_next.py`, and this
+    status section
+  - verification gate: focused selection and `task next` tests; full offline
+    unittest suite; `git diff --check`
+  - review tier: Tier 1
+  - verification run: `python -m unittest tests.test_selection
+    tests.test_task_next` (13 tests); `python -m unittest discover -s tests`
+    (103 tests); `git diff --check`; `python
+    task-governance-tool\scripts\taskgov.py task next --help`; coverage now
+    includes deterministic `created_at`/`task_id` tie-break sorting, null
+    `lane_order` sorting, broader `task next` validation errors, and stronger
+    read-only row-count checks for task/event tables
+  - review result: sub-agent review PASS, no blocking findings; remaining
+    low-risk notes are that read-only row-count checks do not detect in-place
+    updates and the deterministic selection helper is schema-coupled by design
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

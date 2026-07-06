@@ -10,6 +10,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
+SCRIPTS_PATH = SKILL_ROOT / "scripts"
+sys.path.insert(0, str(SCRIPTS_PATH))
+try:
+    from task_governance_tool.storage import initial_schema_sql, project_identity
+finally:
+    sys.path.pop(0)
+
 
 def run_taskgov(*args):
     return subprocess.run(
@@ -103,8 +110,8 @@ class DbInitTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["command"], "db.init")
             self.assertTrue(payload["data"]["created"])
-            self.assertEqual(payload["data"]["migrations_applied"], [1])
-            self.assertEqual(payload["data"]["schema_version"], 1)
+            self.assertEqual(payload["data"]["migrations_applied"], [1, 2])
+            self.assertEqual(payload["data"]["schema_version"], 2)
             self.assertEqual(Path(payload["db_path"]), db.resolve())
             self.assertTrue(db.exists())
             default_db = (
@@ -120,7 +127,7 @@ class DbInitTests(unittest.TestCase):
             with closing(sqlite3.connect(db)) as connection:
                 version = connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
                 project_count = connection.execute("SELECT COUNT(*) FROM project_meta").fetchone()[0]
-            self.assertEqual(version, 1)
+            self.assertEqual(version, 2)
             self.assertEqual(project_count, 1)
 
     def test_db_init_is_idempotent(self):
@@ -136,7 +143,68 @@ class DbInitTests(unittest.TestCase):
             payload = json.loads(second.stdout)
             self.assertFalse(payload["data"]["created"])
             self.assertEqual(payload["data"]["migrations_applied"], [])
-            self.assertEqual(payload["data"]["schema_version"], 1)
+            self.assertEqual(payload["data"]["schema_version"], 2)
+
+    def test_db_init_migrates_schema_v1_database_to_completion_commit_columns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            project = project_identity(repo)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                connection.executescript(initial_schema_sql())
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+                    (1, "initial_schema", "2026-07-06T00:00:00Z"),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO project_meta(
+                      project_id,
+                      canonical_path_hash,
+                      display_name,
+                      created_at,
+                      updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        project.project_id,
+                        project.canonical_path_hash,
+                        project.display_name,
+                        "2026-07-06T00:00:00Z",
+                        "2026-07-06T00:00:00Z",
+                    ),
+                )
+                insert_task(connection, project_id=project.project_id)
+                connection.commit()
+
+            result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["data"]["created"])
+            self.assertEqual(payload["data"]["migrations_applied"], [2])
+            self.assertEqual(payload["data"]["schema_version"], 2)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                task = connection.execute(
+                    """
+                    SELECT completion_commit_required, completion_commit_hash
+                      FROM tasks
+                     WHERE task_id = ?
+                    """,
+                    ("tg_task_test",),
+                ).fetchone()
+                versions = [
+                    row["version"]
+                    for row in connection.execute(
+                        "SELECT version FROM schema_migrations ORDER BY version"
+                    ).fetchall()
+                ]
+            self.assertEqual(versions, [1, 2])
+            self.assertEqual(task["completion_commit_required"], 1)
+            self.assertEqual(task["completion_commit_hash"], "")
 
     def test_db_init_returns_json_error_for_invalid_db_path(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -219,10 +287,16 @@ class DbInitTests(unittest.TestCase):
                     "idx_tasks_project_lane_order",
                     "idx_tasks_project_lane_order_unique",
                     "idx_task_events_task_created",
+                    "idx_tasks_project_completion_commit",
                 }.issubset(indexes)
             )
             self.assertIn("CREATE UNIQUE INDEX", unique_index_sql.upper())
             self.assertIn("WHERE kind = 'sequential'", unique_index_sql)
+            with closing(sqlite3.connect(db)) as connection:
+                column_rows = connection.execute("PRAGMA table_info(tasks)").fetchall()
+            task_columns = {row[1] for row in column_rows}
+            self.assertIn("completion_commit_required", task_columns)
+            self.assertIn("completion_commit_hash", task_columns)
 
     def test_project_mismatch_is_rejected_for_explicit_db(self):
         with tempfile.TemporaryDirectory() as tmp:

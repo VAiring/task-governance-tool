@@ -18,6 +18,25 @@ PRIORITIES = ("low", "normal", "high", "urgent")
 STATUSES = ("ready", "in_progress", "blocked", "review_pending", "done", "cancelled")
 REVIEW_TIERS = (0, 1, 2)
 
+PUBLIC_TASK_FIELDS = (
+    "task_id",
+    "project_id",
+    "title",
+    "description",
+    "kind",
+    "lane",
+    "lane_order",
+    "priority",
+    "status",
+    "blocked_reason",
+    "review_tier",
+    "verification",
+    "tags",
+    "created_at",
+    "updated_at",
+    "completed_at",
+)
+
 TEXT_LIMITS = {
     "title": 200,
     "description": 4000,
@@ -25,6 +44,7 @@ TEXT_LIMITS = {
     "tags": 500,
     "add_note": 2000,
     "event_summary": 1000,
+    "completion_commit_hash": 128,
 }
 
 UPPER_ENV_NAME_PATTERN = r"[A-Z_][A-Z0-9_]*"
@@ -390,11 +410,36 @@ def next_lane_order(connection: sqlite3.Connection, project_id: str, lane: str) 
 
 
 def row_to_task(row: sqlite3.Row) -> dict[str, Any]:
-    return dict(row)
+    row_keys = set(row.keys())
+    return {field: row[field] for field in PUBLIC_TASK_FIELDS if field in row_keys}
 
 
 def row_to_event(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
+
+
+def find_task_ids_by_completion_commit_hash(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    completion_commit_hash: Any,
+) -> list[str]:
+    commit_hash = validate_text(
+        "completion_commit_hash",
+        completion_commit_hash,
+        required=True,
+        limit=TEXT_LIMITS["completion_commit_hash"],
+    )
+    rows = connection.execute(
+        """
+        SELECT task_id
+          FROM tasks
+         WHERE project_id = ?
+           AND completion_commit_hash = ?
+         ORDER BY task_id
+        """,
+        (project.project_id, commit_hash),
+    ).fetchall()
+    return [str(row["task_id"]) for row in rows]
 
 
 def split_tags(tags: str) -> list[str]:

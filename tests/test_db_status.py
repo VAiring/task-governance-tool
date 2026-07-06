@@ -10,6 +10,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
+SCRIPTS_PATH = SKILL_ROOT / "scripts"
+sys.path.insert(0, str(SCRIPTS_PATH))
+try:
+    from task_governance_tool.storage import initial_schema_sql, project_identity
+finally:
+    sys.path.pop(0)
 
 
 def run_taskgov(*args):
@@ -217,7 +223,7 @@ class DbStatusTests(unittest.TestCase):
             self.assertEqual(payload["data"]["exists"], True)
             self.assertEqual(payload["data"]["needs_init"], False)
             self.assertEqual(payload["data"]["needs_migration"], False)
-            self.assertEqual(payload["data"]["schema_version"], 1)
+            self.assertEqual(payload["data"]["schema_version"], 2)
             self.assertEqual(
                 payload["data"]["counts"],
                 {
@@ -248,6 +254,62 @@ class DbStatusTests(unittest.TestCase):
             with closing(sqlite3.connect(db)) as connection:
                 tables = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
             self.assertEqual(tables, [])
+
+    def test_schema_v1_status_reports_migration_required_without_migrating(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            project = project_identity(repo)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.executescript(initial_schema_sql())
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+                    (1, "initial_schema", "2026-07-06T00:00:00Z"),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO project_meta(
+                      project_id,
+                      canonical_path_hash,
+                      display_name,
+                      created_at,
+                      updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        project.project_id,
+                        project.canonical_path_hash,
+                        project.display_name,
+                        "2026-07-06T00:00:00Z",
+                        "2026-07-06T00:00:00Z",
+                    ),
+                )
+                insert_task(connection, project.project_id)
+                connection.commit()
+
+            result = run_taskgov("db", "status", "--repo", str(repo), "--db", str(db), "--json")
+
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "migration_required")
+            self.assertTrue(payload["data"]["needs_migration"])
+            self.assertEqual(payload["data"]["schema_version"], 1)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                versions = [
+                    row["version"]
+                    for row in connection.execute(
+                        "SELECT version FROM schema_migrations ORDER BY version"
+                    ).fetchall()
+                ]
+                columns = {
+                    str(row["name"])
+                    for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
+                }
+            self.assertEqual(versions, [1])
+            self.assertNotIn("completion_commit_required", columns)
+            self.assertNotIn("completion_commit_hash", columns)
 
     def test_project_mismatch_status_is_reported_without_writing(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -14,7 +14,7 @@ from typing import Any
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class StorageError(Exception):
@@ -152,6 +152,11 @@ def table_exists(connection: sqlite3.Connection, table_name: str) -> bool:
     return row is not None
 
 
+def column_exists(connection: sqlite3.Connection, table_name: str, column_name: str) -> bool:
+    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return column_name in {str(row["name"]) for row in rows}
+
+
 def current_schema_version(connection: sqlite3.Connection) -> int:
     if not table_exists(connection, "schema_migrations"):
         return 0
@@ -235,6 +240,14 @@ CREATE INDEX IF NOT EXISTS idx_task_events_task_created ON task_events(task_id, 
 """
 
 
+def completion_commit_schema_sql() -> str:
+    return """
+CREATE INDEX IF NOT EXISTS idx_tasks_project_completion_commit
+  ON tasks(project_id, completion_commit_hash)
+  WHERE completion_commit_hash != '';
+"""
+
+
 def empty_counts() -> dict[str, int]:
     return {
         "active": 0,
@@ -259,6 +272,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "idx_tasks_project_lane_order",
         "idx_tasks_project_lane_order_unique",
         "idx_task_events_task_created",
+        "idx_tasks_project_completion_commit",
     }
     table_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     index_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
@@ -266,7 +280,50 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
     indexes = {str(row["name"]) for row in index_rows}
     missing = [f"table:{name}" for name in sorted(required_tables - tables)]
     missing.extend(f"index:{name}" for name in sorted(required_indexes - indexes))
+    if "tasks" in tables:
+        task_column_rows = connection.execute("PRAGMA table_info(tasks)").fetchall()
+        task_columns = {str(row["name"]) for row in task_column_rows}
+        required_task_columns = {
+            "completion_commit_required",
+            "completion_commit_hash",
+        }
+        missing.extend(
+            f"column:tasks.{name}" for name in sorted(required_task_columns - task_columns)
+        )
     return missing
+
+
+def apply_initial_schema_migration(connection: sqlite3.Connection) -> None:
+    applied_at = utc_now()
+    connection.executescript(initial_schema_sql())
+    connection.execute(
+        "INSERT OR IGNORE INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+        (1, "initial_schema", applied_at),
+    )
+
+
+def apply_completion_commit_migration(connection: sqlite3.Connection) -> None:
+    applied_at = utc_now()
+    if not column_exists(connection, "tasks", "completion_commit_required"):
+        connection.execute(
+            """
+            ALTER TABLE tasks
+              ADD COLUMN completion_commit_required INTEGER NOT NULL DEFAULT 1
+              CHECK (completion_commit_required IN (0, 1))
+            """
+        )
+    if not column_exists(connection, "tasks", "completion_commit_hash"):
+        connection.execute(
+            """
+            ALTER TABLE tasks
+              ADD COLUMN completion_commit_hash TEXT NOT NULL DEFAULT ''
+            """
+        )
+    connection.executescript(completion_commit_schema_sql())
+    connection.execute(
+        "INSERT OR IGNORE INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+        (2, "completion_commit_columns", applied_at),
+    )
 
 
 def apply_migrations(connection: sqlite3.Connection) -> list[int]:
@@ -276,16 +333,16 @@ def apply_migrations(connection: sqlite3.Connection) -> list[int]:
             "migration_required",
             f"database schema version {version} is newer than supported version {SCHEMA_VERSION}",
         )
-    if version == SCHEMA_VERSION:
-        return []
 
-    applied_at = utc_now()
-    connection.executescript(initial_schema_sql())
-    connection.execute(
-        "INSERT OR IGNORE INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
-        (SCHEMA_VERSION, "initial_schema", applied_at),
-    )
-    return [SCHEMA_VERSION]
+    applied: list[int] = []
+    if version < 1:
+        apply_initial_schema_migration(connection)
+        applied.append(1)
+        version = 1
+    if version < 2:
+        apply_completion_commit_migration(connection)
+        applied.append(2)
+    return applied
 
 
 def ensure_project_meta(connection: sqlite3.Connection, project: ProjectIdentity) -> None:

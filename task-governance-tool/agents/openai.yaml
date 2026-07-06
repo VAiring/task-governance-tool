@@ -1,0 +1,4 @@
+interface:
+  display_name: "Task Governance Tool"
+  short_description: "Local task state and next-task governance"
+  default_prompt: "Use $task-governance-tool to inspect ready work and update local task state."

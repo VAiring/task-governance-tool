@@ -1027,6 +1027,34 @@ Current execution unit:
     regression tests; two final independent sub-agent reviews PASS, no blocking
     findings
 
+- `TG-M4.1 SKILL.md And Skill References`
+  - status: completed
+  - intended outcome: add the installable skill metadata and concise references
+    needed to use the bundled `taskgov` CLI without loading large project docs
+  - write scope: `task-governance-tool/SKILL.md`,
+    `task-governance-tool/agents/openai.yaml`,
+    `task-governance-tool/references/task_workflow.md`,
+    `task-governance-tool/references/cli_contracts.md`, and this status section
+  - verification gate: skill metadata helper if available, otherwise roadmap
+    fallback self-check; reference links resolve; `SKILL.md` frontmatter
+    contains only `name` and `description`; no deferred MVP behavior is
+    advertised
+  - verification run: `generate_openai_yaml.py` and `quick_validate.py` were
+    attempted but unavailable because `PyYAML` is not installed; fallback
+    PowerShell self-check passed for required files, frontmatter
+    name/description-only shape, folder/name match, trigger description,
+    reference links, `agents/openai.yaml` metadata, ASCII content, and contents
+    sections in long references; `python
+    task-governance-tool\scripts\taskgov.py --help`; `python -m unittest
+    discover -s tests` (99 tests); `git diff --check`
+  - review tier: Tier 2
+  - review result: initial independent reviews found one medium issue where
+    `cli_contracts.md` overstated command-specific error data-shape guarantees;
+    fixed in the same execution unit by narrowing the wording to implemented
+    explicit empty data shapes, adding contents sections to long references, and
+    aligning `SKILL.md` MVP wording with explicit local task-state updates; two
+    final independent sub-agent reviews PASS, no blocking findings
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

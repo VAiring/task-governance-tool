@@ -708,6 +708,20 @@ Current execution unit:
   - review tier: Tier 1
   - review result: sub-agent review PASS, no blocking findings
 
+- `TG-M1.2 JSON/Text Output And Error Envelope`
+  - status: completed
+  - intended outcome: implement the stable output envelope, text output
+    baseline, and exit code mapping for later command handlers
+  - write scope:
+    `task-governance-tool/scripts/task_governance_tool/cli.py`, focused CLI
+    tests, and this status section
+  - verification gate: JSON envelope tests for success and validation error;
+    help text tests for common options; argument parsing test proves
+    `--read-only` reaches command handlers
+  - verification run: `python -m unittest discover -s tests` (11 tests)
+  - review tier: Tier 2
+  - review result: two sub-agent reviews PASS, no blocking findings
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

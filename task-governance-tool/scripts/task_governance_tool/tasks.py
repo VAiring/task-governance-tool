@@ -182,6 +182,13 @@ class TaskShowResult:
     suggested_next_action: str
 
 
+@dataclass(frozen=True)
+class EditTaskResult:
+    task: dict[str, Any]
+    changed_fields: list[str]
+    event: dict[str, Any]
+
+
 def validation_error(code: str, message: str, field: str | None = None) -> TaskValidationError:
     return TaskValidationError(code=code, message=message, field=field)
 
@@ -594,6 +601,54 @@ def validate_task_id(value: Any) -> str:
     return validate_text("task_id", value, required=True, limit=128)
 
 
+def note_event_summary(note: str) -> str:
+    prefix = "Note added: "
+    limit = TEXT_LIMITS["event_summary"]
+    if len(prefix) + len(note) <= limit:
+        return prefix + note
+    return prefix + note[: limit - len(prefix) - 3] + "..."
+
+
+def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for field, value in edit_input.items():
+        if field == "title":
+            normalized[field] = validate_text(field, value, required=True, limit=TEXT_LIMITS["title"])
+        elif field == "description":
+            normalized[field] = validate_text(field, value, limit=TEXT_LIMITS["description"])
+        elif field == "kind":
+            normalized[field] = validate_choice(field, value, KINDS, "invalid_kind")
+        elif field == "lane":
+            normalized[field] = validate_text(field, value)
+        elif field == "lane_order":
+            normalized[field] = validate_lane_order(value)
+        elif field == "priority":
+            normalized[field] = validate_choice(field, value, PRIORITIES, "invalid_priority")
+        elif field == "status":
+            normalized[field] = validate_choice(field, value, STATUSES, "invalid_status")
+        elif field == "blocked_reason":
+            normalized[field] = validate_text(field, value)
+        elif field == "review_tier":
+            normalized[field] = validate_review_tier(value)
+        elif field == "verification":
+            normalized[field] = validate_text(field, value, limit=TEXT_LIMITS["verification"])
+        elif field == "tags":
+            normalized[field] = validate_text(field, value, limit=TEXT_LIMITS["tags"])
+        elif field == "add_note":
+            normalized[field] = validate_text(field, value, required=True, limit=TEXT_LIMITS["add_note"])
+        else:
+            raise validation_error("invalid_argument", f"{field} is not editable", field)
+    if not normalized:
+        raise validation_error("invalid_argument", "at least one editable field or add_note is required")
+    if normalized.get("status") == "blocked" and not str(normalized.get("blocked_reason", "")).strip():
+        raise validation_error(
+            "blocked_reason_required",
+            "blocked_reason is required when status is blocked",
+            "blocked_reason",
+        )
+    return normalized
+
+
 def suggested_next_action(task: dict[str, Any]) -> str:
     status = task["status"]
     if status == "ready":
@@ -648,3 +703,139 @@ def show_task(
         events=[row_to_event(row) for row in event_rows],
         suggested_next_action=suggested_next_action(task),
     )
+
+
+def read_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> dict[str, Any] | None:
+    row = connection.execute(
+        """
+        SELECT *
+          FROM tasks
+         WHERE project_id = ?
+           AND task_id = ?
+        """,
+        (project_id, task_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return row_to_task(row)
+
+
+def update_task_row(
+    connection: sqlite3.Connection,
+    *,
+    task_id: str,
+    project_id: str,
+    values: dict[str, Any],
+) -> None:
+    assignments = ", ".join(f"{field} = :{field}" for field in values)
+    parameters = dict(values)
+    parameters["task_id"] = task_id
+    parameters["project_id"] = project_id
+    connection.execute(
+        f"""
+        UPDATE tasks
+           SET {assignments}
+         WHERE project_id = :project_id
+           AND task_id = :task_id
+        """,
+        parameters,
+    )
+
+
+def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id: Any, **edit_input: Any) -> EditTaskResult:
+    normalized_task_id = validate_task_id(task_id)
+    normalized = validate_task_edit_input(**edit_input)
+    add_note = normalized.pop("add_note", None)
+
+    existing = read_task(connection, project.project_id, normalized_task_id)
+    if existing is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+
+    updated = dict(existing)
+    status_was_provided = "status" in normalized
+    lane_was_provided = "lane" in normalized
+    order_was_provided = "lane_order" in normalized
+    for field, value in normalized.items():
+        updated[field] = value
+
+    if updated["kind"] == "sequential":
+        if not str(updated["lane"]).strip():
+            updated["lane"] = "default"
+        if updated["lane_order"] is None:
+            updated["lane_order"] = next_lane_order(connection, project.project_id, str(updated["lane"]))
+        elif lane_was_provided and not order_was_provided and updated["lane"] != existing["lane"]:
+            updated["lane_order"] = next_lane_order(connection, project.project_id, str(updated["lane"]))
+
+    if status_was_provided and updated["status"] == "blocked" and "blocked_reason" not in normalized:
+        raise validation_error(
+            "blocked_reason_required",
+            "blocked_reason is required when status is blocked",
+            "blocked_reason",
+        )
+    if updated["status"] == "blocked" and not str(updated["blocked_reason"]).strip():
+        raise validation_error(
+            "blocked_reason_required",
+            "blocked_reason is required when status is blocked",
+            "blocked_reason",
+        )
+    if status_was_provided and updated["status"] != "blocked" and "blocked_reason" not in normalized:
+        updated["blocked_reason"] = ""
+
+    now = utc_now()
+    if status_was_provided:
+        if updated["status"] == "done":
+            updated["completed_at"] = existing["completed_at"] or now
+        elif existing["completed_at"] is not None:
+            updated["completed_at"] = None
+
+    comparable_fields = (
+        "title",
+        "description",
+        "kind",
+        "lane",
+        "lane_order",
+        "priority",
+        "status",
+        "blocked_reason",
+        "review_tier",
+        "verification",
+        "tags",
+        "completed_at",
+    )
+    changed_fields = [field for field in comparable_fields if updated[field] != existing[field]]
+    if not changed_fields and add_note is None:
+        raise validation_error("invalid_argument", "task edit did not change any fields")
+
+    update_values = {field: updated[field] for field in changed_fields}
+    update_values["updated_at"] = now
+    try:
+        update_task_row(
+            connection,
+            task_id=normalized_task_id,
+            project_id=project.project_id,
+            values=update_values,
+        )
+    except sqlite3.IntegrityError as exc:
+        raise TaskRepositoryError(
+            "invalid_argument",
+            "task violates database constraints, such as duplicate sequential lane order",
+        ) from exc
+
+    if add_note is not None:
+        event_type = "note_added" if not changed_fields else "task_updated"
+        summary = note_event_summary(add_note)
+    else:
+        event_type = "task_updated"
+        summary = f"Updated fields: {', '.join(changed_fields)}"
+    event = create_task_event(
+        connection,
+        project_id=project.project_id,
+        task_id=normalized_task_id,
+        event_type=event_type,
+        summary=summary,
+        created_at=now,
+    )
+    task = read_task(connection, project.project_id, normalized_task_id)
+    if task is None:
+        raise TaskRepositoryError("internal_error", "task was not readable after update")
+    return EditTaskResult(task=task, changed_fields=changed_fields, event=event)

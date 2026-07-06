@@ -26,8 +26,10 @@ from task_governance_tool.tasks import (
     TaskRepositoryError,
     TaskValidationError,
     add_task,
+    edit_task,
     list_tasks,
     show_task,
+    validate_task_edit_input,
     validate_task_input,
 )
 
@@ -175,7 +177,21 @@ def build_parser() -> argparse.ArgumentParser:
     task_show_parser = task_subparsers.add_parser("show", help="show one task and recent events")
     add_common_options(task_show_parser)
     task_show_parser.add_argument("task_id")
-    add_common_options(task_subparsers.add_parser("edit", help="update task state or metadata"))
+    task_edit_parser = task_subparsers.add_parser("edit", help="update task state or metadata")
+    add_common_options(task_edit_parser)
+    task_edit_parser.add_argument("task_id")
+    task_edit_parser.add_argument("--title", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--description", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--kind", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--lane", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--order", dest="lane_order", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--priority", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--status", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--blocked-reason", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--review-tier", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--verification", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--tags", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--add-note", default=argparse.SUPPRESS)
 
     return parser
 
@@ -212,6 +228,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_task_list(context)
     if context.command == "task.show":
         return handle_task_show(context)
+    if context.command == "task.edit":
+        return handle_task_edit(context)
     return error_result(
         context.command,
         "internal_error",
@@ -616,6 +634,158 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         db_path=str(target.db_path),
         data=data,
         text=task_show_text(result.task, result.events, result.suggested_next_action),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
+EDIT_ARGUMENT_FIELDS = (
+    "title",
+    "description",
+    "kind",
+    "lane",
+    "lane_order",
+    "priority",
+    "status",
+    "blocked_reason",
+    "review_tier",
+    "verification",
+    "tags",
+    "add_note",
+)
+
+
+def task_edit_empty_data() -> dict[str, Any]:
+    return {"task": None, "changed_fields": [], "event": None}
+
+
+def task_edit_input(args: argparse.Namespace) -> dict[str, Any]:
+    return {field: getattr(args, field) for field in EDIT_ARGUMENT_FIELDS if hasattr(args, field)}
+
+
+def task_edit_failure_result(
+    context: CommandContext,
+    *,
+    project_id: str | None,
+    db_path: str | None,
+    code: str,
+    message: str,
+    exit_code: int,
+) -> CommandResult:
+    return CommandResult(
+        ok=False,
+        command=context.command,
+        project_id=project_id,
+        db_path=db_path,
+        data=task_edit_empty_data(),
+        errors=[{"code": code, "message": message}],
+        exit_code=exit_code,
+    )
+
+
+def task_edit_text(task: dict[str, Any], changed_fields: list[str], event: dict[str, Any]) -> str:
+    changed = ", ".join(changed_fields) if changed_fields else "none"
+    return "\n".join(
+        [
+            f"Task updated: {task['task_id']}",
+            f"Title: {task['title']}",
+            f"Status: {task['status']}  Priority: {task['priority']}  Kind: {task['kind']}",
+            f"Changed: {changed}",
+            f"Event: {event['event_type']}",
+        ]
+    )
+
+
+def handle_task_edit(context: CommandContext) -> CommandResult:
+    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    if context.read_only:
+        return task_edit_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            code="invalid_argument",
+            message="task edit cannot run with --read-only because it writes the database",
+            exit_code=EXIT_USAGE,
+        )
+
+    edit_input = task_edit_input(context.args)
+    try:
+        validate_task_edit_input(**edit_input)
+    except TaskValidationError as exc:
+        return task_edit_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_USAGE,
+        )
+
+    if not target.db_path.exists():
+        return task_edit_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            code="db_not_initialized",
+            message="database is not initialized; run db init first",
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    try:
+        initialize_database(target)
+        with closing(connect(target.db_path)) as connection:
+            with connection:
+                result = edit_task(
+                    connection,
+                    target.project,
+                    getattr(context.args, "task_id", ""),
+                    **edit_input,
+                )
+    except TaskValidationError as exc:
+        return task_edit_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_USAGE,
+        )
+    except TaskRepositoryError as exc:
+        exit_code = EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE
+        return task_edit_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            code=exc.code,
+            message=exc.message,
+            exit_code=exit_code,
+        )
+    except StorageError as exc:
+        return task_edit_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error:
+        return task_edit_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            code="internal_error",
+            message="could not edit task",
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    data = {"task": result.task, "changed_fields": result.changed_fields, "event": result.event}
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=target.project.project_id,
+        db_path=str(target.db_path),
+        data=data,
+        text=task_edit_text(result.task, result.changed_fields, result.event),
         exit_code=EXIT_SUCCESS,
     )
 

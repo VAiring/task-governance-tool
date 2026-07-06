@@ -922,6 +922,40 @@ Current execution unit:
     execution unit; two final independent sub-agent reviews PASS, no blocking
     findings
 
+- `TG-M2.5 task edit`
+  - status: completed
+  - intended outcome: implement explicit task metadata/status updates with
+    concise event history, completed timestamp transitions, blocked-reason
+    enforcement, note support, and structured JSON/text output
+  - write scope:
+    `task-governance-tool/scripts/task_governance_tool/tasks.py`,
+    `task-governance-tool/scripts/task_governance_tool/cli.py`, edit/event
+    tests, and this status section
+  - verification gate: status transition tests; blocked reason tests; add-note
+    and event summary size-limit tests; privacy rejection prevents storage;
+    `task edit --read-only` does not create or modify rows; JSON data contains
+    `task`, `changed_fields`, and `event`
+  - verification run: `python -m unittest tests.test_task_edit` (12 tests);
+    `python -m unittest discover -s tests` (86 tests); `python
+    task-governance-tool\scripts\taskgov.py task edit --help`;
+    `git diff --check`; coverage includes metadata updates, status `done`
+    completed timestamp set/clear behavior, blocked-reason enforcement,
+    blocker clearing on unblock, note event creation without changed fields,
+    long notes accepted up to the 2000-character note limit with concise
+    1000-character-or-less event summaries, note size rejection without event
+    rows, privacy rejection without storage, read-only no-create/no-modify
+    behavior, missing DB no-create behavior, duplicate sequential order
+    rollback, structured `not_found`, and concise text output
+  - review tier: Tier 2
+  - review result: initial sub-agent reviews found a medium issue where
+    documented-valid 1001-2000 character notes were rejected by the shorter
+    event-summary limit; fixed in the same execution unit by storing concise
+    note event summaries while preserving the 2000-character note input limit;
+    two final independent sub-agent reviews PASS, no blocking findings;
+    remaining low risk is that failed edit paths after database initialization
+    may still refresh existing `project_meta.updated_at`, while task/event rows
+    remain rolled back
+
 ## Reference Material
 
 - `references/KuraKoma_TASK_STATUS.md` is a copied reference example from

@@ -95,6 +95,7 @@ jobs:
           $forbidden = $tracked | Where-Object {
             $_ -match '(^references/)' -or
             $_ -match '(^task-governance-tool/state/)' -or
+            $_ -match '(^\.agents/skills/[^/]+/state/)' -or
             $_ -match '(\.sqlite3?$|\.sqlite3?-(shm|wal|journal)$)' -or
             $_ -match '(\.db$|\.db-(shm|wal|journal)$)' -or
             $_ -match '(__pycache__/|\.pyc$|\.log$|\.tmp$)'

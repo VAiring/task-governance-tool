@@ -2,7 +2,7 @@
 
 This note records how `task-governance-tool` should be published after MVP
 completion. It is a release decision note only; it does not authorize installing
-or overwriting a user skill directory.
+or overwriting a project or user skill directory.
 
 ## Decision
 
@@ -18,6 +18,10 @@ installable skill artifact:
 
 Do not publish generated runtime state, copied root reference material, test
 outputs, caches, logs, or local databases.
+
+The MVP should be installed per governed project, not as a user-wide shared
+skill. A separate project-scoped copy keeps task state attached to the project
+whose tasks it manages.
 
 ## Release Artifact Contents
 
@@ -52,21 +56,49 @@ The artifact must exclude:
 
 ## Install Path
 
-For a local Codex skill install, use a destination such as:
+For normal MVP use, install the artifact into the governed target project:
 
 ```text
-%USERPROFILE%\.codex\skills\task-governance-tool
+<target-project>\.agents\skills\task-governance-tool
 ```
 
-or, when `CODEX_HOME` is explicitly configured:
+This repo-scoped location is the Codex skill discovery path for a project. It
+also keeps the default database path project-local:
 
 ```text
-%CODEX_HOME%\skills\task-governance-tool
+<target-project>\.agents\skills\task-governance-tool\state\projects\<project-id>\taskgov.sqlite
 ```
 
 Before installing or updating, show the exact destination path and obtain
-explicit user approval. If the destination already exists, do not overwrite it
-without a separate explicit update decision.
+explicit user approval. Installing into a target project's `.agents/skills`
+directory is a target-project file mutation. If the destination already exists,
+do not overwrite it without a separate explicit update decision.
+
+Before running `db init` or any task-state write command, make sure generated
+state is kept out of commits. The target project should ignore at least:
+
+```text
+.agents/skills/task-governance-tool/state/
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+*.db-wal
+*.db-shm
+*.db-journal
+```
+
+User-wide installation locations such as
+`%USERPROFILE%\.codex\skills\task-governance-tool`, `%CODEX_HOME%\skills`, or a
+personal global skills directory are not recommended for normal MVP use. Use
+them only for explicit local experimentation, preferably with an explicit
+`--db` path, because one global copy can otherwise accumulate task state for
+multiple unrelated projects.
 
 ## Pre-Release Checks
 
@@ -91,4 +123,5 @@ Versioning can start at the runtime package version in
 `task-governance-tool/scripts/task_governance_tool/__init__.py`. If a Git tag is
 created, use a clear prefix such as `v0.1.0` and include a short note that this
 MVP supports local task registration, task inspection, next-task selection,
-blocker handling, and explicit local task-state updates.
+blocker handling, and explicit local task-state updates through a
+project-scoped Codex skill install.

@@ -5,6 +5,8 @@ LLM quick read:
 - This repository publishes a Codex skill in `task-governance-tool/`.
 - The installable skill folder is `task-governance-tool/`, not the repository
   root.
+- Install it per governed project under `.agents/skills/task-governance-tool`;
+  user-wide installs are not recommended for normal use.
 - Use it to replace large `TASK_STATUS.md` files with local SQLite task state.
 - It supports explicit task registration, task inspection, next-work selection,
   blocker handling, local task status updates, and completion commit evidence.
@@ -18,23 +20,42 @@ specs, design docs, tests, and current user decisions still govern the work.
 
 ## Install
 
-Install from the skill folder path:
+Install the skill folder into each governed project that needs task tracking:
 
 ```text
-https://github.com/<owner>/<repo>/tree/main/task-governance-tool
+<target-project>\.agents\skills\task-governance-tool
 ```
 
-Or with the Codex skill installer helper:
+Use the release artifact or this repository's `task-governance-tool/` folder as
+the source package. Do not install the MVP into a user-wide skill directory such
+as `%USERPROFILE%\.codex\skills` for normal governed-project use; that makes one
+copy responsible for unrelated project task state.
 
-```powershell
-install-skill-from-github.py --repo <owner>/<repo> --path task-governance-tool
+Before running write commands in the target project, ensure generated state is
+ignored there:
+
+```text
+.agents/skills/task-governance-tool/state/
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+*.db-wal
+*.db-shm
+*.db-journal
 ```
 
-After installation, restart Codex so the skill metadata can be discovered.
+After project-scoped installation, restart Codex or start a new session from
+inside that project so the skill metadata can be discovered.
 
 ## Minimal Workflow
 
-Run commands from the installed skill folder:
+Run commands from the project-scoped installed skill folder:
 
 ```powershell
 python scripts/taskgov.py db status --repo <target-project> --json
@@ -53,10 +74,11 @@ When no managed materials changed, complete with `--commit-not-required`
 instead of `--completion-commit-hash <hash>`. `taskgov` records commit state but
 does not create commits, branches, PRs, or issue comments.
 
-By default, runtime state is stored under the installed skill folder:
+By default, runtime state is stored under the project-scoped installed skill
+folder:
 
 ```text
-task-governance-tool/state/projects/<project-id>/taskgov.sqlite
+<target-project>/.agents/skills/task-governance-tool/state/projects/<project-id>/taskgov.sqlite
 ```
 
 Use `--db <path>` only when a project or user explicitly needs a different

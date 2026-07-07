@@ -153,8 +153,12 @@ The product must not become:
   available. If validation tooling is unavailable, run a documented self-check
   for required files, frontmatter, naming, trigger description, and reference
   links.
-- Do not install or overwrite a user skill directory without explicit user
-  approval and a shown destination path.
+- Do not install or overwrite a user or project skill directory without
+  explicit user approval and a shown destination path.
+- For the MVP, prefer project-scoped skill installation under a target
+  project's `.agents/skills/task-governance-tool` directory. User-wide
+  installation is discouraged unless the user explicitly asks for local
+  experimentation outside a governed project.
 
 ## Architecture Rules
 
@@ -183,8 +187,13 @@ The product must not become:
 ## SQLite And State Rules
 
 - The default task-governance-tool database path must be configurable.
-- A reasonable default may be under the user's local Codex/task-governance-tool
-  data area, not inside target project source trees.
+- Because the MVP skill is intended to be installed per governed project, a
+  reasonable default may be generated local state under the installed
+  project-scoped skill folder, such as
+  `.agents/skills/task-governance-tool/state/`, or an explicit user-approved
+  `--db` path.
+- Generated state under a project-scoped install must be ignored or otherwise
+  kept out of source commits before `db init` or other write commands are used.
 - The SQLite database is a helper state store, not the source of truth for a
   target project's decisions.
 - Store references to governing files, command names, hashes, timestamps,
@@ -207,6 +216,11 @@ The product must not become:
 - Inspect target projects read-only by default.
 - Do not modify a target project simply because task-governance-tool inspected
   it.
+- Installing the skill into a target project's `.agents/skills` directory is a
+  target-project mutation and requires explicit user approval for that
+  destination. After installation, `taskgov` write commands may write only the
+  generated task-governance-tool database under the installed skill folder or an
+  explicit `--db` path.
 - Do not create commits, branches, tags, issue comments, PRs, or file edits in a
   target project unless the user explicitly approves that concrete mutation in
   the current task. Target-project governance rules may tell

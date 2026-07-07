@@ -25,7 +25,8 @@ The MVP includes:
 
 - A Codex skill named `task-governance-tool`.
 - A Python stdlib-first CLI named `taskgov`.
-- A SQLite state store using one database per target project.
+- A SQLite state store scoped to one governed project per installed skill copy
+  by default.
 - Task registration and inspection commands:
   - `taskgov db init`
   - `taskgov db status`
@@ -35,7 +36,8 @@ The MVP includes:
   - `taskgov task show`
   - `taskgov task edit`
 - JSON output for Codex and concise text output for humans.
-- Skill-local generated runtime state under the installed skill folder.
+- Project-scoped skill-local generated runtime state under the installed skill
+  folder.
 - Offline operation by default.
 
 ## Non-Goals For MVP
@@ -58,6 +60,17 @@ The MVP does not include:
 
 The installable skill folder name and `SKILL.md` frontmatter `name` must be
 `task-governance-tool`.
+
+The MVP is intended for project-scoped installation. Install a separate copy of
+the skill into each governed project that needs task tracking:
+
+```text
+<target-project>/.agents/skills/task-governance-tool/
+```
+
+User-wide installation is not recommended for normal MVP use because it can
+blur task state across projects. Use a user-wide install only for explicit local
+experimentation, and prefer an explicit `--db` path if doing so.
 
 The skill package should contain only files needed by Codex to use the skill:
 
@@ -96,6 +109,12 @@ Default database path:
 
 ```text
 <installed-skill-root>/state/projects/<project-id>/taskgov.sqlite
+```
+
+With the recommended project-scoped install, this resolves under:
+
+```text
+<target-project>/.agents/skills/task-governance-tool/state/projects/<project-id>/taskgov.sqlite
 ```
 
 `<project-id>` must be deterministic from the canonical target project path. It
@@ -461,7 +480,12 @@ Required error codes:
 The MVP must:
 
 - Write only to the task-governance-tool SQLite database by default.
-- Never modify target project files.
+- Never modify target project source files, Git state, issues, PRs, or external
+  services.
+- Treat project-scoped installation and generated state creation as explicit
+  user-approved setup/write actions. Generated state under
+  `.agents/skills/task-governance-tool/state/` must be ignored or kept out of
+  commits.
 - Never store API keys, tokens, cookies, authorization headers, raw provider
   bodies, full private prompts, full chat logs, large raw diffs, raw stdout, raw
   stderr, stack traces, or environment dumps.
@@ -498,5 +522,5 @@ The MVP is acceptable when:
 - `task next` correctly works around blocked sequential lanes.
 - JSON outputs are tested for shape and key fields.
 - Free-form privacy rejection and size-limit behavior are tested.
-- No command mutates target project source files.
+- No command mutates target project source files or Git state.
 - Generated SQLite databases and root copied references are ignored by Git.

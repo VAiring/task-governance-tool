@@ -1,6 +1,6 @@
 ---
 name: task-governance-tool
-description: Local-first task-status replacement for Codex using the bundled taskgov CLI and skill-local SQLite state. Use when planning explicit tasks, initializing or inspecting local task state, selecting next actionable work, handling blockers, registering explicit tasks, updating task status, or completing tasks with verification, review, and completion commit evidence.
+description: Project-scoped local-first task-status replacement for Codex using the bundled taskgov CLI and skill-local SQLite state. Use when planning explicit tasks, initializing or inspecting local task state, selecting next actionable work, handling blockers, registering explicit tasks, updating task status, or completing tasks with verification, review, and completion commit evidence.
 ---
 
 # Task Governance Tool
@@ -10,9 +10,13 @@ task-status documents. Treat the target project's `AGENTS.md`, specs, design
 docs, tests, and user decisions as the source of truth; the SQLite database is
 only a local task-state helper.
 
+This skill is intended to be installed per governed project, normally under the
+target project's `.agents/skills/task-governance-tool` directory. Do not use a
+user-wide install as the normal task manager for multiple projects.
+
 ## Quick Start
 
-Run the bundled CLI from the installed skill folder:
+Run the bundled CLI from the project-scoped installed skill folder:
 
 ```powershell
 python scripts/taskgov.py db status --repo <target-project> --json
@@ -32,6 +36,9 @@ First-use flow:
 Use `--db <path>` only when the user or project explicitly needs a database
 outside the skill-local default. The default database lives under this installed
 skill folder at `state/projects/<project-id>/taskgov.sqlite`.
+If this skill was discovered from a user-wide or global install, do not
+initialize task state until the user confirms that they want that non-standard
+setup or installs a project-scoped copy.
 
 ## Operating Rules
 

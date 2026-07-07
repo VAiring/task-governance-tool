@@ -18,7 +18,8 @@ matter.
 
 ## Invocation
 
-Run from the installed skill folder:
+Run from the project-scoped installed skill folder, normally
+`.agents/skills/task-governance-tool` inside the governed project:
 
 ```powershell
 python scripts/taskgov.py <command> [options]
@@ -26,7 +27,9 @@ python scripts/taskgov.py <command> [options]
 
 For a new target project, start with `db status`. It reports missing or
 outdated databases without creating files. Use `db init` only when local task
-tracking should be created or migrated for that project.
+tracking should be created or migrated for that project-scoped install. If the
+skill is running from a user-wide or global install, confirm that non-standard
+setup before writing state.
 
 Common options:
 

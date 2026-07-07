@@ -9,7 +9,8 @@ in `docs/specification.md`.
 
 The MVP is a small local-first Codex skill plus deterministic Python CLI. The
 skill tells Codex when and how to use the tool. The CLI owns all structured task
-state operations. SQLite stores one target project's task state per database.
+state operations. A project-scoped installed skill copy owns one governed
+project's default task state.
 
 The design intentionally avoids a general project-management system. It
 implements the minimum state and query behavior needed to replace large
@@ -52,6 +53,16 @@ ignored by Git:
 ```text
 task-governance-tool/state/projects/<project-id>/taskgov.sqlite
 ```
+
+When installed for normal use, the skill folder should live under the governed
+project's repo-scoped skill directory:
+
+```text
+<target-project>/.agents/skills/task-governance-tool/
+```
+
+User-wide installation is discouraged for the MVP because this tool is meant to
+replace one project's task-status file with one project-local task database.
 
 ## Skill Package Design
 
@@ -122,7 +133,8 @@ Inputs:
 - `--db`: explicit override.
 - `--repo`: target project root; default current directory.
 - installed skill root: inferred from `scripts/taskgov.py` location for the
-  self-contained skill package.
+  self-contained skill package. In normal use, this is the target project's
+  `.agents/skills/task-governance-tool` directory.
 
 Resolution:
 
@@ -133,6 +145,13 @@ Resolution:
 
 ```text
 <installed-skill-root>/state/projects/<project-id>/taskgov.sqlite
+```
+
+With the recommended project-scoped install, the default database path stays
+under the target project's installed skill copy:
+
+```text
+<target-project>/.agents/skills/task-governance-tool/state/projects/<project-id>/taskgov.sqlite
 ```
 
 Project ID algorithm:
@@ -465,12 +484,12 @@ Required test areas:
 - Free-form privacy rejection and size-limit behavior are tested.
 - An installed skill-folder smoke test runs `scripts/taskgov.py --help` without
   importing modules from outside the skill folder.
-- No test mutates a real target project.
+- No test mutates a real target project source file or Git state.
 
 ## Packaging And Release Design
 
 The source repository is the development and review surface. The installable
-skill folder is the user-facing distribution unit.
+skill folder is the project-scoped distribution unit.
 
 Release artifacts should include the installable skill folder only:
 

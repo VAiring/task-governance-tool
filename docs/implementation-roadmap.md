@@ -30,7 +30,8 @@ Implementation units may modify this repository's source, docs, tests, and
 fixtures within their declared write scopes. Runtime behavior and tests must not
 mutate target project files. Test execution may write only to
 task-governance-tool test databases, temporary directories, or generated
-skill-local runtime state.
+skill-local runtime state. Project-scoped install guidance must not require
+tests to mutate a real target project.
 
 ## Skill Validation Fallback
 
@@ -150,7 +151,9 @@ Implementation notes:
 - Compute `project_id` as sanitized basename plus first 12 SHA-256 hex
   characters of the normalized canonical path.
 - Resolve default DB path to:
-  `<installed-skill-root>/state/projects/<project-id>/taskgov.sqlite`.
+  `<installed-skill-root>/state/projects/<project-id>/taskgov.sqlite`. For
+  normal use, `<installed-skill-root>` is the target project's
+  `.agents/skills/task-governance-tool` directory.
 - Support explicit `--db` override.
 - Create parent directories only for write commands that initialize or migrate
   the selected database.
@@ -624,8 +627,11 @@ Write scope:
 Implementation notes:
 
 - Record how the skill should be published after MVP completion.
-- Do not install or overwrite a user skill directory without explicit user
-  approval and destination path.
+- Do not install or overwrite a project or user skill directory without
+  explicit user approval and destination path.
+- Document that the MVP's recommended installation target is
+  `<target-project>/.agents/skills/task-governance-tool`, and that user-wide
+  installation is discouraged for normal governed-project use.
 - Keep generated state and root copied references out of release artifacts.
 
 Verification gate:

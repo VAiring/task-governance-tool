@@ -40,12 +40,15 @@ truth.
   - human-readable text output mode for users
 - SQLite state store
   - configurable path
-  - default skill-local runtime state under the installed skill folder
-  - separate SQLite database per target project
+  - default project-scoped skill-local runtime state under the installed skill
+    folder
+  - separate installed skill copy per governed project
   - task records and concise task event history
   - migration history
 - Optional install/export path later
-  - copy or install skill into Codex skill directory
+  - copy the skill artifact into each governed target project's
+    `.agents/skills/task-governance-tool` directory
+  - discourage user-wide installation for normal MVP use
   - keep source project and installed skill distinguishable
 
 ## Design Principles
@@ -104,9 +107,9 @@ not start as a general project-management system.
 - Do not modify target projects; the MVP only writes to the
   task-governance-tool SQLite database.
 - By default, create project-specific SQLite databases under a runtime state
-  directory inside the installed `task-governance-tool` skill folder. This keeps
-  the skill self-contained after installation while still keeping each target
-  project's task state separate.
+  directory inside the project-scoped installed `task-governance-tool` skill
+  folder. This keeps task state attached to the governed project that owns the
+  install.
 - Treat the skill-local runtime state directory as generated local data. It must
   not be part of committed source, exported skill packages, or static skill
   instructions.
@@ -666,6 +669,9 @@ Confirmed decisions:
   outside it as development and review surfaces.
 - Default SQLite storage is skill-local and per-project:
   `<installed-skill-root>/state/projects/<project-id>/taskgov.sqlite`.
+- The recommended MVP install target is project-scoped:
+  `<target-project>/.agents/skills/task-governance-tool`. User-wide installs
+  are discouraged for normal governed-project task tracking.
 - `taskgov db init` is the explicit create/migrate command; `taskgov db status`
   is read-only by default and reports missing or migration-needed state without
   changing the database.
@@ -1106,7 +1112,8 @@ Current execution unit:
 - `TG-M4.O1 Release/Install Decision Note`
   - status: completed
   - intended outcome: record how the completed skill should be published and
-    installed without mutating user skill directories
+    installed without accidental user-wide installation or unapproved project
+    skill-directory mutation
   - write scope: `docs/release-install.md` and this status section
   - verification gate: documentation consistency check with release packaging
     rules, install safety rules, and generated-state exclusions
@@ -1221,6 +1228,30 @@ Current execution unit:
   - review result: two independent sub-agent reviews PASS, no blocking
     findings; both noted a non-blocking wording softness in `docs/design.md`,
     which was tightened from should to must before completion
+
+- `TG-M5.O6 Project-Scoped Install Guidance`
+  - status: completed
+  - intended outcome: make project-scoped `.agents/skills/task-governance-tool`
+    installation the recommended MVP path and mark user-wide installs as
+    non-standard/experimental
+  - write scope: `AGENTS.md`, `.gitignore`, README, release/install docs,
+    MVP specification/design/roadmap docs, skill metadata/references, CI
+    generated-artifact guard, and install-guidance tests
+  - verification gate: install guidance consistency self-check; skill metadata
+    self-check; focused install-guidance tests; full offline unittest suite;
+    `git diff --check`
+  - verification run: `python -m unittest tests.test_skill_self_containment`
+    (6 tests); `python -m unittest discover -s tests` (132 tests); `python
+    task-governance-tool\scripts\taskgov.py --help`; `python
+    task-governance-tool\scripts\taskgov.py task next --help`; `git diff
+    --check`; fallback skill metadata/reference self-check; install guidance
+    consistency self-check; `git check-ignore` confirmed project-scoped
+    `.agents/skills/task-governance-tool/state/` is ignored while
+    `.agents/skills/task-governance-tool/SKILL.md` is not ignored wholesale
+  - review tier: Tier 2
+  - review result: two independent sub-agent reviews PASS, no blocking
+    findings; remaining low risk is that the install-guidance regression test
+    is string-based, while the reviewed docs themselves are consistent
 
 ## Reference Material
 

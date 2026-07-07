@@ -23,6 +23,11 @@ project's applicable `AGENTS.md`, specs, design docs, tests, and local rules.
 The task database stores compact execution state only. Do not treat it as a
 hidden authority for product decisions.
 
+Use the project-scoped installed copy for the governed project, normally under
+`.agents/skills/task-governance-tool`. If this skill is available only from a
+user-wide or global install, ask the user before initializing state; normal MVP
+operation expects a separate installed copy per project.
+
 ## Minimal Operating Loop
 
 Use this loop when the user asks to work from local task state:
@@ -58,7 +63,7 @@ If a task blocks, mark that task `blocked` with a concise reason, then return to
    ```
 
 If the database is missing, initialize it only when the user intends to use this
-local state store:
+local state store for the current project-scoped install:
 
 ```powershell
 python scripts/taskgov.py db init --repo <target-project> --json

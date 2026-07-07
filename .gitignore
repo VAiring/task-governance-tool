@@ -3,6 +3,7 @@
 
 # Skill-local runtime state and databases.
 /task-governance-tool/state/
+/.agents/skills/*/state/
 *.sqlite
 *.sqlite3
 *.sqlite3-shm
@@ -36,6 +37,5 @@ dist/
 *.tmp
 *.bak
 .codex/
-.agents/
 .DS_Store
 Thumbs.db

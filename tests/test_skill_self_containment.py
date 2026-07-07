@@ -37,6 +37,18 @@ def git_check_ignore(path: str) -> str:
     return result.stdout
 
 
+def git_is_ignored(path: str) -> bool:
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", path],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 class SkillSelfContainmentTests(unittest.TestCase):
     def test_skill_guidance_mentions_completion_commit_gate(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -58,6 +70,20 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("git show --name-only <completion_commit_hash>", workflow)
         self.assertIn("done transition without commit evidence failed with `commit_required`", forward_note)
         self.assertIn("the synthetic target project path was not created", forward_note)
+
+    def test_guidance_prefers_project_scoped_install(self):
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        release_note = (ROOT / "docs" / "release-install.md").read_text(encoding="utf-8")
+        specification = (ROOT / "docs" / "specification.md").read_text(encoding="utf-8")
+
+        for text in (skill_md, readme, release_note, specification):
+            self.assertIn(".agents", text)
+            self.assertIn("project-scoped", text)
+
+        self.assertIn("not recommended", release_note)
+        self.assertIn("not recommended", readme)
+        self.assertIn("user-wide", skill_md)
 
     def test_copied_skill_folder_help_runs_without_repo_python_path(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -99,6 +125,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "task-governance-tool/state/projects/example-123456789abc/taskgov.sqlite",
             "task-governance-tool/state/projects/example-123456789abc/taskgov.sqlite-wal",
             "task-governance-tool/state/projects/example-123456789abc/taskgov.sqlite-shm",
+            ".agents/skills/task-governance-tool/state/.keep",
             "scratch.sqlite",
             "scratch.sqlite3",
             "scratch.sqlite-wal",
@@ -116,6 +143,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
         for path in ignored_paths:
             with self.subTest(path=path):
                 self.assertIn(path, git_check_ignore(path))
+
+    def test_repo_scoped_skill_folder_is_not_wholesale_ignored(self):
+        self.assertFalse(git_is_ignored(".agents/skills/task-governance-tool/SKILL.md"))
 
 
 if __name__ == "__main__":

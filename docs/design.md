@@ -10,7 +10,9 @@ in `docs/specification.md`.
 The MVP is a small local-first Codex skill plus deterministic Python CLI. The
 skill tells Codex when and how to use the tool. The CLI owns all structured task
 state operations. A project-scoped installed skill copy owns one governed
-project's default task state.
+project's default task state. The approved post-MVP Task Viewer extension adds
+a generated, self-contained HTML snapshot without introducing a server or a
+second state store.
 
 The design intentionally avoids a general project-management system. It
 implements the minimum state and query behavior needed to replace large
@@ -31,6 +33,8 @@ task-governance-tool/
   SKILL.md
   agents/
     openai.yaml
+  assets/
+    task-viewer.template.html
   scripts/
     taskgov.py
     task_governance_tool/
@@ -39,6 +43,7 @@ task-governance-tool/
       storage.py
       tasks.py
       selection.py
+      viewer.py
   references/
     task_workflow.md
     cli_contracts.md
@@ -120,6 +125,21 @@ behavior is self-contained. Tests may add `task-governance-tool/scripts/` to
 
 - Implement `task next` readiness rules.
 - Keep sequential lane logic separate from generic list filtering.
+
+`task-governance-tool/scripts/task_governance_tool/viewer.py`
+
+- Assemble the versioned static-viewer snapshot from repository results.
+- Load and validate the bundled viewer template.
+- Encode snapshot JSON for safe HTML embedding.
+- Render and atomically write the output file.
+- Contain no raw SQLite queries; task and event reads remain in the task
+  repository boundary.
+
+`task-governance-tool/assets/task-viewer.template.html`
+
+- Contain the complete offline HTML, CSS, and JavaScript application.
+- Use one unique snapshot placeholder populated by `viewer.py`.
+- Depend on no external files, packages, fonts, CDNs, or network calls.
 
 `tests/`
 
@@ -285,6 +305,12 @@ database should produce `db_not_initialized`; a database requiring migration
 should produce `migration_required`; `db status` should report those states
 without changing the database.
 
+The post-MVP `web export` command is a hybrid export command: it reads the
+database through the inspection path but, only after explicit user intent,
+writes one generated HTML snapshot. Its `--read-only` mode is the no-write
+inspection/preview path. It follows the dedicated output rules in the Static
+Task Viewer Design section and never writes the database.
+
 ## JSON Envelope
 
 Required JSON shape:
@@ -399,6 +425,207 @@ Implementation rules:
 - Required verification and review gates still apply through the execution
   workflow and skill guidance; this simplified design does not add structured review or verification tables.
 
+## Static Task Viewer Design
+
+The Task Viewer is a projection of current SQLite state, never an independent
+authority. The implementation flow is:
+
+```text
+SQLite (read-only)
+  -> task/event repository query
+  -> versioned snapshot object
+  -> base64-encoded UTF-8 JSON
+  -> bundled HTML template
+  -> atomic task-viewer.html replacement
+  -> browser file:// view
+```
+
+No browser-to-database connection exists. Regenerating the HTML with
+`taskgov web export` is the only refresh mechanism.
+
+### Command And Module Flow
+
+`cli.py` adds a `web` command group with an `export` subcommand. The stable
+command name is `web.export`. It accepts the existing common options plus
+`--output`:
+
+```powershell
+python scripts/taskgov.py web export --repo <target-project> --json
+python scripts/taskgov.py web export --repo <target-project> --output <html-path> --json
+python scripts/taskgov.py web export --repo <target-project> --read-only --json
+```
+
+The handler must:
+
+1. Resolve project identity, database path, and output path.
+2. Inspect database readiness without migration or mutation.
+3. Load all viewer task rows and bounded events through repository helpers in a
+   dedicated read-only SQLite snapshot transaction.
+4. Assemble and validate snapshot version 1.
+5. Render the bundled template in memory.
+6. For `--read-only`, report the planned result without creating directories or
+   files.
+7. Otherwise, create only the default generated viewer directory when needed
+   and atomically replace the selected regular HTML file.
+8. Emit the normal JSON envelope or concise text output.
+
+The handler must not append `task_events` or `tool_events`. Exporting is a file
+write but not a task-state mutation. Skill guidance must invoke the writing mode
+only after the current user request explicitly asks to create or regenerate the
+viewer. A task-state inspection request alone permits only inspection commands
+or the `--read-only` preview.
+
+### Repository Read Model
+
+`tasks.py` remains the task/event repository boundary. Add a dedicated viewer
+read helper rather than changing `list_tasks` or `show_task` behavior. The
+helper must:
+
+- select every task for the current `project_id`
+- serialize all fields in `TASK_SHOW_FIELDS`
+- order tasks with the existing `task list` priority/lane/order/time/ID rules
+- fetch at most 10 events per task, ordered by `created_at DESC, rowid DESC` to
+  match `task show` tie behavior
+- return plain dictionaries to `viewer.py`
+
+This extension requires no SQLite schema migration. It must not broaden the
+existing `task.list` JSON task shape, whose compatibility is independent from
+the viewer snapshot.
+
+### Snapshot Assembly
+
+`viewer.py` owns `SNAPSHOT_VERSION = 1` and constructs:
+
+- `snapshot_version`
+- one UTC `generated_at` value shared by CLI output and embedded data
+- project ID and display name only
+- current database schema version
+- total and per-status counts
+- ordered tasks with bounded `events`
+
+Do not embed the canonical repository path, database path, environment data, or
+tool events. The CLI envelope may display the local database and output paths,
+but the portable HTML snapshot must not include them.
+
+Serialize with deterministic JSON settings, UTF-8 encode the bytes, and base64
+encode those bytes before template insertion. The template must contain exactly
+one fixed placeholder. Rendering fails with `internal_error` if the template is
+missing, unreadable, or has zero or multiple placeholders.
+
+The browser decodes the base64 payload with standard browser APIs. Task content
+must be assigned with `textContent` or equivalent text-node APIs. Do not pass
+stored values to `innerHTML`, `insertAdjacentHTML`, `eval`, `Function`, URL
+attributes, inline event attributes, or CSS declarations.
+
+### Output Path And Atomic Write
+
+Default output path resolution mirrors the database's project state directory:
+
+```text
+<installed-skill-root>/state/projects/<project-id>/viewer/task-viewer.html
+```
+
+Add a storage helper that derives this path from the installed skill root and
+project ID. Do not derive it by string replacement on the database filename,
+because an explicit `--db` override must not move the default viewer away from
+skill-local generated state.
+
+For an explicit `--output`:
+
+- resolve the path to an absolute path without requiring it to exist
+- require an `.html` or `.htm` suffix
+- require the parent directory to exist
+- reject a destination that is a directory, symbolic link, or existing
+  non-regular file
+- reject a destination inside the canonical target project unless it is under
+  the installed skill's generated `state/` directory
+- treat the user-approved path as the complete file-write scope
+
+Apply the same existing-destination type rejection to the default output path.
+
+For the default output, create only its `viewer` parent directory. For both
+default and explicit output, write the rendered bytes to a unique temporary
+file in the destination directory, flush and close it, then use `os.replace`
+for atomic replacement. Clean up the temporary file after failures. Report
+whether an existing regular output was replaced.
+
+`--read-only` performs path, database, snapshot, and template validation in
+memory but creates no output parent, temporary file, or final HTML.
+
+### Browser Application
+
+The template is a quiet operational interface, not a marketing page. Its main
+regions are:
+
+- compact header with `Task Viewer`, project display name, project ID, and
+  generated timestamp
+- stable status summary for all six statuses
+- filter toolbar with text search, status, kind, lane, priority, tag, terminal
+  task visibility, and reset command
+- dense task table on desktop and a stable stacked row layout on narrow screens
+- unframed detail region or modal for the selected task and its recent events
+- explicit empty-result state
+
+The browser defaults to active tasks and keeps done/cancelled tasks available
+through the terminal-task control. Filtering and sorting are client-side and
+ephemeral. Do not use cookies, local storage, IndexedDB, or URL query state.
+
+Use neutral surfaces plus distinct status colors; do not rely on color alone.
+Keep card radii at 8 px or less, avoid nested cards, retain visible keyboard
+focus, associate labels with controls, and ensure long IDs, titles, commit
+hashes, and descriptions wrap without overlap. Use native controls and
+semantic table/detail markup where practical.
+
+### Read-Only Snapshot Transaction
+
+Do not use the existing immutable inspection connection for the viewer data
+read. Add a dedicated `connect_snapshot_readonly` storage helper that opens the
+SQLite URI with `mode=ro` but without `immutable=1`, enables
+`PRAGMA query_only=ON`, and starts an explicit read transaction. Revalidate
+schema version and project identity inside that transaction before querying
+tasks and events. This gives the export one SQLite-consistent point-in-time view
+when another session commits concurrently.
+
+Preserve the existing preflight rejection for active WAL sidecars. Tests must
+prove a normal snapshot read creates no WAL/SHM/journal files, an already-active
+WAL state fails without stale output, and a concurrent writer either yields a
+consistent snapshot or a structured tool error. This does not add cross-session
+ownership or live synchronization; the generated timestamp still describes
+export time, not an exclusive database revision.
+
+### Browser Security Boundary
+
+The generated page must include this exact meta content security policy:
+
+```text
+default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; object-src 'none'; media-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'
+```
+
+`'unsafe-inline'` is accepted only for the fixed bundled application script and
+style needed by a single-file `file://` page. It does not permit eval because
+`'unsafe-eval'` is absent. Stored task data is base64 text in a non-executable
+data element and is inserted into the DOM only through text APIs; no task value
+can create another inline script, style, event attribute, URL, or markup node.
+Static tests must assert the exact policy and prohibited sinks, and a browser
+negative test must render script/event-handler-shaped task text without setting
+an execution sentinel or making a network request.
+
+The implementation must contain no network API, external URL, telemetry,
+automatic browser launch, or database-write code. Browser refresh reloads the
+same snapshot and must not be presented as a database refresh.
+
+### Viewer Error Mapping
+
+- malformed/user-unsafe destination: `output_path_invalid`, exit code 1
+- missing explicit parent: `output_parent_missing`, exit code 1
+- output I/O or atomic replacement failure: `output_write_failed`, exit code 2
+- missing/malformed template or unexpected snapshot/render failure:
+  `internal_error`, exit code 2
+
+Database readiness errors retain their existing codes and command-specific
+empty data must still include the resolved output path when resolution itself
+succeeded.
+
 ## Validation Rules
 
 Task validation:
@@ -486,6 +713,23 @@ Required test areas:
   importing modules from outside the skill folder.
 - No test mutates a real target project source file or Git state.
 
+Task Viewer extension tests must additionally cover:
+
+- all-status snapshot projection with completion commit fields and no private
+  source paths
+- the 10-event-per-task bound and deterministic event ordering
+- base64 payload round-trip and HTML-shaped task text rendered as text
+- default output path, explicit output safety, atomic replacement, and
+  `--read-only` no-write behavior
+- missing DB, migration-required, and project-mismatch propagation
+- no database, task-event, or tool-event mutation during export
+- no external resource URLs or network APIs in the bundled template
+- exact CSP directive assertions and prohibited DOM sink assertions for
+  `innerHTML`, `insertAdjacentHTML`, `eval`, `Function`, inline event
+  attributes, and task-derived URL attributes
+- isolated installed-skill export from a copied skill folder
+- representative desktop and mobile `file://` browser checks
+
 ## Packaging And Release Design
 
 The source repository is the development and review surface. The installable
@@ -497,6 +741,8 @@ Release artifacts should include the installable skill folder only:
 task-governance-tool/
   SKILL.md
   agents/
+  assets/
+    task-viewer.template.html
   scripts/
     taskgov.py
     task_governance_tool/
@@ -512,6 +758,11 @@ Release artifacts must exclude:
 - root copied reference material
 - test outputs
 
+Generated `task-viewer.html` snapshots remain under `state/` by default and
+must be excluded from release artifacts. The `assets/` template is static
+runtime input and must be included after the Task Viewer implementation is
+complete.
+
 ## Future Extension Points
 
 The design leaves room for:
@@ -521,7 +772,7 @@ The design leaves room for:
 - Review-template generation.
 - Dependency graphs.
 - Git advisory integration.
-- Richer export/import.
+- Task import and richer exchange formats beyond the approved static viewer.
 
 These extensions must not change MVP privacy or target-project mutation
 semantics without updating `docs/specification.md` and this design.

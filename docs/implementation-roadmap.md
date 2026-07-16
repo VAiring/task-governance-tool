@@ -1,6 +1,8 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: formal MVP implementation roadmap baseline.
+Status: formal MVP and approved post-MVP extension roadmap baseline. TG-M7
+implementation requires explicit user approval after its design/task baseline
+is reviewed.
 
 This document turns `docs/specification.md` and `docs/design.md` into
 implementation-sized execution units. It is the preferred roadmap for building
@@ -654,7 +656,8 @@ Do not implement these in the MVP unless `docs/specification.md`,
 - verification-run recording
 - review request generation
 - Git integration
-- dashboard or service UI
+- live dashboard or service UI; the static non-server viewer is scoped only by
+  TG-M7 below
 - automatic target-project mutation
 - raw command output retention
 
@@ -809,6 +812,237 @@ Verification gate:
 - Skill metadata/self-check.
 - Full offline test suite.
 - Forward-test or documented representative dry run of a task completion flow.
+
+## Approved Post-MVP Extension: TG-M7 Static Task Viewer
+
+TG-M7 adds a user-facing, non-server Task Viewer as a generated single-file
+HTML snapshot. It does not add a live dashboard, HTTP server, browser-to-SQLite
+access, or browser-side mutation. Implementation must not begin until the user
+approves these execution units after TG-M7.0 review.
+
+All TG-M7 units are sequential in lane `VIEWER`. This feature has a compact
+contract-to-renderer-to-CLI-to-release dependency chain; unrelated optional
+tasks in other lanes remain selectable if this lane blocks.
+
+### TG-M7.0 Static Task Viewer Design And Task Baseline
+
+Kind: sequential
+Lane: `VIEWER`
+Depends on: TG-M6.4
+Review tier: Tier 2
+
+Write scope:
+
+- `AGENTS.md`
+- `docs/specification.md`
+- `docs/design.md`
+- `docs/implementation-roadmap.md`
+- `plan.md`
+- task-governance-tool SQLite task records
+
+Implementation notes:
+
+- Define the static snapshot boundary, CLI name, output path, embedded data
+  contract, UI scope, privacy/security rules, and packaging behavior.
+- Register bounded implementation tasks in SQLite.
+- Keep TG-M7.1 blocked with an explicit user-approval reason until the reviewed
+  roadmap is approved; later lane tasks remain ready but non-actionable behind
+  that blocked sequential task.
+- Do not update `SKILL.md`, `README.md`, or release guidance to advertise an
+  unimplemented command.
+- Do not implement application or CLI code in this unit.
+
+Verification gate:
+
+- Documentation consistency check across governing docs.
+- Inspect registered TG-M7 tasks with public `taskgov` commands.
+- Full offline unittest suite remains green.
+- `git diff --check`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issues.
+- The user can approve or revise the implementation units from the documented
+  contract and task list.
+
+### TG-M7.1 Viewer Snapshot Read Model
+
+Kind: sequential
+Lane: `VIEWER`
+Depends on: TG-M7.0 and user approval of TG-M7 implementation
+Review tier: Tier 2
+
+Write scope:
+
+- `task-governance-tool/scripts/task_governance_tool/tasks.py`
+- `task-governance-tool/scripts/task_governance_tool/storage.py`
+- new `task-governance-tool/scripts/task_governance_tool/viewer.py`
+- focused snapshot/repository tests
+- governing docs only for necessary clarifications
+
+Implementation notes:
+
+- Add a dedicated repository query for every task with all `task show` fields
+  and at most 10 recent events per task.
+- Preserve existing `task list` and `task show` JSON contracts.
+- Define snapshot version 1, one generation timestamp, project-safe metadata,
+  source schema version, status counts, and deterministic task order.
+- Exclude canonical repo path, DB path, tool events, and raw private runtime
+  data.
+- Require read-only SQLite access and no schema migration.
+- Use a dedicated non-immutable, query-only SQLite read transaction and
+  revalidate schema/project identity inside the snapshot transaction.
+
+Verification gate:
+
+- All statuses and completion commit fields project correctly.
+- Events are bounded and deterministically ordered.
+- Snapshot counts and timestamps are consistent.
+- Existing task command contract tests and full offline suite pass.
+- Tests prove snapshot reads create no task/tool events or DB writes.
+- Normal reads create no SQLite sidecars; active WAL is rejected; a concurrent
+  writer yields a consistent snapshot or structured failure.
+
+Completion criteria:
+
+- Snapshot version 1 is deterministic, privacy-bounded, and independently
+  usable by the renderer.
+
+### TG-M7.2 Bundled Static Viewer And Renderer
+
+Kind: sequential
+Lane: `VIEWER`
+Depends on: TG-M7.1
+Review tier: Tier 2
+
+Write scope:
+
+- `task-governance-tool/assets/task-viewer.template.html`
+- `task-governance-tool/scripts/task_governance_tool/viewer.py`
+- renderer, template-security, and UI behavior tests
+
+Implementation notes:
+
+- Build one responsive vanilla HTML/CSS/JavaScript application with no runtime
+  dependencies or external assets.
+- Encode snapshot JSON as base64 UTF-8 and replace exactly one fixed template
+  placeholder.
+- Render all stored task values through text-only DOM APIs.
+- Add status totals, active/terminal visibility, text search, status/kind/lane/
+  priority/tag filters, deterministic list order, task details, completion
+  commit state, and recent events.
+- Display project identity and generated timestamp without implying live data.
+- Add a restrictive content security policy and no network/storage APIs.
+- Use the exact documented CSP, including the explicitly accepted inline
+  script/style policy for the fixed single-file template.
+
+Verification gate:
+
+- Template placeholder validation and base64 round-trip tests.
+- HTML-shaped task text remains inert and visible as text.
+- Static inspection finds no external URL, fetch/XHR, WebSocket, service
+  worker, cookie, or local-storage behavior.
+- Tests assert the required CSP directives and reject prohibited task-content
+  DOM sinks such as `innerHTML`, `insertAdjacentHTML`, `eval`, `Function`,
+  inline event attributes, and task-derived URL attributes.
+- A `file://` negative test proves script/event-handler-shaped task text is
+  inert and no network request is made.
+- Browser smoke check through `file://` covers filters, selection, empty state,
+  and task details.
+- Desktop and mobile screenshots show no blank view, overlap, clipped controls,
+  or unreadable content.
+
+Completion criteria:
+
+- The rendered single file is useful offline and safe for sanitized task text.
+
+### TG-M7.3 `web export` CLI And Output Safety
+
+Kind: sequential
+Lane: `VIEWER`
+Depends on: TG-M7.2
+Review tier: Tier 2
+
+Write scope:
+
+- `task-governance-tool/scripts/task_governance_tool/cli.py`
+- `task-governance-tool/scripts/task_governance_tool/storage.py`
+- `task-governance-tool/scripts/task_governance_tool/viewer.py`
+- CLI, path, atomic-write, and installed-copy tests
+- `task-governance-tool/references/cli_contracts.md` after behavior exists
+
+Implementation notes:
+
+- Add `web export`, stable command name `web.export`, and `--output`.
+- Resolve the default viewer independently of explicit `--db`:
+  `<skill-root>/state/projects/<project-id>/viewer/task-viewer.html`.
+- Implement explicit-output validation, default-only parent creation, atomic
+  replacement, and cleanup on failure.
+- Implement `--read-only` as a no-file-write preview.
+- Emit the documented JSON/text fields and error codes.
+- Never write SQLite, open a browser, or mutate target project source/Git state;
+  explicit output inside the target project is accepted only under the
+  installed skill's generated `state/` directory.
+
+Verification gate:
+
+- CLI help, success/error JSON envelopes, and concise text output.
+- Default and explicit output-path behavior.
+- Rejection of explicit target-project destinations outside installed-skill
+  generated `state/`.
+- Existing file replacement and simulated write-failure cleanup.
+- `--read-only` creates no directories, temp files, output files, or DB rows.
+- Missing DB, migration-required, and project-mismatch behavior.
+- Isolated project-scoped skill copy exports without external imports.
+
+Completion criteria:
+
+- Repeated export safely regenerates one self-contained viewer with no server or
+  database mutation.
+
+### TG-M7.4 Skill Guidance, Packaging, And Acceptance
+
+Kind: sequential
+Lane: `VIEWER`
+Depends on: TG-M7.3
+Review tier: Tier 2
+
+Write scope:
+
+- `task-governance-tool/SKILL.md`
+- `task-governance-tool/agents/openai.yaml`
+- `task-governance-tool/references/task_workflow.md`
+- `task-governance-tool/references/cli_contracts.md`
+- `README.md`
+- `docs/release-install.md`
+- `.github/workflows/ci.yml`
+- packaging/self-containment tests and forward-test notes
+
+Implementation notes:
+
+- Advertise static task viewing only after the command is implemented.
+- Explain snapshot freshness, default location, explicit-output approval, and
+  the absence of browser edit/live-refresh behavior.
+- Include `assets/task-viewer.template.html` in the installable release unit.
+- Keep generated viewer snapshots under `state/` and out of source/release
+  artifacts.
+- Forward-test a realistic request to export and inspect task state using a
+  fresh sub-agent context.
+
+Verification gate:
+
+- Skill metadata/reference self-check and isolated installed-skill export.
+- Full offline test suite and CI artifact guard.
+- Representative browser checks at desktop and mobile viewports.
+- Forward-test confirms a fresh agent can select the correct command and
+  explain snapshot freshness without inventing a server or write capability.
+- `git diff --check`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issues.
+- The static viewer satisfies all acceptance criteria in
+  `docs/specification.md` and its generated output remains untracked.
 
 ## Roadmap Completion Criteria
 

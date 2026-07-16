@@ -53,7 +53,9 @@ The MVP does not include:
 - Creating Git commits, branches, PRs, issue comments, or other target-project
   mutation. A later completion-evidence extension may require and record an
   existing commit identifier, but `taskgov` must not create commits by default.
-- Dashboards, services, network sync, or cloud workflows.
+- Live dashboards, services, network sync, or cloud workflows. The approved
+  post-MVP static Task Viewer extension below is not a live dashboard or
+  service.
 - Raw command-output retention.
 
 ## Skill Package Requirements
@@ -102,6 +104,21 @@ exported.
 
 Runtime code required by `scripts/taskgov.py` must be included inside the skill
 package so the installed skill is self-contained.
+
+After the approved static Task Viewer extension is implemented, the package
+must additionally include:
+
+```text
+task-governance-tool/
+  assets/
+    task-viewer.template.html
+  scripts/
+    task_governance_tool/
+      viewer.py
+```
+
+The bundled template is static runtime input. Generated `task-viewer.html`
+snapshots remain under `state/` and are not part of the package.
 
 ## Data Location
 
@@ -251,6 +268,207 @@ state is missing or inconsistent. The error codes should include
 `verification_required`, `review_required`, `commit_required`, and
 `completion_commit_conflict` unless a later approved CLI contract chooses
 narrower names.
+
+## Approved Post-MVP Extension: Static Task Viewer
+
+The tool must provide a user-facing, non-server task viewer after the core task
+and completion flows are stable. The application name is `Task Viewer` and the
+CLI entry point is:
+
+```powershell
+taskgov web export --repo <target-project> [--output <html-path>]
+```
+
+This extension is a generated static snapshot, not a live dashboard. The CLI
+reads the existing SQLite database in read-only mode, embeds a bounded task
+snapshot into one self-contained HTML file, and exits. Opening the file must not
+require Python, a local HTTP server, a browser extension, a network connection,
+or direct browser access to SQLite.
+
+### Export Behavior
+
+`web export` must:
+
+- require an initialized, current-schema database and preserve the existing
+  `db_not_initialized`, `migration_required`, and `project_mismatch` behavior
+- open SQLite read-only and write no database rows, task events, tool events, or
+  migrations
+- export every task status, including `done` and `cancelled`, while allowing
+  the browser UI to hide terminal tasks by default
+- include all task fields exposed by `task show`, including
+  `completion_commit_required` and `completion_commit_hash`
+- include at most the 10 most recent task events per task, newest first
+- preserve current `task list`, `task show`, and other CLI JSON contracts
+- replace the selected HTML file atomically so a failed render does not leave a
+  partial viewer
+- make snapshot age visible through a UTC `generated_at` timestamp in the
+  rendered application
+
+The default output path is generated skill-local runtime state:
+
+```text
+<installed-skill-root>/state/projects/<project-id>/viewer/task-viewer.html
+```
+
+The default viewer directory may be created by `web export`. An explicit
+`--output` path is a separate file-write destination and requires explicit user
+approval when Codex invokes it. Its parent directory must already exist; the
+command must not create arbitrary explicit-output parent directories. The path
+must end in `.html` or `.htm`. For either default or explicit output, an
+existing directory, symbolic link, or non-regular-file destination must be
+rejected.
+
+An explicit output that resolves inside the canonical target project must stay
+under the installed skill's generated `state/` directory. Other explicit
+destinations inside the target project must be rejected with
+`output_path_invalid`, even when their parent exists. A user-approved explicit
+destination outside the target project remains allowed.
+
+An explicit `--db` changes only the SQLite source. It must not move the default
+HTML output away from the installed skill's generated state directory.
+
+Generating or regenerating either default or explicit output requires explicit
+user intent in the current task. A request only to inspect or summarize task
+state does not authorize an HTML write. Codex may use `--read-only` to preview
+the resolved output and counts before that intent is granted.
+
+`--read-only` acts as a dry preview for this command. It must read and validate
+the database and template, report the resolved output path and snapshot counts,
+set `written=false`, and create or replace no HTML or directories.
+
+The command must not open a browser automatically. Browser opening remains a
+separate user action.
+
+### Snapshot Contract
+
+The embedded snapshot is an internal, versioned data contract with this
+top-level shape:
+
+```json
+{
+  "snapshot_version": 1,
+  "generated_at": "2026-01-01T00:00:00Z",
+  "project": {
+    "project_id": "example-a1b2c3d4e5f6",
+    "display_name": "example"
+  },
+  "source_schema_version": 2,
+  "counts": {
+    "total": 0,
+    "ready": 0,
+    "in_progress": 0,
+    "blocked": 0,
+    "review_pending": 0,
+    "done": 0,
+    "cancelled": 0
+  },
+  "tasks": []
+}
+```
+
+Each task contains the `task show` task fields plus an `events` array. The
+snapshot must not add the canonical repository path or database path. Stored
+task text remains subject to the existing write-time privacy checks.
+
+The snapshot JSON must be encoded before insertion into the HTML so stored task
+text cannot terminate a script element or inject markup. Browser rendering
+must place stored text through text-only DOM APIs rather than interpreting it as
+HTML.
+
+### CLI Output Contract
+
+The stable command name is `web.export`. A successful JSON result uses the
+normal envelope and includes:
+
+```json
+{
+  "output_path": "C:/.../task-viewer.html",
+  "written": true,
+  "replaced": false,
+  "task_count": 0,
+  "event_count": 0,
+  "generated_at": "2026-01-01T00:00:00Z",
+  "snapshot_version": 1
+}
+```
+
+`written` must be false for `--read-only`. Text output must state the resolved
+path, task count, generation timestamp, and whether the file was written or
+only previewed.
+
+`event_count` is the number of bounded recent-event rows actually embedded
+across all exported tasks.
+
+After command and output-path resolution, error results must preserve this
+command-specific `data` shape with `written=false`, `replaced=false`, zero
+counts, `generated_at=null`, and the resolved `output_path` when available. If
+output-path resolution itself fails, `output_path` is null. The error result
+retains `snapshot_version=1` after command resolution.
+
+New user-correctable error codes are:
+
+- `output_path_invalid`
+- `output_parent_missing`
+
+An operating-system write failure uses `output_write_failed` and exit code 2.
+An absent or malformed bundled template is an `internal_error`.
+
+### Viewer Experience
+
+The viewer must be a read-only operational interface. It must provide:
+
+- project identity and snapshot generation time
+- status totals for all six task statuses
+- text search across task ID, title, description, lane, tags, and commit hash
+- status, kind, lane, priority, and tag filters
+- a default view that emphasizes active tasks while keeping terminal history
+  available
+- deterministic task ordering consistent with `task list`
+- a task detail view for description, blocker, verification, review tier,
+  completion commit state, timestamps, tags, and recent events
+- responsive desktop and mobile layouts, keyboard access, visible focus,
+  associated form labels, and readable contrast
+
+The viewer must not provide task-edit, completion, commit, or database-write
+controls. It must not imply live refresh; the displayed `generated_at` value is
+the freshness boundary.
+
+### Viewer Safety And Non-Goals
+
+The generated HTML must use bundled inline HTML, CSS, and JavaScript only. It
+must not use a CDN, external font, analytics, telemetry, fetch/XHR, WebSocket,
+service worker, cookie, or local-storage persistence. A restrictive content
+security policy must disable network connections and unrelated resource loads
+while permitting the bundled inline application code. The exact accepted
+policy and the reason for its inline-script/style exception are defined in
+`docs/design.md` and must be browser-tested through `file://`.
+
+This extension does not include:
+
+- direct SQLite access from browser JavaScript or a file picker
+- live database watching or automatic regeneration
+- task registration or editing in the browser
+- a local or remote HTTP server
+- sharing, synchronization, authentication, or multi-user coordination
+- automatic browser launch
+
+### Viewer Acceptance Criteria
+
+The extension is acceptable when:
+
+- `web export` and `web export --read-only` satisfy their JSON and write-safety
+  contracts against temporary databases
+- the generated file opens through `file://` and remains useful with networking
+  unavailable
+- all statuses, completion commit fields, and bounded recent events render
+  correctly
+- stored HTML-shaped text is rendered as text and cannot execute
+- default and explicit output-path rules are covered by tests
+- existing CLI contracts and the full offline test suite remain green
+- desktop and mobile browser checks show no blank view, overlap, clipped
+  controls, or unreadable task content
+- the installable skill remains self-contained and release artifacts include
+  the required viewer asset but exclude generated viewer snapshots
 
 ## Task Ordering
 

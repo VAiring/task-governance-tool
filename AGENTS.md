@@ -170,6 +170,10 @@ The product must not become:
 - Any command that writes to the task-governance-tool database must say what it
   will record. Any command that writes to a target project must require explicit
   user intent and should offer a dry-run first.
+- A generated static viewer under the installed skill's ignored `state/`
+  directory is permitted only when the user explicitly asks to create or
+  regenerate it. Merely inspecting task state does not authorize that file
+  write. The command must offer a no-write preview.
 - Profile detection must emit evidence, confidence, matched governing docs,
   reference-only exclusions, and an `unknown` or `needs_user_confirmation`
   state when confidence is low.
@@ -194,6 +198,10 @@ The product must not become:
   `--db` path.
 - Generated state under a project-scoped install must be ignored or otherwise
   kept out of source commits before `db init` or other write commands are used.
+- User-requested generated runtime artifacts, such as a static task viewer,
+  may live under the same ignored project-specific `state/` directory. They are
+  local projections of SQLite state, not an additional source of truth, and
+  must remain out of source commits and release artifacts.
 - The SQLite database is a helper state store, not the source of truth for a
   target project's decisions.
 - Store references to governing files, command names, hashes, timestamps,
@@ -218,9 +226,12 @@ The product must not become:
   it.
 - Installing the skill into a target project's `.agents/skills` directory is a
   target-project mutation and requires explicit user approval for that
-  destination. After installation, `taskgov` write commands may write only the
-  generated task-governance-tool database under the installed skill folder or an
-  explicit `--db` path.
+  destination. After installation, ordinary `taskgov` write commands may write
+  only the generated task-governance-tool database under the installed skill
+  folder or an explicit `--db` path. A documented export command may also write
+  a user-requested generated artifact under the installed skill's ignored
+  `state/` directory. Writing an export elsewhere requires explicit user
+  approval of that destination; an inspection request alone is not approval.
 - Do not create commits, branches, tags, issue comments, PRs, or file edits in a
   target project unless the user explicitly approves that concrete mutation in
   the current task. Target-project governance rules may tell

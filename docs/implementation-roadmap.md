@@ -1,8 +1,8 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: formal MVP and approved post-MVP extension roadmap baseline. TG-M7
-implementation requires explicit user approval after its design/task baseline
-is reviewed.
+Status: MVP, the completion-commit extension, and TG-M7 Static Task Viewer are
+implemented. The approved default-browser launch follow-up remains
+requirements-only pending design and roadmap approval.
 
 This document turns `docs/specification.md` and `docs/design.md` into
 implementation-sized execution units. It is the preferred roadmap for building
@@ -817,8 +817,9 @@ Verification gate:
 
 TG-M7 adds a user-facing, non-server Task Viewer as a generated single-file
 HTML snapshot. It does not add a live dashboard, HTTP server, browser-to-SQLite
-access, or browser-side mutation. Implementation must not begin until the user
-approves these execution units after TG-M7.0 review.
+access, or browser-side mutation. Implementation was approved after the TG-M7.0
+review, and all TG-M7 execution units are complete. The unit definitions below
+remain the approved execution record.
 
 All TG-M7 units are sequential in lane `VIEWER`. This feature has a compact
 contract-to-renderer-to-CLI-to-release dependency chain; unrelated optional

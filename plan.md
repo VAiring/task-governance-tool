@@ -1,7 +1,8 @@
 # task-governance-tool Initial Plan
 
-Status: MVP and completion commit extension implemented; the approved static
-Task Viewer design is being promoted to formal docs and SQLite-backed tasks.
+Status: MVP, completion commit extension, and static Task Viewer implemented.
+Explicit default-browser launch is approved only as a follow-up requirement
+pending design and roadmap approval.
 
 This document captures early ideas for a reusable task-governance-tool Codex
 skill/tooling project. Product behavior is now governed by
@@ -704,9 +705,9 @@ Open issues:
 
 - Decide after the MVP whether to add profile detection, verification recording,
   review-template generation, dependency graphs, or Git integration.
-- TG-M7 has an approved roadmap and is tracked in the project-local SQLite
-  database; no additional product decision is currently required for its
-  baseline.
+- TG-M7.0 through TG-M7.4 are complete, with task and commit evidence recorded
+  in the project-local SQLite database. No additional product decision is
+  currently required for the static Viewer baseline.
 - Before implementing default-browser launch, define its command or option,
   regeneration behavior, error contract, verification gates, and execution
   unit. The current requirement does not authorize changing `web export` or
@@ -714,7 +715,8 @@ Open issues:
 
 ## Implementation Execution Status
 
-The approved implementation loop is consuming
+All currently approved execution units through TG-M7 are complete. Future
+implementation requires an approved addition to
 `docs/implementation-roadmap.md`.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local

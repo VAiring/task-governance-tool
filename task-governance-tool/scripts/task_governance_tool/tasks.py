@@ -208,6 +208,12 @@ class TaskShowResult:
 
 
 @dataclass(frozen=True)
+class ViewerTaskListResult:
+    tasks: list[dict[str, Any]]
+    event_count: int
+
+
+@dataclass(frozen=True)
 class EditTaskResult:
     task: dict[str, Any]
     changed_fields: list[str]
@@ -791,6 +797,63 @@ def show_task(
         events=[row_to_event(row) for row in event_rows],
         suggested_next_action=suggested_next_action(task),
     )
+
+
+def list_tasks_for_viewer(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    *,
+    event_limit: int = 10,
+) -> ViewerTaskListResult:
+    """Return the complete, bounded task projection used by static viewers."""
+    if not 1 <= event_limit <= 10:
+        raise TaskRepositoryError(
+            "internal_error",
+            "viewer event limit must be between 1 and 10",
+        )
+
+    task_rows = connection.execute(
+        """
+        SELECT *
+          FROM tasks
+         WHERE project_id = ?
+         ORDER BY
+           CASE priority
+             WHEN 'urgent' THEN 0
+             WHEN 'high' THEN 1
+             WHEN 'normal' THEN 2
+             ELSE 3
+           END,
+           lane,
+           lane_order IS NULL,
+           lane_order,
+           created_at,
+           task_id
+        """,
+        (project.project_id,),
+    ).fetchall()
+
+    tasks: list[dict[str, Any]] = []
+    event_count = 0
+    for task_row in task_rows:
+        task = row_to_show_task(task_row)
+        event_rows = connection.execute(
+            """
+            SELECT *
+              FROM task_events
+             WHERE project_id = ?
+               AND task_id = ?
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT ?
+            """,
+            (project.project_id, task["task_id"], event_limit),
+        ).fetchall()
+        events = [row_to_event(row) for row in event_rows]
+        task["events"] = events
+        tasks.append(task)
+        event_count += len(events)
+
+    return ViewerTaskListResult(tasks=tasks, event_count=event_count)
 
 
 def read_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> dict[str, Any] | None:

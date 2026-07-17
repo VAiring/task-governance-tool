@@ -136,6 +136,21 @@ def connect_readonly(db_path: Path) -> sqlite3.Connection:
     return connection
 
 
+def connect_snapshot_readonly(db_path: Path) -> sqlite3.Connection:
+    """Open a point-in-time read transaction without immutable SQLite mode."""
+    uri = db_path.resolve(strict=False).as_uri() + "?mode=ro"
+    connection = sqlite3.connect(uri, uri=True)
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA query_only = ON")
+        connection.execute("BEGIN")
+    except Exception:
+        connection.close()
+        raise
+    return connection
+
+
 def sqlite_sidecar_paths(db_path: Path) -> list[Path]:
     return [Path(str(db_path) + suffix) for suffix in ("-wal", "-shm")]
 
@@ -284,11 +299,42 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         task_column_rows = connection.execute("PRAGMA table_info(tasks)").fetchall()
         task_columns = {str(row["name"]) for row in task_column_rows}
         required_task_columns = {
+            "task_id",
+            "project_id",
+            "title",
+            "description",
+            "kind",
+            "lane",
+            "lane_order",
+            "priority",
+            "status",
+            "blocked_reason",
+            "review_tier",
+            "verification",
+            "tags",
+            "created_at",
+            "updated_at",
+            "completed_at",
             "completion_commit_required",
             "completion_commit_hash",
         }
         missing.extend(
             f"column:tasks.{name}" for name in sorted(required_task_columns - task_columns)
+        )
+    if "task_events" in tables:
+        event_column_rows = connection.execute("PRAGMA table_info(task_events)").fetchall()
+        event_columns = {str(row["name"]) for row in event_column_rows}
+        required_event_columns = {
+            "task_event_id",
+            "task_id",
+            "project_id",
+            "event_type",
+            "summary",
+            "created_at",
+        }
+        missing.extend(
+            f"column:task_events.{name}"
+            for name in sorted(required_event_columns - event_columns)
         )
     return missing
 
@@ -379,6 +425,51 @@ def read_project_meta_id(connection: sqlite3.Connection) -> str | None:
     if row is None:
         return None
     return str(row["project_id"])
+
+
+def validate_snapshot_database(
+    connection: sqlite3.Connection,
+    target: DatabaseTarget,
+) -> int:
+    """Revalidate schema and project identity inside a viewer read transaction."""
+    query_only = int(connection.execute("PRAGMA query_only").fetchone()[0])
+    if not connection.in_transaction or query_only != 1:
+        raise StorageError(
+            "internal_error",
+            "viewer snapshot requires an active query-only transaction",
+        )
+
+    version = current_schema_version(connection)
+    if version != SCHEMA_VERSION:
+        raise StorageError(
+            "migration_required",
+            (
+                f"database schema version {version} does not match supported "
+                f"version {SCHEMA_VERSION}; run db init to migrate"
+            ),
+        )
+
+    if required_schema_objects_missing(connection):
+        raise StorageError(
+            "migration_required",
+            "database schema is incomplete; run db init to migrate",
+        )
+
+    existing_project_id = read_project_meta_id(connection)
+    if existing_project_id is None:
+        raise StorageError(
+            "migration_required",
+            "database project metadata is missing; run db init to repair",
+        )
+    if existing_project_id != target.project.project_id:
+        raise StorageError(
+            "project_mismatch",
+            (
+                f"database belongs to project {existing_project_id}, "
+                f"not {target.project.project_id}"
+            ),
+        )
+    return version
 
 
 def count_tasks(connection: sqlite3.Connection, project_id: str) -> dict[str, int]:

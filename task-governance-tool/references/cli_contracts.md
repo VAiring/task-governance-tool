@@ -14,6 +14,7 @@ matter.
 - [`task next`](#task-next)
 - [`task show`](#task-show)
 - [`task edit`](#task-edit)
+- [`web export`](#web-export)
 - [Error Codes](#error-codes)
 
 ## Invocation
@@ -55,7 +56,9 @@ All JSON output uses this envelope:
 Inspection commands are read-only by default: `db status`, `task list`,
 `task next`, and `task show`.
 
-Write commands are `db init`, `task add`, and `task edit`.
+Database write commands are `db init`, `task add`, and `task edit`. `web export`
+never writes SQLite, but its normal mode writes one generated HTML file after
+explicit user intent. Use `web export --read-only` for a no-file-write preview.
 
 ## Commands
 
@@ -245,6 +248,67 @@ hash:
 git show --name-only <completion_commit_hash>
 ```
 
+### `web export`
+
+Render one self-contained, offline Task Viewer snapshot from the initialized
+SQLite database:
+
+```powershell
+python scripts/taskgov.py web export --repo <target-project> --json
+```
+
+The default output is generated skill-local state:
+
+```text
+<installed-skill-root>/state/projects/<project-id>/viewer/task-viewer.html
+```
+
+Use `--read-only` to validate the database, snapshot, template, and resolved
+output path without creating a directory or file. Use `--output <path>` only
+after the user explicitly approves that complete destination. Explicit parents
+must already exist and the filename must end in `.html` or `.htm`. An explicit
+path inside the governed project is accepted only under the installed skill's
+generated `state/` directory.
+
+`data`:
+
+```json
+{
+  "output_path": "C:\\path\\to\\task-viewer.html",
+  "written": true,
+  "replaced": false,
+  "task_count": 3,
+  "event_count": 7,
+  "generated_at": "2026-07-17T00:00:00Z",
+  "snapshot_version": 1
+}
+```
+
+The generated file is stale until `web export` is explicitly run again. The
+command does not start a server, open a browser, edit tasks, or write database
+events. Databases using WAL mode are rejected before the snapshot connection so
+even a preview does not create SQLite sidecar files.
+
+After command and output resolution, every `web.export` error preserves this
+fixed `data` shape. `output_path` is `null` only when output resolution itself
+failed:
+
+```json
+{
+  "output_path": null,
+  "written": false,
+  "replaced": false,
+  "task_count": 0,
+  "event_count": 0,
+  "generated_at": null,
+  "snapshot_version": 1
+}
+```
+
+`output_path_invalid` and `output_parent_missing` use exit code 1.
+`output_write_failed`, database readiness failures, WAL-state rejection, and
+unexpected snapshot/template failures use exit code 2.
+
 ## Error Codes
 
 Known error codes include:
@@ -264,6 +328,9 @@ Known error codes include:
 - `db_not_initialized`
 - `migration_required`
 - `project_mismatch`
+- `output_path_invalid`
+- `output_parent_missing`
+- `output_write_failed`
 - `internal_error`
 
 Some commands define an explicit empty `data` shape for specific error paths.

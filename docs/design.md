@@ -586,12 +586,15 @@ schema version and project identity inside that transaction before querying
 tasks and events. This gives the export one SQLite-consistent point-in-time view
 when another session commits concurrently.
 
-Preserve the existing preflight rejection for active WAL sidecars. Tests must
-prove a normal snapshot read creates no WAL/SHM/journal files, an already-active
-WAL state fails without stale output, and a concurrent writer either yields a
-consistent snapshot or a structured tool error. This does not add cross-session
-ownership or live synchronization; the generated timestamp still describes
-export time, not an exclusive database revision.
+Preserve the existing preflight rejection for active WAL sidecars. Also inspect
+the stable SQLite file-header journal bytes without opening a mutable SQLite
+connection and reject persistent WAL mode before the snapshot connection. Tests
+must prove a normal snapshot read creates no WAL/SHM/journal files, active or
+cleanly closed WAL state fails without stale output or new sidecars, and a
+concurrent writer either yields a consistent snapshot or a structured tool
+error. This does not add cross-session ownership or live synchronization; the
+generated timestamp still describes export time, not an exclusive database
+revision.
 
 ### Browser Security Boundary
 

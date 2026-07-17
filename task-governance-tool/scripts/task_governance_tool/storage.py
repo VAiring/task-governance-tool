@@ -101,6 +101,20 @@ def default_db_path(skill_root: str | os.PathLike[str], project_id: str) -> Path
     return Path(skill_root).resolve() / "state" / "projects" / project_id / "taskgov.sqlite"
 
 
+def default_viewer_output_path(
+    skill_root: str | os.PathLike[str],
+    project_id: str,
+) -> Path:
+    return (
+        Path(skill_root).resolve()
+        / "state"
+        / "projects"
+        / project_id
+        / "viewer"
+        / "task-viewer.html"
+    )
+
+
 def resolve_database_target(
     *,
     repo: str | os.PathLike[str],
@@ -138,6 +152,7 @@ def connect_readonly(db_path: Path) -> sqlite3.Connection:
 
 def connect_snapshot_readonly(db_path: Path) -> sqlite3.Connection:
     """Open a point-in-time read transaction without immutable SQLite mode."""
+    validate_snapshot_journal_state(db_path)
     uri = db_path.resolve(strict=False).as_uri() + "?mode=ro"
     connection = sqlite3.connect(uri, uri=True)
     try:
@@ -157,6 +172,34 @@ def sqlite_sidecar_paths(db_path: Path) -> list[Path]:
 
 def existing_sqlite_sidecars(db_path: Path) -> list[Path]:
     return [path for path in sqlite_sidecar_paths(db_path) if path.exists()]
+
+
+def sqlite_header_uses_wal(db_path: Path) -> bool:
+    """Inspect SQLite's stable file-header journal bytes without opening SQLite."""
+    try:
+        with db_path.open("rb") as stream:
+            header = stream.read(20)
+    except OSError as exc:
+        raise StorageError("internal_error", "could not inspect database journal mode") from exc
+    return (
+        len(header) >= 20
+        and header[:16] == b"SQLite format 3\x00"
+        and (header[18] == 2 or header[19] == 2)
+    )
+
+
+def validate_snapshot_journal_state(db_path: Path) -> None:
+    """Reject SQLite states that can make a read create WAL/SHM sidecars."""
+    if existing_sqlite_sidecars(db_path):
+        raise StorageError(
+            "internal_error",
+            "database has active WAL sidecar files; close writers or checkpoint before export",
+        )
+    if sqlite_header_uses_wal(db_path):
+        raise StorageError(
+            "internal_error",
+            "database uses WAL journal mode; switch to a rollback journal before export",
+        )
 
 
 def table_exists(connection: sqlite3.Connection, table_name: str) -> bool:

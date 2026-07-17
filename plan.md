@@ -700,8 +700,9 @@ Open issues:
 
 - Decide after the MVP whether to add profile detection, verification recording,
   review-template generation, dependency graphs, or Git integration.
-- TG-M7 implementation awaits explicit user approval of the reviewed roadmap;
-  no additional product decision is currently required for its baseline.
+- TG-M7 has an approved roadmap and is tracked in the project-local SQLite
+  database; no additional product decision is currently required for its
+  baseline.
 
 ## Implementation Execution Status
 

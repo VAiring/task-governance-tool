@@ -293,6 +293,8 @@ or direct browser access to SQLite.
   `db_not_initialized`, `migration_required`, and `project_mismatch` behavior
 - open SQLite read-only and write no database rows, task events, tool events, or
   migrations
+- reject active WAL sidecars and persistent WAL journal mode before the viewer
+  snapshot connection so export and `--read-only` create no SQLite sidecars
 - export every task status, including `done` and `cancelled`, while allowing
   the browser UI to hide terminal tasks by default
 - include all task fields exposed by `task show`, including

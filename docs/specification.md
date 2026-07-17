@@ -452,7 +452,7 @@ This extension does not include:
 - task registration or editing in the browser
 - a local or remote HTTP server
 - sharing, synchronization, authentication, or multi-user coordination
-- automatic browser launch
+- browser launch without an explicit user request
 
 ### Viewer Acceptance Criteria
 
@@ -471,6 +471,24 @@ The extension is acceptable when:
   controls, or unreadable task content
 - the installable skill remains self-contained and release artifacts include
   the required viewer asset but exclude generated viewer snapshots
+
+### Approved Follow-Up Requirement: Default-Browser Launch
+
+After an explicit user request to display the Task Viewer, the tool must be
+able to open a generated Task Viewer HTML file directly in the operating
+system's configured default browser.
+
+This capability must preserve the static-snapshot boundary: opening the file
+must not add browser-to-SQLite access, a local server, live refresh, automatic
+regeneration, or browser-side task mutation. A generic task-state inspection,
+an export-only request, or `web export --read-only` must not launch a browser.
+
+This requirement does not yet approve a command name, option, interaction
+flow, regeneration policy, error contract, or implementation task. Those
+decisions must be added to `docs/design.md` and
+`docs/implementation-roadmap.md` before implementation. Until then, the
+existing `web export` contract remains generation-only and does not launch a
+browser.
 
 ## Task Ordering
 

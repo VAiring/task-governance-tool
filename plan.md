@@ -692,7 +692,10 @@ Confirmed decisions:
   SQLite through the CLI, runs without a server or network, defaults under
   skill-local generated `state/`, and is stale until explicitly regenerated.
 - Browser-side SQLite access, task mutation, live watching, external assets,
-  and automatic browser launch are outside the Task Viewer scope.
+  and browser launch without an explicit user request are outside the Task
+  Viewer scope. Direct launch of a generated Viewer in the operating system's
+  configured default browser is approved as a follow-up requirement, while its
+  command and interaction design remain deferred.
 - The implemented Task Viewer may be advertised in Skill discovery metadata,
   README, and release guidance only as an explicitly requested, stale offline
   snapshot with no server, live refresh, or browser editing.
@@ -704,6 +707,10 @@ Open issues:
 - TG-M7 has an approved roadmap and is tracked in the project-local SQLite
   database; no additional product decision is currently required for its
   baseline.
+- Before implementing default-browser launch, define its command or option,
+  regeneration behavior, error contract, verification gates, and execution
+  unit. The current requirement does not authorize changing `web export` or
+  Skill guidance yet.
 
 ## Implementation Execution Status
 

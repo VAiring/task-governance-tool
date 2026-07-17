@@ -1,6 +1,6 @@
 ---
 name: task-governance-tool
-description: Project-scoped local-first task-status replacement for Codex using the bundled taskgov CLI and skill-local SQLite state. Use when planning explicit tasks, initializing or inspecting local task state, selecting next actionable work, handling blockers, registering explicit tasks, updating task status, or completing tasks with verification, review, and completion commit evidence.
+description: Project-scoped local-first task tracking for Codex using the bundled taskgov CLI and skill-local SQLite state. Use when planning or registering explicit tasks, initializing or inspecting task state, selecting next actionable work, handling blockers, updating or completing tasks with verification, review, and completion commit evidence, or creating or regenerating a user-requested offline static Task Viewer.
 ---
 
 # Task Governance Tool
@@ -40,6 +40,37 @@ If this skill was discovered from a user-wide or global install, do not
 initialize task state until the user confirms that they want that non-standard
 setup or installs a project-scoped copy.
 
+## Static Task Viewer
+
+Create or regenerate the offline viewer only when the current user explicitly
+asks for that HTML artifact. A request only to inspect or summarize task state
+authorizes `task list`, `task next`, or `task show`, not an HTML write.
+
+Use the bundled entry point and command names exactly:
+`python scripts/taskgov.py web export --repo <target-project>`. There is no
+`viewer` command group, `--project-root` option, or guaranteed global `taskgov`
+executable; do not invent aliases.
+
+Preview the resolved path and counts without writing:
+
+```powershell
+python scripts/taskgov.py web export --repo <target-project> --read-only --json
+```
+
+After explicit user intent, generate the default snapshot:
+
+```powershell
+python scripts/taskgov.py web export --repo <target-project> --json
+```
+
+The default file is
+`state/projects/<project-id>/viewer/task-viewer.html` under this installed
+skill. Use `--output <html-path>` only when the user approves that complete
+destination; its parent must already exist. The generated page is a stale
+snapshot until the command is explicitly run again. It has no server, live
+refresh, browser-side SQLite access, or task-edit controls, and the CLI does not
+open a browser automatically.
+
 ## Operating Rules
 
 - Inspect before writing: `db status`, `task list`, `task next`, and `task show`
@@ -48,6 +79,8 @@ setup or installs a project-scoped copy.
   task database.
 - Use `task add` and `task edit` only for explicit task-state registration or
   updates; they write only to the task-governance-tool database.
+- Use writing `web export` mode only for an explicit create/regenerate request;
+  it writes one generated HTML snapshot and never writes SQLite.
 - Complete tasks only after required verification and review are done, then
   record either a completion commit hash or an explicit no-managed-materials
   decision with `task edit --status done`.
@@ -66,7 +99,8 @@ Read [references/cli_contracts.md](references/cli_contracts.md) when you need
 command arguments, JSON payload shapes, error behavior, or examples.
 
 This version supports task registration, inspection, next-work selection,
-blocker updates, and completion commit evidence recorded on task rows. It does
-not create commits, branches, PRs, issue comments, review requests, persistent
-project profiles, dependency graphs, network services, or target-project
-mutation.
+blocker updates, completion commit evidence recorded on task rows, and an
+explicitly requested offline static viewer. It does not create commits,
+branches, PRs, issue comments, review requests, persistent project profiles,
+dependency graphs, network services, live dashboards, browser edit controls,
+or unapproved target-project mutation.

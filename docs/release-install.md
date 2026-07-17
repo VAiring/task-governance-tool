@@ -19,7 +19,7 @@ installable skill artifact:
 Do not publish generated runtime state, copied root reference material, test
 outputs, caches, logs, or local databases.
 
-The MVP should be installed per governed project, not as a user-wide shared
+The skill should be installed per governed project, not as a user-wide shared
 skill. A separate project-scoped copy keeps task state attached to the project
 whose tasks it manages.
 
@@ -32,6 +32,8 @@ task-governance-tool/
   SKILL.md
   agents/
     openai.yaml
+  assets/
+    task-viewer.template.html
   scripts/
     taskgov.py
     task_governance_tool/
@@ -40,6 +42,7 @@ task-governance-tool/
       storage.py
       tasks.py
       selection.py
+      viewer.py
   references/
     task_workflow.md
     cli_contracts.md
@@ -50,13 +53,14 @@ The artifact must exclude:
 - `state/`
 - `*.sqlite`, `*.sqlite3`, `*.db`
 - SQLite sidecars such as `*-wal`, `*-shm`, and `*-journal`
+- generated `task-viewer.html` snapshots
 - root `references/`
 - `tests/`, `fixtures/`, and development-only docs
 - caches, logs, temporary files, and local editor files
 
 ## Install Path
 
-For normal MVP use, install the artifact into the governed target project:
+For normal use, install the artifact into the governed target project:
 
 ```text
 <target-project>\.agents\skills\task-governance-tool
@@ -93,9 +97,24 @@ state is kept out of commits. The target project should ignore at least:
 *.db-journal
 ```
 
+## Viewer Runtime State
+
+After installation, an explicitly requested `web export` writes the default
+viewer to:
+
+```text
+<installed-skill-root>\state\projects\<project-id>\viewer\task-viewer.html
+```
+
+Use an explicit `--output` only after the user approves that complete path; its
+parent must already exist. The HTML is a stale offline snapshot until the user
+requests regeneration. It has no server, live database refresh, browser editing,
+or automatic browser launch. Generated viewers remain runtime state and must
+not be added to the release artifact.
+
 User-wide installation locations such as
 `%USERPROFILE%\.codex\skills\task-governance-tool`, `%CODEX_HOME%\skills`, or a
-personal global skills directory are not recommended for normal MVP use. Use
+personal global skills directory are not recommended for normal use. Use
 them only for explicit local experimentation, preferably with an explicit
 `--db` path, because one global copy can otherwise accumulate task state for
 multiple unrelated projects.
@@ -109,9 +128,11 @@ Before creating a release artifact:
 3. Run the fallback skill self-check or official skill validation helper when
    available.
 4. Run the installed skill self-containment smoke test.
-5. Confirm generated `state/`, SQLite files, root copied references, logs, and
-   caches are ignored and absent from the artifact.
-6. Confirm `task-governance-tool/SKILL.md` frontmatter contains only `name` and
+5. Confirm an isolated installed copy can run `web export` and that the
+   artifact includes `assets/task-viewer.template.html` and `viewer.py`.
+6. Confirm generated `state/`, SQLite files, generated `task-viewer.html`, root
+   copied references, logs, and caches are ignored and absent from the artifact.
+7. Confirm `task-governance-tool/SKILL.md` frontmatter contains only `name` and
    `description`, and the `name` matches the folder.
 
 ## Publication Notes
@@ -122,6 +143,6 @@ skill is local-first and should remain usable offline.
 Versioning can start at the runtime package version in
 `task-governance-tool/scripts/task_governance_tool/__init__.py`. If a Git tag is
 created, use a clear prefix such as `v0.1.0` and include a short note that this
-MVP supports local task registration, task inspection, next-task selection,
-blocker handling, and explicit local task-state updates through a
-project-scoped Codex skill install.
+release supports local task registration, task inspection, next-task selection,
+blocker handling, explicit local task-state updates, completion evidence, and
+offline static Task Viewer export through a project-scoped Codex skill install.

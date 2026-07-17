@@ -1,4 +1,4 @@
 interface:
   display_name: "Task Governance Tool"
-  short_description: "Project-scoped task tracking, next-work selection, and completion evidence"
-  default_prompt: "Use $task-governance-tool from a project-scoped install to inspect or initialize local task state, choose next ready work, update explicit task status, and complete tasks with verification, review, and commit evidence."
+  short_description: "Track project tasks and export an offline viewer"
+  default_prompt: "Use $task-governance-tool to inspect or update project-scoped task state, choose ready work, and create an offline Task Viewer when requested."

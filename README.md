@@ -9,9 +9,11 @@ LLM quick read:
   user-wide installs are not recommended for normal use.
 - Use it to replace large `TASK_STATUS.md` files with local SQLite task state.
 - It supports explicit task registration, task inspection, next-work selection,
-  blocker handling, local task status updates, and completion commit evidence.
+  blocker handling, local task status updates, completion commit evidence, and
+  an explicitly requested offline static Task Viewer.
 - It does not import planning files, manage dependency graphs, write Git state,
-  create PRs/issues, run a service, or store raw logs/secrets.
+  create PRs/issues, run a service, provide live browser editing, or store raw
+  logs/secrets.
 
 `task-governance-tool` is a local-first Codex skill plus a stdlib Python CLI
 named `taskgov`. It helps Codex and the user work from compact local task state
@@ -84,7 +86,35 @@ folder:
 Use `--db <path>` only when a project or user explicitly needs a different
 database path.
 
-## MVP Commands
+## Offline Task Viewer
+
+When the user explicitly asks to create or regenerate a browser-readable task
+snapshot, run:
+
+```powershell
+python scripts/taskgov.py web export --repo <target-project> --json
+```
+
+Preview without creating a directory or file:
+
+```powershell
+python scripts/taskgov.py web export --repo <target-project> --read-only --json
+```
+
+The default output is:
+
+```text
+<target-project>/.agents/skills/task-governance-tool/state/projects/<project-id>/viewer/task-viewer.html
+```
+
+Use `--output <html-path>` only after the user approves that complete
+destination; its parent must already exist. The HTML is self-contained and
+opens through `file://` without a server or network. It is a timestamped
+snapshot, not a live view: task changes appear only after an explicitly
+requested regeneration. The page cannot edit tasks, and `taskgov` does not open
+a browser automatically.
+
+## Commands
 
 - `taskgov db init`
 - `taskgov db status`
@@ -93,20 +123,22 @@ database path.
 - `taskgov task next`
 - `taskgov task show`
 - `taskgov task edit`
+- `taskgov web export`
 
 Inspection commands are read-only by default. Write commands record only to the
-task-governance-tool SQLite database, not to target project files.
+task-governance-tool SQLite database, except explicitly requested `web export`,
+which writes one generated HTML snapshot and never writes SQLite.
 
 ## Non-Goals
 
-The MVP intentionally does not include:
+The current release intentionally does not include:
 
 - Markdown task import.
 - `task approve`, `task depend`, or persistent project profiles.
 - Verification-run recording beyond short task fields.
 - Review request generation.
 - Git commits, branches, PRs, issue comments, or target-project mutation.
-- Network services, dashboards, sync, or cloud workflows.
+- Network services, live dashboards, browser editing, sync, or cloud workflows.
 - Raw command-output, stack-trace, prompt, diff, log, or secret retention.
 
 ## Development Checks
@@ -117,6 +149,7 @@ Run the local checks before publishing:
 python -m unittest discover -s tests
 python task-governance-tool\scripts\taskgov.py --help
 python task-governance-tool\scripts\taskgov.py task next --help
+python task-governance-tool\scripts\taskgov.py web export --help
 git diff --check
 ```
 

@@ -693,8 +693,9 @@ Confirmed decisions:
   skill-local generated `state/`, and is stale until explicitly regenerated.
 - Browser-side SQLite access, task mutation, live watching, external assets,
   and automatic browser launch are outside the Task Viewer scope.
-- Do not advertise the Task Viewer in Skill discovery metadata, README, or
-  release guidance until TG-M7 implementation and acceptance are complete.
+- The implemented Task Viewer may be advertised in Skill discovery metadata,
+  README, and release guidance only as an explicitly requested, stale offline
+  snapshot with no server, live refresh, or browser editing.
 
 Open issues:
 

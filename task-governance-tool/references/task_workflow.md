@@ -12,6 +12,7 @@ tasks with `task-governance-tool`.
 - [Execution Unit Boundary](#execution-unit-boundary)
 - [Blockers](#blockers)
 - [Completion And Review](#completion-and-review)
+- [Create An Offline Task Viewer](#create-an-offline-task-viewer)
 - [Register Tasks](#register-tasks)
 
 ## Source Of Truth
@@ -25,7 +26,7 @@ hidden authority for product decisions.
 
 Use the project-scoped installed copy for the governed project, normally under
 `.agents/skills/task-governance-tool`. If this skill is available only from a
-user-wide or global install, ask the user before initializing state; normal MVP
+user-wide or global install, ask the user before initializing state; normal
 operation expects a separate installed copy per project.
 
 ## Minimal Operating Loop
@@ -153,6 +154,38 @@ git show --name-only <completion_commit_hash>
 Use `--add-note` for concise local notes. Keep notes sanitized and short; do not
 store raw command output, stack traces, secrets, large diffs, or private chat
 logs.
+
+## Create An Offline Task Viewer
+
+Use `web export` writing mode only when the current user explicitly asks to
+create or regenerate the viewer. For ordinary inspection or summarization, use
+`task list`, `task next`, and `task show` without creating HTML.
+
+Use the bundled command exactly as shown below. The CLI has no `viewer export`
+or `--project-root` alias, and a global `taskgov` executable is not guaranteed.
+
+Preview the path and snapshot counts without writing:
+
+```powershell
+python scripts/taskgov.py web export --repo <target-project> --read-only --json
+```
+
+Generate the default skill-local file after explicit user intent:
+
+```powershell
+python scripts/taskgov.py web export --repo <target-project> --json
+```
+
+The default output is
+`state/projects/<project-id>/viewer/task-viewer.html` under the installed skill
+folder. Pass `--output <html-path>` only after the user approves that complete
+destination; an explicit parent must already exist. Opening the browser is a
+separate user action.
+
+Treat the page as a timestamped snapshot. Task changes do not appear until the
+user explicitly requests regeneration. The page does not connect to SQLite,
+start a server, refresh itself from the database, or provide task-edit controls.
+Use the CLI to update task state, then regenerate only with current user intent.
 
 ## Register Tasks
 

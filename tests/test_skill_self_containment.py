@@ -71,6 +71,55 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("done transition without commit evidence failed with `commit_required`", forward_note)
         self.assertIn("the synthetic target project path was not created", forward_note)
 
+    def test_skill_guidance_exposes_static_viewer_with_explicit_write_gate(self):
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
+            encoding="utf-8"
+        )
+        contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
+            encoding="utf-8"
+        )
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        release_note = (ROOT / "docs" / "release-install.md").read_text(encoding="utf-8")
+        openai_yaml = (SKILL_ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
+        forward_note = (ROOT / "docs" / "forward-tests" / "static-task-viewer.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("creating or regenerating a user-requested offline static Task Viewer", skill_md)
+        self.assertIn("python scripts/taskgov.py web export --repo <target-project>", skill_md)
+        self.assertIn("no\n`viewer` command group, `--project-root` option", skill_md)
+        for text in (skill_md, workflow, contracts, readme):
+            self.assertIn("web export", text)
+            self.assertIn("--read-only", text)
+            self.assertIn("explicit", text.lower())
+            self.assertIn("snapshot", text.lower())
+
+        for text in (skill_md, workflow, readme):
+            lowered = text.lower()
+            self.assertTrue(
+                "no server" in lowered
+                or "start a server" in lowered
+                or "without a server" in lowered
+            )
+            self.assertIn("browser", lowered)
+
+        self.assertIn("task-viewer.template.html", release_note)
+        self.assertIn("generated `task-viewer.html`", release_note)
+        self.assertIn("stale offline snapshot", release_note)
+        self.assertIn("explicit `--output`", release_note)
+        self.assertIn("offline viewer", openai_yaml.lower())
+        self.assertIn("## Final Result\n\nPASS", forward_note)
+        self.assertIn("python scripts/taskgov.py web export --repo", forward_note)
+        self.assertIn("created no artifacts", forward_note)
+
+        short_line = next(
+            line for line in openai_yaml.splitlines() if "short_description:" in line
+        )
+        short_description = short_line.split(":", 1)[1].strip().strip('"')
+        self.assertGreaterEqual(len(short_description), 25)
+        self.assertLessEqual(len(short_description), 64)
+
     def test_guidance_prefers_project_scoped_install(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -115,9 +164,43 @@ class SkillSelfContainmentTests(unittest.TestCase):
             generated.mkdir(parents=True, exist_ok=True)
             generated_db = generated / "taskgov.sqlite"
             generated_db.write_text("", encoding="utf-8")
+            generated_viewer = generated / "viewer" / "task-viewer.html"
+            generated_viewer.parent.mkdir()
+            generated_viewer.write_text("generated", encoding="utf-8")
             copied = copy_skill_to(workspace / "release", source=source)
 
             self.assertFalse((copied / "state").exists())
+            self.assertTrue((copied / "assets" / "task-viewer.template.html").is_file())
+            self.assertTrue(
+                (copied / "scripts" / "task_governance_tool" / "viewer.py").is_file()
+            )
+
+    def test_ci_requires_viewer_runtime_and_rejects_generated_viewer(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+        self.assertIn("$skillRoot/assets/task-viewer.template.html", workflow)
+        self.assertIn("$skillRoot/scripts/task_governance_tool/viewer.py", workflow)
+        self.assertIn("task-viewer\\.html$", workflow)
+
+    def test_tracked_skill_package_contains_runtime_but_no_generated_state(self):
+        result = subprocess.run(
+            ["git", "ls-files", "task-governance-tool"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        tracked = set(result.stdout.splitlines())
+        self.assertIn("task-governance-tool/assets/task-viewer.template.html", tracked)
+        self.assertIn(
+            "task-governance-tool/scripts/task_governance_tool/viewer.py",
+            tracked,
+        )
+        self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))
+        self.assertFalse(any(path.endswith("/task-viewer.html") for path in tracked))
 
     def test_git_ignores_generated_state_and_sqlite_artifacts(self):
         ignored_paths = [
@@ -125,7 +208,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "task-governance-tool/state/projects/example-123456789abc/taskgov.sqlite",
             "task-governance-tool/state/projects/example-123456789abc/taskgov.sqlite-wal",
             "task-governance-tool/state/projects/example-123456789abc/taskgov.sqlite-shm",
+            "task-governance-tool/state/projects/example-123456789abc/viewer/task-viewer.html",
             ".agents/skills/task-governance-tool/state/.keep",
+            ".agents/skills/task-governance-tool/state/projects/example/viewer/task-viewer.html",
             "scratch.sqlite",
             "scratch.sqlite3",
             "scratch.sqlite-wal",

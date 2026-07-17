@@ -33,6 +33,7 @@ jobs:
         run: |
           python task-governance-tool/scripts/taskgov.py --help
           python task-governance-tool/scripts/taskgov.py task next --help
+          python task-governance-tool/scripts/taskgov.py web export --help
 
       - name: Skill package self-check
         shell: pwsh
@@ -78,6 +79,8 @@ jobs:
             "$skillRoot/scripts/task_governance_tool/storage.py",
             "$skillRoot/scripts/task_governance_tool/tasks.py",
             "$skillRoot/scripts/task_governance_tool/selection.py",
+            "$skillRoot/scripts/task_governance_tool/viewer.py",
+            "$skillRoot/assets/task-viewer.template.html",
             "$skillRoot/references/task_workflow.md",
             "$skillRoot/references/cli_contracts.md"
           )
@@ -96,6 +99,7 @@ jobs:
             $_ -match '(^references/)' -or
             $_ -match '(^task-governance-tool/state/)' -or
             $_ -match '(^\.agents/skills/[^/]+/state/)' -or
+            $_ -match '(^|/)task-viewer\.html$' -or
             $_ -match '(\.sqlite3?$|\.sqlite3?-(shm|wal|journal)$)' -or
             $_ -match '(\.db$|\.db-(shm|wal|journal)$)' -or
             $_ -match '(__pycache__/|\.pyc$|\.log$|\.tmp$)'

@@ -1,0 +1,1115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; object-src 'none'; media-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Task Viewer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.45;
+      color: #242424;
+      background: #f5f6f7;
+      --surface: #ffffff;
+      --surface-muted: #f0f2f3;
+      --border: #c8cdd1;
+      --border-strong: #8a9298;
+      --text-muted: #5c646a;
+      --accent: #006d77;
+      --accent-strong: #004f57;
+      --ready: #176b87;
+      --progress: #006d77;
+      --blocked: #a13b2a;
+      --review: #7a5800;
+      --done: #357a38;
+      --cancelled: #62686d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: #f5f6f7;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button,
+    select,
+    input[type="checkbox"] {
+      cursor: pointer;
+    }
+
+    input[type="search"],
+    select {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--surface);
+      color: #242424;
+      padding: 7px 9px;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+      outline: 3px solid #f2b134;
+      outline-offset: 2px;
+    }
+
+    .app-header {
+      background: #24282b;
+      color: #ffffff;
+      border-bottom: 4px solid var(--accent);
+    }
+
+    .header-inner,
+    main {
+      width: min(100% - 32px, 1440px);
+      margin: 0 auto;
+    }
+
+    .header-inner {
+      min-height: 92px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 18px 0;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 2px;
+      font-size: 1.45rem;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .project-name {
+      margin: 0;
+      color: #e7eaec;
+      font-size: 0.95rem;
+      overflow-wrap: anywhere;
+    }
+
+    .snapshot-meta {
+      max-width: 52%;
+      text-align: right;
+      color: #e7eaec;
+      font-size: 0.84rem;
+    }
+
+    .snapshot-meta span {
+      display: block;
+      overflow-wrap: anywhere;
+    }
+
+    main {
+      padding: 20px 0 40px;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .status-summary {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(110px, 1fr));
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .status-tile {
+      min-height: 66px;
+      display: grid;
+      grid-template-columns: 10px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: #242424;
+      text-align: left;
+    }
+
+    .status-tile:hover {
+      border-color: var(--border-strong);
+      background: #fafbfb;
+    }
+
+    .status-mark {
+      width: 8px;
+      height: 36px;
+      border-radius: 3px;
+      background: var(--cancelled);
+    }
+
+    .status-label {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .status-count {
+      min-width: 2ch;
+      text-align: right;
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+
+    .status-ready .status-mark,
+    .badge-ready {
+      background: var(--ready);
+    }
+
+    .status-in-progress .status-mark,
+    .badge-in-progress {
+      background: var(--progress);
+    }
+
+    .status-blocked .status-mark,
+    .badge-blocked {
+      background: var(--blocked);
+    }
+
+    .status-review-pending .status-mark,
+    .badge-review-pending {
+      background: var(--review);
+    }
+
+    .status-done .status-mark,
+    .badge-done {
+      background: var(--done);
+    }
+
+    .status-cancelled .status-mark,
+    .badge-cancelled {
+      background: var(--cancelled);
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns: minmax(210px, 2fr) repeat(5, minmax(118px, 1fr)) auto auto;
+      align-items: end;
+      gap: 10px;
+      padding: 14px 0 18px;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .filter-field label,
+    .terminal-filter .filter-label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
+    .terminal-filter {
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 3px 2px;
+      white-space: nowrap;
+    }
+
+    .terminal-filter input {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+    }
+
+    .terminal-filter .filter-label {
+      margin: 0;
+      color: #30363a;
+    }
+
+    .reset-button {
+      min-height: 38px;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--accent-strong);
+      padding: 7px 14px;
+      font-weight: 600;
+    }
+
+    .reset-button:hover {
+      background: #e9f3f4;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.65fr) minmax(320px, 0.85fr);
+      gap: 24px;
+      padding-top: 18px;
+      align-items: start;
+    }
+
+    .list-header,
+    .detail-header {
+      min-height: 44px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .list-header h2,
+    .detail-header h2 {
+      margin: 0;
+      font-size: 1.05rem;
+      letter-spacing: 0;
+    }
+
+    .result-count {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.82rem;
+    }
+
+    .table-scroll {
+      overflow-x: auto;
+      border-top: 2px solid #4f565b;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th,
+    td {
+      padding: 10px 9px;
+      border-bottom: 1px solid #e0e3e5;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+
+    th {
+      color: var(--text-muted);
+      background: var(--surface-muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+    }
+
+    td {
+      font-size: 0.85rem;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    tbody tr.selected td {
+      background: #e9f3f4;
+    }
+
+    .title-column {
+      width: 34%;
+    }
+
+    .status-column,
+    .kind-column,
+    .priority-column {
+      width: 13%;
+    }
+
+    .lane-column {
+      width: 15%;
+    }
+
+    .updated-column {
+      width: 12%;
+    }
+
+    .task-button {
+      display: block;
+      width: 100%;
+      border: 0;
+      background: transparent;
+      color: var(--accent-strong);
+      padding: 0;
+      text-align: left;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    .task-button:hover {
+      text-decoration: underline;
+    }
+
+    .task-id {
+      display: block;
+      margin-top: 4px;
+      color: var(--text-muted);
+      font-family: Consolas, monospace;
+      font-size: 0.72rem;
+      font-weight: 400;
+      overflow-wrap: anywhere;
+    }
+
+    .badge {
+      display: inline-block;
+      max-width: 100%;
+      border-radius: 4px;
+      padding: 3px 7px;
+      color: #ffffff;
+      font-size: 0.72rem;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    .empty-state,
+    .fatal-state {
+      margin: 0;
+      padding: 28px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .detail-panel {
+      border-top: 2px solid #4f565b;
+      padding-top: 12px;
+      min-width: 0;
+    }
+
+    .detail-title {
+      margin: 0 0 6px;
+      font-size: 1.15rem;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+      letter-spacing: 0;
+    }
+
+    .detail-id {
+      margin: 0 0 14px;
+      color: var(--text-muted);
+      font-family: Consolas, monospace;
+      font-size: 0.78rem;
+      overflow-wrap: anywhere;
+    }
+
+    .detail-description {
+      margin: 0 0 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: minmax(110px, 0.42fr) minmax(0, 1fr);
+      gap: 0;
+      margin: 0;
+    }
+
+    .detail-grid dt,
+    .detail-grid dd {
+      margin: 0;
+      padding: 8px 0;
+      border-bottom: 1px solid #e0e3e5;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
+    .detail-grid dt {
+      padding-right: 12px;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      font-weight: 650;
+    }
+
+    .detail-grid dd {
+      font-size: 0.84rem;
+    }
+
+    .events-heading {
+      margin: 20px 0 8px;
+      font-size: 0.92rem;
+      letter-spacing: 0;
+    }
+
+    .event-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .event-item {
+      padding: 10px 0;
+      border-bottom: 1px solid #e0e3e5;
+    }
+
+    .event-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 3px;
+      color: var(--text-muted);
+      font-size: 0.72rem;
+    }
+
+    .event-summary {
+      margin: 0;
+      font-size: 0.82rem;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @media (max-width: 1180px) {
+      .status-summary {
+        grid-template-columns: repeat(3, minmax(120px, 1fr));
+      }
+
+      .filters {
+        grid-template-columns: repeat(4, minmax(130px, 1fr));
+      }
+
+      .filter-search {
+        grid-column: span 2;
+      }
+
+      .workspace {
+        grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.8fr);
+      }
+    }
+
+    @media (max-width: 820px) {
+      .header-inner {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .snapshot-meta {
+        max-width: 100%;
+        text-align: left;
+      }
+
+      .filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .workspace {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .detail-panel {
+        padding-top: 18px;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .header-inner,
+      main {
+        width: min(100% - 20px, 1440px);
+      }
+
+      .status-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .filters,
+      .filter-search {
+        grid-template-columns: minmax(0, 1fr);
+        grid-column: auto;
+      }
+
+      .terminal-filter,
+      .reset-button {
+        width: 100%;
+      }
+
+      .table-scroll {
+        overflow: visible;
+        border-bottom: 0;
+        background: transparent;
+      }
+
+      table,
+      tbody,
+      tr,
+      td {
+        display: block;
+        width: 100%;
+      }
+
+      table {
+        min-width: 0;
+      }
+
+      thead {
+        display: none;
+      }
+
+      tbody {
+        display: grid;
+        gap: 10px;
+      }
+
+      tbody tr {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        padding: 5px 10px;
+      }
+
+      tbody tr.selected {
+        border-color: var(--accent);
+      }
+
+      tbody tr.selected td {
+        background: transparent;
+      }
+
+      td {
+        display: grid;
+        grid-template-columns: 88px minmax(0, 1fr);
+        gap: 10px;
+        padding: 7px 0;
+      }
+
+      td::before {
+        content: attr(data-label);
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        font-weight: 650;
+        text-transform: uppercase;
+      }
+
+      td:first-child {
+        display: block;
+        padding: 9px 0;
+      }
+
+      td:first-child::before {
+        content: none;
+      }
+
+      .detail-grid {
+        grid-template-columns: minmax(90px, 0.38fr) minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div>
+        <h1>Task Viewer</h1>
+        <p class="project-name" id="project-name"></p>
+      </div>
+      <div class="snapshot-meta" aria-label="Snapshot metadata">
+        <span id="project-id"></span>
+        <span id="generated-at"></span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section aria-labelledby="status-summary-heading">
+      <h2 class="sr-only" id="status-summary-heading">Status summary</h2>
+      <div class="status-summary" id="status-summary"></div>
+    </section>
+
+    <section class="filters" aria-label="Task filters">
+      <div class="filter-field filter-search">
+        <label for="search-filter">Search</label>
+        <input id="search-filter" type="search" autocomplete="off">
+      </div>
+      <div class="filter-field">
+        <label for="status-filter">Status</label>
+        <select id="status-filter"></select>
+      </div>
+      <div class="filter-field">
+        <label for="kind-filter">Kind</label>
+        <select id="kind-filter"></select>
+      </div>
+      <div class="filter-field">
+        <label for="lane-filter">Lane</label>
+        <select id="lane-filter"></select>
+      </div>
+      <div class="filter-field">
+        <label for="priority-filter">Priority</label>
+        <select id="priority-filter"></select>
+      </div>
+      <div class="filter-field">
+        <label for="tag-filter">Tag</label>
+        <select id="tag-filter"></select>
+      </div>
+      <label class="terminal-filter" for="terminal-filter">
+        <input id="terminal-filter" type="checkbox">
+        <span class="filter-label">Show terminal</span>
+      </label>
+      <button class="reset-button" id="reset-filters" type="button">Reset</button>
+    </section>
+
+    <div class="fatal-state" id="fatal-state" role="alert" hidden></div>
+
+    <section class="workspace" id="workspace">
+      <section aria-labelledby="task-list-heading">
+        <div class="list-header">
+          <h2 id="task-list-heading">Tasks</h2>
+          <p class="result-count" id="result-count" aria-live="polite"></p>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th class="title-column" scope="col">Task</th>
+                <th class="status-column" scope="col">Status</th>
+                <th class="kind-column" scope="col">Kind</th>
+                <th class="lane-column" scope="col">Lane</th>
+                <th class="priority-column" scope="col">Priority</th>
+                <th class="updated-column" scope="col">Updated</th>
+              </tr>
+            </thead>
+            <tbody id="task-rows"></tbody>
+          </table>
+        </div>
+        <p class="empty-state" id="empty-state" hidden>No matching tasks.</p>
+      </section>
+
+      <section aria-labelledby="detail-heading">
+        <div class="detail-header">
+          <h2 id="detail-heading">Task detail</h2>
+        </div>
+        <p class="sr-only" id="selection-announcement" aria-live="polite"></p>
+        <div class="detail-panel" id="task-detail"></div>
+      </section>
+    </section>
+  </main>
+
+  <script id="taskgov-snapshot" type="application/octet-stream">__TASKGOV_SNAPSHOT_BASE64__</script>
+  <script>
+    "use strict";
+
+    (() => {
+      const statusOrder = [
+        "ready",
+        "in_progress",
+        "blocked",
+        "review_pending",
+        "done",
+        "cancelled"
+      ];
+      const statusLabels = {
+        ready: "Ready",
+        in_progress: "In progress",
+        blocked: "Blocked",
+        review_pending: "Review pending",
+        done: "Done",
+        cancelled: "Cancelled"
+      };
+      const terminalStatuses = new Set(["done", "cancelled"]);
+      const kindLabels = {
+        sequential: "Sequential",
+        optional: "Optional"
+      };
+      const priorityLabels = {
+        urgent: "Urgent",
+        high: "High",
+        normal: "Normal",
+        low: "Low"
+      };
+      const elements = {
+        projectName: document.getElementById("project-name"),
+        projectId: document.getElementById("project-id"),
+        generatedAt: document.getElementById("generated-at"),
+        statusSummary: document.getElementById("status-summary"),
+        search: document.getElementById("search-filter"),
+        status: document.getElementById("status-filter"),
+        kind: document.getElementById("kind-filter"),
+        lane: document.getElementById("lane-filter"),
+        priority: document.getElementById("priority-filter"),
+        tag: document.getElementById("tag-filter"),
+        terminal: document.getElementById("terminal-filter"),
+        reset: document.getElementById("reset-filters"),
+        rows: document.getElementById("task-rows"),
+        empty: document.getElementById("empty-state"),
+        resultCount: document.getElementById("result-count"),
+        detail: document.getElementById("task-detail"),
+        selectionAnnouncement: document.getElementById("selection-announcement"),
+        fatal: document.getElementById("fatal-state"),
+        workspace: document.getElementById("workspace")
+      };
+      let snapshot;
+      let selectedTaskId = null;
+      let pendingFocusTaskId = null;
+      let laneValues = [];
+      let tagValues = [];
+      const taskButtons = new Map();
+
+      const asText = (value, fallback = "") => {
+        if (value === null || value === undefined || value === "") {
+          return fallback;
+        }
+        return String(value);
+      };
+
+      const makeElement = (name, className, textValue) => {
+        const element = document.createElement(name);
+        if (className) {
+          element.className = className;
+        }
+        if (textValue !== undefined) {
+          element.textContent = asText(textValue);
+        }
+        return element;
+      };
+
+      const statusClass = (status, prefix) => {
+        if (!statusOrder.includes(status)) {
+          return `${prefix}-cancelled`;
+        }
+        return `${prefix}-${status.replace("_", "-")}`;
+      };
+
+      const addFixedOption = (select, value, label) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        select.append(option);
+      };
+
+      const fillDynamicOptions = (select, values, allLabel) => {
+        select.replaceChildren();
+        addFixedOption(select, "", allLabel);
+        values.forEach((value, index) => {
+          addFixedOption(select, String(index + 1), value);
+        });
+      };
+
+      const selectedDynamicValue = (select, values) => {
+        if (!select.value) {
+          return "";
+        }
+        const index = Number(select.value) - 1;
+        return values[index] || "";
+      };
+
+      const splitTags = (task) => asText(task.tags)
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+
+      const decodeSnapshot = () => {
+        const encoded = document.getElementById("taskgov-snapshot").textContent.trim();
+        const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+        return JSON.parse(new TextDecoder("utf-8").decode(bytes));
+      };
+
+      const initializeMetadata = () => {
+        elements.projectName.textContent = asText(snapshot.project.display_name, "Unnamed project");
+        elements.projectId.textContent = `Project: ${asText(snapshot.project.project_id)}`;
+        elements.generatedAt.textContent = `Snapshot generated: ${asText(snapshot.generated_at)}`;
+      };
+
+      const renderStatusSummary = () => {
+        elements.statusSummary.replaceChildren();
+        statusOrder.forEach((status) => {
+          const tile = makeElement("button", `status-tile ${statusClass(status, "status")}`);
+          tile.type = "button";
+          const mark = makeElement("span", "status-mark");
+          const label = makeElement("span", "status-label", statusLabels[status]);
+          const count = makeElement("span", "status-count", snapshot.counts[status] || 0);
+          tile.append(mark, label, count);
+          tile.addEventListener("click", () => {
+            elements.status.value = status;
+            if (terminalStatuses.has(status)) {
+              elements.terminal.checked = true;
+            }
+            renderTasks();
+          });
+          elements.statusSummary.append(tile);
+        });
+      };
+
+      const initializeFilters = () => {
+        elements.status.replaceChildren();
+        addFixedOption(elements.status, "", "All statuses");
+        statusOrder.forEach((status) => addFixedOption(
+          elements.status,
+          status,
+          statusLabels[status]
+        ));
+
+        elements.kind.replaceChildren();
+        addFixedOption(elements.kind, "", "All kinds");
+        Object.entries(kindLabels).forEach(([value, label]) => {
+          addFixedOption(elements.kind, value, label);
+        });
+
+        elements.priority.replaceChildren();
+        addFixedOption(elements.priority, "", "All priorities");
+        ["urgent", "high", "normal", "low"].forEach((priority) => {
+          addFixedOption(elements.priority, priority, priorityLabels[priority]);
+        });
+
+        laneValues = [...new Set(snapshot.tasks.map((task) => asText(task.lane)).filter(Boolean))]
+          .sort((left, right) => left.localeCompare(right));
+        tagValues = [...new Set(snapshot.tasks.flatMap(splitTags))]
+          .sort((left, right) => left.localeCompare(right));
+        fillDynamicOptions(elements.lane, laneValues, "All lanes");
+        fillDynamicOptions(elements.tag, tagValues, "All tags");
+      };
+
+      const matchesFilters = (task) => {
+        if (!elements.terminal.checked && terminalStatuses.has(task.status)) {
+          return false;
+        }
+        if (elements.status.value && task.status !== elements.status.value) {
+          return false;
+        }
+        if (elements.kind.value && task.kind !== elements.kind.value) {
+          return false;
+        }
+        if (elements.priority.value && task.priority !== elements.priority.value) {
+          return false;
+        }
+        const lane = selectedDynamicValue(elements.lane, laneValues);
+        if (lane && asText(task.lane) !== lane) {
+          return false;
+        }
+        const tag = selectedDynamicValue(elements.tag, tagValues);
+        if (tag && !splitTags(task).includes(tag)) {
+          return false;
+        }
+        const query = elements.search.value.trim().toLocaleLowerCase();
+        if (!query) {
+          return true;
+        }
+        return [
+          task.task_id,
+          task.title,
+          task.description,
+          task.lane,
+          task.tags,
+          task.completion_commit_hash
+        ].some((value) => asText(value).toLocaleLowerCase().includes(query));
+      };
+
+      const makeCell = (label, content) => {
+        const cell = document.createElement("td");
+        cell.setAttribute("data-label", label);
+        if (content instanceof Node) {
+          cell.append(content);
+        } else {
+          cell.textContent = asText(content, "-");
+        }
+        return cell;
+      };
+
+      const makeTaskRow = (task) => {
+        const row = document.createElement("tr");
+        if (task.task_id === selectedTaskId) {
+          row.className = "selected";
+        }
+        const titleButton = makeElement("button", "task-button", task.title);
+        titleButton.type = "button";
+        titleButton.setAttribute(
+          "aria-pressed",
+          task.task_id === selectedTaskId ? "true" : "false"
+        );
+        titleButton.append(makeElement("span", "task-id", task.task_id));
+        titleButton.addEventListener("click", () => {
+          selectedTaskId = task.task_id;
+          pendingFocusTaskId = task.task_id;
+          renderTasks();
+          elements.selectionAnnouncement.textContent = `Selected task: ${asText(task.title)}`;
+        });
+        taskButtons.set(task.task_id, titleButton);
+
+        const badge = makeElement(
+          "span",
+          `badge ${statusClass(task.status, "badge")}`,
+          statusLabels[task.status] || task.status
+        );
+        const laneOrder = task.lane_order === null || task.lane_order === undefined
+          ? asText(task.lane, "-")
+          : `${asText(task.lane, "-")} / ${task.lane_order}`;
+        row.append(
+          makeCell("Task", titleButton),
+          makeCell("Status", badge),
+          makeCell("Kind", kindLabels[task.kind] || task.kind),
+          makeCell("Lane", laneOrder),
+          makeCell("Priority", priorityLabels[task.priority] || task.priority),
+          makeCell("Updated", task.updated_at)
+        );
+        return row;
+      };
+
+      const addDetailValue = (list, label, value) => {
+        list.append(
+          makeElement("dt", "", label),
+          makeElement("dd", "", asText(value, "Not recorded"))
+        );
+      };
+
+      const completionText = (task) => {
+        if (!task.completion_commit_required) {
+          return "Not required";
+        }
+        if (task.completion_commit_hash) {
+          return `Required - ${task.completion_commit_hash}`;
+        }
+        return "Required - hash not recorded";
+      };
+
+      const renderDetail = (task) => {
+        elements.detail.replaceChildren();
+        if (!task) {
+          elements.detail.append(makeElement("p", "empty-state", "No task selected."));
+          return;
+        }
+
+        elements.detail.append(
+          makeElement("h3", "detail-title", task.title),
+          makeElement("p", "detail-id", task.task_id),
+          makeElement("p", "detail-description", asText(task.description, "No description recorded."))
+        );
+
+        const values = makeElement("dl", "detail-grid");
+        addDetailValue(values, "Status", statusLabels[task.status] || task.status);
+        addDetailValue(values, "Kind", kindLabels[task.kind] || task.kind);
+        addDetailValue(
+          values,
+          "Lane / order",
+          task.lane_order === null || task.lane_order === undefined
+            ? asText(task.lane, "Not recorded")
+            : `${asText(task.lane, "Not recorded")} / ${task.lane_order}`
+        );
+        addDetailValue(values, "Priority", priorityLabels[task.priority] || task.priority);
+        addDetailValue(values, "Review tier", task.review_tier);
+        addDetailValue(values, "Blocked reason", task.blocked_reason);
+        addDetailValue(values, "Verification", task.verification);
+        addDetailValue(values, "Completion commit", completionText(task));
+        addDetailValue(values, "Created", task.created_at);
+        addDetailValue(values, "Updated", task.updated_at);
+        addDetailValue(values, "Completed", task.completed_at);
+        addDetailValue(values, "Tags", task.tags);
+        elements.detail.append(values);
+
+        elements.detail.append(makeElement("h3", "events-heading", "Recent events"));
+        const events = makeElement("ol", "event-list");
+        if (!task.events.length) {
+          events.append(makeElement("li", "event-item", "No recent events."));
+        } else {
+          task.events.forEach((event) => {
+            const item = makeElement("li", "event-item");
+            const meta = makeElement("div", "event-meta");
+            meta.append(
+              makeElement("span", "", event.created_at),
+              makeElement("span", "", event.event_type)
+            );
+            item.append(meta, makeElement("p", "event-summary", event.summary));
+            events.append(item);
+          });
+        }
+        elements.detail.append(events);
+      };
+
+      const renderTasks = () => {
+        const visible = snapshot.tasks.filter(matchesFilters);
+        if (!visible.some((task) => task.task_id === selectedTaskId)) {
+          selectedTaskId = visible.length ? visible[0].task_id : null;
+        }
+        taskButtons.clear();
+        elements.rows.replaceChildren(...visible.map(makeTaskRow));
+        elements.empty.hidden = visible.length !== 0;
+        elements.resultCount.textContent = `${visible.length} of ${snapshot.tasks.length}`;
+        renderDetail(visible.find((task) => task.task_id === selectedTaskId));
+        if (pendingFocusTaskId) {
+          const focusTarget = taskButtons.get(pendingFocusTaskId);
+          pendingFocusTaskId = null;
+          if (focusTarget) {
+            focusTarget.focus();
+          }
+        }
+      };
+
+      const resetFilters = () => {
+        elements.search.value = "";
+        elements.status.value = "";
+        elements.kind.value = "";
+        elements.lane.value = "";
+        elements.priority.value = "";
+        elements.tag.value = "";
+        elements.terminal.checked = false;
+        renderTasks();
+      };
+
+      const bindFilters = () => {
+        [elements.search, elements.status, elements.kind, elements.lane,
+          elements.priority, elements.tag, elements.terminal]
+          .forEach((element) => element.addEventListener("input", renderTasks));
+        elements.status.addEventListener("change", () => {
+          if (terminalStatuses.has(elements.status.value)) {
+            elements.terminal.checked = true;
+          }
+          renderTasks();
+        });
+        elements.reset.addEventListener("click", resetFilters);
+      };
+
+      try {
+        snapshot = decodeSnapshot();
+        initializeMetadata();
+        initializeFilters();
+        renderStatusSummary();
+        bindFilters();
+        renderTasks();
+      } catch (error) {
+        elements.workspace.hidden = true;
+        elements.fatal.hidden = false;
+        elements.fatal.textContent = "Viewer data could not be loaded.";
+      }
+    })();
+  </script>
+</body>
+</html>

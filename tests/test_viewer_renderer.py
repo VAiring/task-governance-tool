@@ -52,17 +52,18 @@ class TemplateAuditParser(HTMLParser):
 
 def sample_snapshot(title="Safe task"):
     return {
-        "snapshot_version": 1,
+        "snapshot_version": 2,
         "generated_at": "2026-07-17T00:00:00Z",
         "project": {
             "project_id": "viewer-project-123456789abc",
             "display_name": "Viewer project",
         },
-        "source_schema_version": 2,
+        "source_schema_version": 3,
         "counts": {
             "total": 1,
             "ready": 1,
             "in_progress": 0,
+            "paused": 0,
             "blocked": 0,
             "review_pending": 0,
             "done": 0,
@@ -80,6 +81,7 @@ def sample_snapshot(title="Safe task"):
                 "priority": "high",
                 "status": "ready",
                 "blocked_reason": "",
+                "pause_reason": "",
                 "review_tier": 2,
                 "verification": "Offline checks",
                 "tags": "viewer,offline",
@@ -165,7 +167,7 @@ class ViewerRendererTests(unittest.TestCase):
 
     def test_render_rejects_unsupported_snapshot_version(self):
         snapshot = sample_snapshot()
-        snapshot["snapshot_version"] = 2
+        snapshot["snapshot_version"] = 3
 
         with self.assertRaises(ViewerError) as failure:
             render_viewer_html(snapshot)
@@ -233,6 +235,8 @@ class ViewerRendererTests(unittest.TestCase):
             "terminalStatuses.has(task.status)",
             "renderDetail",
             "completion_commit_hash",
+            'paused: "Paused"',
+            'addDetailValue(values, "Pause reason", task.pause_reason)',
             "task.events.forEach",
             'titleButton.setAttribute(\n          "aria-pressed"',
             "focusTarget.focus()",

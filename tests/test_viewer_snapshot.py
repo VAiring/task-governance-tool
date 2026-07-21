@@ -52,7 +52,11 @@ class ViewerSnapshotTests(unittest.TestCase):
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     for index, status in enumerate(STATUSES):
-                        initial_status = "ready" if status == "done" else status
+                        initial_status = (
+                            "ready" if status == "done" else
+                            "in_progress" if status == "paused" else
+                            status
+                        )
                         tasks[status] = add_task(
                             connection,
                             target.project,
@@ -75,6 +79,18 @@ class ViewerSnapshotTests(unittest.TestCase):
                             )
                             tasks[status]["status"] = "done"
                             tasks[status]["completed_at"] = "2026-07-17T00:00:00Z"
+                        elif status == "paused":
+                            connection.execute(
+                                """
+                                UPDATE tasks
+                                   SET status = 'paused',
+                                       pause_reason = 'Viewer pause reason'
+                                 WHERE task_id = ?
+                                """,
+                                (tasks[status]["task_id"],),
+                            )
+                            tasks[status]["status"] = "paused"
+                            tasks[status]["pause_reason"] = "Viewer pause reason"
                     selected = tasks["ready"]
                     connection.execute(
                         """
@@ -114,7 +130,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 )
 
             snapshot = result.snapshot
-            self.assertEqual(snapshot["snapshot_version"], 1)
+            self.assertEqual(snapshot["snapshot_version"], 2)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {
@@ -135,7 +151,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 [event["summary"] for event in ready["events"]],
                 [f"Viewer event {index:02d}" for index in range(11, 1, -1)],
             )
-            self.assertEqual(result.event_count, 15)
+            self.assertEqual(result.event_count, 16)
             self.assertEqual(snapshot["tasks"][0]["priority"], "urgent")
 
             serialized = json.dumps(snapshot)
@@ -172,7 +188,7 @@ class ViewerSnapshotTests(unittest.TestCase):
             target = initialized_target(tmp)
             with closing(connect(target.db_path)) as connection:
                 with connection:
-                    connection.execute("DELETE FROM schema_migrations WHERE version = 2")
+                    connection.execute("DELETE FROM schema_migrations WHERE version = 3")
 
             with closing(connect_snapshot_readonly(target.db_path)) as connection:
                 with self.assertRaises(StorageError) as migration:

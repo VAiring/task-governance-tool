@@ -14,7 +14,7 @@ from typing import Any
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class StorageError(Exception):
@@ -315,6 +315,70 @@ CREATE INDEX IF NOT EXISTS idx_tasks_project_completion_commit
 """
 
 
+def paused_tasks_schema_sql() -> str:
+    return """
+CREATE TABLE tasks_v3 (
+  task_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL CHECK (kind IN ('sequential', 'optional')),
+  lane TEXT NOT NULL DEFAULT '',
+  lane_order INTEGER,
+  priority TEXT NOT NULL CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+  status TEXT NOT NULL CHECK (status IN (
+    'ready',
+    'in_progress',
+    'paused',
+    'blocked',
+    'review_pending',
+    'done',
+    'cancelled'
+  )),
+  blocked_reason TEXT NOT NULL DEFAULT '',
+  pause_reason TEXT NOT NULL DEFAULT '',
+  review_tier INTEGER NOT NULL CHECK (review_tier IN (0, 1, 2)),
+  verification TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT,
+  completion_commit_required INTEGER NOT NULL DEFAULT 1
+    CHECK (completion_commit_required IN (0, 1)),
+  completion_commit_hash TEXT NOT NULL DEFAULT '',
+  CHECK (status != 'blocked' OR blocked_reason != ''),
+  CHECK (
+    (status = 'paused' AND pause_reason != '') OR
+    (status != 'paused' AND pause_reason = '')
+  ),
+  CHECK (kind != 'sequential' OR lane != ''),
+  CHECK (kind != 'sequential' OR lane_order IS NOT NULL)
+);
+"""
+
+
+def create_task_indexes(connection: sqlite3.Connection) -> None:
+    connection.execute("CREATE INDEX idx_tasks_project_status ON tasks(project_id, status)")
+    connection.execute("CREATE INDEX idx_tasks_project_kind ON tasks(project_id, kind)")
+    connection.execute(
+        "CREATE INDEX idx_tasks_project_lane_order ON tasks(project_id, lane, lane_order)"
+    )
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX idx_tasks_project_lane_order_unique
+          ON tasks(project_id, lane, lane_order)
+          WHERE kind = 'sequential'
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX idx_tasks_project_completion_commit
+          ON tasks(project_id, completion_commit_hash)
+          WHERE completion_commit_hash != ''
+        """
+    )
+
+
 def empty_counts() -> dict[str, int]:
     return {
         "active": 0,
@@ -361,6 +425,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
             "priority",
             "status",
             "blocked_reason",
+            "pause_reason",
             "review_tier",
             "verification",
             "tags",
@@ -424,6 +489,85 @@ def apply_completion_commit_migration(connection: sqlite3.Connection) -> None:
     )
 
 
+def apply_paused_state_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Rebuild the task parent table safely while preserving task-event links."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "paused-state migration requires no active transaction",
+        )
+    connection.execute("PRAGMA foreign_keys = OFF")
+    try:
+        if int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 0:
+            raise StorageError("internal_error", "could not disable foreign key enforcement")
+        connection.execute("BEGIN IMMEDIATE")
+        task_ids_before = [
+            str(row["task_id"])
+            for row in connection.execute("SELECT task_id FROM tasks ORDER BY task_id").fetchall()
+        ]
+        event_links_before = [
+            (str(row["task_event_id"]), str(row["task_id"]))
+            for row in connection.execute(
+                "SELECT task_event_id, task_id FROM task_events ORDER BY task_event_id"
+            ).fetchall()
+        ]
+        connection.execute("DROP TABLE IF EXISTS tasks_v3")
+        connection.execute(paused_tasks_schema_sql())
+        connection.execute(
+            """
+            INSERT INTO tasks_v3(
+              task_id, project_id, title, description, kind, lane, lane_order,
+              priority, status, blocked_reason, pause_reason, review_tier,
+              verification, tags, created_at, updated_at, completed_at,
+              completion_commit_required, completion_commit_hash
+            )
+            SELECT
+              task_id, project_id, title, description, kind, lane, lane_order,
+              priority, status, blocked_reason, '', review_tier,
+              verification, tags, created_at, updated_at, completed_at,
+              completion_commit_required, completion_commit_hash
+              FROM tasks
+            """
+        )
+        if fail_stage == "after_copy":
+            raise StorageError("internal_error", "injected paused-state migration failure")
+        connection.execute("DROP TABLE tasks")
+        connection.execute("ALTER TABLE tasks_v3 RENAME TO tasks")
+        create_task_indexes(connection)
+        task_ids_after = [
+            str(row["task_id"])
+            for row in connection.execute("SELECT task_id FROM tasks ORDER BY task_id").fetchall()
+        ]
+        event_links_after = [
+            (str(row["task_event_id"]), str(row["task_id"]))
+            for row in connection.execute(
+                "SELECT task_event_id, task_id FROM task_events ORDER BY task_event_id"
+            ).fetchall()
+        ]
+        if task_ids_after != task_ids_before or event_links_after != event_links_before:
+            raise StorageError("internal_error", "paused-state migration changed task or event identities")
+        if connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise StorageError("internal_error", "paused-state migration produced foreign key violations")
+        connection.execute(
+            "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+            (3, "paused_state", utc_now()),
+        )
+        if fail_stage == "before_commit":
+            raise StorageError("internal_error", "injected paused-state migration failure")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute("PRAGMA foreign_keys = ON")
+        if int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 1:
+            raise StorageError("internal_error", "could not restore foreign key enforcement")
+
+
 def apply_migrations(connection: sqlite3.Connection) -> list[int]:
     version = current_schema_version(connection)
     if version > SCHEMA_VERSION:
@@ -440,6 +584,12 @@ def apply_migrations(connection: sqlite3.Connection) -> list[int]:
     if version < 2:
         apply_completion_commit_migration(connection)
         applied.append(2)
+        version = 2
+    if version < 3:
+        if connection.in_transaction:
+            connection.commit()
+        apply_paused_state_migration(connection)
+        applied.append(3)
     return applied
 
 
@@ -568,7 +718,7 @@ def count_tasks(connection: sqlite3.Connection, project_id: str) -> dict[str, in
             SELECT COUNT(*) AS count
               FROM tasks
              WHERE project_id = ?
-               AND status IN ('ready', 'in_progress', 'blocked', 'review_pending')
+               AND status IN ('ready', 'in_progress', 'paused', 'blocked', 'review_pending')
             """,
             (project_id,),
         ).fetchone()["count"]
@@ -713,6 +863,16 @@ def initialize_database(target: DatabaseTarget) -> InitResult:
         target.db_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(connect(target.db_path)) as connection:
             with connection:
+                if table_exists(connection, "project_meta"):
+                    existing_project_id = read_project_meta_id(connection)
+                    if (
+                        existing_project_id is not None
+                        and existing_project_id != target.project.project_id
+                    ):
+                        raise StorageError(
+                            "project_mismatch",
+                            f"database belongs to project {existing_project_id}, not {target.project.project_id}",
+                        )
                 migrations_applied = apply_migrations(connection)
                 ensure_project_meta(connection, target.project)
                 version = current_schema_version(connection)

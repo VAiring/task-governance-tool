@@ -789,7 +789,8 @@ Selection rules:
 - Include ready `optional` tasks directly.
 - Include ready `sequential` tasks only when earlier tasks in the lane are
   complete or cancelled.
-- Exclude `in_progress`, `blocked`, `review_pending`, `done`, and `cancelled`.
+- Exclude `in_progress`, `paused`, `blocked`, `review_pending`, `done`, and
+  `cancelled`.
 - Supported filters are `--kind`, `--lane`, `--priority`, and `--limit`.
 - Default limit is `5`.
 - Priority order is `urgent`, `high`, `normal`, `low`.

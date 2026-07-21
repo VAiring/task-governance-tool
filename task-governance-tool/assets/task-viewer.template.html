@@ -22,6 +22,7 @@
       --accent-strong: #004f57;
       --ready: #176b87;
       --progress: #006d77;
+      --paused: #5d4e9e;
       --blocked: #a13b2a;
       --review: #7a5800;
       --done: #357a38;
@@ -193,6 +194,11 @@
     .status-in-progress .status-mark,
     .badge-in-progress {
       background: var(--progress);
+    }
+
+    .status-paused .status-mark,
+    .badge-paused {
+      background: var(--paused);
     }
 
     .status-blocked .status-mark,
@@ -733,6 +739,7 @@
       const statusOrder = [
         "ready",
         "in_progress",
+        "paused",
         "blocked",
         "review_pending",
         "done",
@@ -741,6 +748,7 @@
       const statusLabels = {
         ready: "Ready",
         in_progress: "In progress",
+        paused: "Paused",
         blocked: "Blocked",
         review_pending: "Review pending",
         done: "Done",
@@ -1027,6 +1035,7 @@
         addDetailValue(values, "Priority", priorityLabels[task.priority] || task.priority);
         addDetailValue(values, "Review tier", task.review_tier);
         addDetailValue(values, "Blocked reason", task.blocked_reason);
+        addDetailValue(values, "Pause reason", task.pause_reason);
         addDetailValue(values, "Verification", task.verification);
         addDetailValue(values, "Completion commit", completionText(task));
         addDetailValue(values, "Created", task.created_at);

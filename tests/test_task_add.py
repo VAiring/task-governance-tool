@@ -440,6 +440,32 @@ class TaskAddTests(unittest.TestCase):
             self.assertEqual(table_count(db, "tasks"), before_tasks)
             self.assertEqual(table_count(db, "task_events"), before_events)
 
+    def test_task_add_rejects_initial_paused_without_storing_task_or_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+
+            result = run_taskgov(
+                "task",
+                "add",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--title",
+                "Cannot start paused",
+                "--status",
+                "paused",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "initial_paused_forbidden")
+            self.assertEqual(table_count(db, "tasks"), 0)
+            self.assertEqual(table_count(db, "task_events"), 0)
+
     def test_task_add_rejects_project_mismatch_without_storage(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
@@ -471,7 +497,7 @@ class TaskAddTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             init_db(db, repo)
             with closing(sqlite3.connect(db)) as connection:
-                connection.execute("DELETE FROM schema_migrations WHERE version = 2")
+                connection.execute("DELETE FROM schema_migrations WHERE version = 3")
                 connection.commit()
             before = db.read_bytes()
 
@@ -498,7 +524,7 @@ class TaskAddTests(unittest.TestCase):
                     "SELECT version FROM schema_migrations ORDER BY version"
                 )]
                 task_count = connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-            self.assertEqual(versions, [1])
+            self.assertEqual(versions, [1, 2])
             self.assertEqual(task_count, 0)
 
 

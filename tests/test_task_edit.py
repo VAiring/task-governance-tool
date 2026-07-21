@@ -185,6 +185,128 @@ class TaskEditTests(unittest.TestCase):
             self.assertEqual(blocked["data"]["task"]["blocked_reason"], "Waiting for user decision")
             self.assertEqual(unblocked["data"]["task"]["blocked_reason"], "")
 
+    def test_task_edit_pauses_and_resumes_with_distinct_reason_and_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Pausable task", "--status", "in_progress")
+
+            paused = edit_task(
+                db,
+                repo,
+                task["task_id"],
+                "--status",
+                "paused",
+                "--pause-reason",
+                "Waiting for a safe continuation window",
+            )
+            status = run_taskgov("db", "status", "--repo", str(repo), "--db", str(db), "--json")
+            resumed = edit_task(db, repo, task["task_id"], "--status", "in_progress")
+
+            self.assertEqual(paused["data"]["task"]["status"], "paused")
+            self.assertEqual(
+                paused["data"]["task"]["pause_reason"],
+                "Waiting for a safe continuation window",
+            )
+            self.assertIn("Paused: Waiting for a safe continuation window", paused["data"]["event"]["summary"])
+            self.assertEqual(json.loads(status.stdout)["data"]["counts"]["active"], 1)
+            self.assertEqual(resumed["data"]["task"]["status"], "in_progress")
+            self.assertEqual(resumed["data"]["task"]["pause_reason"], "")
+            self.assertEqual(
+                resumed["data"]["event"]["summary"],
+                "Resumed from paused; Previous reason: Waiting for a safe continuation window",
+            )
+
+    def test_resume_event_prioritizes_historical_pause_reason_over_long_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Resume history", "--status", "in_progress")
+            edit_task(
+                db,
+                repo,
+                task["task_id"],
+                "--status",
+                "paused",
+                "--pause-reason",
+                "Critical handoff reason",
+            )
+
+            resumed = edit_task(
+                db,
+                repo,
+                task["task_id"],
+                "--status",
+                "in_progress",
+                "--add-note",
+                "x" * 1500,
+            )
+
+            summary = resumed["data"]["event"]["summary"]
+            self.assertTrue(summary.startswith("Resumed from paused; Previous reason: Critical handoff reason"))
+            self.assertLessEqual(len(summary), 1000)
+            self.assertEqual(resumed["data"]["task"]["pause_reason"], "")
+
+    def test_task_edit_pause_requires_reason_and_valid_transition_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            ready = add_task(db, repo, "Ready task")
+
+            invalid_source = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db), ready["task_id"],
+                "--status", "paused", "--pause-reason", "Hold", "--json",
+            )
+            edit_task(db, repo, ready["task_id"], "--status", "in_progress")
+            missing_reason = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db), ready["task_id"],
+                "--status", "paused", "--json",
+            )
+            edit_task(
+                db, repo, ready["task_id"], "--status", "paused", "--pause-reason", "Hold",
+            )
+            invalid_resume = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db), ready["task_id"],
+                "--status", "blocked", "--blocked-reason", "Dependency", "--json",
+            )
+
+            self.assertEqual(json.loads(invalid_source.stdout)["errors"][0]["code"], "invalid_status_transition")
+            self.assertEqual(json.loads(missing_reason.stdout)["errors"][0]["code"], "pause_reason_required")
+            self.assertEqual(json.loads(invalid_resume.stdout)["errors"][0]["code"], "invalid_status_transition")
+            stored = fetch_task(db, ready["task_id"])
+            self.assertEqual(stored["status"], "paused")
+            self.assertEqual(stored["pause_reason"], "Hold")
+            self.assertEqual(table_count(db, "task_events"), 3)
+
+            review_task = add_task(db, repo, "Review task", "--status", "review_pending")
+            review_paused = edit_task(
+                db,
+                repo,
+                review_task["task_id"],
+                "--status",
+                "paused",
+                "--pause-reason",
+                "Review intentionally deferred",
+            )
+            self.assertEqual(review_paused["data"]["task"]["status"], "paused")
+
+    def test_task_edit_pause_reason_privacy_and_size_rejections_do_not_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Private pause", "--status", "in_progress")
+
+            for reason, code in (("token=secret", "privacy_rejected"), ("x" * 1001, "invalid_argument")):
+                with self.subTest(code=code):
+                    result = run_taskgov(
+                        "task", "edit", "--repo", str(repo), "--db", str(db), task["task_id"],
+                        "--status", "paused", "--pause-reason", reason, "--json",
+                    )
+                    self.assertEqual(result.returncode, 1)
+                    self.assertEqual(json.loads(result.stdout)["errors"][0]["code"], code)
+                    self.assertEqual(fetch_task(db, task["task_id"])["status"], "in_progress")
+            self.assertEqual(table_count(db, "task_events"), 1)
+
     def test_task_edit_add_note_records_note_event_without_changed_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
@@ -337,7 +459,7 @@ class TaskEditTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             init_db(db, repo)
             with closing(sqlite3.connect(db)) as connection:
-                connection.execute("DELETE FROM schema_migrations WHERE version = 2")
+                connection.execute("DELETE FROM schema_migrations WHERE version = 3")
                 connection.commit()
             before = db.read_bytes()
 
@@ -362,7 +484,7 @@ class TaskEditTests(unittest.TestCase):
                 versions = [row[0] for row in connection.execute(
                     "SELECT version FROM schema_migrations ORDER BY version"
                 )]
-            self.assertEqual(versions, [1])
+            self.assertEqual(versions, [1, 2])
 
     def test_task_edit_duplicate_sequential_order_rolls_back(self):
         with tempfile.TemporaryDirectory() as tmp:

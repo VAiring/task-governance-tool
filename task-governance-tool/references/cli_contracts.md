@@ -79,8 +79,8 @@ python scripts/taskgov.py db init --repo <target-project> --json
 ```json
 {
   "created": true,
-  "migrations_applied": [1, 2],
-  "schema_version": 2
+  "migrations_applied": [1, 2, 3],
+  "schema_version": 3
 }
 ```
 
@@ -99,7 +99,7 @@ python scripts/taskgov.py db status --repo <target-project> --json
   "exists": true,
   "needs_init": false,
   "needs_migration": false,
-  "schema_version": 2,
+  "schema_version": 3,
   "counts": {
     "active": 3,
     "blocked": 1,
@@ -109,6 +109,9 @@ python scripts/taskgov.py db status --repo <target-project> --json
   }
 }
 ```
+
+`counts.active` includes `ready`, `in_progress`, `paused`, `blocked`, and
+`review_pending`; it excludes terminal `done` and `cancelled` tasks.
 
 ### `task add`
 
@@ -138,6 +141,15 @@ initial state, then complete it with `task edit --status done` so the normal
 verification, review, and completion-evidence gates are enforced. Attempting
 `task add --status done` returns `initial_done_forbidden` before any task or
 event is stored.
+
+An initial status of `paused` is also prohibited and returns
+`initial_paused_forbidden`. `paused` is an intentional hold for work that has
+already entered `in_progress` or `review_pending`.
+
+For sequential tasks, initial `in_progress` or `review_pending` and any
+insertion into an existing lane must preserve the shared predecessor rule.
+Every earlier same-lane task must be `done` or `cancelled` before later work may
+be active or under review.
 
 ### `task list`
 
@@ -180,7 +192,8 @@ Selection rules:
 - Include ready optional tasks directly.
 - Include ready sequential tasks only when earlier same-lane tasks are `done` or
   `cancelled`.
-- Exclude `in_progress`, `blocked`, `review_pending`, `done`, and `cancelled`.
+- Exclude `in_progress`, `paused`, `blocked`, `review_pending`, `done`, and
+  `cancelled`.
 
 `data`: `tasks`, `count`, `limit`, `selection_rules`.
 
@@ -217,6 +230,7 @@ Editable options:
 - `--priority`
 - `--status`
 - `--blocked-reason`
+- `--pause-reason`
 - `--review-tier`
 - `--verification`
 - `--tags`
@@ -231,6 +245,19 @@ Editable options:
   required review gate passed or has a valid fallback.
 
 `data`: `task`, `changed_fields`, `event`.
+
+Only `in_progress` or `review_pending` tasks may move to `paused`, and the
+transition requires a concise sanitized `--pause-reason`. A paused task resumes
+to `in_progress`, which clears the current `pause_reason`; the transition event
+retains the bounded historical reason. Unsupported pause/resume paths return
+`invalid_status_transition`.
+
+Sequential transitions to `in_progress`, `review_pending`, or `done` require
+all earlier same-lane tasks to be `done` or `cancelled`. The same predicate is
+used by `task next`. Adds and edits that change kind, lane, order, or status
+also validate both affected lanes and return
+`sequential_predecessor_incomplete` without storing a success event when the
+result would place incomplete work before an already advanced task.
 
 `--completion-commit-hash` and `--commit-not-required` are mutually exclusive.
 `task edit --status done` requires both `--verification-complete` and
@@ -290,7 +317,7 @@ generated `state/` directory.
   "task_count": 3,
   "event_count": 7,
   "generated_at": "2026-07-17T00:00:00Z",
-  "snapshot_version": 1
+  "snapshot_version": 2
 }
 ```
 
@@ -311,7 +338,7 @@ failed:
   "task_count": 0,
   "event_count": 0,
   "generated_at": null,
-  "snapshot_version": 1
+  "snapshot_version": 2
 }
 ```
 
@@ -329,11 +356,15 @@ Known error codes include:
 - `invalid_priority`
 - `invalid_review_tier`
 - `blocked_reason_required`
+- `pause_reason_required`
 - `verification_required`
 - `review_required`
 - `commit_required`
 - `completion_commit_conflict`
 - `initial_done_forbidden`
+- `initial_paused_forbidden`
+- `invalid_status_transition`
+- `sequential_predecessor_incomplete`
 - `privacy_rejected`
 - `not_found`
 - `db_not_initialized`

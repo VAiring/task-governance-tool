@@ -202,6 +202,7 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--priority", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--status", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--blocked-reason", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--pause-reason", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--review-tier", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--verification", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--tags", default=argparse.SUPPRESS)
@@ -942,6 +943,7 @@ EDIT_ARGUMENT_FIELDS = (
     "priority",
     "status",
     "blocked_reason",
+    "pause_reason",
     "review_tier",
     "verification",
     "tags",

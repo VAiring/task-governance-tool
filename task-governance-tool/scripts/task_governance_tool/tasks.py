@@ -10,12 +10,13 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from task_governance_tool.ordering import first_out_of_order_advanced_task
 from task_governance_tool.storage import ProjectIdentity, utc_now
 
 
 KINDS = ("sequential", "optional")
 PRIORITIES = ("low", "normal", "high", "urgent")
-STATUSES = ("ready", "in_progress", "blocked", "review_pending", "done", "cancelled")
+STATUSES = ("ready", "in_progress", "paused", "blocked", "review_pending", "done", "cancelled")
 REVIEW_TIERS = (0, 1, 2)
 
 PUBLIC_TASK_FIELDS = (
@@ -29,6 +30,7 @@ PUBLIC_TASK_FIELDS = (
     "priority",
     "status",
     "blocked_reason",
+    "pause_reason",
     "review_tier",
     "verification",
     "tags",
@@ -50,6 +52,7 @@ TEXT_LIMITS = {
     "add_note": 2000,
     "event_summary": 1000,
     "completion_commit_hash": 128,
+    "pause_reason": 1000,
 }
 
 UPPER_ENV_NAME_PATTERN = r"[A-Z_][A-Z0-9_]*"
@@ -145,6 +148,7 @@ STRICT_RAW_OUTPUT_FIELDS = {
     "verification",
     "tags",
     "blocked_reason",
+    "pause_reason",
     "add_note",
     "event_summary",
 }
@@ -371,6 +375,7 @@ def validate_task_input(
     priority: Any = "normal",
     status: Any = "ready",
     blocked_reason: Any = "",
+    pause_reason: Any = "",
     review_tier: Any = 1,
     verification: Any = "",
     tags: Any = "",
@@ -385,6 +390,11 @@ def validate_task_input(
         "priority": validate_choice("priority", priority, PRIORITIES, "invalid_priority"),
         "status": validate_choice("status", status, STATUSES, "invalid_status"),
         "blocked_reason": validate_text("blocked_reason", blocked_reason),
+        "pause_reason": validate_text(
+            "pause_reason",
+            pause_reason,
+            limit=TEXT_LIMITS["pause_reason"],
+        ),
         "review_tier": validate_review_tier(review_tier),
         "verification": validate_text("verification", verification, limit=TEXT_LIMITS["verification"]),
         "tags": validate_text("tags", tags, limit=TEXT_LIMITS["tags"]),
@@ -400,6 +410,18 @@ def validate_task_input(
             "initial_done_forbidden",
             "task add --status done is prohibited; add the task first and complete it with task edit",
             "status",
+        )
+    if normalized["status"] == "paused":
+        raise validation_error(
+            "initial_paused_forbidden",
+            "task add --status paused is prohibited; pause work with task edit after it starts",
+            "status",
+        )
+    if normalized["pause_reason"]:
+        raise validation_error(
+            "invalid_argument",
+            "pause_reason may be recorded only while a task is paused",
+            "pause_reason",
         )
     if add_note is not None:
         normalized["add_note"] = validate_text("add_note", add_note, limit=TEXT_LIMITS["add_note"])
@@ -526,6 +548,7 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
         "priority": normalized["priority"],
         "status": normalized["status"],
         "blocked_reason": normalized["blocked_reason"],
+        "pause_reason": normalized["pause_reason"],
         "review_tier": normalized["review_tier"],
         "verification": normalized["verification"],
         "tags": normalized["tags"],
@@ -533,6 +556,8 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
         "updated_at": now,
         "completed_at": completed_at,
     }
+    savepoint = f"taskgov_ordering_{secrets.token_hex(4)}"
+    connection.execute(f"SAVEPOINT {savepoint}")
     try:
         connection.execute(
             """
@@ -547,6 +572,7 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
               priority,
               status,
               blocked_reason,
+              pause_reason,
               review_tier,
               verification,
               tags,
@@ -565,6 +591,7 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
               :priority,
               :status,
               :blocked_reason,
+              :pause_reason,
               :review_tier,
               :verification,
               :tags,
@@ -575,11 +602,30 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
             """,
             row,
         )
+        if row["kind"] == "sequential":
+            invalid_task_id = first_out_of_order_advanced_task(
+                connection,
+                project_id=project.project_id,
+                lanes={str(row["lane"])},
+            )
+            if invalid_task_id is not None:
+                raise TaskRepositoryError(
+                    "sequential_predecessor_incomplete",
+                    "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
+                )
     except sqlite3.IntegrityError as exc:
+        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
         raise TaskRepositoryError(
             "invalid_argument",
             "task violates database constraints, such as duplicate sequential lane order",
         ) from exc
+    except Exception:
+        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+        raise
+    else:
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
 
     event = create_task_event(
         connection,
@@ -697,6 +743,24 @@ def note_event_summary(note: str, recorded_markers: list[str] | None = None) -> 
     return prefix + note[: note_limit - 3] + "..." + suffix
 
 
+def bounded_event_summary(prefix: str, value: str, suffix: str = "") -> str:
+    limit = TEXT_LIMITS["event_summary"]
+    available = limit - len(prefix)
+    if available <= 0:
+        return prefix[:limit]
+    if len(value) > available:
+        if available <= 3:
+            return prefix + value[:available]
+        return prefix + value[: available - 3] + "..."
+    base = prefix + value
+    remaining = limit - len(base)
+    if len(suffix) <= remaining:
+        return base + suffix
+    if remaining <= 3:
+        return base + suffix[:remaining]
+    return base + suffix[: remaining - 3] + "..."
+
+
 def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for field, value in edit_input.items():
@@ -716,6 +780,8 @@ def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
             normalized[field] = validate_choice(field, value, STATUSES, "invalid_status")
         elif field == "blocked_reason":
             normalized[field] = validate_text(field, value)
+        elif field == "pause_reason":
+            normalized[field] = validate_text(field, value, limit=TEXT_LIMITS["pause_reason"])
         elif field == "review_tier":
             normalized[field] = validate_review_tier(value)
         elif field == "verification":
@@ -759,6 +825,8 @@ def suggested_next_action(task: dict[str, Any]) -> str:
         return "Resolve the blocker, or choose another ready task."
     if status == "review_pending":
         return "Complete the required review gate, then update the task status."
+    if status == "paused":
+        return "Review the pause reason, then resume the task to in_progress when safe."
     if status == "done":
         return "No next action; the task is done."
     if status == "cancelled":
@@ -1000,6 +1068,43 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
     if status_was_provided and updated["status"] != "blocked" and "blocked_reason" not in normalized:
         updated["blocked_reason"] = ""
 
+    if status_was_provided and updated["status"] == "paused":
+        if existing["status"] not in {"in_progress", "review_pending"}:
+            raise validation_error(
+                "invalid_status_transition",
+                "only in_progress or review_pending tasks may transition to paused",
+                "status",
+            )
+        if not str(updated.get("pause_reason", "")).strip():
+            raise validation_error(
+                "pause_reason_required",
+                "pause_reason is required when status is paused",
+                "pause_reason",
+            )
+    elif status_was_provided and existing["status"] == "paused":
+        if updated["status"] != "in_progress":
+            raise validation_error(
+                "invalid_status_transition",
+                "paused tasks may resume only to in_progress",
+                "status",
+            )
+        if str(normalized.get("pause_reason", "")).strip():
+            raise validation_error(
+                "invalid_status_transition",
+                "pause_reason cannot be retained when a paused task resumes",
+                "pause_reason",
+            )
+        updated["pause_reason"] = ""
+    elif "pause_reason" in normalized:
+        if existing["status"] != "paused" or not str(updated["pause_reason"]).strip():
+            raise validation_error(
+                "pause_reason_required" if existing["status"] == "paused" else "invalid_status_transition",
+                "a non-empty pause_reason may be recorded only while status is paused",
+                "pause_reason",
+            )
+    elif updated["status"] != "paused":
+        updated["pause_reason"] = ""
+
     now = utc_now()
     if status_was_provided:
         if updated["status"] == "done":
@@ -1022,6 +1127,7 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
         "priority",
         "status",
         "blocked_reason",
+        "pause_reason",
         "review_tier",
         "verification",
         "tags",
@@ -1044,6 +1150,18 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
 
     update_values = {field: updated[field] for field in changed_fields}
     update_values["updated_at"] = now
+    ordering_changed = any(
+        updated[field] != existing[field]
+        for field in ("kind", "lane", "lane_order", "status")
+    )
+    affected_lanes: set[str] = set()
+    if ordering_changed and existing["kind"] == "sequential":
+        affected_lanes.add(str(existing["lane"]))
+    if ordering_changed and updated["kind"] == "sequential":
+        affected_lanes.add(str(updated["lane"]))
+
+    savepoint = f"taskgov_ordering_{secrets.token_hex(4)}"
+    connection.execute(f"SAVEPOINT {savepoint}")
     try:
         update_task_row(
             connection,
@@ -1051,13 +1169,48 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
             project_id=project.project_id,
             values=update_values,
         )
+        invalid_task_id = first_out_of_order_advanced_task(
+            connection,
+            project_id=project.project_id,
+            lanes=affected_lanes,
+        )
+        if invalid_task_id is not None:
+            raise TaskRepositoryError(
+                "sequential_predecessor_incomplete",
+                "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
+            )
     except sqlite3.IntegrityError as exc:
+        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
         raise TaskRepositoryError(
             "invalid_argument",
             "task violates database constraints, such as duplicate sequential lane order",
         ) from exc
+    except Exception:
+        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+        raise
+    else:
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
 
-    if add_note is not None:
+    pause_changed = updated["pause_reason"] != existing["pause_reason"]
+    if status_was_provided and updated["status"] == "paused":
+        suffix = f"; Note: {add_note}" if add_note is not None else ""
+        event_type = "task_updated"
+        summary = bounded_event_summary("Paused: ", str(updated["pause_reason"]), suffix)
+    elif status_was_provided and existing["status"] == "paused":
+        suffix = f"; Note: {add_note}" if add_note is not None else ""
+        event_type = "task_updated"
+        summary = bounded_event_summary(
+            "Resumed from paused; Previous reason: ",
+            str(existing["pause_reason"]),
+            suffix,
+        )
+    elif pause_changed:
+        suffix = f"; Note: {add_note}" if add_note is not None else ""
+        event_type = "task_updated"
+        summary = bounded_event_summary("Pause reason updated: ", str(updated["pause_reason"]), suffix)
+    elif add_note is not None:
         event_type = "note_added" if not changed_fields and not recorded_markers else "task_updated"
         summary = note_event_summary(add_note, recorded_markers)
     elif recorded_markers:

@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from task_governance_tool.ordering import incomplete_predecessor_sql
 from task_governance_tool.storage import ProjectIdentity
 from task_governance_tool.tasks import (
     KINDS,
@@ -39,20 +40,7 @@ def selection_rules() -> dict[str, Any]:
 
 
 def next_task_readiness_sql(task_alias: str = "task") -> str:
-    return f"""
-    (
-      {task_alias}.kind = 'optional'
-      OR NOT EXISTS (
-        SELECT 1
-          FROM tasks AS earlier
-         WHERE earlier.project_id = {task_alias}.project_id
-           AND earlier.kind = 'sequential'
-           AND earlier.lane = {task_alias}.lane
-           AND earlier.lane_order < {task_alias}.lane_order
-           AND earlier.status NOT IN ('done', 'cancelled')
-      )
-    )
-    """
+    return f"({task_alias}.kind = 'optional' OR NOT {incomplete_predecessor_sql(task_alias)})"
 
 
 def next_task_filters(

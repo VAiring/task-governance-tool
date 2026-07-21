@@ -23,7 +23,7 @@ from task_governance_tool.storage import (
 from task_governance_tool.tasks import STATUSES, list_tasks_for_viewer
 
 
-SNAPSHOT_VERSION = 1
+SNAPSHOT_VERSION = 2
 VIEWER_EVENT_LIMIT = 10
 TEMPLATE_PLACEHOLDER = "__TASKGOV_SNAPSHOT_BASE64__"
 TEMPLATE_RELATIVE_PATH = Path("assets") / "task-viewer.template.html"
@@ -60,7 +60,7 @@ def build_viewer_snapshot(
     *,
     generated_at: str | None = None,
 ) -> ViewerSnapshotResult:
-    """Build snapshot version 1 from one validated SQLite read transaction."""
+    """Build snapshot version 2 from one validated SQLite read transaction."""
     try:
         source_schema_version = validate_snapshot_database(connection, target)
         task_result = list_tasks_for_viewer(

@@ -1,6 +1,9 @@
 # task-governance-tool Initial Plan
 
 Status: MVP, completion commit extension, and static Task Viewer implemented.
+TG-M8 governance-hardening requirements, design, and execution units are
+approved for documentation/task registration; implementation awaits separate
+explicit user approval.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -700,11 +703,44 @@ Confirmed decisions:
 - The implemented Task Viewer may be advertised in Skill discovery metadata,
   README, and release guidance only as an explicitly requested, stale offline
   snapshot with no server, live refresh, or browser editing.
+- TG-M8 prohibits `task add --status done`; historical import, if ever needed,
+  must use a separately approved explicit operation.
+- `db init` remains the sole create/migrate command. Project-scoped setup runs
+  it explicitly after installation and ignore verification; package creation
+  itself must not initialize a target database.
+- TG-M8 adds `paused` as an intentional hold distinct from `blocked`.
+  `paused` requires a concise reason, appears in `task current`, remains
+  incomplete for sequential ordering, and resumes explicitly to
+  `in_progress`. Initial paused registration is prohibited, and the Viewer
+  gains paused support in the same schema-v3 execution unit.
+- Direct transitions of sequential tasks into `in_progress`,
+  `review_pending`, or `done` must use the same predecessor-completeness rule
+  as `task next`. No administrative override is approved for TG-M8.
+- `task current` is the only approved TG-M8 resume addition. It returns
+  in-progress, review-pending, paused, and blocked tasks with latest event and
+  deterministic suggested action; stale detection and persistent checkpoints
+  remain deferred.
+- New completion transitions use explicit `git_commit`, `external_revision`,
+  or `commit_not_required` evidence. Git commits are checked read-only and
+  stored as canonical full IDs; schema-v2 hashes remain preserved as
+  historical unverified evidence.
+- Review evidence becomes structured and sanitized. Tier 2 requires two
+  distinct independent PASS receipts for one current target, and unresolved
+  high/medium findings block completion. Monotonic target generations prevent
+  A-to-B-to-A receipt reuse; resolving a high/medium finding requires a newer
+  target and fresh receipts. Deterministic evidence checks add no LLM decision;
+  a normal Tier 2 pass uses two review decisions and each meaningful
+  finding/fix cycle adds two fresh decisions.
+- TG-M8 explicitly defers verification receipts, stale warnings, handoff
+  checkpoints, event-history pagination, and parent/child or acceptance
+  checklist structures. Reconsider task granularity only after operational
+  evidence from `paused` and `task current`.
 
 Open issues:
 
-- Decide after the MVP whether to add profile detection, verification recording,
-  review-template generation, dependency graphs, or Git integration.
+- Decide later whether to add profile detection, verification recording,
+  review-template generation, dependency graphs, or Git integration beyond
+  TG-M8's read-only completion-commit validation.
 - TG-M7.0 through TG-M7.4 are complete, with task and commit evidence recorded
   in the project-local SQLite database. No additional product decision is
   currently required for the static Viewer baseline.
@@ -712,12 +748,17 @@ Open issues:
   regeneration behavior, error contract, verification gates, and execution
   unit. The current requirement does not authorize changing `web export` or
   Skill guidance yet.
+- Decide after TG-M8 operational use whether long-running tasks need stale
+  warnings, checkpoints, history pagination, or checklist/child execution
+  units. Their feedback items are valid observations but not adopted in the
+  current minimal scope.
 
 ## Implementation Execution Status
 
-All currently approved execution units through TG-M7 are complete. Future
-implementation requires an approved addition to
-`docs/implementation-roadmap.md`.
+All implementation units through TG-M7 are complete. TG-M8.0 is the approved
+governing-document and task-baseline unit. TG-M8.1 through TG-M8.6 are approved
+as registered roadmap tasks but must not be consumed until the user separately
+approves implementation.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local
 SQLite database. Do not append another large per-task execution log here; use

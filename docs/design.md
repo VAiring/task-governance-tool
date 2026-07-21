@@ -1,6 +1,7 @@
 # task-governance-tool MVP Design
 
-Status: formal MVP design baseline.
+Status: formal MVP design baseline plus approved TG-M8 governance-hardening
+design. TG-M8 remains unimplemented until its roadmap units complete.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -42,7 +43,10 @@ task-governance-tool/
       cli.py
       storage.py
       tasks.py
+      ordering.py
       selection.py
+      completion.py
+      reviews.py
       viewer.py
   references/
     task_workflow.md
@@ -124,7 +128,26 @@ behavior is self-contained. Tests may add `task-governance-tool/scripts/` to
 `task-governance-tool/scripts/task_governance_tool/selection.py`
 
 - Implement `task next` readiness rules.
-- Keep sequential lane logic separate from generic list filtering.
+- Consume the shared sequential predecessor predicate from `ordering.py`.
+
+`task-governance-tool/scripts/task_governance_tool/ordering.py`
+
+- Own the one predecessor-completeness query used by both `task next` and
+  direct status transitions.
+- Treat only `done` and `cancelled` predecessors as complete.
+
+`task-governance-tool/scripts/task_governance_tool/completion.py`
+
+- Validate explicit completion evidence kinds.
+- Resolve Git commit evidence read-only and return a canonical full object ID.
+- Enforce completion evidence without creating commits or changing Git state.
+
+`task-governance-tool/scripts/task_governance_tool/reviews.py`
+
+- Create and read sanitized review targets, receipts, and findings through
+  storage repository helpers.
+- Evaluate tier-specific review gates deterministically.
+- Store no raw review transcript or private reasoning.
 
 `task-governance-tool/scripts/task_governance_tool/viewer.py`
 
@@ -283,27 +306,36 @@ deferred.
 
 ## Command Flow
 
-Write commands are `db init`, `task add`, and `task edit`. They should follow
-this flow:
+`db init` is the only create/migrate command. It should follow this flow:
 
 1. Parse arguments.
 2. Resolve repo and database path.
 3. If `--read-only` is present, reject the command before creating,
    migrating, or writing.
 4. Initialize or migrate the database when needed.
-5. Validate inputs.
-6. Execute repository operation.
-7. Emit JSON or concise text.
-8. Return a stable exit code.
+5. Emit JSON or concise text.
+6. Return a stable exit code.
+
+All other write commands, including `task add`, `task edit`, and TG-M8 review
+commands, must use this flow:
+
+1. Parse arguments and reject `--read-only`.
+2. Resolve repo and database path without creating parents or a file.
+3. Open an existing database and verify project identity and current schema.
+4. Return `db_not_initialized` or `migration_required` without mutation when
+   applicable.
+5. Validate inputs and current-state transition gates.
+6. Perform the repository operation in one transaction.
+7. Emit JSON or concise text and return a stable exit code.
 
 Write commands must clearly say what they recorded in text mode and in JSON
 payloads.
 
-Inspection commands are `db status`, `task list`, `task next`, and `task show`.
-They must not create, migrate, or write to the database by default. A missing
-database should produce `db_not_initialized`; a database requiring migration
-should produce `migration_required`; `db status` should report those states
-without changing the database.
+Inspection commands are `db status`, `task list`, `task next`, `task current`,
+and `task show` after TG-M8. They must not create, migrate, or write to the
+database by default. A missing database should produce `db_not_initialized`; a
+database requiring migration should produce `migration_required`; `db status`
+should report those states without changing the database.
 
 The post-MVP `web export` command is a hybrid export command: it reads the
 database through the inspection path but, only after explicit user intent,
@@ -335,7 +367,7 @@ Errors should use stable codes:
 ```json
 {
   "code": "invalid_status",
-  "message": "status must be one of: ready, in_progress, blocked, review_pending, done, cancelled"
+  "message": "status must be one of: ready, in_progress, paused, blocked, review_pending, done, cancelled"
 }
 ```
 
@@ -354,11 +386,11 @@ IDs must not encode private path details.
 
 ## Completion Commit Extension Design
 
-The post-MVP completion extension should add schema version 2 and keep commit
-evidence directly on the `tasks` row. This intentionally avoids separate commit
-or artifact tables. The database records which commit or durable revision closes
-the task; the version-control system remains responsible for listing changed
-materials.
+The implemented post-MVP completion extension added schema version 2 and kept
+commit evidence directly on the `tasks` row. This section describes the
+historical v2 design; TG-M8 below supersedes its generic revision and
+boolean-only review behavior for new transitions. The version-control system
+remains responsible for listing changed materials.
 
 Recommended `tasks` columns:
 
@@ -425,6 +457,390 @@ Implementation rules:
 - Required verification and review gates still apply through the execution
   workflow and skill guidance; this simplified design does not add structured review or verification tables.
 
+## TG-M8 Governance Hardening Design
+
+This section supersedes the initialization, completion-evidence, and
+boolean-only review details above for new behavior. Migrations preserve the
+earlier schema and data rather than rewriting historical claims.
+
+### Project-Scoped Setup
+
+Package creation remains side-effect free. After the user approves installation
+to `<repo>/.agents/skills/task-governance-tool`, the setup workflow is:
+
+1. verify the installed `state/` path is ignored;
+2. run `taskgov db status --repo <repo>`;
+3. run `taskgov db init --repo <repo>` explicitly when initialization or a
+   supported migration is required; and
+4. run `db status` again to confirm the current schema and project identity.
+
+No task command may substitute for step 3.
+
+### Schema Version 3: Paused State
+
+Schema version 3 rebuilds `tasks` transactionally because the existing status
+`CHECK` constraint must admit `paused`. It adds:
+
+```sql
+pause_reason TEXT NOT NULL DEFAULT ''
+```
+
+The rebuilt table must include `paused` in the status constraint and:
+
+```sql
+CHECK (
+  (status = 'paused' AND pause_reason != '') OR
+  (status != 'paused' AND pause_reason = '')
+)
+```
+
+All version-2 rows copy unchanged with `pause_reason=''`. Because
+`task_events` references the rebuilt parent table, the migration must use this
+SQLite-safe boundary (or an equivalently tested strategy):
+
+1. confirm no transaction is active, then disable foreign-key enforcement;
+2. begin the migration transaction, create the version-3 table, copy every
+   task, replace the old table, and recreate indexes;
+3. compare task/event IDs and counts and run `PRAGMA foreign_key_check` before
+   commit;
+4. commit only when all checks pass; otherwise roll back to the usable version-2
+   database; and
+5. re-enable foreign-key enforcement in a `finally` path and verify it reports
+   enabled before returning the connection.
+
+`PRAGMA foreign_keys` must not be toggled inside a transaction. Failure-injection
+tests must prove rollback preserves the original data and that enforcement is
+restored for both success and failure paths.
+
+`ordering.py` exposes one repository query answering whether a given sequential
+task has an earlier same-project, same-lane row whose status is not `done` or
+`cancelled`. `selection.py` excludes such ready tasks. `tasks.py` calls the
+same predicate before transitions into `in_progress`, `review_pending`, or
+`done` and returns `sequential_predecessor_incomplete` on failure. A paused
+predecessor is therefore incomplete without special-case duplication.
+
+Task add applies the predicate to a proposed sequential row whose initial
+status is `in_progress` or `review_pending`; initial `done` and `paused` are
+rejected before storage. Task edit validates the complete resulting row, not only the fields
+named on the command. If kind, lane, order, or status changes, the same write
+transaction validates every `in_progress`, `review_pending`, and `done` row in
+both affected old/new lanes. This rejects inserting or moving an incomplete
+task ahead of work that has already crossed the sequential gate. The
+repository uses an immediate write transaction and performs validation
+immediately before the write so concurrent writers serialize instead of
+bypassing it.
+
+No transition override is introduced in TG-M8. Administrative overrides need
+a separate contract and audit design before implementation.
+Unsupported pause/resume source states fail with `invalid_status_transition`;
+initial paused registration fails with `initial_paused_forbidden`.
+
+### `task current` Read Model
+
+The repository query selects only `in_progress`, `review_pending`, `paused`,
+and `blocked`, with default limit `20`. It left-joins or separately fetches at
+most one latest event per task using deterministic order
+`created_at DESC, rowid DESC`, matching `task show` and the Viewer when multiple
+events share the same second. The internal rowid is a tie-breaker only and is
+not exposed in JSON.
+
+Command value is `task.current`; its payload is:
+
+```json
+{
+  "tasks": [
+    {
+      "task_id": "tg_task_example",
+      "status": "in_progress",
+      "latest_event": {},
+      "suggested_next_action": "continue implementation"
+    }
+  ],
+  "count": 1,
+  "limit": 20,
+  "statuses": ["in_progress", "review_pending", "paused", "blocked"]
+}
+```
+
+Suggested actions are deterministic status mappings, optionally including the
+sanitized pause or blocker reason:
+
+- `in_progress`: continue the task and inspect its latest event;
+- `review_pending`: complete the required review gate;
+- `paused`: review the pause reason and resume explicitly when safe;
+- `blocked`: resolve or reassess the blocker.
+
+The command does not inspect the working tree, calculate staleness, or write a
+checkpoint. A transition into `paused` is valid only from `in_progress` or
+`review_pending`; the normal exit from `paused` is `in_progress`. Leaving
+`paused` clears `pause_reason`; the transition event retains only the concise
+sanitized historical reason.
+
+### Schema Version 4: Completion Evidence
+
+Schema version 4 adds these task columns while retaining
+`completion_commit_required` and `completion_commit_hash` as compatibility
+projections:
+
+```sql
+completion_evidence_kind TEXT NOT NULL DEFAULT 'none' CHECK (
+  completion_evidence_kind IN (
+    'none',
+    'git_commit',
+    'external_revision',
+    'commit_not_required',
+    'legacy_unverified'
+  )
+),
+completion_evidence_revision TEXT NOT NULL DEFAULT '',
+completion_evidence_reason TEXT NOT NULL DEFAULT '',
+external_revision_approved INTEGER NOT NULL DEFAULT 0 CHECK (
+  external_revision_approved IN (0, 1)
+)
+```
+
+Version-2 historical rows map without validation or data loss:
+
+- required with a non-empty hash becomes `legacy_unverified`; the original
+  hash remains unchanged and is copied to `completion_evidence_revision`;
+- not required with an empty hash becomes `commit_not_required`;
+- required with an empty hash becomes `none`; and
+- any otherwise inconsistent legacy combination becomes `legacy_unverified`
+  with both original fields retained for audit and a migration warning.
+
+Historical `done` rows remain done. `legacy_unverified` is read-only historical
+evidence and cannot satisfy a new done transition after the task is reopened.
+New writes enforce this complete cross-field matrix and synchronize the legacy
+projection:
+
+- `none`: revision/reason empty, approval `0`, required `1`, hash empty;
+- `git_commit`: canonical full revision non-empty, reason empty, approval `0`,
+  required `1`, hash equal to revision;
+- `external_revision`: revision and sanitized reason non-empty, approval `1`,
+  required `1`, hash equal to revision;
+- `commit_not_required`: revision/reason empty, approval `0`, required `0`,
+  hash empty; and
+- `legacy_unverified`: migration-only; revision mirrors the preserved old hash,
+  reason/approval remain empty/`0`, and the original required/hash pair is not
+  rewritten.
+
+Changing an evidence kind clears every field not permitted by the destination
+row before applying its new values. Conflicting or stale reason, approval,
+revision, required, or hash fields fail with `completion_evidence_conflict`
+rather than being silently retained. `legacy_unverified` cannot be selected by
+a normal CLI write.
+
+Completion CLI contract:
+
+- `--completion-commit-hash <revision>` is the compatibility spelling for
+  evidence kind `git_commit`;
+- `--completion-evidence-kind git_commit --completion-revision <revision>` is
+  the explicit Git spelling;
+- `--completion-evidence-kind external_revision --completion-revision <id>
+  --completion-evidence-reason <summary>` records external evidence;
+- external evidence always requires `--external-revision-approved` and stores
+  an audit event; in a Git project the acknowledgement explicitly selects the
+  external durable source instead of Git history; and
+- `--commit-not-required` maps to `commit_not_required`.
+
+Mutually conflicting evidence options fail before storage. A task must not be
+created initially as done, regardless of supplied evidence.
+
+Git resolution uses `subprocess.run` with an argument vector and no shell,
+equivalent to:
+
+```text
+git -C <canonical-repo> rev-parse --verify --end-of-options <revision>^{commit}
+```
+
+The revision-plus-peel expression is one argument in the subprocess argument
+vector. Reject empty or leading-hyphen revisions before process execution;
+`--end-of-options` is still required as defense in depth. The implementation
+must reject failure, multiple output lines, non-hex output, or output that is
+not one canonical full object ID. This makes an ambiguous short name fail and
+stores the resolved full ID. Tests include option-shaped input and snapshot
+`HEAD`, refs, index/worktree status, and database bytes or logical counts before
+and after read-only inspection to prove no mutation.
+
+### Schema Version 5: Review Evidence
+
+Schema version 5 adds the current target to `tasks`:
+
+```sql
+review_target_kind TEXT NOT NULL DEFAULT '',
+review_target_value TEXT NOT NULL DEFAULT '',
+review_target_generation INTEGER NOT NULL DEFAULT 0 CHECK (
+  review_target_generation >= 0
+)
+```
+
+It adds two normalized evidence tables:
+
+```sql
+CREATE TABLE review_receipts (
+  review_receipt_id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  reviewer_key TEXT NOT NULL,
+  receipt_kind TEXT NOT NULL CHECK (receipt_kind IN (
+    'independent', 'self_review_fallback', 'not_required'
+  )),
+  verdict TEXT NOT NULL CHECK (verdict IN (
+    'pass', 'changes_requested', 'not_required'
+  )),
+  target_kind TEXT NOT NULL,
+  target_value TEXT NOT NULL,
+  target_generation INTEGER NOT NULL CHECK (target_generation > 0),
+  summary TEXT NOT NULL DEFAULT '',
+  user_approved INTEGER NOT NULL DEFAULT 0 CHECK (user_approved IN (0, 1)),
+  created_at TEXT NOT NULL,
+  UNIQUE (task_id, target_generation, reviewer_key),
+  CHECK (reviewer_key != ''),
+  CHECK (target_kind IN ('git_commit', 'diff_fingerprint', 'external_revision')),
+  CHECK (target_value != ''),
+  CHECK (
+    (receipt_kind = 'independent' AND verdict IN ('pass', 'changes_requested')
+      AND user_approved = 0) OR
+    (receipt_kind = 'self_review_fallback'
+      AND verdict IN ('pass', 'changes_requested')) OR
+    (receipt_kind = 'not_required' AND verdict = 'not_required'
+      AND user_approved = 0 AND summary != '')
+  ),
+  FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+);
+
+CREATE TABLE review_findings (
+  review_finding_id TEXT PRIMARY KEY,
+  review_receipt_id TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('high', 'medium', 'low')),
+  status TEXT NOT NULL CHECK (status IN ('open', 'resolved')),
+  summary TEXT NOT NULL,
+  resolution_summary TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  resolved_at TEXT,
+  FOREIGN KEY (review_receipt_id) REFERENCES review_receipts(review_receipt_id)
+);
+```
+
+Indexes cover `(task_id, target_generation, target_kind, target_value,
+verdict)`, reviewer distinctness queries, and open findings by task and
+severity. Receipts are append-only and each reviewer may record only one
+receipt per task target generation. A correction or re-review requires setting
+the review target again to create a new generation; same-generation
+PASS-to-changes-requested or changes-requested-to-PASS replacement fails with
+`review_receipt_already_recorded`. Finding resolution updates only status,
+sanitized resolution summary, and timestamp while preserving the original
+finding.
+
+Allowed review target kinds are `git_commit`, `diff_fingerprint`, and
+`external_revision`. A Git target is resolved and stored canonically through
+the same read-only validation service used by completion evidence. A diff
+fingerprint must use canonical `sha256:<64 lowercase hex characters>` form;
+the tool validates but does not invent the fingerprint. CLI commands are:
+
+- `review target set <task-id> --kind <kind> --revision <value>`;
+- `review receipt add <task-id> --reviewer <key> --kind <kind>
+  --verdict <verdict> [--summary <summary>] [--user-approved]`;
+- `review finding add <task-id> --receipt-id <id> --severity <severity>
+  --summary <summary>`; and
+- `review finding resolve <finding-id> --resolution <summary>`.
+
+Receipt creation copies the task's current target and generation; callers
+cannot silently attach a receipt to a different target. Every `review target
+set` increments the task generation and appends an audit event, even when kind
+and value equal a historical target. Old receipts remain historical but the
+completion query counts only receipts whose target kind, value, and generation
+equal the current task target.
+
+The service validates receipt combinations as one unit:
+
+- `independent` accepts `pass` or `changes_requested`, never user approval;
+- `self_review_fallback` requires a concise summary; Tier 1 `pass` requires
+  approval `0`, while Tier 2 `pass` requires explicit approval `1`;
+- `not_required` is Tier 0 only, requires verdict `not_required`, a concise
+  mechanical-change rationale, and approval `0`; and
+- `changes_requested` requires a concise summary and never satisfies a review
+  gate.
+
+Finding creation first loads the task in the current project and the referenced
+receipt through `(project_id, task_id, review_receipt_id)`, rejects a historical
+target generation, and derives the stored relationship solely from the loaded
+receipt. The finding table intentionally does not duplicate caller-supplied
+task/project keys. Cross-task or cross-project receipt use fails with
+`review_receipt_mismatch`.
+
+The gate query counts distinct reviewer keys for independent `pass` receipts,
+applies Tier 0/1/2 fallback rules from the specification, and separately checks
+for open high or medium findings across all task receipts. Resolving a high or
+medium finding does not erase its freshness requirement: the task's current
+target generation must be greater than that finding receipt's generation, and
+the counted PASS receipts must belong to the newer current generation. Thus
+resolve-without-target-reset remains blocked; target reset plus fresh passes can
+succeed. Reviewer-key distinctness is a deterministic minimum check, not
+cryptographic identity proof.
+
+`task show` reuses the gate query and returns an additive `review_evidence`
+object after schema version 5:
+
+```json
+{
+  "target": {"kind": "git_commit", "value": "...", "generation": 3},
+  "gate": {
+    "review_tier": 2,
+    "required_independent_passes": 2,
+    "qualifying_independent_passes": 2,
+    "fallback_kind": null,
+    "satisfied": true
+  },
+  "counts": {
+    "receipts_total": 4,
+    "receipts_current_generation": 2,
+    "open_high": 0,
+    "open_medium": 0,
+    "open_low": 1
+  },
+  "blocking_findings": [],
+  "recent_receipts": [],
+  "recent_findings": []
+}
+```
+
+Receipt/finding arrays are sanitized, ordered by `created_at DESC, rowid DESC`,
+and bounded to 10 each. The projection includes no transcript or reasoning and
+performs no writes or LLM calls. The snapshot-version-3 builder reuses this read
+model rather than reimplementing review gate logic. Before a target is set, the
+projection uses an empty target with generation `0`, zero qualifying receipts,
+and `satisfied=false` for tiers that require review.
+
+Review and finding summaries, reviewer keys, target values, external evidence,
+pause reasons, and resolution summaries all pass the same deny-by-default
+privacy validator used by task notes. Raw review text, private prompts,
+reasoning, diffs, logs, and stack traces are never accepted.
+
+Migration gives every existing task an empty target and generation `0` and
+creates no synthetic receipt or finding. Historical done rows remain done; if
+one is reopened, a later done transition must set a target and satisfy the new
+review gate.
+
+### Migration And Compatibility Verification
+
+The v2-to-current path is explicit, ordered, idempotent, and transactionally
+repeatable through `db init`. A synthetic sanitized migration fixture must
+match the operational shape without copying private project text: 12 tasks,
+191 events, nine completed task hashes, active and ready tasks, and
+representative tool events. Tests compare task IDs, event IDs and counts,
+statuses, completion hashes, and project metadata before and after migration,
+then run `PRAGMA quick_check` and `PRAGMA foreign_key_check`.
+
+Snapshot version 3 reuses the bounded `task show` review-evidence projection.
+It does not expose raw reviews, reasoning, or an unbounded ledger.
+
+The compact envelope retains its existing top-level keys. Existing commands
+retain their command names. Minimal all-status static-viewer and snapshot
+support for `paused` ships with schema version 3 so the implemented viewer does
+not regress. New completion/review evidence presentation may wait for the final
+TG-M8 integration unit after those contracts are stable.
+
 ## Static Task Viewer Design
 
 The Task Viewer is a projection of current SQLite state, never an independent
@@ -461,7 +877,7 @@ The handler must:
 2. Inspect database readiness without migration or mutation.
 3. Load all viewer task rows and bounded events through repository helpers in a
    dedicated read-only SQLite snapshot transaction.
-4. Assemble and validate snapshot version 1.
+4. Assemble and validate the snapshot version required by the current schema.
 5. Render the bundled template in memory.
 6. For `--read-only`, report the planned result without creating directories or
    files.
@@ -482,7 +898,9 @@ read helper rather than changing `list_tasks` or `show_task` behavior. The
 helper must:
 
 - select every task for the current `project_id`
-- serialize all fields in `TASK_SHOW_FIELDS`
+- serialize an explicit allow-list for the schema-appropriate snapshot version;
+  version 2 adds pause fields but intentionally does not expose schema-v4
+  completion evidence until version 3
 - order tasks with the existing `task list` priority/lane/order/time/ID rules
 - fetch at most 10 events per task, ordered by `created_at DESC, rowid DESC` to
   match `task show` tie behavior
@@ -494,7 +912,16 @@ the viewer snapshot.
 
 ### Snapshot Assembly
 
-`viewer.py` owns `SNAPSHOT_VERSION = 1` and constructs:
+The implemented schema-v2 baseline uses snapshot version 1. TG-M8 updates the
+version mapping explicitly:
+
+- snapshot version 1: schema version 2 and the original six statuses;
+- snapshot version 2: schema versions 3-4, adding `paused`, `pause_reason`, and
+  seven-status counts; and
+- snapshot version 3: schema version 5, adding the final completion/review
+  evidence projection.
+
+`viewer.py` owns this mapping and constructs:
 
 - `snapshot_version`
 - one UTC `generated_at` value shared by CLI output and embedded data
@@ -559,7 +986,8 @@ regions are:
 
 - compact header with `Task Viewer`, project display name, project ID, and
   generated timestamp
-- stable status summary for all six statuses
+- stable status summary for every schema-supported status: six in snapshot v1
+  and seven, including `paused`, in snapshot v2 and v3
 - filter toolbar with text search, status, kind, lane, priority, tag, terminal
   task visibility, and reset command
 - dense task table on desktop and a stable stacked row layout on narrow screens
@@ -638,11 +1066,15 @@ Task validation:
   `docs/specification.md`.
 - `kind` must be `sequential` or `optional`.
 - `priority` must be one of the MVP priorities.
-- `status` must be one of the MVP statuses.
+- `status` must be one of the current schema statuses; TG-M8 adds `paused`.
 - `review_tier` must be integer `0`, `1`, or `2`.
 - `blocked_reason` is required when status is `blocked`.
 - `task add --status blocked` must reject before storage unless
   `--blocked-reason` is provided.
+- `task add --status done` must reject with `initial_done_forbidden` before
+  storage.
+- `pause_reason` is required and non-empty exactly while the task is `paused`,
+  and is cleared when leaving `paused`; concise history belongs in task events.
 - `completed_at` is set when status becomes `done` and cleared when moving back
   to an active status.
 
@@ -654,6 +1086,11 @@ Sequential task behavior:
   such as `default`.
 - `task next` does not return later ready sequential tasks while earlier tasks in
   the same lane are incomplete.
+- Direct transitions to `in_progress`, `review_pending`, or `done` use the same
+  predecessor predicate as `task next`.
+- Sequential add and combined kind/lane/order/status edits validate the
+  resulting affected lanes so registration or reordering cannot create an
+  already-active out-of-order state.
 - `task next` supports `--kind`, `--lane`, `--priority`, and `--limit`; default
   limit is `5`.
 - `task next` sorts by priority rank (`urgent`, `high`, `normal`, `low`), lane,
@@ -716,6 +1153,29 @@ Required test areas:
   importing modules from outside the skill folder.
 - No test mutates a real target project source file or Git state.
 
+TG-M8 focused tests must additionally cover:
+
+- task writes against missing and old-schema databases leave paths and bytes
+  unchanged and return `db_not_initialized` or `migration_required`;
+- initial done rejection and every completion-gate path;
+- paused transitions, required pause reason, resumption, and active counts;
+- shared sequential predecessor behavior for next/start/review/done;
+- registration, reordering, combined-edit, and concurrent-write attempts that
+  would create an out-of-order active/review/done row;
+- deterministic `task current` ordering, latest-event selection, limit, JSON
+  shape, and zero database/Git mutation;
+- Git commit existence, annotated-tag peeling, unique short hash
+  canonicalization, ambiguity/missing rejection, and unchanged Git state;
+- explicit external-revision acknowledgement in Git projects;
+- Tier 0/1/2 receipts, reviewer distinctness, target equality, fallback
+  approval, target changes, and unresolved/resolved finding gates;
+- privacy rejection and field limits for every new free-form field;
+- concurrent writers and readers under SQLite transaction/timeout behavior;
+- sequential v2-to-v3-to-v4-to-v5 migration, idempotent rerun, rollback on
+  failure, and the 12-task/191-event preservation fixture; and
+- regression coverage for project identity, read-only behavior, task next,
+  compact envelopes, and static viewer export.
+
 Task Viewer extension tests must additionally cover:
 
 - all-status snapshot projection with completion commit fields and no private
@@ -771,11 +1231,13 @@ complete.
 The design leaves room for:
 
 - Project profile detection.
-- Verification recording.
+- Verification recording and acceptance-progress receipts.
 - Review-template generation.
 - Dependency graphs.
-- Git advisory integration.
+- Additional Git advisory integration beyond read-only completion validation.
 - Task import and richer exchange formats beyond the approved static viewer.
+- Stale-active warnings, persistent handoff checkpoints, event-history
+  pagination, and parent/child or checklist execution units.
 
 These extensions must not change MVP privacy or target-project mutation
 semantics without updating `docs/specification.md` and this design.

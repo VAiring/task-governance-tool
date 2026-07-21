@@ -1,7 +1,8 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
 Status: MVP, the completion-commit extension, and TG-M7 Static Task Viewer are
-implemented. The approved default-browser launch follow-up remains
+implemented. TG-M8 governance hardening is approved and planned below but is
+not implemented. The default-browser launch follow-up remains
 requirements-only pending design and roadmap approval.
 
 This document turns `docs/specification.md` and `docs/design.md` into
@@ -58,6 +59,8 @@ Sequential lanes:
 - `NEXT`: next-task selection behavior.
 - `SKILL`: installable skill instructions and bundled references.
 - `HARDEN`: final fixture, packaging, and forward-test hardening.
+- `GOVERNANCE-HARDENING`: approved TG-M8 database, transition, evidence, and
+  resume-surface changes.
 
 Optional units may be consumed whenever their prerequisites are met. A blocker
 in one sequential lane should not stop ready optional units in another lane.
@@ -1045,6 +1048,284 @@ Completion criteria:
 - The static viewer satisfies all acceptance criteria in
   `docs/specification.md` and its generated output remains untracked.
 
+## Approved Post-MVP Extension: TG-M8 Governance Hardening
+
+TG-M8 converts the current record-and-guidance behavior into deterministic
+enforcement at the highest-risk boundaries while preserving the simple lane
+model. The execution units are sequential so each schema and CLI contract is
+migratable and reviewable before the next depends on it. No TG-M8 unit may
+create commits or otherwise mutate a governed target project's Git state.
+
+### TG-M8.0 Hardening Contract And Task Baseline
+
+Kind: sequential
+Lane: `GOVERNANCE-HARDENING`
+Depends on: TG-M7.4
+Review tier: Tier 2
+
+Intended outcome:
+
+- Reconcile the external operational feedback with current code, tests, and
+  governing documents.
+- Approve only initial-done prohibition, explicit initialization, paused work,
+  shared sequential transition enforcement, `task current`, structured review
+  evidence, and typed completion evidence with read-only Git validation.
+- Register TG-M8 work in the project-local task database without beginning
+  implementation.
+
+Write scope:
+
+- `docs/specification.md`
+- `docs/design.md`
+- `docs/implementation-roadmap.md`
+- `plan.md`
+- ignored project-local SQLite task state
+
+Verification gate:
+
+- Documentation consistency and deferred-scope checks.
+- Confirm implementation and Skill discovery metadata are unchanged.
+- Full offline unittest suite.
+- `git diff --check`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified documentation commit is recorded on the TG-M8.0 task.
+
+### TG-M8.1 Explicit Initialization And Initial-Done Prohibition
+
+Kind: sequential
+Lane: `GOVERNANCE-HARDENING`
+Depends on: TG-M8.0
+Review tier: Tier 2
+
+Intended outcome:
+
+- Make `db init` the sole database create/migrate path.
+- Reject `task add --status done` before any write.
+
+Write scope:
+
+- CLI and storage open-mode boundaries
+- task-add validation
+- focused initialization, migration-required, read-only, and add tests
+- implementation-facing CLI contract references
+
+Verification gate:
+
+- Missing-DB task writes do not create a file or parent state directory.
+- Old-schema task writes do not migrate or modify the database.
+- Initial done fails with `initial_done_forbidden` and stores no task/event.
+- Existing explicit `db init`, project identity, and read-only tests pass.
+- Full offline unittest suite and `git diff --check`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified implementation commit is recorded on the task.
+
+### TG-M8.2 Paused State And Shared Sequential Guard
+
+Kind: sequential
+Lane: `GOVERNANCE-HARDENING`
+Depends on: TG-M8.1
+Review tier: Tier 2
+
+Intended outcome:
+
+- Add schema version 3 with `paused` and required `pause_reason`.
+- Use one predecessor predicate for next-task selection and transitions into
+  `in_progress`, `review_pending`, and `done`.
+
+Write scope:
+
+- schema version 3 and migration repository code
+- task domain/state transitions
+- shared ordering module and selection integration
+- minimal Task Viewer snapshot, status filter, count, and display support for
+  `paused`
+- focused schema, transition, privacy, and concurrency tests
+
+Verification gate:
+
+- Paused/resume and blocker semantics are distinct and tested.
+- A paused or otherwise incomplete predecessor blocks later same-lane direct
+  transitions but not unrelated optional or other-lane work.
+- Initial active/review registration, combined metadata/status edits, and
+  insertion/reordering before already active/review/done work cannot bypass the
+  same invariant, including under concurrent writers.
+- Schema migration preserves all version-2 rows and passes SQLite integrity and
+  foreign-key checks.
+- Static Viewer export remains all-status and safely renders paused tasks and
+  pause reasons as snapshot version 2 without changing its read-only or offline
+  boundary.
+- Injected migration failure leaves the version-2 database usable and restores
+  `PRAGMA foreign_keys=ON` on both success and failure paths.
+- Full offline unittest suite and `git diff --check`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified implementation commit is recorded on the task.
+
+### TG-M8.3 Current Task Rediscovery
+
+Kind: sequential
+Lane: `GOVERNANCE-HARDENING`
+Depends on: TG-M8.2
+Review tier: Tier 2
+
+Intended outcome:
+
+- Add read-only `task current` for `in_progress`, `review_pending`, `paused`,
+  and `blocked` work while keeping `task next` ready-only.
+
+Write scope:
+
+- repository current-task read model
+- CLI parser, JSON/text output, and help
+- focused ordering, latest-event, limit, error, and no-write tests
+
+Verification gate:
+
+- JSON and text output match the documented contract and deterministic order.
+- Same-second latest-event selection agrees with `task show` through the shared
+  `created_at DESC, rowid DESC` tie rule.
+- Missing/migration/project mismatch errors do not mutate the database.
+- Database and Git state remain unchanged during successful inspection.
+- Full offline unittest suite and `git diff --check`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified implementation commit is recorded on the task.
+
+### TG-M8.4 Typed Completion Evidence And Git Validation
+
+Kind: sequential
+Lane: `GOVERNANCE-HARDENING`
+Depends on: TG-M8.3
+Review tier: Tier 2
+
+Intended outcome:
+
+- Add schema version 4 with explicit `git_commit`, `external_revision`,
+  `commit_not_required`, and historical `legacy_unverified` evidence.
+- Validate Git commits read-only and store the canonical full object ID.
+
+Write scope:
+
+- schema version 4 and migration repository code
+- completion evidence service and CLI options
+- task output/viewer compatibility fields as required for this slice
+- temporary-Git-repository and migration tests
+
+Verification gate:
+
+- Missing, ambiguous, and non-commit revisions fail; valid short hashes resolve
+  canonically.
+- Leading-hyphen/option-shaped revisions are rejected and Git invocation uses
+  an explicit end-of-options boundary.
+- External revisions always require reason and explicit approval; Git projects
+  additionally make the non-Git durable-source choice explicit in the audit.
+- Every completion evidence kind enforces its full field/legacy-projection
+  matrix, clears stale fields on kind changes, and rejects conflicting options.
+- Git `HEAD`, refs, index, worktree, and config are unchanged by validation.
+- Version-2 completed hashes are byte-for-byte retained and labeled historical
+  without retroactive failure.
+- Full offline unittest suite and `git diff --check`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified implementation commit is recorded on the task.
+
+### TG-M8.5 Structured Review Receipts And Findings
+
+Kind: sequential
+Lane: `GOVERNANCE-HARDENING`
+Depends on: TG-M8.4
+Review tier: Tier 2
+
+Intended outcome:
+
+- Add schema version 5 review targets, sanitized receipts, and findings.
+- Enforce tier-specific same-target receipt counts and unresolved-finding gates
+  without storing review transcripts or reasoning.
+
+Write scope:
+
+- schema version 5 and review repository/service code
+- review target, receipt, and finding CLI commands
+- done-transition review gate integration
+- additive bounded `task show.review_evidence` read model
+- focused tier, freshness, fallback, privacy, and concurrency tests
+
+Verification gate:
+
+- Tier 2 requires two distinct independent PASS receipts for the same current
+  target; Tier 1 and Tier 0/fallback paths match the specification.
+- A target change invalidates old receipts for gate purposes without deleting
+  history.
+- Open high or medium findings block completion until resolved.
+- Resolving high/medium findings without a newer target generation remains
+  blocked; a newer target and fresh receipts can satisfy the gate.
+- Receipt kind/verdict/approval/tier/rationale combinations, one-receipt-per-
+  reviewer-generation, and cross-task/project receipt ownership are enforced.
+- PASS-then-changes-requested in one reviewer generation is rejected and
+  re-review uses a new generation.
+- `task show` reports current target, deterministic gate state, bounded
+  receipts/findings, and blocking counts without database or Git mutation.
+- Raw logs, diffs, stack traces, secrets, transcripts, and private prompts are
+  rejected in every new free-form field.
+- Full offline unittest suite and `git diff --check`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified implementation commit is recorded on the task.
+
+### TG-M8.6 Migration, Skill, Viewer, And Acceptance Sync
+
+Kind: sequential
+Lane: `GOVERNANCE-HARDENING`
+Depends on: TG-M8.5
+Review tier: Tier 2
+
+Intended outcome:
+
+- Prove the complete v2-to-v5 migration and synchronize implemented CLI,
+  viewer, workflow, Skill references, README, and release package.
+
+Write scope:
+
+- synthetic sanitized 12-task/191-event migration fixture and acceptance tests
+- Task Viewer snapshot version 3 reuses the bounded `task show` review-evidence
+  projection and adds completion evidence UI compatibility; paused snapshot
+  version 2 support is already required by TG-M8.2
+- `SKILL.md`, `agents/openai.yaml`, one-level references, README, and release
+  guidance only for behavior now implemented
+- final governing-document implementation status
+
+Verification gate:
+
+- Migration preserves task/event IDs and counts, nine historical completion
+  hashes, statuses, and project identity; quick and foreign-key checks pass.
+- All minimum TG-M8 acceptance criteria in `docs/specification.md` pass,
+  including concurrent update, privacy, project separation, and no-write tests.
+- Installed-skill self-containment, metadata/reference self-check, viewer
+  security tests, full offline suite, and `git diff --check` pass.
+- A realistic forward test shows a fresh Codex session can use `task current`,
+  pause/resume safely, and complete only with valid evidence.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified implementation commit is recorded on the task.
+- Verification receipts, stale detection, checkpoints, event pagination, and
+  parent/child/checklist features remain explicitly deferred.
+
 ## Roadmap Completion Criteria
 
 The MVP implementation roadmap is complete when:
@@ -1059,3 +1340,9 @@ The MVP implementation roadmap is complete when:
   documented AGENTS fallback review path must be followed before completion is
   accepted.
 - The final implementation is committed only after review PASS.
+
+TG-M8 is complete only when TG-M8.0 through TG-M8.6 are complete in order and
+the migration/acceptance gate above passes. The current approval authorizes the
+governing-document update and task registration only. Implementation
+consumption begins only after separate explicit user approval, and it never
+authorizes the deferred features listed in TG-M8.6.

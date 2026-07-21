@@ -23,6 +23,34 @@ def run_taskgov(*args):
     )
 
 
+def init_git_repo(repo):
+    repo.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=TaskGov Test",
+            "-c",
+            "user.email=taskgov@example.invalid",
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "initial",
+        ],
+        check=True,
+    )
+    return subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+
+
 def init_db(db, repo):
     result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
     if result.returncode != 0:
@@ -121,20 +149,30 @@ class CompletionCommitCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            revision = init_git_repo(repo)
             task = add_task(db, repo, "Commit hash task")
 
-            payload = edit_task(db, repo, task["task_id"], "--completion-commit-hash", "abc123def456")
+            payload = edit_task(
+                db,
+                repo,
+                task["task_id"],
+                "--completion-commit-hash",
+                revision[:12],
+            )
 
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["command"], "task.edit")
             self.assertIn("completion_commit_hash", payload["data"]["changed_fields"])
             self.assertNotIn("completion_commit_hash", payload["data"]["task"])
-            self.assertEqual(payload["data"]["event"]["summary"], "Recorded: completion commit hash")
+            self.assertEqual(
+                payload["data"]["event"]["summary"],
+                "Recorded: Git completion commit verified",
+            )
             self.assertEqual(
                 fetch_completion_state(db, task["task_id"]),
                 {
                     "completion_commit_required": 1,
-                    "completion_commit_hash": "abc123def456",
+                    "completion_commit_hash": revision,
                 },
             )
 
@@ -142,6 +180,7 @@ class CompletionCommitCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            revision = init_git_repo(repo)
             task = add_task(db, repo, "Commit hash text task")
 
             result = run_taskgov(
@@ -153,18 +192,19 @@ class CompletionCommitCliTests(unittest.TestCase):
                 str(db),
                 task["task_id"],
                 "--completion-commit-hash",
-                "abc123def456",
+                revision[:12],
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("Event: task_updated - Recorded: completion commit hash", result.stdout)
+            self.assertIn("Event: task_updated - Recorded: Git completion commit verified", result.stdout)
 
     def test_task_edit_commit_not_required_clears_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            revision = init_git_repo(repo)
             task = add_task(db, repo, "No material task")
-            edit_task(db, repo, task["task_id"], "--completion-commit-hash", "abc123def456")
+            edit_task(db, repo, task["task_id"], "--completion-commit-hash", revision)
 
             payload = edit_task(db, repo, task["task_id"], "--commit-not-required")
 
@@ -201,7 +241,7 @@ class CompletionCommitCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 1)
             payload = json.loads(result.stdout)
-            self.assertEqual(payload["errors"][0]["code"], "completion_commit_conflict")
+            self.assertEqual(payload["errors"][0]["code"], "completion_evidence_conflict")
             self.assertEqual(
                 fetch_completion_state(db, task["task_id"]),
                 {
@@ -303,6 +343,7 @@ class CompletionCommitCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            revision = init_git_repo(repo)
             task = add_task(db, repo, "Missing verification confirmation")
 
             result = run_taskgov(
@@ -317,7 +358,7 @@ class CompletionCommitCliTests(unittest.TestCase):
                 "done",
                 "--review-complete",
                 "--completion-commit-hash",
-                "abc123def456",
+                revision,
                 "--json",
             )
 
@@ -332,6 +373,7 @@ class CompletionCommitCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            revision = init_git_repo(repo)
             task = add_task(db, repo, "Missing review confirmation")
 
             result = run_taskgov(
@@ -346,7 +388,7 @@ class CompletionCommitCliTests(unittest.TestCase):
                 "done",
                 "--verification-complete",
                 "--completion-commit-hash",
-                "abc123def456",
+                revision,
                 "--json",
             )
 
@@ -419,7 +461,7 @@ class CompletionCommitCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 1)
             payload = json.loads(result.stdout)
-            self.assertEqual(payload["errors"][0]["code"], "completion_commit_conflict")
+            self.assertEqual(payload["errors"][0]["code"], "completion_evidence_conflict")
             self.assertEqual(fetch_task_state(db, task["task_id"])["status"], "ready")
             self.assertEqual(table_count(db, "task_events"), 1)
 
@@ -427,6 +469,7 @@ class CompletionCommitCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            revision = init_git_repo(repo)
             task = add_task(db, repo, "Done with completion metadata")
 
             payload = edit_task(
@@ -438,7 +481,7 @@ class CompletionCommitCliTests(unittest.TestCase):
                 "--verification-complete",
                 "--review-complete",
                 "--completion-commit-hash",
-                "abc123def456",
+                revision[:12],
             )
 
             self.assertEqual(payload["data"]["task"]["status"], "done")
@@ -446,14 +489,18 @@ class CompletionCommitCliTests(unittest.TestCase):
             self.assertIn("status", payload["data"]["changed_fields"])
             self.assertIn("completed_at", payload["data"]["changed_fields"])
             self.assertIn("completion_commit_hash", payload["data"]["changed_fields"])
-            self.assertEqual(fetch_completion_state(db, task["task_id"])["completion_commit_hash"], "abc123def456")
+            self.assertEqual(
+                fetch_completion_state(db, task["task_id"])["completion_commit_hash"],
+                revision,
+            )
 
     def test_task_edit_done_accepts_previously_recorded_commit_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            revision = init_git_repo(repo)
             task = add_task(db, repo, "Done with earlier commit metadata")
-            edit_task(db, repo, task["task_id"], "--completion-commit-hash", "abc123def456")
+            edit_task(db, repo, task["task_id"], "--completion-commit-hash", revision)
 
             payload = edit_task(
                 db,
@@ -467,7 +514,10 @@ class CompletionCommitCliTests(unittest.TestCase):
 
             self.assertEqual(payload["data"]["task"]["status"], "done")
             self.assertIsNotNone(payload["data"]["task"]["completed_at"])
-            self.assertEqual(fetch_completion_state(db, task["task_id"])["completion_commit_hash"], "abc123def456")
+            self.assertEqual(
+                fetch_completion_state(db, task["task_id"])["completion_commit_hash"],
+                revision,
+            )
 
     def test_task_edit_done_accepts_commit_not_required_with_confirmations(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -527,15 +577,16 @@ class CompletionCommitCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            revision = init_git_repo(repo)
             task = add_task(db, repo, "Completion metadata visibility")
-            edit_task(db, repo, task["task_id"], "--completion-commit-hash", "abc123def456")
+            edit_task(db, repo, task["task_id"], "--completion-commit-hash", revision)
 
             shown = task_payload("show", db, repo, task["task_id"])["data"]["task"]
             listed = task_payload("list", db, repo)["data"]["tasks"][0]
             next_task = task_payload("next", db, repo)["data"]["tasks"][0]
 
             self.assertEqual(shown["completion_commit_required"], 1)
-            self.assertEqual(shown["completion_commit_hash"], "abc123def456")
+            self.assertEqual(shown["completion_commit_hash"], revision)
             for public_task in (listed, next_task):
                 self.assertNotIn("completion_commit_required", public_task)
                 self.assertNotIn("completion_commit_hash", public_task)
@@ -606,6 +657,10 @@ class CompletionCommitCliTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--completion-commit-hash", result.stdout)
+        self.assertIn("--completion-evidence-kind", result.stdout)
+        self.assertIn("--completion-revision", result.stdout)
+        self.assertIn("--completion-evidence-reason", result.stdout)
+        self.assertIn("--external-revision-approved", result.stdout)
         self.assertIn("--commit-not-required", result.stdout)
         self.assertIn("--verification-complete", result.stdout)
         self.assertIn("--review-complete", result.stdout)

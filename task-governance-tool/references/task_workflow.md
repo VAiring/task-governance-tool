@@ -125,12 +125,22 @@ Mark a task `done` only after:
 - there are no unresolved high or medium review findings
 - the completion commit gate is satisfied
 
-For changed managed materials, after an explicitly approved project commit or
-durable revision already exists outside `taskgov`, record its hash or revision
-ID:
+For changed Git-managed materials, first create the project commit through the
+approved project workflow, then record it. `taskgov` verifies the revision
+read-only and stores its canonical full commit ID; a unique short hash or
+annotated tag is accepted only when Git resolves it unambiguously:
 
 ```powershell
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
+```
+
+For an approved durable revision outside the target Git history, use the
+explicit external evidence form. The reason and acknowledgement are required;
+an arbitrary string passed to `--completion-commit-hash` is not an external
+revision bypass:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-evidence-kind external_revision --completion-revision <revision> --completion-evidence-reason "Approved external release" --external-revision-approved --json
 ```
 
 If no managed materials changed, explicitly record that no completion commit is
@@ -140,8 +150,10 @@ required:
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --commit-not-required --json
 ```
 
-If a commit hash or no-commit decision was already recorded, the later done
-transition still requires `--verification-complete` and `--review-complete`.
+If valid typed evidence was already recorded, the later done transition still
+requires `--verification-complete` and `--review-complete`. Historical
+`legacy_unverified` evidence is retained for audit but cannot close a reopened
+task.
 
 `taskgov` records the commit state but does not create commits, branches, PRs,
 or issue comments. To trace changed materials for a completed Git task, inspect

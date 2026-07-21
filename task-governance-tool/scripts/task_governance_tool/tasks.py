@@ -10,6 +10,12 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from task_governance_tool.completion import (
+    CompletionEvidenceError,
+    WRITABLE_EVIDENCE_KINDS,
+    completion_evidence_values,
+    validate_evidence_matrix,
+)
 from task_governance_tool.ordering import first_out_of_order_advanced_task
 from task_governance_tool.storage import ProjectIdentity, utc_now
 
@@ -42,6 +48,15 @@ PUBLIC_TASK_FIELDS = (
 TASK_SHOW_FIELDS = PUBLIC_TASK_FIELDS + (
     "completion_commit_required",
     "completion_commit_hash",
+    "completion_evidence_kind",
+    "completion_evidence_revision",
+    "completion_evidence_reason",
+    "external_revision_approved",
+)
+
+VIEWER_TASK_FIELDS = PUBLIC_TASK_FIELDS + (
+    "completion_commit_required",
+    "completion_commit_hash",
 )
 
 TEXT_LIMITS = {
@@ -52,6 +67,8 @@ TEXT_LIMITS = {
     "add_note": 2000,
     "event_summary": 1000,
     "completion_commit_hash": 128,
+    "completion_revision": 500,
+    "completion_evidence_reason": 1000,
     "pause_reason": 1000,
 }
 
@@ -149,6 +166,8 @@ STRICT_RAW_OUTPUT_FIELDS = {
     "tags",
     "blocked_reason",
     "pause_reason",
+    "completion_revision",
+    "completion_evidence_reason",
     "add_note",
     "event_summary",
 }
@@ -466,6 +485,11 @@ def row_to_show_task(row: sqlite3.Row) -> dict[str, Any]:
     return {field: row[field] for field in TASK_SHOW_FIELDS if field in row_keys}
 
 
+def row_to_viewer_task(row: sqlite3.Row) -> dict[str, Any]:
+    row_keys = set(row.keys())
+    return {field: row[field] for field in VIEWER_TASK_FIELDS if field in row_keys}
+
+
 def row_to_internal_task(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 
@@ -734,7 +758,6 @@ def validate_completion_commit_hash(value: Any) -> str:
     return validate_text(
         "completion_commit_hash",
         value,
-        required=True,
         limit=TEXT_LIMITS["completion_commit_hash"],
     )
 
@@ -773,6 +796,30 @@ def bounded_event_summary(prefix: str, value: str, suffix: str = "") -> str:
     return base + suffix[: remaining - 3] + "..."
 
 
+def bounded_transition_summary(
+    prefix: str,
+    value: str,
+    *,
+    recorded_markers: list[str],
+    note: str | None,
+) -> str:
+    """Keep mandatory audit markers in bounded pause/resume event summaries."""
+    if not recorded_markers:
+        suffix = f"; Note: {note}" if note is not None else ""
+        return bounded_event_summary(prefix, value, suffix)
+
+    marker_suffix = f"; Recorded: {', '.join(recorded_markers)}"
+    value_limit = TEXT_LIMITS["event_summary"] - len(prefix) - len(marker_suffix)
+    if value_limit <= 0:
+        return (prefix + marker_suffix)[: TEXT_LIMITS["event_summary"]]
+    if len(value) > value_limit:
+        value = value[: max(0, value_limit - 3)] + ("..." if value_limit >= 3 else "")
+    summary = prefix + value + marker_suffix
+    if note is None:
+        return summary
+    return bounded_event_summary(summary, "", f"; Note: {note}")
+
+
 def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for field, value in edit_input.items():
@@ -804,17 +851,64 @@ def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
             normalized[field] = validate_text(field, value, required=True, limit=TEXT_LIMITS["add_note"])
         elif field == "completion_commit_hash":
             normalized[field] = validate_completion_commit_hash(value)
-        elif field in {"commit_not_required", "verification_complete", "review_complete"}:
+        elif field == "completion_evidence_kind":
+            normalized[field] = validate_choice(
+                field,
+                value,
+                WRITABLE_EVIDENCE_KINDS,
+                "completion_evidence_conflict",
+            )
+        elif field == "completion_revision":
+            normalized[field] = validate_text(
+                field,
+                value,
+                limit=TEXT_LIMITS["completion_revision"],
+            )
+        elif field == "completion_evidence_reason":
+            normalized[field] = validate_text(
+                field,
+                value,
+                limit=TEXT_LIMITS["completion_evidence_reason"],
+            )
+        elif field in {
+            "commit_not_required",
+            "external_revision_approved",
+            "verification_complete",
+            "review_complete",
+        }:
             if value is not True:
                 raise validation_error("invalid_argument", f"{field} must be true when provided", field)
             normalized[field] = True
         else:
             raise validation_error("invalid_argument", f"{field} is not editable", field)
-    if normalized.get("commit_not_required") and "completion_commit_hash" in normalized:
+    explicit_evidence_fields = {
+        "completion_evidence_kind",
+        "completion_revision",
+        "completion_evidence_reason",
+        "external_revision_approved",
+    }
+    if "completion_commit_hash" in normalized and explicit_evidence_fields & normalized.keys():
         raise validation_error(
-            "completion_commit_conflict",
-            "completion_commit_hash cannot be supplied when commit is marked not required",
+            "completion_evidence_conflict",
+            "completion_commit_hash cannot be combined with explicit completion evidence options",
             "completion_commit_hash",
+        )
+    if normalized.get("commit_not_required") and (
+        "completion_commit_hash" in normalized or explicit_evidence_fields & normalized.keys()
+    ):
+        raise validation_error(
+            "completion_evidence_conflict",
+            "commit_not_required cannot be combined with other completion evidence options",
+            "commit_not_required",
+        )
+    if "completion_evidence_kind" not in normalized and (
+        {"completion_revision", "completion_evidence_reason", "external_revision_approved"}
+        & normalized.keys()
+    ):
+        raise validation_error(
+            "completion_evidence_conflict",
+            "completion evidence details require --completion-evidence-kind",
+            "completion_evidence_kind",
         )
     if not normalized:
         raise validation_error("invalid_argument", "at least one editable field or add_note is required")
@@ -922,7 +1016,7 @@ def list_tasks_for_viewer(
     tasks: list[dict[str, Any]] = []
     event_count = 0
     for task_row in task_rows:
-        task = row_to_show_task(task_row)
+        task = row_to_viewer_task(task_row)
         event_rows = connection.execute(
             """
             SELECT *
@@ -1103,19 +1197,15 @@ def enforce_done_transition_gates(
             "task edit --status done requires --review-complete",
             "review_complete",
         )
-    commit_required = bool(task["completion_commit_required"])
-    commit_hash = str(task["completion_commit_hash"])
-    if not commit_required and commit_hash:
-        raise validation_error(
-            "completion_commit_conflict",
-            "completion_commit_hash must be empty when commit is marked not required",
-            "completion_commit_hash",
-        )
-    if commit_required and not commit_hash:
+    try:
+        validate_evidence_matrix(task, allow_legacy=False)
+    except CompletionEvidenceError as exc:
+        raise validation_error(exc.code, exc.message, exc.field) from exc
+    if task["completion_evidence_kind"] == "none":
         raise validation_error(
             "commit_required",
-            "task edit --status done requires --completion-commit-hash or a previously recorded commit hash",
-            "completion_commit_hash",
+            "task edit --status done requires explicit completion evidence",
+            "completion_evidence_kind",
         )
 
 
@@ -1125,6 +1215,10 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
     add_note = normalized.pop("add_note", None)
     completion_commit_hash = normalized.pop("completion_commit_hash", None)
     commit_not_required = bool(normalized.pop("commit_not_required", False))
+    completion_evidence_kind = normalized.pop("completion_evidence_kind", None)
+    completion_revision = normalized.pop("completion_revision", None)
+    completion_evidence_reason = normalized.pop("completion_evidence_reason", None)
+    external_revision_approved = bool(normalized.pop("external_revision_approved", False))
     verification_complete = bool(normalized.pop("verification_complete", False))
     review_complete = bool(normalized.pop("review_complete", False))
 
@@ -1138,12 +1232,28 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
     order_was_provided = "lane_order" in normalized
     for field, value in normalized.items():
         updated[field] = value
+    evidence_marker: str | None = None
+    requested_evidence_kind = completion_evidence_kind
+    requested_revision = completion_revision or ""
+    requested_reason = completion_evidence_reason or ""
     if completion_commit_hash is not None:
-        updated["completion_commit_required"] = 1
-        updated["completion_commit_hash"] = completion_commit_hash
-    if commit_not_required:
-        updated["completion_commit_required"] = 0
-        updated["completion_commit_hash"] = ""
+        requested_evidence_kind = "git_commit"
+        requested_revision = completion_commit_hash
+    elif commit_not_required:
+        requested_evidence_kind = "commit_not_required"
+    if requested_evidence_kind is not None:
+        try:
+            evidence = completion_evidence_values(
+                repo=project.canonical_repo,
+                kind=requested_evidence_kind,
+                revision=requested_revision,
+                reason=requested_reason,
+                external_revision_approved=external_revision_approved,
+            )
+        except CompletionEvidenceError as exc:
+            raise validation_error(exc.code, exc.message, exc.field) from exc
+        updated.update(evidence.values)
+        evidence_marker = evidence.audit_marker
 
     if updated["kind"] == "sequential":
         if not str(updated["lane"]).strip():
@@ -1234,13 +1344,15 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
         "completed_at",
         "completion_commit_required",
         "completion_commit_hash",
+        "completion_evidence_kind",
+        "completion_evidence_revision",
+        "completion_evidence_reason",
+        "external_revision_approved",
     )
     changed_fields = [field for field in comparable_fields if updated[field] != existing[field]]
     recorded_markers = []
-    if commit_not_required:
-        recorded_markers.append("commit not required")
-    elif completion_commit_hash is not None:
-        recorded_markers.append("completion commit hash")
+    if evidence_marker is not None:
+        recorded_markers.append(evidence_marker)
     if verification_complete:
         recorded_markers.append("verification complete")
     if review_complete:
@@ -1295,21 +1407,29 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
 
     pause_changed = updated["pause_reason"] != existing["pause_reason"]
     if status_was_provided and updated["status"] == "paused":
-        suffix = f"; Note: {add_note}" if add_note is not None else ""
         event_type = "task_updated"
-        summary = bounded_event_summary("Paused: ", str(updated["pause_reason"]), suffix)
+        summary = bounded_transition_summary(
+            "Paused: ",
+            str(updated["pause_reason"]),
+            recorded_markers=recorded_markers,
+            note=add_note,
+        )
     elif status_was_provided and existing["status"] == "paused":
-        suffix = f"; Note: {add_note}" if add_note is not None else ""
         event_type = "task_updated"
-        summary = bounded_event_summary(
+        summary = bounded_transition_summary(
             "Resumed from paused; Previous reason: ",
             str(existing["pause_reason"]),
-            suffix,
+            recorded_markers=recorded_markers,
+            note=add_note,
         )
     elif pause_changed:
-        suffix = f"; Note: {add_note}" if add_note is not None else ""
         event_type = "task_updated"
-        summary = bounded_event_summary("Pause reason updated: ", str(updated["pause_reason"]), suffix)
+        summary = bounded_transition_summary(
+            "Pause reason updated: ",
+            str(updated["pause_reason"]),
+            recorded_markers=recorded_markers,
+            note=add_note,
+        )
     elif add_note is not None:
         event_type = "note_added" if not changed_fields and not recorded_markers else "task_updated"
         summary = note_event_summary(add_note, recorded_markers)

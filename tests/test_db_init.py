@@ -16,6 +16,7 @@ try:
     from task_governance_tool.storage import (
         StorageError,
         apply_completion_commit_migration,
+        apply_completion_evidence_migration,
         apply_initial_schema_migration,
         apply_paused_state_migration,
         connect_initialized,
@@ -148,8 +149,8 @@ class DbInitTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["command"], "db.init")
             self.assertTrue(payload["data"]["created"])
-            self.assertEqual(payload["data"]["migrations_applied"], [1, 2, 3])
-            self.assertEqual(payload["data"]["schema_version"], 3)
+            self.assertEqual(payload["data"]["migrations_applied"], [1, 2, 3, 4])
+            self.assertEqual(payload["data"]["schema_version"], 4)
             self.assertEqual(Path(payload["db_path"]), db.resolve())
             self.assertTrue(db.exists())
             default_db = (
@@ -165,7 +166,7 @@ class DbInitTests(unittest.TestCase):
             with closing(sqlite3.connect(db)) as connection:
                 version = connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
                 project_count = connection.execute("SELECT COUNT(*) FROM project_meta").fetchone()[0]
-            self.assertEqual(version, 3)
+            self.assertEqual(version, 4)
             self.assertEqual(project_count, 1)
 
     def test_db_init_is_idempotent(self):
@@ -181,7 +182,7 @@ class DbInitTests(unittest.TestCase):
             payload = json.loads(second.stdout)
             self.assertFalse(payload["data"]["created"])
             self.assertEqual(payload["data"]["migrations_applied"], [])
-            self.assertEqual(payload["data"]["schema_version"], 3)
+            self.assertEqual(payload["data"]["schema_version"], 4)
 
     def test_db_init_migrates_schema_v1_database_through_paused_state(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -222,8 +223,8 @@ class DbInitTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(result.stdout)
             self.assertFalse(payload["data"]["created"])
-            self.assertEqual(payload["data"]["migrations_applied"], [2, 3])
-            self.assertEqual(payload["data"]["schema_version"], 3)
+            self.assertEqual(payload["data"]["migrations_applied"], [2, 3, 4])
+            self.assertEqual(payload["data"]["schema_version"], 4)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute(
@@ -240,7 +241,7 @@ class DbInitTests(unittest.TestCase):
                         "SELECT version FROM schema_migrations ORDER BY version"
                     ).fetchall()
                 ]
-            self.assertEqual(versions, [1, 2, 3])
+            self.assertEqual(versions, [1, 2, 3, 4])
             self.assertEqual(task["completion_commit_required"], 1)
             self.assertEqual(task["completion_commit_hash"], "")
             self.assertEqual(task["pause_reason"], "")
@@ -255,8 +256,8 @@ class DbInitTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(result.stdout)
-            self.assertEqual(payload["data"]["migrations_applied"], [3])
-            self.assertEqual(payload["data"]["schema_version"], 3)
+            self.assertEqual(payload["data"]["migrations_applied"], [3, 4])
+            self.assertEqual(payload["data"]["schema_version"], 4)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute("SELECT * FROM tasks WHERE task_id = ?", ("tg_task_test",)).fetchone()
@@ -271,7 +272,7 @@ class DbInitTests(unittest.TestCase):
                 ]
                 quick_check = connection.execute("PRAGMA quick_check").fetchone()[0]
                 foreign_key_rows = connection.execute("PRAGMA foreign_key_check").fetchall()
-            self.assertEqual(versions, [1, 2, 3])
+            self.assertEqual(versions, [1, 2, 3, 4])
             self.assertEqual(task["pause_reason"], "")
             self.assertEqual(event["task_id"], "tg_task_test")
             self.assertEqual(quick_check, "ok")
@@ -377,6 +378,125 @@ class DbInitTests(unittest.TestCase):
                 )
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
 
+    def test_completion_evidence_migration_maps_legacy_rows_without_data_loss(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            project = create_v2_database(db, repo)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                connection.execute("PRAGMA foreign_keys = ON")
+                apply_paused_state_migration(connection)
+                for task_id in ("tg_task_not_required", "tg_task_hash", "tg_task_inconsistent"):
+                    insert_task(connection, project_id=project.project_id, task_id=task_id)
+                connection.execute(
+                    "UPDATE tasks SET completion_commit_required = 0 WHERE task_id = ?",
+                    ("tg_task_not_required",),
+                )
+                connection.execute(
+                    "UPDATE tasks SET completion_commit_hash = ? WHERE task_id = ?",
+                    ("legacy-hash", "tg_task_hash"),
+                )
+                connection.execute(
+                    """
+                    UPDATE tasks
+                       SET completion_commit_required = 0,
+                           completion_commit_hash = ?
+                     WHERE task_id = ?
+                    """,
+                    ("inconsistent-hash", "tg_task_inconsistent"),
+                )
+                connection.commit()
+
+                with connection:
+                    inconsistent = apply_completion_evidence_migration(connection)
+
+                rows = {
+                    row["task_id"]: dict(row)
+                    for row in connection.execute("SELECT * FROM tasks ORDER BY task_id")
+                }
+                versions = [
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT version FROM schema_migrations ORDER BY version"
+                    )
+                ]
+
+            self.assertEqual(inconsistent, 1)
+            self.assertEqual(versions, [1, 2, 3, 4])
+            self.assertEqual(rows["tg_task_test"]["completion_evidence_kind"], "none")
+            self.assertEqual(
+                rows["tg_task_not_required"]["completion_evidence_kind"],
+                "commit_not_required",
+            )
+            self.assertEqual(rows["tg_task_hash"]["completion_evidence_kind"], "legacy_unverified")
+            self.assertEqual(rows["tg_task_hash"]["completion_evidence_revision"], "legacy-hash")
+            self.assertEqual(
+                rows["tg_task_inconsistent"]["completion_evidence_kind"],
+                "legacy_unverified",
+            )
+            self.assertEqual(rows["tg_task_inconsistent"]["completion_commit_required"], 0)
+            self.assertEqual(rows["tg_task_inconsistent"]["completion_commit_hash"], "inconsistent-hash")
+
+    def test_completion_evidence_migration_failure_rolls_back_columns_and_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            create_v2_database(db, repo)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                apply_paused_state_migration(connection)
+                with self.assertRaises(StorageError):
+                    with connection:
+                        apply_completion_evidence_migration(connection, fail_stage="after_mapping")
+
+                columns = {
+                    row["name"] for row in connection.execute("PRAGMA table_info(tasks)")
+                }
+                versions = [
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT version FROM schema_migrations ORDER BY version"
+                    )
+                ]
+                self.assertNotIn("completion_evidence_kind", columns)
+                self.assertEqual(versions, [1, 2, 3])
+                self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_db_init_warns_when_inconsistent_legacy_evidence_is_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            create_v2_database(db, repo)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                apply_paused_state_migration(connection)
+                connection.execute(
+                    """
+                    UPDATE tasks
+                       SET completion_commit_required = 0,
+                           completion_commit_hash = 'preserved-revision'
+                    """
+                )
+                connection.commit()
+
+            result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
+
+            self.assertEqual(result.returncode, 0, result.stdout)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["data"]["migrations_applied"], [4])
+            self.assertEqual(payload["warnings"][0]["code"], "legacy_completion_evidence_preserved")
+            with closing(sqlite3.connect(db)) as connection:
+                row = connection.execute(
+                    """
+                    SELECT completion_commit_required, completion_commit_hash,
+                           completion_evidence_kind, completion_evidence_revision
+                      FROM tasks
+                    """
+                ).fetchone()
+            self.assertEqual(row, (0, "preserved-revision", "legacy_unverified", "preserved-revision"))
+
     def test_db_init_returns_json_error_for_invalid_db_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "directory-instead-of-db"
@@ -468,6 +588,10 @@ class DbInitTests(unittest.TestCase):
             task_columns = {row[1] for row in column_rows}
             self.assertIn("completion_commit_required", task_columns)
             self.assertIn("completion_commit_hash", task_columns)
+            self.assertIn("completion_evidence_kind", task_columns)
+            self.assertIn("completion_evidence_revision", task_columns)
+            self.assertIn("completion_evidence_reason", task_columns)
+            self.assertIn("external_revision_approved", task_columns)
 
     def test_project_mismatch_is_rejected_for_explicit_db(self):
         with tempfile.TemporaryDirectory() as tmp:

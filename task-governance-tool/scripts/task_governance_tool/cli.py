@@ -213,6 +213,14 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--tags", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--add-note", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--completion-commit-hash", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--completion-evidence-kind", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--completion-revision", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--completion-evidence-reason", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument(
+        "--external-revision-approved",
+        action="store_true",
+        default=argparse.SUPPRESS,
+    )
     task_edit_parser.add_argument("--commit-not-required", action="store_true", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--verification-complete", action="store_true", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--review-complete", action="store_true", default=argparse.SUPPRESS)
@@ -492,6 +500,7 @@ def handle_db_init(context: CommandContext) -> CommandResult:
         project_id=target.project.project_id,
         db_path=str(target.db_path),
         data=data,
+        warnings=result.warnings,
         text=(
             f"DB {action}: {target.db_path}\n"
             f"Project: {target.project.project_id}\n"
@@ -935,7 +944,12 @@ def task_show_text(task: dict[str, Any], events: list[dict[str, Any]], suggested
     lines.append(f"Review tier: {task['review_tier']}")
     if task["verification"]:
         lines.append(f"Verification: {task['verification']}")
-    if "completion_commit_required" in task:
+    if "completion_evidence_kind" in task:
+        kind = task["completion_evidence_kind"]
+        revision = task["completion_evidence_revision"]
+        detail = f", {revision}" if revision else ""
+        lines.append(f"Completion evidence: {kind}{detail}")
+    elif "completion_commit_required" in task:
         if task["completion_commit_required"]:
             commit_hash = task["completion_commit_hash"] or "hash not set"
             lines.append(f"Completion commit: required, {commit_hash}")
@@ -1032,6 +1046,10 @@ EDIT_ARGUMENT_FIELDS = (
     "tags",
     "add_note",
     "completion_commit_hash",
+    "completion_evidence_kind",
+    "completion_revision",
+    "completion_evidence_reason",
+    "external_revision_approved",
     "commit_not_required",
     "verification_complete",
     "review_complete",

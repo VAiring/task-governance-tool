@@ -80,8 +80,8 @@ python scripts/taskgov.py db init --repo <target-project> --json
 ```json
 {
   "created": true,
-  "migrations_applied": [1, 2, 3],
-  "schema_version": 3
+  "migrations_applied": [1, 2, 3, 4],
+  "schema_version": 4
 }
 ```
 
@@ -100,7 +100,7 @@ python scripts/taskgov.py db status --repo <target-project> --json
   "exists": true,
   "needs_init": false,
   "needs_migration": false,
-  "schema_version": 3,
+  "schema_version": 4,
   "counts": {
     "active": 3,
     "blocked": 1,
@@ -242,10 +242,14 @@ python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 
 `data`: `task`, `events`, `suggested_next_action`.
 
-`task` includes completion commit trace fields:
+`task` includes typed completion evidence and the legacy commit projection:
 
 - `completion_commit_required`
 - `completion_commit_hash`
+- `completion_evidence_kind`
+- `completion_evidence_revision`
+- `completion_evidence_reason`
+- `external_revision_approved`
 
 ### `task edit`
 
@@ -270,10 +274,18 @@ Editable options:
 - `--verification`
 - `--tags`
 - `--add-note`
-- `--completion-commit-hash <hash>`: record the commit hash or unique revision
-  ID that closes the task, and mark the task as requiring a completion commit.
+- `--completion-commit-hash <revision>`: Git-only compatibility alias. Verify
+  an existing commit read-only and store its canonical full object ID.
+- `--completion-evidence-kind <kind>`: explicitly select `git_commit`,
+  `external_revision`, or `commit_not_required`.
+- `--completion-revision <revision>`: revision for explicit Git or external
+  evidence.
+- `--completion-evidence-reason <summary>`: concise sanitized reason required
+  for external evidence.
+- `--external-revision-approved`: explicitly acknowledge that the external
+  durable source is approved instead of target Git history when available.
 - `--commit-not-required`: explicitly mark that no managed materials changed;
-  this clears any stored completion commit hash.
+  compatibility alias for `commit_not_required` evidence.
 - `--verification-complete`: record a concise command-time confirmation that
   required verification passed or has an approved exception.
 - `--review-complete`: record a concise command-time confirmation that the
@@ -294,16 +306,30 @@ also validate both affected lanes and return
 `sequential_predecessor_incomplete` without storing a success event when the
 result would place incomplete work before an already advanced task.
 
-`--completion-commit-hash` and `--commit-not-required` are mutually exclusive.
+Completion evidence spellings are mutually exclusive. Git evidence is resolved
+with a shell-free, read-only `git rev-parse --verify --end-of-options
+<revision>^{commit}` call. Missing, ambiguous, option-shaped, and non-commit
+revisions fail; unique short hashes and annotated tags are stored as the
+canonical full commit ID. External evidence always requires its explicit kind,
+revision, reason, and approval. Changing evidence kind clears fields not valid
+for the new kind.
+
 `task edit --status done` requires both `--verification-complete` and
 `--review-complete`. It also requires either a stored or newly supplied
-`--completion-commit-hash`, unless `--commit-not-required` explicitly marks the
-task as having no changed managed materials.
+valid typed evidence record. `legacy_unverified` evidence is preserved for
+historical completed tasks but cannot satisfy a new done transition after a
+task is reopened.
 
-Complete with a commit hash or durable revision ID:
+Complete with a Git commit:
 
 ```powershell
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
+```
+
+Complete with an explicitly approved external revision:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-evidence-kind external_revision --completion-revision <revision> --completion-evidence-reason "Approved external release" --external-revision-approved --json
 ```
 
 Complete when no managed materials changed:
@@ -312,9 +338,9 @@ Complete when no managed materials changed:
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --commit-not-required --json
 ```
 
-`taskgov` records commit state only. It does not create commits or mutate the
-target project. For Git projects, inspect changed materials from the stored
-hash:
+`taskgov` records and validates evidence only. It does not create commits or
+mutate the target project. For Git projects, inspect changed materials from the
+stored hash:
 
 ```powershell
 git show --name-only <completion_commit_hash>
@@ -396,6 +422,9 @@ Known error codes include:
 - `review_required`
 - `commit_required`
 - `completion_commit_conflict`
+- `completion_evidence_conflict`
+- `git_commit_not_found_or_ambiguous`
+- `external_revision_approval_required`
 - `initial_done_forbidden`
 - `initial_paused_forbidden`
 - `invalid_status_transition`

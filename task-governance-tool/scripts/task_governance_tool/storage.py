@@ -14,7 +14,7 @@ from typing import Any
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class StorageError(Exception):
@@ -45,6 +45,7 @@ class InitResult:
     created: bool
     migrations_applied: list[int]
     schema_version: int
+    warnings: list[dict[str, str]]
 
 
 @dataclass(frozen=True)
@@ -434,6 +435,10 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
             "completed_at",
             "completion_commit_required",
             "completion_commit_hash",
+            "completion_evidence_kind",
+            "completion_evidence_revision",
+            "completion_evidence_reason",
+            "external_revision_approved",
         }
         missing.extend(
             f"column:tasks.{name}" for name in sorted(required_task_columns - task_columns)
@@ -568,7 +573,95 @@ def apply_paused_state_migration(
             raise StorageError("internal_error", "could not restore foreign key enforcement")
 
 
-def apply_migrations(connection: sqlite3.Connection) -> list[int]:
+def apply_completion_evidence_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> int:
+    """Add typed completion evidence while preserving every legacy projection."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "completion-evidence migration requires no active transaction",
+        )
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        if not column_exists(connection, "tasks", "completion_evidence_kind"):
+            connection.execute(
+                """
+                ALTER TABLE tasks
+                  ADD COLUMN completion_evidence_kind TEXT NOT NULL DEFAULT 'none'
+                  CHECK (completion_evidence_kind IN (
+                    'none', 'git_commit', 'external_revision',
+                    'commit_not_required', 'legacy_unverified'
+                  ))
+                """
+            )
+        if not column_exists(connection, "tasks", "completion_evidence_revision"):
+            connection.execute(
+                """
+                ALTER TABLE tasks
+                  ADD COLUMN completion_evidence_revision TEXT NOT NULL DEFAULT ''
+                """
+            )
+        if not column_exists(connection, "tasks", "completion_evidence_reason"):
+            connection.execute(
+                """
+                ALTER TABLE tasks
+                  ADD COLUMN completion_evidence_reason TEXT NOT NULL DEFAULT ''
+                """
+            )
+        if not column_exists(connection, "tasks", "external_revision_approved"):
+            connection.execute(
+                """
+                ALTER TABLE tasks
+                  ADD COLUMN external_revision_approved INTEGER NOT NULL DEFAULT 0
+                  CHECK (external_revision_approved IN (0, 1))
+                """
+            )
+
+        inconsistent_count = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                  FROM tasks
+                 WHERE completion_commit_required = 0
+                   AND completion_commit_hash != ''
+                """
+            ).fetchone()[0]
+        )
+        connection.execute(
+            """
+            UPDATE tasks
+               SET completion_evidence_kind = CASE
+                     WHEN completion_commit_required = 1 AND completion_commit_hash = ''
+                       THEN 'none'
+                     WHEN completion_commit_required = 0 AND completion_commit_hash = ''
+                       THEN 'commit_not_required'
+                     ELSE 'legacy_unverified'
+                   END,
+                   completion_evidence_revision = CASE
+                     WHEN completion_commit_hash != '' THEN completion_commit_hash
+                     ELSE ''
+                   END,
+                   completion_evidence_reason = '',
+                   external_revision_approved = 0
+            """
+        )
+        if fail_stage == "after_mapping":
+            raise StorageError("internal_error", "injected completion-evidence migration failure")
+        connection.execute(
+            "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+            (4, "typed_completion_evidence", utc_now()),
+        )
+        connection.commit()
+        return inconsistent_count
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[dict[str, str]]]:
     version = current_schema_version(connection)
     if version > SCHEMA_VERSION:
         raise StorageError(
@@ -577,6 +670,7 @@ def apply_migrations(connection: sqlite3.Connection) -> list[int]:
         )
 
     applied: list[int] = []
+    warnings: list[dict[str, str]] = []
     if version < 1:
         apply_initial_schema_migration(connection)
         applied.append(1)
@@ -590,7 +684,21 @@ def apply_migrations(connection: sqlite3.Connection) -> list[int]:
             connection.commit()
         apply_paused_state_migration(connection)
         applied.append(3)
-    return applied
+        version = 3
+    if version < 4:
+        inconsistent_count = apply_completion_evidence_migration(connection)
+        applied.append(4)
+        if inconsistent_count:
+            warnings.append(
+                {
+                    "code": "legacy_completion_evidence_preserved",
+                    "message": (
+                        f"preserved {inconsistent_count} inconsistent legacy completion "
+                        "record(s) as legacy_unverified"
+                    ),
+                }
+            )
+    return applied, warnings
 
 
 def ensure_project_meta(connection: sqlite3.Connection, project: ProjectIdentity) -> None:
@@ -873,7 +981,7 @@ def initialize_database(target: DatabaseTarget) -> InitResult:
                             "project_mismatch",
                             f"database belongs to project {existing_project_id}, not {target.project.project_id}",
                         )
-                migrations_applied = apply_migrations(connection)
+                migrations_applied, warnings = apply_migrations(connection)
                 ensure_project_meta(connection, target.project)
                 version = current_schema_version(connection)
     except StorageError:
@@ -887,6 +995,7 @@ def initialize_database(target: DatabaseTarget) -> InitResult:
         created=created,
         migrations_applied=migrations_applied,
         schema_version=version,
+        warnings=warnings,
     )
 
 

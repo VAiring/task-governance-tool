@@ -24,7 +24,7 @@ from task_governance_tool.storage import (  # noqa: E402
     inspect_database,
     resolve_database_target,
 )
-from task_governance_tool.tasks import STATUSES, TASK_SHOW_FIELDS, add_task  # noqa: E402
+from task_governance_tool.tasks import STATUSES, VIEWER_TASK_FIELDS, add_task  # noqa: E402
 from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
 
 
@@ -143,7 +143,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
             self.assertEqual(result.task_count, len(STATUSES))
             ready = next(task for task in snapshot["tasks"] if task["status"] == "ready")
-            self.assertEqual(set(ready), set(TASK_SHOW_FIELDS) | {"events"})
+            self.assertEqual(set(ready), set(VIEWER_TASK_FIELDS) | {"events"})
             self.assertEqual(ready["completion_commit_required"], 1)
             self.assertEqual(ready["completion_commit_hash"], "abc123viewer")
             self.assertEqual(len(ready["events"]), 10)
@@ -188,7 +188,7 @@ class ViewerSnapshotTests(unittest.TestCase):
             target = initialized_target(tmp)
             with closing(connect(target.db_path)) as connection:
                 with connection:
-                    connection.execute("DELETE FROM schema_migrations WHERE version = 3")
+                    connection.execute("DELETE FROM schema_migrations WHERE version = 4")
 
             with closing(connect_snapshot_readonly(target.db_path)) as connection:
                 with self.assertRaises(StorageError) as migration:

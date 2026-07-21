@@ -218,6 +218,14 @@ class ViewerTaskListResult:
 
 
 @dataclass(frozen=True)
+class CurrentTaskResult:
+    tasks: list[dict[str, Any]]
+    count: int
+    limit: int
+    statuses: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class EditTaskResult:
     task: dict[str, Any]
     changed_fields: list[str]
@@ -648,7 +656,11 @@ def validate_limit(value: Any, *, default: int = 20) -> int:
         raise validation_error("invalid_argument", "limit must be a positive integer", "limit")
     if isinstance(value, int):
         limit = value
-    elif isinstance(value, str) and value.strip().isdigit():
+    elif (
+        isinstance(value, str)
+        and value.strip().isascii()
+        and value.strip().isdigit()
+    ):
         limit = int(value.strip())
     else:
         raise validation_error("invalid_argument", "limit must be a positive integer", "limit")
@@ -928,6 +940,94 @@ def list_tasks_for_viewer(
         event_count += len(events)
 
     return ViewerTaskListResult(tasks=tasks, event_count=event_count)
+
+
+CURRENT_STATUSES = ("in_progress", "review_pending", "paused", "blocked")
+
+
+def current_suggested_next_action(task: dict[str, Any]) -> str:
+    status = task["status"]
+    if status == "in_progress":
+        return "continue the task and inspect its latest event"
+    if status == "review_pending":
+        return "complete the required review gate"
+    if status == "paused":
+        reason = str(task.get("pause_reason", "")).strip()
+        suffix = f": {reason}" if reason else ""
+        return f"review the pause reason and resume explicitly when safe{suffix}"
+    reason = str(task.get("blocked_reason", "")).strip()
+    suffix = f": {reason}" if reason else ""
+    return f"resolve or reassess the blocker{suffix}"
+
+
+def list_current_tasks(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    *,
+    limit: Any = None,
+) -> CurrentTaskResult:
+    row_limit = validate_limit(limit, default=20)
+    rows = connection.execute(
+        """
+        SELECT
+          task.*,
+          latest.task_event_id AS latest_event_id,
+          latest.event_type AS latest_event_type,
+          latest.summary AS latest_event_summary,
+          latest.created_at AS latest_event_created_at
+          FROM tasks AS task
+          LEFT JOIN task_events AS latest
+            ON latest.rowid = (
+              SELECT event.rowid
+                FROM task_events AS event
+               WHERE event.project_id = task.project_id
+                 AND event.task_id = task.task_id
+               ORDER BY event.created_at DESC, event.rowid DESC
+               LIMIT 1
+            )
+         WHERE task.project_id = ?
+           AND task.status IN ('in_progress', 'review_pending', 'paused', 'blocked')
+         ORDER BY
+           CASE task.status
+             WHEN 'in_progress' THEN 0
+             WHEN 'review_pending' THEN 1
+             WHEN 'paused' THEN 2
+             ELSE 3
+           END,
+           CASE task.priority
+             WHEN 'urgent' THEN 0
+             WHEN 'high' THEN 1
+             WHEN 'normal' THEN 2
+             ELSE 3
+           END,
+           task.updated_at DESC,
+           task.task_id
+         LIMIT ?
+        """,
+        (project.project_id, row_limit),
+    ).fetchall()
+    tasks = []
+    for row in rows:
+        task = row_to_task(row)
+        if row["latest_event_id"] is None:
+            task["latest_event"] = {}
+        else:
+            task["latest_event"] = {
+                "task_event_id": row["latest_event_id"],
+                "task_id": task["task_id"],
+                "project_id": task["project_id"],
+                "event_type": row["latest_event_type"],
+                "summary": row["latest_event_summary"],
+                "created_at": row["latest_event_created_at"],
+            }
+        task["suggested_next_action"] = current_suggested_next_action(task)
+        tasks.append(task)
+    return CurrentTaskResult(
+        tasks=tasks,
+        count=len(tasks),
+        limit=row_limit,
+        statuses=CURRENT_STATUSES,
+    )
 
 
 def read_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> dict[str, Any] | None:

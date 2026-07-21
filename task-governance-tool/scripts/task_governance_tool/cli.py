@@ -26,10 +26,12 @@ from task_governance_tool.storage import (
 )
 from task_governance_tool.selection import select_next_tasks
 from task_governance_tool.tasks import (
+    CURRENT_STATUSES,
     TaskRepositoryError,
     TaskValidationError,
     add_task,
     edit_task,
+    list_current_tasks,
     list_tasks,
     show_task,
 )
@@ -188,6 +190,9 @@ def build_parser() -> argparse.ArgumentParser:
     task_next_parser.add_argument("--lane", default=None)
     task_next_parser.add_argument("--priority", default=None)
     task_next_parser.add_argument("--limit", default=None)
+    task_current_parser = task_subparsers.add_parser("current", help="rediscover active or held work")
+    add_common_options(task_current_parser)
+    task_current_parser.add_argument("--limit", default=None)
     task_show_parser = task_subparsers.add_parser("show", help="show one task and recent events")
     add_common_options(task_show_parser)
     task_show_parser.add_argument("task_id")
@@ -259,6 +264,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_task_list(context)
     if context.command == "task.next":
         return handle_task_next(context)
+    if context.command == "task.current":
+        return handle_task_current(context)
     if context.command == "task.show":
         return handle_task_show(context)
     if context.command == "task.edit":
@@ -834,6 +841,82 @@ def handle_task_next(context: CommandContext) -> CommandResult:
         db_path=str(target.db_path),
         data=data,
         text=task_next_text(result.tasks, result.count, result.limit),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
+def task_current_empty_data() -> dict[str, Any]:
+    return {
+        "tasks": [],
+        "count": 0,
+        "limit": 0,
+        "statuses": list(CURRENT_STATUSES),
+    }
+
+
+def task_current_text(tasks: list[dict[str, Any]], count: int, limit: int) -> str:
+    lines = [f"Current tasks: {count} (limit {limit})"]
+    for task in tasks:
+        lines.append(
+            f"{task['task_id']} [{task['status']}] {task['priority']} - "
+            f"{task['title']} | {task['suggested_next_action']}"
+        )
+    return "\n".join(lines)
+
+
+def handle_task_current(context: CommandContext) -> CommandResult:
+    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    status = inspect_database(target)
+    if status.error_code:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data=task_current_empty_data(),
+            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    try:
+        with closing(connect_readonly(target.db_path)) as connection:
+            result = list_current_tasks(
+                connection,
+                target.project,
+                limit=getattr(context.args, "limit", None),
+            )
+    except TaskValidationError as exc:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data=task_current_empty_data(),
+            errors=[{"code": exc.code, "message": exc.message}],
+            exit_code=EXIT_USAGE,
+        )
+    except sqlite3.Error:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data=task_current_empty_data(),
+            errors=[{"code": "internal_error", "message": "could not list current tasks"}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    data = {
+        "tasks": result.tasks,
+        "count": result.count,
+        "limit": result.limit,
+        "statuses": list(result.statuses),
+    }
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=target.project.project_id,
+        db_path=str(target.db_path),
+        data=data,
+        text=task_current_text(result.tasks, result.count, result.limit),
         exit_code=EXIT_SUCCESS,
     )
 

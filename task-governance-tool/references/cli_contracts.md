@@ -12,6 +12,7 @@ matter.
 - [`task add`](#task-add)
 - [`task list`](#task-list)
 - [`task next`](#task-next)
+- [`task current`](#task-current)
 - [`task show`](#task-show)
 - [`task edit`](#task-edit)
 - [`web export`](#web-export)
@@ -54,7 +55,7 @@ All JSON output uses this envelope:
 ```
 
 Inspection commands are read-only by default: `db status`, `task list`,
-`task next`, and `task show`.
+`task next`, `task current`, and `task show`.
 
 Database write commands are `db init`, `task add`, and `task edit`. Only
 `db init` may create or migrate a database. Other write commands require an
@@ -196,6 +197,40 @@ Selection rules:
   `cancelled`.
 
 `data`: `tasks`, `count`, `limit`, `selection_rules`.
+
+### `task current`
+
+Rediscover work that has already started, is under review, is intentionally
+paused, or is blocked. This inspection command is read-only and does not infer
+working-tree freshness or staleness.
+
+```powershell
+python scripts/taskgov.py task current --repo <target-project> --limit 20 --json
+```
+
+`data`:
+
+```json
+{
+  "tasks": [
+    {
+      "task_id": "tg_task_example",
+      "status": "in_progress",
+      "latest_event": {},
+      "suggested_next_action": "continue the task and inspect its latest event"
+    }
+  ],
+  "count": 1,
+  "limit": 20,
+  "statuses": ["in_progress", "review_pending", "paused", "blocked"]
+}
+```
+
+Each task contains the normal public task fields plus its latest event and a
+deterministic status-based suggested action. Ordering is status
+(`in_progress`, `review_pending`, `paused`, `blocked`), priority, newest
+`updated_at`, then `task_id`. Same-second latest events use event row order as a
+private tie-breaker. `--limit` defaults to `20` and is capped at `100`.
 
 ### `task show`
 

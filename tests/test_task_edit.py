@@ -31,6 +31,8 @@ def init_db(db, repo):
 
 
 def add_task(db, repo, title, *extra):
+    if not db.exists():
+        init_db(db, repo)
     result = run_taskgov(
         "task",
         "add",
@@ -328,6 +330,39 @@ class TaskEditTests(unittest.TestCase):
             self.assertEqual(payload["data"], {"task": None, "changed_fields": [], "event": None})
             self.assertFalse(db.exists())
             self.assertFalse(db.parent.exists())
+
+    def test_task_edit_does_not_migrate_old_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute("DELETE FROM schema_migrations WHERE version = 2")
+                connection.commit()
+            before = db.read_bytes()
+
+            result = run_taskgov(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "tg_task_missing",
+                "--title",
+                "No migration",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "migration_required")
+            self.assertEqual(db.read_bytes(), before)
+            with closing(sqlite3.connect(db)) as connection:
+                versions = [row[0] for row in connection.execute(
+                    "SELECT version FROM schema_migrations ORDER BY version"
+                )]
+            self.assertEqual(versions, [1])
 
     def test_task_edit_duplicate_sequential_order_rolls_back(self):
         with tempfile.TemporaryDirectory() as tmp:

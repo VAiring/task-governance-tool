@@ -40,6 +40,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            init_db(db, repo)
 
             result = run_taskgov(
                 "task",
@@ -82,6 +83,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            init_db(db, repo)
 
             first = run_taskgov(
                 "task",
@@ -123,6 +125,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            init_db(db, repo)
 
             result = run_taskgov(
                 "task",
@@ -145,6 +148,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            init_db(db, repo)
 
             result = run_taskgov(
                 "task",
@@ -190,10 +194,11 @@ class TaskAddTests(unittest.TestCase):
             self.assertEqual(task["verification"], "python -m unittest")
             self.assertEqual(task["tags"], "task,sqlite")
 
-    def test_task_add_rejects_blocked_without_reason_before_creating_database(self):
+    def test_task_add_rejects_blocked_without_reason_before_storage(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "db" / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            init_db(db, repo)
 
             result = run_taskgov(
                 "task",
@@ -213,13 +218,14 @@ class TaskAddTests(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertFalse(payload["ok"])
             self.assertEqual(payload["errors"][0]["code"], "blocked_reason_required")
-            self.assertFalse(db.exists())
-            self.assertFalse(db.parent.exists())
+            self.assertEqual(table_count(db, "tasks"), 0)
+            self.assertEqual(table_count(db, "task_events"), 0)
 
     def test_task_add_rejects_duplicate_sequential_lane_order(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            init_db(db, repo)
 
             first = run_taskgov(
                 "task",
@@ -336,6 +342,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            init_db(db, repo)
 
             result = run_taskgov(
                 "task",
@@ -356,6 +363,143 @@ class TaskAddTests(unittest.TestCase):
             self.assertLessEqual(len(lines), 6)
             self.assertIn("Task added: tg_task_", result.stdout)
             self.assertIn("Lane: default  Order: 1", result.stdout)
+
+    def test_task_add_requires_explicit_db_init_without_creating_parent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "missing" / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+
+            result = run_taskgov(
+                "task",
+                "add",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--title",
+                "Needs explicit init",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "db_not_initialized")
+            self.assertFalse(db.exists())
+            self.assertFalse(db.parent.exists())
+
+    def test_task_add_reports_readiness_before_initial_done_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "missing" / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+
+            result = run_taskgov(
+                "task",
+                "add",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--title",
+                "Already done",
+                "--status",
+                "done",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "db_not_initialized")
+            self.assertFalse(db.exists())
+            self.assertFalse(db.parent.exists())
+
+    def test_task_add_rejects_initial_done_without_storing_task_or_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            before_tasks = table_count(db, "tasks")
+            before_events = table_count(db, "task_events")
+
+            result = run_taskgov(
+                "task",
+                "add",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--title",
+                "No completion bypass",
+                "--status",
+                "done",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "initial_done_forbidden")
+            self.assertEqual(table_count(db, "tasks"), before_tasks)
+            self.assertEqual(table_count(db, "task_events"), before_events)
+
+    def test_task_add_rejects_project_mismatch_without_storage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            owner_repo = Path(tmp) / "owner"
+            other_repo = Path(tmp) / "other"
+            init_db(db, owner_repo)
+
+            result = run_taskgov(
+                "task",
+                "add",
+                "--repo",
+                str(other_repo),
+                "--db",
+                str(db),
+                "--title",
+                "Wrong project",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "project_mismatch")
+            self.assertEqual(table_count(db, "tasks"), 0)
+            self.assertEqual(table_count(db, "task_events"), 0)
+
+    def test_task_add_does_not_migrate_old_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute("DELETE FROM schema_migrations WHERE version = 2")
+                connection.commit()
+            before = db.read_bytes()
+
+            result = run_taskgov(
+                "task",
+                "add",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--title",
+                "Must migrate explicitly",
+                "--status",
+                "done",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["errors"][0]["code"], "migration_required")
+            self.assertEqual(db.read_bytes(), before)
+            with closing(sqlite3.connect(db)) as connection:
+                versions = [row[0] for row in connection.execute(
+                    "SELECT version FROM schema_migrations ORDER BY version"
+                )]
+                task_count = connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            self.assertEqual(versions, [1])
+            self.assertEqual(task_count, 0)
 
 
 if __name__ == "__main__":

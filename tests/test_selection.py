@@ -27,7 +27,25 @@ def initialized_target(tmp: str):
 
 
 def add(connection, project, title, **kwargs):
-    return add_task(connection, project, title=title, **kwargs).task
+    initial_status = kwargs.pop("status", "ready")
+    task = add_task(
+        connection,
+        project,
+        title=title,
+        status=("ready" if initial_status == "done" else initial_status),
+        **kwargs,
+    ).task
+    if initial_status == "done":
+        task = edit_task(
+            connection,
+            project,
+            task["task_id"],
+            status="done",
+            verification_complete=True,
+            review_complete=True,
+            commit_not_required=True,
+        ).task
+    return task
 
 
 def task_row(project_id, **overrides):

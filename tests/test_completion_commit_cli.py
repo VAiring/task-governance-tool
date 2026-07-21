@@ -23,7 +23,16 @@ def run_taskgov(*args):
     )
 
 
+def init_db(db, repo):
+    result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
+    if result.returncode != 0:
+        raise AssertionError(result.stderr or result.stdout)
+    return json.loads(result.stdout)
+
+
 def add_task(db, repo, title, *extra):
+    if not db.exists():
+        init_db(db, repo)
     result = run_taskgov(
         "task",
         "add",

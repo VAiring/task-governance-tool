@@ -16,7 +16,7 @@ from task_governance_tool import __version__
 from task_governance_tool.storage import (
     StatusResult,
     StorageError,
-    connect,
+    connect_initialized,
     connect_readonly,
     connect_snapshot_readonly,
     initialize_database,
@@ -32,8 +32,6 @@ from task_governance_tool.tasks import (
     edit_task,
     list_tasks,
     show_task,
-    validate_task_edit_input,
-    validate_task_input,
 )
 from task_governance_tool.viewer import (
     SNAPSHOT_VERSION,
@@ -620,18 +618,7 @@ def handle_task_add(context: CommandContext) -> CommandResult:
 
     task_input = task_add_input(context.args)
     try:
-        validate_task_input(**task_input)
-    except TaskValidationError as exc:
-        return validation_failure_result(
-            context,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            exc=exc,
-        )
-
-    try:
-        initialize_database(target)
-        with closing(connect(target.db_path)) as connection:
+        with closing(connect_initialized(target)) as connection:
             with connection:
                 result = add_task(connection, target.project, **task_input)
     except TaskValidationError as exc:
@@ -1022,30 +1009,7 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
 
     edit_input = task_edit_input(context.args)
     try:
-        validate_task_edit_input(**edit_input)
-    except TaskValidationError as exc:
-        return task_edit_failure_result(
-            context,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            code=exc.code,
-            message=exc.message,
-            exit_code=EXIT_USAGE,
-        )
-
-    if not target.db_path.exists():
-        return task_edit_failure_result(
-            context,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            code="db_not_initialized",
-            message="database is not initialized; run db init first",
-            exit_code=EXIT_TOOL_ERROR,
-        )
-
-    try:
-        initialize_database(target)
-        with closing(connect(target.db_path)) as connection:
+        with closing(connect_initialized(target)) as connection:
             with connection:
                 result = edit_task(
                     connection,

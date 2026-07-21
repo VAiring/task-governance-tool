@@ -142,6 +142,15 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return connection
 
 
+def connect_existing(db_path: Path) -> sqlite3.Connection:
+    """Open an existing database read/write without allowing SQLite to create it."""
+    uri = db_path.resolve(strict=False).as_uri() + "?mode=rw"
+    connection = sqlite3.connect(uri, uri=True)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    return connection
+
+
 def connect_readonly(db_path: Path) -> sqlite3.Connection:
     uri = db_path.resolve(strict=False).as_uri() + "?mode=ro&immutable=1"
     connection = sqlite3.connect(uri, uri=True)
@@ -470,18 +479,11 @@ def read_project_meta_id(connection: sqlite3.Connection) -> str | None:
     return str(row["project_id"])
 
 
-def validate_snapshot_database(
+def validate_current_database(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
 ) -> int:
-    """Revalidate schema and project identity inside a viewer read transaction."""
-    query_only = int(connection.execute("PRAGMA query_only").fetchone()[0])
-    if not connection.in_transaction or query_only != 1:
-        raise StorageError(
-            "internal_error",
-            "viewer snapshot requires an active query-only transaction",
-        )
-
+    """Require the supported schema and matching project without migrating."""
     version = current_schema_version(connection)
     if version != SCHEMA_VERSION:
         raise StorageError(
@@ -513,6 +515,47 @@ def validate_snapshot_database(
             ),
         )
     return version
+
+
+def connect_initialized(target: DatabaseTarget) -> sqlite3.Connection:
+    """Open a current, project-matching database without creation or migration."""
+    if not target.db_path.exists():
+        raise StorageError(
+            "db_not_initialized",
+            "database is not initialized; run db init first",
+        )
+    try:
+        connection = connect_existing(target.db_path)
+    except sqlite3.Error as exc:
+        if not target.db_path.exists():
+            raise StorageError(
+                "db_not_initialized",
+                "database is not initialized; run db init first",
+            ) from exc
+        raise StorageError("internal_error", "could not open database") from exc
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        validate_current_database(connection, target)
+    except Exception:
+        connection.rollback()
+        connection.close()
+        raise
+    return connection
+
+
+def validate_snapshot_database(
+    connection: sqlite3.Connection,
+    target: DatabaseTarget,
+) -> int:
+    """Revalidate schema and project identity inside a viewer read transaction."""
+    query_only = int(connection.execute("PRAGMA query_only").fetchone()[0])
+    if not connection.in_transaction or query_only != 1:
+        raise StorageError(
+            "internal_error",
+            "viewer snapshot requires an active query-only transaction",
+        )
+
+    return validate_current_database(connection, target)
 
 
 def count_tasks(connection: sqlite3.Connection, project_id: str) -> dict[str, int]:

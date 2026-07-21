@@ -66,6 +66,8 @@ def init_db(db, repo, *, skill_root=SKILL_ROOT):
 
 
 def add_task(db, repo, title="Viewer task", *, skill_root=SKILL_ROOT):
+    if not db.exists():
+        init_db(db, repo, skill_root=skill_root)
     result = run_taskgov(
         "task",
         "add",

@@ -71,7 +71,37 @@ class TaskStatusFixtureTests(unittest.TestCase):
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "synthetic-repo"
 
-            seeded = [add_fixture_task(db, repo, task) for task in fixture["tasks"]]
+            init_result = run_taskgov(
+                "db", "init", "--repo", str(repo), "--db", str(db), "--json"
+            )
+            self.assertEqual(init_result.returncode, 0, init_result.stderr)
+
+            seeded = []
+            for task in fixture["tasks"]:
+                initial = dict(task)
+                target_status = initial.get("status", "ready")
+                if target_status == "done":
+                    initial["status"] = "ready"
+                stored = add_fixture_task(db, repo, initial)
+                if target_status == "done":
+                    completed = run_taskgov(
+                        "task",
+                        "edit",
+                        "--repo",
+                        str(repo),
+                        "--db",
+                        str(db),
+                        stored["task_id"],
+                        "--status",
+                        "done",
+                        "--verification-complete",
+                        "--review-complete",
+                        "--commit-not-required",
+                        "--json",
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    stored = json.loads(completed.stdout)["data"]["task"]
+                seeded.append(stored)
 
             self.assertEqual(len(seeded), 7)
             by_status = {}

@@ -13,7 +13,12 @@ SKILL_ROOT = ROOT / "task-governance-tool"
 SCRIPTS_PATH = SKILL_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_PATH))
 try:
-    from task_governance_tool.storage import initial_schema_sql, project_identity
+    from task_governance_tool.storage import (
+        connect_initialized,
+        initial_schema_sql,
+        project_identity,
+        resolve_database_target,
+    )
 finally:
     sys.path.pop(0)
 
@@ -311,6 +316,28 @@ class DbInitTests(unittest.TestCase):
             self.assertEqual(second.returncode, 2)
             payload = json.loads(second.stdout)
             self.assertEqual(payload["errors"][0]["code"], "project_mismatch")
+
+    def test_initialized_write_connection_holds_lock_after_readiness_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            initialized = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
+            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            target = resolve_database_target(
+                repo=repo,
+                db=db,
+                script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+            )
+
+            with closing(connect_initialized(target)) as connection:
+                self.assertTrue(connection.in_transaction)
+                with closing(sqlite3.connect(db, timeout=0)) as contender:
+                    with self.assertRaises(sqlite3.OperationalError):
+                        contender.execute("BEGIN IMMEDIATE")
+
+            with closing(sqlite3.connect(db, timeout=0)) as contender:
+                contender.execute("BEGIN IMMEDIATE")
+                contender.rollback()
 
     def test_schema_constraints_reject_invalid_task_rows(self):
         with tempfile.TemporaryDirectory() as tmp:

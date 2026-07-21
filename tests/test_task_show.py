@@ -31,6 +31,8 @@ def init_db(db, repo):
 
 
 def add_task(db, repo, title, *extra):
+    if not db.exists():
+        init_db(db, repo)
     result = run_taskgov(
         "task",
         "add",

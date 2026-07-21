@@ -52,14 +52,29 @@ class ViewerSnapshotTests(unittest.TestCase):
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     for index, status in enumerate(STATUSES):
+                        initial_status = "ready" if status == "done" else status
                         tasks[status] = add_task(
                             connection,
                             target.project,
                             title=f"{status} task",
-                            status=status,
+                            status=initial_status,
                             blocked_reason=("Waiting for input" if status == "blocked" else ""),
                             priority=("urgent" if index == 0 else "normal"),
                         ).task
+                        if status == "done":
+                            # Viewer projection deliberately seeds a historical row;
+                            # completion-transition gates are tested at the CLI boundary.
+                            connection.execute(
+                                """
+                                UPDATE tasks
+                                   SET status = 'done',
+                                       completed_at = '2026-07-17T00:00:00Z'
+                                 WHERE task_id = ?
+                                """,
+                                (tasks[status]["task_id"],),
+                            )
+                            tasks[status]["status"] = "done"
+                            tasks[status]["completed_at"] = "2026-07-17T00:00:00Z"
                     selected = tasks["ready"]
                     connection.execute(
                         """

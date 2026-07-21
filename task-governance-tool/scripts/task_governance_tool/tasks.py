@@ -395,6 +395,12 @@ def validate_task_input(
             "blocked_reason is required when status is blocked",
             "blocked_reason",
         )
+    if normalized["status"] == "done":
+        raise validation_error(
+            "initial_done_forbidden",
+            "task add --status done is prohibited; add the task first and complete it with task edit",
+            "status",
+        )
     if add_note is not None:
         normalized["add_note"] = validate_text("add_note", add_note, limit=TEXT_LIMITS["add_note"])
     return normalized

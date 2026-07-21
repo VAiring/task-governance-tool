@@ -285,7 +285,7 @@ class TaskNextTests(unittest.TestCase):
                 "--order",
                 "20",
             )
-            add_task(
+            done_earlier = add_task(
                 db,
                 repo,
                 "Done earlier",
@@ -295,8 +295,16 @@ class TaskNextTests(unittest.TestCase):
                 "DONE",
                 "--order",
                 "10",
+            )
+            edit_task(
+                db,
+                repo,
+                done_earlier["task_id"],
                 "--status",
                 "done",
+                "--verification-complete",
+                "--review-complete",
+                "--commit-not-required",
             )
             add_task(
                 db,

@@ -24,6 +24,8 @@ def run_taskgov(*args):
 
 
 def add_task(db, repo, title, *extra):
+    if not db.exists():
+        init_db(db, repo)
     result = run_taskgov(
         "task",
         "add",
@@ -66,7 +68,7 @@ def list_tasks(db, repo, *extra):
 
 class TaskListTests(unittest.TestCase):
     def seed_tasks(self, db, repo):
-        return {
+        seeded = {
             "ready_optional": add_task(
                 db,
                 repo,
@@ -106,8 +108,6 @@ class TaskListTests(unittest.TestCase):
                 db,
                 repo,
                 "Done task",
-                "--status",
-                "done",
                 "--tags",
                 "archive",
             ),
@@ -121,6 +121,25 @@ class TaskListTests(unittest.TestCase):
                 "archive",
             ),
         }
+        done_result = run_taskgov(
+            "task",
+            "edit",
+            "--repo",
+            str(repo),
+            "--db",
+            str(db),
+            seeded["done"]["task_id"],
+            "--status",
+            "done",
+            "--verification-complete",
+            "--review-complete",
+            "--commit-not-required",
+            "--json",
+        )
+        if done_result.returncode != 0:
+            raise AssertionError(done_result.stderr or done_result.stdout)
+        seeded["done"] = json.loads(done_result.stdout)["data"]["task"]
+        return seeded
 
     def test_task_list_returns_active_tasks_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:

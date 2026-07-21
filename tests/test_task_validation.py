@@ -100,6 +100,15 @@ class TaskValidationTests(unittest.TestCase):
         )
         self.assertEqual(validated["blocked_reason"], "Waiting for user decision")
 
+    def test_initial_done_status_is_forbidden(self):
+        self.assert_validation_error(
+            "initial_done_forbidden",
+            validate_task_input,
+            title="Already complete",
+            status="done",
+            field="status",
+        )
+
     def test_size_limits_are_enforced(self):
         cases = (
             ("title", TEXT_LIMITS["title"]),

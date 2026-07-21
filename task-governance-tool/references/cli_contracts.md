@@ -56,9 +56,13 @@ All JSON output uses this envelope:
 Inspection commands are read-only by default: `db status`, `task list`,
 `task next`, and `task show`.
 
-Database write commands are `db init`, `task add`, and `task edit`. `web export`
-never writes SQLite, but its normal mode writes one generated HTML file after
-explicit user intent. Use `web export --read-only` for a no-file-write preview.
+Database write commands are `db init`, `task add`, and `task edit`. Only
+`db init` may create or migrate a database. Other write commands require an
+already initialized database at the current schema version; they return
+`db_not_initialized` or `migration_required` without creating or migrating
+files otherwise. `web export` never writes SQLite, but its normal mode writes
+one generated HTML file after explicit user intent. Use `web export --read-only`
+for a no-file-write preview.
 
 ## Commands
 
@@ -108,7 +112,7 @@ python scripts/taskgov.py db status --repo <target-project> --json
 
 ### `task add`
 
-Register one explicit task.
+Register one explicit task in a database previously prepared with `db init`.
 
 ```powershell
 python scripts/taskgov.py task add --repo <target-project> --title "Update docs" --kind optional --priority normal --json
@@ -121,13 +125,19 @@ Useful options:
 - `--lane`
 - `--order`
 - `--priority low|normal|high|urgent`
-- `--status ready|in_progress|blocked|review_pending|done|cancelled`
+- `--status ready|in_progress|blocked|review_pending|cancelled`
 - `--blocked-reason`
 - `--review-tier 0|1|2`
 - `--verification`
 - `--tags`
 
 `data`: `task`, `event`.
+
+An initial status of `done` is prohibited. Add the task in another supported
+initial state, then complete it with `task edit --status done` so the normal
+verification, review, and completion-evidence gates are enforced. Attempting
+`task add --status done` returns `initial_done_forbidden` before any task or
+event is stored.
 
 ### `task list`
 
@@ -323,6 +333,7 @@ Known error codes include:
 - `review_required`
 - `commit_required`
 - `completion_commit_conflict`
+- `initial_done_forbidden`
 - `privacy_rejected`
 - `not_found`
 - `db_not_initialized`

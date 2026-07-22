@@ -80,10 +80,18 @@ browser launch.
 - Before completion, set the current review target and record the tier-required
   sanitized receipts/findings. Tier 2 normally requires two distinct
   independent PASS receipts for one target generation; a changed target needs
-  fresh receipts.
+  fresh receipts. Any current-generation `changes_requested` also requires a
+  newer target and fresh review.
 - Complete only after verification, review, and explicit `git_commit`,
   `external_revision`, or `commit_not_required` evidence pass. Unresolved high
-  or medium findings block completion.
+  or medium findings block completion. Git/external completion must match the
+  same current review target; a diff fingerprint cannot close revision-bearing
+  evidence, and stored Git evidence is rechecked at completion.
+- Treat `done` as terminal and immutable. All later task edits and structured
+  review writes fail; register follow-up work as a new task. A tier downgrade
+  also needs `--review-tier-change-reason`, an initialized review latch that
+  has never started, and no review target. Legacy or ambiguous latch state
+  fails closed.
 - Git resolution, evidence counting, and sequential checks are deterministic
   and do not add an LLM judgment.
 - Writing commands affect only taskgov SQLite state: skill-local by default, or

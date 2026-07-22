@@ -216,6 +216,7 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--blocked-reason", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--pause-reason", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--review-tier", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--review-tier-change-reason", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--verification", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--tags", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--add-note", default=argparse.SUPPRESS)
@@ -242,8 +243,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common_options(review_target_set_parser)
     review_target_set_parser.add_argument("task_id")
-    review_target_set_parser.add_argument("--kind", required=True)
-    review_target_set_parser.add_argument("--revision", required=True)
+    review_target_set_parser.add_argument("--kind", help="required review target kind")
+    review_target_set_parser.add_argument("--revision", help="required review target revision")
 
     review_receipt_parser = review_subparsers.add_parser("receipt", help="review receipt commands")
     review_receipt_subparsers = review_receipt_parser.add_subparsers(dest="review_action")
@@ -252,9 +253,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common_options(review_receipt_add_parser)
     review_receipt_add_parser.add_argument("task_id")
-    review_receipt_add_parser.add_argument("--reviewer", required=True)
-    review_receipt_add_parser.add_argument("--kind", required=True)
-    review_receipt_add_parser.add_argument("--verdict", required=True)
+    review_receipt_add_parser.add_argument("--reviewer", help="required reviewer key")
+    review_receipt_add_parser.add_argument("--kind", help="required receipt kind")
+    review_receipt_add_parser.add_argument("--verdict", help="required receipt verdict")
     review_receipt_add_parser.add_argument("--summary", default="")
     review_receipt_add_parser.add_argument("--user-approved", action="store_true")
 
@@ -265,15 +266,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common_options(review_finding_add_parser)
     review_finding_add_parser.add_argument("task_id")
-    review_finding_add_parser.add_argument("--receipt-id", required=True)
-    review_finding_add_parser.add_argument("--severity", required=True)
-    review_finding_add_parser.add_argument("--summary", required=True)
+    review_finding_add_parser.add_argument("--receipt-id", help="required review receipt ID")
+    review_finding_add_parser.add_argument("--severity", help="required finding severity")
+    review_finding_add_parser.add_argument("--summary", help="required finding summary")
     review_finding_resolve_parser = review_finding_subparsers.add_parser(
         "resolve", help="resolve a review finding while preserving its history"
     )
     add_common_options(review_finding_resolve_parser)
     review_finding_resolve_parser.add_argument("finding_id")
-    review_finding_resolve_parser.add_argument("--resolution", required=True)
+    review_finding_resolve_parser.add_argument("--resolution", help="required resolution summary")
 
     web_parser = subparsers.add_parser("web", help="static viewer commands")
     web_subparsers = web_parser.add_subparsers(dest="web_command")
@@ -1126,6 +1127,7 @@ EDIT_ARGUMENT_FIELDS = (
     "blocked_reason",
     "pause_reason",
     "review_tier",
+    "review_tier_change_reason",
     "verification",
     "tags",
     "add_note",

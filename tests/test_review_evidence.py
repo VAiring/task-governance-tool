@@ -158,6 +158,108 @@ class ReviewEvidenceTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout)
             self.assertEqual(payload(completed)["data"]["task"]["status"], "done")
 
+    def test_current_generation_changes_requested_blocks_until_fresh_generation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            repo.mkdir()
+            init_db(db, repo)
+            task = add_task(db, repo)
+            target_set(db, repo, task["task_id"])
+            receipt_add(db, repo, task["task_id"], "reviewer-a")
+            receipt_add(db, repo, task["task_id"], "reviewer-b")
+            requested = receipt_add(
+                db,
+                repo,
+                task["task_id"],
+                "reviewer-c",
+                verdict="changes_requested",
+                summary="A correction is still required",
+            )
+            self.assertEqual(requested.returncode, 0, requested.stdout)
+
+            shown = run_taskgov(
+                "task", "show", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--json",
+            )
+            evidence = payload(shown)["data"]["review_evidence"]
+            self.assertEqual(
+                evidence["counts"]["changes_requested_current_generation"],
+                1,
+            )
+            self.assertFalse(evidence["gate"]["satisfied"])
+            blocked = done(db, repo, task["task_id"])
+            self.assertEqual(
+                payload(blocked)["errors"][0]["code"],
+                "review_receipts_insufficient",
+            )
+
+            target_set(db, repo, task["task_id"], FINGERPRINT_B)
+            receipt_add(db, repo, task["task_id"], "reviewer-a")
+            receipt_add(db, repo, task["task_id"], "reviewer-b")
+            self.assertEqual(done(db, repo, task["task_id"]).returncode, 0)
+
+    def test_git_completion_requires_matching_git_target_and_rejects_diff_target(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            revision = init_git_repo(repo)
+            init_db(db, repo)
+            task = add_task(db, repo)
+            target_set(db, repo, task["task_id"])
+            receipt_add(db, repo, task["task_id"], "reviewer-a")
+            receipt_add(db, repo, task["task_id"], "reviewer-b")
+
+            mismatched = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--status", "done", "--verification-complete",
+                "--review-complete", "--completion-commit-hash", revision, "--json",
+            )
+            self.assertEqual(mismatched.returncode, 1, mismatched.stdout)
+            self.assertEqual(
+                payload(mismatched)["errors"][0]["code"],
+                "review_target_mismatch",
+            )
+
+            git_target = run_taskgov(
+                "review", "target", "set", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--kind", "git_commit", "--revision", revision,
+                "--json",
+            )
+            self.assertEqual(git_target.returncode, 0, git_target.stdout)
+            receipt_add(db, repo, task["task_id"], "reviewer-a")
+            receipt_add(db, repo, task["task_id"], "reviewer-b")
+            completed = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--status", "done", "--verification-complete",
+                "--review-complete", "--completion-commit-hash", revision, "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+
+    def test_commit_not_required_requires_diff_fingerprint_target(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            revision = init_git_repo(repo)
+            init_db(db, repo)
+            task = add_task(db, repo)
+            target = run_taskgov(
+                "review", "target", "set", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--kind", "git_commit", "--revision", revision,
+                "--json",
+            )
+            self.assertEqual(target.returncode, 0, target.stdout)
+            receipt_add(db, repo, task["task_id"], "reviewer-a")
+            receipt_add(db, repo, task["task_id"], "reviewer-b")
+
+            completed = done(db, repo, task["task_id"])
+
+            self.assertEqual(completed.returncode, 1, completed.stdout)
+            self.assertEqual(
+                payload(completed)["errors"][0]["code"],
+                "review_target_mismatch",
+            )
+
     def test_same_reviewer_cannot_replace_or_contradict_receipt_in_generation(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -346,6 +448,167 @@ class ReviewEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(low.returncode, 0)
             self.assertEqual(done(db, repo, task["task_id"]).returncode, 0)
+
+    def test_done_review_evidence_is_terminal_and_immutable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            repo.mkdir()
+            init_db(db, repo)
+            task = add_task(db, repo)
+            target_set(db, repo, task["task_id"])
+            first = receipt_add(db, repo, task["task_id"], "reviewer-a")
+            receipt_add(db, repo, task["task_id"], "reviewer-b")
+            receipt_id = payload(first)["data"]["receipt"]["review_receipt_id"]
+            finding = run_taskgov(
+                "review", "finding", "add", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--receipt-id", receipt_id, "--severity", "low",
+                "--summary", "Optional wording", "--json",
+            )
+            finding_id = payload(finding)["data"]["finding"]["review_finding_id"]
+            self.assertEqual(done(db, repo, task["task_id"]).returncode, 0)
+            before_bytes = db.read_bytes()
+
+            with closing(sqlite3.connect(db)) as connection:
+                before = (
+                    connection.execute("SELECT COUNT(*) FROM task_events").fetchone()[0],
+                    connection.execute("SELECT COUNT(*) FROM review_receipts").fetchone()[0],
+                    connection.execute("SELECT COUNT(*) FROM review_findings").fetchone()[0],
+                )
+            attempts = (
+                run_taskgov(
+                    "review", "target", "set", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--kind", "diff_fingerprint",
+                    "--revision", FINGERPRINT_B, "--json",
+                ),
+                receipt_add(db, repo, task["task_id"], "reviewer-c"),
+                run_taskgov(
+                    "review", "finding", "add", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--receipt-id", receipt_id, "--severity", "low",
+                    "--summary", "Late finding", "--json",
+                ),
+                run_taskgov(
+                    "review", "finding", "add", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--receipt-id", "", "--severity", "critical",
+                    "--summary", "Authorization: Bearer secret", "--json",
+                ),
+                run_taskgov(
+                    "review", "finding", "resolve", "--repo", str(repo), "--db", str(db),
+                    finding_id, "--resolution", "Late resolution", "--json",
+                ),
+                run_taskgov(
+                    "review", "finding", "resolve", "--repo", str(repo), "--db", str(db),
+                    finding_id, "--resolution", "Authorization: Bearer secret", "--json",
+                ),
+                run_taskgov(
+                    "review", "target", "set", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--json",
+                ),
+                run_taskgov(
+                    "review", "receipt", "add", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--json",
+                ),
+                run_taskgov(
+                    "review", "finding", "add", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--json",
+                ),
+                run_taskgov(
+                    "review", "finding", "resolve", "--repo", str(repo), "--db", str(db),
+                    finding_id, "--json",
+                ),
+            )
+            for attempt in attempts:
+                self.assertEqual(attempt.returncode, 1, attempt.stdout)
+                self.assertEqual(
+                    payload(attempt)["errors"][0]["code"],
+                    "task_done_immutable",
+                )
+            with closing(sqlite3.connect(db)) as connection:
+                after = (
+                    connection.execute("SELECT COUNT(*) FROM task_events").fetchone()[0],
+                    connection.execute("SELECT COUNT(*) FROM review_receipts").fetchone()[0],
+                    connection.execute("SELECT COUNT(*) FROM review_findings").fetchone()[0],
+                )
+            self.assertEqual(after, before)
+            self.assertEqual(db.read_bytes(), before_bytes)
+
+    def test_missing_review_payloads_use_service_errors_without_writes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            repo.mkdir()
+            init_db(db, repo)
+            task = add_task(db, repo)
+            self.assertEqual(target_set(db, repo, task["task_id"]).returncode, 0)
+            receipt = receipt_add(db, repo, task["task_id"], "reviewer-a")
+            receipt_id = payload(receipt)["data"]["receipt"]["review_receipt_id"]
+            finding = run_taskgov(
+                "review", "finding", "add", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--receipt-id", receipt_id, "--severity", "low",
+                "--summary", "Optional wording", "--json",
+            )
+            finding_id = payload(finding)["data"]["finding"]["review_finding_id"]
+            baseline = db.read_bytes()
+            cases = (
+                (
+                    "review.target.set",
+                    ("review", "target", "set", "--repo", str(repo), "--db", str(db), task["task_id"]),
+                    "invalid_review_evidence",
+                    {"task": None, "changed_fields": [], "event": None},
+                    "review_target_kind must be one of",
+                ),
+                (
+                    "review.receipt.add",
+                    ("review", "receipt", "add", "--repo", str(repo), "--db", str(db), task["task_id"]),
+                    "invalid_argument",
+                    {"receipt": None, "event": None},
+                    "reviewer_key is required",
+                ),
+                (
+                    "review.finding.add",
+                    ("review", "finding", "add", "--repo", str(repo), "--db", str(db), task["task_id"]),
+                    "invalid_argument",
+                    {"finding": None, "event": None},
+                    "review_receipt_id is required",
+                ),
+                (
+                    "review.finding.resolve",
+                    ("review", "finding", "resolve", "--repo", str(repo), "--db", str(db), finding_id),
+                    "invalid_argument",
+                    {"finding": None, "event": None},
+                    "review_finding_resolution is required",
+                ),
+            )
+            for command, args, code, empty_data, text_error in cases:
+                with self.subTest(command=command, output="json"):
+                    result = run_taskgov(*args, "--json")
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    result_payload = payload(result)
+                    self.assertEqual(result_payload["command"], command)
+                    self.assertEqual(result_payload["errors"][0]["code"], code)
+                    self.assertEqual(result_payload["data"], empty_data)
+                    self.assertEqual(result.stderr, "")
+                    self.assertEqual(db.read_bytes(), baseline)
+                with self.subTest(command=command, output="text"):
+                    result = run_taskgov(*args)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn(text_error, result.stderr)
+                    self.assertEqual(db.read_bytes(), baseline)
+
+    def test_review_help_marks_service_required_payloads(self):
+        cases = (
+            (("review", "target", "set", "--help"), ("required review target kind", "required review target revision")),
+            (("review", "receipt", "add", "--help"), ("required reviewer key", "required receipt kind", "required receipt verdict")),
+            (("review", "finding", "add", "--help"), ("required review receipt ID", "required finding severity", "required finding summary")),
+            (("review", "finding", "resolve", "--help"), ("required resolution summary",)),
+        )
+        for args, expected in cases:
+            with self.subTest(args=args):
+                result = run_taskgov(*args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for text_value in expected:
+                    self.assertIn(text_value, result.stdout)
 
     def test_receipt_ownership_privacy_and_read_only_are_enforced(self):
         with tempfile.TemporaryDirectory() as temp:

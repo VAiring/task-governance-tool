@@ -120,7 +120,7 @@ class TaskShowTests(unittest.TestCase):
             self.assertIn("updated_at", data["task"])
             self.assertEqual(len(data["events"]), 1)
             self.assertEqual(data["events"][0]["task_id"], task["task_id"])
-            self.assertEqual(data["events"][0]["event_type"], "task_added")
+            self.assertEqual(data["events"][0]["event_type"], "task_added_review_unstarted")
             self.assertIn("Start work", data["suggested_next_action"])
             self.assertNotIn("task edit", data["suggested_next_action"])
             self.assertEqual(table_count(db, "task_events"), event_count_before)
@@ -324,7 +324,10 @@ class TaskShowTests(unittest.TestCase):
             self.assertIn(f"Task: {task['task_id']}", result.stdout)
             self.assertIn("Title: Ready optional", result.stdout)
             self.assertIn("Completion evidence: none", result.stdout)
-            self.assertIn("Latest event: task_added - Task registered", result.stdout)
+            self.assertIn(
+                "Latest event: task_added_review_unstarted - Task registered",
+                result.stdout,
+            )
 
 
 if __name__ == "__main__":

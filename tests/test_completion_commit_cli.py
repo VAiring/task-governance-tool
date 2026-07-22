@@ -82,7 +82,36 @@ def add_task(db, repo, title, *extra):
 
 def edit_task(db, repo, task_id, *extra):
     if "--status" in extra and extra[extra.index("--status") + 1] == "done":
-        seed_review_evidence(db, task_id)
+        target_kind = None
+        target_value = None
+        if "--completion-commit-hash" in extra:
+            supplied = extra[extra.index("--completion-commit-hash") + 1]
+            target_kind = "git_commit"
+            target_value = subprocess.run(
+                ["git", "-C", str(repo), "rev-parse", f"{supplied}^{{commit}}"],
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+            ).stdout.strip()
+        elif "--completion-evidence-kind" in extra:
+            target_kind = extra[extra.index("--completion-evidence-kind") + 1]
+            if target_kind in {"git_commit", "external_revision"}:
+                target_value = extra[extra.index("--completion-revision") + 1]
+                if target_kind == "git_commit":
+                    target_value = subprocess.run(
+                        ["git", "-C", str(repo), "rev-parse", f"{target_value}^{{commit}}"],
+                        check=True,
+                        text=True,
+                        stdout=subprocess.PIPE,
+                    ).stdout.strip()
+            else:
+                target_kind = None
+        seed_review_evidence(
+            db,
+            task_id,
+            target_kind=target_kind,
+            target_value=target_value,
+        )
     result = run_taskgov(
         "task",
         "edit",

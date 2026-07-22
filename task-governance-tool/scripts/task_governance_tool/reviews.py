@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import re
 import secrets
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
-from task_governance_tool.completion import CompletionEvidenceError, resolve_git_commit
+from task_governance_tool.completion import (
+    DIFF_FINGERPRINT,
+    CompletionEvidenceError,
+    resolve_git_commit,
+)
 from task_governance_tool.storage import ProjectIdentity, utc_now
 from task_governance_tool.tasks import (
     TaskRepositoryError,
@@ -25,7 +28,6 @@ REVIEW_TARGET_KINDS = ("git_commit", "diff_fingerprint", "external_revision")
 RECEIPT_KINDS = ("independent", "self_review_fallback", "not_required")
 REVIEW_VERDICTS = ("pass", "changes_requested", "not_required")
 FINDING_SEVERITIES = ("high", "medium", "low")
-DIFF_FINGERPRINT = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
 
 class ReviewEvidenceError(Exception):
@@ -61,6 +63,15 @@ def review_error(code: str, message: str, field: str | None = None) -> ReviewEvi
 
 def generate_review_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(8)}"
+
+
+def require_task_not_done_for_review_mutation(task: dict[str, Any]) -> None:
+    if task["status"] == "done":
+        raise review_error(
+            "task_done_immutable",
+            "done tasks are terminal and their structured review evidence cannot be changed",
+            "status",
+        )
 
 
 def normalize_review_target(project: ProjectIdentity, kind: Any, revision: Any) -> tuple[str, str]:
@@ -99,10 +110,11 @@ def set_review_target(
     revision: Any,
 ) -> ReviewTargetResult:
     normalized_task_id = validate_task_id(task_id)
-    target_kind, target_value = normalize_review_target(project, kind, revision)
     task = read_internal_task(connection, project.project_id, normalized_task_id)
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
+    require_task_not_done_for_review_mutation(task)
+    target_kind, target_value = normalize_review_target(project, kind, revision)
 
     generation = int(task["review_target_generation"]) + 1
     now = utc_now()
@@ -232,6 +244,7 @@ def add_review_receipt(
     task = read_internal_task(connection, project.project_id, normalized_task_id)
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
+    require_task_not_done_for_review_mutation(task)
     if (
         int(task["review_target_generation"]) <= 0
         or not str(task["review_target_kind"])
@@ -319,6 +332,10 @@ def add_review_finding(
     summary: Any,
 ) -> ReviewFindingResult:
     normalized_task_id = validate_task_id(task_id)
+    task = read_internal_task(connection, project.project_id, normalized_task_id)
+    if task is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+    require_task_not_done_for_review_mutation(task)
     normalized_receipt_id = validate_text("review_receipt_id", receipt_id, required=True, limit=128)
     finding_severity = validate_choice(
         "severity", severity, FINDING_SEVERITIES, "invalid_review_evidence"
@@ -326,9 +343,6 @@ def add_review_finding(
     finding_summary = validate_text(
         "review_finding_summary", summary, required=True, limit=1000
     )
-    task = read_internal_task(connection, project.project_id, normalized_task_id)
-    if task is None:
-        raise TaskRepositoryError("not_found", "task was not found")
     receipt = connection.execute(
         """
         SELECT * FROM review_receipts
@@ -394,21 +408,30 @@ def resolve_review_finding(
     normalized_finding_id = validate_text(
         "review_finding_id", finding_id, required=True, limit=128
     )
-    resolution_summary = validate_text(
-        "review_finding_resolution", resolution, required=True, limit=1000
-    )
     row = connection.execute(
         """
-        SELECT finding.*, receipt.task_id, receipt.project_id
+        SELECT finding.*, receipt.task_id, receipt.project_id,
+               task.status AS task_status
           FROM review_findings AS finding
           JOIN review_receipts AS receipt
             ON receipt.review_receipt_id = finding.review_receipt_id
+          JOIN tasks AS task
+            ON task.task_id = receipt.task_id AND task.project_id = receipt.project_id
          WHERE finding.review_finding_id = ? AND receipt.project_id = ?
         """,
         (normalized_finding_id, project.project_id),
     ).fetchone()
     if row is None:
         raise TaskRepositoryError("not_found", "review finding was not found")
+    if row["task_status"] == "done":
+        raise review_error(
+            "task_done_immutable",
+            "done tasks are terminal and their structured review evidence cannot be changed",
+            "status",
+        )
+    resolution_summary = validate_text(
+        "review_finding_resolution", resolution, required=True, limit=1000
+    )
     if row["status"] != "open":
         raise review_error(
             "invalid_review_evidence",
@@ -493,6 +516,17 @@ def read_review_evidence(
              WHERE project_id = ? AND task_id = ?
                AND target_kind = ? AND target_value = ? AND target_generation = ?
                AND receipt_kind = 'independent' AND verdict = 'pass'
+            """,
+            (project_id, task_id, target_kind, target_value, generation),
+        ).fetchone()[0]
+    ) if generation > 0 else 0
+    changes_requested = int(
+        connection.execute(
+            """
+            SELECT COUNT(*) FROM review_receipts
+             WHERE project_id = ? AND task_id = ?
+               AND target_kind = ? AND target_value = ? AND target_generation = ?
+               AND verdict = 'changes_requested'
             """,
             (project_id, task_id, target_kind, target_value, generation),
         ).fetchone()[0]
@@ -594,7 +628,12 @@ def read_review_evidence(
         if tier == 0
         else qualifying >= required or fallback_kind == "self_review_fallback"
     )
-    satisfied = target_set and tier_satisfied and not blocking_rows
+    satisfied = (
+        target_set
+        and tier_satisfied
+        and changes_requested == 0
+        and not blocking_rows
+    )
     return {
         "target": {"kind": target_kind, "value": target_value, "generation": generation},
         "gate": {
@@ -607,6 +646,7 @@ def read_review_evidence(
         "counts": {
             "receipts_total": total_receipts,
             "receipts_current_generation": current_receipts,
+            "changes_requested_current_generation": changes_requested,
             "open_high": open_counts["high"],
             "open_medium": open_counts["medium"],
             "open_low": open_counts["low"],
@@ -642,6 +682,12 @@ def enforce_review_gate(
             "review_finding_unresolved",
             "a high or medium finding is unresolved or still requires a newer target and fresh review",
             "review_finding",
+        )
+    if evidence["counts"]["changes_requested_current_generation"]:
+        raise review_error(
+            "review_receipts_insufficient",
+            "current-generation changes_requested requires a newer target generation and fresh review",
+            "review_receipt",
         )
     if not evidence["gate"]["satisfied"]:
         raise review_error(

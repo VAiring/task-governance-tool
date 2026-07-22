@@ -613,8 +613,8 @@ Version-2 historical rows map without validation or data loss:
 - any otherwise inconsistent legacy combination becomes `legacy_unverified`
   with both original fields retained for audit and a migration warning.
 
-Historical `done` rows remain done. `legacy_unverified` is read-only historical
-evidence and cannot satisfy a new done transition after the task is reopened.
+Historical `done` rows remain done and are terminal. `legacy_unverified` is
+read-only historical evidence and cannot satisfy any new done transition.
 New writes enforce this complete cross-field matrix and synchronize the legacy
 projection:
 
@@ -666,6 +666,17 @@ not one canonical full object ID. This makes an ambiguous short name fail and
 stores the resolved full ID. Tests include option-shaped input and snapshot
 `HEAD`, refs, index/worktree status, and database bytes or logical counts before
 and after read-only inspection to prove no mutation.
+
+The done gate reuses this resolver for stored Git completion evidence and a
+current Git review target, then compares the returned canonical ID with the
+stored value. Evidence recorded earlier therefore fails completion if the
+repository/object no longer resolves. A schema-neutral binding validator then
+accepts only identical `git_commit` target/completion IDs, identical
+`external_revision` target/completion values, or a `diff_fingerprint` paired
+with `commit_not_required`. Schema version 5 has no deterministic relationship
+between an arbitrary diff fingerprint and a later Git commit/tree or external
+revision, so revision-bearing completion with a diff target fails closed with
+`review_target_mismatch` and requires a new target plus fresh receipts.
 
 ### Schema Version 5: Review Evidence
 
@@ -776,7 +787,10 @@ task/project keys. Cross-task or cross-project receipt use fails with
 
 The gate query counts distinct reviewer keys for independent `pass` receipts,
 applies Tier 0/1/2 fallback rules from the specification, and separately checks
-for open high or medium findings across all task receipts. Resolving a high or
+for current-generation `changes_requested` receipts and open high or medium
+findings across all task receipts. Any current-generation changes request makes
+the gate unsatisfied regardless of PASS count and requires a newer target plus
+fresh review. Resolving a high or
 medium finding does not erase its freshness requirement: the task's current
 target generation must be greater than that finding receipt's generation, and
 the counted PASS receipts must belong to the newer current generation. Thus
@@ -800,6 +814,7 @@ object after schema version 5:
   "counts": {
     "receipts_total": 4,
     "receipts_current_generation": 2,
+    "changes_requested_current_generation": 0,
     "open_high": 0,
     "open_medium": 0,
     "open_low": 1
@@ -822,10 +837,36 @@ pause reasons, and resolution summaries all pass the same deny-by-default
 privacy validator used by task notes. Raw review text, private prompts,
 reasoning, diffs, logs, and stack traces are never accepted.
 
+Every structured review write loads the owning task first and rejects it with
+`task_done_immutable` when status is `done`. `task edit` rejects every edit to a
+done task with the same code, including status changes. Done is terminal and no
+reopen transition exists; follow-up work uses a new task.
+
+Review parsers require only the positional task or finding identifier needed to
+locate the owner. Mutable-payload presence checks remain required semantically
+and are labeled required in help, but execute in the service after the done
+guard. Non-done omissions retain command-specific JSON/text validation
+envelopes. Done and non-done failure paths write no task, review, finding, or
+event row.
+
+`task edit --review-tier-change-reason` is a transient sanitized audit input,
+not a schema column. New task registration records the machine event type
+`task_added_review_unstarted`; a task initially registered in, or later entering,
+`review_pending` records `review_started`. The latter event type wins even when
+the transition also carries a note, completion marker, or other audit marker.
+A downgrade is allowed only while both existing and resulting status are
+`ready`, `in_progress`, `paused`, or `blocked`, exactly one initialization
+marker exists, no review-start marker exists, and no review target has ever
+been set (empty kind/value, generation `0`). Missing or duplicate markers and
+legacy `task_added` history fail closed. The check uses event type/count, never
+event-summary prose, and remains latched through pause/resume or leaving review.
+The command cannot combine a downgrade with completion evidence or
+verification/review completion confirmations. Its at-most-500-character
+rationale is retained in the task event. Upgrades need no downgrade rationale.
+
 Migration gives every existing task an empty target and generation `0` and
-creates no synthetic receipt or finding. Historical done rows remain done; if
-one is reopened, a later done transition must set a target and satisfy the new
-review gate.
+creates no synthetic receipt or finding. Historical done rows remain terminal
+and unchanged.
 
 ### Migration And Compatibility Verification
 
@@ -1168,6 +1209,10 @@ Task validation:
 - `priority` must be one of the MVP priorities.
 - `status` must be one of the current schema statuses; TG-M8 adds `paused`.
 - `review_tier` must be integer `0`, `1`, or `2`.
+- lane inputs are trimmed on add, edit, list, and next; an empty sequential lane
+  still normalizes to `default`.
+- `lane_order` must fit SQLite's signed 64-bit integer range, including when it
+  is assigned by appending after the lane maximum.
 - `blocked_reason` is required when status is `blocked`.
 - `task add --status blocked` must reject before storage unless
   `--blocked-reason` is provided.
@@ -1175,8 +1220,8 @@ Task validation:
   storage.
 - `pause_reason` is required and non-empty exactly while the task is `paused`,
   and is cleared when leaving `paused`; concise history belongs in task events.
-- `completed_at` is set when status becomes `done` and cleared when moving back
-  to an active status.
+- `completed_at` is set when status becomes `done`. Because done is terminal,
+  it is never cleared by a later task edit.
 
 Sequential task behavior:
 
@@ -1269,6 +1314,16 @@ TG-M8 focused tests must additionally cover:
 - explicit external-revision acknowledgement in Git projects;
 - Tier 0/1/2 receipts, reviewer distinctness, target equality, fallback
   approval, target changes, and unresolved/resolved finding gates;
+- current-generation `changes_requested` overriding otherwise sufficient PASS
+  receipts until a fresh target generation;
+- exact Git/external target-to-completion binding, diff-target fail-closed
+  behavior for revision-bearing evidence, and done-time revalidation after
+  saved Git evidence becomes unavailable;
+- rejection of every task/review write after done, terminal no-reopen behavior,
+  and sanitized reason/review-start-latch/no-target enforcement for tier
+  downgrades;
+- whitespace lane-bypass attempts and signed-64-bit explicit/auto order
+  boundaries returning structured errors without traceback;
 - privacy rejection and field limits for every new free-form field;
 - concurrent writers and readers under SQLite transaction/timeout behavior;
 - sequential v2-to-v3-to-v4-to-v5 migration, idempotent rerun, rollback on

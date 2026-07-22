@@ -168,7 +168,16 @@ the new generation prevents older receipts from being reused. Git resolution,
 receipt counting, finding-state checks, and sequential-order checks are
 deterministic and add no LLM judgment. Record findings with `review finding add`
 and resolve them with `review finding resolve`; an unresolved high or medium
-finding blocks completion.
+finding blocks completion. A current-generation `changes_requested` receipt
+also blocks completion even if enough PASS receipts exist; set a newer target
+and obtain fresh review after the correction.
+
+Final evidence must identify the reviewed revision. Git completion requires a
+matching Git review target, and external completion requires the same external
+revision target. A diff fingerprint cannot be deterministically bound to a
+later Git commit/tree or external revision, so retarget that final revision and
+review it before completion. `commit_not_required` requires a diff target as
+the explicit no-managed-material-change review decision.
 
 For changed Git-managed materials, first create the project commit through the
 approved project workflow, then record it. `taskgov` verifies the revision
@@ -197,8 +206,27 @@ python scripts/taskgov.py task edit --repo <target-project> <task-id> --status d
 
 If valid typed evidence was already recorded, the later done transition still
 requires `--verification-complete` and `--review-complete`. Historical
-`legacy_unverified` evidence is retained for audit but cannot close a reopened
-task.
+`legacy_unverified` evidence is retained for audit but cannot close any new
+done transition. Stored Git evidence and Git review targets are resolved again
+during the done transition; evidence that no longer exists fails closed.
+
+Done is terminal and immutable. Every later `task edit` and structured review
+write is rejected with `task_done_immutable`, including an attempted status
+change. Register any follow-up work as a new task and leave the completed audit
+record unchanged.
+
+If a review tier must be lowered, provide a concise sanitized rationale while
+the task is `ready`, in progress, paused, or blocked and review has never
+started. A new task has one `task_added_review_unstarted` machine event; entry
+into review-pending records `review_started`. Exactly one initialization marker,
+no start marker, and an empty target at generation `0` are required. Missing,
+duplicate, or legacy marker state fails closed, and pause/resume never clears a
+start marker. Do not combine the downgrade with completion evidence or gate
+confirmations.
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --review-tier 1 --review-tier-change-reason "Scope reclassified after governing-rule review" --json
+```
 
 `taskgov` records the commit state but does not create commits, branches, PRs,
 or issue comments. To trace changed materials for a completed Git task, inspect

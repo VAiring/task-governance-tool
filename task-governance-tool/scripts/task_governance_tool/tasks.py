@@ -14,6 +14,8 @@ from task_governance_tool.completion import (
     CompletionEvidenceError,
     WRITABLE_EVIDENCE_KINDS,
     completion_evidence_values,
+    resolve_git_commit,
+    validate_completion_review_binding,
     validate_evidence_matrix,
 )
 from task_governance_tool.ordering import first_out_of_order_advanced_task
@@ -24,6 +26,11 @@ KINDS = ("sequential", "optional")
 PRIORITIES = ("low", "normal", "high", "urgent")
 STATUSES = ("ready", "in_progress", "paused", "blocked", "review_pending", "done", "cancelled")
 REVIEW_TIERS = (0, 1, 2)
+SQLITE_INT64_MIN = -(2**63)
+SQLITE_INT64_MAX = 2**63 - 1
+REVIEW_TIER_DOWNGRADE_STATUSES = {"ready", "in_progress", "paused", "blocked"}
+REVIEW_TRACKING_INITIALIZED_EVENT = "task_added_review_unstarted"
+REVIEW_STARTED_EVENT = "review_started"
 
 PUBLIC_TASK_FIELDS = (
     "task_id",
@@ -75,6 +82,7 @@ TEXT_LIMITS = {
     "review_receipt_summary": 1000,
     "review_finding_summary": 1000,
     "review_finding_resolution": 1000,
+    "review_tier_change_reason": 500,
 }
 
 UPPER_ENV_NAME_PATTERN = r"[A-Z_][A-Z0-9_]*"
@@ -187,6 +195,7 @@ STRICT_RAW_OUTPUT_FIELDS = {
     "review_receipt_summary",
     "review_finding_summary",
     "review_finding_resolution",
+    "review_tier_change_reason",
 }
 BENIGN_TITLE_RAW_OUTPUT_PREFIXES = (
     "add ",
@@ -375,6 +384,10 @@ def validate_choice(field: str, value: Any, allowed: tuple[str, ...], code: str)
     return text
 
 
+def validate_lane(value: Any) -> str:
+    return validate_text("lane", value).strip()
+
+
 def validate_review_tier(value: Any) -> int:
     if isinstance(value, bool):
         raise validation_error("invalid_review_tier", "review_tier must be 0, 1, or 2", "review_tier")
@@ -395,10 +408,25 @@ def validate_lane_order(value: Any) -> int | None:
     if isinstance(value, bool):
         raise validation_error("invalid_argument", "lane_order must be an integer", "lane_order")
     if isinstance(value, int):
-        return value
-    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-        return int(value.strip())
-    raise validation_error("invalid_argument", "lane_order must be an integer", "lane_order")
+        lane_order = value
+    elif isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        try:
+            lane_order = int(value.strip())
+        except ValueError as exc:
+            raise validation_error(
+                "invalid_argument",
+                "lane_order must be within the SQLite signed 64-bit integer range",
+                "lane_order",
+            ) from exc
+    else:
+        raise validation_error("invalid_argument", "lane_order must be an integer", "lane_order")
+    if not SQLITE_INT64_MIN <= lane_order <= SQLITE_INT64_MAX:
+        raise validation_error(
+            "invalid_argument",
+            "lane_order must be within the SQLite signed 64-bit integer range",
+            "lane_order",
+        )
+    return lane_order
 
 
 def validate_event_summary(summary: Any) -> str:
@@ -430,7 +458,7 @@ def validate_task_input(
         "title": validate_text("title", title, required=True, limit=TEXT_LIMITS["title"]),
         "description": validate_text("description", description, limit=TEXT_LIMITS["description"]),
         "kind": validate_choice("kind", kind, KINDS, "invalid_kind"),
-        "lane": validate_text("lane", lane),
+        "lane": validate_lane(lane),
         "lane_order": validate_lane_order(lane_order),
         "priority": validate_choice("priority", priority, PRIORITIES, "invalid_priority"),
         "status": validate_choice("status", status, STATUSES, "invalid_status"),
@@ -490,7 +518,14 @@ def next_lane_order(connection: sqlite3.Connection, project_id: str, lane: str) 
     ).fetchone()
     if row is None or row["max_order"] is None:
         return 1
-    return int(row["max_order"]) + 1
+    max_order = int(row["max_order"])
+    if max_order >= SQLITE_INT64_MAX:
+        raise validation_error(
+            "invalid_argument",
+            "lane_order cannot be auto-assigned beyond the SQLite signed 64-bit integer range",
+            "lane_order",
+        )
+    return max_order + 1
 
 
 def row_to_task(row: sqlite3.Row) -> dict[str, Any]:
@@ -681,7 +716,11 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
         connection,
         project_id=project.project_id,
         task_id=task_id,
-        event_type="task_added",
+        event_type=(
+            REVIEW_STARTED_EVENT
+            if row["status"] == "review_pending"
+            else REVIEW_TRACKING_INITIALIZED_EVENT
+        ),
         summary="Task registered",
         created_at=now,
     )
@@ -735,7 +774,7 @@ def list_tasks(
         values.append(validate_choice("kind", kind, KINDS, "invalid_kind"))
     if lane is not None:
         filters.append("lane = ?")
-        values.append(validate_text("lane", lane))
+        values.append(validate_lane(lane))
     if priority is not None:
         filters.append("priority = ?")
         values.append(validate_choice("priority", priority, PRIORITIES, "invalid_priority"))
@@ -848,7 +887,7 @@ def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
         elif field == "kind":
             normalized[field] = validate_choice(field, value, KINDS, "invalid_kind")
         elif field == "lane":
-            normalized[field] = validate_text(field, value)
+            normalized[field] = validate_lane(value)
         elif field == "lane_order":
             normalized[field] = validate_lane_order(value)
         elif field == "priority":
@@ -861,6 +900,13 @@ def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
             normalized[field] = validate_text(field, value, limit=TEXT_LIMITS["pause_reason"])
         elif field == "review_tier":
             normalized[field] = validate_review_tier(value)
+        elif field == "review_tier_change_reason":
+            normalized[field] = validate_text(
+                field,
+                value,
+                required=True,
+                limit=TEXT_LIMITS["review_tier_change_reason"],
+            )
         elif field == "verification":
             normalized[field] = validate_text(field, value, limit=TEXT_LIMITS["verification"])
         elif field == "tags":
@@ -1210,6 +1256,7 @@ def update_task_row(
 
 def enforce_done_transition_gates(
     connection: sqlite3.Connection,
+    project: ProjectIdentity,
     task: dict[str, Any],
     *,
     status_was_provided: bool,
@@ -1243,7 +1290,7 @@ def enforce_done_transition_gates(
     from task_governance_tool.reviews import ReviewEvidenceError, enforce_review_gate
 
     try:
-        enforce_review_gate(
+        review_evidence = enforce_review_gate(
             connection,
             project_id=str(task["project_id"]),
             task_id=str(task["task_id"]),
@@ -1252,9 +1299,50 @@ def enforce_done_transition_gates(
     except ReviewEvidenceError as exc:
         raise validation_error(exc.code, exc.message, exc.field) from exc
 
+    target = review_evidence["target"]
+    if task["completion_evidence_kind"] == "git_commit":
+        try:
+            canonical = resolve_git_commit(
+                project.canonical_repo,
+                str(task["completion_evidence_revision"]),
+            )
+        except CompletionEvidenceError as exc:
+            raise validation_error(exc.code, exc.message, exc.field) from exc
+        if canonical != str(task["completion_evidence_revision"]):
+            raise validation_error(
+                "git_commit_not_found_or_ambiguous",
+                "stored Git completion evidence no longer resolves to its canonical commit",
+                "completion_revision",
+            )
+    elif target["kind"] == "git_commit":
+        try:
+            canonical = resolve_git_commit(project.canonical_repo, str(target["value"]))
+        except CompletionEvidenceError as exc:
+            raise validation_error(exc.code, exc.message, "review_target_value") from exc
+        if canonical != str(target["value"]):
+            raise validation_error(
+                "git_commit_not_found_or_ambiguous",
+                "stored Git review target no longer resolves to its canonical commit",
+                "review_target_value",
+            )
+    try:
+        validate_completion_review_binding(task, target)
+    except CompletionEvidenceError as exc:
+        raise validation_error(exc.code, exc.message, exc.field) from exc
+
 
 def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id: Any, **edit_input: Any) -> EditTaskResult:
     normalized_task_id = validate_task_id(task_id)
+    existing = read_internal_task(connection, project.project_id, normalized_task_id)
+    if existing is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+    if existing["status"] == "done":
+        raise validation_error(
+            "task_done_immutable",
+            "done tasks are terminal and cannot be edited",
+            "status",
+        )
+
     normalized = validate_task_edit_input(**edit_input)
     add_note = normalized.pop("add_note", None)
     completion_commit_hash = normalized.pop("completion_commit_hash", None)
@@ -1265,10 +1353,7 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
     external_revision_approved = bool(normalized.pop("external_revision_approved", False))
     verification_complete = bool(normalized.pop("verification_complete", False))
     review_complete = bool(normalized.pop("review_complete", False))
-
-    existing = read_internal_task(connection, project.project_id, normalized_task_id)
-    if existing is None:
-        raise TaskRepositoryError("not_found", "task was not found")
+    review_tier_change_reason = normalized.pop("review_tier_change_reason", None)
 
     updated = dict(existing)
     status_was_provided = "status" in normalized
@@ -1285,6 +1370,69 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
         requested_revision = completion_commit_hash
     elif commit_not_required:
         requested_evidence_kind = "commit_not_required"
+
+    tier_downgraded = int(updated["review_tier"]) < int(existing["review_tier"])
+    if review_tier_change_reason is not None and not tier_downgraded:
+        raise validation_error(
+            "invalid_argument",
+            "review_tier_change_reason is valid only with a review-tier downgrade",
+            "review_tier_change_reason",
+        )
+    if tier_downgraded:
+        if review_tier_change_reason is None:
+            raise validation_error(
+                "invalid_argument",
+                "review-tier downgrade requires --review-tier-change-reason",
+                "review_tier_change_reason",
+            )
+        if (
+            existing["status"] not in REVIEW_TIER_DOWNGRADE_STATUSES
+            or updated["status"] not in REVIEW_TIER_DOWNGRADE_STATUSES
+        ):
+            raise validation_error(
+                "invalid_status_transition",
+                "review-tier downgrade must occur before review_pending and remain in ready, in_progress, paused, or blocked state",
+                "status",
+            )
+        event_counts = connection.execute(
+            """
+            SELECT SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END) AS initialized,
+                   SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END) AS started
+              FROM task_events
+             WHERE project_id = ? AND task_id = ?
+            """,
+            (
+                REVIEW_TRACKING_INITIALIZED_EVENT,
+                REVIEW_STARTED_EVENT,
+                project.project_id,
+                normalized_task_id,
+            ),
+        ).fetchone()
+        if (
+            int(event_counts["initialized"] or 0) != 1
+            or int(event_counts["started"] or 0) != 0
+        ):
+            raise validation_error(
+                "invalid_status_transition",
+                "review-tier downgrade requires initialized pre-review tracking with no review_started event",
+                "review_tier",
+            )
+        if requested_evidence_kind is not None or verification_complete or review_complete:
+            raise validation_error(
+                "invalid_argument",
+                "review-tier downgrade cannot be combined with completion evidence or gate confirmations",
+                "review_tier",
+            )
+        if (
+            int(existing["review_target_generation"]) != 0
+            or str(existing["review_target_kind"])
+            or str(existing["review_target_value"])
+        ):
+            raise validation_error(
+                "invalid_review_evidence",
+                "review-tier downgrade is allowed only before any review target is set",
+                "review_tier",
+            )
     if requested_evidence_kind is not None:
         try:
             evidence = completion_evidence_values(
@@ -1388,6 +1536,11 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
     )
     changed_fields = [field for field in comparable_fields if updated[field] != existing[field]]
     recorded_markers = []
+    if tier_downgraded:
+        recorded_markers.append(
+            f"review tier downgraded {existing['review_tier']}->{updated['review_tier']}: "
+            f"{review_tier_change_reason}"
+        )
     if evidence_marker is not None:
         recorded_markers.append(evidence_marker)
     if verification_complete:
@@ -1430,6 +1583,7 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
             )
         enforce_done_transition_gates(
             connection,
+            project,
             updated,
             status_was_provided=status_was_provided,
             verification_complete=verification_complete,
@@ -1450,7 +1604,19 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
 
     pause_changed = updated["pause_reason"] != existing["pause_reason"]
-    if status_was_provided and updated["status"] == "paused":
+    if (
+        status_was_provided
+        and updated["status"] == "review_pending"
+        and existing["status"] != "review_pending"
+    ):
+        event_type = REVIEW_STARTED_EVENT
+        summary = bounded_transition_summary(
+            "Entered review_pending",
+            "",
+            recorded_markers=recorded_markers,
+            note=add_note,
+        )
+    elif status_was_provided and updated["status"] == "paused":
         event_type = "task_updated"
         summary = bounded_transition_summary(
             "Paused: ",

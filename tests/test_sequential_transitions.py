@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -53,8 +54,6 @@ def edit_result(db, repo, task_id, *extra):
 
 
 def task_state(db, task_id):
-    import sqlite3
-
     with closing(sqlite3.connect(db)) as connection:
         row = connection.execute("SELECT status, lane_order FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
         events = connection.execute("SELECT COUNT(*) FROM task_events").fetchone()[0]
@@ -178,6 +177,40 @@ class SequentialTransitionTests(unittest.TestCase):
             self.assertEqual(combined.returncode, 1)
             self.assertEqual(json.loads(combined.stdout)["errors"][0]["code"], "sequential_predecessor_incomplete")
             self.assertEqual(task_state(db, active["task_id"])[0][0], "in_progress")
+
+    def test_padded_lane_edit_is_trimmed_and_cannot_bypass_predecessor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            add_task(
+                db, repo, "Earlier", "--kind", "sequential", "--lane", "CORE", "--order", "10"
+            )
+            later = add_task(
+                db, repo, "Later", "--kind", "sequential", "--lane", "CORE", "--order", "20"
+            )
+
+            bypass = edit_result(
+                db,
+                repo,
+                later["task_id"],
+                "--lane",
+                "  CORE  ",
+                "--status",
+                "in_progress",
+            )
+
+            self.assertEqual(bypass.returncode, 1, bypass.stdout)
+            self.assertEqual(
+                json.loads(bypass.stdout)["errors"][0]["code"],
+                "sequential_predecessor_incomplete",
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                row = connection.execute(
+                    "SELECT lane, status FROM tasks WHERE task_id = ?",
+                    (later["task_id"],),
+                ).fetchone()
+            self.assertEqual(row, ("CORE", "ready"))
 
     def test_concurrent_writers_serialize_before_sequential_guard(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -368,6 +368,11 @@ ambiguous, or non-commit revisions must fail with
 stored. Validation must not change `HEAD`, the index, the worktree, refs, or
 configuration.
 
+The `done` transition must re-resolve any stored Git completion evidence and
+any current Git review target. Completion fails if the repository or object no
+longer resolves or if the canonical object ID differs from the stored value.
+Validation at evidence-recording time is not sufficient by itself.
+
 `external_revision` must never be inferred from an arbitrary string. It
 requires an explicit evidence kind, revision value, reason,
 `--external-revision-approved`, and audit event. In a Git project the
@@ -382,6 +387,24 @@ alias for `git_commit`; it no longer accepts a generic revision string.
 Existing schema-v2 rows and their original hashes must be retained. Migration
 may label historical evidence `legacy_unverified`; it must not rewrite or
 retroactively invalidate completed tasks.
+
+Revision-bearing completion evidence must identify the exact current review
+target:
+
+- `git_commit` completion requires a `git_commit` review target with the same
+  canonical commit ID.
+- `external_revision` completion requires an `external_revision` review target
+  with the same exact revision value.
+- A `diff_fingerprint` is not derivable from a Git commit or external revision
+  under schema version 5, so it fails closed for either revision-bearing
+  completion kind. Callers must retarget the final commit/revision and obtain
+  fresh receipts.
+- `commit_not_required` requires a `diff_fingerprint` review target; its explicit
+  assertion is that no managed material changed and therefore no completion
+  revision exists to bind.
+
+A mismatch returns `review_target_mismatch`. This contract adds no target Git
+mutation and no schema change.
 
 ### Structured Review Evidence
 
@@ -407,6 +430,9 @@ Completion rules are:
 - Tier 0 may use a `not_required` receipt only with a concise mechanical-change
   rationale.
 - Any unresolved `high` or `medium` finding blocks completion.
+- Any `changes_requested` receipt for the current target generation blocks
+  completion, even when the tier's PASS count is otherwise satisfied. A newer
+  target generation and fresh qualifying review are required.
 - Changing or re-setting the current review target advances its generation and
   prevents every older-generation receipt from satisfying the gate, even for
   an A-to-B-to-A target sequence.
@@ -426,6 +452,25 @@ Recording or validating receipts, reviewer distinctness, target equality,
 findings, and Git commits is deterministic and adds no LLM decision. One
 finding/fix cycle normally adds two fresh final-review decisions, for four
 review decisions in total; each additional meaningful fix cycle adds two.
+
+Once a task is `done`, it is terminal and immutable. Every `task edit` and
+structured review write (target, receipt, finding, or resolution) is rejected
+with `task_done_immutable`; no status transition may reopen the task. Follow-up
+work must be registered as a new task so the completed audit record remains
+unchanged.
+
+A review-tier downgrade is permitted only before review starts, while both the
+existing and resulting state are `ready`, `in_progress`, `paused`, or `blocked`.
+New tasks initialize a schema-neutral event latch with
+`task_added_review_unstarted`; initial or later entry into `review_pending`
+records `review_started`. Downgrade requires exactly one initialization marker,
+no `review_started` marker, and no review target ever set (empty target,
+generation `0`). Missing or duplicate initialization markers and legacy tasks
+whose event history predates the latch fail closed. The command requires the
+sanitized `--review-tier-change-reason` rationale and cannot combine a
+downgrade with completion evidence or verification/review completion
+confirmations. Upgrades need no downgrade rationale. Supplying a rationale
+without an actual downgrade is invalid.
 
 ### Deferred Feedback
 
@@ -764,6 +809,11 @@ Task selection must support both sequence-sensitive and free-order work.
   other lanes.
 
 The MVP uses `lane` plus `lane_order` instead of a general dependency graph.
+Lane input is trimmed consistently for add, edit, list, and next operations so
+whitespace cannot create a shadow sequential lane. `lane_order` must fit the
+SQLite signed 64-bit integer range
+`-9223372036854775808..9223372036854775807`; explicit and auto-appended values
+outside that range fail with structured `invalid_argument` output.
 
 ## CLI Requirements
 
@@ -916,8 +966,9 @@ Required output:
 
 After schema version 5, `task show` also returns `review_evidence` with the
 current target/generation, tier requirement, current-generation qualifying
-receipt counts, fallback state, blocking-finding counts and up to 10 sanitized
-recent receipts/findings. This is a read-only projection, not raw review text.
+receipt counts, `changes_requested_current_generation`, fallback state,
+blocking-finding counts and up to 10 sanitized recent receipts/findings. This
+is a read-only projection, not raw review text.
 
 ### `taskgov task edit`
 
@@ -935,6 +986,7 @@ Editable fields:
 - `--blocked-reason`
 - `--pause-reason`
 - `--review-tier`
+- `--review-tier-change-reason`, required only for a tier downgrade
 - `--verification`
 - `--tags`
 - `--add-note`
@@ -949,6 +1001,12 @@ start/review/completion transitions enforce the shared predecessor rule, and
 completion enforces structured review and explicit completion evidence. The
 guard evaluates the resulting kind, lane, order, and status together and checks
 both affected lanes when ordering metadata changes.
+
+Every edit to a `done` task fails with `task_done_immutable`, including status,
+metadata, note, review-tier, confirmation, and completion-evidence edits.
+Structured review writes fail with the same code. A tier downgrade on a
+non-done task additionally follows the rationale, safe-state, and never-reviewed
+rules above.
 
 `task block` and `task done` aliases are postponed. Use `task edit` in the MVP.
 
@@ -977,6 +1035,14 @@ loaded receipt rather than trusted from caller-provided values.
 `taskgov review finding resolve <finding-id>` requires `--resolution` and
 preserves the original finding. These commands never launch reviewers or make
 LLM calls; they record and validate evidence produced by the approved workflow.
+
+These mutable review payload flags are service-required rather than
+parser-required. The positional task or finding identifier remains parser-
+required so the service can locate the owner and return `task_done_immutable`
+before validating even omitted mutable payload. For a non-done owner, omission
+still returns the command-specific structured validation envelope and performs
+no write. CLI help and this contract continue to label every payload above as
+required.
 
 ## JSON Output
 
@@ -1057,6 +1123,7 @@ Required error codes:
 - `pause_reason_required`
 - `initial_done_forbidden`
 - `initial_paused_forbidden`
+- `task_done_immutable`
 - `invalid_status_transition`
 - `sequential_predecessor_incomplete`
 - `privacy_rejected`
@@ -1069,6 +1136,7 @@ Required error codes:
 - `review_finding_unresolved`
 - `review_receipt_mismatch`
 - `review_receipt_already_recorded`
+- `review_target_mismatch`
 - `invalid_review_evidence`
 - `verification_required`
 - `review_required`
@@ -1117,6 +1185,7 @@ MVP size limits:
   characters each.
 - pause reason, review receipt summary, review finding summary, and finding
   resolution summary: 1000 characters each.
+- review-tier change reason: 500 characters.
 
 The CLI must reject obvious secrets and raw dump patterns, including bearer
 tokens, authorization headers, private key blocks, `password=`, `token=`,
@@ -1151,6 +1220,18 @@ TG-M8 is acceptable only when automated tests additionally prove:
   without writing the database or Git state;
 - Tier 2 completion requires two distinct `PASS` receipts for the same current
   target and fails with any unresolved high or medium finding;
+- a current-generation `changes_requested` receipt blocks completion despite
+  otherwise sufficient PASS receipts, while a newer generation with fresh
+  review can succeed;
+- Git/external completion evidence matches the exact current target, a diff
+  target fails closed for revision-bearing completion, and stored Git evidence
+  is revalidated at the done transition;
+- done tasks reject every task/review mutation permanently, and tier downgrades
+  require a sanitized rationale plus an initialized, unstarted review latch
+  before any review target has been set;
+- lane edits cannot create whitespace-shadow lanes, and explicit/auto task
+  orders outside SQLite's signed 64-bit range return structured validation
+  errors without traceback;
 - resolving a high or medium finding without advancing the target generation
   remains blocked; a newer target plus fresh required PASS receipts succeeds;
 - one reviewer cannot replace or contradict a receipt in the same target

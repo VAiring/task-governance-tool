@@ -35,6 +35,16 @@ def table_count(db, table):
         return connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
 
 
+def add_task(db, repo, title, *extra):
+    result = run_taskgov(
+        "task", "add", "--repo", str(repo), "--db", str(db),
+        "--title", title, *extra, "--json",
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stderr or result.stdout)
+    return json.loads(result.stdout)["data"]["task"]
+
+
 class TaskAddTests(unittest.TestCase):
     def test_task_add_registers_optional_task_with_defaults(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,7 +80,7 @@ class TaskAddTests(unittest.TestCase):
             self.assertEqual(task["review_tier"], 1)
             self.assertEqual(task["completed_at"], None)
             self.assertEqual(event["task_id"], task["task_id"])
-            self.assertEqual(event["event_type"], "task_added")
+            self.assertEqual(event["event_type"], "task_added_review_unstarted")
             self.assertIn("Task registered", event["summary"])
 
             with closing(sqlite3.connect(db)) as connection:
@@ -526,6 +536,90 @@ class TaskAddTests(unittest.TestCase):
                 task_count = connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
             self.assertEqual(versions, [1, 2, 3, 4])
             self.assertEqual(task_count, 0)
+
+    def test_task_order_enforces_sqlite_signed_64_bit_range_without_traceback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            minimum = str(-(2**63))
+            maximum = str(2**63 - 1)
+
+            lower = add_task(
+                db,
+                repo,
+                "Minimum order",
+                "--kind",
+                "sequential",
+                "--lane",
+                "LOW",
+                "--order",
+                minimum,
+            )
+            upper = add_task(
+                db,
+                repo,
+                "Maximum order",
+                "--kind",
+                "sequential",
+                "--lane",
+                "HIGH",
+                "--order",
+                maximum,
+            )
+            self.assertEqual(lower["lane_order"], -(2**63))
+            self.assertEqual(upper["lane_order"], 2**63 - 1)
+            before = (table_count(db, "tasks"), table_count(db, "task_events"))
+
+            for value in (str(2**63), str(-(2**63) - 1), "9" * 5000):
+                with self.subTest(value=value):
+                    result = run_taskgov(
+                        "task", "add", "--repo", str(repo), "--db", str(db),
+                        "--title", "Out of range", "--kind", "sequential",
+                        "--lane", "RANGE", "--order", value, "--json",
+                    )
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertEqual(
+                        json.loads(result.stdout)["errors"][0]["code"],
+                        "invalid_argument",
+                    )
+                    self.assertNotIn("Traceback", result.stdout + result.stderr)
+                    self.assertEqual(
+                        (table_count(db, "tasks"), table_count(db, "task_events")),
+                        before,
+                    )
+
+    def test_auto_appended_order_rejects_int64_overflow_without_storage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            add_task(
+                db,
+                repo,
+                "Maximum order",
+                "--kind",
+                "sequential",
+                "--lane",
+                "FULL",
+                "--order",
+                str(2**63 - 1),
+            )
+            before = (table_count(db, "tasks"), table_count(db, "task_events"))
+
+            result = run_taskgov(
+                "task", "add", "--repo", str(repo), "--db", str(db),
+                "--title", "Cannot append", "--kind", "sequential",
+                "--lane", "FULL", "--json",
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertEqual(json.loads(result.stdout)["errors"][0]["code"], "invalid_argument")
+            self.assertNotIn("Traceback", result.stdout + result.stderr)
+            self.assertEqual(
+                (table_count(db, "tasks"), table_count(db, "task_events")),
+                before,
+            )
 
 
 if __name__ == "__main__":

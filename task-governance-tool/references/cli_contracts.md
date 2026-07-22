@@ -254,8 +254,9 @@ python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 
 `review_evidence` is a bounded structured projection containing the current
 target and generation, tier gate/pass/fallback state, receipt and open-finding
-counts, blocking findings, and at most ten recent receipts and findings. It
-never contains raw review transcripts or private reasoning.
+counts, `changes_requested_current_generation`, blocking findings, and at most
+ten recent receipts and findings. It never contains raw review transcripts or
+private reasoning.
 
 ### `task edit`
 
@@ -277,6 +278,8 @@ Editable options:
 - `--blocked-reason`
 - `--pause-reason`
 - `--review-tier`
+- `--review-tier-change-reason <summary>`: sanitized rationale required only
+  when lowering the review tier.
 - `--verification`
 - `--tags`
 - `--add-note`
@@ -311,6 +314,10 @@ used by `task next`. Adds and edits that change kind, lane, order, or status
 also validate both affected lanes and return
 `sequential_predecessor_incomplete` without storing a success event when the
 result would place incomplete work before an already advanced task.
+Lane values are trimmed consistently for add, edit, list, and next. Explicit
+and auto-appended orders must fit SQLite's signed 64-bit integer range;
+out-of-range input returns structured `invalid_argument` output without a
+Python traceback.
 
 Completion evidence spellings are mutually exclusive. Git evidence is resolved
 with a shell-free, read-only `git rev-parse --verify --end-of-options
@@ -320,11 +327,29 @@ canonical full commit ID. External evidence always requires its explicit kind,
 revision, reason, and approval. Changing evidence kind clears fields not valid
 for the new kind.
 
+At the done transition, stored Git evidence and any Git review target are
+resolved again. `git_commit` completion must equal the current canonical Git
+review target; `external_revision` completion must equal the current external
+review target. A `diff_fingerprint` cannot close either revision-bearing kind
+because schema version 5 defines no deterministic diff-to-commit/tree mapping;
+retarget the final revision and obtain fresh receipts. `commit_not_required`
+requires a diff target.
+
 `task edit --status done` requires both `--verification-complete` and
 `--review-complete`. It also requires either a stored or newly supplied
 valid typed evidence record. `legacy_unverified` evidence is preserved for
-historical completed tasks but cannot satisfy a new done transition after a
-task is reopened.
+historical completed tasks but cannot satisfy any new done transition.
+
+Every edit to a `done` task is rejected with `task_done_immutable`, including a
+status change, note, review-tier edit, confirmation, or completion-evidence
+edit. Done is terminal; create a new task for follow-up work. Lowering a tier is
+allowed only while both existing and resulting status are `ready`,
+`in_progress`, `paused`, or `blocked`. It requires exactly one
+`task_added_review_unstarted` event, no `review_started` event, an empty review
+target at generation `0`, and `--review-tier-change-reason`. Missing, duplicate,
+or legacy marker state fails closed; pause/resume or leaving review does not
+clear the latch. A downgrade cannot be combined with completion evidence or
+verification/review completion confirmations. Tier upgrades need no rationale.
 
 Complete with a Git commit:
 
@@ -381,6 +406,9 @@ self-review PASS is explicitly user-approved because independent tooling is
 unavailable. Tier 0 uses a `not_required` receipt with a rationale. The normal
 Tier 2 path therefore uses two LLM review judgments; each meaningful fix/new
 target requires two fresh judgments. Deterministic gate checks add none.
+A `changes_requested` receipt in the current generation blocks completion even
+when sufficient PASS receipts exist; a newer target generation and fresh
+review are required.
 
 Record and resolve findings:
 
@@ -393,6 +421,14 @@ Severity is `high`, `medium`, or `low`. Open high/medium findings block `done`.
 After resolving a high/medium finding, completion still requires a newer target
 generation and fresh qualifying receipts. Review write commands require an
 initialized current-schema database and reject `--read-only` before writing.
+They also reject target, receipt, finding, and resolution mutations while the
+owning task is `done`, returning `task_done_immutable`.
+
+All mutable payload flags shown above remain required by the command contract
+and are labeled required in `--help`, but their presence is validated after
+owner lookup. This ensures a done owner returns `task_done_immutable` even when
+a payload flag is omitted. A non-done owner receives the normal command-
+specific JSON/text validation envelope, with no database write.
 
 ### `web export`
 
@@ -480,9 +516,11 @@ Known error codes include:
 - `review_finding_unresolved`
 - `review_receipt_mismatch`
 - `review_receipt_already_recorded`
+- `review_target_mismatch`
 - `invalid_review_evidence`
 - `initial_done_forbidden`
 - `initial_paused_forbidden`
+- `task_done_immutable`
 - `invalid_status_transition`
 - `sequential_predecessor_incomplete`
 - `privacy_rejected`

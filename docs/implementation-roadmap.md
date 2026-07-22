@@ -1,6 +1,8 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
 Status: implementation units through TG-M8 governance hardening are complete.
+The schema-neutral TG-M8.C1 audited gate correction is approved as one Tier 2
+maintenance slice.
 TG-M9 paused-work visibility has an approved contract and execution-unit
 roadmap, but implementation requires separate user approval. The
 default-browser launch follow-up remains requirements-only pending design and
@@ -409,8 +411,8 @@ Implementation notes:
 
 - Support editable fields from `docs/specification.md`.
 - Require `--blocked-reason` when setting `status=blocked`.
-- Set `completed_at` when status becomes `done`; clear it when moving back to
-  an active status.
+- Set `completed_at` when status becomes `done`. TG-M8.C1 later makes `done`
+  terminal, so no transition back to an active status exists.
 - Append concise task event rows for meaningful changes and notes.
 - If `--read-only` is supplied, reject before creating, migrating, or writing.
 - JSON data must include `task`, `changed_fields`, and `event`.
@@ -1328,6 +1330,51 @@ Completion criteria:
 - The verified implementation commit is recorded on the task.
 - Verification receipts, stale detection, checkpoints, event pagination, and
   parent/child/checklist features remain explicitly deferred.
+
+### TG-M8.C1 Audited Gate Corrections
+
+Kind: maintenance correction
+Lane: `GOVERNANCE-HARDENING`
+Depends on: TG-M8.6
+Review tier: Tier 2
+
+Intended outcome:
+
+- bind final Git/external completion to the exact current review target and
+  fail closed for revision-bearing completion reviewed only by an arbitrary
+  diff fingerprint;
+- revalidate stored Git evidence at every done transition;
+- make done tasks terminal and immutable across every task/review write, with
+  no reopen transition;
+- require a sanitized rationale, an unstarted schema-neutral review latch, and
+  an unset review target for safe tier downgrades;
+- block on any current-generation `changes_requested` receipt;
+- normalize lanes and validate every explicit/auto order inside SQLite's signed
+  64-bit range.
+
+Write scope:
+
+- completion, task, review, selection, and CLI modules without schema change;
+- focused review/completion/edit/sequential/add regression tests;
+- governing completion/review/validation contracts and installable Skill
+  workflow/CLI references only where behavior changes.
+
+Verification gate:
+
+- focused audited-defect tests and unchanged migration acceptance tests;
+- full offline unittest suite;
+- skill `quick_validate` when available, otherwise the documented fallback
+  self-check;
+- `git diff --check`;
+- two independent Tier 2 review passes with all valid findings resolved.
+
+Compatibility boundary:
+
+- schema remains version 5 and the v2-to-v5 migration path remains unchanged;
+- paused/current behavior, compact command envelopes, bounded viewer evidence,
+  and no-target-mutation rules remain unchanged;
+- no forward test, install, release, commit, tag, push, or external action is
+  part of this correction slice.
 
 ## Approved Post-MVP Extension: TG-M9 Paused Work Visibility
 

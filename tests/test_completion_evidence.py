@@ -195,6 +195,64 @@ class CompletionEvidenceTests(unittest.TestCase):
                 },
             )
 
+    def test_saved_git_evidence_is_revalidated_when_task_transitions_done(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            db = Path(tmp) / "taskgov.sqlite"
+            revision = init_git_repo(repo)
+            init_db(db, repo)
+            task = add_task(db, repo)
+            recorded = edit(
+                db,
+                repo,
+                task["task_id"],
+                "--completion-evidence-kind",
+                "git_commit",
+                "--completion-revision",
+                revision,
+            )
+            self.assertEqual(recorded.returncode, 0, recorded.stdout)
+            seed_review_evidence(db, task["task_id"])
+            with closing(sqlite3.connect(db)) as connection:
+                before = (
+                    connection.execute(
+                        "SELECT status FROM tasks WHERE task_id = ?",
+                        (task["task_id"],),
+                    ).fetchone()[0],
+                    connection.execute("SELECT COUNT(*) FROM task_events").fetchone()[0],
+                )
+
+            (repo / ".git").rename(repo / "git-unavailable")
+            completed = edit(
+                db,
+                repo,
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+            )
+
+            self.assertEqual(completed.returncode, 1, completed.stdout)
+            self.assertEqual(
+                json.loads(completed.stdout)["errors"][0]["code"],
+                "git_commit_not_found_or_ambiguous",
+            )
+            self.assertNotIn("Traceback", completed.stderr + completed.stdout)
+            with closing(sqlite3.connect(db)) as connection:
+                after = (
+                    connection.execute(
+                        "SELECT status FROM tasks WHERE task_id = ?",
+                        (task["task_id"],),
+                    ).fetchone()[0],
+                    connection.execute("SELECT COUNT(*) FROM task_events").fetchone()[0],
+                )
+            self.assertEqual(after, before)
+            self.assertEqual(
+                completion_state(db, task["task_id"])["completion_evidence_revision"],
+                revision,
+            )
+
     def test_annotated_tag_peels_to_commit(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
@@ -360,6 +418,26 @@ class CompletionEvidenceTests(unittest.TestCase):
                     "completion_commit_required": 1,
                     "completion_commit_hash": "release-42",
                 },
+            )
+            seed_review_evidence(
+                db,
+                task["task_id"],
+                target_kind="diff_fingerprint",
+                target_value="sha256:" + "d" * 64,
+            )
+            mismatched = edit(
+                db,
+                repo,
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+            )
+            self.assertEqual(mismatched.returncode, 1, mismatched.stdout)
+            self.assertEqual(
+                json.loads(mismatched.stdout)["errors"][0]["code"],
+                "review_target_mismatch",
             )
             seed_review_evidence(db, task["task_id"])
             completed = edit(
@@ -568,7 +646,7 @@ class CompletionEvidenceTests(unittest.TestCase):
                     )
                     self.assertEqual(db.read_bytes(), before)
 
-    def test_legacy_unverified_evidence_cannot_close_a_reopened_task(self):
+    def test_legacy_unverified_evidence_cannot_close_a_new_transition(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             db = Path(tmp) / "taskgov.sqlite"

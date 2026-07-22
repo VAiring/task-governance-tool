@@ -122,7 +122,7 @@ class TaskEditTests(unittest.TestCase):
             self.assertIn("review_tier", data["changed_fields"])
             self.assertEqual(table_count(db, "task_events"), 2)
 
-    def test_task_edit_status_done_sets_and_clears_completed_at(self):
+    def test_task_edit_status_done_is_terminal_and_preserves_completed_at(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
@@ -143,12 +143,21 @@ class TaskEditTests(unittest.TestCase):
             self.assertIsNotNone(completed_at)
             self.assertIn("status", done["data"]["changed_fields"])
             self.assertIn("completed_at", done["data"]["changed_fields"])
+            before = fetch_task(db, task["task_id"])
+            before_events = table_count(db, "task_events")
 
-            ready = edit_task(db, repo, task["task_id"], "--status", "ready")
+            ready = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--status", "ready", "--json",
+            )
 
-            self.assertIsNone(ready["data"]["task"]["completed_at"])
-            self.assertEqual(ready["data"]["task"]["status"], "ready")
-            self.assertIn("completed_at", ready["data"]["changed_fields"])
+            self.assertEqual(ready.returncode, 1, ready.stdout)
+            self.assertEqual(
+                json.loads(ready.stdout)["errors"][0]["code"],
+                "task_done_immutable",
+            )
+            self.assertEqual(fetch_task(db, task["task_id"]), before)
+            self.assertEqual(table_count(db, "task_events"), before_events)
 
     def test_task_edit_blocked_status_requires_reason_and_can_clear_on_unblock(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -537,6 +546,26 @@ class TaskEditTests(unittest.TestCase):
             self.assertEqual(fetch_task(db, second["task_id"])["lane_order"], 2)
             self.assertEqual(table_count(db, "task_events"), 2)
 
+    def test_task_edit_rejects_order_outside_sqlite_int64_without_traceback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(
+                db, repo, "Ordered", "--kind", "sequential", "--lane", "EDIT", "--order", "1"
+            )
+            before_events = table_count(db, "task_events")
+
+            result = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--order", str(2**63), "--json",
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertEqual(json.loads(result.stdout)["errors"][0]["code"], "invalid_argument")
+            self.assertNotIn("Traceback", result.stdout + result.stderr)
+            self.assertEqual(fetch_task(db, task["task_id"])["lane_order"], 1)
+            self.assertEqual(table_count(db, "task_events"), before_events)
+
     def test_task_edit_unknown_task_returns_structured_not_found(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
@@ -562,6 +591,313 @@ class TaskEditTests(unittest.TestCase):
             self.assertEqual(payload["data"], {"task": None, "changed_fields": [], "event": None})
             self.assertEqual(table_count(db, "task_events"), 0)
 
+    def test_done_task_rejects_every_task_edit_as_terminal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Done gate metadata")
+            edit_task(
+                db,
+                repo,
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+                "--commit-not-required",
+            )
+            before = fetch_task(db, task["task_id"])
+            before_events = table_count(db, "task_events")
+
+            attempts = (
+                run_taskgov(
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--title", "Late title", "--json",
+                ),
+                run_taskgov(
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--add-note", "Late note", "--json",
+                ),
+                run_taskgov(
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--status", "in_progress", "--json",
+                ),
+                run_taskgov(
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--review-tier", "0",
+                    "--review-tier-change-reason", "Reclassify as mechanical", "--json",
+                ),
+                run_taskgov(
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--commit-not-required", "--json",
+                ),
+                run_taskgov(
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--verification-complete", "--json",
+                ),
+                run_taskgov(
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--review-tier", "9", "--json",
+                ),
+                run_taskgov(
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--add-note", "", "--json",
+                ),
+                run_taskgov(
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--title", "Authorization: Bearer secret", "--json",
+                ),
+            )
+            for result in attempts:
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertEqual(
+                    json.loads(result.stdout)["errors"][0]["code"],
+                    "task_done_immutable",
+                )
+            self.assertEqual(fetch_task(db, task["task_id"]), before)
+            self.assertEqual(table_count(db, "task_events"), before_events)
+
+    def test_review_tier_downgrade_requires_reason_and_no_review_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Tier downgrade", "--review-tier", "2")
+
+            missing_reason = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--review-tier", "1", "--json",
+            )
+            self.assertEqual(missing_reason.returncode, 1)
+            self.assertEqual(json.loads(missing_reason.stdout)["errors"][0]["code"], "invalid_argument")
+            private_reason = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--review-tier", "1",
+                "--review-tier-change-reason", "Authorization: Bearer secret", "--json",
+            )
+            self.assertEqual(json.loads(private_reason.stdout)["errors"][0]["code"], "privacy_rejected")
+
+            target = run_taskgov(
+                "review", "target", "set", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--kind", "diff_fingerprint",
+                "--revision", "sha256:" + "a" * 64, "--json",
+            )
+            self.assertEqual(target.returncode, 0, target.stdout)
+            target_only = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--review-tier", "1",
+                "--review-tier-change-reason", "Scope is now narrow", "--json",
+            )
+            self.assertEqual(target_only.returncode, 1, target_only.stdout)
+            self.assertEqual(
+                json.loads(target_only.stdout)["errors"][0]["code"],
+                "invalid_review_evidence",
+            )
+
+            reset = run_taskgov(
+                "review", "target", "set", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--kind", "diff_fingerprint",
+                "--revision", "sha256:" + "b" * 64, "--json",
+            )
+            self.assertEqual(reset.returncode, 0, reset.stdout)
+            still_rejected = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--review-tier", "1",
+                "--review-tier-change-reason", "Scope is now narrow", "--json",
+            )
+            self.assertEqual(still_rejected.returncode, 1, still_rejected.stdout)
+            self.assertEqual(
+                json.loads(still_rejected.stdout)["errors"][0]["code"],
+                "invalid_review_evidence",
+            )
+
+            fresh = add_task(db, repo, "Fresh tier downgrade", "--review-tier", "2")
+            downgraded = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                fresh["task_id"], "--review-tier", "1",
+                "--review-tier-change-reason", "Scope is now narrow", "--json",
+            )
+            self.assertEqual(downgraded.returncode, 0, downgraded.stdout)
+            self.assertIn("Scope is now narrow", json.loads(downgraded.stdout)["data"]["event"]["summary"])
+
+            upgraded = edit_task(db, repo, fresh["task_id"], "--review-tier", "2")
+            self.assertEqual(upgraded["data"]["task"]["review_tier"], 2)
+            edit_task(db, repo, fresh["task_id"], "--status", "review_pending")
+            unsafe_state = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                fresh["task_id"], "--review-tier", "1",
+                "--review-tier-change-reason", "Review gate changed", "--json",
+            )
+            self.assertEqual(unsafe_state.returncode, 1, unsafe_state.stdout)
+            self.assertEqual(
+                json.loads(unsafe_state.stdout)["errors"][0]["code"],
+                "invalid_status_transition",
+            )
+            combined_resume = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                fresh["task_id"], "--status", "in_progress", "--review-tier", "1",
+                "--review-tier-change-reason", "Review gate changed", "--json",
+            )
+            self.assertEqual(combined_resume.returncode, 1, combined_resume.stdout)
+            self.assertEqual(
+                json.loads(combined_resume.stdout)["errors"][0]["code"],
+                "invalid_status_transition",
+            )
+            resumed = edit_task(db, repo, fresh["task_id"], "--status", "in_progress")
+            self.assertEqual(resumed["data"]["task"]["status"], "in_progress")
+            historical_review = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                fresh["task_id"], "--status", "ready", "--json",
+            )
+            self.assertEqual(historical_review.returncode, 0, historical_review.stdout)
+            after_return_to_ready = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                fresh["task_id"], "--review-tier", "1",
+                "--review-tier-change-reason", "Review gate changed", "--json",
+            )
+            self.assertEqual(after_return_to_ready.returncode, 1, after_return_to_ready.stdout)
+            self.assertEqual(
+                json.loads(after_return_to_ready.stdout)["errors"][0]["code"],
+                "invalid_status_transition",
+            )
+
+            unreviewed = add_task(db, repo, "Unreviewed combinations", "--review-tier", "2")
+            for extra in (
+                ("--commit-not-required",),
+                ("--verification-complete",),
+                ("--review-complete",),
+            ):
+                combined_gate = run_taskgov(
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    unreviewed["task_id"], "--review-tier", "1",
+                    "--review-tier-change-reason", "Scope is now narrow",
+                    *extra, "--json",
+                )
+                self.assertEqual(combined_gate.returncode, 1, combined_gate.stdout)
+                self.assertEqual(
+                    json.loads(combined_gate.stdout)["errors"][0]["code"],
+                    "invalid_argument",
+                )
+            entering_review = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                unreviewed["task_id"], "--status", "review_pending",
+                "--review-tier", "1", "--review-tier-change-reason", "Scope is now narrow",
+                "--json",
+            )
+            self.assertEqual(entering_review.returncode, 1, entering_review.stdout)
+            self.assertEqual(
+                json.loads(entering_review.stdout)["errors"][0]["code"],
+                "invalid_status_transition",
+            )
+
+    def test_review_tier_downgrade_latch_survives_review_pause_and_legacy_ambiguity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+
+            initially_reviewing = add_task(
+                db,
+                repo,
+                "Initially reviewing",
+                "--review-tier",
+                "2",
+                "--status",
+                "review_pending",
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                initial_event = connection.execute(
+                    "SELECT event_type FROM task_events WHERE task_id = ?",
+                    (initially_reviewing["task_id"],),
+                ).fetchone()[0]
+            self.assertEqual(initial_event, "review_started")
+            edit_task(db, repo, initially_reviewing["task_id"], "--status", "in_progress")
+            initial_downgrade = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                initially_reviewing["task_id"], "--review-tier", "1",
+                "--review-tier-change-reason", "Review already started", "--json",
+            )
+            self.assertEqual(initial_downgrade.returncode, 1, initial_downgrade.stdout)
+            self.assertEqual(
+                json.loads(initial_downgrade.stdout)["errors"][0]["code"],
+                "invalid_status_transition",
+            )
+
+            paused = add_task(db, repo, "Pause after review", "--review-tier", "2")
+            edit_task(db, repo, paused["task_id"], "--status", "in_progress")
+            entered = edit_task(
+                db,
+                repo,
+                paused["task_id"],
+                "--status",
+                "review_pending",
+                "--add-note",
+                "Review handoff",
+                "--commit-not-required",
+                "--verification-complete",
+            )
+            self.assertEqual(entered["data"]["event"]["event_type"], "review_started")
+            self.assertIn("Review handoff", entered["data"]["event"]["summary"])
+            self.assertIn("commit not required", entered["data"]["event"]["summary"])
+            edit_task(
+                db,
+                repo,
+                paused["task_id"],
+                "--status",
+                "paused",
+                "--pause-reason",
+                "Waiting for review",
+            )
+            edit_task(db, repo, paused["task_id"], "--status", "in_progress")
+            after_resume = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                paused["task_id"], "--review-tier", "1",
+                "--review-tier-change-reason", "Review already started", "--json",
+            )
+            self.assertEqual(after_resume.returncode, 1, after_resume.stdout)
+            self.assertEqual(
+                json.loads(after_resume.stdout)["errors"][0]["code"],
+                "invalid_status_transition",
+            )
+
+            ambiguous_tasks = {
+                "legacy": add_task(db, repo, "Legacy marker", "--review-tier", "2"),
+                "missing": add_task(db, repo, "Missing marker", "--review-tier", "2"),
+                "duplicate": add_task(db, repo, "Duplicate marker", "--review-tier", "2"),
+            }
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    "UPDATE task_events SET event_type = 'task_added' WHERE task_id = ?",
+                    (ambiguous_tasks["legacy"]["task_id"],),
+                )
+                connection.execute(
+                    "DELETE FROM task_events WHERE task_id = ?",
+                    (ambiguous_tasks["missing"]["task_id"],),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO task_events(
+                      task_event_id, task_id, project_id, event_type, summary, created_at
+                    )
+                    SELECT 'tg_event_duplicate_marker', task_id, project_id,
+                           event_type, summary, created_at
+                      FROM task_events
+                     WHERE task_id = ?
+                    """,
+                    (ambiguous_tasks["duplicate"]["task_id"],),
+                )
+                connection.commit()
+            for marker_case, task in ambiguous_tasks.items():
+                with self.subTest(marker_case=marker_case):
+                    rejected = run_taskgov(
+                        "task", "edit", "--repo", str(repo), "--db", str(db),
+                        task["task_id"], "--review-tier", "1",
+                        "--review-tier-change-reason", "Marker is ambiguous", "--json",
+                    )
+                    self.assertEqual(rejected.returncode, 1, rejected.stdout)
+                    self.assertEqual(
+                        json.loads(rejected.stdout)["errors"][0]["code"],
+                        "invalid_status_transition",
+                    )
+
     def test_task_edit_text_output_is_concise_and_operational(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
@@ -586,6 +922,11 @@ class TaskEditTests(unittest.TestCase):
             self.assertLessEqual(len(lines), 5)
             self.assertIn(f"Task updated: {task['task_id']}", result.stdout)
             self.assertIn("Changed: priority", result.stdout)
+
+    def test_task_edit_help_includes_review_tier_change_reason(self):
+        result = run_taskgov("task", "edit", "--help")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--review-tier-change-reason", result.stdout)
 
 
 if __name__ == "__main__":

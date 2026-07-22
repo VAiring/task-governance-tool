@@ -13,8 +13,8 @@ from task_governance_tool.tasks import (
     PRIORITIES,
     row_to_task,
     validate_choice,
+    validate_lane,
     validate_limit,
-    validate_text,
 )
 
 
@@ -57,7 +57,7 @@ def next_task_filters(
         values.append(validate_choice("kind", kind, KINDS, "invalid_kind"))
     if lane is not None:
         filters.append("task.lane = ?")
-        values.append(validate_text("lane", lane))
+        values.append(validate_lane(lane))
     if priority is not None:
         filters.append("task.priority = ?")
         values.append(validate_choice("priority", priority, PRIORITIES, "invalid_priority"))

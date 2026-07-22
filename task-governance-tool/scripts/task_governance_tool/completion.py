@@ -15,6 +15,7 @@ WRITABLE_EVIDENCE_KINDS = (
     "commit_not_required",
 )
 FULL_GIT_OBJECT_ID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+DIFF_FINGERPRINT = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
 
 @dataclass(frozen=True)
@@ -209,3 +210,47 @@ def validate_evidence_matrix(task: dict[str, Any], *, allow_legacy: bool) -> Non
             "completion evidence fields do not form a valid evidence record",
             "completion_evidence_kind",
         )
+
+
+def validate_completion_review_binding(
+    task: dict[str, Any],
+    review_target: dict[str, Any],
+) -> None:
+    """Require revision-bearing completion evidence to match the reviewed revision."""
+    evidence_kind = str(task.get("completion_evidence_kind", ""))
+    evidence_revision = str(task.get("completion_evidence_revision", ""))
+    target_kind = str(review_target.get("kind", ""))
+    target_value = str(review_target.get("value", ""))
+
+    if evidence_kind == "git_commit":
+        if target_kind != "git_commit" or target_value != evidence_revision:
+            raise evidence_error(
+                "review_target_mismatch",
+                "git_commit completion requires the current review target to be the same canonical Git commit",
+                "review_target_value",
+            )
+        return
+
+    if evidence_kind == "external_revision":
+        if target_kind != "external_revision" or target_value != evidence_revision:
+            raise evidence_error(
+                "review_target_mismatch",
+                "external_revision completion requires the current review target to be the same external revision",
+                "review_target_value",
+            )
+        return
+
+    if evidence_kind == "commit_not_required":
+        if target_kind != "diff_fingerprint" or not DIFF_FINGERPRINT.fullmatch(target_value):
+            raise evidence_error(
+                "review_target_mismatch",
+                "commit_not_required completion requires a canonical diff_fingerprint review target",
+                "review_target_value",
+            )
+        return
+
+    raise evidence_error(
+        "completion_evidence_conflict",
+        "completion evidence fields do not form a closable evidence record",
+        "completion_evidence_kind",
+    )

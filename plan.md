@@ -1,7 +1,8 @@
 # task-governance-tool Initial Plan
 
 Status: MVP, completion commit extension, static Task Viewer, and TG-M8
-governance hardening implemented.
+governance hardening implemented. The TG-M9 paused-work visibility contract and
+roadmap are approved, but implementation awaits separate user approval.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -733,6 +734,30 @@ Confirmed decisions:
   checkpoints, event-history pagination, and parent/child or acceptance
   checklist structures. Reconsider task granularity only after operational
   evidence from `paused` and `task current`.
+- TG-M9 adds a design-level recall path for paused work without changing its
+  readiness semantics: `db status.counts.paused` exposes the exact population,
+  successful `task next` emits an advisory `paused_tasks_present` warning, and
+  `task current --status paused` returns the existing bounded resume-rich
+  projection. `task next` remains ready-only and never blocks unrelated work
+  because paused tasks exist.
+- `counts.active` continues to include paused tasks. The new paused count is
+  additive, warnings contain only count/fixed command text, and the current
+  filter accepts only the four existing current-work statuses. These operations
+  are deterministic and add zero LLM judgments or network calls.
+- TG-M9 does not add a schema migration. Skill and user guidance may advertise
+  the new surface only in TG-M9.2 after CLI behavior and regression tests exist.
+- TG-M9.1 implements only the additive paused count. TG-M9.2 implements the
+  current-status filter and warning together so no verified release warns users
+  to run a command that does not yet exist. The warning reuses the successful
+  status-inspection count and is advisory under concurrent updates; TG-M9 does
+  not import the Viewer's snapshot/WAL policy into `task next`.
+- Result/history pagination is not part of TG-M9. This deliberately leaves the
+  current/list resume view bounded; the exact paused count reveals when the
+  returned subset may not cover the whole population.
+- Automatic GitHub update checking, including the proposed once-daily policy,
+  remains unapproved. It requires a separate decision on opt-in network use,
+  project/release identity, local cache location, time source, failure policy,
+  privacy, and read-only behavior.
 
 Open issues:
 
@@ -746,16 +771,22 @@ Open issues:
   regeneration behavior, error contract, verification gates, and execution
   unit. The current requirement does not authorize changing `web export` or
   Skill guidance yet.
-- Decide after TG-M8 operational use whether long-running tasks need stale
-  warnings, checkpoints, history pagination, or checklist/child execution
-  units. Their feedback items are valid observations but not adopted in the
-  current minimal scope.
+- Decide after further operational use whether long-running tasks need stale
+  warnings, checkpoints, event-history or current/list pagination, or
+  checklist/child execution units. Their feedback items remain valid
+  observations but are not adopted by TG-M9.
+- Revisit a once-daily GitHub update check only as a separately approved
+  local-cache/network feature; using the Skill must not contact GitHub under
+  the current contract.
 
 ## Implementation Execution Status
 
 All implementation units through TG-M8 are complete. TG-M8.0 established the
 governing-document/task baseline, and TG-M8.1 through TG-M8.6 were consumed in
-order after separate explicit user approval.
+order after separate explicit user approval. TG-M9.0 establishes only the
+paused-visibility contract and task baseline. TG-M9.1 is registered as blocked
+pending separate user approval, and TG-M9.2 remains ordered behind it; neither
+implementation unit is authorized by the current planning request.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local
 SQLite database. Do not append another large per-task execution log here; use

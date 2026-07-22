@@ -1,8 +1,10 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
 Status: implementation units through TG-M8 governance hardening are complete.
-The default-browser launch follow-up remains requirements-only pending design
-and roadmap approval.
+TG-M9 paused-work visibility has an approved contract and execution-unit
+roadmap, but implementation requires separate user approval. The
+default-browser launch follow-up remains requirements-only pending design and
+roadmap approval.
 
 This document turns `docs/specification.md` and `docs/design.md` into
 implementation-sized execution units. It is the preferred roadmap for building
@@ -60,6 +62,8 @@ Sequential lanes:
 - `HARDEN`: final fixture, packaging, and forward-test hardening.
 - `GOVERNANCE-HARDENING`: implemented TG-M8 database, transition, evidence, and
   resume-surface changes.
+- `PAUSED-VISIBILITY`: approved TG-M9 additive counts, warnings, and bounded
+  paused-work retrieval; implementation is not yet authorized.
 
 Optional units may be consumed whenever their prerequisites are met. A blocker
 in one sequential lane should not stop ready optional units in another lane.
@@ -1325,6 +1329,164 @@ Completion criteria:
 - Verification receipts, stale detection, checkpoints, event pagination, and
   parent/child/checklist features remain explicitly deferred.
 
+## Approved Post-MVP Extension: TG-M9 Paused Work Visibility
+
+TG-M9 makes an unbounded population of paused work visible without turning
+`task next` into a resume command or adding a workflow engine. The milestone is
+schema-neutral and split into a reviewed contract baseline, a count-only slice,
+and a filter/warning/guidance slice. TG-M9.1 remains explicitly
+blocked until the user separately approves implementation; registering the
+roadmap does not grant that approval.
+
+### TG-M9.0 Paused Visibility Contract And Task Baseline
+
+Kind: sequential
+Lane: `PAUSED-VISIBILITY`
+Depends on: TG-M8.6
+Review tier: Tier 2
+
+Intended outcome:
+
+- Define the minimal paused-work visibility contract from operational
+  feedback without changing existing CLI or Skill behavior.
+- Approve an exact paused count, an advisory `task next` warning, and a bounded
+  `task current --status paused` view.
+- Register TG-M9 implementation tasks while keeping implementation blocked for
+  separate user approval.
+
+Write scope:
+
+- `docs/specification.md`
+- `docs/design.md`
+- `docs/implementation-roadmap.md`
+- `plan.md`
+- ignored project-local SQLite task state
+
+Verification gate:
+
+- Governing-document and deferred-scope consistency checks.
+- Inspect TG-M9 tasks through public `taskgov` commands and confirm TG-M9.1 is
+  blocked for approval while TG-M9.2 remains ordered behind it.
+- Confirm application code, schema, Skill package, README, and release guidance
+  are unchanged.
+- Full offline unittest suite and `git diff --check`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified documentation commit is recorded on TG-M9.0.
+- Pagination and GitHub update checking remain explicitly deferred.
+
+### TG-M9.1 Paused Count Projection
+
+Kind: sequential
+Lane: `PAUSED-VISIBILITY`
+Depends on: TG-M9.0 and separate user approval of TG-M9 implementation
+Review tier: Tier 2
+
+Intended outcome:
+
+- Add exact project-scoped paused counts to `db status`.
+
+Write scope:
+
+- `task-governance-tool/scripts/task_governance_tool/storage.py`
+- `task-governance-tool/scripts/task_governance_tool/cli.py`
+- focused DB-status, error-shape, and read-only tests
+- governing docs only for necessary contract corrections
+
+Implementation notes:
+
+- Do not change the SQLite schema or migration version.
+- Add `counts.paused` while retaining paused rows in `counts.active`.
+- Preserve a zero-LLM-decision, read-only path.
+
+Verification gate:
+
+- Exact positive/zero paused counts, including a count greater than the current
+  result limit.
+- Existing `active`, `blocked`, `review_pending`, `done`, and
+  `next_actionable` values retain their meanings.
+- Missing/migration/project errors retain the additive empty count shape.
+- Database/event/sidecar/Git no-write assertions and the full offline suite
+  pass.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified implementation commit is recorded on the task.
+
+### TG-M9.2 Current Filter, Next Warning, And Guidance Sync
+
+Kind: sequential
+Lane: `PAUSED-VISIBILITY`
+Depends on: TG-M9.1
+Review tier: Tier 2
+
+Intended outcome:
+
+- Add a bounded current-work status filter, including the paused-only
+  resume-rich view, and add its `task next` warning in the same verified slice.
+- Synchronize Skill, workflow, CLI, user, and release guidance only after the
+  behavior is implemented and verified.
+
+Write scope:
+
+- `task-governance-tool/scripts/task_governance_tool/tasks.py`
+- `task-governance-tool/scripts/task_governance_tool/cli.py`
+- focused current-task, next-warning, privacy, and CLI contract tests
+- `task-governance-tool/SKILL.md`
+- `task-governance-tool/agents/openai.yaml` only if display metadata needs
+  synchronization
+- `task-governance-tool/references/task_workflow.md`
+- `task-governance-tool/references/cli_contracts.md`
+- `README.md` and `docs/release-install.md`
+- forward-test note and governing-doc status updates
+
+Implementation notes:
+
+- Accept only `in_progress`, `review_pending`, `paused`, or `blocked` for
+  `task current --status`.
+- Preserve the unfiltered TG-M8 query, ordering, payload, default limit `20`,
+  and maximum `100`.
+- Reuse the current latest-event and suggested-action projection; do not add a
+  second paused-task read model.
+- Return the effective selected list in `data.statuses` and reject unsupported
+  values with `invalid_status` without mutation.
+- Build `paused_tasks_present` only after successful current-schema and
+  project-identity validation, reusing the exact paused count already returned
+  by the status inspection. Keep `task.next.data` unchanged.
+- Treat status inspection and candidate selection as successive advisory reads,
+  not a linearizable snapshot. Do not replace the existing task inspection
+  connection with the Viewer-specific snapshot/WAL policy in this milestone.
+- Include only the integer count and fixed `taskgov task current --status
+  paused` suggestion; never serialize paused-task text into the warning.
+- Describe the result as bounded. Do not add or advertise pagination,
+  stale-age detection, checkpoints, automatic resume, or GitHub checks.
+
+Verification gate:
+
+- Every accepted filter, paused-only fields/guidance, deterministic order,
+  default unfiltered compatibility, limit validation, and invalid-status errors
+  are covered.
+- Warning is present exactly once at positive count, absent at zero and on
+  failed commands, with equivalent JSON/text guidance and documented advisory
+  freshness under concurrent writers.
+- Equivalent next candidates, ordering, filters, selection rules, data payload,
+  exit code, and other-lane behavior remain unchanged when paused rows exist.
+- Missing/migration/project mismatch and `--read-only` inspections create no
+  database, event, sidecar, target-project, or Git changes.
+- CLI help, compact envelope, Skill metadata/reference self-check, isolated
+  installed-copy smoke test, and full offline suite pass.
+- A fresh-context forward flow can follow the warning to the paused-only view
+  without claiming exhaustive pagination or freshness.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- All TG-M9 acceptance criteria in `docs/specification.md` pass.
+- The verified implementation/guidance commit is recorded on the task.
+
 ## Roadmap Completion Criteria
 
 The MVP implementation roadmap is complete when:
@@ -1343,3 +1505,9 @@ The MVP implementation roadmap is complete when:
 TG-M8.0 through TG-M8.6 were consumed in order after separate explicit user
 approval. Completion requires the migration/acceptance gate above and never
 authorizes the deferred features listed in TG-M8.6.
+
+TG-M9.0 records only the contract and task baseline. TG-M9.1 and TG-M9.2 must
+not be consumed until a later user request explicitly approves implementation.
+That later approval still does not authorize current/list/event pagination,
+stale detection, checkpoints, parent/child task structure, default-browser
+launch, or networked GitHub update checking.

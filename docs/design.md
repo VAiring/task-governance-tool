@@ -1,6 +1,7 @@
 # task-governance-tool MVP Design
 
 Status: formal implemented design baseline through TG-M8 governance hardening.
+The TG-M9 paused-work visibility design is approved but not implemented.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -124,11 +125,15 @@ behavior is self-contained. Tests may add `task-governance-tool/scripts/` to
 - Validate task fields.
 - Create, update, fetch, and list tasks.
 - Append task event rows for meaningful changes.
+- Own the bounded current-task projection and its optional current-status
+  filter after TG-M9.
 
 `task-governance-tool/scripts/task_governance_tool/selection.py`
 
 - Implement `task next` readiness rules.
 - Consume the shared sequential predecessor predicate from `ordering.py`.
+- Keep paused visibility advisory-only; paused rows never become next-task
+  candidates.
 
 `task-governance-tool/scripts/task_governance_tool/ordering.py`
 
@@ -841,6 +846,101 @@ support for `paused` shipped with schema version 3 so the viewer did not
 regress. The final integration unit added completion/review evidence after
 those contracts stabilized.
 
+## Approved TG-M9 Paused Work Visibility Design
+
+TG-M9 adds three read-only projections over the existing schema-v5 `status`
+column. It requires no schema version change, task migration, event backfill,
+or viewer snapshot change. Implementation must not begin until its execution
+units receive separate approval.
+
+### Paused Count Repository Query
+
+`storage.empty_counts()` gains the additive `paused` key so success and every
+database-readiness error return one stable count shape. `count_tasks()` fills
+that key with an exact project-scoped `COUNT(*) WHERE status='paused'` while
+leaving the existing `active` predicate unchanged. `status_data()` therefore
+needs no new top-level field; `status_text()` adds a labeled paused value.
+
+The count query runs through the existing inspection connection and project
+identity check. It must not open a write connection, start migration, append an
+event, or create SQLite sidecars. No task content is needed to compute or
+display the count.
+
+### Advisory Warning Assembly
+
+`task next` keeps its existing repository candidate query, inspection
+connection boundary, and stable `data` payload. After TG-M9.1,
+`inspect_database()` already returns the exact unfiltered paused count from its
+successful current-schema, project-matching read. TG-M9.2 reuses that
+`StatusResult` value when assembling the warning; it does not add a third query
+or change the candidate connection to the viewer-specific snapshot helper.
+
+When the count is positive, the handler constructs exactly one warning:
+
+```json
+{
+  "code": "paused_tasks_present",
+  "message": "3 paused tasks exist; run taskgov task current --status paused"
+}
+```
+
+The numeric value is substituted deterministically. The warning remains in the
+existing top-level `warnings` array; `data.tasks`, `data.count`, `data.limit`,
+and `data.selection_rules` are byte-for-byte compatible for equivalent input
+state. The text renderer appends the equivalent warning after the candidate
+list. Warning generation neither invokes an LLM nor changes the exit code.
+
+Database-readiness, argument-validation, and internal-error paths retain empty
+warnings. This avoids presenting a paused count that was not obtained from a
+successful current-schema, project-matching read. The warning serializer must
+use only the integer count and fixed command text, never any stored task field.
+
+The status inspection and candidate selection remain successive read-only
+observations, as they are before TG-M9. A concurrent writer can commit between
+them, so the advisory count may be stale by the time candidates are emitted.
+This is acceptable for a recall warning and must be documented rather than
+overstated as a linearizable snapshot. Reusing `connect_snapshot_readonly()`
+would import the Viewer-specific persistent-WAL rejection and transaction
+contract into `task next`; TG-M9 does not authorize that compatibility change.
+
+### Filtered Current-Task Read Model
+
+The `task current` parser adds optional `--status`. `tasks.py` validates it
+against `CURRENT_STATUSES` and parameterizes the status predicate; it must not
+interpolate caller text into SQL. With no filter, the current SQL, status rank,
+priority rank, newest-update order, task-ID tie-break, default limit `20`, and
+maximum limit `100` remain unchanged.
+
+With a valid filter, the repository applies one status predicate and returns
+the selected one-element tuple in `CurrentTaskResult.statuses`. The existing
+latest-event subquery and `current_suggested_next_action()` are reused, so
+paused results retain their sanitized pause reason, most recent event, and
+resume guidance without duplicating a read model. `task_current_empty_data()`
+must accept the effective valid filter for stable missing/migration/project
+error payloads. Unsupported current statuses return `invalid_status` and make
+no database or Git change.
+
+The command remains bounded. No cursor, offset, `has_more`, or total-matching
+field is added in TG-M9. `db status.counts.paused` is the exact population
+signal; the existing `--limit` controls the resume-rich subset. This makes
+possible truncation visible without coupling the current command to the later
+pagination design.
+
+### Compatibility And Guidance Boundary
+
+TG-M9.1 changes only the storage count projection and `db status` text.
+TG-M9.2 adds the current-task query/parser and the `task next` warning together,
+then synchronizes `SKILL.md`, the one-level workflow/CLI references, README,
+and release guidance after those behaviors pass acceptance. This ordering
+ensures the warning never advertises a command that is not implemented in the
+same verified slice. Unimplemented behavior must not be advertised by the
+installable Skill during TG-M9.0 or TG-M9.1.
+
+The following remain separate future designs: current/list/event pagination,
+stale detection, checkpoints, parent/child or checklist execution units, and a
+networked GitHub update check with once-daily caching. TG-M9 introduces no
+network, Git write, target-project mutation, or additional LLM judgment.
+
 ## Static Task Viewer Design
 
 The Task Viewer is a projection of current SQLite state, never an independent
@@ -1176,6 +1276,23 @@ TG-M8 focused tests must additionally cover:
 - regression coverage for project identity, read-only behavior, task next,
   compact envelopes, and static viewer export.
 
+TG-M9 focused tests must additionally cover:
+
+- additive exact `paused` counts on ready and error-shaped `db status`
+  responses while preserving the meaning of `active`;
+- zero/positive paused warning behavior and identical next-task candidate data
+  with and without a paused population;
+- warning reuse of the successful status-inspection count, its documented
+  advisory freshness under concurrent writers, and no event, sidecar,
+  database, or Git mutation;
+- warning privacy: only a count and fixed command text may be serialized;
+- unfiltered current-task compatibility and each accepted `--status` value,
+  especially the paused-only latest-event and suggested-action projection;
+- invalid current status, limit, missing database, migration-required, and
+  project-mismatch errors without writes; and
+- installed-Skill self-containment, CLI help, compact JSON envelopes, and the
+  full offline regression suite after guidance synchronization.
+
 Task Viewer extension tests must additionally cover:
 
 - all-status snapshot projection with completion commit fields and no private
@@ -1238,6 +1355,8 @@ The design leaves room for:
 - Task import and richer exchange formats beyond the approved static viewer.
 - Stale-active warnings, persistent handoff checkpoints, event-history
   pagination, and parent/child or checklist execution units.
+- Cursor pagination for bounded current/list results and a separately designed
+  once-daily GitHub update check.
 
 These extensions must not change MVP privacy or target-project mutation
 semantics without updating `docs/specification.md` and this design.

@@ -1,6 +1,8 @@
 # task-governance-tool MVP Specification
 
-Status: formal implemented baseline through TG-M8 governance hardening.
+Status: formal implemented baseline through TG-M8 governance hardening. The
+TG-M9 paused-work visibility contract is approved for implementation planning;
+its CLI and Skill behavior is not yet implemented.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -434,6 +436,87 @@ units. A checklist or child-task feature should be reconsidered only after
 operational evidence from `paused` and `task current` shows that the simple lane
 model is insufficient.
 
+## Approved Post-MVP Extension: TG-M9 Paused Work Visibility
+
+TG-M9 addresses the narrower risk that intentionally paused work can disappear
+from the normal ready-task flow. It adds deterministic visibility to existing
+read surfaces without changing paused-state semantics, sequential readiness,
+or the local-first and no-target-mutation boundaries.
+
+### Paused Count
+
+After TG-M9 is implemented, `taskgov db status` must expose an exact
+`counts.paused` value for the current project. `counts.active` remains backward
+compatible: it continues to include `ready`, `in_progress`, `paused`,
+`blocked`, and `review_pending`. The separate paused count is additive and must
+not change any existing total.
+
+The concise text form must label the paused count explicitly. Missing,
+migration-required, and project-mismatch responses must retain the normal
+command-specific empty count object, including `paused: 0`, without creating,
+migrating, or modifying the database.
+
+### Ready Selection Warning
+
+`taskgov task next` remains a ready-task selector. Its candidate query,
+filters, ordering, `data` payload, and treatment of sequential lanes do not
+change. When the current project has one or more paused tasks, a successful
+`task next` response must add one structured warning with code
+`paused_tasks_present`. Its deterministic message must include the paused-task
+count and suggest:
+
+```text
+taskgov task current --status paused
+```
+
+The text form must present the same advisory warning. The warning must not add
+paused tasks to the result, suppress otherwise ready work, change the success
+exit code, or write a task event, tool event, database byte, or Git state. No
+paused warning is emitted when the count is zero or when `task next` itself
+fails database or argument validation. The warning contains only the count and
+command suggestion, not task titles, pause reasons, or event text.
+
+The warning count is the exact result of the successful database-status
+inspection that precedes candidate selection. It is an advisory observation,
+not a cross-command lock: a concurrent writer may change task state immediately
+after that read. TG-M9 does not change the existing `task next` connection or
+WAL/sidecar policy merely to make the warning linearizable.
+
+### Current-Status Filter
+
+`taskgov task current` gains an optional `--status` filter. Accepted values are
+the existing current-work statuses `in_progress`, `review_pending`, `paused`,
+and `blocked`. Omitting the filter preserves the TG-M8 query, output,
+ordering, default limit `20`, and maximum limit `100` unchanged.
+
+`taskgov task current --status paused` returns only paused tasks using the
+existing paused ordering, latest-event projection, pause reason, and
+deterministic suggested next action. In JSON, `data.statuses` contains the
+effective selected status list, so a paused-only response reports
+`["paused"]`. An unsupported status such as `ready`, `done`, or `cancelled`
+must fail with `invalid_status` and no database or Git mutation.
+
+This is a bounded resume-rich view, not an unbounded ledger. Operators can
+compare the returned page count with `db status`'s exact paused count and raise
+the existing limit when useful. Cursor pagination for `task current`, richer
+`task list` retrieval, and event-history pagination remain deferred; TG-M9 must
+not advertise exhaustive retrieval beyond the existing limit.
+
+### Compatibility, Cost, And Non-Goals
+
+TG-M9 requires no SQLite schema migration and makes no data model change. It
+adds one count key, may add one warning on successful `task next`, and narrows
+the existing `task.current.data.statuses` list only when the caller explicitly
+requests a filter. The compact top-level JSON envelope and all existing command
+names remain unchanged.
+
+Paused counting, warning construction, and status filtering are deterministic
+SQLite/CLI operations and add zero LLM judgments. TG-M9 does not add stale-age
+calculation, checkpoints, parent/child tasks, acceptance checklists, automatic
+resume, network access, or GitHub update checking. A once-daily GitHub update
+check remains an unapproved follow-up pending a separate network, cache,
+failure, and privacy contract.
+
 ## Approved Post-MVP Extension: Static Task Viewer
 
 The tool must provide a user-facing, non-server task viewer after the core task
@@ -730,6 +813,10 @@ Required output:
 - done task count
 - next-actionable task count
 
+After TG-M9 implementation, required output also includes the exact paused task
+count. This additive field does not remove paused tasks from the existing active
+count.
+
 ### `taskgov task add`
 
 Purpose: register one explicit task as current state.
@@ -798,6 +885,10 @@ Selection rules:
 - Sort by priority rank, lane, lane order with nulls last, creation time, and
   `task_id` for deterministic ties.
 
+After TG-M9 implementation, a successful response also emits the
+`paused_tasks_present` advisory warning when paused work exists. This does not
+change any selection rule or `data` field.
+
 ### `taskgov task current`
 
 Purpose: rediscover work already started, under review, paused, or blocked.
@@ -806,6 +897,11 @@ This TG-M8 inspection command is read-only and includes only `in_progress`,
 `review_pending`, `paused`, and `blocked`. It returns the latest event and a
 deterministic suggested next action for each task. Its default limit is `20`.
 It does not perform stale-age or working-tree freshness analysis.
+
+After TG-M9 implementation, optional `--status` accepts one of those four
+current-work statuses. Omitting it preserves the existing combined view;
+`--status paused` provides the bounded paused-work list used by the
+`task next` warning.
 
 ### `taskgov task show`
 
@@ -946,6 +1042,10 @@ In `db.status`, `counts.active` means tasks with status `ready`,
 `in_progress`, `paused`, `blocked`, or `review_pending`. It
 excludes `done` and `cancelled`.
 
+After TG-M9 implementation, `db.status.counts.paused` is an additive exact
+project count. Existing meanings of `active`, `blocked`, `review_pending`,
+`done`, and `next_actionable` are unchanged.
+
 Required error codes:
 
 - `invalid_argument`
@@ -978,6 +1078,10 @@ Required error codes:
 - `git_commit_not_found_or_ambiguous`
 - `external_revision_approval_required`
 - `internal_error`
+
+Required TG-M9 warning code:
+
+- `paused_tasks_present`
 
 ## Privacy And Safety
 
@@ -1062,3 +1166,25 @@ TG-M8 is acceptable only when automated tests additionally prove:
 - concurrent updates retain SQLite integrity; and
 - the existing project-identity, `task next`, compact JSON-envelope, viewer,
   and `--read-only` contracts do not regress.
+
+TG-M9 is acceptable only when automated tests additionally prove:
+
+- `db status.counts.paused` is exact, including when more paused tasks exist
+  than `task current` can return in one bounded response, while
+  `counts.active` retains its existing meaning;
+- successful `task next` emits no paused warning at count zero and exactly one
+  `paused_tasks_present` warning at a positive count with the count and
+  suggested command;
+- paused warnings do not alter ready candidates, selection rules, filters,
+  ordering, success exit status, or JSON `data`;
+- `task current --status paused` returns only paused tasks with latest event,
+  pause reason, deterministic suggested action, and `statuses=["paused"]`;
+- unfiltered `task current` preserves its TG-M8 behavior, and unsupported
+  current-status filters fail with `invalid_status` without mutation;
+- successful and failing `db status`, `task next`, and `task current` reads do
+  not change database contents, SQLite sidecars, task/tool events, or Git
+  state;
+- project identity separation and missing/migration-required behavior remain
+  unchanged; and
+- warnings expose no task title, pause reason, event text, secret, raw output,
+  prompt, stack trace, or diff.

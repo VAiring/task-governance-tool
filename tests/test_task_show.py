@@ -222,7 +222,12 @@ class TaskShowTests(unittest.TestCase):
             self.assertFalse(payload["ok"])
             self.assertEqual(payload["command"], "task.show")
             self.assertEqual(payload["errors"][0]["code"], "not_found")
-            self.assertEqual(payload["data"], {"task": None, "events": [], "suggested_next_action": ""})
+            self.assertEqual(payload["data"], {
+                "task": None,
+                "events": [],
+                "suggested_next_action": "",
+                "review_evidence": None,
+            })
 
     def test_task_show_missing_db_does_not_create_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -244,7 +249,12 @@ class TaskShowTests(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertFalse(payload["ok"])
             self.assertEqual(payload["errors"][0]["code"], "db_not_initialized")
-            self.assertEqual(payload["data"], {"task": None, "events": [], "suggested_next_action": ""})
+            self.assertEqual(payload["data"], {
+                "task": None,
+                "events": [],
+                "suggested_next_action": "",
+                "review_evidence": None,
+            })
             self.assertFalse(db.exists())
             self.assertFalse(db.parent.exists())
 

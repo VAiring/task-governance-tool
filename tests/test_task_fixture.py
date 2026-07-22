@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.review_test_helpers import seed_review_evidence
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -84,6 +86,7 @@ class TaskStatusFixtureTests(unittest.TestCase):
                     initial["status"] = "ready"
                 stored = add_fixture_task(db, repo, initial)
                 if target_status == "done":
+                    seed_review_evidence(db, stored["task_id"])
                     completed = run_taskgov(
                         "task",
                         "edit",

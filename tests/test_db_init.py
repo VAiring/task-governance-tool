@@ -19,6 +19,7 @@ try:
         apply_completion_evidence_migration,
         apply_initial_schema_migration,
         apply_paused_state_migration,
+        apply_review_evidence_migration,
         connect_initialized,
         ensure_project_meta,
         initial_schema_sql,
@@ -149,8 +150,8 @@ class DbInitTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["command"], "db.init")
             self.assertTrue(payload["data"]["created"])
-            self.assertEqual(payload["data"]["migrations_applied"], [1, 2, 3, 4])
-            self.assertEqual(payload["data"]["schema_version"], 4)
+            self.assertEqual(payload["data"]["migrations_applied"], [1, 2, 3, 4, 5])
+            self.assertEqual(payload["data"]["schema_version"], 5)
             self.assertEqual(Path(payload["db_path"]), db.resolve())
             self.assertTrue(db.exists())
             default_db = (
@@ -166,7 +167,7 @@ class DbInitTests(unittest.TestCase):
             with closing(sqlite3.connect(db)) as connection:
                 version = connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
                 project_count = connection.execute("SELECT COUNT(*) FROM project_meta").fetchone()[0]
-            self.assertEqual(version, 4)
+            self.assertEqual(version, 5)
             self.assertEqual(project_count, 1)
 
     def test_db_init_is_idempotent(self):
@@ -182,7 +183,7 @@ class DbInitTests(unittest.TestCase):
             payload = json.loads(second.stdout)
             self.assertFalse(payload["data"]["created"])
             self.assertEqual(payload["data"]["migrations_applied"], [])
-            self.assertEqual(payload["data"]["schema_version"], 4)
+            self.assertEqual(payload["data"]["schema_version"], 5)
 
     def test_db_init_migrates_schema_v1_database_through_paused_state(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -223,8 +224,8 @@ class DbInitTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(result.stdout)
             self.assertFalse(payload["data"]["created"])
-            self.assertEqual(payload["data"]["migrations_applied"], [2, 3, 4])
-            self.assertEqual(payload["data"]["schema_version"], 4)
+            self.assertEqual(payload["data"]["migrations_applied"], [2, 3, 4, 5])
+            self.assertEqual(payload["data"]["schema_version"], 5)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute(
@@ -241,7 +242,7 @@ class DbInitTests(unittest.TestCase):
                         "SELECT version FROM schema_migrations ORDER BY version"
                     ).fetchall()
                 ]
-            self.assertEqual(versions, [1, 2, 3, 4])
+            self.assertEqual(versions, [1, 2, 3, 4, 5])
             self.assertEqual(task["completion_commit_required"], 1)
             self.assertEqual(task["completion_commit_hash"], "")
             self.assertEqual(task["pause_reason"], "")
@@ -256,8 +257,8 @@ class DbInitTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(result.stdout)
-            self.assertEqual(payload["data"]["migrations_applied"], [3, 4])
-            self.assertEqual(payload["data"]["schema_version"], 4)
+            self.assertEqual(payload["data"]["migrations_applied"], [3, 4, 5])
+            self.assertEqual(payload["data"]["schema_version"], 5)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute("SELECT * FROM tasks WHERE task_id = ?", ("tg_task_test",)).fetchone()
@@ -272,7 +273,7 @@ class DbInitTests(unittest.TestCase):
                 ]
                 quick_check = connection.execute("PRAGMA quick_check").fetchone()[0]
                 foreign_key_rows = connection.execute("PRAGMA foreign_key_check").fetchall()
-            self.assertEqual(versions, [1, 2, 3, 4])
+            self.assertEqual(versions, [1, 2, 3, 4, 5])
             self.assertEqual(task["pause_reason"], "")
             self.assertEqual(event["task_id"], "tg_task_test")
             self.assertEqual(quick_check, "ok")
@@ -485,7 +486,7 @@ class DbInitTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stdout)
             payload = json.loads(result.stdout)
-            self.assertEqual(payload["data"]["migrations_applied"], [4])
+            self.assertEqual(payload["data"]["migrations_applied"], [4, 5])
             self.assertEqual(payload["warnings"][0]["code"], "legacy_completion_evidence_preserved")
             with closing(sqlite3.connect(db)) as connection:
                 row = connection.execute(
@@ -696,6 +697,76 @@ class DbInitTests(unittest.TestCase):
                         lane="lane-a",
                         lane_order=1,
                     )
+
+    def test_review_evidence_migration_preserves_rows_and_adds_normalized_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                connection.execute("PRAGMA foreign_keys = ON")
+                apply_initial_schema_migration(connection)
+                apply_completion_commit_migration(connection)
+                connection.commit()
+                apply_paused_state_migration(connection)
+                apply_completion_evidence_migration(connection)
+                insert_task(connection, task_id="tg_task_review_migration")
+                connection.commit()
+
+                apply_review_evidence_migration(connection)
+                row = connection.execute(
+                    """
+                    SELECT review_target_kind, review_target_value,
+                           review_target_generation
+                      FROM tasks WHERE task_id = 'tg_task_review_migration'
+                    """
+                ).fetchone()
+                self.assertEqual(dict(row), {
+                    "review_target_kind": "",
+                    "review_target_value": "",
+                    "review_target_generation": 0,
+                })
+                self.assertEqual(
+                    connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0],
+                    5,
+                )
+                tables = {
+                    row[0] for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    )
+                }
+                self.assertIn("review_receipts", tables)
+                self.assertIn("review_findings", tables)
+                self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_review_evidence_migration_failure_rolls_back_schema_and_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                connection.execute("PRAGMA foreign_keys = ON")
+                apply_initial_schema_migration(connection)
+                apply_completion_commit_migration(connection)
+                connection.commit()
+                apply_paused_state_migration(connection)
+                apply_completion_evidence_migration(connection)
+
+                with self.assertRaises(StorageError):
+                    apply_review_evidence_migration(connection, fail_stage="after_schema")
+
+                columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(tasks)")
+                }
+                self.assertNotIn("review_target_kind", columns)
+                self.assertFalse(
+                    connection.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'review_receipts'"
+                    ).fetchone()
+                )
+                self.assertEqual(
+                    connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0],
+                    4,
+                )
 
 
 if __name__ == "__main__":

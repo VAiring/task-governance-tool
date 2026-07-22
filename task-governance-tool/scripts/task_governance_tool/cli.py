@@ -25,6 +25,13 @@ from task_governance_tool.storage import (
     skill_root_from_script,
 )
 from task_governance_tool.selection import select_next_tasks
+from task_governance_tool.reviews import (
+    ReviewEvidenceError,
+    add_review_finding,
+    add_review_receipt,
+    resolve_review_finding,
+    set_review_target,
+)
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
     TaskRepositoryError,
@@ -225,6 +232,49 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--verification-complete", action="store_true", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--review-complete", action="store_true", default=argparse.SUPPRESS)
 
+    review_parser = subparsers.add_parser("review", help="structured review evidence commands")
+    review_subparsers = review_parser.add_subparsers(dest="review_entity")
+
+    review_target_parser = review_subparsers.add_parser("target", help="review target commands")
+    review_target_subparsers = review_target_parser.add_subparsers(dest="review_action")
+    review_target_set_parser = review_target_subparsers.add_parser(
+        "set", help="set and advance a task review target"
+    )
+    add_common_options(review_target_set_parser)
+    review_target_set_parser.add_argument("task_id")
+    review_target_set_parser.add_argument("--kind", required=True)
+    review_target_set_parser.add_argument("--revision", required=True)
+
+    review_receipt_parser = review_subparsers.add_parser("receipt", help="review receipt commands")
+    review_receipt_subparsers = review_receipt_parser.add_subparsers(dest="review_action")
+    review_receipt_add_parser = review_receipt_subparsers.add_parser(
+        "add", help="record a sanitized review receipt"
+    )
+    add_common_options(review_receipt_add_parser)
+    review_receipt_add_parser.add_argument("task_id")
+    review_receipt_add_parser.add_argument("--reviewer", required=True)
+    review_receipt_add_parser.add_argument("--kind", required=True)
+    review_receipt_add_parser.add_argument("--verdict", required=True)
+    review_receipt_add_parser.add_argument("--summary", default="")
+    review_receipt_add_parser.add_argument("--user-approved", action="store_true")
+
+    review_finding_parser = review_subparsers.add_parser("finding", help="review finding commands")
+    review_finding_subparsers = review_finding_parser.add_subparsers(dest="review_action")
+    review_finding_add_parser = review_finding_subparsers.add_parser(
+        "add", help="record a sanitized review finding"
+    )
+    add_common_options(review_finding_add_parser)
+    review_finding_add_parser.add_argument("task_id")
+    review_finding_add_parser.add_argument("--receipt-id", required=True)
+    review_finding_add_parser.add_argument("--severity", required=True)
+    review_finding_add_parser.add_argument("--summary", required=True)
+    review_finding_resolve_parser = review_finding_subparsers.add_parser(
+        "resolve", help="resolve a review finding while preserving its history"
+    )
+    add_common_options(review_finding_resolve_parser)
+    review_finding_resolve_parser.add_argument("finding_id")
+    review_finding_resolve_parser.add_argument("--resolution", required=True)
+
     web_parser = subparsers.add_parser("web", help="static viewer commands")
     web_subparsers = web_parser.add_subparsers(dest="web_command")
     web_export_parser = web_subparsers.add_parser(
@@ -243,6 +293,8 @@ def command_name(args: argparse.Namespace) -> str:
         return f"db.{args.db_command}"
     if args.command == "task" and args.task_command:
         return f"task.{args.task_command}"
+    if args.command == "review" and args.review_entity and args.review_action:
+        return f"review.{args.review_entity}.{args.review_action}"
     if args.command == "web" and args.web_command:
         return f"web.{args.web_command}"
     if args.command:
@@ -278,6 +330,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_task_show(context)
     if context.command == "task.edit":
         return handle_task_edit(context)
+    if context.command.startswith("review."):
+        return handle_review_command(context)
     if context.command == "web.export":
         return handle_web_export(context)
     return error_result(
@@ -930,7 +984,12 @@ def handle_task_current(context: CommandContext) -> CommandResult:
     )
 
 
-def task_show_text(task: dict[str, Any], events: list[dict[str, Any]], suggested_next_action: str) -> str:
+def task_show_text(
+    task: dict[str, Any],
+    events: list[dict[str, Any]],
+    suggested_next_action: str,
+    review_evidence: dict[str, Any],
+) -> str:
     lines = [
         f"Task: {task['task_id']}",
         f"Title: {task['title']}",
@@ -942,6 +1001,15 @@ def task_show_text(task: dict[str, Any], events: list[dict[str, Any]], suggested
             lane += f"  Order: {task['lane_order']}"
         lines.append(lane)
     lines.append(f"Review tier: {task['review_tier']}")
+    review_target = review_evidence["target"]
+    review_gate = review_evidence["gate"]
+    lines.append(
+        "Review evidence: "
+        f"generation {review_target['generation']}, "
+        f"passes {review_gate['qualifying_independent_passes']}/"
+        f"{review_gate['required_independent_passes']}, "
+        f"satisfied={str(review_gate['satisfied']).lower()}"
+    )
     if task["verification"]:
         lines.append(f"Verification: {task['verification']}")
     if "completion_evidence_kind" in task:
@@ -973,7 +1041,12 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            data={"task": None, "events": [], "suggested_next_action": ""},
+            data={
+                "task": None,
+                "events": [],
+                "suggested_next_action": "",
+                "review_evidence": None,
+            },
             errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
             exit_code=EXIT_TOOL_ERROR,
         )
@@ -995,7 +1068,12 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                 command=context.command,
                 project_id=target.project.project_id,
                 db_path=str(target.db_path),
-                data={"task": None, "events": [], "suggested_next_action": ""},
+                data={
+                    "task": None,
+                    "events": [],
+                    "suggested_next_action": "",
+                    "review_evidence": None,
+                },
                 errors=[{"code": exc.code, "message": exc.message}],
                 exit_code=EXIT_USAGE,
             )
@@ -1019,6 +1097,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         "task": result.task,
         "events": result.events,
         "suggested_next_action": result.suggested_next_action,
+        "review_evidence": result.review_evidence,
     }
     return CommandResult(
         ok=True,
@@ -1026,7 +1105,12 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         project_id=target.project.project_id,
         db_path=str(target.db_path),
         data=data,
-        text=task_show_text(result.task, result.events, result.suggested_next_action),
+        text=task_show_text(
+            result.task,
+            result.events,
+            result.suggested_next_action,
+            result.review_evidence,
+        ),
         exit_code=EXIT_SUCCESS,
     )
 
@@ -1170,6 +1254,168 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
     )
 
 
+def review_empty_data(command: str) -> dict[str, Any]:
+    if command == "review.target.set":
+        return {"task": None, "changed_fields": [], "event": None}
+    if command == "review.receipt.add":
+        return {"receipt": None, "event": None}
+    return {"finding": None, "event": None}
+
+
+def review_failure_result(
+    context: CommandContext,
+    *,
+    project_id: str,
+    db_path: str,
+    code: str,
+    message: str,
+    exit_code: int,
+) -> CommandResult:
+    return CommandResult(
+        ok=False,
+        command=context.command,
+        project_id=project_id,
+        db_path=db_path,
+        data=review_empty_data(context.command),
+        errors=[{"code": code, "message": message}],
+        exit_code=exit_code,
+    )
+
+
+def review_text(command: str, data: dict[str, Any]) -> str:
+    event = data["event"]
+    if command == "review.target.set":
+        task = data["task"]
+        return (
+            f"Review target set: {task['task_id']}\n"
+            f"Target: {task['review_target_kind']} generation "
+            f"{task['review_target_generation']}\n"
+            f"Event: {event['event_type']} - {event['summary']}"
+        )
+    if command == "review.receipt.add":
+        receipt = data["receipt"]
+        return (
+            f"Review receipt recorded: {receipt['review_receipt_id']}\n"
+            f"Verdict: {receipt['verdict']}  Kind: {receipt['receipt_kind']}\n"
+            f"Event: {event['event_type']} - {event['summary']}"
+        )
+    finding = data["finding"]
+    verb = "resolved" if command.endswith("resolve") else "recorded"
+    return (
+        f"Review finding {verb}: {finding['review_finding_id']}\n"
+        f"Severity: {finding['severity']}  Status: {finding['status']}\n"
+        f"Event: {event['event_type']} - {event['summary']}"
+    )
+
+
+def handle_review_command(context: CommandContext) -> CommandResult:
+    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    project_id = target.project.project_id
+    db_path = str(target.db_path)
+    if context.read_only:
+        return review_failure_result(
+            context,
+            project_id=project_id,
+            db_path=db_path,
+            code="invalid_argument",
+            message=f"{context.command.replace('.', ' ')} cannot run with --read-only because it writes the database",
+            exit_code=EXIT_USAGE,
+        )
+
+    try:
+        with closing(connect_initialized(target)) as connection:
+            with connection:
+                if context.command == "review.target.set":
+                    result = set_review_target(
+                        connection,
+                        target.project,
+                        getattr(context.args, "task_id", ""),
+                        kind=getattr(context.args, "kind", ""),
+                        revision=getattr(context.args, "revision", ""),
+                    )
+                    data = {
+                        "task": result.task,
+                        "changed_fields": result.changed_fields,
+                        "event": result.event,
+                    }
+                elif context.command == "review.receipt.add":
+                    result = add_review_receipt(
+                        connection,
+                        target.project,
+                        getattr(context.args, "task_id", ""),
+                        reviewer=getattr(context.args, "reviewer", ""),
+                        kind=getattr(context.args, "kind", ""),
+                        verdict=getattr(context.args, "verdict", ""),
+                        summary=getattr(context.args, "summary", ""),
+                        user_approved=bool(getattr(context.args, "user_approved", False)),
+                    )
+                    data = {"receipt": result.receipt, "event": result.event}
+                elif context.command == "review.finding.add":
+                    result = add_review_finding(
+                        connection,
+                        target.project,
+                        getattr(context.args, "task_id", ""),
+                        receipt_id=getattr(context.args, "receipt_id", ""),
+                        severity=getattr(context.args, "severity", ""),
+                        summary=getattr(context.args, "summary", ""),
+                    )
+                    data = {"finding": result.finding, "event": result.event}
+                else:
+                    result = resolve_review_finding(
+                        connection,
+                        target.project,
+                        getattr(context.args, "finding_id", ""),
+                        resolution=getattr(context.args, "resolution", ""),
+                    )
+                    data = {"finding": result.finding, "event": result.event}
+    except (TaskValidationError, ReviewEvidenceError) as exc:
+        return review_failure_result(
+            context,
+            project_id=project_id,
+            db_path=db_path,
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_USAGE,
+        )
+    except TaskRepositoryError as exc:
+        return review_failure_result(
+            context,
+            project_id=project_id,
+            db_path=db_path,
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE,
+        )
+    except StorageError as exc:
+        return review_failure_result(
+            context,
+            project_id=project_id,
+            db_path=db_path,
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error:
+        return review_failure_result(
+            context,
+            project_id=project_id,
+            db_path=db_path,
+            code="internal_error",
+            message="could not record structured review evidence",
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=project_id,
+        db_path=db_path,
+        data=data,
+        text=review_text(context.command, data),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
@@ -1183,6 +1429,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise CommandLineError(
                 "invalid_argument",
                 "task requires a subcommand: add, list, next, show, or edit",
+            )
+        if args.command == "review" and (
+            getattr(args, "review_entity", None) is None
+            or getattr(args, "review_action", None) is None
+        ):
+            raise CommandLineError(
+                "invalid_argument",
+                "review requires target set, receipt add, finding add, or finding resolve",
             )
         if args.command == "web" and args.web_command is None:
             raise CommandLineError("invalid_argument", "web requires a subcommand: export")

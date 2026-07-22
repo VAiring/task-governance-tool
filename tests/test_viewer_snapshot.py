@@ -188,7 +188,7 @@ class ViewerSnapshotTests(unittest.TestCase):
             target = initialized_target(tmp)
             with closing(connect(target.db_path)) as connection:
                 with connection:
-                    connection.execute("DELETE FROM schema_migrations WHERE version = 4")
+                    connection.execute("DELETE FROM schema_migrations WHERE version = 5")
 
             with closing(connect_snapshot_readonly(target.db_path)) as connection:
                 with self.assertRaises(StorageError) as migration:

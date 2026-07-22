@@ -7,6 +7,8 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
+from tests.review_test_helpers import seed_review_evidence
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -49,6 +51,8 @@ def add_task(db, repo, title, *extra):
 
 
 def edit_task(db, repo, task_id, *extra):
+    if "--status" in extra and extra[extra.index("--status") + 1] == "done":
+        seed_review_evidence(db, task_id)
     result = run_taskgov(
         "task",
         "edit",

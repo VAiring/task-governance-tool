@@ -7,6 +7,8 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
+from tests.review_test_helpers import seed_review_evidence
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -121,6 +123,7 @@ class TaskListTests(unittest.TestCase):
                 "archive",
             ),
         }
+        seed_review_evidence(db, seeded["done"]["task_id"])
         done_result = run_taskgov(
             "task",
             "edit",

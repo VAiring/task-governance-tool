@@ -497,7 +497,7 @@ class TaskAddTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             init_db(db, repo)
             with closing(sqlite3.connect(db)) as connection:
-                connection.execute("DELETE FROM schema_migrations WHERE version = 4")
+                connection.execute("DELETE FROM schema_migrations WHERE version = 5")
                 connection.commit()
             before = db.read_bytes()
 
@@ -524,7 +524,7 @@ class TaskAddTests(unittest.TestCase):
                     "SELECT version FROM schema_migrations ORDER BY version"
                 )]
                 task_count = connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-            self.assertEqual(versions, [1, 2, 3])
+            self.assertEqual(versions, [1, 2, 3, 4])
             self.assertEqual(task_count, 0)
 
 

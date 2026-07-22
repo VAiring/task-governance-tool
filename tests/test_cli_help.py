@@ -49,6 +49,27 @@ class CliHelpTests(unittest.TestCase):
         parser = build_parser()
         self.assertEqual(parser.prog, "taskgov")
 
+    def test_structured_review_command_help_is_available(self):
+        commands = (
+            ("review", "target", "set", "--help"),
+            ("review", "receipt", "add", "--help"),
+            ("review", "finding", "add", "--help"),
+            ("review", "finding", "resolve", "--help"),
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    [sys.executable, "scripts/taskgov.py", *command],
+                    cwd=SKILL_ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("--repo", result.stdout)
+                self.assertIn("--read-only", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

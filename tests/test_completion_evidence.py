@@ -9,6 +9,8 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
+from tests.review_test_helpers import seed_review_evidence
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -359,6 +361,7 @@ class CompletionEvidenceTests(unittest.TestCase):
                     "completion_commit_hash": "release-42",
                 },
             )
+            seed_review_evidence(db, task["task_id"])
             completed = edit(
                 db,
                 repo,

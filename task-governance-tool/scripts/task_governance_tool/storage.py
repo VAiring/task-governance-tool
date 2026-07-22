@@ -14,7 +14,7 @@ from typing import Any
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class StorageError(Exception):
@@ -397,6 +397,8 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "tasks",
         "task_events",
         "tool_events",
+        "review_receipts",
+        "review_findings",
     }
     required_indexes = {
         "idx_tasks_project_status",
@@ -405,6 +407,9 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "idx_tasks_project_lane_order_unique",
         "idx_task_events_task_created",
         "idx_tasks_project_completion_commit",
+        "idx_review_receipts_task_target_verdict",
+        "idx_review_receipts_task_reviewer_generation",
+        "idx_review_findings_status_severity_receipt",
     }
     table_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     index_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
@@ -439,6 +444,9 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
             "completion_evidence_revision",
             "completion_evidence_reason",
             "external_revision_approved",
+            "review_target_kind",
+            "review_target_value",
+            "review_target_generation",
         }
         missing.extend(
             f"column:tasks.{name}" for name in sorted(required_task_columns - task_columns)
@@ -457,6 +465,41 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         missing.extend(
             f"column:task_events.{name}"
             for name in sorted(required_event_columns - event_columns)
+        )
+    required_review_columns = {
+        "review_receipts": {
+            "review_receipt_id",
+            "task_id",
+            "project_id",
+            "reviewer_key",
+            "receipt_kind",
+            "verdict",
+            "target_kind",
+            "target_value",
+            "target_generation",
+            "summary",
+            "user_approved",
+            "created_at",
+        },
+        "review_findings": {
+            "review_finding_id",
+            "review_receipt_id",
+            "severity",
+            "status",
+            "summary",
+            "resolution_summary",
+            "created_at",
+            "resolved_at",
+        },
+    }
+    for table_name, required_columns in required_review_columns.items():
+        if table_name not in tables:
+            continue
+        column_rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        columns = {str(row["name"]) for row in column_rows}
+        missing.extend(
+            f"column:{table_name}.{name}"
+            for name in sorted(required_columns - columns)
         )
     return missing
 
@@ -661,6 +704,121 @@ def apply_completion_evidence_migration(
         raise
 
 
+def apply_review_evidence_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Add append-only structured review evidence without synthesizing history."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "review-evidence migration requires no active transaction",
+        )
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        if not column_exists(connection, "tasks", "review_target_kind"):
+            connection.execute(
+                "ALTER TABLE tasks ADD COLUMN review_target_kind TEXT NOT NULL DEFAULT ''"
+            )
+        if not column_exists(connection, "tasks", "review_target_value"):
+            connection.execute(
+                "ALTER TABLE tasks ADD COLUMN review_target_value TEXT NOT NULL DEFAULT ''"
+            )
+        if not column_exists(connection, "tasks", "review_target_generation"):
+            connection.execute(
+                """
+                ALTER TABLE tasks
+                  ADD COLUMN review_target_generation INTEGER NOT NULL DEFAULT 0
+                  CHECK (review_target_generation >= 0)
+                """
+            )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS review_receipts (
+              review_receipt_id TEXT PRIMARY KEY,
+              task_id TEXT NOT NULL,
+              project_id TEXT NOT NULL,
+              reviewer_key TEXT NOT NULL,
+              receipt_kind TEXT NOT NULL CHECK (receipt_kind IN (
+                'independent', 'self_review_fallback', 'not_required'
+              )),
+              verdict TEXT NOT NULL CHECK (verdict IN (
+                'pass', 'changes_requested', 'not_required'
+              )),
+              target_kind TEXT NOT NULL CHECK (target_kind IN (
+                'git_commit', 'diff_fingerprint', 'external_revision'
+              )),
+              target_value TEXT NOT NULL,
+              target_generation INTEGER NOT NULL CHECK (target_generation > 0),
+              summary TEXT NOT NULL DEFAULT '',
+              user_approved INTEGER NOT NULL DEFAULT 0 CHECK (user_approved IN (0, 1)),
+              created_at TEXT NOT NULL,
+              UNIQUE (task_id, target_generation, reviewer_key),
+              CHECK (reviewer_key != ''),
+              CHECK (target_value != ''),
+              CHECK (
+                (receipt_kind = 'independent'
+                  AND verdict IN ('pass', 'changes_requested')
+                  AND user_approved = 0) OR
+                (receipt_kind = 'self_review_fallback'
+                  AND verdict IN ('pass', 'changes_requested')) OR
+                (receipt_kind = 'not_required'
+                  AND verdict = 'not_required'
+                  AND user_approved = 0
+                  AND summary != '')
+              ),
+              FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS review_findings (
+              review_finding_id TEXT PRIMARY KEY,
+              review_receipt_id TEXT NOT NULL,
+              severity TEXT NOT NULL CHECK (severity IN ('high', 'medium', 'low')),
+              status TEXT NOT NULL CHECK (status IN ('open', 'resolved')),
+              summary TEXT NOT NULL,
+              resolution_summary TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL,
+              resolved_at TEXT,
+              FOREIGN KEY (review_receipt_id) REFERENCES review_receipts(review_receipt_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_review_receipts_task_target_verdict
+              ON review_receipts(
+                task_id, target_generation, target_kind, target_value, verdict
+              )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_review_receipts_task_reviewer_generation
+              ON review_receipts(task_id, target_generation, reviewer_key)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_review_findings_status_severity_receipt
+              ON review_findings(status, severity, review_receipt_id)
+            """
+        )
+        if fail_stage == "after_schema":
+            raise StorageError("internal_error", "injected review-evidence migration failure")
+        connection.execute(
+            "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+            (5, "structured_review_evidence", utc_now()),
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[dict[str, str]]]:
     version = current_schema_version(connection)
     if version > SCHEMA_VERSION:
@@ -698,6 +856,10 @@ def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[di
                     ),
                 }
             )
+        version = 4
+    if version < 5:
+        apply_review_evidence_migration(connection)
+        applied.append(5)
     return applied, warnings
 
 

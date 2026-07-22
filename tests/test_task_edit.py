@@ -7,6 +7,8 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
+from tests.review_test_helpers import seed_review_evidence
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -51,6 +53,8 @@ def add_task(db, repo, title, *extra):
 
 
 def edit_task(db, repo, task_id, *extra):
+    if "--status" in extra and extra[extra.index("--status") + 1] == "done":
+        seed_review_evidence(db, task_id)
     result = run_taskgov(
         "task",
         "edit",
@@ -459,7 +463,7 @@ class TaskEditTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             init_db(db, repo)
             with closing(sqlite3.connect(db)) as connection:
-                connection.execute("DELETE FROM schema_migrations WHERE version = 4")
+                connection.execute("DELETE FROM schema_migrations WHERE version = 5")
                 connection.commit()
             before = db.read_bytes()
 
@@ -484,7 +488,7 @@ class TaskEditTests(unittest.TestCase):
                 versions = [row[0] for row in connection.execute(
                     "SELECT version FROM schema_migrations ORDER BY version"
                 )]
-            self.assertEqual(versions, [1, 2, 3])
+            self.assertEqual(versions, [1, 2, 3, 4])
 
     def test_task_edit_duplicate_sequential_order_rolls_back(self):
         with tempfile.TemporaryDirectory() as tmp:

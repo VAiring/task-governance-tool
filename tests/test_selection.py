@@ -13,6 +13,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from task_governance_tool.selection import select_next_tasks  # noqa: E402
 from task_governance_tool.storage import connect, initialize_database, resolve_database_target  # noqa: E402
 from task_governance_tool.tasks import add_task, edit_task  # noqa: E402
+from tests.review_test_helpers import seed_review_evidence_connection  # noqa: E402
 
 
 SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"
@@ -36,6 +37,7 @@ def add(connection, project, title, **kwargs):
         **kwargs,
     ).task
     if initial_status == "done":
+        seed_review_evidence_connection(connection, task["task_id"])
         task = edit_task(
             connection,
             project,
@@ -205,6 +207,7 @@ class SelectionTests(unittest.TestCase):
                 before_done = select_next_tasks(connection, target.project, limit=10)
 
                 with connection:
+                    seed_review_evidence_connection(connection, first["task_id"])
                     edit_task(
                         connection,
                         target.project,

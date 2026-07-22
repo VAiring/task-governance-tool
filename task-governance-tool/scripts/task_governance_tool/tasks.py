@@ -52,6 +52,9 @@ TASK_SHOW_FIELDS = PUBLIC_TASK_FIELDS + (
     "completion_evidence_revision",
     "completion_evidence_reason",
     "external_revision_approved",
+    "review_target_kind",
+    "review_target_value",
+    "review_target_generation",
 )
 
 VIEWER_TASK_FIELDS = PUBLIC_TASK_FIELDS + (
@@ -70,6 +73,11 @@ TEXT_LIMITS = {
     "completion_revision": 500,
     "completion_evidence_reason": 1000,
     "pause_reason": 1000,
+    "review_target_value": 500,
+    "reviewer_key": 500,
+    "review_receipt_summary": 1000,
+    "review_finding_summary": 1000,
+    "review_finding_resolution": 1000,
 }
 
 UPPER_ENV_NAME_PATTERN = r"[A-Z_][A-Z0-9_]*"
@@ -104,6 +112,13 @@ PRIVACY_PATTERNS = (
     re.compile(r"\b(Basic|Bearer)\s*[:=]\s*\S+", re.IGNORECASE),
     re.compile(r"-----(BEGIN|END)\s+", re.IGNORECASE),
     re.compile(r"Traceback \(most recent call last\)"),
+    re.compile(
+        r"(?im)^\s*(?:private|system|developer)\s+prompt\s*[:=-]\s*\S+"
+    ),
+    re.compile(
+        r"(?im)^\s*(?:private\s+reasoning|chain[- ]of[- ]thought)\s*[:=-]\s*\S+"
+    ),
+    re.compile(r"(?im)^\s*(?:raw\s+)?review\s+transcript\s*[:=-]\s*\S+"),
     re.compile(
         r"(?im)^\s*stack\s+trace\s*[:=-]?\s*\n\s*(?:#\d+|at\s+|Traceback|Exception|Caused by:|panic:|goroutine|\S+\.\S+)"
     ),
@@ -170,6 +185,11 @@ STRICT_RAW_OUTPUT_FIELDS = {
     "completion_evidence_reason",
     "add_note",
     "event_summary",
+    "review_target_value",
+    "reviewer_key",
+    "review_receipt_summary",
+    "review_finding_summary",
+    "review_finding_resolution",
 }
 BENIGN_TITLE_RAW_OUTPUT_PREFIXES = (
     "add ",
@@ -228,6 +248,7 @@ class TaskShowResult:
     task: dict[str, Any]
     events: list[dict[str, Any]]
     suggested_next_action: str
+    review_evidence: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -972,10 +993,17 @@ def show_task(
         """,
         (project.project_id, normalized_task_id, event_limit),
     ).fetchall()
+    from task_governance_tool.reviews import read_review_evidence
+
     return TaskShowResult(
         task=task,
         events=[row_to_event(row) for row in event_rows],
         suggested_next_action=suggested_next_action(task),
+        review_evidence=read_review_evidence(
+            connection,
+            project.project_id,
+            normalized_task_id,
+        ),
     )
 
 
@@ -1177,6 +1205,7 @@ def update_task_row(
 
 
 def enforce_done_transition_gates(
+    connection: sqlite3.Connection,
     task: dict[str, Any],
     *,
     status_was_provided: bool,
@@ -1207,6 +1236,17 @@ def enforce_done_transition_gates(
             "task edit --status done requires explicit completion evidence",
             "completion_evidence_kind",
         )
+    from task_governance_tool.reviews import ReviewEvidenceError, enforce_review_gate
+
+    try:
+        enforce_review_gate(
+            connection,
+            project_id=str(task["project_id"]),
+            task_id=str(task["task_id"]),
+            review_tier=int(task["review_tier"]),
+        )
+    except ReviewEvidenceError as exc:
+        raise validation_error(exc.code, exc.message, exc.field) from exc
 
 
 def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id: Any, **edit_input: Any) -> EditTaskResult:
@@ -1321,13 +1361,6 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
             updated["completed_at"] = existing["completed_at"] or now
         elif existing["completed_at"] is not None:
             updated["completed_at"] = None
-    enforce_done_transition_gates(
-        updated,
-        status_was_provided=status_was_provided,
-        verification_complete=verification_complete,
-        review_complete=review_complete,
-    )
-
     comparable_fields = (
         "title",
         "description",
@@ -1391,6 +1424,13 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
                 "sequential_predecessor_incomplete",
                 "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
             )
+        enforce_done_transition_gates(
+            connection,
+            updated,
+            status_was_provided=status_was_provided,
+            verification_complete=verification_complete,
+            review_complete=review_complete,
+        )
     except sqlite3.IntegrityError as exc:
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")

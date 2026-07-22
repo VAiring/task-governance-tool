@@ -7,6 +7,8 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
+from tests.review_test_helpers import seed_review_evidence
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -39,6 +41,8 @@ def add_task(db, repo, title, *extra):
 
 
 def edit_task(db, repo, task_id, *extra):
+    if "--status" in extra and extra[extra.index("--status") + 1] == "done":
+        seed_review_evidence(db, task_id)
     result = run_taskgov(
         "task", "edit", "--repo", str(repo), "--db", str(db), task_id, *extra, "--json"
     )
@@ -276,7 +280,7 @@ class TaskCurrentTests(unittest.TestCase):
                     self.assertEqual(db.read_bytes(), before_invalid)
 
             with closing(sqlite3.connect(db)) as connection:
-                connection.execute("DELETE FROM schema_migrations WHERE version = 4")
+                connection.execute("DELETE FROM schema_migrations WHERE version = 5")
                 connection.commit()
             before_migration = db.read_bytes()
             migration = current(db, repo)

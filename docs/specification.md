@@ -462,11 +462,12 @@ unchanged.
 A review-tier downgrade is permitted only before review starts, while both the
 existing and resulting state are `ready`, `in_progress`, `paused`, or `blocked`.
 New tasks initialize a schema-neutral event latch with
-`task_added_review_unstarted`; initial or later entry into `review_pending`
-records `review_started`. Downgrade requires exactly one initialization marker,
-no `review_started` marker, and no review target ever set (empty target,
-generation `0`). Missing or duplicate initialization markers and legacy tasks
-whose event history predates the latch fail closed. The command requires the
+`task_added_review_unstarted`; initial or later entry into `review_pending`, or
+any accepted `--review-complete` confirmation, records `review_started`.
+Downgrade requires exactly one initialization marker, no `review_started`
+marker, and no review target ever set (empty target, generation `0`). Missing
+or duplicate initialization markers and legacy tasks whose event history
+predates the latch fail closed. The command requires the
 sanitized `--review-tier-change-reason` rationale and cannot combine a
 downgrade with completion evidence or verification/review completion
 confirmations. Upgrades need no downgrade rationale. Supplying a rationale

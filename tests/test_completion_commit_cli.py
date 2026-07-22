@@ -323,6 +323,7 @@ class CompletionCommitCliTests(unittest.TestCase):
             )
 
             self.assertEqual(payload["data"]["changed_fields"], [])
+            self.assertEqual(payload["data"]["event"]["event_type"], "review_started")
             self.assertEqual(
                 payload["data"]["event"]["summary"],
                 "Recorded: verification complete, review complete",
@@ -346,7 +347,7 @@ class CompletionCommitCliTests(unittest.TestCase):
             )
 
             self.assertEqual(payload["data"]["changed_fields"], [])
-            self.assertEqual(payload["data"]["event"]["event_type"], "task_updated")
+            self.assertEqual(payload["data"]["event"]["event_type"], "review_started")
             self.assertEqual(
                 payload["data"]["event"]["summary"],
                 "Note added: Checked required gates; Recorded: verification complete, review complete",

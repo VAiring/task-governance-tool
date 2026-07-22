@@ -1649,6 +1649,8 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
     else:
         event_type = "task_updated"
         summary = f"Updated fields: {', '.join(changed_fields)}"
+    if review_complete:
+        event_type = REVIEW_STARTED_EVENT
     event = create_task_event(
         connection,
         project_id=project.project_id,

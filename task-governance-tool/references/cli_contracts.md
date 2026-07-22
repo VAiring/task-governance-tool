@@ -346,10 +346,12 @@ edit. Done is terminal; create a new task for follow-up work. Lowering a tier is
 allowed only while both existing and resulting status are `ready`,
 `in_progress`, `paused`, or `blocked`. It requires exactly one
 `task_added_review_unstarted` event, no `review_started` event, an empty review
-target at generation `0`, and `--review-tier-change-reason`. Missing, duplicate,
-or legacy marker state fails closed; pause/resume or leaving review does not
-clear the latch. A downgrade cannot be combined with completion evidence or
-verification/review completion confirmations. Tier upgrades need no rationale.
+target at generation `0`, and `--review-tier-change-reason`. Entry into
+`review_pending` and every accepted `--review-complete` confirmation record the
+irreversible `review_started` marker. Missing, duplicate, or legacy marker state
+fails closed; pause/resume or leaving review does not clear the latch. A
+downgrade cannot be combined with completion evidence or verification/review
+completion confirmations. Tier upgrades need no rationale.
 
 Complete with a Git commit:
 

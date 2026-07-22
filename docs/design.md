@@ -852,8 +852,10 @@ event row.
 `task edit --review-tier-change-reason` is a transient sanitized audit input,
 not a schema column. New task registration records the machine event type
 `task_added_review_unstarted`; a task initially registered in, or later entering,
-`review_pending` records `review_started`. The latter event type wins even when
-the transition also carries a note, completion marker, or other audit marker.
+`review_pending` records `review_started`. An accepted `--review-complete`
+confirmation records the same irreversible marker because completion implies
+review has started. The latter event type wins even when the command also
+carries a note, status transition, completion marker, or other audit marker.
 A downgrade is allowed only while both existing and resulting status are
 `ready`, `in_progress`, `paused`, or `blocked`, exactly one initialization
 marker exists, no review-start marker exists, and no review target has ever

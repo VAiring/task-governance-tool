@@ -789,6 +789,32 @@ class TaskEditTests(unittest.TestCase):
                 "invalid_status_transition",
             )
 
+    def test_review_complete_latches_review_started_before_tier_downgrade(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Confirmed review", "--review-tier", "2")
+
+            confirmed = edit_task(
+                db,
+                repo,
+                task["task_id"],
+                "--review-complete",
+            )
+            self.assertEqual(confirmed["data"]["event"]["event_type"], "review_started")
+            self.assertIn("review complete", confirmed["data"]["event"]["summary"])
+
+            rejected = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                task["task_id"], "--review-tier", "1",
+                "--review-tier-change-reason", "Scope is now narrow", "--json",
+            )
+            self.assertEqual(rejected.returncode, 1, rejected.stdout)
+            self.assertEqual(
+                json.loads(rejected.stdout)["errors"][0]["code"],
+                "invalid_status_transition",
+            )
+
     def test_review_tier_downgrade_latch_survives_review_pause_and_legacy_ambiguity(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"

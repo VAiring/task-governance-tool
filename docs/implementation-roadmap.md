@@ -1362,6 +1362,8 @@ Write scope:
 Verification gate:
 
 - focused audited-defect tests and unchanged migration acceptance tests;
+- regression coverage that a prior `--review-complete` confirmation latches
+  review as started and prevents a later tier downgrade;
 - full offline unittest suite;
 - skill `quick_validate` when available, otherwise the documented fallback
   self-check;

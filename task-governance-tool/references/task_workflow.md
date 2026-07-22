@@ -218,11 +218,11 @@ record unchanged.
 If a review tier must be lowered, provide a concise sanitized rationale while
 the task is `ready`, in progress, paused, or blocked and review has never
 started. A new task has one `task_added_review_unstarted` machine event; entry
-into review-pending records `review_started`. Exactly one initialization marker,
-no start marker, and an empty target at generation `0` are required. Missing,
-duplicate, or legacy marker state fails closed, and pause/resume never clears a
-start marker. Do not combine the downgrade with completion evidence or gate
-confirmations.
+into review-pending or any accepted `--review-complete` confirmation records
+`review_started`. Exactly one initialization marker, no start marker, and an
+empty target at generation `0` are required. Missing, duplicate, or legacy
+marker state fails closed, and pause/resume never clears a start marker. Do not
+combine the downgrade with completion evidence or gate confirmations.
 
 ```powershell
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --review-tier 1 --review-tier-change-reason "Scope reclassified after governing-rule review" --json

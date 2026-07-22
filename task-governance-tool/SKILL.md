@@ -90,8 +90,9 @@ browser launch.
 - Treat `done` as terminal and immutable. All later task edits and structured
   review writes fail; register follow-up work as a new task. A tier downgrade
   also needs `--review-tier-change-reason`, an initialized review latch that
-  has never started, and no review target. Legacy or ambiguous latch state
-  fails closed.
+  has never started, and no review target. Entering review or accepting
+  `--review-complete` irreversibly starts that latch. Legacy or ambiguous latch
+  state fails closed.
 - Git resolution, evidence counting, and sequential checks are deterministic
   and do not add an LLM judgment.
 - Writing commands affect only taskgov SQLite state: skill-local by default, or

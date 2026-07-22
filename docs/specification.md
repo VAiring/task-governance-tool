@@ -1,8 +1,6 @@
 # task-governance-tool MVP Specification
 
-Status: formal MVP baseline plus approved TG-M8 governance-hardening
-requirements. TG-M8 behavior is not implemented until its roadmap units pass
-their verification and review gates.
+Status: formal implemented baseline through TG-M8 governance hardening.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -35,8 +33,13 @@ The MVP includes:
   - `taskgov task add`
   - `taskgov task list`
   - `taskgov task next`
+  - `taskgov task current`
   - `taskgov task show`
   - `taskgov task edit`
+  - `taskgov review target set`
+  - `taskgov review receipt add`
+  - `taskgov review finding add`
+  - `taskgov review finding resolve`
 - JSON output for Codex and concise text output for humans.
 - Project-scoped skill-local generated runtime state under the installed skill
   folder.
@@ -53,7 +56,7 @@ The MVP does not include:
 - Verification-run recording beyond short task fields.
 - Review request generation.
 - Creating Git commits, branches, PRs, issue comments, or other target-project
-  mutation. TG-M8 may inspect Git read-only to validate an existing commit, but
+  mutation. The tool may inspect Git read-only to validate an existing commit, but
   `taskgov` must not create or change Git state.
 - Live dashboards, services, network sync, or cloud workflows. The approved
   post-MVP static Task Viewer extension below is not a live dashboard or
@@ -113,8 +116,7 @@ exported.
 Runtime code required by `scripts/taskgov.py` must be included inside the skill
 package so the installed skill is self-contained.
 
-After the approved static Task Viewer extension is implemented, the package
-must additionally include:
+The implemented static Task Viewer package additionally includes:
 
 ```text
 task-governance-tool/
@@ -166,10 +168,9 @@ The MVP task record includes:
 - `lane_order`: integer order within a lane.
 - `priority`: `low`, `normal`, `high`, or `urgent`.
 - `status`: `ready`, `in_progress`, `paused`, `blocked`, `review_pending`,
-  `done`, or `cancelled` after TG-M8. The pre-TG-M8 schema does not contain
-  `paused`.
+  `done`, or `cancelled`.
 - `blocked_reason`: required when status is `blocked`.
-- `pause_reason`: required when status is `paused` after TG-M8.
+- `pause_reason`: required when status is `paused`.
 - `review_tier`: integer `0`, `1`, or `2`.
 - `verification`: short verification expectation or command label.
 - `tags`: comma-separated labels.
@@ -182,7 +183,7 @@ The MVP may store task notes and state changes in a concise task event history.
 This extension made task completion auditable without adding a heavy
 material-tracking schema. Its generic revision and boolean-only review details
 are historical baseline behavior and are superseded for new transitions by the
-approved TG-M8 contract below.
+implemented TG-M8 contract below.
 
 A task may be marked `done` only after all of these gates are satisfied:
 
@@ -279,7 +280,7 @@ state is missing or inconsistent. The error codes should include
 `completion_commit_conflict` unless a later approved CLI contract chooses
 narrower names.
 
-## Approved Post-MVP Extension: TG-M8 Governance Hardening
+## Implemented Post-MVP Extension: TG-M8 Governance Hardening
 
 TG-M8 supersedes the simplified completion-evidence and boolean-only review
 parts of the completion commit extension. It preserves the local-first SQLite
@@ -674,7 +675,7 @@ Task selection must support both sequence-sensitive and free-order work.
 - `optional` tasks are actionable when their status is `ready`.
 - `sequential` tasks are actionable when their status is `ready` and all earlier
   tasks in the same `lane` are `done` or `cancelled`.
-- After TG-M8, the same earlier-task predicate must guard direct transitions to
+- The same earlier-task predicate guards direct transitions to
   `in_progress`, `review_pending`, and `done`; `paused` is incomplete.
 - A blocked sequential lane must not hide ready optional tasks or ready tasks in
   other lanes.
@@ -759,7 +760,7 @@ If `task add` sets initial `--status blocked`, it must require
 `--blocked-reason`. The CLI must reject blocked task creation without a blocked
 reason before any row is stored.
 
-After TG-M8, this command must not create or migrate a database and must reject
+This command must not create or migrate a database and must reject
 initial `--status done` with `initial_done_forbidden`. Initial
 `in_progress` or `review_pending` must pass the shared sequential predecessor
 rule when the new task is sequential. Initial `paused` fails with
@@ -836,18 +837,18 @@ Editable fields:
 - `--priority`
 - `--status`
 - `--blocked-reason`
-- `--pause-reason` after TG-M8
+- `--pause-reason`
 - `--review-tier`
 - `--verification`
 - `--tags`
 - `--add-note`
 - `--completion-evidence-kind`, `--completion-revision`, and
-  `--completion-evidence-reason` after TG-M8
-- `--external-revision-approved` after TG-M8
+  `--completion-evidence-reason`
+- `--external-revision-approved`
 - existing `--completion-commit-hash` and `--commit-not-required`
 
 When setting `--status blocked`, `--blocked-reason` is required.
-After TG-M8, setting `--status paused` requires `--pause-reason`, sequential
+Setting `--status paused` requires `--pause-reason`, sequential
 start/review/completion transitions enforce the shared predecessor rule, and
 completion enforces structured review and explicit completion evidence. The
 guard evaluates the resulting kind, lane, order, and status together and checks
@@ -942,7 +943,7 @@ Task objects in JSON must use the same field names as the task model. The
 `review_tier` value must be an integer, not a string.
 
 In `db.status`, `counts.active` means tasks with status `ready`,
-`in_progress`, `paused`, `blocked`, or `review_pending` after TG-M8. It
+`in_progress`, `paused`, `blocked`, or `review_pending`. It
 excludes `done` and `cancelled`.
 
 Required error codes:

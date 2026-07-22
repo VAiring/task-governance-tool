@@ -25,6 +25,11 @@ from task_governance_tool.storage import (  # noqa: E402
     resolve_database_target,
 )
 from task_governance_tool.tasks import STATUSES, VIEWER_TASK_FIELDS, add_task  # noqa: E402
+from task_governance_tool.reviews import (  # noqa: E402
+    add_review_finding,
+    add_review_receipt,
+    set_review_target,
+)
 from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
 
 
@@ -95,10 +100,36 @@ class ViewerSnapshotTests(unittest.TestCase):
                     connection.execute(
                         """
                         UPDATE tasks
-                           SET completion_commit_hash = ?
+                           SET completion_commit_hash = ?,
+                               completion_evidence_kind = 'legacy_unverified',
+                               completion_evidence_revision = ?
                          WHERE task_id = ?
                         """,
-                        ("abc123viewer", selected["task_id"]),
+                        ("abc123viewer", "abc123viewer", selected["task_id"]),
+                    )
+                    set_review_target(
+                        connection,
+                        target.project,
+                        selected["task_id"],
+                        kind="diff_fingerprint",
+                        revision="sha256:" + ("a" * 64),
+                    )
+                    receipt = add_review_receipt(
+                        connection,
+                        target.project,
+                        selected["task_id"],
+                        reviewer="viewer-reviewer",
+                        kind="independent",
+                        verdict="pass",
+                        summary="Viewer evidence projection accepted",
+                    )
+                    add_review_finding(
+                        connection,
+                        target.project,
+                        selected["task_id"],
+                        receipt_id=receipt.receipt["review_receipt_id"],
+                        severity="low",
+                        summary="Non-blocking presentation note",
                     )
                     for index in range(12):
                         connection.execute(
@@ -130,7 +161,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 )
 
             snapshot = result.snapshot
-            self.assertEqual(snapshot["snapshot_version"], 2)
+            self.assertEqual(snapshot["snapshot_version"], 3)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {
@@ -143,9 +174,23 @@ class ViewerSnapshotTests(unittest.TestCase):
 
             self.assertEqual(result.task_count, len(STATUSES))
             ready = next(task for task in snapshot["tasks"] if task["status"] == "ready")
-            self.assertEqual(set(ready), set(VIEWER_TASK_FIELDS) | {"events"})
+            self.assertEqual(
+                set(ready),
+                set(VIEWER_TASK_FIELDS) | {"events", "review_evidence"},
+            )
             self.assertEqual(ready["completion_commit_required"], 1)
             self.assertEqual(ready["completion_commit_hash"], "abc123viewer")
+            self.assertEqual(ready["completion_evidence_kind"], "legacy_unverified")
+            self.assertEqual(ready["completion_evidence_revision"], "abc123viewer")
+            self.assertEqual(ready["review_target_kind"], "diff_fingerprint")
+            self.assertEqual(ready["review_target_generation"], 1)
+            self.assertEqual(
+                ready["review_evidence"]["gate"]["qualifying_independent_passes"],
+                1,
+            )
+            self.assertEqual(ready["review_evidence"]["counts"]["open_low"], 1)
+            self.assertLessEqual(len(ready["review_evidence"]["recent_receipts"]), 10)
+            self.assertLessEqual(len(ready["review_evidence"]["recent_findings"]), 10)
             self.assertEqual(len(ready["events"]), 10)
             self.assertEqual(
                 [event["summary"] for event in ready["events"]],

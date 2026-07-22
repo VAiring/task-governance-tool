@@ -52,13 +52,13 @@ class TemplateAuditParser(HTMLParser):
 
 def sample_snapshot(title="Safe task"):
     return {
-        "snapshot_version": 2,
+        "snapshot_version": 3,
         "generated_at": "2026-07-17T00:00:00Z",
         "project": {
             "project_id": "viewer-project-123456789abc",
             "display_name": "Viewer project",
         },
-        "source_schema_version": 3,
+        "source_schema_version": 5,
         "counts": {
             "total": 1,
             "ready": 1,
@@ -90,6 +90,58 @@ def sample_snapshot(title="Safe task"):
                 "completed_at": None,
                 "completion_commit_required": 1,
                 "completion_commit_hash": "",
+                "completion_evidence_kind": "git_commit",
+                "completion_evidence_revision": "a" * 40,
+                "completion_evidence_reason": "",
+                "external_revision_approved": 0,
+                "review_target_kind": "git_commit",
+                "review_target_value": "a" * 40,
+                "review_target_generation": 1,
+                "review_evidence": {
+                    "target": {"kind": "git_commit", "value": "a" * 40, "generation": 1},
+                    "gate": {
+                        "review_tier": 2,
+                        "required_independent_passes": 2,
+                        "qualifying_independent_passes": 1,
+                        "fallback_kind": None,
+                        "satisfied": False,
+                    },
+                    "counts": {
+                        "receipts_total": 1,
+                        "receipts_current_generation": 1,
+                        "open_high": 0,
+                        "open_medium": 0,
+                        "open_low": 1,
+                    },
+                    "blocking_findings": [{
+                        "review_finding_id": "tg_review_finding_blocking_viewer",
+                        "severity": "medium",
+                        "status": "resolved",
+                        "summary": "Fresh review is required",
+                        "reviewer_key": "reviewer-a",
+                        "target_generation": 1,
+                        "blocking_reason": "fresh_review_required",
+                        "created_at": "2026-07-17T00:00:00Z",
+                    }],
+                    "recent_receipts": [{
+                        "review_receipt_id": "tg_review_receipt_viewer",
+                        "reviewer_key": "reviewer-a",
+                        "receipt_kind": "independent",
+                        "verdict": "pass",
+                        "summary": "Review passed",
+                        "target_generation": 1,
+                        "created_at": "2026-07-17T00:00:00Z",
+                    }],
+                    "recent_findings": [{
+                        "review_finding_id": "tg_review_finding_viewer",
+                        "severity": "low",
+                        "status": "open",
+                        "summary": "Polish later",
+                        "reviewer_key": "reviewer-a",
+                        "target_generation": 1,
+                        "created_at": "2026-07-17T00:00:00Z",
+                    }],
+                },
                 "events": [
                     {
                         "task_event_id": "tg_event_viewer",
@@ -167,7 +219,7 @@ class ViewerRendererTests(unittest.TestCase):
 
     def test_render_rejects_unsupported_snapshot_version(self):
         snapshot = sample_snapshot()
-        snapshot["snapshot_version"] = 3
+        snapshot["snapshot_version"] = 2
 
         with self.assertRaises(ViewerError) as failure:
             render_viewer_html(snapshot)
@@ -235,6 +287,12 @@ class ViewerRendererTests(unittest.TestCase):
             "terminalStatuses.has(task.status)",
             "renderDetail",
             "completion_commit_hash",
+            "completion_evidence_kind",
+            "review_evidence",
+            "blocking_findings",
+            "blocking_reason",
+            "recent_receipts",
+            "recent_findings",
             'paused: "Paused"',
             'addDetailValue(values, "Pause reason", task.pause_reason)',
             "task.events.forEach",

@@ -1,9 +1,7 @@
 # task-governance-tool Initial Plan
 
-Status: MVP, completion commit extension, and static Task Viewer implemented.
-TG-M8 governance-hardening requirements, design, and execution units are
-approved for documentation/task registration; implementation awaits separate
-explicit user approval.
+Status: MVP, completion commit extension, static Task Viewer, and TG-M8
+governance hardening implemented.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -755,10 +753,9 @@ Open issues:
 
 ## Implementation Execution Status
 
-All implementation units through TG-M7 are complete. TG-M8.0 is the approved
-governing-document and task-baseline unit. TG-M8.1 through TG-M8.6 are approved
-as registered roadmap tasks but must not be consumed until the user separately
-approves implementation.
+All implementation units through TG-M8 are complete. TG-M8.0 established the
+governing-document/task baseline, and TG-M8.1 through TG-M8.6 were consumed in
+order after separate explicit user approval.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local
 SQLite database. Do not append another large per-task execution log here; use

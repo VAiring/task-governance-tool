@@ -41,7 +41,10 @@ task-governance-tool/
       cli.py
       storage.py
       tasks.py
+      ordering.py
       selection.py
+      completion.py
+      reviews.py
       viewer.py
   references/
     task_workflow.md
@@ -78,8 +81,10 @@ explicit user approval. Installing into a target project's `.agents/skills`
 directory is a target-project file mutation. If the destination already exists,
 do not overwrite it without a separate explicit update decision.
 
-Before running `db init` or any task-state write command, make sure generated
-state is kept out of commits. The target project should ignore at least:
+Project-scoped setup happens after installation, not while the artifact is
+built. Before running `db init` or any task-state write command, make sure
+generated state is kept out of commits. The target project should ignore at
+least:
 
 ```text
 .agents/skills/task-governance-tool/state/
@@ -97,6 +102,19 @@ state is kept out of commits. The target project should ignore at least:
 *.db-journal
 ```
 
+Then inspect and initialize explicitly:
+
+```powershell
+python scripts/taskgov.py db status --repo <target-project> --json
+python scripts/taskgov.py db init --repo <target-project> --json
+python scripts/taskgov.py db status --repo <target-project> --json
+```
+
+Only `db init` creates or migrates the database. The current release migrates
+supported schema-v2 databases through schema v5 while retaining historical
+task/event IDs and completion hashes; keep a normal project backup before any
+release update even though migration is transactional and repeatable.
+
 ## Viewer Runtime State
 
 After installation, an explicitly requested `web export` writes the default
@@ -107,10 +125,11 @@ viewer to:
 ```
 
 Use an explicit `--output` only after the user approves that complete path; its
-parent must already exist. The HTML is a stale offline snapshot until the user
-requests regeneration. It has no server, live database refresh, browser editing,
-or automatic browser launch. Generated viewers remain runtime state and must
-not be added to the release artifact.
+parent must already exist. Snapshot v3 includes typed completion and bounded
+structured review evidence. The HTML is stale until the user requests
+regeneration. It has no server, live database refresh, browser editing, or
+automatic browser launch. Generated viewers remain runtime state and must not
+be added to the release artifact.
 
 User-wide installation locations such as
 `%USERPROFILE%\.codex\skills\task-governance-tool`, `%CODEX_HOME%\skills`, or a
@@ -140,9 +159,10 @@ Before creating a release artifact:
 Initial publication should avoid network services and cloud dependencies. The
 skill is local-first and should remain usable offline.
 
-Versioning can start at the runtime package version in
-`task-governance-tool/scripts/task_governance_tool/__init__.py`. If a Git tag is
-created, use a clear prefix such as `v0.1.0` and include a short note that this
-release supports local task registration, task inspection, next-task selection,
-blocker handling, explicit local task-state updates, completion evidence, and
-offline static Task Viewer export through a project-scoped Codex skill install.
+Versioning follows the runtime package version in
+`task-governance-tool/scripts/task_governance_tool/__init__.py`. Release notes
+should name current/next task inspection, pause/resume, sequential transition
+guards, typed completion evidence with read-only Git validation, structured
+review gates, schema-v5 migration, and snapshot-v3 offline Viewer export.
+The TG-M8 release candidate is version `0.2.0` because it adds new commands,
+schema migrations, and completion-gate behavior beyond the `0.1.0` trial.

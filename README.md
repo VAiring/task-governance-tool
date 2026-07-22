@@ -8,9 +8,10 @@ LLM quick read:
 - Install it per governed project under `.agents/skills/task-governance-tool`;
   user-wide installs are not recommended for normal use.
 - Use it to replace large `TASK_STATUS.md` files with local SQLite task state.
-- It supports explicit task registration, task inspection, next-work selection,
-  blocker handling, local task status updates, completion commit evidence, and
-  an explicitly requested offline static Task Viewer.
+- It supports explicit task registration, current/next task inspection,
+  pause/resume and blocker handling, sequential guards, typed completion
+  evidence, structured review receipts/findings, and an explicitly requested
+  offline static Task Viewer.
 - It does not import planning files, manage dependency graphs, write Git state,
   create PRs/issues, run a service, provide live browser editing, or store raw
   logs/secrets.
@@ -33,6 +34,10 @@ the source package. Do not install the MVP into a user-wide skill directory such
 as `%USERPROFILE%\.codex\skills` for normal governed-project use; that makes one
 copy responsible for unrelated project task state.
 
+Prefer the release artifact. If copying from a development working tree,
+exclude `state/`, caches, generated viewers, and SQLite files instead of making
+an unfiltered recursive copy.
+
 Before running write commands in the target project, ensure generated state is
 ignored there:
 
@@ -52,8 +57,10 @@ ignored there:
 *.db-journal
 ```
 
-After project-scoped installation, restart Codex or start a new session from
-inside that project so the skill metadata can be discovered.
+After project-scoped installation, verify the ignore rules, run `db status`,
+and—with explicit intent to start local tracking—run `db init`. Skill package
+creation itself must not initialize a target database. Restart Codex or start a
+new session from inside that project so the skill metadata can be discovered.
 
 ## Minimal Workflow
 
@@ -63,8 +70,11 @@ Run commands from the project-scoped installed skill folder:
 python scripts/taskgov.py db status --repo <target-project> --json
 python scripts/taskgov.py db init --repo <target-project> --json
 python scripts/taskgov.py task add --repo <target-project> --title "Example task" --json
+python scripts/taskgov.py task current --repo <target-project> --json
 python scripts/taskgov.py task next --repo <target-project> --json
 python scripts/taskgov.py task show --repo <target-project> <task-id> --json
+python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_commit --revision <hash> --json
+python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
 ```
 
@@ -72,9 +82,15 @@ Start with `db status`. It inspects without creating files. Use `db init` only
 when local task tracking should be created or migrated for that target project.
 Register only explicit user-approved tasks.
 
-When no managed materials changed, complete with `--commit-not-required`
-instead of `--completion-commit-hash <hash>`. `taskgov` records commit state but
-does not create commits, branches, PRs, or issue comments.
+Tier 1 normally needs one independent PASS; a documented self-review fallback
+is allowed when independent tooling is unavailable. Tier 2 normally needs two
+distinct reviewers for the same target generation; its self-review fallback
+also requires explicit user approval. A meaningful fix advances the target and
+needs fresh review. These are the LLM review decisions; Git/ordering/evidence
+checks are deterministic and add no LLM judgment. When no managed materials
+changed, complete with `--commit-not-required`; approved external durable
+revisions use the explicit `external_revision` options. `taskgov` validates
+evidence but does not create commits, branches, PRs, or issue comments.
 
 By default, runtime state is stored under the project-scoped installed skill
 folder:
@@ -109,7 +125,8 @@ The default output is:
 
 Use `--output <html-path>` only after the user approves that complete
 destination; its parent must already exist. The HTML is self-contained and
-opens through `file://` without a server or network. It is a timestamped
+opens through `file://` without a server or network. Snapshot v3 includes typed
+completion and bounded structured review evidence. It is a timestamped
 snapshot, not a live view: task changes appear only after an explicitly
 requested regeneration. The page cannot edit tasks, and `taskgov` does not open
 a browser automatically.
@@ -121,8 +138,13 @@ a browser automatically.
 - `taskgov task add`
 - `taskgov task list`
 - `taskgov task next`
+- `taskgov task current`
 - `taskgov task show`
 - `taskgov task edit`
+- `taskgov review target set`
+- `taskgov review receipt add`
+- `taskgov review finding add`
+- `taskgov review finding resolve`
 - `taskgov web export`
 
 Inspection commands are read-only by default. Write commands record only to the
@@ -135,8 +157,10 @@ The current release intentionally does not include:
 
 - Markdown task import.
 - `task approve`, `task depend`, or persistent project profiles.
-- Verification-run recording beyond short task fields.
-- Review request generation.
+- Verification receipts beyond short task fields.
+- Stale-work warnings, persistent checkpoints, history pagination, and
+  parent/child or acceptance-checklist structures.
+- Review request generation or raw review transcript retention.
 - Git commits, branches, PRs, issue comments, or target-project mutation.
 - Network services, live dashboards, browser editing, sync, or cloud workflows.
 - Raw command-output, stack-trace, prompt, diff, log, or secret retention.

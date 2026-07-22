@@ -50,6 +50,36 @@ def git_is_ignored(path: str) -> bool:
 
 
 class SkillSelfContainmentTests(unittest.TestCase):
+    def test_tg_m8_guidance_and_metadata_are_synchronized(self):
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
+            encoding="utf-8"
+        )
+        contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
+            encoding="utf-8"
+        )
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        release_note = (ROOT / "docs" / "release-install.md").read_text(
+            encoding="utf-8"
+        )
+        openai_yaml = (SKILL_ROOT / "agents" / "openai.yaml").read_text(
+            encoding="utf-8"
+        )
+
+        for text in (skill_md, workflow, contracts, readme):
+            self.assertIn("task current", text)
+            self.assertIn("Tier 2", text)
+        for text in (workflow, contracts, readme):
+            self.assertIn("review target set", text)
+            self.assertIn("review receipt add", text)
+        self.assertIn("review target", skill_md)
+        self.assertIn("task add --status done", skill_md)
+        self.assertIn("Only `db init`", skill_md)
+        self.assertIn("snapshot_version\": 3", contracts)
+        self.assertIn("schema v5", release_note)
+        self.assertIn("verification receipts", skill_md.lower())
+        self.assertIn("current work", openai_yaml.lower())
+
     def test_skill_guidance_mentions_completion_commit_gate(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(encoding="utf-8")
@@ -59,13 +89,15 @@ class SkillSelfContainmentTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("completing tasks with verification, review, and completion commit evidence", skill_md)
+        self.assertIn("completing tasks with structured review and completion evidence", skill_md)
+        self.assertIn("task current", skill_md)
+        self.assertIn("two distinct", skill_md)
         for text in (workflow, contracts, readme):
             self.assertIn("--verification-complete", text)
             self.assertIn("--review-complete", text)
             self.assertIn("--completion-commit-hash", text)
             self.assertIn("--commit-not-required", text)
-            self.assertIn("does not create commits", text)
+            self.assertIn("does not create commits", " ".join(text.split()))
         self.assertIn("first create the project commit through the", workflow)
         self.assertIn("--completion-evidence-kind external_revision", workflow)
         self.assertIn("--external-revision-approved", workflow)
@@ -90,7 +122,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
         self.assertIn("creating or regenerating a user-requested offline static Task Viewer", skill_md)
         self.assertIn("python scripts/taskgov.py web export --repo <target-project>", skill_md)
-        self.assertIn("no\n`viewer` command group, `--project-root` option", skill_md)
+        self.assertIn("no `viewer` command group", skill_md)
+        self.assertIn("`--project-root` option", skill_md)
         for text in (skill_md, workflow, contracts, readme):
             self.assertIn("web export", text)
             self.assertIn("--read-only", text)
@@ -108,9 +141,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
         self.assertIn("task-viewer.template.html", release_note)
         self.assertIn("generated `task-viewer.html`", release_note)
-        self.assertIn("stale offline snapshot", release_note)
+        self.assertIn("Snapshot v3", release_note)
         self.assertIn("explicit `--output`", release_note)
-        self.assertIn("offline viewer", openai_yaml.lower())
+        self.assertIn("offline task viewer", openai_yaml.lower())
         self.assertIn("## Final Result\n\nPASS", forward_note)
         self.assertIn("python scripts/taskgov.py web export --repo", forward_note)
         self.assertIn("created no artifacts", forward_note)

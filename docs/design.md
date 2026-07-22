@@ -1,7 +1,6 @@
 # task-governance-tool MVP Design
 
-Status: formal MVP design baseline plus approved TG-M8 governance-hardening
-design. TG-M8 remains unimplemented until its roadmap units complete.
+Status: formal implemented design baseline through TG-M8 governance hardening.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -54,6 +53,7 @@ task-governance-tool/
 tests/
 fixtures/
   task-status-mvp/
+  task-status-migration-v2/
 ```
 
 Generated local runtime state is created under the installed skill folder and is
@@ -332,7 +332,7 @@ Write commands must clearly say what they recorded in text mode and in JSON
 payloads.
 
 Inspection commands are `db status`, `task list`, `task next`, `task current`,
-and `task show` after TG-M8. They must not create, migrate, or write to the
+and `task show`. They must not create, migrate, or write to the
 database by default. A missing database should produce `db_not_initialized`; a
 database requiring migration should produce `migration_required`; `db status`
 should report those states without changing the database.
@@ -457,7 +457,7 @@ Implementation rules:
 - Required verification and review gates still apply through the execution
   workflow and skill guidance; this simplified design does not add structured review or verification tables.
 
-## TG-M8 Governance Hardening Design
+## Implemented TG-M8 Governance Hardening Design
 
 This section supersedes the initialization, completion-evidence, and
 boolean-only review details above for new behavior. Migrations preserve the
@@ -837,9 +837,9 @@ It does not expose raw reviews, reasoning, or an unbounded ledger.
 
 The compact envelope retains its existing top-level keys. Existing commands
 retain their command names. Minimal all-status static-viewer and snapshot
-support for `paused` ships with schema version 3 so the implemented viewer does
-not regress. New completion/review evidence presentation may wait for the final
-TG-M8 integration unit after those contracts are stable.
+support for `paused` shipped with schema version 3 so the viewer did not
+regress. The final integration unit added completion/review evidence after
+those contracts stabilized.
 
 ## Static Task Viewer Design
 

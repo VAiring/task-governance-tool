@@ -57,10 +57,7 @@ TASK_SHOW_FIELDS = PUBLIC_TASK_FIELDS + (
     "review_target_generation",
 )
 
-VIEWER_TASK_FIELDS = PUBLIC_TASK_FIELDS + (
-    "completion_commit_required",
-    "completion_commit_hash",
-)
+VIEWER_TASK_FIELDS = TASK_SHOW_FIELDS
 
 TEXT_LIMITS = {
     "title": 200,
@@ -1041,6 +1038,8 @@ def list_tasks_for_viewer(
         (project.project_id,),
     ).fetchall()
 
+    from task_governance_tool.reviews import read_review_evidence
+
     tasks: list[dict[str, Any]] = []
     event_count = 0
     for task_row in task_rows:
@@ -1058,6 +1057,11 @@ def list_tasks_for_viewer(
         ).fetchall()
         events = [row_to_event(row) for row in event_rows]
         task["events"] = events
+        task["review_evidence"] = read_review_evidence(
+            connection,
+            project.project_id,
+            str(task["task_id"]),
+        )
         tasks.append(task)
         event_count += len(events)
 

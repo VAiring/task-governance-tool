@@ -938,7 +938,9 @@
           task.description,
           task.lane,
           task.tags,
-          task.completion_commit_hash
+          task.completion_commit_hash,
+          task.completion_evidence_revision,
+          task.review_target_value
         ].some((value) => asText(value).toLocaleLowerCase().includes(query));
       };
 
@@ -999,14 +1001,120 @@
         );
       };
 
-      const completionText = (task) => {
-        if (!task.completion_commit_required) {
-          return "Not required";
+      const completionEvidenceText = (task) => {
+        const kind = asText(task.completion_evidence_kind, "none");
+        const revision = asText(task.completion_evidence_revision);
+        if (kind === "git_commit") {
+          return `Git commit - ${revision || "revision not recorded"}`;
         }
-        if (task.completion_commit_hash) {
-          return `Required - ${task.completion_commit_hash}`;
+        if (kind === "external_revision") {
+          const approval = task.external_revision_approved ? "approved" : "not approved";
+          const reason = asText(task.completion_evidence_reason, "reason not recorded");
+          return `External revision - ${revision || "revision not recorded"} - ${approval} - ${reason}`;
         }
-        return "Required - hash not recorded";
+        if (kind === "commit_not_required") {
+          return "Commit not required";
+        }
+        if (kind === "legacy_unverified") {
+          return `Legacy unverified revision - ${revision || asText(task.completion_commit_hash, "not recorded")}`;
+        }
+        return "Not recorded";
+      };
+
+      const reviewTargetText = (evidence) => {
+        const target = evidence && evidence.target ? evidence.target : {};
+        if (!target.kind || !target.generation) {
+          return "Not recorded";
+        }
+        return `${target.kind} - ${asText(target.value, "value not recorded")} - generation ${target.generation}`;
+      };
+
+      const reviewGateText = (evidence) => {
+        const gate = evidence && evidence.gate ? evidence.gate : {};
+        const result = gate.satisfied ? "Satisfied" : "Not satisfied";
+        const passes = `${asText(gate.qualifying_independent_passes, 0)}/${asText(gate.required_independent_passes, 0)} independent PASS`;
+        const fallback = gate.fallback_kind ? `; fallback ${gate.fallback_kind}` : "";
+        return `${result} - ${passes}${fallback}`;
+      };
+
+      const reviewFindingCountsText = (evidence) => {
+        const counts = evidence && evidence.counts ? evidence.counts : {};
+        return `High ${asText(counts.open_high, 0)}; Medium ${asText(counts.open_medium, 0)}; Low ${asText(counts.open_low, 0)}`;
+      };
+
+      const renderReviewReceipts = (evidence) => {
+        elements.detail.append(makeElement("h3", "events-heading", "Recent review receipts"));
+        const recent_receipts = evidence && Array.isArray(evidence.recent_receipts)
+          ? evidence.recent_receipts
+          : [];
+        const list = makeElement("ol", "event-list");
+        if (!recent_receipts.length) {
+          list.append(makeElement("li", "event-item", "No review receipts recorded."));
+        } else {
+          recent_receipts.forEach((receipt) => {
+            const item = makeElement("li", "event-item");
+            const meta = makeElement("div", "event-meta");
+            meta.append(
+              makeElement("span", "", receipt.created_at),
+              makeElement("span", "", receipt.reviewer_key),
+              makeElement("span", "", `${asText(receipt.receipt_kind)} / ${asText(receipt.verdict)}`),
+              makeElement("span", "", `generation ${asText(receipt.target_generation)}`)
+            );
+            item.append(meta, makeElement("p", "event-summary", asText(receipt.summary, "No summary.")));
+            list.append(item);
+          });
+        }
+        elements.detail.append(list);
+      };
+
+      const renderReviewFindings = (evidence) => {
+        elements.detail.append(makeElement("h3", "events-heading", "Recent review findings"));
+        const recent_findings = evidence && Array.isArray(evidence.recent_findings)
+          ? evidence.recent_findings
+          : [];
+        const list = makeElement("ol", "event-list");
+        if (!recent_findings.length) {
+          list.append(makeElement("li", "event-item", "No review findings recorded."));
+        } else {
+          recent_findings.forEach((finding) => {
+            const item = makeElement("li", "event-item");
+            const meta = makeElement("div", "event-meta");
+            meta.append(
+              makeElement("span", "", finding.created_at),
+              makeElement("span", "", finding.reviewer_key),
+              makeElement("span", "", `${asText(finding.severity)} / ${asText(finding.status)}`),
+              makeElement("span", "", `generation ${asText(finding.target_generation)}`)
+            );
+            item.append(meta, makeElement("p", "event-summary", finding.summary));
+            list.append(item);
+          });
+        }
+        elements.detail.append(list);
+      };
+
+      const renderBlockingReviewFindings = (evidence) => {
+        elements.detail.append(makeElement("h3", "events-heading", "Blocking review findings"));
+        const blocking_findings = evidence && Array.isArray(evidence.blocking_findings)
+          ? evidence.blocking_findings
+          : [];
+        const list = makeElement("ol", "event-list");
+        if (!blocking_findings.length) {
+          list.append(makeElement("li", "event-item", "No blocking review findings."));
+        } else {
+          blocking_findings.forEach((finding) => {
+            const item = makeElement("li", "event-item");
+            const meta = makeElement("div", "event-meta");
+            meta.append(
+              makeElement("span", "", finding.created_at),
+              makeElement("span", "", finding.reviewer_key),
+              makeElement("span", "", `${asText(finding.severity)} / ${asText(finding.status)}`),
+              makeElement("span", "", asText(finding.blocking_reason, "blocking"))
+            );
+            item.append(meta, makeElement("p", "event-summary", finding.summary));
+            list.append(item);
+          });
+        }
+        elements.detail.append(list);
       };
 
       const renderDetail = (task) => {
@@ -1037,12 +1145,23 @@
         addDetailValue(values, "Blocked reason", task.blocked_reason);
         addDetailValue(values, "Pause reason", task.pause_reason);
         addDetailValue(values, "Verification", task.verification);
-        addDetailValue(values, "Completion commit", completionText(task));
+        addDetailValue(values, "Completion evidence", completionEvidenceText(task));
+        addDetailValue(values, "Review target", reviewTargetText(task.review_evidence));
+        addDetailValue(values, "Review gate", reviewGateText(task.review_evidence));
+        addDetailValue(
+          values,
+          "Open review findings",
+          reviewFindingCountsText(task.review_evidence)
+        );
         addDetailValue(values, "Created", task.created_at);
         addDetailValue(values, "Updated", task.updated_at);
         addDetailValue(values, "Completed", task.completed_at);
         addDetailValue(values, "Tags", task.tags);
         elements.detail.append(values);
+
+        renderBlockingReviewFindings(task.review_evidence);
+        renderReviewReceipts(task.review_evidence);
+        renderReviewFindings(task.review_evidence);
 
         elements.detail.append(makeElement("h3", "events-heading", "Recent events"));
         const events = makeElement("ol", "event-list");

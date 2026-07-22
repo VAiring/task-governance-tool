@@ -1,4 +1,4 @@
 interface:
   display_name: "Task Governance Tool"
-  short_description: "Track project tasks and export an offline viewer"
-  default_prompt: "Use $task-governance-tool to inspect or update project-scoped task state, choose ready work, and create an offline Task Viewer when requested."
+  short_description: "Resume and govern project-scoped task work"
+  default_prompt: "Use $task-governance-tool to rediscover current work, choose ready tasks, enforce review and completion evidence, and export an offline Task Viewer only when requested."

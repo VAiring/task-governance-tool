@@ -1,57 +1,53 @@
 ---
 name: task-governance-tool
-description: Project-scoped local-first task tracking for Codex using the bundled taskgov CLI and skill-local SQLite state. Use when planning or registering explicit tasks, initializing or inspecting task state, selecting next actionable work, handling blockers, updating or completing tasks with verification, review, and completion commit evidence, or creating or regenerating a user-requested offline static Task Viewer.
+description: Project-scoped local-first task tracking for Codex using the bundled taskgov CLI and skill-local SQLite state. Use when planning or registering explicit tasks, initializing or inspecting task state, rediscovering current work, selecting next actionable work, pausing or handling blockers, updating or completing tasks with structured review and completion evidence, or creating or regenerating a user-requested offline static Task Viewer.
 ---
 
 # Task Governance Tool
 
 Use this skill to work from compact local task state instead of loading large
 task-status documents. Treat the target project's `AGENTS.md`, specs, design
-docs, tests, and user decisions as the source of truth; the SQLite database is
-only a local task-state helper.
+docs, tests, and user decisions as the source of truth; SQLite is only a local
+task-state helper.
 
-This skill is intended to be installed per governed project, normally under the
-target project's `.agents/skills/task-governance-tool` directory. Do not use a
-user-wide install as the normal task manager for multiple projects.
+Install a separate copy per governed project, normally at
+`.agents/skills/task-governance-tool`. Do not use a user-wide copy as the normal
+task manager for unrelated projects.
 
 ## Quick Start
 
-Run the bundled CLI from the project-scoped installed skill folder:
+Run the bundled CLI from the installed skill folder:
 
 ```powershell
 python scripts/taskgov.py db status --repo <target-project> --json
+python scripts/taskgov.py task current --repo <target-project> --json
 python scripts/taskgov.py task next --repo <target-project> --json
 python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 ```
 
 First-use flow:
 
-1. Run `db status` to inspect without creating files.
-2. If the database is missing and the user intends to use local task tracking,
-   run `db init`.
-3. If there are no tasks yet, register explicit user-approved tasks with
-   `task add`; do not import large task files or invent dependency graphs.
-4. Use `task next` and `task show` to choose and inspect work before acting.
+1. Run `db status` without creating files.
+2. After project-scoped installation, verify that generated `state/` is ignored.
+   If the user intends to use local tracking, run `db init`. Package creation
+   itself never initializes a target database.
+3. Register only explicit user-approved tasks with `task add`; do not import
+   large task files or invent dependency graphs.
+4. Use `task current` to rediscover started, paused, blocked, or review-pending
+   work. Use `task next` only for new ready work, then inspect with `task show`.
 
-Use `--db <path>` only when the user or project explicitly needs a database
-outside the skill-local default. The default database lives under this installed
-skill folder at `state/projects/<project-id>/taskgov.sqlite`.
-If this skill was discovered from a user-wide or global install, do not
-initialize task state until the user confirms that they want that non-standard
-setup or installs a project-scoped copy.
+Use `--db <path>` only when explicitly required. The default is
+`state/projects/<project-id>/taskgov.sqlite` under this installed skill. If the
+skill came from a global install, do not initialize state until the user
+confirms that non-standard setup or installs a project-scoped copy.
 
 ## Static Task Viewer
 
 Create or regenerate the offline viewer only when the current user explicitly
-asks for that HTML artifact. A request only to inspect or summarize task state
-authorizes `task list`, `task next`, or `task show`, not an HTML write.
+asks for that HTML artifact. Inspection alone authorizes CLI reads, not an HTML
+write.
 
-Use the bundled entry point and command names exactly:
-`python scripts/taskgov.py web export --repo <target-project>`. There is no
-`viewer` command group, `--project-root` option, or guaranteed global `taskgov`
-executable; do not invent aliases.
-
-Preview the resolved path and counts without writing:
+Preview without writing:
 
 ```powershell
 python scripts/taskgov.py web export --repo <target-project> --read-only --json
@@ -63,44 +59,50 @@ After explicit user intent, generate the default snapshot:
 python scripts/taskgov.py web export --repo <target-project> --json
 ```
 
+Use this exact command surface. There is no `viewer` command group,
+`--project-root` option, or guaranteed global `taskgov` executable.
+
 The default file is
-`state/projects/<project-id>/viewer/task-viewer.html` under this installed
-skill. Use `--output <html-path>` only when the user approves that complete
-destination; its parent must already exist. The generated page is a stale
-snapshot until the command is explicitly run again. It has no server, live
-refresh, browser-side SQLite access, or task-edit controls, and the CLI does not
-open a browser automatically.
+`state/projects/<project-id>/viewer/task-viewer.html`. Use `--output` only for a
+fully approved destination. Snapshot v3 shows typed completion evidence and
+bounded structured review evidence. It remains stale until regenerated and has
+no server, live refresh, browser-side SQLite, edit controls, or automatic
+browser launch.
 
 ## Operating Rules
 
-- Inspect before writing: `db status`, `task list`, `task next`, and `task show`
-  must not create or migrate databases.
-- Use `db init` only when the user intends to initialize or migrate the local
-  task database.
-- Use `task add` and `task edit` only for explicit task-state registration or
-  updates; they write only to the task-governance-tool database.
-- Use writing `web export` mode only for an explicit create/regenerate request;
-  it writes one generated HTML snapshot and never writes SQLite.
-- Complete tasks only after required verification and review are done, then
-  record either a completion commit hash or an explicit no-managed-materials
-  decision with `task edit --status done`.
-- Do not modify target-project files, Git state, issues, PRs, or external
-  services merely because this skill inspected task state.
-- Do not store secrets, raw logs, stack traces, environment dumps, large raw
-  diffs, full private prompts, or full chat logs in task fields.
+- `db status`, `task list`, `task next`, `task current`, and `task show` must
+  not create or migrate databases. Only `db init` creates or migrates one.
+- `task add --status done` is prohibited. Initial `paused` is also prohibited.
+- Pause only `in_progress` or `review_pending` work with a concise reason;
+  resume explicitly to `in_progress`.
+- Direct sequential transitions use the same predecessor rule as `task next`.
+- Before completion, set the current review target and record the tier-required
+  sanitized receipts/findings. Tier 2 normally requires two distinct
+  independent PASS receipts for one target generation; a changed target needs
+  fresh receipts.
+- Complete only after verification, review, and explicit `git_commit`,
+  `external_revision`, or `commit_not_required` evidence pass. Unresolved high
+  or medium findings block completion.
+- Git resolution, evidence counting, and sequential checks are deterministic
+  and do not add an LLM judgment.
+- Writing commands affect only taskgov SQLite state: skill-local by default, or
+  the explicitly selected `--db` path. `web export` writes one HTML snapshot
+  only after explicit user intent.
+- Do not modify target source, Git state, issues, PRs, or external services
+  merely because this skill inspected task state.
+- Reject secrets, raw logs, stack traces, environment dumps, large raw diffs,
+  private prompts/reasoning, review transcripts, and full chat logs.
 
 ## Workflow References
 
-Read [references/task_workflow.md](references/task_workflow.md) when choosing
-work, starting an execution unit, updating blockers, or deciding when a task is
-complete.
+Read [references/task_workflow.md](references/task_workflow.md) when choosing,
+pausing, resuming, reviewing, or completing work.
 
-Read [references/cli_contracts.md](references/cli_contracts.md) when you need
-command arguments, JSON payload shapes, error behavior, or examples.
+Read [references/cli_contracts.md](references/cli_contracts.md) for exact
+arguments, JSON shapes, errors, and examples.
 
-This version supports task registration, inspection, next-work selection,
-blocker updates, completion commit evidence recorded on task rows, and an
-explicitly requested offline static viewer. It does not create commits,
-branches, PRs, issue comments, review requests, persistent project profiles,
-dependency graphs, network services, live dashboards, browser edit controls,
-or unapproved target-project mutation.
+This version does not record verification receipts, detect stale work, persist
+handoff checkpoints, page event history, create child/checklist tasks, or create
+commits, branches, PRs, issue comments, network services, browser edit controls,
+or unapproved target-project mutations.

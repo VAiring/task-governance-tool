@@ -15,6 +15,7 @@ matter.
 - [`task current`](#task-current)
 - [`task show`](#task-show)
 - [`task edit`](#task-edit)
+- [Review evidence commands](#review-evidence-commands)
 - [`web export`](#web-export)
 - [Error Codes](#error-codes)
 
@@ -57,13 +58,13 @@ All JSON output uses this envelope:
 Inspection commands are read-only by default: `db status`, `task list`,
 `task next`, `task current`, and `task show`.
 
-Database write commands are `db init`, `task add`, and `task edit`. Only
-`db init` may create or migrate a database. Other write commands require an
-already initialized database at the current schema version; they return
-`db_not_initialized` or `migration_required` without creating or migrating
-files otherwise. `web export` never writes SQLite, but its normal mode writes
-one generated HTML file after explicit user intent. Use `web export --read-only`
-for a no-file-write preview.
+Database write commands are `db init`, `task add`, `task edit`, and the four
+`review` evidence commands. Only `db init` may create or migrate a database.
+Other write commands require an already initialized database at the current
+schema version; they return `db_not_initialized` or `migration_required`
+without creating or migrating files otherwise. `web export` never writes
+SQLite, but its normal mode writes one generated HTML file after explicit user
+intent. Use `web export --read-only` for a no-file-write preview.
 
 ## Commands
 
@@ -80,8 +81,8 @@ python scripts/taskgov.py db init --repo <target-project> --json
 ```json
 {
   "created": true,
-  "migrations_applied": [1, 2, 3, 4],
-  "schema_version": 4
+  "migrations_applied": [1, 2, 3, 4, 5],
+  "schema_version": 5
 }
 ```
 
@@ -100,7 +101,7 @@ python scripts/taskgov.py db status --repo <target-project> --json
   "exists": true,
   "needs_init": false,
   "needs_migration": false,
-  "schema_version": 4,
+  "schema_version": 5,
   "counts": {
     "active": 3,
     "blocked": 1,
@@ -240,7 +241,7 @@ Show one task plus recent event history and suggested next action.
 python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 ```
 
-`data`: `task`, `events`, `suggested_next_action`.
+`data`: `task`, `events`, `suggested_next_action`, `review_evidence`.
 
 `task` includes typed completion evidence and the legacy commit projection:
 
@@ -250,6 +251,11 @@ python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 - `completion_evidence_revision`
 - `completion_evidence_reason`
 - `external_revision_approved`
+
+`review_evidence` is a bounded structured projection containing the current
+target and generation, tier gate/pass/fallback state, receipt and open-finding
+counts, blocking findings, and at most ten recent receipts and findings. It
+never contains raw review transcripts or private reasoning.
 
 ### `task edit`
 
@@ -346,6 +352,48 @@ stored hash:
 git show --name-only <completion_commit_hash>
 ```
 
+### Review evidence commands
+
+Set or replace the current review target:
+
+```powershell
+python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_commit --revision <revision> --json
+```
+
+Allowed target kinds are `git_commit`, `diff_fingerprint`, and
+`external_revision`. Git targets are verified read-only and stored canonically.
+A diff fingerprint must be `sha256:` followed by 64 lowercase hexadecimal
+characters. Every set advances the monotonic target generation, including
+A-to-B-to-A changes.
+
+Add a sanitized receipt for the current target generation:
+
+```powershell
+python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <stable-reviewer-key> --kind independent --verdict pass --summary "No blocking findings" --json
+```
+
+Receipt kinds are `independent`, `self_review_fallback`, and `not_required`;
+verdicts are `pass`, `changes_requested`, and `not_required`. One reviewer key
+may record only one receipt per target generation. Tier 1 requires one distinct
+independent PASS, or a documented self-review PASS when independent tooling is
+unavailable. Tier 2 requires two independent PASS receipts, unless a Tier 2
+self-review PASS is explicitly user-approved because independent tooling is
+unavailable. Tier 0 uses a `not_required` receipt with a rationale. The normal
+Tier 2 path therefore uses two LLM review judgments; each meaningful fix/new
+target requires two fresh judgments. Deterministic gate checks add none.
+
+Record and resolve findings:
+
+```powershell
+python scripts/taskgov.py review finding add --repo <target-project> <task-id> --receipt-id <receipt-id> --severity high --summary "Concise finding" --json
+python scripts/taskgov.py review finding resolve --repo <target-project> <finding-id> --resolution "Concise resolution" --json
+```
+
+Severity is `high`, `medium`, or `low`. Open high/medium findings block `done`.
+After resolving a high/medium finding, completion still requires a newer target
+generation and fresh qualifying receipts. Review write commands require an
+initialized current-schema database and reject `--read-only` before writing.
+
 ### `web export`
 
 Render one self-contained, offline Task Viewer snapshot from the initialized
@@ -378,11 +426,13 @@ generated `state/` directory.
   "task_count": 3,
   "event_count": 7,
   "generated_at": "2026-07-17T00:00:00Z",
-  "snapshot_version": 2
+  "snapshot_version": 3
 }
 ```
 
-The generated file is stale until `web export` is explicitly run again. The
+Snapshot version 3 includes the task-show typed completion fields and the same
+bounded structured review-evidence projection. The generated file is stale
+until `web export` is explicitly run again. The
 command does not start a server, open a browser, edit tasks, or write database
 events. Databases using WAL mode are rejected before the snapshot connection so
 even a preview does not create SQLite sidecar files.
@@ -399,7 +449,7 @@ failed:
   "task_count": 0,
   "event_count": 0,
   "generated_at": null,
-  "snapshot_version": 2
+  "snapshot_version": 3
 }
 ```
 
@@ -425,6 +475,12 @@ Known error codes include:
 - `completion_evidence_conflict`
 - `git_commit_not_found_or_ambiguous`
 - `external_revision_approval_required`
+- `review_target_required`
+- `review_receipts_insufficient`
+- `review_finding_unresolved`
+- `review_receipt_mismatch`
+- `review_receipt_already_recorded`
+- `invalid_review_evidence`
 - `initial_done_forbidden`
 - `initial_paused_forbidden`
 - `invalid_status_transition`

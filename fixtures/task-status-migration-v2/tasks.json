@@ -1,0 +1,24 @@
+{
+  "fixture": "task-status-migration-v2",
+  "description": "Synthetic sanitized schema-v2 state matching the observed 12-task and 191-event migration shape.",
+  "schema_version": 2,
+  "tasks": [
+    {"task_id": "tg_task_migration_01", "title": "Completed slice 01", "status": "done", "lane_order": 10, "event_count": 16, "completion_commit_hash": "1111111111111111111111111111111111111111"},
+    {"task_id": "tg_task_migration_02", "title": "Completed slice 02", "status": "done", "lane_order": 20, "event_count": 16, "completion_commit_hash": "2222222222222222222222222222222222222222"},
+    {"task_id": "tg_task_migration_03", "title": "Completed slice 03", "status": "done", "lane_order": 30, "event_count": 16, "completion_commit_hash": "3333333333333333333333333333333333333333"},
+    {"task_id": "tg_task_migration_04", "title": "Completed slice 04", "status": "done", "lane_order": 40, "event_count": 16, "completion_commit_hash": "4444444444444444444444444444444444444444"},
+    {"task_id": "tg_task_migration_05", "title": "Completed slice 05", "status": "done", "lane_order": 50, "event_count": 16, "completion_commit_hash": "5555555555555555555555555555555555555555"},
+    {"task_id": "tg_task_migration_06", "title": "Completed slice 06", "status": "done", "lane_order": 60, "event_count": 16, "completion_commit_hash": "6666666666666666666666666666666666666666"},
+    {"task_id": "tg_task_migration_07", "title": "Completed slice 07", "status": "done", "lane_order": 70, "event_count": 16, "completion_commit_hash": "7777777777777777777777777777777777777777"},
+    {"task_id": "tg_task_migration_08", "title": "Completed slice 08", "status": "done", "lane_order": 80, "event_count": 16, "completion_commit_hash": "8888888888888888888888888888888888888888"},
+    {"task_id": "tg_task_migration_09", "title": "Completed slice 09", "status": "done", "lane_order": 90, "event_count": 16, "completion_commit_hash": "9999999999999999999999999999999999999999"},
+    {"task_id": "tg_task_migration_10", "title": "Active implementation", "status": "in_progress", "lane_order": 100, "event_count": 16, "completion_commit_hash": ""},
+    {"task_id": "tg_task_migration_11", "title": "Ready follow-up 01", "status": "ready", "lane_order": 110, "event_count": 16, "completion_commit_hash": ""},
+    {"task_id": "tg_task_migration_12", "title": "Ready follow-up 02", "status": "ready", "lane_order": 120, "event_count": 15, "completion_commit_hash": ""}
+  ],
+  "tool_events": [
+    {"tool_event_id": "tg_tool_migration_01", "command": "task.show", "status": "ok", "summary": "Inspected active task"},
+    {"tool_event_id": "tg_tool_migration_02", "command": "task.edit", "status": "ok", "summary": "Recorded sanitized verification summary"},
+    {"tool_event_id": "tg_tool_migration_03", "command": "task.next", "status": "ok", "summary": "Checked sequential readiness"}
+  ]
+}

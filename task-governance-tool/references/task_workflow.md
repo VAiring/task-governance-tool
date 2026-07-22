@@ -10,6 +10,7 @@ tasks with `task-governance-tool`.
 - [Inspect Ready Work](#inspect-ready-work)
 - [Selection Semantics](#selection-semantics)
 - [Execution Unit Boundary](#execution-unit-boundary)
+- [Pause And Resume](#pause-and-resume)
 - [Blockers](#blockers)
 - [Completion And Review](#completion-and-review)
 - [Create An Offline Task Viewer](#create-an-offline-task-viewer)
@@ -36,9 +37,10 @@ Use this loop when the user asks to work from local task state:
 1. Inspect: `db status`.
 2. Initialize only if needed and explicitly intended: `db init`.
 3. Register only explicit tasks: `task add`.
-4. Choose work: `task next`.
-5. Inspect the chosen task: `task show`.
-6. Update local state: `task edit`.
+4. Rediscover started work: `task current`.
+5. If no current task should resume, choose ready work: `task next`.
+6. Inspect the chosen task: `task show`.
+7. Update local state: `task edit`.
 
 If a task blocks, mark that task `blocked` with a concise reason, then return to
 `task next` for unrelated ready work.
@@ -96,6 +98,25 @@ tracking:
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --json
 ```
 
+## Pause And Resume
+
+Pause only work already in `in_progress` or `review_pending`, with a concise
+sanitized reason:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status paused --pause-reason "Waiting for a safe continuation window" --json
+```
+
+Use `task current` in a later session to rediscover it. Resume explicitly to
+`in_progress`; the current pause reason is cleared while its bounded transition
+event remains:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --json
+```
+
+Paused work is incomplete and blocks later work in the same sequential lane.
+
 ## Blockers
 
 When a task cannot continue, record the blocker concisely:
@@ -124,6 +145,30 @@ Mark a task `done` only after:
   decision exists for the task's review tier
 - there are no unresolved high or medium review findings
 - the completion commit gate is satisfied
+
+Set one review target before recording results. Use a Git commit when the
+reviewed state is committed, or a deterministic diff fingerprint/external
+revision when that is the actual target:
+
+```powershell
+python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_commit --revision <hash> --json
+```
+
+Record only sanitized structured outcomes. A normal Tier 2 task needs two
+distinct independent PASS receipts for the same target generation:
+
+```powershell
+python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
+python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --json
+```
+
+This is two LLM review judgments in the normal Tier 2 path. If findings cause a
+meaningful change, set the review target again and obtain two fresh judgments;
+the new generation prevents older receipts from being reused. Git resolution,
+receipt counting, finding-state checks, and sequential-order checks are
+deterministic and add no LLM judgment. Record findings with `review finding add`
+and resolve them with `review finding resolve`; an unresolved high or medium
+finding blocks completion.
 
 For changed Git-managed materials, first create the project commit through the
 approved project workflow, then record it. `taskgov` verifies the revision
@@ -205,7 +250,8 @@ Register only explicit user-approved tasks. The MVP does not import large task
 files, create draft dependency graphs, run approval workflows, or register
 persistent project profiles.
 
-Do not use `task add` to close current work. Register the task first, then use
+Do not use `task add` to close current work; initial `done` is rejected.
+Register the task first, then use
 `task edit --status done` with the required verification, review, and completion
 commit flags when the task is actually complete.
 

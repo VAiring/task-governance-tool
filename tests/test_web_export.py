@@ -112,7 +112,7 @@ def empty_export_data(output_path):
         "task_count": 0,
         "event_count": 0,
         "generated_at": None,
-        "snapshot_version": 2,
+        "snapshot_version": 3,
     }
 
 
@@ -187,7 +187,7 @@ class WebExportTests(unittest.TestCase):
             self.assertFalse(payload["data"]["replaced"])
             self.assertEqual(payload["data"]["task_count"], 1)
             self.assertEqual(payload["data"]["event_count"], 1)
-            self.assertEqual(payload["data"]["snapshot_version"], 2)
+            self.assertEqual(payload["data"]["snapshot_version"], 3)
             self.assertRegex(payload["data"]["generated_at"], r"Z$")
             snapshot = embedded_snapshot(output)
             self.assertEqual(snapshot["tasks"][0]["task_id"], task["task_id"])

@@ -1,9 +1,8 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: MVP, the completion-commit extension, and TG-M7 Static Task Viewer are
-implemented. TG-M8 governance hardening is approved and planned below but is
-not implemented. The default-browser launch follow-up remains
-requirements-only pending design and roadmap approval.
+Status: implementation units through TG-M8 governance hardening are complete.
+The default-browser launch follow-up remains requirements-only pending design
+and roadmap approval.
 
 This document turns `docs/specification.md` and `docs/design.md` into
 implementation-sized execution units. It is the preferred roadmap for building
@@ -59,7 +58,7 @@ Sequential lanes:
 - `NEXT`: next-task selection behavior.
 - `SKILL`: installable skill instructions and bundled references.
 - `HARDEN`: final fixture, packaging, and forward-test hardening.
-- `GOVERNANCE-HARDENING`: approved TG-M8 database, transition, evidence, and
+- `GOVERNANCE-HARDENING`: implemented TG-M8 database, transition, evidence, and
   resume-surface changes.
 
 Optional units may be consumed whenever their prerequisites are met. A blocker
@@ -1048,7 +1047,7 @@ Completion criteria:
 - The static viewer satisfies all acceptance criteria in
   `docs/specification.md` and its generated output remains untracked.
 
-## Approved Post-MVP Extension: TG-M8 Governance Hardening
+## Implemented Post-MVP Extension: TG-M8 Governance Hardening
 
 TG-M8 converts the current record-and-guidance behavior into deterministic
 enforcement at the highest-risk boundaries while preserving the simple lane
@@ -1341,8 +1340,6 @@ The MVP implementation roadmap is complete when:
   accepted.
 - The final implementation is committed only after review PASS.
 
-TG-M8 is complete only when TG-M8.0 through TG-M8.6 are complete in order and
-the migration/acceptance gate above passes. The current approval authorizes the
-governing-document update and task registration only. Implementation
-consumption begins only after separate explicit user approval, and it never
+TG-M8.0 through TG-M8.6 were consumed in order after separate explicit user
+approval. Completion requires the migration/acceptance gate above and never
 authorizes the deferred features listed in TG-M8.6.

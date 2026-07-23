@@ -2,9 +2,12 @@
 
 Status: implementation units through TG-M8 governance hardening are complete.
 TG-M9 paused-work visibility has an approved contract and execution-unit
-roadmap, but implementation requires separate user approval. The
-default-browser launch follow-up remains requirements-only pending design and
-roadmap approval.
+roadmap, but implementation requires separate user approval. TG-M11
+completion-integrity corrections likewise have an approved contract and task
+roadmap, but implementation waits for separate approval. TG-M12 scope control
+and local handoff has an approved contract and staged roadmap; it also remains
+unimplemented. The default-browser launch follow-up remains requirements-only
+pending design and roadmap approval.
 
 This document turns `docs/specification.md` and `docs/design.md` into
 implementation-sized execution units. It is the preferred roadmap for building
@@ -64,6 +67,10 @@ Sequential lanes:
   resume-surface changes.
 - `PAUSED-VISIBILITY`: approved TG-M9 additive counts, warnings, and bounded
   paused-work retrieval; implementation is not yet authorized.
+- `COMPLETION-INTEGRITY`: approved TG-M11 lifecycle, review, and read-only Git
+  binding corrections; implementation is not yet authorized.
+- `SCOPE-CONTROL`: approved TG-M12 local handoff and optional Task Contract
+  capability; implementation is not yet authorized.
 
 Optional units may be consumed whenever their prerequisites are met. A blocker
 in one sequential lane should not stop ready optional units in another lane.
@@ -1487,6 +1494,613 @@ Completion criteria:
 - All TG-M9 acceptance criteria in `docs/specification.md` pass.
 - The verified implementation/guidance commit is recorded on the task.
 
+## Approved Post-MVP Extension: TG-M11 Completion Integrity Corrections
+
+TG-M11 closes the audited completion/review gaps found by a consuming project
+while preserving explicit reopen, review-before-commit ordering, and the normal
+two-judgment Tier 2 path. TG-M11 uses lane `COMPLETION-INTEGRITY`. The contract
+and task baseline are approved; implementation units remain blocked until the
+user separately approves consumption.
+
+The formal milestone uses TG-M11 to avoid reusing the title of a cancelled
+provisional TG-M10 checklist task retained in SQLite history.
+
+### TG-M11.0 Completion Integrity Contract And Task Baseline
+
+Kind: sequential
+Lane: `COMPLETION-INTEGRITY`
+Depends on: TG-M8.6
+Review tier: Tier 2
+
+Intended outcome:
+
+- Record the accepted operational corrections without adopting permanent done
+  immutability or the event-latch tier-downgrade design.
+- Define explicit reopen, current-generation changes-requested blocking,
+  done-time Git revalidation, normalized ordering inputs, and review-before-
+  commit `git_snapshot` binding.
+- Register bounded implementation tasks without changing product code, schema,
+  Skill behavior, README, or release guidance.
+
+Write scope:
+
+- `docs/specification.md`
+- `docs/design.md`
+- `docs/implementation-roadmap.md`
+- `plan.md`
+- ignored project-local SQLite task state
+
+Verification gate:
+
+- Governing-document consistency and explicit deferred-implementation checks.
+- Inspect the registered TG-M11 tasks and confirm TG-M11.1 is blocked for
+  separate implementation approval.
+- Confirm application code, schema, Skill package, README, version metadata,
+  and release guidance are unchanged.
+- Full offline unittest suite and `git diff --check`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified documentation commit is recorded on TG-M11.0.
+- Additional external feedback may revise the approved contract before
+  TG-M11.1 is unblocked.
+
+### TG-M11.1 Deterministic Gate And Input Corrections
+
+Kind: sequential
+Lane: `COMPLETION-INTEGRITY`
+Depends on: TG-M11.0 and separate user approval of TG-M11 implementation
+Review tier: Tier 2
+
+Intended outcome:
+
+- Block current-generation `changes_requested` receipts.
+- Revalidate stored Git evidence at every done transition.
+- Normalize lanes and enforce signed-64-bit explicit/automatic lane orders.
+
+Write scope:
+
+- completion, review, task, selection, and CLI service boundaries
+- additive `task show` review-evidence count and stable error mapping
+- focused gate, Git no-write, lane, overflow, concurrency, and JSON tests
+- governing docs only for necessary contract corrections
+
+Implementation notes:
+
+- Add no SQLite schema or event-latch change in this unit.
+- Count only exact current-target-generation `changes_requested` receipts.
+- Reuse the canonical no-shell Git resolver and re-run it immediately before
+  done completion.
+- Use shared lane/order validators in add/edit/list/next.
+- Do not change Skill or user/release guidance yet.
+
+Verification gate:
+
+- Two PASS receipts plus any current `changes_requested` still fail with
+  `review_changes_requested`; a newer target plus fresh PASS succeeds.
+- Deleted/unresolvable stored Git evidence fails without SQLite or Git change.
+- Whitespace-shadow lane and integer overflow cases return compact structured
+  errors without traceback.
+- Existing selection, project identity, privacy, read-only, and full offline
+  tests pass.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified implementation commit is recorded on the task.
+
+### TG-M11.2 Done Reopen And Review-Tier Boundary
+
+Kind: sequential
+Lane: `COMPLETION-INTEGRITY`
+Depends on: TG-M11.1
+Review tier: Tier 2
+
+Intended outcome:
+
+- Lock done tasks against every write except one explicit atomic reopen.
+- Allow review-tier downgrade only before the first structured review target.
+
+Write scope:
+
+- task edit CLI options and lifecycle service
+- shared done-owner guard for task and review writes
+- tier-change validation and sanitized audit events
+- focused lifecycle, ordering, privacy, concurrency, and rollback tests
+
+Implementation notes:
+
+- Require exact `done -> in_progress` plus `--reopen-reason` and no combined
+  mutation.
+- Clear current completion evidence and review target, advance generation, and
+  preserve all historical events/receipts/findings.
+- Apply the shared sequential guard after constructing the reopened row; never
+  mutate successors automatically.
+- Keep review payloads parser-required. Malformed CLI syntax need not be
+  replaced by a done-owner error.
+- Use generation `0`, empty target, safe current/resulting status, and one
+  sanitized reason for downgrades. Do not rename task-added events or add an
+  event-history latch.
+- Use schema-v5 fields only in this unit. Do not reference
+  `review_target_base_revision`; TG-M11.3 extends the same guards after adding
+  that field.
+
+Verification gate:
+
+- Every valid non-reopen task/review write against done fails
+  `done_task_requires_reopen` without bytes, rows, or events changing.
+- Reopen is atomic, preserves history, invalidates prior completion/review
+  eligibility, and requires fresh gates on re-completion.
+- Reopen ordering conflicts fail without cascading task updates.
+- Downgrades succeed only before target generation 1 and never after review or
+  reopen; upgrades retain normal behavior.
+- Privacy, compact JSON/text errors, concurrent writers, and full suite pass.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified implementation commit is recorded on the task.
+
+### TG-M11.3 Schema Version 6 And Git Snapshot Service
+
+Kind: sequential
+Lane: `COMPLETION-INTEGRITY`
+Depends on: TG-M11.2
+Review tier: Tier 2
+
+Intended outcome:
+
+- Add schema version 6 target-base storage and internal `git_snapshot`
+  capture/comparison primitives.
+- Keep the public target surface unchanged until completion binding can ship in
+  the same later unit.
+
+Write scope:
+
+- schema/migration and repository layer
+- completion/review Git snapshot service
+- target/receipt read and write models
+- schema-v6 Viewer compatibility and unchanged snapshot allow-list tests
+- migration, byte-path, Git topology, privacy, and no-mutation tests
+
+Implementation notes:
+
+- Add `review_target_base_revision` to tasks and
+  `target_base_revision` to receipts.
+- Rebuild the constrained receipt table transactionally to add
+  `git_snapshot`, preserving receipt IDs and finding references.
+- Extend the reopen and review-tier guards to clear or validate the new target
+  base field only after the migration succeeds.
+- Parse `git ls-files --stage -z` and recursive tree output as bytes.
+- Fingerprint the versioned base/mode/object/path manifest.
+- Reject unborn HEAD, unmerged index, root completion, and merge completion in
+  the first version.
+- Keep `git_snapshot` unavailable through the public review-target CLI and omit
+  its new target-base output until TG-M11.4 activates target creation and done
+  binding together.
+- Never run `git write-tree`, hooks, checkout, commit, reset, add, or another
+  target-project mutation.
+
+Verification gate:
+
+- v2-to-v6 and v5-to-v6 migrations are repeatable and rollback-safe and retain
+  12 tasks, 191 events, nine historical hashes, all review evidence, and
+  project identity.
+- Snapshot capture changes only the authorized SQLite target/event rows and
+  leaves Git refs, object inventory, index, worktree, config, and hooks
+  unchanged.
+- Equivalent index/commit trees match; wrong base, added/removed/changed/
+  renamed/mode-changed/hook-changed content and merges fail deterministically.
+- Raw and unusual Git path bytes are canonicalized without storing paths.
+- Normal and read-only Viewer export work at schema version 6, report actual
+  source schema 6, preserve snapshot version 3, and expose no target-base data.
+- Quick check, foreign-key check, concurrency, privacy, and full suite pass.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified schema/service commit is recorded on the task.
+
+### TG-M11.4 Completion Binding, Skill Sync, And Acceptance
+
+Kind: sequential
+Lane: `COMPLETION-INTEGRITY`
+Depends on: TG-M11.3
+Review tier: Tier 2
+
+Intended outcome:
+
+- Activate the public `git_snapshot` review target only together with exact
+  completion-to-review binding for Git, snapshot, external, and
+  commit-not-required paths.
+- Synchronize implemented CLI, Skill, workflow, README, release/version, and
+  Viewer-compatible read models only after acceptance passes.
+
+Write scope:
+
+- review-target activation, done-gate binding integration, and stable CLI
+  contracts
+- `task show`, Viewer snapshot/read-model compatibility as required
+- `task-governance-tool/SKILL.md`
+- `task-governance-tool/agents/openai.yaml` only if display metadata changes
+- one-level Skill workflow and CLI references
+- README, release/install guidance, version metadata, forward-test note, and
+  governing status text
+- focused binding and full TG-M11 acceptance tests
+
+Implementation notes:
+
+- Enable public `git_snapshot` target creation and its target-base projection
+  in the same change that enables its done-gate binding; no released
+  intermediate unit may create an uncompletable target.
+- Accept identical Git commit target/evidence or a single-parent commit that
+  matches the current `git_snapshot` base and fingerprint.
+- Preserve exact external revision matching and diff-target
+  commit-not-required semantics.
+- Keep the normal Tier 2 path at two judgments; deterministic binding must not
+  trigger another LLM review.
+- Do not advertise root/merge snapshot support or another deferred feature.
+
+Verification gate:
+
+- Every TG-M11 acceptance criterion in `docs/specification.md` passes.
+- Installed-skill self-containment, metadata/reference consistency, compact
+  JSON/text contracts, Viewer compatibility, privacy, read-only, project
+  separation, migration, and full offline tests pass.
+- A realistic forward flow reviews a staged snapshot twice, creates the commit
+  through the project workflow, and completes without extra review; a changed
+  commit fails binding.
+- `git diff --check` and the appropriate version/release checks pass.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified implementation/guidance commit is recorded on the task.
+- Remaining external feedback is either incorporated into a separately
+  approved unit or explicitly deferred with rationale.
+
+## Approved Post-MVP Extension: TG-M12 Scope Control And Local Handoff
+
+TG-M12 provides one deterministic escape path for out-of-scope discoveries and
+one optional authority-copied Task Contract. It preserves acceptance-driven
+completion, lane-local stopping, and the existing simple loop. The base units
+do not depend on an Issue Skill. TG-M12 uses lane `SCOPE-CONTROL`; optional
+advisory units require their own later approval and never block that lane.
+
+### TG-M12.0 Scope-Control Contract And Task Baseline
+
+Kind: sequential
+Lane: `SCOPE-CONTROL`
+Depends on: TG-M8.6; coordinated with the TG-M11.0 feedback closeout
+Review tier: Tier 2
+
+Intended outcome:
+
+- Classify the operational feedback into Task core, optional advisory, future
+  Issue integration, and explicitly deferred work.
+- Define continue-first scope handling, deterministic Contract activation,
+  durable local handoff, pending rediscovery, adapter boundaries, migration
+  order, and zero-additional-judgment guarantees.
+- Correct TG-M11's schema-neutral/schema-v6 ordering description.
+- Register bounded future units without changing product code or advertised
+  Skill behavior.
+
+Write scope:
+
+- `docs/specification.md`
+- `docs/design.md`
+- `docs/implementation-roadmap.md`
+- `plan.md`
+- ignored project-local SQLite task state
+
+Verification gate:
+
+- Governing-document consistency, judgment-budget, stop-condition, and
+  responsibility-boundary checks.
+- Inspect registered TG-M12 tasks and confirm TG-M12.1 is blocked for separate
+  implementation approval.
+- Confirm code, schema, `SKILL.md`, installed references, README, release
+  metadata, Viewer code, and version remain unchanged.
+- Full offline unittest suite and `git diff --check`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue,
+  including no v0.2.0 downgrade or hidden LLM-decision increase.
+- The verified documentation commit is recorded on TG-M12.0.
+
+### TG-M12.1 Schema Version 7 And Local Handoff Commands
+
+Kind: sequential
+Lane: `SCOPE-CONTROL`
+Depends on: TG-M11.4 and separate user approval of TG-M12 implementation
+Review tier: Tier 2
+
+Intended outcome:
+
+- Add a durable Task-DB-local handoff outbox that works without Issue Skill.
+- Add stable local record/list/show/withdraw surfaces, exact pending counts,
+  source-task summary, and exact-replay idempotency.
+
+Write scope:
+
+- schema version 7 migration and handoff repository/service
+- handoff CLI parser, compact JSON/text envelopes, and error mapping
+- additive `db status` and `task show` projections
+- `task-governance-tool/SKILL.md`, one-level workflow/CLI references, and
+  README/release guidance for the implemented local-only handoff
+- focused migration, privacy, idempotency, concurrency, and no-task-mutation
+  tests
+- governing docs only for necessary contract corrections
+
+Implementation notes:
+
+- Store only the three approved states and bounded delivery bookkeeping.
+- Commit locally before any receiver attempt; return `ok=true` only after that
+  commit.
+- Exact payload replay returns one row. A distinct occurrence requires a stable
+  explicit occurrence ID; do not implement semantic duplicate detection.
+- Store `source_contract_revision=0` in v7 and include it in the idempotency
+  identity so v8 can later capture the current pointer without rewriting rows.
+- Keep the adapter disabled and `sync_due=false` in this unit.
+- Do not append task events or update source-task timestamps.
+- Default list to pending-only, oldest-first, return exact `total_matching`,
+  and use `db status.counts.handoff_pending` as the project population signal;
+  do not add paging.
+- Permit withdraw only before any claim/delivery attempt. Claim/sync code does
+  not ship in this unit.
+- Fix all new field limits, stable command/data/error/warning shapes, and the
+  `durable/created/replayed/handoff_id` local write receipt.
+- Do not change Task selection or completion gates.
+
+Verification gate:
+
+- Missing/migration/read-only/project-mismatch paths create no row, file,
+  sidecar, task event, task timestamp, or target-project change.
+- Local commit failure is an error and never appears durable; successful exact
+  replay is idempotent. Recovery and the single execution-unit stop are
+  explicit and do not mutate Task status automatically.
+- Pending-to-withdrawn is user-explicit and race-safe in the adapter-disabled
+  state.
+- Privacy rejection covers every stored free-form field and no Issue
+  priority/lifecycle/resulting-task field exists.
+- v5-to-v6-to-v7 and v6-to-v7 migrations preserve the 12-task/191-event
+  fixture, nine completion hashes, review evidence, project identity, and pass
+  rollback, quick, and foreign-key checks.
+- Existing current/next/done, compact envelopes, Viewer snapshot v3, and full
+  offline tests pass.
+- A fresh-context forward flow records an out-of-scope discovery, continues,
+  completes the source task with a pending handoff, and rediscovers the oldest
+  pending row and exact count without an Issue Skill or extra question.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified schema/CLI/Skill commit is recorded on the task.
+
+### TG-M12.2 Schema Version 8 Task Contract
+
+Kind: sequential
+Lane: `SCOPE-CONTROL`
+Depends on: TG-M12.1
+Review tier: Tier 2
+
+Intended outcome:
+
+- Add an optional immutable Task Contract that copies explicit authority and
+  reduces scope reinterpretation without adding a task-start question.
+- Invalidate stale completion/review eligibility only when semantic authority
+  changes after review has started.
+
+Write scope:
+
+- schema version 8 migration and Contract repository/service
+- optional task add/edit inputs and conditional additive write receipts
+- lifecycle invalidation and additive `task show.contract`
+- Skill/workflow/CLI guidance for deterministic activation and revision rules
+- focused authority, migration, lifecycle, JSON, privacy, concurrency, and
+  legacy-compatibility tests
+
+Implementation notes:
+
+- Keep purpose in title/description and existing acceptance authority for
+  revision-0 tasks.
+- Enforce the activation matrix: approved statuses on add, or revision-0
+  `ready|blocked -> in_progress` with empty evidence/target/generation and no
+  other caller mutation. Other revision-0 tasks stay revision 0.
+- Treat later revisions as Contract-only caller edits in approved active
+  statuses; done requires reopen and cancelled rejects.
+- Permit later revision only from explicit user or later independent authority;
+  current-task document edits cannot self-authorize expansion.
+- Require an actual scope, acceptance, or constraints change. Treat canonical
+  equality as `recorded=false` regardless of authority/reason replay and
+  perform no evidence, target, status, timestamp, or event write.
+- Clear completion evidence on a semantic revision. Keep review generation 0
+  when no review target has ever existed; otherwise clear target/base, advance
+  generation, and return review-pending to in-progress atomically.
+- Return `contract_write` only when Contract input was supplied and display the
+  current Contract only under task show.
+- Capture the task's current Contract revision in new handoff identities while
+  preserving existing schema-v7 revision-0 rows.
+- Keep Contract/outbox fields out of list/current/next and Viewer.
+
+Verification gate:
+
+- Revision-0 tasks and ordinary add/edit payloads keep existing behavior and
+  shape.
+- The complete activation/status/combination matrix is covered.
+- First copy and later immutable revisions obey authority rules without raw
+  prompt storage.
+- Exact replay and authority-only re-label cannot force a revision or review.
+- Revision failure rolls back pointer, row, task status/evidence/target,
+  timestamp, and event together.
+- Pre-review revision keeps generation 0; post-review semantic revision
+  requires fresh review and completion evidence.
+- v7 handoffs and all v5 fixture data survive v8 migration and rollback checks.
+- Viewer snapshot v3 emits actual source schema 8 with unchanged allow-list in
+  normal and read-only export.
+- Skill self-containment, privacy, compact envelopes, concurrency, and full
+  offline tests pass.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified schema/Contract/guidance commit is recorded on the task.
+
+### TG-M12.3 Versioned Issue Adapter, Claims, And Due Sync
+
+Kind: sequential
+Lane: `SCOPE-CONTROL`
+Depends on: TG-M12.2, a separately approved Issue Skill intake contract, and
+explicit user approval of the integration boundary
+Review tier: Tier 2
+Initial status: blocked
+
+Intended outcome:
+
+- Deliver existing and new pending handoffs through one explicitly enabled,
+  versioned local intake boundary.
+- Add claim/lease, fixed bounded retry, crash reconciliation, and due sync only
+  when a real receiver contract makes those paths usable.
+
+Write scope:
+
+- concrete local adapter and explicit project-scoped configuration
+- handoff claim, acknowledgement, fixed retry, and sync services
+- `handoff sync --due` and delivery-status projection
+- adapter version negotiation and sanitized acknowledgement handling
+- `AGENTS.md`, specification safety boundary, `SKILL.md`, one-level references,
+  README, and release guidance synchronized in the same unit
+- fake/real local-contract compatibility, failure, permission, privacy, crash,
+  concurrency, and integration tests
+
+Implementation notes:
+
+- Do not start until the Issue intake contract and exact transport exist.
+- Never open/init/migrate/edit the Issue DB directly and never use a shell,
+  URL, network, GitHub, or arbitrary dynamic project code.
+- Keep the same `handoff record` command; the agent never branches on receiver
+  presence.
+- Acquire one expiring claim and atomically increment attempts. Once claimed,
+  a row can never be locally withdrawn, including after expiry.
+- Use matching-token compare-and-swap for acknowledgement and stable
+  `handoff_id` for receiver idempotency.
+- Implement the fixed 60-second, 300-second, then exhausted retry contract;
+  advance fixed `last_delivery_code` stages only on retryable negative
+  responses rather than using the broader delivery-attempt count.
+  Permanent/exhausted rows remain pending but not due, while expired uncertain
+  claims remain due for acknowledgement reconciliation without advancing the
+  retry stage.
+- `sync --due` runs one bounded batch at a boundary, never a loop-to-empty.
+- Absent/disabled adapters emit no warning. Enabled delivery failure emits only
+  `handoff_delivery_pending` with fixed continue guidance.
+- Store only receiver acceptance receipt; no priority, triage, resolution,
+  resulting Task ID, import, or reverse synchronization.
+
+Verification gate:
+
+- Absent, installed-disabled, enabled-success, enabled-retryable,
+  enabled-permanent, exhausted, crash-after-receive, expired-claim, and
+  existing-pending-drain scenarios all use the same agent workflow.
+- A delayed worker after lease expiry can never create local-withdrawn plus
+  receiver-accepted state.
+- Concurrent sync/ack uses one receiver item and deterministic local state.
+- Exact due calculation, attempt increment, retry times/cap, permanent behavior,
+  and no adapter-version reset are covered.
+- Permission and version mismatches fail closed to pending without Issue or
+  Task data corruption.
+- Governing write boundaries, privacy, idempotency, zero extra LLM decisions,
+  no-network/no-shell, full offline suite, and installed-copy tests pass.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified adapter/delivery/guidance commit is recorded on the task.
+
+### TG-M12.O1 Informational Effort Advisory
+
+Kind: optional
+Lane: `SCOPE-ADVISORY`
+Depends on: TG-M12.2, a separately approved default-off risk profile
+Review tier: Tier 2
+Initial status: blocked
+
+Intended outcome:
+
+- Expose deterministic scale observations without adding an LLM disposition,
+  user question, status transition, or completion gate.
+
+Write scope:
+
+- optional basis metadata and read-only repository/Git observation service
+- risk-profile configuration and informational JSON/text output
+- focused attribution/unknown, dirty/multi-active, metric, privacy, no-write,
+  and zero-stop tests
+- Skill guidance only after the default-off behavior is verified
+
+Implementation notes:
+
+- Always return `suggested_action=continue`.
+- Never auto-handoff, ask, pause, block, fail, or change acceptance.
+- Basis capture is best-effort on the existing first in-progress write and
+  cannot block start.
+- Return attribution unknown for non-Git, dirty/uncertain endpoints, missing
+  coverage, or possible active-task overlap.
+- Do not persist acknowledgement or an LLM choice; repeated stable warnings are
+  acceptable.
+
+Verification gate:
+
+- Deterministic metrics and unknown reasons are reproducible without target Git
+  or source mutation.
+- No threshold alone changes Task or handoff state or creates a user-decision
+  stop.
+- Disabled profiles leave the simple loop and task output unchanged.
+- Full offline suite and Skill compatibility checks pass.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified optional-feature commit is recorded on the task.
+
+### TG-M12.O2 Local Package Self-Status
+
+Kind: optional
+Lane: `SCOPE-ADVISORY`
+Depends on: TG-M12.0 and separate user approval
+Review tier: Tier 2
+Initial status: blocked
+
+Intended outcome:
+
+- Report installed version and local core modification through a release
+  manifest without update checking or automatic repair.
+
+Write scope:
+
+- versioned release manifest and read-only `self status`
+- package/config/adapter boundary tests
+- Skill and release guidance only after the behavior is implemented
+
+Implementation notes:
+
+- Report only clean, modified, or unknown with bounded changed core paths.
+- Exclude generated state, declared configuration, and adapter files.
+- Do not contact GitHub, download, install, repair, or block task work.
+
+Verification gate:
+
+- Clean, modified, missing-manifest, ignored-state, and configured-adapter cases
+  are deterministic and read-only.
+- Installed-copy packaging, privacy, compact output, and full offline tests
+  pass.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified optional-feature commit is recorded on the task.
+
 ## Roadmap Completion Criteria
 
 The MVP implementation roadmap is complete when:
@@ -1511,3 +2125,19 @@ not be consumed until a later user request explicitly approves implementation.
 That later approval still does not authorize current/list/event pagination,
 stale detection, checkpoints, parent/child task structure, default-browser
 launch, or networked GitHub update checking.
+
+TG-M11.0 records only the completion-integrity contract and task baseline.
+TG-M11.1 through TG-M11.4 must not be consumed until a later user request
+explicitly approves implementation. That approval does not authorize unrelated
+TG-M9 work, pagination, stale detection, checkpoints, parent/child task
+structure, default-browser launch, network access, or Git writes by
+task-governance-tool.
+
+TG-M12.0 records only the scope-control/local-handoff contract and task
+baseline. TG-M12.1 through TG-M12.3 require a later explicit implementation
+approval after TG-M11 finishes. TG-M12.3 remains blocked until an Issue Skill
+intake contract, governing permission update, and the integration boundary are
+separately approved. TG-M12.O1 and TG-M12.O2 are optional and require their own
+approval. None of these approvals authorizes semantic Issue triage, paging,
+child tasks, signed evidence, external Issue import/lifecycle sync, or daily
+GitHub update checking.

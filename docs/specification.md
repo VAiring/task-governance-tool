@@ -2,7 +2,12 @@
 
 Status: formal implemented baseline through TG-M8 governance hardening. The
 TG-M9 paused-work visibility contract is approved for implementation planning;
-its CLI and Skill behavior is not yet implemented.
+its CLI and Skill behavior is not yet implemented. The TG-M11
+completion-integrity correction contract is approved for planning and task
+registration, but its schema, CLI, and Skill behavior remain unimplemented
+pending separate approval. The TG-M12 scope-control and local-handoff contract
+is likewise approved for planning and task registration only; v0.2.0 behavior
+remains the implemented release baseline.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -516,6 +521,589 @@ calculation, checkpoints, parent/child tasks, acceptance checklists, automatic
 resume, network access, or GitHub update checking. A once-daily GitHub update
 check remains an unapproved follow-up pending a separate network, cache,
 failure, and privacy contract.
+
+## Approved Post-MVP Extension: TG-M11 Completion Integrity Corrections
+
+TG-M11 incorporates the accepted parts of the CanonWeave operational
+hardening feedback without making completed tasks permanently immutable or
+increasing the normal Tier 2 review path beyond two LLM judgments. The contract
+is approved for planning and task registration only. Implementation requires a
+separate user request.
+
+TG-M11 preserves the existing local-first database, compact JSON envelope,
+project identity, privacy boundary, explicit `db init`, task selection, paused
+work, and no-target-project-mutation rules.
+
+### Locked Done State And Explicit Reopen
+
+A `done` task is locked, but not permanently immutable. The only accepted write
+against a `done` task is an explicit reopen transition:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --reopen-reason "<sanitized reason>" --json
+```
+
+The reopen transition must be atomic and must:
+
+- require a non-empty sanitized `reopen_reason`;
+- reject every additional task mutation, completion confirmation, completion
+  evidence option, or note in the same command;
+- change status only from `done` to `in_progress`;
+- clear `completed_at`, blocker state, and pause state;
+- reset writable completion evidence to `none` and its legacy projection to
+  commit-required with an empty hash;
+- clear the current review target while advancing its generation so every
+  earlier receipt remains historical and cannot satisfy a later completion;
+- preserve all existing task events, review receipts, and findings;
+- append one sanitized `task_reopened` event that identifies the previous
+  completion evidence kind and revision without storing raw output; and
+- apply the shared sequential-lane invariant to the resulting state.
+
+Every other task edit or structured review write against a `done` task must
+fail with stable error code `done_task_requires_reopen` and perform no write.
+This includes metadata edits, notes, review-tier changes, target changes,
+receipts, new findings, finding resolution, and completion-evidence changes.
+A reopened task must satisfy fresh verification, review, and completion gates
+before returning to `done`.
+
+### Review-Tier Downgrade Boundary
+
+A review-tier downgrade is allowed only before structured review begins.
+Structured review begins when the first review target is set, represented
+mechanically by `review_target_generation > 0`; status events are not used as
+an indirect latch.
+
+A downgrade must:
+
+- occur while the task is `ready`, `in_progress`, `paused`, or `blocked`;
+- require a concise sanitized `--review-tier-change-reason`;
+- require `review_target_generation == 0` with an empty current target;
+- reject combination with completion evidence, verification/review
+  confirmations, or a transition into `review_pending` or `done`; and
+- append a `review_tier_changed` event with the old tier, new tier, and reason.
+
+Once any review target has been set, the tier may be raised but must never be
+lowered, including after a reopen. No `task_added_review_unstarted` event latch
+or event-history backfill is required. Invalid downgrades return
+`review_tier_downgrade_forbidden` without mutation.
+
+### Current-Generation Changes Requested
+
+Any `changes_requested` receipt for the exact current review target generation
+must block completion even when the tier's required PASS count is otherwise
+satisfied. `task show.review_evidence.counts` must expose
+`changes_requested_current_generation`. The completion path must return
+`review_changes_requested`. Setting a newer target generation and obtaining
+fresh qualifying review receipts is the only way to clear this condition;
+historical receipts remain preserved.
+
+### Done-Time Git Revalidation And Input Boundaries
+
+Every transition to `done` must re-resolve stored Git completion evidence and
+any Git-backed current review target immediately before the database update.
+The canonical full commit ID must still equal the stored value. Missing,
+ambiguous, non-commit, or no-longer-resolvable evidence fails with the existing
+Git validation error and changes neither SQLite nor Git.
+
+Lane values must be trimmed consistently by add, edit, list, and next
+operations. Explicit and automatically assigned `lane_order` values must stay
+within SQLite's signed 64-bit integer range. Whitespace-shadow lanes and
+automatic order overflow must return structured validation errors without a
+traceback.
+
+These checks are deterministic and add no LLM judgment.
+
+### Review-Before-Commit Git Snapshot Binding
+
+TG-M11 retains the approved workflow in which implementation is verified and
+reviewed before the completion commit is created. It adds review target kind
+`git_snapshot` so the reviewed staged state can be bound deterministically to
+the later Git commit without a second pair of LLM reviews.
+
+Setting a `git_snapshot` target must:
+
+- read the canonical current `HEAD` commit as the base revision;
+- read only stage-0 entries from the Git index;
+- reject an unborn `HEAD`, unmerged index, zero-object intent-to-add entry, or
+  sparse-directory index entry;
+- construct a versioned canonical manifest from base commit, file mode, object
+  ID, and raw path bytes for every index entry;
+- store a SHA-256 fingerprint and the canonical base commit;
+- advance the normal review target generation; and
+- leave Git `HEAD`, refs, objects, index, worktree, configuration, and hooks
+  unchanged.
+
+`review target set --kind git_snapshot` captures the current staged snapshot;
+it does not accept a caller-supplied `--revision`. Unstaged and untracked
+content is outside the snapshot and is not inspected or recorded.
+
+At completion, `git_commit` evidence may satisfy review binding in either of
+these ways:
+
+- the current target is `git_commit` with the identical canonical commit ID; or
+- the current target is `git_snapshot`, the completion commit has exactly one
+  parent equal to the stored base revision, and the completion commit tree
+  produces the identical canonical manifest fingerprint.
+
+Merge commits and snapshot/parent/tree mismatches must fail with
+`review_target_mismatch`. `external_revision` completion still requires the
+identical external target. `commit_not_required` still requires an explicit
+`diff_fingerprint` target. Existing target kinds and historical receipts remain
+valid under their existing rules.
+
+The normal successful Tier 2 path remains two independent LLM review
+judgments. Fingerprint creation, parent/tree comparison, receipt counting, Git
+resolution, and finding-state checks are deterministic.
+
+### TG-M11 Compatibility And Acceptance
+
+TG-M11 must not be advertised by `SKILL.md`, README, release guidance, or
+installed-skill references until its implementation and migrations pass their
+acceptance gates. Implementation must provide an explicit, repeatable schema
+migration and preserve the sanitized 12-task/191-event fixture, nine historical
+completion hashes, every existing review receipt/finding, and project identity.
+
+Acceptance requires automated proof that:
+
+- every non-reopen write against `done` is rejected without mutation;
+- reopen atomically invalidates old completion/review eligibility while
+  preserving history;
+- a reopened task cannot complete without fresh evidence;
+- the sequential invariant also governs reopen;
+- review-tier downgrade is possible only at generation `0` with a reason;
+- current-generation `changes_requested` blocks otherwise sufficient PASS;
+- stored Git evidence is revalidated at the done transition;
+- `git_snapshot` binds the reviewed staged state to one later single-parent
+  commit and detects added, removed, changed, renamed, mode-changed, hook-
+  changed, wrong-parent, and merge-commit cases;
+- normal Tier 2 completion uses two review judgments, not four;
+- lane normalization and integer boundaries cannot bypass ordering;
+- privacy rejection, compact envelopes, read-only behavior, project
+  separation, concurrency, and migration preservation remain intact; and
+- no validation or inspection command changes SQLite or target-project Git
+  state unless the command is an explicitly authorized task-database write.
+
+## Approved Post-MVP Extension: TG-M12 Scope Control And Local Handoff
+
+TG-M12 incorporates the accepted task-scope and effort-growth feedback without
+turning Task Skill into an Issue tracker, workflow engine, or audit platform.
+It is approved for planning and task registration only. Product code, schema,
+CLI, Skill guidance, README, release metadata, and installed behavior remain at
+the implemented v0.2.0/schema-v5 baseline until separately approved
+implementation units pass their gates.
+
+The extension has two core capabilities:
+
+- an optional, authority-copied Task Contract that reduces repeated scope and
+  acceptance reinterpretation; and
+- a durable local handoff outbox that records out-of-scope discoveries before
+  work continues, whether or not an Issue Skill is installed.
+
+An informational Effort Advisory and local-package self-status are optional
+later units. They must not make the minimum Task loop more complex.
+
+### Responsibility And Continue-First Rule
+
+Task Skill remains responsible for:
+
+- preserving the task purpose through existing `title` and `description`;
+- recording scope, acceptance, constraints, current state, next work, and
+  blockers;
+- running selection, execution, verification, state-update, review, and
+  completion loops; and
+- ending work when the current accepted authority is satisfied or reporting an
+  existing blocker, unavailable dependency, or required user decision.
+
+Task Skill does not own long-term Issue lifecycle, external ticket import,
+Issue priority or triage, duplicate resolution, resulting-task creation,
+threat-model management, project-specific test strategy, or a large evidence
+and signature system. A future Issue Skill owns those concerns independently.
+
+For each newly discovered defect, improvement, or request, the agent makes the
+single classification already inherent in scoped work:
+
+1. If resolving it is within the current accepted scope and can proceed under
+   current authority, keep it in the current task.
+2. If an unmet condition prevents current acceptance and cannot be resolved
+   safely within the currently authorized work, record it as the current
+   task's blocker.
+3. Otherwise, durably record one handoff and continue the current task.
+
+Quality improvement, possible future risk, or convenience alone must not add an
+acceptance condition. The agent must not ask whether to enable a Contract,
+whether an Issue Skill exists, or whether to continue merely because a handoff
+or Effort Advisory exists.
+
+Safety is an orthogonal modifier, not a fourth destination. First choose current
+task, blocker, or handoff using the rules above. A credible data-loss or safety
+risk must also be reported promptly. If continuing the affected task or lane is
+unsafe, block only that task or lane and continue other safe ready work. A
+global stop occurs only when all otherwise ready work is unsafe or an existing
+user-decision rule already requires it.
+
+Reaching current acceptance remains the normal completion condition. Pending
+handoffs, advisory warnings, and later Issue resolution do not extend or block
+the source task.
+
+### Optional Task Contract
+
+A Task Contract is a concise, immutable revision of explicit scope and
+acceptance information already supplied by authority. It is per-task optional
+and must never become a new question or a heuristic LLM decision.
+
+Contract revision 1 is recorded only when both scope and acceptance are already
+explicit in at least one of:
+
+- the user's current instruction;
+- an approved implementation roadmap; or
+- explicit task-registration input.
+
+The CLI copies that information during `task add`, or during an explicit
+revision-0 transition from `ready` or `blocked` to `in_progress`. On add, the
+resulting status must be `ready`, `in_progress`, `blocked`, or
+`review_pending`. On edit, the Contract group may be combined only with that
+status transition and requires empty completion evidence, target, and target
+generation. It cannot be combined with notes, metadata, review-tier,
+completion-evidence, or gate-confirmation changes. If either Contract field is
+absent, the task remains at revision `0`; the agent must not ask for missing
+fields or infer that a task is "long enough" to need them.
+
+A revision-0 task that does not use one of those activation boundaries remains
+revision 0. `paused`, `review_pending`, `done`, and `cancelled` existing tasks
+cannot activate a first Contract. Revision `0` continues to use the user
+request, governing documents, and existing task fields as authority. It never
+means that acceptance is optional or automatically satisfied.
+
+The Contract stores:
+
+- concise `scope`;
+- concise `acceptance`;
+- optional `constraints`;
+- an optional initial stable sanitized `authority_ref`; and
+- for later revisions, a concise change reason and timestamp.
+
+Purpose remains in existing `title` and `description`; no duplicate purpose
+column is added. A user-instruction authority reference must identify a stable
+decision without storing a raw prompt, full chat, or private reasoning.
+
+Every later revision is append-only and requires a non-empty stable sanitized
+`authority_ref` identifying either an explicit user instruction or a later
+independent authority change, plus a change reason. This is structured
+acknowledgement of authority, not a stored prompt. A governing document edited
+as an output of the current task cannot authorize that same task to expand its
+Contract. Agent-proposed hardening outside the current Contract is handed off
+instead.
+
+Later revision is a Contract-only edit allowed while the task is `ready`,
+`in_progress`, `paused`, `blocked`, or `review_pending`. It rejects every
+caller-supplied task metadata, note, status, review-tier, evidence, or gate
+change in the same command. The service itself moves `review_pending` to
+`in_progress` when invalidating review. A `done` task must be reopened first;
+`cancelled` rejects Contract writes.
+
+Supplying scope, acceptance, and constraints that canonically equal the current
+Contract is an exact replay regardless of repeated authority/change metadata.
+It returns `recorded=false` with the current revision and performs no task,
+evidence, target, timestamp, or event write. A semantic revision requires at
+least one of those three Contract-content fields to change. A crash retry or
+authority re-label therefore cannot create a new Contract generation or force
+another review.
+
+For an explicit current user instruction with no external decision ID, the
+agent may generate `user_instruction:<task-id>:<next-revision>` as the stable
+authority reference without asking another question. Governing-document
+authority uses a repository-relative path plus a known revision or content
+hash. Neither form stores the instruction or document body.
+
+A semantic Contract revision must atomically:
+
+- preserve all earlier Contract revisions;
+- advance the current revision;
+- clear current completion evidence;
+- when review has not started (`generation=0` and target empty), keep generation
+  `0`; otherwise clear the current review target and advance its generation;
+- move `review_pending` back to `in_progress` while leaving other allowed
+  active statuses unchanged;
+- update the task timestamp; and
+- append one sanitized `contract_revised` event.
+
+The task must then satisfy fresh verification, review, and completion gates.
+Contract writes against `done` remain forbidden by the TG-M11 done guard until
+the task is explicitly reopened. When and only when Contract input is supplied,
+the write response adds a receipt containing `recorded` and the current
+`revision`; ordinary add/edit payloads remain unchanged. The receipt does not
+broaden the compact task object used by list/current/next.
+
+Only `task show` gains an additive sibling `contract` projection. Contract
+fields do not appear in `task list`, `task current`, `task next`, or the static
+Viewer.
+
+### Local Handoff Outbox
+
+The same command is used whether an Issue Skill is absent, installed but
+disabled, or explicitly connected:
+
+```text
+taskgov handoff record <source-task-id> ...
+```
+
+The agent never chooses a different workflow based on Issue Skill presence.
+The command first commits one sanitized local record. Its only user-visible
+states are:
+
+- `pending_handoff`: durably recorded locally and awaiting or retrying
+  delivery;
+- `handed_off`: a configured receiver has accepted the record; this does not
+  mean the Issue is resolved; and
+- `handoff_withdrawn_by_user`: the user explicitly handled or withdrew the
+  pending request outside Task Skill before any delivery claim.
+
+Allowed state transitions are only
+`pending_handoff -> handed_off` and
+`pending_handoff -> handoff_withdrawn_by_user`. A handed-off or withdrawn
+record cannot return to pending. Withdrawing records that the user no longer
+wants Task Skill to deliver; it does not claim that an external Issue was
+resolved. Once any delivery claim has been acquired, Task Skill can no longer
+withdraw the record, even after lease expiry. Later cancellation would require
+a separately designed receiver lookup/cancel contract.
+
+The outbox stores only bounded, sanitized discovery metadata, source task
+identity, the source Contract revision (or `0`), an idempotency identity, state,
+delivery bookkeeping, and timestamps. It must not store Issue priority, Issue
+lifecycle, semantic duplicate decisions, threat models, raw review/output,
+secrets, stack traces, large diffs, or a `resulting_task_id`.
+
+Exact replay of the same source task and canonical payload returns the existing
+handoff. A distinct occurrence requires a stable explicit occurrence ID
+provided by user instruction or another deterministic source. The first
+version does not ask an LLM to distinguish a crash retry from a semantic
+recurrence.
+
+The local commit is the success boundary. Only a successful local commit may
+return `ok=true`. Transient SQLite failure may receive one bounded retry and a
+privacy-rejected payload may be replaced once with a shorter sanitized
+abstraction; no unbounded retry loop is allowed. If the local record still
+cannot be committed, the command returns `ok=false`, the agent immediately
+reports stable `handoff_not_persisted`, and the current execution unit stops
+until persistence succeeds or the user explicitly accepts the forgetting risk.
+This is the one deliberate continue-first exception: it is an orchestration
+stop, not an automatic Task status change. Recovery is deterministic: inspect
+`db status`, obtain any required explicit initialization/migration or external
+state repair, and replay the same record identity. The agent must never claim
+that a failed local record was handed off.
+
+Failure after the local commit returns success with state `pending_handoff`.
+An absent or disabled receiver is the normal local-only mode and emits no
+warning. A delivery attempt through an enabled receiver that fails emits the
+additive warning with fixed `suggested_action=continue`. Neither case blocks
+source-task completion, alters task
+selection, appends a task event, or changes the source task's `updated_at`.
+
+The approved command family is introduced only by the implementation unit that
+can make each command useful:
+
+- `handoff record`;
+- `handoff list`, bounded to the existing compact-list style;
+- `handoff show`;
+- `handoff withdraw`; and
+- `handoff sync --due`, which retries pending delivery only and never imports,
+  reconciles, or mutates Issue lifecycle.
+
+The local-outbox unit introduces record/list/show/withdraw. `handoff sync
+--due` is introduced only with the separately approved Issue adapter and claim
+state machine; the base Skill does not advertise a dead sync command.
+
+Stable command names are `handoff.record`, `handoff.list`, `handoff.show`,
+`handoff.withdraw`, and `handoff.sync`. Their minimum data payloads are:
+
+- record: `handoff` and `local_record` with `durable`, `created`, `replayed`,
+  and `handoff_id`;
+- list: `handoffs`, returned `count`, exact `total_matching`, `limit`, and
+  selected `states`;
+- show: `handoff`;
+- withdraw: `handoff` and `changed_fields`; and
+- sync: bounded `claimed`, `accepted`, `pending`, and `failed` counts.
+
+`handoff list` defaults to `pending_handoff` and oldest-first
+`created_at, handoff_id` order. Terminal records appear only with an explicit
+state filter. The default limit is 20 and maximum is 100; paging remains
+deferred.
+
+New stable error codes are `handoff_not_persisted`,
+`handoff_not_withdrawable`, `handoff_occurrence_invalid`,
+`contract_activation_forbidden`, `contract_authority_required`,
+and `contract_write_conflict`. Canonically unchanged Contract input is a
+successful no-op, not an error. `handoff_delivery_pending` is a warning code,
+never a completion error.
+
+`task show` gains only a compact sibling handoff summary. Full records remain
+behind the handoff commands.
+
+### Pending Rediscovery And Delivery
+
+After local-outbox implementation, `db status` adds:
+
+- exact `counts.handoff_pending`;
+- `handoff_delivery.adapter_enabled`; and
+- deterministic `handoff_delivery.sync_due`.
+
+At session or execution-unit boundaries, the workflow runs exactly one
+`handoff sync --due` only when both `adapter_enabled` and `sync_due` are true.
+The agent does not decide whether to retry, ask the user, or enter a retry loop.
+A delivery failure remains pending and non-blocking. No current/next warning is
+required.
+
+Delivery uses the stable `handoff_id` as receiver idempotency identity. Internal
+claim and expiring-lease fields prevent concurrent delivery and withdrawal
+races. Withdrawal succeeds only when no claim has ever been acquired.
+Receiver acknowledgement changes state only through a compare-and-swap that
+matches the active claim. After a crash between receiver acceptance and local
+acknowledgement, the lease expires and a retry with the same `handoff_id` must
+return the same receiver item before local state becomes `handed_off`.
+
+The first adapter uses a fixed retry contract. A never-claimed record with
+`delivery_attempts=0` is immediately due when an adapter is enabled, including
+a record created before that adapter existed. Claim acquisition atomically
+increments `delivery_attempts`, but that counter is observability only and does
+not select a retry stage. Retry stage advances only on a matching-claim
+retryable negative response:
+
+- the first stores `last_delivery_code=retryable_wait_1` and is due after 60
+  seconds;
+- the second stores `last_delivery_code=retryable_wait_2` and is due after 300
+  seconds; and
+- the third stores `last_delivery_code=retry_exhausted` with no automatic due
+  time.
+
+A permanent negative response stores `permanent_error` and is also pending but
+not due. An expired claim represents an uncertain acknowledgement: it does not
+advance the retryable-result stage and is due for idempotent reconciliation
+regardless of the normal retry cap. Active claims, permanent errors, and
+exhausted negative responses make `sync_due=false`. Adapter-version changes do
+not silently reset terminal retry metadata.
+
+The Issue adapter is not part of the first outbox unit. It remains disabled by
+default and may be implemented only after a versioned local Issue intake
+contract exists and the governing write boundary is explicitly updated.
+Enabling it requires user-approved project-scoped configuration. Task Skill may
+then call only that versioned local intake boundary; it must not directly open,
+initialize, migrate, or edit an Issue database, and must not invoke a shell,
+URL, network service, or GitHub. Without the adapter, records simply remain
+pending and the user may explicitly ask an agent to handle or withdraw one
+outside Task Skill.
+
+Handoff summary and rationale are limited to 1000 characters each; occurrence
+ID to 200; adapter key/version, receiver receipt, stable delivery code, and
+Contract authority reference to 500; withdrawal reason and Contract change
+reason to 1000; Contract scope and acceptance to 4000 each; and Contract
+constraints to 2000. All use the existing secret/raw-output/diff rejection.
+Adapter source reference is only the tuple `project_id`, `source_task_id`, and
+`source_contract_revision`; it contains no Contract or task prose.
+
+### Optional Informational Effort Advisory
+
+Effort Advisory is a later, default-off risk-profile feature. It may
+deterministically report changed file/line/module counts, generated fixture
+size, structured retry counts, Contract revision count, handoff count, and
+configured test metrics when coverage is available.
+
+Its initial contract is informational only:
+
+- `suggested_action` is always `continue`;
+- it never asks the user, records a handoff, changes acceptance, pauses,
+  blocks, or fails a task by itself;
+- it stores no acknowledgement or LLM disposition;
+- repeated warnings may reuse one stable key; and
+- absent or unreliable attribution is reported as `unknown`, not inferred.
+
+Optional best-effort basis metadata may be attached to the first
+`in_progress` write when the feature is enabled. Capture failure never blocks
+task start. Git evaluation is read-only. Attribution is `unknown` whenever the
+repository is non-Git, either endpoint is dirty or uncertain, basis coverage is
+missing, or any active-task overlap occurred between basis and observation.
+The advisory must expose its basis, coverage, attribution, thresholds, unknown
+reasons, and stable warning key.
+
+### Consuming-Project Modification Boundary
+
+Consuming-project behavior belongs in documented configuration or an approved
+adapter. Core Task Skill improvements belong in an upstream Issue or pull
+request. If a consuming project modifies core package files, it must make the
+installed version, origin, and local difference visible.
+
+A later read-only `self status` command may compare packaged core files with a
+release manifest and report `clean`, `modified`, or `unknown`. It must not
+repair, update, download, contact GitHub, or stop task work. The once-daily
+GitHub update-check proposal remains separately deferred.
+
+### Compatibility, Judgment Budget, And Acceptance
+
+Migration order is fixed:
+
+1. TG-M11 schema-neutral corrections use schema-v5 fields only.
+2. TG-M11 adds schema version 6 for Git snapshot base revisions.
+3. TG-M12 adds schema version 7 for the handoff outbox.
+4. TG-M12 adds schema version 8 for Task Contract revisions.
+
+Old binaries must reject newer schemas with `migration_required` or an
+equivalent explicit newer-schema error; they must never downgrade or write a
+newer database. Operators must update the installed Skill before `db init` and
+retain the normal local backup/rollback discipline.
+
+Static Viewer snapshot version 3 maps to source schema versions 5, 6, 7, and 8.
+`source_schema_version` contains the actual database version. Contract and
+outbox fields are excluded from the Viewer task allow-list. Normal and
+`--read-only` exports must be tested at every intermediate schema.
+
+The decision budget is:
+
+- legacy or simple revision-0 task: zero additional LLM judgments;
+- Contract activation: zero judgments because it copies only explicit input;
+- Task-versus-handoff classification: the one judgment already inherent in
+  scope handling, with no second Issue-presence or continuation judgment;
+- adapter delivery and due retry: zero judgments;
+- Effort Advisory: zero judgments and zero stop decisions; and
+- normal Tier 2 review: the existing two independent review judgments.
+
+The sole new stop is failure to make an out-of-scope discovery durable after
+the bounded local retry. It requires no LLM disposition, affects only the
+current execution unit, and exists because continuing would reintroduce the
+context-compression forgetting risk this extension is intended to remove.
+
+Acceptance requires automated proof that:
+
+- revision-0 tasks retain existing add/current/next/edit/done behavior;
+- Contract creation and revision follow only explicit authority and preserve
+  immutable history;
+- canonical replay of the current Contract is a write-free no-op;
+- a semantic Contract revision changes at least one content field;
+- pre-review Contract change keeps generation 0, while a post-review semantic
+  revision clears completion evidence and requires a fresh review generation;
+- exact handoff replay creates one row, while explicit stable occurrence IDs
+  can distinguish genuinely separate occurrences;
+- local-record failure is never reported as durable, while delivery failure is
+  durable, pending, and non-blocking;
+- concurrent sync/withdraw/ack paths cannot produce a withdrawn record that was
+  already accepted;
+- once-claimed records cannot be withdrawn, including after lease expiry;
+- pending handoffs default to deterministic oldest-first retrieval and are
+  exactly counted;
+- absence, disabled presence, or enabled presence of Issue Skill does not
+  change the command the agent uses;
+- migrations v5-to-v6-to-v7-to-v8 and v7-to-v8 preserve tasks, 191-event
+  fixture history, nine completion hashes, review evidence, handoffs, Contract
+  pointers/revisions, and project identity with rollback, quick, and
+  foreign-key checks;
+- Viewer snapshot v3 remains safe and unchanged at schemas 6, 7, and 8;
+- privacy, compact envelopes, read-only behavior, project separation,
+  concurrency, and no-target-project-mutation behavior do not regress; and
+- the implemented Skill remains concise and advertises each surface only after
+  its own implementation and acceptance pass.
+
+Semantic duplicate/recurrence resolution, retention/archive, paging, multiple
+Issue receivers, Issue import/sync/priority/triage, automatic Task creation,
+advanced risk or fixture analysis, child/checklist tasks, signed evidence, and
+daily GitHub update checking remain separate Issue candidates.
 
 ## Approved Post-MVP Extension: Static Task Viewer
 

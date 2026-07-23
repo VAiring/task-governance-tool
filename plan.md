@@ -3,6 +3,10 @@
 Status: MVP, completion commit extension, static Task Viewer, and TG-M8
 governance hardening implemented. The TG-M9 paused-work visibility contract and
 roadmap are approved, but implementation awaits separate user approval.
+The TG-M11 completion-integrity correction contract and task baseline are
+approved, but implementation awaits separate user approval. The TG-M12
+scope-control and local-handoff contract and roadmap are approved for later
+implementation; v0.2.0/schema v5 remains the implemented baseline.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -758,12 +762,106 @@ Confirmed decisions:
   remains unapproved. It requires a separate decision on opt-in network use,
   project/release identity, local cache location, time source, failure policy,
   privacy, and read-only behavior.
+- TG-M11 corrects completion integrity without making `done` permanently
+  immutable. A done task rejects every task/review write except an exact,
+  reason-required reopen to `in_progress`. Reopen atomically clears current
+  completion evidence, clears the current review target while advancing its
+  generation, preserves historical events/receipts/findings, and reuses the
+  sequential ordering guard.
+- Re-completion after reopen requires fresh verification, review, and
+  completion evidence. Review, metadata, note, evidence, and finding writes
+  cannot mutate a task while it remains done.
+- Review-tier downgrade is permitted only in a pre-review safe status while
+  `review_target_generation=0`, with a sanitized reason. The first structured
+  review target is the review-start boundary; no task-added event rename,
+  event latch, or legacy event backfill is adopted.
+- Any exact-current-generation `changes_requested` receipt blocks completion
+  regardless of PASS count. A newer target generation and fresh required
+  review are required.
+- Stored Git completion evidence and Git review targets are resolved again at
+  the done transition. Lane values share one trimming boundary, and explicit
+  or automatic lane orders stay within SQLite signed 64-bit range. These
+  corrections add no LLM judgment.
+- TG-M11 preserves review-before-commit ordering and the normal two-judgment
+  Tier 2 path through schema-v6 `git_snapshot`. The target records a canonical
+  base commit plus a SHA-256 fingerprint of a versioned stage-0 index manifest.
+  The later single-parent completion commit must have the same base and tree
+  fingerprint. Root and merge snapshot completions are initially unsupported.
+  Schema/storage and internal snapshot primitives land first, but the public
+  `git_snapshot` target is enabled only in the same unit as its done-gate
+  binding, so no completed intermediate release exposes an uncompletable
+  target.
+- TG-M11 is not advertised by the Skill, README, release guidance, or version
+  metadata until implementation, migration, acceptance, and forward-flow tests
+  pass. TG-M11.1 through TG-M11.4 remain blocked from consumption until a
+  separate implementation approval.
+- The formal milestone uses TG-M11 because a cancelled provisional SQLite task
+  already used the human-facing title `TG-M10.1`; cancelled history is retained
+  and its title is not reused for a different approved unit.
+- TG-M12 keeps Task Skill responsible for purpose/scope/acceptance/current
+  state, blockers, the consumption loop, and acceptance-driven completion. It
+  does not absorb Issue import, priority, triage, resolution, duplicate
+  handling, automatic Task conversion, or a general evidence/workflow engine.
+- New findings use one continue-first classification: required by current
+  acceptance and safely actionable under current authority stays in the Task;
+  a named unmet condition that prevents acceptance and cannot be safely
+  resolved under current authority becomes a blocker; everything else is
+  durably handed off before work continues. Safety is an orthogonal
+  notification/blocking modifier. Pending handoffs and effort warnings never
+  extend an otherwise complete Task.
+- The agent always invokes the same `handoff record` operation. Without an
+  Issue Skill or with its adapter disabled, the sanitized record remains
+  `pending_handoff`; a future explicitly enabled adapter may advance it to
+  `handed_off` only after receiver acceptance. User out-of-band handling
+  withdraws a still-pending request and does not assert Issue resolution.
+- Handoff persistence is local-first and idempotent. Local commit failure is
+  never reported as success and stops only the current execution unit until the
+  record is durable or the user accepts forgetting risk. Receiver failure after
+  local commit remains pending and non-blocking. Claims, leases, stable
+  `handoff_id`, and compare-and-swap acknowledgement close sync/withdraw crash
+  races without exposing more states. Once any claim is acquired, the record
+  can no longer be withdrawn locally, even after expiry; a future receiver-side
+  cancellation contract is a separate feature.
+- `db status` will expose the exact pending count plus adapter-enabled and
+  sync-due flags. At a session or execution-unit boundary, an enabled due sink
+  receives one bounded deterministic sync attempt; there is no LLM retry
+  decision, question, retry loop, or current/next warning. Delivery attempts
+  are observability only; the fixed retry stage advances solely on stable
+  retryable-negative result codes so expired claims do not consume the
+  negative-result budget.
+- Task Contract is core but per-task optional. Revision 1 is copied only when
+  explicit scope and acceptance already exist in user instruction, approved
+  roadmap, or task input. Otherwise revision 0 preserves the current simple
+  flow without a question. Purpose remains title/description and the database
+  stays subordinate to governing authority.
+- Later Contract revisions require explicit user or independent later
+  authority. Current-task document edits cannot self-authorize scope growth.
+  Canonically equal content is a write-free replay regardless of authority
+  relabeling. Semantic revision preserves history and clears completion
+  evidence; it keeps review generation 0 if review has never started, otherwise
+  clears the current review target, advances review generation, returns
+  review-pending to in-progress, and requires fresh gates.
+- TG-M12 uses schema v7 for the outbox and schema v8 for Contract revisions,
+  after TG-M11 schema v6. Static Viewer snapshot v3 remains the projection for
+  schemas 5-8, carries the actual source schema, and excludes new outbox and
+  Contract fields. Older binaries reject newer schemas rather than downgrading.
+- The initial optional Effort Advisory is default-off and informational:
+  `suggested_action=continue`, unknown attribution when evidence is unreliable,
+  and no automatic ask/handoff/pause/block/failure/acceptance mutation.
+  Consumer-core modification visibility is a separate offline read-only
+  self-status unit; configuration/adapters are the supported local extension
+  boundary.
+- The judgment budget is explicit: revision-0 tasks add zero decisions,
+  Contract activation is a deterministic copy, Issue presence and delivery add
+  zero decisions, Effort Advisory adds zero decisions, and normal Tier 2
+  remains two independent reviews. The design aims to reduce resume-time scope
+  reinterpretation rather than introduce stricter routine stops.
 
 Open issues:
 
 - Decide later whether to add profile detection, verification recording,
   review-template generation, dependency graphs, or Git integration beyond
-  TG-M8's read-only completion-commit validation.
+  TG-M11's read-only snapshot and completion validation.
 - TG-M7.0 through TG-M7.4 are complete, with task and commit evidence recorded
   in the project-local SQLite database. No additional product decision is
   currently required for the static Viewer baseline.
@@ -778,6 +876,14 @@ Open issues:
 - Revisit a once-daily GitHub update check only as a separately approved
   local-cache/network feature; using the Skill must not contact GitHub under
   the current contract.
+- Before TG-M12.3, define and approve the future Issue Skill's exact versioned
+  local intake contract and transport plus Task Skill's governing permission
+  update. Until then, the adapter remains disabled and Task Skill never opens
+  or modifies Issue storage.
+- Keep semantic duplicate/recurrence handling, handoff paging/retention,
+  multiple receivers, Issue import/sync/priority/triage, resulting-task
+  creation, advanced risk/fixture analysis, signed evidence, and child-task
+  structure outside the approved TG-M12 core.
 
 ## Implementation Execution Status
 
@@ -786,7 +892,16 @@ governing-document/task baseline, and TG-M8.1 through TG-M8.6 were consumed in
 order after separate explicit user approval. TG-M9.0 establishes only the
 paused-visibility contract and task baseline. TG-M9.1 is registered as blocked
 pending separate user approval, and TG-M9.2 remains ordered behind it; neither
-implementation unit is authorized by the current planning request.
+implementation unit is authorized by the current planning request. TG-M11.0
+establishes only the completion-integrity contract and task baseline.
+TG-M11.1 is registered as blocked pending separate user approval, and TG-M11.2
+through TG-M11.4 remain ordered behind it. TG-M12.0 establishes only the
+scope-control/local-handoff contract and task baseline; TG-M12.1 is blocked
+pending separate implementation approval after TG-M11, TG-M12.2 and TG-M12.3
+remain ordered behind it, TG-M12.3 is additionally blocked on an Issue intake
+contract and integration approval, and TG-M12.O1/O2 are separately gated
+optional work. None of those implementation units is authorized by the current
+planning request.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local
 SQLite database. Do not append another large per-task execution log here; use

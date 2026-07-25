@@ -361,7 +361,12 @@ class CompletionEvidenceTests(unittest.TestCase):
                     "completion_commit_hash": "release-42",
                 },
             )
-            seed_review_evidence(db, task["task_id"])
+            seed_review_evidence(
+                db,
+                task["task_id"],
+                target_kind="external_revision",
+                target_value="release-42",
+            )
             completed = edit(
                 db,
                 repo,

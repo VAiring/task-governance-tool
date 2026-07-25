@@ -45,6 +45,7 @@ task-governance-tool/
       selection.py
       completion.py
       reviews.py
+      git_snapshot.py
       viewer.py
   references/
     task_workflow.md
@@ -110,10 +111,48 @@ python scripts/taskgov.py db init --repo <target-project> --json
 python scripts/taskgov.py db status --repo <target-project> --json
 ```
 
-Only `db init` creates or migrates the database. The current release migrates
-supported schema-v2 databases through schema v5 while retaining historical
-task/event IDs and completion hashes; keep a normal project backup before any
-release update even though migration is transactional and repeatable.
+Only `db init` creates or migrates the database. Version `0.3.0` uses schema v6
+and migrates supported schema-v2, v3, v4, and v5 databases through the explicit
+ordered migration path while retaining task/event IDs, completion hashes, and
+structured review history. Skill installation or an ordinary task command does
+not migrate a database. Back up the project-local database before updating the
+skill, then run `db init` explicitly. Migrations are transactional, repeatable,
+and never downgrade a database; an older runtime rejects a newer schema.
+
+## Git Snapshot Completion Workflow
+
+Version `0.3.0` supports review before the project creates its completion
+commit. Stage only the intended project changes through the project's own Git
+workflow, capture a snapshot target without a caller revision, collect the
+required reviews, create the project commit, and then complete the task:
+
+```powershell
+git add <intended-project-paths>
+python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_snapshot --json
+python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
+python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --json
+git commit -m "<project-approved message>"
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
+```
+
+`review target set --kind git_snapshot` accepts no `--revision`. It reads the
+canonical current `HEAD` and stage-0 index entries without changing Git.
+Unstaged and untracked content is excluded. At completion, the commit must have
+exactly one parent equal to the stored base and a tree fingerprint identical to
+the reviewed snapshot. Root and merge commits are unsupported for this path.
+If the reviewed content changes, set a new snapshot target and obtain fresh
+reviews. A matching commit needs only the original two Tier 2 judgments; the
+base/tree binding is deterministic.
+
+After a task is `done`, all task and review writes are rejected except this
+exact reason-required reopen:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --reopen-reason "<sanitized reason>" --json
+```
+
+Reopen preserves historical evidence but requires fresh verification, review,
+and completion evidence before the task can be completed again.
 
 ## Viewer Runtime State
 
@@ -125,8 +164,10 @@ viewer to:
 ```
 
 Use an explicit `--output` only after the user approves that complete path; its
-parent must already exist. Snapshot v3 includes typed completion and bounded
-structured review evidence. The HTML is stale until the user requests
+parent must already exist. Snapshot v3 continues to serve schemas v5-v6,
+includes typed completion and bounded structured review evidence, carries the
+actual source schema, and omits the internal
+`review_target_base_revision`. The HTML is stale until the user requests
 regeneration. It has no server, live database refresh, browser editing, or
 automatic browser launch. Generated viewers remain runtime state and must not
 be added to the release artifact.
@@ -148,11 +189,15 @@ Before creating a release artifact:
    available.
 4. Run the installed skill self-containment smoke test.
 5. Confirm an isolated installed copy can run `web export` and that the
-   artifact includes `assets/task-viewer.template.html` and `viewer.py`.
+   artifact includes `assets/task-viewer.template.html`, `viewer.py`, and
+   `git_snapshot.py`.
 6. Confirm generated `state/`, SQLite files, generated `task-viewer.html`, root
    copied references, logs, and caches are ignored and absent from the artifact.
 7. Confirm `task-governance-tool/SKILL.md` frontmatter contains only `name` and
    `description`, and the `name` matches the folder.
+8. Confirm `taskgov --version` reports `0.3.0`, storage reports schema v6, and
+   the Skill, workflow, CLI contracts, README, and this note describe the same
+   snapshot/reopen behavior.
 
 ## Publication Notes
 
@@ -164,7 +209,8 @@ Versioning follows the runtime package version in
 should name current/next task inspection, pause/resume, sequential transition
 guards, typed completion evidence with read-only Git validation, structured
 review gates, exact paused counts, the bounded current-status filter, the
-advisory paused-work warning, schema-v5 migration, and snapshot-v3 offline
-Viewer export.
-The TG-M8 release candidate is version `0.2.0` because it adds new commands,
-schema migrations, and completion-gate behavior beyond the `0.1.0` trial.
+advisory paused-work warning, schema-v6 migration, deterministic staged-snapshot
+completion binding, done/reopen safety, and snapshot-v3 offline Viewer export.
+The implemented TG-M11 release is version `0.3.0`. It adds schema v6 and
+completion-integrity behavior beyond the historical `0.2.0` TG-M8 release
+candidate and the `0.1.0` trial.

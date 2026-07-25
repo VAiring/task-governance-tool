@@ -3,10 +3,14 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
+from unittest import mock
+
+from tests.review_test_helpers import seed_review_evidence_connection
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +31,12 @@ try:
         resolve_database_target,
         validate_current_database,
     )
-    from task_governance_tool.tasks import list_tasks_for_viewer
+    from task_governance_tool import tasks as task_service
+    from task_governance_tool.tasks import (
+        TaskValidationError,
+        edit_task,
+        list_tasks_for_viewer,
+    )
 finally:
     sys.path.pop(0)
 
@@ -161,6 +170,51 @@ def git_status(repo):
         text=True,
         stdout=subprocess.PIPE,
     ).stdout
+
+
+def commit_staged(repo, message="completion"):
+    subprocess.run(
+        [
+            "git", "-C", str(repo), "-c", "user.name=TaskGov Test",
+            "-c", "user.email=taskgov@example.invalid", "commit", "--quiet",
+            "-m", message,
+        ],
+        check=True,
+    )
+    return subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+
+
+def target_and_two_passes(db, repo, task_id, kind, revision=None):
+    target_args = [
+        "review", "target", "set",
+        "--repo", str(repo), "--db", str(db), task_id,
+        "--kind", kind,
+    ]
+    if revision is not None:
+        target_args.extend(["--revision", revision])
+    target_args.append("--json")
+    target = run_taskgov(*target_args)
+    if target.returncode:
+        raise AssertionError(target.stderr or target.stdout)
+    for reviewer in ("reviewer-a", "reviewer-b"):
+        receipt = receipt_add(db, repo, task_id, reviewer)
+        if receipt.returncode:
+            raise AssertionError(receipt.stderr or receipt.stdout)
+    return payload(target)["data"]
+
+
+def snapshot_target_and_two_passes(db, repo, task_id):
+    return target_and_two_passes(
+        db,
+        repo,
+        task_id,
+        "git_snapshot",
+    )
 
 
 class ReviewEvidenceTests(unittest.TestCase):
@@ -822,7 +876,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             self.assertEqual(receipt_add(db, repo, task_id, "reviewer-b").returncode, 0)
             self.assertEqual(done(db, repo, task_id).returncode, 0)
 
-    def test_internal_git_snapshot_target_and_receipt_keep_base_private_and_generation_bound(self):
+    def test_public_git_snapshot_target_projects_base_but_viewer_keeps_it_private(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
@@ -831,27 +885,65 @@ class ReviewEvidenceTests(unittest.TestCase):
             task_id = add_task(db, repo)["task_id"]
 
             before_db, before_git = db.read_bytes(), git_status(repo)
-            unavailable = run_taskgov(
+            revision_rejected = run_taskgov(
                 "review", "target", "set",
                 "--repo", str(repo), "--db", str(db), task_id,
-                "--kind", "git_snapshot", "--revision", "internal-only",
+                "--kind", "git_snapshot", "--revision", "caller-supplied",
                 "--json",
             )
-            self.assertEqual(unavailable.returncode, 1, unavailable.stdout)
             self.assertEqual(
-                payload(unavailable)["errors"][0]["code"],
+                revision_rejected.returncode,
+                1,
+                revision_rejected.stdout,
+            )
+            self.assertEqual(
+                payload(revision_rejected)["errors"][0]["code"],
                 "invalid_review_evidence",
             )
             self.assertEqual(db.read_bytes(), before_db)
             self.assertEqual(git_status(repo), before_git)
 
-            target_result = internal_git_snapshot_target(db, repo, task_id)
-            fingerprint = target_result.task["review_target_value"]
+            read_only = run_taskgov(
+                "review", "target", "set",
+                "--repo", str(repo), "--db", str(db), task_id,
+                "--kind", "git_snapshot", "--read-only", "--json",
+            )
+            self.assertEqual(read_only.returncode, 1, read_only.stdout)
+            self.assertEqual(
+                payload(read_only)["errors"][0]["code"],
+                "invalid_argument",
+            )
+            self.assertEqual(db.read_bytes(), before_db)
+            self.assertEqual(git_status(repo), before_git)
+
+            target_set_result = run_taskgov(
+                "review", "target", "set",
+                "--repo", str(repo), "--db", str(db), task_id,
+                "--kind", "git_snapshot", "--json",
+            )
+            self.assertEqual(
+                target_set_result.returncode,
+                0,
+                target_set_result.stdout,
+            )
+            target_data = payload(target_set_result)["data"]
+            fingerprint = target_data["task"]["review_target_value"]
             self.assertEqual(
                 review_target_state(db, task_id),
                 ("git_snapshot", fingerprint, base, 1),
             )
             self.assertTrue(fingerprint.startswith("sha256:"))
+            self.assertEqual(
+                target_data["task"]["review_target_base_revision"],
+                base,
+            )
+            self.assertIn(
+                "review_target_base_revision",
+                target_data["changed_fields"],
+            )
+            self.assertEqual(git_status(repo), before_git)
+            self.assertNotIn(str(repo), target_set_result.stdout)
+            self.assertNotIn("reviewed.txt", target_set_result.stdout)
 
             recorded = receipt_add(db, repo, task_id, "reviewer-a")
             self.assertEqual(recorded.returncode, 0, recorded.stdout)
@@ -870,12 +962,19 @@ class ReviewEvidenceTests(unittest.TestCase):
                     connection, target.project.project_id, task_id
                 )
                 viewer_tasks = list_tasks_for_viewer(connection, target.project).tasks
+            shown = payload(
+                run_taskgov(
+                    "task", "show",
+                    "--repo", str(repo), "--db", str(db), task_id, "--json",
+                )
+            )
             self.assertEqual(evidence["counts"]["receipts_current_generation"], 1)
             self.assertEqual(evidence["gate"]["qualifying_independent_passes"], 1)
+            self.assertEqual(
+                shown["data"]["task"]["review_target_base_revision"],
+                base,
+            )
             for projection in (
-                target_result.task,
-                target_result.changed_fields,
-                target_result.event,
                 receipt,
                 evidence,
                 viewer_tasks,
@@ -908,7 +1007,10 @@ class ReviewEvidenceTests(unittest.TestCase):
                 review_target_state(db, task_id),
                 ("diff_fingerprint", FINGERPRINT_B, "", 2),
             )
-            self.assertNotIn("review_target_base_revision", reset.stdout)
+            self.assertEqual(
+                payload(reset)["data"]["task"]["review_target_base_revision"],
+                "",
+            )
 
     def test_concurrent_internal_snapshot_targets_serialize_generation_updates(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -1004,7 +1106,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(db.read_bytes(), before)
 
-    def test_schema_six_snapshot_target_done_fails_closed_without_write(self):
+    def test_snapshot_completion_rejects_a_root_commit_without_write(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
@@ -1032,6 +1134,399 @@ class ReviewEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(db.read_bytes(), before_db)
             self.assertEqual(git_status(repo), before_git)
+
+    def test_snapshot_completion_binds_two_reviews_to_the_later_commit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            base = init_git_repo(repo)
+            init_db(db, repo)
+            task_id = add_task(db, repo)["task_id"]
+            reviewed = repo / "reviewed.txt"
+            reviewed.write_text("reviewed\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "reviewed.txt"],
+                check=True,
+            )
+
+            target = snapshot_target_and_two_passes(db, repo, task_id)
+            self.assertEqual(
+                target["task"]["review_target_base_revision"],
+                base,
+            )
+            completion = commit_staged(repo)
+            before_git = git_status(repo)
+            completed = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db), task_id,
+                "--status", "done", "--verification-complete",
+                "--review-complete", "--completion-commit-hash", completion,
+                "--json",
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            shown = payload(
+                run_taskgov(
+                    "task", "show", "--repo", str(repo), "--db", str(db),
+                    task_id, "--json",
+                )
+            )["data"]
+            self.assertEqual(shown["task"]["status"], "done")
+            self.assertEqual(
+                shown["task"]["completion_evidence_revision"],
+                completion,
+            )
+            self.assertEqual(
+                shown["review_evidence"]["counts"]["receipts_total"],
+                2,
+            )
+            self.assertEqual(
+                shown["review_evidence"]["target"]["generation"],
+                1,
+            )
+            self.assertTrue(shown["review_evidence"]["gate"]["satisfied"])
+            self.assertEqual(git_status(repo), before_git)
+
+    def test_snapshot_completion_rejects_a_commit_changed_after_review(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            init_git_repo(repo)
+            init_db(db, repo)
+            task_id = add_task(db, repo)["task_id"]
+            reviewed = repo / "reviewed.txt"
+            reviewed.write_text("reviewed\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "reviewed.txt"],
+                check=True,
+            )
+            snapshot_target_and_two_passes(db, repo, task_id)
+
+            reviewed.write_text("changed after review\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "reviewed.txt"],
+                check=True,
+            )
+            completion = commit_staged(repo, "changed completion")
+            before_db, before_git = db.read_bytes(), git_status(repo)
+            rejected = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db), task_id,
+                "--status", "done", "--verification-complete",
+                "--review-complete", "--completion-commit-hash", completion,
+                "--json",
+            )
+
+            self.assertEqual(rejected.returncode, 1, rejected.stdout)
+            self.assertEqual(
+                payload(rejected)["errors"][0]["code"],
+                "review_target_mismatch",
+            )
+            self.assertEqual(db.read_bytes(), before_db)
+            self.assertEqual(git_status(repo), before_git)
+
+    def test_public_completion_binding_accepts_exact_non_snapshot_pairs(self):
+        cases = ("git_commit", "external_revision", "commit_not_required")
+        for completion_kind in cases:
+            with self.subTest(completion_kind=completion_kind), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                repo, db = root / "repo", root / "tasks.sqlite"
+                git_revision = init_git_repo(repo)
+                init_db(db, repo)
+                task_id = add_task(db, repo)["task_id"]
+                if completion_kind == "git_commit":
+                    target_and_two_passes(
+                        db,
+                        repo,
+                        task_id,
+                        "git_commit",
+                        git_revision,
+                    )
+                    evidence_args = ("--completion-commit-hash", git_revision)
+                elif completion_kind == "external_revision":
+                    target_and_two_passes(
+                        db,
+                        repo,
+                        task_id,
+                        "external_revision",
+                        "release-reviewed",
+                    )
+                    evidence_args = (
+                        "--completion-evidence-kind",
+                        "external_revision",
+                        "--completion-revision",
+                        "release-reviewed",
+                        "--completion-evidence-reason",
+                        "Approved external release",
+                        "--external-revision-approved",
+                    )
+                else:
+                    target_and_two_passes(
+                        db,
+                        repo,
+                        task_id,
+                        "diff_fingerprint",
+                        FINGERPRINT_A,
+                    )
+                    evidence_args = ("--commit-not-required",)
+
+                completed = run_taskgov(
+                    "task", "edit",
+                    "--repo", str(repo), "--db", str(db), task_id,
+                    "--status", "done", "--verification-complete",
+                    "--review-complete", *evidence_args, "--json",
+                )
+
+                self.assertEqual(completed.returncode, 0, completed.stdout)
+                shown = payload(
+                    run_taskgov(
+                        "task", "show",
+                        "--repo", str(repo), "--db", str(db), task_id,
+                        "--json",
+                    )
+                )["data"]
+                self.assertEqual(shown["task"]["status"], "done")
+                self.assertEqual(
+                    shown["review_evidence"]["counts"]["receipts_total"],
+                    2,
+                )
+                self.assertEqual(
+                    shown["review_evidence"]["target"]["generation"],
+                    1,
+                )
+
+    def test_public_completion_binding_rejects_non_snapshot_mismatches(self):
+        cases = ("git_commit", "external_revision", "diff_fingerprint")
+        for target_kind in cases:
+            with self.subTest(target_kind=target_kind), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                repo, db = root / "repo", root / "tasks.sqlite"
+                reviewed_commit = init_git_repo(repo)
+                init_db(db, repo)
+                task_id = add_task(db, repo)["task_id"]
+                if target_kind == "git_commit":
+                    target_and_two_passes(
+                        db,
+                        repo,
+                        task_id,
+                        target_kind,
+                        reviewed_commit,
+                    )
+                    (repo / "different.txt").write_text(
+                        "different\n",
+                        encoding="utf-8",
+                    )
+                    subprocess.run(
+                        ["git", "-C", str(repo), "add", "different.txt"],
+                        check=True,
+                    )
+                    different_commit = commit_staged(
+                        repo,
+                        "different completion",
+                    )
+                    evidence_args = (
+                        "--completion-commit-hash",
+                        different_commit,
+                    )
+                elif target_kind == "external_revision":
+                    target_and_two_passes(
+                        db,
+                        repo,
+                        task_id,
+                        target_kind,
+                        "release-reviewed",
+                    )
+                    evidence_args = (
+                        "--completion-evidence-kind",
+                        "external_revision",
+                        "--completion-revision",
+                        "release-different",
+                        "--completion-evidence-reason",
+                        "Approved external release",
+                        "--external-revision-approved",
+                    )
+                else:
+                    target_and_two_passes(
+                        db,
+                        repo,
+                        task_id,
+                        target_kind,
+                        FINGERPRINT_A,
+                    )
+                    evidence_args = (
+                        "--completion-commit-hash",
+                        reviewed_commit,
+                    )
+                before_db, before_git = db.read_bytes(), git_status(repo)
+
+                rejected = run_taskgov(
+                    "task", "edit",
+                    "--repo", str(repo), "--db", str(db), task_id,
+                    "--status", "done", "--verification-complete",
+                    "--review-complete", *evidence_args, "--json",
+                )
+
+                self.assertEqual(rejected.returncode, 1, rejected.stdout)
+                self.assertEqual(
+                    payload(rejected)["errors"][0]["code"],
+                    "review_target_mismatch",
+                )
+                self.assertEqual(db.read_bytes(), before_db)
+                self.assertEqual(git_status(repo), before_git)
+
+    def test_locked_binding_rechecks_a_concurrently_reset_review_target(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            repo.mkdir()
+            init_db(db, repo)
+            task_id = add_task(db, repo)["task_id"]
+            target_set(db, repo, task_id)
+            receipt_add(db, repo, task_id, "reviewer-a")
+            receipt_add(db, repo, task_id, "reviewer-b")
+            target = database_target(db, repo)
+            original_binding = task_service.revalidate_done_git_evidence
+            binding_calls = 0
+
+            def reset_between_checks(task, **kwargs):
+                nonlocal binding_calls
+                binding_calls += 1
+                original_binding(task, **kwargs)
+                if binding_calls == 1:
+                    with closing(connect_existing(db)) as writer:
+                        seed_review_evidence_connection(
+                            writer,
+                            task_id,
+                            target_kind="external_revision",
+                            target_value="concurrent-release",
+                        )
+                        writer.commit()
+
+            with closing(connect_existing(db)) as connection:
+                validate_current_database(connection, target)
+                with mock.patch.object(
+                    task_service,
+                    "revalidate_done_git_evidence",
+                    side_effect=reset_between_checks,
+                ):
+                    with self.assertRaises(TaskValidationError) as raised:
+                        edit_task(
+                            connection,
+                            target.project,
+                            task_id,
+                            status="done",
+                            verification_complete=True,
+                            review_complete=True,
+                            commit_not_required=True,
+                        )
+                connection.rollback()
+
+            self.assertEqual(raised.exception.code, "review_target_mismatch")
+            self.assertEqual(binding_calls, 2)
+            with closing(sqlite3.connect(db)) as connection:
+                row = connection.execute(
+                    """
+                    SELECT status, completion_evidence_kind,
+                           review_target_kind, review_target_value
+                      FROM tasks WHERE task_id = ?
+                    """,
+                    (task_id,),
+                ).fetchone()
+            self.assertEqual(
+                row,
+                (
+                    "ready",
+                    "none",
+                    "external_revision",
+                    "concurrent-release",
+                ),
+            )
+
+    def test_concurrent_completion_allows_one_done_transition(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            repo.mkdir()
+            init_db(db, repo)
+            task_id = add_task(db, repo)["task_id"]
+            self.assertEqual(target_set(db, repo, task_id).returncode, 0)
+            self.assertEqual(
+                receipt_add(db, repo, task_id, "reviewer-a").returncode,
+                0,
+            )
+            self.assertEqual(
+                receipt_add(db, repo, task_id, "reviewer-b").returncode,
+                0,
+            )
+            target = database_target(db, repo)
+            with closing(sqlite3.connect(db)) as connection:
+                before_events = connection.execute(
+                    "SELECT COUNT(*) FROM task_events WHERE task_id = ?",
+                    (task_id,),
+                ).fetchone()[0]
+            barrier = threading.Barrier(2)
+            prelock_barrier = threading.Barrier(2)
+            thread_calls = threading.local()
+            original_binding = task_service.revalidate_done_git_evidence
+
+            def synchronize_first_prelock_check(task, **kwargs):
+                call_count = getattr(thread_calls, "count", 0) + 1
+                thread_calls.count = call_count
+                if call_count == 1:
+                    prelock_barrier.wait()
+                return original_binding(task, **kwargs)
+
+            def complete(_worker):
+                with closing(connect_existing(db)) as connection:
+                    try:
+                        validate_current_database(connection, target)
+                        barrier.wait()
+                        with connection:
+                            edit_task(
+                                connection,
+                                target.project,
+                                task_id,
+                                status="done",
+                                verification_complete=True,
+                                review_complete=True,
+                                commit_not_required=True,
+                            )
+                        return "ok"
+                    except task_service.TaskRepositoryError as exc:
+                        return exc.code
+
+            with mock.patch.object(
+                task_service,
+                "revalidate_done_git_evidence",
+                side_effect=synchronize_first_prelock_check,
+            ):
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    outcomes = list(executor.map(complete, range(2)))
+
+            self.assertCountEqual(
+                outcomes,
+                ["ok", "done_task_requires_reopen"],
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                row = connection.execute(
+                    """
+                    SELECT status, completion_evidence_kind
+                      FROM tasks WHERE task_id = ?
+                    """,
+                    (task_id,),
+                ).fetchone()
+                after_events = connection.execute(
+                    "SELECT COUNT(*) FROM task_events WHERE task_id = ?",
+                    (task_id,),
+                ).fetchone()[0]
+                self.assertEqual(
+                    connection.execute("PRAGMA quick_check").fetchone()[0],
+                    "ok",
+                )
+                self.assertEqual(
+                    connection.execute("PRAGMA foreign_key_check").fetchall(),
+                    [],
+                )
+            self.assertEqual(row, ("done", "commit_not_required"))
+            self.assertEqual(after_events, before_events + 1)
 
     def test_concurrent_duplicate_reviewer_records_exactly_one_receipt(self):
         with tempfile.TemporaryDirectory() as temp:

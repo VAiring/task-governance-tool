@@ -50,7 +50,7 @@ def git_is_ignored(path: str) -> bool:
 
 
 class SkillSelfContainmentTests(unittest.TestCase):
-    def test_tg_m8_guidance_and_metadata_are_synchronized(self):
+    def test_tg_m8_and_m11_guidance_and_metadata_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
             encoding="utf-8"
@@ -76,9 +76,72 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("task add --status done", skill_md)
         self.assertIn("Only `db init`", skill_md)
         self.assertIn("snapshot_version\": 3", contracts)
-        self.assertIn("schema v5", release_note)
+        self.assertIn("schema v6", release_note)
+        self.assertIn("version `0.3.0`", release_note)
         self.assertIn("verification receipts", skill_md.lower())
         self.assertIn("current work", openai_yaml.lower())
+
+    def test_tg_m11_snapshot_reopen_and_release_metadata_are_synchronized(self):
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
+            encoding="utf-8"
+        )
+        contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
+            encoding="utf-8"
+        )
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        release_note = (ROOT / "docs" / "release-install.md").read_text(
+            encoding="utf-8"
+        )
+        runtime_init = (
+            SKILL_ROOT / "scripts" / "task_governance_tool" / "__init__.py"
+        ).read_text(encoding="utf-8")
+        storage = (
+            SKILL_ROOT / "scripts" / "task_governance_tool" / "storage.py"
+        ).read_text(encoding="utf-8")
+        viewer = (
+            SKILL_ROOT / "scripts" / "task_governance_tool" / "viewer.py"
+        ).read_text(encoding="utf-8")
+        forward_note = (
+            ROOT
+            / "docs"
+            / "forward-tests"
+            / "tg-m11-git-snapshot-completion.md"
+        ).read_text(encoding="utf-8")
+
+        for text in (skill_md, workflow, contracts, readme, release_note):
+            self.assertIn("git_snapshot", text)
+            self.assertIn("reopen", text.lower())
+        for text in (workflow, readme, release_note):
+            normalized = " ".join(text.lower().split())
+            self.assertIn("--kind git_snapshot", text)
+            self.assertIn("--reopen-reason", text)
+            self.assertIn("unstaged", normalized)
+            self.assertIn("untracked", normalized)
+            self.assertTrue(
+                "single-parent" in normalized
+                or "exactly one parent" in normalized
+            )
+            self.assertIn("fresh", normalized)
+        self.assertIn('__version__ = "0.3.0"', runtime_init)
+        self.assertIn("SCHEMA_VERSION = 6", storage)
+        self.assertIn("SNAPSHOT_VERSION = 3", viewer)
+        self.assertIn("review_target_base_revision", release_note)
+        self.assertIn("omits", release_note)
+        self.assertIn("## Result\n\nPASS", forward_note)
+        self.assertIn("review_target_mismatch", forward_note)
+        self.assertIn("no extra LLM review", forward_note)
+
+        version = subprocess.run(
+            [sys.executable, "scripts/taskgov.py", "--version"],
+            cwd=SKILL_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(version.returncode, 0, version.stderr)
+        self.assertIn("0.3.0", version.stdout)
 
     def test_tg_m9_paused_visibility_guidance_is_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -235,12 +298,23 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertTrue(
                 (copied / "scripts" / "task_governance_tool" / "viewer.py").is_file()
             )
+            self.assertTrue(
+                (
+                    copied
+                    / "scripts"
+                    / "task_governance_tool"
+                    / "git_snapshot.py"
+                ).is_file()
+            )
 
     def test_ci_requires_viewer_runtime_and_rejects_generated_viewer(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
         self.assertIn("$skillRoot/assets/task-viewer.template.html", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/viewer.py", workflow)
+        self.assertIn("$skillRoot/scripts/task_governance_tool/git_snapshot.py", workflow)
+        self.assertIn("SCHEMA_VERSION", workflow)
+        self.assertIn("0\\.3\\.0", workflow)
         self.assertIn("task-viewer\\.html$", workflow)
 
     def test_tracked_skill_package_contains_runtime_but_no_generated_state(self):
@@ -258,6 +332,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("task-governance-tool/assets/task-viewer.template.html", tracked)
         self.assertIn(
             "task-governance-tool/scripts/task_governance_tool/viewer.py",
+            tracked,
+        )
+        self.assertIn(
+            "task-governance-tool/scripts/task_governance_tool/git_snapshot.py",
             tracked,
         )
         self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))

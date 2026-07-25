@@ -13,7 +13,7 @@ from task_governance_tool.completion import (
     FULL_GIT_OBJECT_ID,
     resolve_git_commit,
 )
-from task_governance_tool.git_snapshot import capture_git_snapshot
+from task_governance_tool.git_snapshot import GitSnapshotError, capture_git_snapshot
 from task_governance_tool.storage import ProjectIdentity, utc_now
 from task_governance_tool.tasks import (
     TaskRepositoryError,
@@ -28,7 +28,12 @@ from task_governance_tool.tasks import (
 )
 
 
-REVIEW_TARGET_KINDS = ("git_commit", "diff_fingerprint", "external_revision")
+REVISION_REVIEW_TARGET_KINDS = (
+    "git_commit",
+    "diff_fingerprint",
+    "external_revision",
+)
+REVIEW_TARGET_KINDS = (*REVISION_REVIEW_TARGET_KINDS, "git_snapshot")
 RECEIPT_KINDS = ("independent", "self_review_fallback", "not_required")
 REVIEW_VERDICTS = ("pass", "changes_requested", "not_required")
 FINDING_SEVERITIES = ("high", "medium", "low")
@@ -136,7 +141,7 @@ def normalize_review_target(project: ProjectIdentity, kind: Any, revision: Any) 
     target_kind = validate_choice(
         "review_target_kind",
         kind,
-        REVIEW_TARGET_KINDS,
+        REVISION_REVIEW_TARGET_KINDS,
         "invalid_review_evidence",
     )
     target_value = validate_text(
@@ -212,6 +217,7 @@ def set_review_target(
         changed_fields=[
             "review_target_kind",
             "review_target_value",
+            "review_target_base_revision",
             "review_target_generation",
         ],
         event=event,
@@ -223,13 +229,15 @@ def set_git_snapshot_target(
     project: ProjectIdentity,
     task_id: Any,
 ) -> ReviewTargetResult:
-    """Internal schema-v6 target setter; the CLI activates it in TG-M11.4."""
     normalized_task_id = validate_task_id(task_id)
     task = read_internal_task(connection, project.project_id, normalized_task_id)
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(task)
-    snapshot = capture_git_snapshot(project.canonical_repo)
+    try:
+        snapshot = capture_git_snapshot(project.canonical_repo)
+    except GitSnapshotError as exc:
+        raise review_error(exc.code, exc.message, exc.field) from exc
     task = lock_and_reread_target_owner(
         connection,
         project,
@@ -278,9 +286,53 @@ def set_git_snapshot_target(
         changed_fields=[
             "review_target_kind",
             "review_target_value",
+            "review_target_base_revision",
             "review_target_generation",
         ],
         event=event,
+    )
+
+
+def set_requested_review_target(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    task_id: Any,
+    *,
+    kind: Any,
+    revision: Any = None,
+) -> ReviewTargetResult:
+    """Dispatch the public target request without accepting a snapshot revision."""
+    normalized_task_id = validate_task_id(task_id)
+    task = read_internal_task(connection, project.project_id, normalized_task_id)
+    if task is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+    reject_done_task_write(task)
+    target_kind = validate_choice(
+        "review_target_kind",
+        kind,
+        REVIEW_TARGET_KINDS,
+        "invalid_review_evidence",
+    )
+    if target_kind == "git_snapshot":
+        if revision is not None:
+            raise review_error(
+                "invalid_review_evidence",
+                "git_snapshot captures the current staged index and does not accept --revision",
+                "review_target_value",
+            )
+        return set_git_snapshot_target(connection, project, normalized_task_id)
+    if revision is None:
+        raise review_error(
+            "invalid_review_evidence",
+            "--revision is required unless review target kind is git_snapshot",
+            "review_target_value",
+        )
+    return set_review_target(
+        connection,
+        project,
+        normalized_task_id,
+        kind=target_kind,
+        revision=revision,
     )
 
 

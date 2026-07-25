@@ -82,7 +82,50 @@ def add_task(db, repo, title, *extra):
 
 def edit_task(db, repo, task_id, *extra):
     if "--status" in extra and extra[extra.index("--status") + 1] == "done":
-        seed_review_evidence(db, task_id)
+        with closing(sqlite3.connect(db)) as connection:
+            row = connection.execute(
+                """
+                SELECT completion_evidence_kind, completion_evidence_revision
+                  FROM tasks WHERE task_id = ?
+                """,
+                (task_id,),
+            ).fetchone()
+        evidence_kind, evidence_revision = row
+        if "--completion-commit-hash" in extra:
+            candidate = extra[extra.index("--completion-commit-hash") + 1]
+            evidence_kind = "git_commit"
+            evidence_revision = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "rev-parse",
+                    "--verify",
+                    f"{candidate}^{{commit}}",
+                ],
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+            ).stdout.strip()
+        elif "--commit-not-required" in extra:
+            evidence_kind = "commit_not_required"
+            evidence_revision = ""
+        if evidence_kind == "git_commit":
+            seed_review_evidence(
+                db,
+                task_id,
+                target_kind="git_commit",
+                target_value=evidence_revision,
+            )
+        elif evidence_kind == "external_revision":
+            seed_review_evidence(
+                db,
+                task_id,
+                target_kind="external_revision",
+                target_value=evidence_revision,
+            )
+        else:
+            seed_review_evidence(db, task_id)
     result = run_taskgov(
         "task",
         "edit",

@@ -32,7 +32,9 @@ jobs:
       - name: Check CLI help
         run: |
           python task-governance-tool/scripts/taskgov.py --help
+          python task-governance-tool/scripts/taskgov.py --version
           python task-governance-tool/scripts/taskgov.py task next --help
+          python task-governance-tool/scripts/taskgov.py review target set --help
           python task-governance-tool/scripts/taskgov.py web export --help
 
       - name: Skill package self-check
@@ -75,10 +77,15 @@ jobs:
             "$skillRoot/SKILL.md",
             "$skillRoot/agents/openai.yaml",
             "$skillRoot/scripts/taskgov.py",
+            "$skillRoot/scripts/task_governance_tool/__init__.py",
             "$skillRoot/scripts/task_governance_tool/cli.py",
             "$skillRoot/scripts/task_governance_tool/storage.py",
             "$skillRoot/scripts/task_governance_tool/tasks.py",
+            "$skillRoot/scripts/task_governance_tool/ordering.py",
             "$skillRoot/scripts/task_governance_tool/selection.py",
+            "$skillRoot/scripts/task_governance_tool/completion.py",
+            "$skillRoot/scripts/task_governance_tool/reviews.py",
+            "$skillRoot/scripts/task_governance_tool/git_snapshot.py",
             "$skillRoot/scripts/task_governance_tool/viewer.py",
             "$skillRoot/assets/task-viewer.template.html",
             "$skillRoot/references/task_workflow.md",
@@ -88,6 +95,34 @@ jobs:
             if (-not (Test-Path $file)) {
               throw "Missing required skill package file: $file"
             }
+          }
+
+          $runtimeInit = Get-Content -Raw "$skillRoot/scripts/task_governance_tool/__init__.py"
+          $storage = Get-Content -Raw "$skillRoot/scripts/task_governance_tool/storage.py"
+          $viewer = Get-Content -Raw "$skillRoot/scripts/task_governance_tool/viewer.py"
+          $workflow = Get-Content -Raw "$skillRoot/references/task_workflow.md"
+          $contracts = Get-Content -Raw "$skillRoot/references/cli_contracts.md"
+          $readme = Get-Content -Raw 'README.md'
+          $release = Get-Content -Raw 'docs/release-install.md'
+          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.3\.0"') {
+            throw 'Runtime package version is not 0.3.0'
+          }
+          if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*6') {
+            throw 'Runtime schema version is not 6'
+          }
+          if ($viewer -notmatch 'SNAPSHOT_VERSION\s*=\s*3') {
+            throw 'Viewer snapshot version is not 3'
+          }
+          foreach ($document in @($skillMd, $workflow, $contracts, $readme, $release)) {
+            if ($document -notmatch 'git_snapshot') {
+              throw 'Public guidance is missing git_snapshot'
+            }
+            if ($document -notmatch 'reopen') {
+              throw 'Public guidance is missing done/reopen behavior'
+            }
+          }
+          if ($release -notmatch 'schema v6' -or $release -notmatch '0\.3\.0') {
+            throw 'Release guidance is inconsistent with version 0.3.0/schema v6'
           }
 
       - name: Guard generated artifacts

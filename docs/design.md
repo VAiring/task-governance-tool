@@ -1,10 +1,8 @@
 # task-governance-tool MVP Design
 
-Status: formal implemented design baseline through TG-M9 paused-work
-visibility. TG-M11 completion-integrity implementation is authorized next.
-TG-M12 scope-control and local-handoff implementation is authorized after
-TG-M11 except for the blocked Issue adapter. The runtime remains schema v5
-until TG-M11's explicit migration unit.
+Status: formal implemented design baseline through TG-M11 completion integrity
+at release v0.3.0/schema v6. TG-M12 scope-control and local-handoff
+implementation is authorized next except for the blocked Issue adapter.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -944,13 +942,13 @@ stale detection, checkpoints, parent/child or checklist execution units, and a
 networked GitHub update check with once-daily caching. TG-M9 introduces no
 network, Git write, target-project mutation, or additional LLM judgment.
 
-## Approved TG-M11 Completion Integrity Design
+## Implemented TG-M11 Completion Integrity Design
 
-TG-M11 is an implementation-deferred correction layer over schema version 5.
-It keeps the task/review/storage module boundaries and adds the smallest
-state needed to bind a reviewed staged Git tree to a later completion commit.
-The lifecycle and input corrections that do not need schema version 6 are
-implemented and tested before the snapshot migration.
+TG-M11 is the implemented completion-integrity layer culminating in schema
+version 6. It keeps the task/review/storage module boundaries and adds the
+smallest state needed to bind a reviewed staged Git tree to a later completion
+commit. The lifecycle and input corrections that do not need schema version 6
+were implemented and tested before the snapshot migration.
 
 ### Done Write Guard And Reopen Transaction
 
@@ -1007,6 +1005,13 @@ Review target, receipt, finding-add, and finding-resolution services call the
 same guard after locating a valid owner and before normal payload processing or
 storage. No structured review mutation is permitted while the task remains
 done.
+
+Before a task edit or reopen writes, the service acquires the SQLite writer
+lock and rereads the owner row. A task that became `done` is rejected with
+`done_task_requires_reopen`; another relevant concurrent task-row change fails
+without update and requires a retry. A concurrent review-target change during
+completion is instead evaluated by the locked binding and review-gate reread,
+so it cannot reuse the earlier target or produce a second completion event.
 
 ### Review-Tier Change Guard
 
@@ -1149,12 +1154,12 @@ canonical lane string without changing stored historical rows.
 
 ### TG-M11 Documentation Boundary
 
-Before implementation, only governing documents, `plan.md`, and ignored local
-task state describe TG-M11. `SKILL.md`, installed-skill references, README,
-release/install guidance, version metadata, viewer contracts, and product code
-remain at the implemented schema-v5 behavior. The final TG-M11 unit updates
-those surfaces together only after code, migration, privacy, no-write, and
-forward-flow acceptance passes.
+The v0.3.0 release synchronizes `SKILL.md`, installed-skill references, README,
+release/install guidance, version metadata, and product code only after the
+code, migration, privacy, no-write, and forward-flow acceptance gates pass.
+Viewer snapshot version 3 remains unchanged and omits the internal snapshot
+base even though `review target set` and `task show` expose it for the owning
+task.
 
 ## Approved TG-M12 Scope Control And Local Handoff Design
 
@@ -1594,7 +1599,7 @@ schema and prove identical privacy, no-sidecar, and task-shape behavior.
 Before implementation, only governing documents, `plan.md`, and ignored local
 task state describe TG-M12. Product code, migrations, `SKILL.md`, installed
 references, README, release/version metadata, and Viewer code remain at
-v0.2.0/schema version 5.
+v0.3.0/schema version 6.
 
 Each implementation unit synchronizes only the CLI and internal contracts it
 has actually delivered. The concise Skill workflow adds deterministic Contract

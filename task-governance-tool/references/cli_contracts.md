@@ -81,8 +81,8 @@ python scripts/taskgov.py db init --repo <target-project> --json
 ```json
 {
   "created": true,
-  "migrations_applied": [1, 2, 3, 4, 5],
-  "schema_version": 5
+  "migrations_applied": [1, 2, 3, 4, 5, 6],
+  "schema_version": 6
 }
 ```
 
@@ -101,7 +101,7 @@ python scripts/taskgov.py db status --repo <target-project> --json
   "exists": true,
   "needs_init": false,
   "needs_migration": false,
-  "schema_version": 5,
+  "schema_version": 6,
   "counts": {
     "active": 3,
     "paused": 1,
@@ -276,10 +276,16 @@ python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 - `completion_evidence_reason`
 - `external_revision_approved`
 
+It also includes the current review target fields
+`review_target_kind`, `review_target_value`,
+`review_target_base_revision`, and `review_target_generation`. The base
+revision is non-empty only for `git_snapshot`.
+
 `review_evidence` is a bounded structured projection containing the current
 target and generation, tier gate/pass/fallback state, receipt and open-finding
 counts, blocking findings, and at most ten recent receipts and findings. It
-never contains raw review transcripts or private reasoning.
+never contains the snapshot base revision, raw review transcripts, or private
+reasoning.
 
 ### `task edit`
 
@@ -304,6 +310,10 @@ Editable options:
 - `--verification`
 - `--tags`
 - `--add-note`
+- `--reopen-reason <summary>`: concise sanitized reason for the only permitted
+  write to a `done` task, an isolated reopen to `in_progress`.
+- `--review-tier-change-reason <summary>`: concise sanitized reason required
+  when lowering a review tier before review begins.
 - `--completion-commit-hash <revision>`: Git-only compatibility alias. Verify
   an existing commit read-only and store its canonical full object ID.
 - `--completion-evidence-kind <kind>`: explicitly select `git_commit`,
@@ -322,6 +332,19 @@ Editable options:
   required review gate passed or has a valid fallback.
 
 `data`: `task`, `changed_fields`, `event`.
+
+After a task reaches `done`, every otherwise-valid task and structured-review
+write returns `done_task_requires_reopen`. The only exception is an isolated
+`--status in_progress --reopen-reason <summary>` edit with no other field,
+note, evidence, or gate option. Reopening preserves history, clears current
+completion/review eligibility, and requires fresh gates before another
+completion.
+
+Raising a review tier follows the normal edit path. Lowering it requires
+`--review-tier-change-reason`, target generation zero, no stored target, a safe
+current/resulting status, and no review or completion companion options. Once a
+target has been set, lowering the tier returns
+`review_tier_downgrade_forbidden`.
 
 Only `in_progress` or `review_pending` tasks may move to `paused`, and the
 transition requires a concise sanitized `--pause-reason`. A paused task resumes
@@ -348,7 +371,8 @@ for the new kind.
 `--review-complete`. It also requires either a stored or newly supplied
 valid typed evidence record. `legacy_unverified` evidence is preserved for
 historical completed tasks but cannot satisfy a new done transition after a
-task is reopened.
+task is reopened. A current-generation `changes_requested` receipt blocks
+completion even when the required PASS receipts are present.
 
 Complete with a Git commit:
 
@@ -376,19 +400,42 @@ stored hash:
 git show --name-only <completion_commit_hash>
 ```
 
+At every done transition, stored Git completion evidence and any Git review
+target/base are resolved again read-only. Completion evidence must match the
+current target: `git_commit` requires the identical `git_commit` target or a
+valid `git_snapshot` binding; `external_revision` requires the identical
+external target; and `commit_not_required` requires a `diff_fingerprint`
+target. A mismatch returns `review_target_mismatch` without a success write.
+
 ### Review evidence commands
 
 Set or replace the current review target:
 
 ```powershell
 python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_commit --revision <revision> --json
+python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_snapshot --json
 ```
 
 Allowed target kinds are `git_commit`, `diff_fingerprint`, and
-`external_revision`. Git targets are verified read-only and stored canonically.
-A diff fingerprint must be `sha256:` followed by 64 lowercase hexadecimal
-characters. Every set advances the monotonic target generation, including
-A-to-B-to-A changes.
+`external_revision`, which require `--revision`, plus `git_snapshot`, which
+rejects `--revision`. Git commit targets are verified read-only and stored
+canonically. A diff fingerprint must be `sha256:` followed by 64 lowercase
+hexadecimal characters. Every set advances the monotonic target generation,
+including A-to-B-to-A changes.
+
+For `git_snapshot`, first stage exactly the intended files through the
+project's Git workflow. The command captures canonical `HEAD` as the base and
+fingerprints only the stage-0 index; unstaged and untracked files are excluded.
+It rejects an unborn `HEAD`, unmerged/unsupported index entries, and performs
+no Git mutation. The later completion commit must have exactly one parent equal
+to that base and a tree matching the fingerprint. Root and merge commits are
+unsupported. If candidate content or parent changes, set a new target and
+obtain fresh receipts.
+
+`data` is `task`, `changed_fields`, and `event`. For a snapshot target, the
+returned task and a later `task show.task` expose the canonical
+`review_target_base_revision`. Receipt rows, the `task show.review_evidence`
+projection, and Task Viewer snapshots intentionally omit that base revision.
 
 Add a sanitized receipt for the current target generation:
 
@@ -415,8 +462,11 @@ python scripts/taskgov.py review finding resolve --repo <target-project> <findin
 
 Severity is `high`, `medium`, or `low`. Open high/medium findings block `done`.
 After resolving a high/medium finding, completion still requires a newer target
-generation and fresh qualifying receipts. Review write commands require an
-initialized current-schema database and reject `--read-only` before writing.
+generation and fresh qualifying receipts. Any `changes_requested` receipt for
+the exact current generation also blocks completion with
+`review_changes_requested`; a newer target plus fresh qualifying receipts is
+required. Review write commands require an initialized current-schema database
+and reject `--read-only` before writing.
 
 ### `web export`
 
@@ -455,11 +505,12 @@ generated `state/` directory.
 ```
 
 Snapshot version 3 includes the task-show typed completion fields and the same
-bounded structured review-evidence projection. The generated file is stale
-until `web export` is explicitly run again. The
-command does not start a server, open a browser, edit tasks, or write database
-events. Databases using WAL mode are rejected before the snapshot connection so
-even a preview does not create SQLite sidecar files.
+bounded structured review-evidence projection, but excludes
+`review_target_base_revision`. The generated file is stale until `web export`
+is explicitly run again. The command does not start a server, open a browser,
+edit tasks, or write database events. Databases using WAL mode are rejected
+before the snapshot connection so even a preview does not create SQLite
+sidecar files.
 
 After command and output resolution, every `web.export` error preserves this
 fixed `data` shape. `output_path` is `null` only when output resolution itself
@@ -509,6 +560,10 @@ Known error codes include:
 - `initial_paused_forbidden`
 - `invalid_status_transition`
 - `sequential_predecessor_incomplete`
+- `done_task_requires_reopen`
+- `review_tier_downgrade_forbidden`
+- `review_changes_requested`
+- `review_target_mismatch`
 - `privacy_rejected`
 - `not_found`
 - `db_not_initialized`

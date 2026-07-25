@@ -1,11 +1,9 @@
 # task-governance-tool MVP Specification
 
-Status: formal implemented baseline through TG-M9 paused-work visibility. The
-TG-M11 completion-integrity correction contract is approved and implementation
-is authorized after TG-M9. The TG-M12 scope-control and local-handoff contract
+Status: formal implemented baseline through TG-M11 completion integrity at
+release v0.3.0/schema v6. The TG-M12 scope-control and local-handoff contract
 is approved for staged implementation after TG-M11, except its Issue adapter
-remains blocked on a future intake contract. The runtime remains schema v5
-until TG-M11's explicit migration unit.
+remains blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -520,13 +518,12 @@ resume, network access, or GitHub update checking. A once-daily GitHub update
 check remains an unapproved follow-up pending a separate network, cache,
 failure, and privacy contract.
 
-## Approved Post-MVP Extension: TG-M11 Completion Integrity Corrections
+## Implemented Post-MVP Extension: TG-M11 Completion Integrity Corrections
 
 TG-M11 incorporates the accepted parts of the CanonWeave operational
 hardening feedback without making completed tasks permanently immutable or
 increasing the normal Tier 2 review path beyond two LLM judgments. The contract
-is approved for planning and task registration only. Implementation requires a
-separate user request.
+and its bounded implementation are part of the v0.3.0/schema-v6 baseline.
 
 TG-M11 preserves the existing local-first database, compact JSON envelope,
 project identity, privacy boundary, explicit `db init`, task selection, paused
@@ -655,11 +652,12 @@ resolution, and finding-state checks are deterministic.
 
 ### TG-M11 Compatibility And Acceptance
 
-TG-M11 must not be advertised by `SKILL.md`, README, release guidance, or
-installed-skill references until its implementation and migrations pass their
-acceptance gates. Implementation must provide an explicit, repeatable schema
-migration and preserve the sanitized 12-task/191-event fixture, nine historical
-completion hashes, every existing review receipt/finding, and project identity.
+TG-M11 is advertised by `SKILL.md`, README, release guidance, and
+installed-skill references only as part of the synchronized v0.3.0 release
+after its acceptance gates pass. Implementation provides an explicit,
+repeatable schema migration and preserves the sanitized 12-task/191-event
+fixture, nine historical completion hashes, every existing review
+receipt/finding, and project identity.
 
 Acceptance requires automated proof that:
 
@@ -685,10 +683,9 @@ Acceptance requires automated proof that:
 
 TG-M12 incorporates the accepted task-scope and effort-growth feedback without
 turning Task Skill into an Issue tracker, workflow engine, or audit platform.
-It is approved for planning and task registration only. Product code, schema,
-CLI, Skill guidance, README, release metadata, and installed behavior remain at
-the implemented v0.2.0/schema-v5 baseline until separately approved
-implementation units pass their gates.
+Until each separately approved implementation unit passes its gates, product
+code, schema, CLI, Skill guidance, README, release metadata, and installed
+behavior remain at the implemented v0.3.0/schema-v6 baseline.
 
 The extension has two core capabilities:
 
@@ -1544,8 +1541,9 @@ both affected lanes when ordering metadata changes.
 
 `taskgov review target set <task-id>` sets the task's current review target.
 It requires `--kind` with `git_commit`, `diff_fingerprint`, or
-`external_revision`, plus `--revision`. A Git target is verified and stored as
-its canonical full commit ID; a diff fingerprint must be canonical
+`external_revision`, plus `--revision`; `git_snapshot` instead captures the
+current staged index and rejects a caller revision. A Git target is verified
+and stored as its canonical full commit ID; a diff fingerprint must be canonical
 `sha256:<64-lowercase-hex>`. Changing a target appends an audit event and does
 not delete older receipts. Every set, including re-setting the same value,
 advances the target generation so historical receipts cannot reactivate.
@@ -1625,6 +1623,11 @@ Required `data` payloads:
 
 Task objects in JSON must use the same field names as the task model. The
 `review_tier` value must be an integer, not a string.
+At schema version 6, the task object returned by `review.target.set` and the
+expanded task object returned by `task.show` include
+`review_target_base_revision`. Compact list/current/next task objects, review
+receipts, bounded `review_evidence`, and Viewer snapshot v3 omit that internal
+binding component.
 
 In `db.status`, `counts.active` means tasks with status `ready`,
 `in_progress`, `paused`, `blocked`, or `review_pending`. It
@@ -1660,6 +1663,7 @@ Required error codes:
 - `review_finding_unresolved`
 - `review_receipt_mismatch`
 - `review_receipt_already_recorded`
+- `review_target_mismatch`
 - `invalid_review_evidence`
 - `verification_required`
 - `review_required`

@@ -30,7 +30,7 @@ from task_governance_tool.reviews import (
     add_review_finding,
     add_review_receipt,
     resolve_review_finding,
-    set_review_target,
+    set_requested_review_target,
 )
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
@@ -250,7 +250,11 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_options(review_target_set_parser)
     review_target_set_parser.add_argument("task_id")
     review_target_set_parser.add_argument("--kind", required=True)
-    review_target_set_parser.add_argument("--revision", required=True)
+    review_target_set_parser.add_argument(
+        "--revision",
+        default=None,
+        help="target revision; omit when --kind git_snapshot",
+    )
 
     review_receipt_parser = review_subparsers.add_parser("receipt", help="review receipt commands")
     review_receipt_subparsers = review_receipt_parser.add_subparsers(dest="review_action")
@@ -1340,10 +1344,15 @@ def review_text(command: str, data: dict[str, Any]) -> str:
     event = data["event"]
     if command == "review.target.set":
         task = data["task"]
+        base = (
+            f"\nBase: {task['review_target_base_revision']}"
+            if task["review_target_kind"] == "git_snapshot"
+            else ""
+        )
         return (
             f"Review target set: {task['task_id']}\n"
             f"Target: {task['review_target_kind']} generation "
-            f"{task['review_target_generation']}\n"
+            f"{task['review_target_generation']}{base}\n"
             f"Event: {event['event_type']} - {event['summary']}"
         )
     if command == "review.receipt.add":
@@ -1380,12 +1389,12 @@ def handle_review_command(context: CommandContext) -> CommandResult:
         with closing(connect_initialized(target)) as connection:
             with connection:
                 if context.command == "review.target.set":
-                    result = set_review_target(
+                    result = set_requested_review_target(
                         connection,
                         target.project,
                         getattr(context.args, "task_id", ""),
                         kind=getattr(context.args, "kind", ""),
-                        revision=getattr(context.args, "revision", ""),
+                        revision=getattr(context.args, "revision", None),
                     )
                     data = {
                         "task": result.task,
@@ -1491,6 +1500,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise CommandLineError(
                 "invalid_argument",
                 "review requires target set, receipt add, finding add, or finding resolve",
+            )
+        if (
+            args.command == "review"
+            and getattr(args, "review_entity", None) == "target"
+            and getattr(args, "review_action", None) == "set"
+            and str(getattr(args, "kind", "")).strip() != "git_snapshot"
+            and getattr(args, "revision", None) is None
+        ):
+            raise CommandLineError(
+                "invalid_argument",
+                "review target set requires --revision unless --kind is git_snapshot",
             )
         if args.command == "web" and args.web_command is None:
             raise CommandLineError("invalid_argument", "web requires a subcommand: export")

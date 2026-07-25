@@ -84,15 +84,29 @@ browser launch.
   `paused_tasks_present` warning on successful `task next` is advisory only
   and never changes ready candidates.
 - Direct sequential transitions use the same predecessor rule as `task next`.
+- Treat `done` as write-locked. Reopen it only with an isolated transition to
+  `in_progress` and a concise `--reopen-reason`; every other write is rejected,
+  and re-completion requires fresh gates.
+- Lower a review tier only before the first review target, with a concise
+  `--review-tier-change-reason`. A current-generation `changes_requested`
+  receipt blocks completion until a newer target receives fresh qualifying
+  receipts.
 - Before completion, set the current review target and record the tier-required
   sanitized receipts/findings. Tier 2 normally requires two distinct
   independent PASS receipts for one target generation; a changed target needs
   fresh receipts.
+- For review-before-commit Git work, stage only the intended files, set a
+  `git_snapshot` target without `--revision`, obtain the required reviews, then
+  create the completion commit through the project's Git workflow. The commit
+  must have exactly the reviewed base as its one parent and the reviewed staged
+  tree; root and merge commits are unsupported. A changed candidate requires a
+  new target and fresh reviews. Unstaged and untracked files are excluded.
 - Complete only after verification, review, and explicit `git_commit`,
   `external_revision`, or `commit_not_required` evidence pass. Unresolved high
   or medium findings block completion.
-- Git resolution, evidence counting, and sequential checks are deterministic
-  and do not add an LLM judgment.
+- Git resolution and done-time evidence revalidation, snapshot binding,
+  evidence counting, and sequential checks are deterministic and do not add an
+  LLM judgment.
 - Writing commands affect only taskgov SQLite state: skill-local by default, or
   the explicitly selected `--db` path. `web export` writes one HTML snapshot
   only after explicit user intent.

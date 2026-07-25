@@ -54,7 +54,17 @@ def add_task(db, repo, title, *extra):
 
 def edit_task(db, repo, task_id, *extra):
     if "--status" in extra and extra[extra.index("--status") + 1] == "done":
-        seed_review_evidence(db, task_id)
+        target = {}
+        if (
+            "--completion-evidence-kind" in extra
+            and extra[extra.index("--completion-evidence-kind") + 1]
+            == "external_revision"
+        ):
+            target = {
+                "target_kind": "external_revision",
+                "target_value": extra[extra.index("--completion-revision") + 1],
+            }
+        seed_review_evidence(db, task_id, **target)
     result = run_taskgov(
         "task",
         "edit",

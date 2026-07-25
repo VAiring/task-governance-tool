@@ -159,9 +159,20 @@ Mark a task `done` only after:
 - there are no unresolved high or medium review findings
 - the completion commit gate is satisfied
 
+Lower a review tier only before review begins. The task must still have review
+target generation zero, no target, and a safe non-review status; give one
+sanitized reason and do not combine the downgrade with review or completion
+options:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --review-tier 1 --review-tier-change-reason "Narrow documentation-only scope" --json
+```
+
+Once any target has been set, the tier may be raised but not lowered.
+
 Set one review target before recording results. Use a Git commit when the
-reviewed state is committed, or a deterministic diff fingerprint/external
-revision when that is the actual target:
+reviewed state is already committed, or a deterministic diff
+fingerprint/external revision when that is the actual target:
 
 ```powershell
 python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_commit --revision <hash> --json
@@ -181,7 +192,9 @@ the new generation prevents older receipts from being reused. Git resolution,
 receipt counting, finding-state checks, and sequential-order checks are
 deterministic and add no LLM judgment. Record findings with `review finding add`
 and resolve them with `review finding resolve`; an unresolved high or medium
-finding blocks completion.
+finding blocks completion. Any `changes_requested` receipt for the current
+target generation also blocks completion even when enough PASS receipts exist.
+Set a newer target and obtain fresh qualifying receipts after making changes.
 
 For changed Git-managed materials, first create the project commit through the
 approved project workflow, then record it. `taskgov` verifies the revision
@@ -191,6 +204,31 @@ annotated tag is accepted only when Git resolves it unambiguously:
 ```powershell
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
 ```
+
+When the project requires review before the completion commit, use a
+`git_snapshot` target instead:
+
+1. Stage exactly the intended files through the project's Git workflow.
+   `taskgov` does not stage files. Unstaged and untracked files are outside the
+   review target.
+2. Capture the stage-0 index without supplying a revision:
+
+   ```powershell
+   python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_snapshot --json
+   ```
+
+3. For Tier 2, obtain two independent PASS receipts for that same target
+   generation.
+4. Create the completion commit through the project's Git workflow, without
+   changing the reviewed staged tree.
+5. Complete with that Git commit using the normal
+   `--completion-commit-hash` command above.
+
+The deterministic done gate requires the candidate commit to have exactly one
+parent equal to the captured base and a tree fingerprint equal to the reviewed
+snapshot. Root and merge commits are unsupported. If the candidate content or
+parent changes, set a new snapshot target and obtain fresh reviews; no second
+pair is needed when the original binding succeeds.
 
 For an approved durable revision outside the target Git history, use the
 explicit external evidence form. The reason and acknowledgement are required;
@@ -208,10 +246,27 @@ required:
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --commit-not-required --json
 ```
 
+Completion evidence must match its review target: a Git commit must equal a
+`git_commit` target or satisfy the `git_snapshot` binding, an external revision
+must equal its `external_revision` target, and `commit_not_required` requires a
+`diff_fingerprint` target. The done transition re-resolves stored Git
+completion evidence, Git targets, and snapshot bases read-only before writing.
+
 If valid typed evidence was already recorded, the later done transition still
 requires `--verification-complete` and `--review-complete`. Historical
 `legacy_unverified` evidence is retained for audit but cannot close a reopened
 task.
+
+After a task reaches `done`, every task or review write is rejected. Reopen it
+only with this isolated operation:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --reopen-reason "Approved follow-up correction" --json
+```
+
+Do not combine reopening with another field, note, evidence option, or gate
+confirmation. Reopening preserves history, clears current completion/review
+eligibility, and requires fresh verification, review, and completion evidence.
 
 `taskgov` records the commit state but does not create commits, branches, PRs,
 or issue comments. To trace changed materials for a completed Git task, inspect

@@ -1,11 +1,10 @@
 # task-governance-tool Initial Plan
 
 Status: MVP, completion commit extension, static Task Viewer, TG-M8 governance
-hardening, and TG-M9 paused-work visibility are implemented. TG-M11
-completion-integrity implementation is authorized next. TG-M12 scope-control,
-local handoff, Task Contract, Effort Advisory, and local self-status are
-authorized after their documented dependencies; the Issue adapter remains
-blocked. The runtime remains schema v5 until TG-M11's migration unit.
+hardening, TG-M9 paused-work visibility, and TG-M11 completion integrity are
+implemented at v0.3.0/schema v6. TG-M12 scope-control, local handoff, Task
+Contract, Effort Advisory, and local self-status are authorized after their
+documented dependencies; the Issue adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -790,10 +789,13 @@ Confirmed decisions:
   `git_snapshot` target is enabled only in the same unit as its done-gate
   binding, so no completed intermediate release exposes an uncompletable
   target.
-- TG-M11 is not advertised by the Skill, README, release guidance, or version
-  metadata until implementation, migration, acceptance, and forward-flow tests
-  pass. TG-M11.1 through TG-M11.4 remain blocked from consumption until a
-  separate implementation approval.
+- TG-M11 is advertised by the Skill, README, release guidance, and version
+  metadata only in the synchronized v0.3.0 release after implementation,
+  migration, acceptance, and forward-flow tests pass.
+- Version `0.3.0` is the TG-M11 release because it adds the public
+  `git_snapshot` target, schema version 6, and stricter completion semantics
+  without breaking the existing command family; Viewer snapshot version 3 is
+  unchanged.
 - The formal milestone uses TG-M11 because a cancelled provisional SQLite task
   already used the human-facing title `TG-M10.1`; cancelled history is retained
   and its title is not reused for a different approved unit.
@@ -886,12 +888,12 @@ Open issues:
 
 ## Implementation Execution Status
 
-All implementation units through TG-M9 are complete. TG-M9.1 and TG-M9.2 were
-consumed after explicit user approval. The current task-consumption request
-also authorizes TG-M11.1 through TG-M11.4, then TG-M12.1 and TG-M12.2, plus
-the separately requested TG-M12.O1/O2 optional features after their documented
-dependencies. TG-M12.3 remains blocked on an Issue intake contract, governing
-permission update, and separate integration approval.
+All implementation units through TG-M11 are complete. TG-M9.1 through TG-M11.4
+were consumed after explicit user approval. The current task-consumption
+request continues with TG-M12.1 and TG-M12.2, plus the separately requested
+TG-M12.O1/O2 optional features after their documented dependencies. TG-M12.3
+remains blocked on an Issue intake contract, governing permission update, and
+separate integration approval.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local
 SQLite database. Do not append another large per-task execution log here; use

@@ -19,6 +19,10 @@ from task_governance_tool.completion import (
     resolve_git_commit,
     validate_evidence_matrix,
 )
+from task_governance_tool.git_snapshot import (
+    GitSnapshotError,
+    verify_git_snapshot_commit,
+)
 from task_governance_tool.ordering import (
     ADVANCED_STATUSES,
     canonical_lane,
@@ -64,10 +68,15 @@ TASK_SHOW_FIELDS = PUBLIC_TASK_FIELDS + (
     "external_revision_approved",
     "review_target_kind",
     "review_target_value",
+    "review_target_base_revision",
     "review_target_generation",
 )
 
-VIEWER_TASK_FIELDS = TASK_SHOW_FIELDS
+VIEWER_TASK_FIELDS = tuple(
+    field
+    for field in TASK_SHOW_FIELDS
+    if field != "review_target_base_revision"
+)
 
 TEXT_LIMITS = {
     "title": 200,
@@ -1328,6 +1337,47 @@ def update_task_row(
     )
 
 
+def lock_and_reread_edit_owner(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    task_id: str,
+) -> dict[str, Any]:
+    if not connection.in_transaction:
+        connection.execute("BEGIN IMMEDIATE")
+    task = read_internal_task(connection, project.project_id, task_id)
+    if task is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+    return task
+
+
+def reject_concurrent_edit_base_change(
+    existing: dict[str, Any],
+    locked: dict[str, Any],
+    *,
+    allow_review_target_change: bool,
+) -> None:
+    reject_done_task_write(locked)
+    ignored_fields = {"updated_at"}
+    if allow_review_target_change:
+        ignored_fields.update(
+            {
+                "review_target_kind",
+                "review_target_value",
+                "review_target_base_revision",
+                "review_target_generation",
+            }
+        )
+    if any(
+        locked[field] != existing[field]
+        for field in existing
+        if field not in ignored_fields
+    ):
+        raise TaskRepositoryError(
+            "invalid_argument",
+            "task changed concurrently; retry the edit against current state",
+        )
+
+
 def validate_done_transition_inputs(
     task: dict[str, Any],
     *,
@@ -1369,36 +1419,96 @@ def revalidate_done_git_evidence(
 ) -> None:
     if not status_was_provided or task["status"] != "done":
         return
+    completion_kind = str(task["completion_evidence_kind"])
+    completion_revision = str(task["completion_evidence_revision"])
+    target_kind = str(task["review_target_kind"])
+    target_value = str(task["review_target_value"])
+    target_base_revision = str(task["review_target_base_revision"])
+
     if task["completion_evidence_kind"] == "git_commit":
         try:
             resolved_completion = resolve_git_commit(
                 repo,
-                str(task["completion_evidence_revision"]),
+                completion_revision,
             )
         except CompletionEvidenceError as exc:
             raise validation_error(exc.code, exc.message, exc.field) from exc
-        if resolved_completion != str(task["completion_evidence_revision"]):
+        if resolved_completion != completion_revision:
             raise validation_error(
                 "git_commit_not_found_or_ambiguous",
                 "stored Git completion revision no longer resolves to the recorded commit",
                 "completion_revision",
             )
-    if task["review_target_kind"] == "git_commit":
+
+    if target_kind == "git_commit":
         try:
-            resolved_target = resolve_git_commit(repo, str(task["review_target_value"]))
+            resolved_target = resolve_git_commit(repo, target_value)
         except CompletionEvidenceError as exc:
             raise validation_error(exc.code, exc.message, "review_target_value") from exc
-        if resolved_target != str(task["review_target_value"]):
+        if resolved_target != target_value:
             raise validation_error(
                 "git_commit_not_found_or_ambiguous",
                 "stored Git review target no longer resolves to the recorded commit",
                 "review_target_value",
             )
-    elif task["review_target_kind"] == "git_snapshot":
+        if completion_kind != "git_commit" or completion_revision != target_value:
+            raise validation_error(
+                "review_target_mismatch",
+                "Git completion evidence must equal the current Git commit review target",
+                "review_target_value",
+            )
+    elif target_kind == "git_snapshot":
+        if completion_kind != "git_commit":
+            raise validation_error(
+                "review_target_mismatch",
+                "a Git snapshot review target requires Git commit completion evidence",
+                "completion_evidence_kind",
+            )
+        try:
+            resolved_base = resolve_git_commit(repo, target_base_revision)
+        except CompletionEvidenceError as exc:
+            raise validation_error(
+                exc.code,
+                exc.message,
+                "review_target_base_revision",
+            ) from exc
+        if resolved_base != target_base_revision:
+            raise validation_error(
+                "git_commit_not_found_or_ambiguous",
+                "stored Git snapshot base no longer resolves to the recorded commit",
+                "review_target_base_revision",
+            )
+        try:
+            verify_git_snapshot_commit(
+                repo,
+                completion_revision,
+                expected_base_revision=target_base_revision,
+                expected_fingerprint=target_value,
+            )
+        except GitSnapshotError as exc:
+            raise validation_error(exc.code, exc.message, exc.field) from exc
+    elif target_kind == "external_revision":
+        if (
+            completion_kind != "external_revision"
+            or completion_revision != target_value
+        ):
+            raise validation_error(
+                "review_target_mismatch",
+                "external completion evidence must equal the current external review target",
+                "review_target_value",
+            )
+    elif target_kind == "diff_fingerprint":
+        if completion_kind != "commit_not_required":
+            raise validation_error(
+                "review_target_mismatch",
+                "commit-not-required completion requires a diff_fingerprint review target",
+                "review_target_kind",
+            )
+    elif target_kind:
         raise validation_error(
             "review_target_mismatch",
-            "Git snapshot completion binding is not active in this release unit",
-            "review_target_value",
+            "completion evidence does not match the current review target",
+            "review_target_kind",
         )
 
 
@@ -1430,6 +1540,17 @@ def reopen_done_task(
     *,
     reopen_reason: str,
 ) -> EditTaskResult:
+    locked_existing = lock_and_reread_edit_owner(
+        connection,
+        project,
+        str(existing["task_id"]),
+    )
+    if locked_existing["status"] != "done":
+        raise TaskRepositoryError(
+            "invalid_argument",
+            "task changed concurrently; retry the reopen against current state",
+        )
+    existing = locked_existing
     generation = validate_sqlite_int64(
         int(existing["review_target_generation"]) + 1,
         field="review_target_generation",
@@ -1802,6 +1923,18 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
         repo=project.canonical_repo,
         status_was_provided=status_was_provided,
     )
+    locked_existing = lock_and_reread_edit_owner(
+        connection,
+        project,
+        normalized_task_id,
+    )
+    reject_concurrent_edit_base_change(
+        existing,
+        locked_existing,
+        allow_review_target_change=(
+            status_was_provided and updated["status"] == "done"
+        ),
+    )
 
     savepoint = f"taskgov_ordering_{secrets.token_hex(4)}"
     connection.execute(f"SAVEPOINT {savepoint}")
@@ -1837,9 +1970,24 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
                 "sequential_predecessor_incomplete",
                 "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
             )
+        locked_task = read_internal_task(
+            connection,
+            project.project_id,
+            normalized_task_id,
+        )
+        if locked_task is None:
+            raise TaskRepositoryError(
+                "internal_error",
+                "task was not readable during completion binding",
+            )
+        revalidate_done_git_evidence(
+            locked_task,
+            repo=project.canonical_repo,
+            status_was_provided=status_was_provided,
+        )
         enforce_done_review_gate(
             connection,
-            updated,
+            locked_task,
             status_was_provided=status_was_provided,
         )
     except sqlite3.IntegrityError as exc:

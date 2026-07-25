@@ -97,6 +97,39 @@ changed, complete with `--commit-not-required`; approved external durable
 revisions use the explicit `external_revision` options. `taskgov` validates
 evidence but does not create commits, branches, PRs, or issue comments.
 
+For the normal review-before-commit Git workflow, first stage exactly the
+intended project changes through the project's own Git workflow. Then capture
+and review that staged state:
+
+```powershell
+git add <intended-project-paths>
+python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_snapshot --json
+python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
+python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --json
+git commit -m "<project-approved message>"
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
+```
+
+The snapshot target takes no `--revision`. It fingerprints stage-0 index
+entries and records the current canonical `HEAD` as its base; unstaged and
+untracked content is excluded. The later completion commit must have exactly
+one parent equal to that base and the same tree fingerprint. Root and merge
+commits are unsupported for this path. If the reviewed content changes, stage
+the intended replacement, set a new target, and obtain fresh receipts. The
+binding check needs no second LLM review pair after the project creates the
+matching commit.
+
+A completed task is locked against all writes except an explicit, reasoned
+reopen:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --reopen-reason "<sanitized reason>" --json
+```
+
+Reopen clears current completion/review eligibility while preserving history;
+the task must pass fresh verification, review, and completion gates before it
+can return to `done`.
+
 By default, runtime state is stored under the project-scoped installed skill
 folder:
 
@@ -131,10 +164,10 @@ The default output is:
 Use `--output <html-path>` only after the user approves that complete
 destination; its parent must already exist. The HTML is self-contained and
 opens through `file://` without a server or network. Snapshot v3 includes typed
-completion and bounded structured review evidence. It is a timestamped
-snapshot, not a live view: task changes appear only after an explicitly
-requested regeneration. The page cannot edit tasks, and `taskgov` does not open
-a browser automatically.
+completion and bounded structured review evidence for schema v6 while omitting
+the internal `review_target_base_revision`. It is a timestamped snapshot, not a
+live view: task changes appear only after an explicitly requested regeneration.
+The page cannot edit tasks, and `taskgov` does not open a browser automatically.
 
 ## Commands
 
@@ -177,7 +210,9 @@ Run the local checks before publishing:
 ```powershell
 python -m unittest discover -s tests
 python task-governance-tool\scripts\taskgov.py --help
+python task-governance-tool\scripts\taskgov.py --version
 python task-governance-tool\scripts\taskgov.py task next --help
+python task-governance-tool\scripts\taskgov.py review target set --help
 python task-governance-tool\scripts\taskgov.py web export --help
 git diff --check
 ```

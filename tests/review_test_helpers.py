@@ -6,7 +6,14 @@ from contextlib import closing
 FINGERPRINT = "sha256:" + "c" * 64
 
 
-def seed_review_evidence_connection(connection, task_id):
+def seed_review_evidence_connection(
+    connection,
+    task_id,
+    *,
+    target_kind="diff_fingerprint",
+    target_value=FINGERPRINT,
+    target_base_revision="",
+):
     row = connection.execute(
         "SELECT project_id, review_tier, review_target_generation FROM tasks WHERE task_id = ?",
         (task_id,),
@@ -17,12 +24,19 @@ def seed_review_evidence_connection(connection, task_id):
     connection.execute(
         """
         UPDATE tasks
-           SET review_target_kind = 'diff_fingerprint',
+           SET review_target_kind = ?,
                review_target_value = ?,
+               review_target_base_revision = ?,
                review_target_generation = ?
          WHERE task_id = ?
         """,
-        (FINGERPRINT, generation, task_id),
+        (
+            target_kind,
+            target_value,
+            target_base_revision,
+            generation,
+            task_id,
+        ),
     )
     tier = int(row[1])
     if tier == 0:
@@ -36,9 +50,9 @@ def seed_review_evidence_connection(connection, task_id):
             """
             INSERT INTO review_receipts(
               review_receipt_id, task_id, project_id, reviewer_key, receipt_kind,
-              verdict, target_kind, target_value, target_generation, summary,
-              user_approved, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'diff_fingerprint', ?, ?, ?, 0,
+              verdict, target_kind, target_value, target_base_revision,
+              target_generation, summary, user_approved, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0,
                       '2026-07-22T00:00:00Z')
             """,
             (
@@ -48,14 +62,16 @@ def seed_review_evidence_connection(connection, task_id):
                 reviewer,
                 kind,
                 verdict,
-                FINGERPRINT,
+                target_kind,
+                target_value,
+                target_base_revision,
                 generation,
                 summary,
             ),
         )
 
 
-def seed_review_evidence(db, task_id):
+def seed_review_evidence(db, task_id, **target):
     with closing(sqlite3.connect(db)) as connection:
-        seed_review_evidence_connection(connection, task_id)
+        seed_review_evidence_connection(connection, task_id, **target)
         connection.commit()

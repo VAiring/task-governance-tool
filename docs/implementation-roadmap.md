@@ -1,10 +1,10 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through TG-M9 paused-work visibility are
-complete. TG-M11 completion-integrity corrections are authorized next. TG-M12
-scope control and local handoff are authorized after TG-M11, except TG-M12.3
-remains blocked on a future Issue Skill intake contract. The default-browser
-launch follow-up remains requirements-only pending design and roadmap approval.
+Status: implementation units through TG-M11 completion integrity are complete
+at v0.3.0/schema v6. TG-M12 scope control and local handoff are authorized
+next, except TG-M12.3 remains blocked on a future Issue Skill intake contract.
+The default-browser launch follow-up remains requirements-only pending design
+and roadmap approval.
 
 This document turns `docs/specification.md` and `docs/design.md` into
 implementation-sized execution units. It is the preferred roadmap for building
@@ -64,8 +64,8 @@ Sequential lanes:
   resume-surface changes.
 - `PAUSED-VISIBILITY`: implemented TG-M9 additive counts, warnings, and bounded
   paused-work retrieval.
-- `COMPLETION-INTEGRITY`: approved TG-M11 lifecycle, review, and read-only Git
-  binding corrections; implementation is authorized next.
+- `COMPLETION-INTEGRITY`: implemented TG-M11 lifecycle, review, and read-only
+  Git binding corrections.
 - `SCOPE-CONTROL`: approved TG-M12 local handoff and optional Task Contract
   capability; implementation is authorized after TG-M11 except the Issue
   adapter.
@@ -1490,13 +1490,12 @@ Completion criteria:
 - All TG-M9 acceptance criteria in `docs/specification.md` pass.
 - The verified implementation/guidance commit is recorded on the task.
 
-## Approved Post-MVP Extension: TG-M11 Completion Integrity Corrections
+## Implemented Post-MVP Extension: TG-M11 Completion Integrity Corrections
 
 TG-M11 closes the audited completion/review gaps found by a consuming project
 while preserving explicit reopen, review-before-commit ordering, and the normal
 two-judgment Tier 2 path. TG-M11 uses lane `COMPLETION-INTEGRITY`. The contract
-and task baseline are approved; implementation units remain blocked until the
-user separately approves consumption.
+and all bounded implementation units are complete.
 
 The formal milestone uses TG-M11 to avoid reusing the title of a cancelled
 provisional TG-M10 checklist task retained in SQLite history.
@@ -2122,11 +2121,11 @@ authorize current/list/event pagination, stale detection, checkpoints,
 parent/child task structure, default-browser launch, or networked GitHub update
 checking.
 
-TG-M11.0 records the completion-integrity contract and task baseline. The
-current task-consumption request authorizes TG-M11.1 through TG-M11.4 after
-TG-M9. That approval does not authorize pagination, stale detection,
-checkpoints, parent/child task structure, default-browser launch, network
-access, or Git writes by task-governance-tool.
+TG-M11.0 recorded the completion-integrity contract and task baseline, and
+TG-M11.1 through TG-M11.4 implemented the v0.3.0/schema-v6 release. That
+approval did not authorize pagination, stale detection, checkpoints,
+parent/child task structure, default-browser launch, network access, or Git
+writes by task-governance-tool.
 
 TG-M12.0 records the scope-control/local-handoff contract and task baseline.
 The current task-consumption request authorizes TG-M12.1, TG-M12.2, TG-M12.O1,

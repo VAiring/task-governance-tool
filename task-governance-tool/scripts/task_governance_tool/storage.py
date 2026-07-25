@@ -383,6 +383,7 @@ def create_task_indexes(connection: sqlite3.Connection) -> None:
 def empty_counts() -> dict[str, int]:
     return {
         "active": 0,
+        "paused": 0,
         "blocked": 0,
         "review_pending": 0,
         "done": 0,
@@ -994,6 +995,7 @@ def count_tasks(connection: sqlite3.Connection, project_id: str) -> dict[str, in
         ).fetchone()["count"]
     )
     for status, key in (
+        ("paused", "paused"),
         ("blocked", "blocked"),
         ("review_pending", "review_pending"),
         ("done", "done"),

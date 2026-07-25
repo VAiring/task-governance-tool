@@ -128,6 +128,7 @@ class DbStatusTests(unittest.TestCase):
                     "schema_version": None,
                     "counts": {
                         "active": 0,
+                        "paused": 0,
                         "blocked": 0,
                         "review_pending": 0,
                         "done": 0,
@@ -228,6 +229,7 @@ class DbStatusTests(unittest.TestCase):
                 payload["data"]["counts"],
                 {
                     "active": 6,
+                    "paused": 0,
                     "blocked": 1,
                     "review_pending": 1,
                     "done": 2,
@@ -251,6 +253,17 @@ class DbStatusTests(unittest.TestCase):
             self.assertFalse(payload["data"]["needs_init"])
             self.assertTrue(payload["data"]["needs_migration"])
             self.assertEqual(payload["data"]["schema_version"], 0)
+            self.assertEqual(
+                payload["data"]["counts"],
+                {
+                    "active": 0,
+                    "paused": 0,
+                    "blocked": 0,
+                    "review_pending": 0,
+                    "done": 0,
+                    "next_actionable": 0,
+                },
+            )
             with closing(sqlite3.connect(db)) as connection:
                 tables = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
             self.assertEqual(tables, [])
@@ -295,6 +308,7 @@ class DbStatusTests(unittest.TestCase):
             self.assertEqual(payload["errors"][0]["code"], "migration_required")
             self.assertTrue(payload["data"]["needs_migration"])
             self.assertEqual(payload["data"]["schema_version"], 1)
+            self.assertEqual(payload["data"]["counts"]["paused"], 0)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 versions = [
@@ -317,12 +331,30 @@ class DbStatusTests(unittest.TestCase):
             repo_one = Path(tmp) / "repo-one"
             repo_two = Path(tmp) / "repo-two"
             init_payload = init_db(db, repo_one)
+            before_bytes = db.read_bytes()
+            before_entries = sorted(path.name for path in db.parent.iterdir())
 
             result = run_taskgov("db", "status", "--repo", str(repo_two), "--db", str(db), "--json")
 
             self.assertEqual(result.returncode, 2)
             payload = json.loads(result.stdout)
             self.assertEqual(payload["errors"][0]["code"], "project_mismatch")
+            self.assertEqual(
+                payload["data"]["counts"],
+                {
+                    "active": 0,
+                    "paused": 0,
+                    "blocked": 0,
+                    "review_pending": 0,
+                    "done": 0,
+                    "next_actionable": 0,
+                },
+            )
+            self.assertEqual(db.read_bytes(), before_bytes)
+            self.assertEqual(
+                sorted(path.name for path in db.parent.iterdir()),
+                before_entries,
+            )
             with closing(sqlite3.connect(db)) as connection:
                 row = connection.execute("SELECT project_id FROM project_meta").fetchone()
             self.assertEqual(row[0], init_payload["project_id"])
@@ -378,6 +410,53 @@ class DbStatusTests(unittest.TestCase):
             self.assertEqual(payload["errors"][0]["code"], "internal_error")
             self.assertIn("WAL sidecar", payload["errors"][0]["message"])
             self.assertEqual(payload["data"]["counts"]["active"], 0)
+            self.assertEqual(payload["data"]["counts"]["paused"], 0)
+
+    def test_status_counts_all_paused_tasks_without_changing_active_meaning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            project_id = init_db(db, repo)["project_id"]
+            with closing(sqlite3.connect(db)) as connection:
+                for index in range(25):
+                    insert_task(
+                        connection,
+                        project_id,
+                        task_id=f"tg_task_paused_{index:02d}",
+                        status="in_progress",
+                    )
+                    connection.execute(
+                        """
+                        UPDATE tasks
+                           SET status = 'paused',
+                               pause_reason = 'scheduled hold'
+                         WHERE task_id = ?
+                        """,
+                        (f"tg_task_paused_{index:02d}",),
+                    )
+                connection.commit()
+            before_bytes = db.read_bytes()
+            before_entries = sorted(path.name for path in db.parent.iterdir())
+
+            result = run_taskgov(
+                "db",
+                "status",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            counts = json.loads(result.stdout)["data"]["counts"]
+            self.assertEqual(counts["paused"], 25)
+            self.assertEqual(counts["active"], 25)
+            self.assertEqual(db.read_bytes(), before_bytes)
+            self.assertEqual(
+                sorted(path.name for path in db.parent.iterdir()),
+                before_entries,
+            )
 
     def test_status_text_output_is_concise(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -392,6 +471,7 @@ class DbStatusTests(unittest.TestCase):
             lines = result.stdout.strip().splitlines()
             self.assertLessEqual(len(lines), 6)
             self.assertIn("Status: ready", result.stdout)
+            self.assertIn("Paused: 0", result.stdout)
             self.assertIn("Next actionable: 0", result.stdout)
 
     def test_status_returns_json_error_for_invalid_db_path(self):

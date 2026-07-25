@@ -591,7 +591,8 @@ def status_text(status: StatusResult) -> str:
         f"Project: {status.target.project.project_id}\n"
         f"Status: {state}\n"
         f"Schema version: {schema_version}\n"
-        f"Active: {counts['active']}  Blocked: {counts['blocked']}  "
+        f"Active: {counts['active']}  Paused: {counts['paused']}  "
+        f"Blocked: {counts['blocked']}  "
         f"Review pending: {counts['review_pending']}  Done: {counts['done']}\n"
         f"Next actionable: {counts['next_actionable']}"
     )

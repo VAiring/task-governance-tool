@@ -45,6 +45,10 @@ Use this loop when the user asks to work from local task state:
 If a task blocks, mark that task `blocked` with a concise reason, then return to
 `task next` for unrelated ready work.
 
+`db status.counts.paused` is the exact paused population. If `task next`
+returns `paused_tasks_present`, keep its ready candidates unchanged and inspect
+the bounded paused subset with `task current --status paused`.
+
 ## Inspect Ready Work
 
 1. Check database state without mutation:
@@ -57,6 +61,13 @@ If a task blocks, mark that task `blocked` with a concise reason, then return to
 
    ```powershell
    python scripts/taskgov.py task next --repo <target-project> --limit 5 --json
+   ```
+
+   A `paused_tasks_present` warning is an advisory recall hint, not a stop or a
+   change to the returned ready candidates. Follow it with:
+
+   ```powershell
+   python scripts/taskgov.py task current --repo <target-project> --status paused --json
    ```
 
 3. Inspect the chosen task before acting:
@@ -107,9 +118,11 @@ sanitized reason:
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status paused --pause-reason "Waiting for a safe continuation window" --json
 ```
 
-Use `task current` in a later session to rediscover it. Resume explicitly to
-`in_progress`; the current pause reason is cleared while its bounded transition
-event remains:
+Use `task current --status paused` in a later session to rediscover paused
+work. The result is bounded by `--limit` (default 20, maximum 100), so compare
+it with the exact `db status.counts.paused` value when completeness matters.
+Resume explicitly to `in_progress`; the current pause reason is cleared while
+its bounded transition event remains:
 
 ```powershell
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --json

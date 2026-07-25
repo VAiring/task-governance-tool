@@ -71,6 +71,7 @@ python scripts/taskgov.py db status --repo <target-project> --json
 python scripts/taskgov.py db init --repo <target-project> --json
 python scripts/taskgov.py task add --repo <target-project> --title "Example task" --json
 python scripts/taskgov.py task current --repo <target-project> --json
+python scripts/taskgov.py task current --repo <target-project> --status paused --json
 python scripts/taskgov.py task next --repo <target-project> --json
 python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_commit --revision <hash> --json
@@ -81,6 +82,10 @@ python scripts/taskgov.py task edit --repo <target-project> <task-id> --status d
 Start with `db status`. It inspects without creating files. Use `db init` only
 when local task tracking should be created or migrated for that target project.
 Register only explicit user-approved tasks.
+
+`db status` reports the exact paused count. A successful `task next` keeps
+returning ready work but adds `paused_tasks_present` when paused tasks exist;
+use the bounded `task current --status paused` view to rediscover them.
 
 Tier 1 normally needs one independent PASS; a documented self-review fallback
 is allowed when independent tooling is unavailable. Tier 2 normally needs two

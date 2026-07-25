@@ -41,6 +41,7 @@ from task_governance_tool.tasks import (
     list_current_tasks,
     list_tasks,
     show_task,
+    validate_current_status_filter,
 )
 from task_governance_tool.viewer import (
     SNAPSHOT_VERSION,
@@ -199,6 +200,7 @@ def build_parser() -> argparse.ArgumentParser:
     task_next_parser.add_argument("--limit", default=None)
     task_current_parser = task_subparsers.add_parser("current", help="rediscover active or held work")
     add_common_options(task_current_parser)
+    task_current_parser.add_argument("--status", default=None)
     task_current_parser.add_argument("--limit", default=None)
     task_show_parser = task_subparsers.add_parser("show", help="show one task and recent events")
     add_common_options(task_show_parser)
@@ -843,7 +845,12 @@ def task_next_failure_result(
     )
 
 
-def task_next_text(tasks: list[dict[str, Any]], count: int, limit: int) -> str:
+def task_next_text(
+    tasks: list[dict[str, Any]],
+    count: int,
+    limit: int,
+    warnings: Sequence[dict[str, str]] = (),
+) -> str:
     lines = [f"Next tasks: {count} (limit {limit})"]
     for task in tasks:
         lane = ""
@@ -854,6 +861,7 @@ def task_next_text(tasks: list[dict[str, Any]], count: int, limit: int) -> str:
         lines.append(
             f"{task['task_id']} [{task['status']}] {task['priority']} {task['kind']}{lane} - {task['title']}"
         )
+    lines.extend(f"Warning: {warning['message']}" for warning in warnings)
     return "\n".join(lines)
 
 
@@ -898,23 +906,43 @@ def handle_task_next(context: CommandContext) -> CommandResult:
         "limit": result.limit,
         "selection_rules": result.selection_rules,
     }
+    warnings = []
+    paused_count = int(status.counts["paused"])
+    if paused_count > 0:
+        paused_summary = (
+            "1 paused task exists"
+            if paused_count == 1
+            else f"{paused_count} paused tasks exist"
+        )
+        warnings.append(
+            {
+                "code": "paused_tasks_present",
+                "message": (
+                    f"{paused_summary}; "
+                    "run taskgov task current --status paused"
+                ),
+            }
+        )
     return CommandResult(
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
         db_path=str(target.db_path),
         data=data,
-        text=task_next_text(result.tasks, result.count, result.limit),
+        warnings=warnings,
+        text=task_next_text(result.tasks, result.count, result.limit, warnings),
         exit_code=EXIT_SUCCESS,
     )
 
 
-def task_current_empty_data() -> dict[str, Any]:
+def task_current_empty_data(
+    statuses: Sequence[str] = CURRENT_STATUSES,
+) -> dict[str, Any]:
     return {
         "tasks": [],
         "count": 0,
         "limit": 0,
-        "statuses": list(CURRENT_STATUSES),
+        "statuses": list(statuses),
     }
 
 
@@ -930,24 +958,10 @@ def task_current_text(tasks: list[dict[str, Any]], count: int, limit: int) -> st
 
 def handle_task_current(context: CommandContext) -> CommandResult:
     target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
-    status = inspect_database(target)
-    if status.error_code:
-        return CommandResult(
-            ok=False,
-            command=context.command,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            data=task_current_empty_data(),
-            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
-            exit_code=EXIT_TOOL_ERROR,
-        )
     try:
-        with closing(connect_readonly(target.db_path)) as connection:
-            result = list_current_tasks(
-                connection,
-                target.project,
-                limit=getattr(context.args, "limit", None),
-            )
+        status_filter = validate_current_status_filter(
+            getattr(context.args, "status", None)
+        )
     except TaskValidationError as exc:
         return CommandResult(
             ok=False,
@@ -958,13 +972,45 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_USAGE,
         )
+    effective_statuses = (
+        CURRENT_STATUSES if status_filter is None else (status_filter,)
+    )
+    status = inspect_database(target)
+    if status.error_code:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data=task_current_empty_data(effective_statuses),
+            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    try:
+        with closing(connect_readonly(target.db_path)) as connection:
+            result = list_current_tasks(
+                connection,
+                target.project,
+                limit=getattr(context.args, "limit", None),
+                status=status_filter,
+            )
+    except TaskValidationError as exc:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data=task_current_empty_data(effective_statuses),
+            errors=[{"code": exc.code, "message": exc.message}],
+            exit_code=EXIT_USAGE,
+        )
     except sqlite3.Error:
         return CommandResult(
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            data=task_current_empty_data(),
+            data=task_current_empty_data(effective_statuses),
             errors=[{"code": "internal_error", "message": "could not list current tasks"}],
             exit_code=EXIT_TOOL_ERROR,
         )

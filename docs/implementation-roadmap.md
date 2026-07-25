@@ -1,13 +1,10 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through TG-M8 governance hardening are complete.
-TG-M9 paused-work visibility has an approved contract and execution-unit
-roadmap, but implementation requires separate user approval. TG-M11
-completion-integrity corrections likewise have an approved contract and task
-roadmap, but implementation waits for separate approval. TG-M12 scope control
-and local handoff has an approved contract and staged roadmap; it also remains
-unimplemented. The default-browser launch follow-up remains requirements-only
-pending design and roadmap approval.
+Status: implementation units through TG-M9 paused-work visibility are
+complete. TG-M11 completion-integrity corrections are authorized next. TG-M12
+scope control and local handoff are authorized after TG-M11, except TG-M12.3
+remains blocked on a future Issue Skill intake contract. The default-browser
+launch follow-up remains requirements-only pending design and roadmap approval.
 
 This document turns `docs/specification.md` and `docs/design.md` into
 implementation-sized execution units. It is the preferred roadmap for building
@@ -65,12 +62,13 @@ Sequential lanes:
 - `HARDEN`: final fixture, packaging, and forward-test hardening.
 - `GOVERNANCE-HARDENING`: implemented TG-M8 database, transition, evidence, and
   resume-surface changes.
-- `PAUSED-VISIBILITY`: approved TG-M9 additive counts, warnings, and bounded
-  paused-work retrieval; implementation is not yet authorized.
+- `PAUSED-VISIBILITY`: implemented TG-M9 additive counts, warnings, and bounded
+  paused-work retrieval.
 - `COMPLETION-INTEGRITY`: approved TG-M11 lifecycle, review, and read-only Git
-  binding corrections; implementation is not yet authorized.
+  binding corrections; implementation is authorized next.
 - `SCOPE-CONTROL`: approved TG-M12 local handoff and optional Task Contract
-  capability; implementation is not yet authorized.
+  capability; implementation is authorized after TG-M11 except the Issue
+  adapter.
 
 Optional units may be consumed whenever their prerequisites are met. A blocker
 in one sequential lane should not stop ready optional units in another lane.
@@ -1336,14 +1334,12 @@ Completion criteria:
 - Verification receipts, stale detection, checkpoints, event pagination, and
   parent/child/checklist features remain explicitly deferred.
 
-## Approved Post-MVP Extension: TG-M9 Paused Work Visibility
+## Implemented Post-MVP Extension: TG-M9 Paused Work Visibility
 
 TG-M9 makes an unbounded population of paused work visible without turning
 `task next` into a resume command or adding a workflow engine. The milestone is
-schema-neutral and split into a reviewed contract baseline, a count-only slice,
-and a filter/warning/guidance slice. TG-M9.1 remains explicitly
-blocked until the user separately approves implementation; registering the
-roadmap does not grant that approval.
+schema-neutral and was delivered as a reviewed contract baseline, a count-only
+slice, and a filter/warning/guidance slice after separate user approval.
 
 ### TG-M9.0 Paused Visibility Contract And Task Baseline
 
@@ -2120,24 +2116,22 @@ TG-M8.0 through TG-M8.6 were consumed in order after separate explicit user
 approval. Completion requires the migration/acceptance gate above and never
 authorizes the deferred features listed in TG-M8.6.
 
-TG-M9.0 records only the contract and task baseline. TG-M9.1 and TG-M9.2 must
-not be consumed until a later user request explicitly approves implementation.
-That later approval still does not authorize current/list/event pagination,
-stale detection, checkpoints, parent/child task structure, default-browser
-launch, or networked GitHub update checking.
+TG-M9.0 recorded the contract and task baseline. TG-M9.1 and TG-M9.2 were
+consumed after explicit implementation approval. That approval did not
+authorize current/list/event pagination, stale detection, checkpoints,
+parent/child task structure, default-browser launch, or networked GitHub update
+checking.
 
-TG-M11.0 records only the completion-integrity contract and task baseline.
-TG-M11.1 through TG-M11.4 must not be consumed until a later user request
-explicitly approves implementation. That approval does not authorize unrelated
-TG-M9 work, pagination, stale detection, checkpoints, parent/child task
-structure, default-browser launch, network access, or Git writes by
-task-governance-tool.
+TG-M11.0 records the completion-integrity contract and task baseline. The
+current task-consumption request authorizes TG-M11.1 through TG-M11.4 after
+TG-M9. That approval does not authorize pagination, stale detection,
+checkpoints, parent/child task structure, default-browser launch, network
+access, or Git writes by task-governance-tool.
 
-TG-M12.0 records only the scope-control/local-handoff contract and task
-baseline. TG-M12.1 through TG-M12.3 require a later explicit implementation
-approval after TG-M11 finishes. TG-M12.3 remains blocked until an Issue Skill
-intake contract, governing permission update, and the integration boundary are
-separately approved. TG-M12.O1 and TG-M12.O2 are optional and require their own
-approval. None of these approvals authorizes semantic Issue triage, paging,
-child tasks, signed evidence, external Issue import/lifecycle sync, or daily
-GitHub update checking.
+TG-M12.0 records the scope-control/local-handoff contract and task baseline.
+The current task-consumption request authorizes TG-M12.1, TG-M12.2, TG-M12.O1,
+and TG-M12.O2 after their documented dependencies. TG-M12.3 remains blocked
+until an Issue Skill intake contract, governing permission update, and the
+integration boundary are separately approved. None of these approvals
+authorizes semantic Issue triage, paging, child tasks, signed evidence,
+external Issue import/lifecycle sync, or daily GitHub update checking.

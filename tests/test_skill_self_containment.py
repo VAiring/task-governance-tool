@@ -80,6 +80,32 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("verification receipts", skill_md.lower())
         self.assertIn("current work", openai_yaml.lower())
 
+    def test_tg_m9_paused_visibility_guidance_is_synchronized(self):
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
+            encoding="utf-8"
+        )
+        contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
+            encoding="utf-8"
+        )
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        release_note = (ROOT / "docs" / "release-install.md").read_text(
+            encoding="utf-8"
+        )
+
+        for text in (skill_md, workflow, contracts, readme):
+            self.assertIn("task current --status paused", text)
+            self.assertIn("paused_tasks_present", text)
+            self.assertIn("bounded", text.lower())
+        for text in (skill_md, workflow, contracts):
+            self.assertIn("counts.paused", text)
+        self.assertIn("advisory", skill_md.lower())
+        self.assertIn("advisory", workflow.lower())
+        self.assertIn("advisory", contracts.lower())
+        self.assertIn("exact paused counts", release_note)
+        self.assertIn("bounded current-status filter", release_note)
+        self.assertIn("advisory paused-work warning", release_note)
+
     def test_skill_guidance_mentions_completion_commit_gate(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(encoding="utf-8")

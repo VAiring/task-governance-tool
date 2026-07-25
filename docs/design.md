@@ -1,10 +1,10 @@
 # task-governance-tool MVP Design
 
-Status: formal implemented design baseline through TG-M8 governance hardening.
-The TG-M9 paused-work visibility and TG-M11 completion-integrity correction
-designs are approved but not implemented. The TG-M12 scope-control and local-
-handoff design is approved for later implementation without changing the
-v0.2.0/schema-v5 release baseline.
+Status: formal implemented design baseline through TG-M9 paused-work
+visibility. TG-M11 completion-integrity implementation is authorized next.
+TG-M12 scope-control and local-handoff implementation is authorized after
+TG-M11 except for the blocked Issue adapter. The runtime remains schema v5
+until TG-M11's explicit migration unit.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -849,7 +849,7 @@ support for `paused` shipped with schema version 3 so the viewer did not
 regress. The final integration unit added completion/review evidence after
 those contracts stabilized.
 
-## Approved TG-M9 Paused Work Visibility Design
+## Implemented TG-M9 Paused Work Visibility Design
 
 TG-M9 adds three read-only projections over the existing schema-v5 `status`
 column. It requires no schema version change, task migration, event backfill,

@@ -1071,6 +1071,12 @@ def list_tasks_for_viewer(
 CURRENT_STATUSES = ("in_progress", "review_pending", "paused", "blocked")
 
 
+def validate_current_status_filter(value: Any = None) -> str | None:
+    if value is None:
+        return None
+    return validate_choice("status", value, CURRENT_STATUSES, "invalid_status")
+
+
 def current_suggested_next_action(task: dict[str, Any]) -> str:
     status = task["status"]
     if status == "in_progress":
@@ -1091,10 +1097,22 @@ def list_current_tasks(
     project: ProjectIdentity,
     *,
     limit: Any = None,
+    status: Any = None,
 ) -> CurrentTaskResult:
     row_limit = validate_limit(limit, default=20)
+    status_filter = validate_current_status_filter(status)
+    if status_filter is None:
+        status_predicate = (
+            "task.status IN ('in_progress', 'review_pending', 'paused', 'blocked')"
+        )
+        parameters: tuple[Any, ...] = (project.project_id, row_limit)
+        result_statuses = CURRENT_STATUSES
+    else:
+        status_predicate = "task.status = ?"
+        parameters = (project.project_id, status_filter, row_limit)
+        result_statuses = (status_filter,)
     rows = connection.execute(
-        """
+        f"""
         SELECT
           task.*,
           latest.task_event_id AS latest_event_id,
@@ -1112,7 +1130,7 @@ def list_current_tasks(
                LIMIT 1
             )
          WHERE task.project_id = ?
-           AND task.status IN ('in_progress', 'review_pending', 'paused', 'blocked')
+           AND {status_predicate}
          ORDER BY
            CASE task.status
              WHEN 'in_progress' THEN 0
@@ -1130,7 +1148,7 @@ def list_current_tasks(
            task.task_id
          LIMIT ?
         """,
-        (project.project_id, row_limit),
+        parameters,
     ).fetchall()
     tasks = []
     for row in rows:
@@ -1152,7 +1170,7 @@ def list_current_tasks(
         tasks=tasks,
         count=len(tasks),
         limit=row_limit,
-        statuses=CURRENT_STATUSES,
+        statuses=result_statuses,
     )
 
 

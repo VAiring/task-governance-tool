@@ -135,6 +135,7 @@ class TaskNextTests(unittest.TestCase):
             self.assertEqual(payload["data"]["limit"], 5)
             self.assertEqual(len(payload["data"]["tasks"]), 5)
             self.assertEqual(status["data"]["counts"]["next_actionable"], 6)
+            self.assertEqual(payload["warnings"], [])
             self.assertEqual(payload["data"]["selection_rules"]["status"], "ready")
             self.assertEqual(
                 payload["data"]["selection_rules"]["priority_order"],
@@ -348,9 +349,69 @@ class TaskNextTests(unittest.TestCase):
             self.assertFalse(payload["ok"])
             self.assertEqual(payload["command"], "task.next")
             self.assertEqual(payload["errors"][0]["code"], "db_not_initialized")
+            self.assertEqual(payload["warnings"], [])
             self.assertEqual(payload["data"], {"tasks": [], "count": 0, "limit": 0, "selection_rules": {}})
             self.assertFalse(db.exists())
             self.assertFalse(db.parent.exists())
+
+    def test_task_next_readiness_errors_do_not_emit_paused_warning_or_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            owner = Path(tmp) / "owner"
+            other = Path(tmp) / "other"
+            init_db(db, owner)
+            paused = add_task(db, owner, "Paused work", "--status", "in_progress")
+            edit_task(
+                db,
+                owner,
+                paused["task_id"],
+                "--status",
+                "paused",
+                "--pause-reason",
+                "Intentional hold",
+            )
+
+            before_mismatch = db.read_bytes()
+            mismatch = run_taskgov(
+                "task",
+                "next",
+                "--repo",
+                str(other),
+                "--db",
+                str(db),
+                "--json",
+            )
+            mismatch_payload = json.loads(mismatch.stdout)
+            self.assertEqual(
+                mismatch_payload["errors"][0]["code"],
+                "project_mismatch",
+            )
+            self.assertEqual(mismatch_payload["warnings"], [])
+            self.assertEqual(db.read_bytes(), before_mismatch)
+            self.assertFalse(other.exists())
+
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    "DELETE FROM schema_migrations WHERE version = 5"
+                )
+                connection.commit()
+            before_migration = db.read_bytes()
+            migration = run_taskgov(
+                "task",
+                "next",
+                "--repo",
+                str(owner),
+                "--db",
+                str(db),
+                "--json",
+            )
+            migration_payload = json.loads(migration.stdout)
+            self.assertEqual(
+                migration_payload["errors"][0]["code"],
+                "migration_required",
+            )
+            self.assertEqual(migration_payload["warnings"], [])
+            self.assertEqual(db.read_bytes(), before_migration)
 
     def test_task_next_end_to_end_temp_db_flow(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -420,6 +481,57 @@ class TaskNextTests(unittest.TestCase):
                 before_counts,
             )
 
+    def test_task_next_warns_about_paused_tasks_without_changing_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            add_task(db, repo, "Ready optional", "--priority", "high")
+            before_pause = next_tasks(db, repo, "--limit", "10")
+            for index in range(3):
+                paused = add_task(
+                    db,
+                    repo,
+                    f"Private paused title {index}",
+                    "--status",
+                    "in_progress",
+                )
+                edit_task(
+                    db,
+                    repo,
+                    paused["task_id"],
+                    "--status",
+                    "paused",
+                    "--pause-reason",
+                    f"Private pause reason {index}",
+                )
+            before_bytes = db.read_bytes()
+            before_entries = sorted(path.name for path in db.parent.iterdir())
+
+            after_pause = next_tasks(db, repo, "--limit", "10", "--read-only")
+
+            self.assertEqual(after_pause["data"], before_pause["data"])
+            self.assertEqual(
+                after_pause["warnings"],
+                [
+                    {
+                        "code": "paused_tasks_present",
+                        "message": (
+                            "3 paused tasks exist; "
+                            "run taskgov task current --status paused"
+                        ),
+                    }
+                ],
+            )
+            serialized_warning = json.dumps(after_pause["warnings"])
+            self.assertNotIn("Private paused title", serialized_warning)
+            self.assertNotIn("Private pause reason", serialized_warning)
+            self.assertEqual(db.read_bytes(), before_bytes)
+            self.assertEqual(
+                sorted(path.name for path in db.parent.iterdir()),
+                before_entries,
+            )
+
     def test_task_next_validation_errors_are_structured(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
@@ -449,6 +561,7 @@ class TaskNextTests(unittest.TestCase):
                     self.assertFalse(payload["ok"])
                     self.assertEqual(payload["command"], "task.next")
                     self.assertEqual(payload["errors"][0]["code"], error_code)
+                    self.assertEqual(payload["warnings"], [])
                     self.assertEqual(payload["data"], {"tasks": [], "count": 0, "limit": 0, "selection_rules": {}})
 
     def test_task_next_text_output_is_concise(self):
@@ -466,6 +579,39 @@ class TaskNextTests(unittest.TestCase):
             self.assertLessEqual(len(lines), 2)
             self.assertIn("Next tasks: 1 (limit 5)", result.stdout)
             self.assertIn("Ready optional", result.stdout)
+
+    def test_task_next_text_includes_the_same_paused_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            add_task(db, repo, "Ready optional")
+            paused = add_task(db, repo, "Paused work", "--status", "in_progress")
+            edit_task(
+                db,
+                repo,
+                paused["task_id"],
+                "--status",
+                "paused",
+                "--pause-reason",
+                "Intentional hold",
+            )
+
+            result = run_taskgov(
+                "task",
+                "next",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(
+                "Warning: 1 paused task exists; "
+                "run taskgov task current --status paused",
+                result.stdout,
+            )
 
 
 if __name__ == "__main__":

@@ -104,6 +104,7 @@ python scripts/taskgov.py db status --repo <target-project> --json
   "schema_version": 5,
   "counts": {
     "active": 3,
+    "paused": 1,
     "blocked": 1,
     "review_pending": 0,
     "done": 2,
@@ -114,6 +115,8 @@ python scripts/taskgov.py db status --repo <target-project> --json
 
 `counts.active` includes `ready`, `in_progress`, `paused`, `blocked`, and
 `review_pending`; it excludes terminal `done` and `cancelled` tasks.
+`counts.paused` is the exact project-scoped paused population and does not
+remove paused tasks from `counts.active`.
 
 ### `task add`
 
@@ -199,6 +202,21 @@ Selection rules:
 
 `data`: `tasks`, `count`, `limit`, `selection_rules`.
 
+When paused work exists, a successful response adds exactly one top-level
+warning without changing `data` or the success exit code:
+
+```json
+{
+  "code": "paused_tasks_present",
+  "message": "3 paused tasks exist; run taskgov task current --status paused"
+}
+```
+
+The count comes from the immediately preceding successful status inspection
+and is advisory under concurrent updates. The warning contains no task title,
+pause reason, or event text. Failed commands and projects with zero paused
+tasks return no such warning.
+
 ### `task current`
 
 Rediscover work that has already started, is under review, is intentionally
@@ -207,6 +225,7 @@ working-tree freshness or staleness.
 
 ```powershell
 python scripts/taskgov.py task current --repo <target-project> --limit 20 --json
+python scripts/taskgov.py task current --repo <target-project> --status paused --limit 20 --json
 ```
 
 `data`:
@@ -232,6 +251,11 @@ deterministic status-based suggested action. Ordering is status
 (`in_progress`, `review_pending`, `paused`, `blocked`), priority, newest
 `updated_at`, then `task_id`. Same-second latest events use event row order as a
 private tie-breaker. `--limit` defaults to `20` and is capped at `100`.
+Optional `--status` accepts only `in_progress`, `review_pending`, `paused`, or
+`blocked`. A filter returns that one value in `data.statuses`; unsupported
+statuses fail with `invalid_status` without mutation. This is a bounded view,
+not paged history; use `db status.counts.paused` for the exact paused
+population.
 
 ### `task show`
 

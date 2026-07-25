@@ -163,6 +163,8 @@ Versioning follows the runtime package version in
 `task-governance-tool/scripts/task_governance_tool/__init__.py`. Release notes
 should name current/next task inspection, pause/resume, sequential transition
 guards, typed completion evidence with read-only Git validation, structured
-review gates, schema-v5 migration, and snapshot-v3 offline Viewer export.
+review gates, exact paused counts, the bounded current-status filter, the
+advisory paused-work warning, schema-v5 migration, and snapshot-v3 offline
+Viewer export.
 The TG-M8 release candidate is version `0.2.0` because it adds new commands,
 schema migrations, and completion-gate behavior beyond the `0.1.0` trial.

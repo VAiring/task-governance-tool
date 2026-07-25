@@ -1,13 +1,11 @@
 # task-governance-tool MVP Specification
 
-Status: formal implemented baseline through TG-M8 governance hardening. The
-TG-M9 paused-work visibility contract is approved for implementation planning;
-its CLI and Skill behavior is not yet implemented. The TG-M11
-completion-integrity correction contract is approved for planning and task
-registration, but its schema, CLI, and Skill behavior remain unimplemented
-pending separate approval. The TG-M12 scope-control and local-handoff contract
-is likewise approved for planning and task registration only; v0.2.0 behavior
-remains the implemented release baseline.
+Status: formal implemented baseline through TG-M9 paused-work visibility. The
+TG-M11 completion-integrity correction contract is approved and implementation
+is authorized after TG-M9. The TG-M12 scope-control and local-handoff contract
+is approved for staged implementation after TG-M11, except its Issue adapter
+remains blocked on a future intake contract. The runtime remains schema v5
+until TG-M11's explicit migration unit.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -441,7 +439,7 @@ units. A checklist or child-task feature should be reconsidered only after
 operational evidence from `paused` and `task current` shows that the simple lane
 model is insufficient.
 
-## Approved Post-MVP Extension: TG-M9 Paused Work Visibility
+## Implemented Post-MVP Extension: TG-M9 Paused Work Visibility
 
 TG-M9 addresses the narrower risk that intentionally paused work can disappear
 from the normal ready-task flow. It adds deterministic visibility to existing

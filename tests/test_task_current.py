@@ -117,6 +117,64 @@ class TaskCurrentTests(unittest.TestCase):
             self.assertIn("Waiting for a safe window", data["tasks"][2]["suggested_next_action"])
             self.assertIn("User decision needed", data["tasks"][3]["suggested_next_action"])
 
+    def test_current_status_filter_accepts_each_current_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            seed_current_states(db, repo)
+
+            for status in ("in_progress", "review_pending", "paused", "blocked"):
+                with self.subTest(status=status):
+                    result = current(db, repo, "--status", status)
+
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    data = json.loads(result.stdout)["data"]
+                    self.assertEqual(data["statuses"], [status])
+                    self.assertEqual(data["count"], 1)
+                    self.assertEqual(
+                        [task["status"] for task in data["tasks"]],
+                        [status],
+                    )
+                    self.assertTrue(data["tasks"][0]["latest_event"])
+            paused = json.loads(
+                current(db, repo, "--status", "paused").stdout
+            )["data"]["tasks"][0]
+            self.assertEqual(paused["pause_reason"], "Waiting for a safe window")
+            self.assertIn(
+                "Waiting for a safe window",
+                paused["suggested_next_action"],
+            )
+
+    def test_current_rejects_non_current_status_filters_without_mutation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+
+            for status in ("ready", "done", "cancelled", "paused' OR 1=1 --"):
+                with self.subTest(status=status):
+                    before_bytes = db.read_bytes()
+                    before_entries = sorted(
+                        path.name for path in db.parent.iterdir()
+                    )
+
+                    result = current(db, repo, "--status", status)
+
+                    self.assertEqual(result.returncode, 1)
+                    payload = json.loads(result.stdout)
+                    self.assertEqual(payload["errors"][0]["code"], "invalid_status")
+                    self.assertEqual(payload["warnings"], [])
+                    self.assertEqual(
+                        payload["data"]["statuses"],
+                        ["in_progress", "review_pending", "paused", "blocked"],
+                    )
+                    self.assertEqual(db.read_bytes(), before_bytes)
+                    self.assertEqual(
+                        sorted(path.name for path in db.parent.iterdir()),
+                        before_entries,
+                    )
+
     def test_current_orders_priority_updated_at_and_task_id_and_honors_limit(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
@@ -265,6 +323,12 @@ class TaskCurrentTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             missing_result = current(missing, repo)
             self.assertEqual(json.loads(missing_result.stdout)["errors"][0]["code"], "db_not_initialized")
+            self.assertFalse(missing.parent.exists())
+            missing_filtered = current(missing, repo, "--status", "paused")
+            self.assertEqual(
+                json.loads(missing_filtered.stdout)["data"]["statuses"],
+                ["paused"],
+            )
             self.assertFalse(missing.parent.exists())
 
             db = Path(tmp) / "taskgov.sqlite"

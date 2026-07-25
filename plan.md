@@ -1,12 +1,11 @@
 # task-governance-tool Initial Plan
 
-Status: MVP, completion commit extension, static Task Viewer, and TG-M8
-governance hardening implemented. The TG-M9 paused-work visibility contract and
-roadmap are approved, but implementation awaits separate user approval.
-The TG-M11 completion-integrity correction contract and task baseline are
-approved, but implementation awaits separate user approval. The TG-M12
-scope-control and local-handoff contract and roadmap are approved for later
-implementation; v0.2.0/schema v5 remains the implemented baseline.
+Status: MVP, completion commit extension, static Task Viewer, TG-M8 governance
+hardening, and TG-M9 paused-work visibility are implemented. TG-M11
+completion-integrity implementation is authorized next. TG-M12 scope-control,
+local handoff, Task Contract, Effort Advisory, and local self-status are
+authorized after their documented dependencies; the Issue adapter remains
+blocked. The runtime remains schema v5 until TG-M11's migration unit.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -887,21 +886,12 @@ Open issues:
 
 ## Implementation Execution Status
 
-All implementation units through TG-M8 are complete. TG-M8.0 established the
-governing-document/task baseline, and TG-M8.1 through TG-M8.6 were consumed in
-order after separate explicit user approval. TG-M9.0 establishes only the
-paused-visibility contract and task baseline. TG-M9.1 is registered as blocked
-pending separate user approval, and TG-M9.2 remains ordered behind it; neither
-implementation unit is authorized by the current planning request. TG-M11.0
-establishes only the completion-integrity contract and task baseline.
-TG-M11.1 is registered as blocked pending separate user approval, and TG-M11.2
-through TG-M11.4 remain ordered behind it. TG-M12.0 establishes only the
-scope-control/local-handoff contract and task baseline; TG-M12.1 is blocked
-pending separate implementation approval after TG-M11, TG-M12.2 and TG-M12.3
-remain ordered behind it, TG-M12.3 is additionally blocked on an Issue intake
-contract and integration approval, and TG-M12.O1/O2 are separately gated
-optional work. None of those implementation units is authorized by the current
-planning request.
+All implementation units through TG-M9 are complete. TG-M9.1 and TG-M9.2 were
+consumed after explicit user approval. The current task-consumption request
+also authorizes TG-M11.1 through TG-M11.4, then TG-M12.1 and TG-M12.2, plus
+the separately requested TG-M12.O1/O2 optional features after their documented
+dependencies. TG-M12.3 remains blocked on an Issue intake contract, governing
+permission update, and separate integration approval.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local
 SQLite database. Do not append another large per-task execution log here; use

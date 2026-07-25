@@ -21,6 +21,7 @@ Run the bundled CLI from the installed skill folder:
 ```powershell
 python scripts/taskgov.py db status --repo <target-project> --json
 python scripts/taskgov.py task current --repo <target-project> --json
+python scripts/taskgov.py task current --repo <target-project> --status paused --json
 python scripts/taskgov.py task next --repo <target-project> --json
 python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 ```
@@ -34,7 +35,9 @@ First-use flow:
 3. Register only explicit user-approved tasks with `task add`; do not import
    large task files or invent dependency graphs.
 4. Use `task current` to rediscover started, paused, blocked, or review-pending
-   work. Use `task next` only for new ready work, then inspect with `task show`.
+   work. If `db status` reports paused work or `task next` emits
+   `paused_tasks_present`, use `task current --status paused`. Use `task next`
+   only for new ready work, then inspect with `task show`.
 
 Use `--db <path>` only when explicitly required. The default is
 `state/projects/<project-id>/taskgov.sqlite` under this installed skill. If the
@@ -76,6 +79,10 @@ browser launch.
 - `task add --status done` is prohibited. Initial `paused` is also prohibited.
 - Pause only `in_progress` or `review_pending` work with a concise reason;
   resume explicitly to `in_progress`.
+- `db status.counts.paused` is the exact population count. The
+  `task current --status paused` result is bounded, while a
+  `paused_tasks_present` warning on successful `task next` is advisory only
+  and never changes ready candidates.
 - Direct sequential transitions use the same predecessor rule as `task next`.
 - Before completion, set the current review target and record the tier-required
   sanitized receipts/findings. Tier 2 normally requires two distinct

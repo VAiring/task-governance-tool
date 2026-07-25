@@ -1651,6 +1651,7 @@ Required error codes:
 - `migration_required`
 - `project_mismatch`
 - `review_target_required`
+- `review_changes_requested`
 - `review_receipts_insufficient`
 - `review_finding_unresolved`
 - `review_receipt_mismatch`

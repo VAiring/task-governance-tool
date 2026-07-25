@@ -189,6 +189,12 @@ class ViewerSnapshotTests(unittest.TestCase):
                 1,
             )
             self.assertEqual(ready["review_evidence"]["counts"]["open_low"], 1)
+            self.assertEqual(
+                ready["review_evidence"]["counts"][
+                    "changes_requested_current_generation"
+                ],
+                0,
+            )
             self.assertLessEqual(len(ready["review_evidence"]["recent_receipts"]), 10)
             self.assertLessEqual(len(ready["review_evidence"]["recent_findings"]), 10)
             self.assertEqual(len(ready["events"]), 10)

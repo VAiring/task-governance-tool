@@ -163,17 +163,24 @@ class TaskListTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            self.seed_tasks(db, repo)
+            seeded = self.seed_tasks(db, repo)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    "UPDATE tasks SET lane = ' TG-M2 ' WHERE task_id = ?",
+                    (seeded["sequential"]["task_id"],),
+                )
+                connection.commit()
 
             ready = list_tasks(db, repo, "--status", "ready")["data"]["tasks"]
             sequential = list_tasks(db, repo, "--kind", "sequential")["data"]["tasks"]
-            lane = list_tasks(db, repo, "--lane", "TG-M2")["data"]["tasks"]
+            lane = list_tasks(db, repo, "--lane", "  TG-M2  ")["data"]["tasks"]
             urgent = list_tasks(db, repo, "--priority", "urgent")["data"]["tasks"]
             tag = list_tasks(db, repo, "--tag", "ui")["data"]["tasks"]
 
             self.assertEqual([task["title"] for task in ready], ["Sequential ready", "Ready optional"])
             self.assertEqual([task["title"] for task in sequential], ["Sequential ready"])
             self.assertEqual([task["title"] for task in lane], ["Sequential ready"])
+            self.assertEqual(lane[0]["lane"], " TG-M2 ")
             self.assertEqual([task["title"] for task in urgent], ["Sequential ready"])
             self.assertEqual([task["title"] for task in tag], ["Ready optional"])
 

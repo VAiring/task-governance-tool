@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
+
 
 PROJECT_ID_HASH_LENGTH = 12
 SCHEMA_VERSION = 5
@@ -136,28 +138,31 @@ def utc_now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def connect(db_path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(db_path)
+def configure_connection(connection: sqlite3.Connection) -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
+    connection.create_function(
+        LANE_SQL_FUNCTION,
+        1,
+        canonical_lane,
+        deterministic=True,
+    )
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
+
+
+def connect(db_path: Path) -> sqlite3.Connection:
+    return configure_connection(sqlite3.connect(db_path))
 
 
 def connect_existing(db_path: Path) -> sqlite3.Connection:
     """Open an existing database read/write without allowing SQLite to create it."""
     uri = db_path.resolve(strict=False).as_uri() + "?mode=rw"
-    connection = sqlite3.connect(uri, uri=True)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    return configure_connection(sqlite3.connect(uri, uri=True))
 
 
 def connect_readonly(db_path: Path) -> sqlite3.Connection:
     uri = db_path.resolve(strict=False).as_uri() + "?mode=ro&immutable=1"
-    connection = sqlite3.connect(uri, uri=True)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    return configure_connection(sqlite3.connect(uri, uri=True))
 
 
 def connect_snapshot_readonly(db_path: Path) -> sqlite3.Connection:
@@ -166,8 +171,7 @@ def connect_snapshot_readonly(db_path: Path) -> sqlite3.Connection:
     uri = db_path.resolve(strict=False).as_uri() + "?mode=ro"
     connection = sqlite3.connect(uri, uri=True)
     try:
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
+        configure_connection(connection)
         connection.execute("PRAGMA query_only = ON")
         connection.execute("BEGIN")
     except Exception:

@@ -8,15 +8,22 @@ import binascii
 import secrets
 import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from task_governance_tool.completion import (
     CompletionEvidenceError,
     WRITABLE_EVIDENCE_KINDS,
     completion_evidence_values,
+    resolve_git_commit,
     validate_evidence_matrix,
 )
-from task_governance_tool.ordering import first_out_of_order_advanced_task
+from task_governance_tool.ordering import (
+    ADVANCED_STATUSES,
+    canonical_lane,
+    canonical_lane_sql,
+    first_out_of_order_advanced_task,
+)
 from task_governance_tool.storage import ProjectIdentity, utc_now
 
 
@@ -24,6 +31,8 @@ KINDS = ("sequential", "optional")
 PRIORITIES = ("low", "normal", "high", "urgent")
 STATUSES = ("ready", "in_progress", "paused", "blocked", "review_pending", "done", "cancelled")
 REVIEW_TIERS = (0, 1, 2)
+SQLITE_INT64_MIN = -(1 << 63)
+SQLITE_INT64_MAX = (1 << 63) - 1
 
 PUBLIC_TASK_FIELDS = (
     "task_id",
@@ -389,16 +398,42 @@ def validate_review_tier(value: Any) -> int:
     return tier
 
 
+def validate_lane(value: Any) -> str:
+    return canonical_lane(validate_text("lane", value))
+
+
+def validate_sqlite_int64(value: Any, *, field: str) -> int:
+    if isinstance(value, bool):
+        raise validation_error("invalid_argument", f"{field} must be an integer", field)
+    if isinstance(value, int):
+        integer = value
+    elif (
+        isinstance(value, str)
+        and re.fullmatch(r"-?[0-9]+", value.strip()) is not None
+    ):
+        try:
+            integer = int(value.strip())
+        except (ValueError, OverflowError) as exc:
+            raise validation_error(
+                "invalid_argument",
+                f"{field} must be within SQLite's signed 64-bit integer range",
+                field,
+            ) from exc
+    else:
+        raise validation_error("invalid_argument", f"{field} must be an integer", field)
+    if integer < SQLITE_INT64_MIN or integer > SQLITE_INT64_MAX:
+        raise validation_error(
+            "invalid_argument",
+            f"{field} must be within SQLite's signed 64-bit integer range",
+            field,
+        )
+    return integer
+
+
 def validate_lane_order(value: Any) -> int | None:
     if value is None:
         return None
-    if isinstance(value, bool):
-        raise validation_error("invalid_argument", "lane_order must be an integer", "lane_order")
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-        return int(value.strip())
-    raise validation_error("invalid_argument", "lane_order must be an integer", "lane_order")
+    return validate_sqlite_int64(value, field="lane_order")
 
 
 def validate_event_summary(summary: Any) -> str:
@@ -430,7 +465,7 @@ def validate_task_input(
         "title": validate_text("title", title, required=True, limit=TEXT_LIMITS["title"]),
         "description": validate_text("description", description, limit=TEXT_LIMITS["description"]),
         "kind": validate_choice("kind", kind, KINDS, "invalid_kind"),
-        "lane": validate_text("lane", lane),
+        "lane": validate_lane(lane),
         "lane_order": validate_lane_order(lane_order),
         "priority": validate_choice("priority", priority, PRIORITIES, "invalid_priority"),
         "status": validate_choice("status", status, STATUSES, "invalid_status"),
@@ -479,23 +514,54 @@ def generate_id(prefix: str) -> str:
 
 def next_lane_order(connection: sqlite3.Connection, project_id: str, lane: str) -> int:
     row = connection.execute(
-        """
+        f"""
         SELECT MAX(lane_order) AS max_order
           FROM tasks
          WHERE project_id = ?
            AND kind = 'sequential'
-           AND lane = ?
+           AND {canonical_lane_sql("lane")} = ?
         """,
         (project_id, lane),
     ).fetchone()
     if row is None or row["max_order"] is None:
         return 1
-    return int(row["max_order"]) + 1
+    maximum = int(row["max_order"])
+    if maximum >= SQLITE_INT64_MAX:
+        raise validation_error(
+            "invalid_argument",
+            "lane_order cannot be assigned because the lane reached SQLite's signed 64-bit maximum",
+            "lane_order",
+        )
+    return maximum + 1
 
 
 def row_to_task(row: sqlite3.Row) -> dict[str, Any]:
     row_keys = set(row.keys())
     return {field: row[field] for field in PUBLIC_TASK_FIELDS if field in row_keys}
+
+
+def canonical_lane_order_conflict(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    lane: str,
+    lane_order: int,
+) -> bool:
+    row = connection.execute(
+        f"""
+        SELECT 1
+          FROM tasks
+         WHERE project_id = ?
+           AND kind = 'sequential'
+           AND task_id != ?
+           AND {canonical_lane_sql("lane")} = ?
+           AND lane_order = ?
+         LIMIT 1
+        """,
+        (project_id, task_id, canonical_lane(lane), lane_order),
+    ).fetchone()
+    return row is not None
 
 
 def row_to_show_task(row: sqlite3.Row) -> dict[str, Any]:
@@ -577,7 +643,7 @@ def create_task_event(
 
 def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_input: Any) -> AddTaskResult:
     normalized = validate_task_input(**task_input)
-    lane = normalized["lane"].strip()
+    lane = normalized["lane"]
     lane_order = normalized["lane_order"]
     if normalized["kind"] == "sequential":
         lane = lane or "default"
@@ -653,6 +719,17 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
             row,
         )
         if row["kind"] == "sequential":
+            if canonical_lane_order_conflict(
+                connection,
+                project_id=project.project_id,
+                task_id=task_id,
+                lane=str(row["lane"]),
+                lane_order=int(row["lane_order"]),
+            ):
+                raise TaskRepositoryError(
+                    "invalid_argument",
+                    "task conflicts with an existing canonical sequential lane order",
+                )
             invalid_task_id = first_out_of_order_advanced_task(
                 connection,
                 project_id=project.project_id,
@@ -734,8 +811,8 @@ def list_tasks(
         filters.append("kind = ?")
         values.append(validate_choice("kind", kind, KINDS, "invalid_kind"))
     if lane is not None:
-        filters.append("lane = ?")
-        values.append(validate_text("lane", lane))
+        filters.append(f"{canonical_lane_sql('lane')} = ?")
+        values.append(validate_lane(lane))
     if priority is not None:
         filters.append("priority = ?")
         values.append(validate_choice("priority", priority, PRIORITIES, "invalid_priority"))
@@ -755,7 +832,7 @@ def list_tasks(
              WHEN 'normal' THEN 2
              ELSE 3
            END,
-           lane,
+           {canonical_lane_sql("lane")},
            lane_order IS NULL,
            lane_order,
            created_at,
@@ -848,7 +925,7 @@ def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
         elif field == "kind":
             normalized[field] = validate_choice(field, value, KINDS, "invalid_kind")
         elif field == "lane":
-            normalized[field] = validate_text(field, value)
+            normalized[field] = validate_lane(value)
         elif field == "lane_order":
             normalized[field] = validate_lane_order(value)
         elif field == "priority":
@@ -1226,8 +1303,7 @@ def update_task_row(
     )
 
 
-def enforce_done_transition_gates(
-    connection: sqlite3.Connection,
+def validate_done_transition_inputs(
     task: dict[str, Any],
     *,
     status_was_provided: bool,
@@ -1258,6 +1334,51 @@ def enforce_done_transition_gates(
             "task edit --status done requires explicit completion evidence",
             "completion_evidence_kind",
         )
+
+
+def revalidate_done_git_evidence(
+    task: dict[str, Any],
+    *,
+    repo: Path,
+    status_was_provided: bool,
+) -> None:
+    if not status_was_provided or task["status"] != "done":
+        return
+    if task["completion_evidence_kind"] == "git_commit":
+        try:
+            resolved_completion = resolve_git_commit(
+                repo,
+                str(task["completion_evidence_revision"]),
+            )
+        except CompletionEvidenceError as exc:
+            raise validation_error(exc.code, exc.message, exc.field) from exc
+        if resolved_completion != str(task["completion_evidence_revision"]):
+            raise validation_error(
+                "git_commit_not_found_or_ambiguous",
+                "stored Git completion revision no longer resolves to the recorded commit",
+                "completion_revision",
+            )
+    if task["review_target_kind"] == "git_commit":
+        try:
+            resolved_target = resolve_git_commit(repo, str(task["review_target_value"]))
+        except CompletionEvidenceError as exc:
+            raise validation_error(exc.code, exc.message, "review_target_value") from exc
+        if resolved_target != str(task["review_target_value"]):
+            raise validation_error(
+                "git_commit_not_found_or_ambiguous",
+                "stored Git review target no longer resolves to the recorded commit",
+                "review_target_value",
+            )
+
+
+def enforce_done_review_gate(
+    connection: sqlite3.Connection,
+    task: dict[str, Any],
+    *,
+    status_was_provided: bool,
+) -> None:
+    if not status_was_provided or task["status"] != "done":
+        return
     from task_governance_tool.reviews import ReviewEvidenceError, enforce_review_gate
 
     try:
@@ -1318,7 +1439,9 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
         evidence_marker = evidence.audit_marker
 
     if updated["kind"] == "sequential":
-        if not str(updated["lane"]).strip():
+        if lane_was_provided or existing["kind"] != "sequential":
+            updated["lane"] = validate_lane(updated["lane"])
+        if not updated["lane"]:
             updated["lane"] = "default"
         if updated["lane_order"] is None:
             updated["lane_order"] = next_lane_order(connection, project.project_id, str(updated["lane"]))
@@ -1426,6 +1549,27 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
         affected_lanes.add(str(existing["lane"]))
     if ordering_changed and updated["kind"] == "sequential":
         affected_lanes.add(str(updated["lane"]))
+    lane_metadata_changed = any(
+        updated[field] != existing[field]
+        for field in ("kind", "lane", "lane_order")
+    )
+    advanced_transition = (
+        status_was_provided
+        and updated["status"] in ADVANCED_STATUSES
+        and updated["status"] != existing["status"]
+    )
+
+    validate_done_transition_inputs(
+        updated,
+        status_was_provided=status_was_provided,
+        verification_complete=verification_complete,
+        review_complete=review_complete,
+    )
+    revalidate_done_git_evidence(
+        updated,
+        repo=project.canonical_repo,
+        status_was_provided=status_was_provided,
+    )
 
     savepoint = f"taskgov_ordering_{secrets.token_hex(4)}"
     connection.execute(f"SAVEPOINT {savepoint}")
@@ -1436,6 +1580,21 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
             project_id=project.project_id,
             values=update_values,
         )
+        if (
+            updated["kind"] == "sequential"
+            and (lane_metadata_changed or advanced_transition)
+            and canonical_lane_order_conflict(
+                connection,
+                project_id=project.project_id,
+                task_id=normalized_task_id,
+                lane=str(updated["lane"]),
+                lane_order=int(updated["lane_order"]),
+            )
+        ):
+            raise TaskRepositoryError(
+                "invalid_argument",
+                "task conflicts with an existing canonical sequential lane order",
+            )
         invalid_task_id = first_out_of_order_advanced_task(
             connection,
             project_id=project.project_id,
@@ -1446,12 +1605,10 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
                 "sequential_predecessor_incomplete",
                 "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
             )
-        enforce_done_transition_gates(
+        enforce_done_review_gate(
             connection,
             updated,
             status_was_provided=status_was_provided,
-            verification_complete=verification_complete,
-            review_complete=review_complete,
         )
     except sqlite3.IntegrityError as exc:
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")

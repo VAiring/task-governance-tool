@@ -175,7 +175,7 @@ class TaskNextTests(unittest.TestCase):
             add_task(db, repo, "Optional low", "--priority", "low")
 
             optional = next_tasks(db, repo, "--kind", "optional", "--limit", "10")
-            core = next_tasks(db, repo, "--lane", "CORE", "--limit", "10")
+            core = next_tasks(db, repo, "--lane", "  CORE  ", "--limit", "10")
             high = next_tasks(db, repo, "--priority", "high", "--limit", "10")
             limited = next_tasks(db, repo, "--limit", "2")
 

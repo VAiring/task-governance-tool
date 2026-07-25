@@ -537,6 +537,78 @@ class TaskEditTests(unittest.TestCase):
             self.assertEqual(fetch_task(db, second["task_id"])["lane_order"], 2)
             self.assertEqual(table_count(db, "task_events"), 2)
 
+    def test_task_edit_rejects_automatic_lane_order_overflow_without_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            add_task(
+                db, repo, "At maximum", "--kind", "sequential",
+                "--lane", "LIMIT", "--order", str((1 << 63) - 1),
+            )
+            mover = add_task(
+                db, repo, "Mover", "--kind", "sequential",
+                "--lane", "SOURCE", "--order", "1",
+            )
+            before = db.read_bytes()
+
+            result = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                mover["task_id"], "--lane", " LIMIT ", "--json",
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertEqual(
+                json.loads(result.stdout)["errors"][0]["code"], "invalid_argument"
+            )
+            self.assertNotIn("Traceback", result.stdout + result.stderr)
+            self.assertEqual(fetch_task(db, mover["task_id"])["lane"], "SOURCE")
+            self.assertEqual(db.read_bytes(), before)
+
+    def test_unrelated_edit_preserves_historical_whitespace_lane(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            add_task(
+                db, repo, "Canonical", "--kind", "sequential",
+                "--lane", "CORE", "--order", "1",
+            )
+            historical = add_task(
+                db, repo, "Historical", "--kind", "sequential",
+                "--lane", "LEGACY", "--order", "1",
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    "UPDATE tasks SET lane = ' CORE ' WHERE task_id = ?",
+                    (historical["task_id"],),
+                )
+                connection.commit()
+            selected = run_taskgov(
+                "task", "next", "--repo", str(repo), "--db", str(db),
+                "--lane", "CORE", "--json",
+            )
+            self.assertEqual(selected.returncode, 0, selected.stdout)
+            self.assertEqual(json.loads(selected.stdout)["data"]["tasks"], [])
+
+            result = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                historical["task_id"], "--title", "Historical updated", "--json",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout)
+            stored = fetch_task(db, historical["task_id"])
+            self.assertEqual(stored["title"], "Historical updated")
+            self.assertEqual(stored["lane"], " CORE ")
+            self.assertEqual(stored["lane_order"], 1)
+            blocked = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                historical["task_id"], "--status", "in_progress", "--json",
+            )
+            self.assertEqual(blocked.returncode, 1, blocked.stdout)
+            self.assertEqual(
+                json.loads(blocked.stdout)["errors"][0]["code"], "invalid_argument"
+            )
+            self.assertEqual(fetch_task(db, historical["task_id"])["status"], "ready")
+
     def test_task_edit_unknown_task_returns_structured_not_found(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"

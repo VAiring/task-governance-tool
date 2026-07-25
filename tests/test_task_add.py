@@ -98,6 +98,9 @@ class TaskAddTests(unittest.TestCase):
                 "sequential",
                 "--json",
             )
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute("UPDATE tasks SET lane = ' default '")
+                connection.commit()
             second = run_taskgov(
                 "task",
                 "add",
@@ -244,6 +247,9 @@ class TaskAddTests(unittest.TestCase):
                 "1",
                 "--json",
             )
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute("UPDATE tasks SET lane = ' TG-M2 '")
+                connection.commit()
             second = run_taskgov(
                 "task",
                 "add",
@@ -268,6 +274,45 @@ class TaskAddTests(unittest.TestCase):
             self.assertEqual(payload["errors"][0]["code"], "invalid_argument")
             self.assertEqual(table_count(db, "tasks"), 1)
             self.assertEqual(table_count(db, "task_events"), 1)
+
+    def test_task_add_rejects_explicit_and_automatic_int64_overflow_without_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            maximum = str((1 << 63) - 1)
+            seeded = run_taskgov(
+                "task", "add", "--repo", str(repo), "--db", str(db),
+                "--title", "At maximum", "--kind", "sequential",
+                "--lane", " LIMIT ", "--order", maximum, "--json",
+            )
+            self.assertEqual(seeded.returncode, 0, seeded.stdout)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute("UPDATE tasks SET lane = ' LIMIT '")
+                connection.commit()
+            before = (table_count(db, "tasks"), table_count(db, "task_events"))
+
+            cases = (
+                ("Automatic overflow", ("--lane", "LIMIT")),
+                ("Explicit overflow", ("--lane", "OVER", "--order", str(1 << 63))),
+                ("Huge decimal", ("--lane", "HUGE", "--order", "9" * 5000)),
+            )
+            for title, extra in cases:
+                with self.subTest(title=title):
+                    result = run_taskgov(
+                        "task", "add", "--repo", str(repo), "--db", str(db),
+                        "--title", title, "--kind", "sequential", *extra, "--json",
+                    )
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertEqual(
+                        json.loads(result.stdout)["errors"][0]["code"],
+                        "invalid_argument",
+                    )
+                    self.assertNotIn("Traceback", result.stdout + result.stderr)
+                    self.assertEqual(
+                        (table_count(db, "tasks"), table_count(db, "task_events")),
+                        before,
+                    )
 
     def test_task_add_privacy_rejection_prevents_storage(self):
         with tempfile.TemporaryDirectory() as tmp:

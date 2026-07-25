@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -47,6 +48,9 @@ def resolve_git_commit(repo: Path, revision: str) -> str:
             "completion_revision",
         )
     try:
+        git_environment = os.environ.copy()
+        git_environment["GIT_OPTIONAL_LOCKS"] = "0"
+        git_environment["GIT_NO_LAZY_FETCH"] = "1"
         result = subprocess.run(
             [
                 "git",
@@ -63,6 +67,7 @@ def resolve_git_commit(repo: Path, revision: str) -> str:
             text=True,
             check=False,
             timeout=15,
+            env=git_environment,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise evidence_error(

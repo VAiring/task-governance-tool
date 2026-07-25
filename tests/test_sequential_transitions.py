@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -90,8 +91,24 @@ class SequentialTransitionTests(unittest.TestCase):
                 init_db(db, repo)
                 add_task(db, repo, "Earlier", "--kind", "sequential", "--lane", "CORE", "--order", "10")
                 later = add_task(
-                    db, repo, "Later", "--kind", "sequential", "--lane", "CORE", "--order", "20"
+                    db, repo, "Later", "--kind", "sequential",
+                    "--lane", "SHADOW", "--order", "20"
                 )
+                with closing(sqlite3.connect(db)) as connection:
+                    connection.execute(
+                        "UPDATE tasks SET lane = ' CORE ' WHERE task_id = ?",
+                        (later["task_id"],),
+                    )
+                    connection.commit()
+                if status == "in_progress":
+                    selected = run_taskgov(
+                        "task", "next", "--repo", str(repo), "--db", str(db),
+                        "--lane", "CORE", "--limit", "10", "--json",
+                    )
+                    self.assertEqual(
+                        [task["title"] for task in json.loads(selected.stdout)["data"]["tasks"]],
+                        ["Earlier"],
+                    )
                 extra = []
                 if status == "done":
                     extra = ["--verification-complete", "--review-complete", "--commit-not-required"]

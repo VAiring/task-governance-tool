@@ -497,6 +497,17 @@ def read_review_evidence(
             (project_id, task_id, target_kind, target_value, generation),
         ).fetchone()[0]
     ) if generation > 0 else 0
+    changes_requested = int(
+        connection.execute(
+            """
+            SELECT COUNT(*) FROM review_receipts
+             WHERE project_id = ? AND task_id = ?
+               AND target_kind = ? AND target_value = ? AND target_generation = ?
+               AND verdict = 'changes_requested'
+            """,
+            (project_id, task_id, target_kind, target_value, generation),
+        ).fetchone()[0]
+    ) if generation > 0 else 0
 
     fallback_kind: str | None = None
     if generation > 0 and tier in {1, 2}:
@@ -594,7 +605,12 @@ def read_review_evidence(
         if tier == 0
         else qualifying >= required or fallback_kind == "self_review_fallback"
     )
-    satisfied = target_set and tier_satisfied and not blocking_rows
+    satisfied = (
+        target_set
+        and tier_satisfied
+        and changes_requested == 0
+        and not blocking_rows
+    )
     return {
         "target": {"kind": target_kind, "value": target_value, "generation": generation},
         "gate": {
@@ -607,6 +623,7 @@ def read_review_evidence(
         "counts": {
             "receipts_total": total_receipts,
             "receipts_current_generation": current_receipts,
+            "changes_requested_current_generation": changes_requested,
             "open_high": open_counts["high"],
             "open_medium": open_counts["medium"],
             "open_low": open_counts["low"],
@@ -642,6 +659,12 @@ def enforce_review_gate(
             "review_finding_unresolved",
             "a high or medium finding is unresolved or still requires a newer target and fresh review",
             "review_finding",
+        )
+    if evidence["counts"]["changes_requested_current_generation"]:
+        raise review_error(
+            "review_changes_requested",
+            "a current-generation changes_requested receipt requires a newer target and fresh review",
+            "review_receipt",
         )
     if not evidence["gate"]["satisfied"]:
         raise review_error(

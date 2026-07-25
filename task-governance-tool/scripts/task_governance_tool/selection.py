@@ -6,15 +6,19 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
-from task_governance_tool.ordering import incomplete_predecessor_sql
+from task_governance_tool.ordering import (
+    canonical_lane_sql,
+    duplicate_lane_order_sql,
+    incomplete_predecessor_sql,
+)
 from task_governance_tool.storage import ProjectIdentity
 from task_governance_tool.tasks import (
     KINDS,
     PRIORITIES,
     row_to_task,
     validate_choice,
+    validate_lane,
     validate_limit,
-    validate_text,
 )
 
 
@@ -40,7 +44,11 @@ def selection_rules() -> dict[str, Any]:
 
 
 def next_task_readiness_sql(task_alias: str = "task") -> str:
-    return f"({task_alias}.kind = 'optional' OR NOT {incomplete_predecessor_sql(task_alias)})"
+    return (
+        f"({task_alias}.kind = 'optional' OR "
+        f"(NOT {incomplete_predecessor_sql(task_alias)} "
+        f"AND NOT {duplicate_lane_order_sql(task_alias)}))"
+    )
 
 
 def next_task_filters(
@@ -56,8 +64,8 @@ def next_task_filters(
         filters.append("task.kind = ?")
         values.append(validate_choice("kind", kind, KINDS, "invalid_kind"))
     if lane is not None:
-        filters.append("task.lane = ?")
-        values.append(validate_text("lane", lane))
+        filters.append(f"{canonical_lane_sql('task.lane')} = ?")
+        values.append(validate_lane(lane))
     if priority is not None:
         filters.append("task.priority = ?")
         values.append(validate_choice("priority", priority, PRIORITIES, "invalid_priority"))
@@ -107,7 +115,7 @@ def select_next_tasks(
              WHEN 'normal' THEN 2
              ELSE 3
            END,
-           task.lane,
+           {canonical_lane_sql("task.lane")},
            task.lane_order IS NULL,
            task.lane_order,
            task.created_at,

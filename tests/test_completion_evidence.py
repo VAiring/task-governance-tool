@@ -679,6 +679,79 @@ class CompletionEvidenceTests(unittest.TestCase):
             argv = run.call_args.args[0]
             self.assertEqual(argv[-2:], ["--end-of-options", "abc1234^{commit}"])
             self.assertNotIn("shell", run.call_args.kwargs)
+            self.assertEqual(
+                run.call_args.kwargs["env"]["GIT_OPTIONAL_LOCKS"],
+                "0",
+            )
+            self.assertEqual(
+                run.call_args.kwargs["env"]["GIT_NO_LAZY_FETCH"],
+                "1",
+            )
+
+    def test_done_revalidates_unresolvable_stored_git_evidence_without_writes(self):
+        missing_commit = "f" * 40
+        for target in ("completion", "review"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                repo, db = root / "repo", root / "tasks.sqlite"
+                init_git_repo(repo)
+                init_db(db, repo)
+                task = add_task(db, repo)
+                seed_review_evidence(db, task["task_id"])
+                with closing(sqlite3.connect(db)) as connection:
+                    if target == "completion":
+                        connection.execute(
+                            """
+                            UPDATE tasks
+                               SET completion_evidence_kind = 'git_commit',
+                                   completion_evidence_revision = ?,
+                                   completion_commit_required = 1,
+                                   completion_commit_hash = ?
+                             WHERE task_id = ?
+                            """,
+                            (missing_commit, missing_commit, task["task_id"]),
+                        )
+                    else:
+                        connection.execute(
+                            """
+                            UPDATE tasks
+                               SET review_target_kind = 'git_commit',
+                                   review_target_value = ?
+                             WHERE task_id = ?
+                            """,
+                            (missing_commit, task["task_id"]),
+                        )
+                        connection.execute(
+                            """
+                            UPDATE review_receipts
+                               SET target_kind = 'git_commit', target_value = ?
+                             WHERE task_id = ?
+                            """,
+                            (missing_commit, task["task_id"]),
+                        )
+                    connection.commit()
+                before_db = db.read_bytes()
+                before_git = git_state(repo)
+                evidence_args = () if target == "completion" else ("--commit-not-required",)
+
+                result = edit(
+                    db,
+                    repo,
+                    task["task_id"],
+                    "--status",
+                    "done",
+                    "--verification-complete",
+                    "--review-complete",
+                    *evidence_args,
+                )
+
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertEqual(
+                    json.loads(result.stdout)["errors"][0]["code"],
+                    "git_commit_not_found_or_ambiguous",
+                )
+                self.assertEqual(db.read_bytes(), before_db)
+                self.assertEqual(git_state(repo), before_git)
 
 
 if __name__ == "__main__":

@@ -158,6 +158,59 @@ class ReviewEvidenceTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout)
             self.assertEqual(payload(completed)["data"]["task"]["status"], "done")
 
+    def test_current_changes_requested_requires_new_target_and_fresh_passes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            repo.mkdir()
+            init_db(db, repo)
+            task = add_task(db, repo)
+            task_id = task["task_id"]
+            target_set(db, repo, task_id)
+            receipt_add(db, repo, task_id, "reviewer-a")
+            receipt_add(db, repo, task_id, "reviewer-b")
+            receipt_add(
+                db,
+                repo,
+                task_id,
+                "reviewer-c",
+                verdict="changes_requested",
+                summary="A correction is still required",
+            )
+            shown = run_taskgov(
+                "task", "show", "--repo", str(repo), "--db", str(db),
+                task_id, "--json",
+            )
+            evidence = payload(shown)["data"]["review_evidence"]
+            self.assertEqual(
+                evidence["counts"]["changes_requested_current_generation"], 1
+            )
+            self.assertFalse(evidence["gate"]["satisfied"])
+            before = db.read_bytes()
+
+            blocked = done(db, repo, task_id)
+
+            self.assertEqual(blocked.returncode, 1, blocked.stdout)
+            self.assertEqual(
+                payload(blocked)["errors"][0]["code"], "review_changes_requested"
+            )
+            self.assertEqual(db.read_bytes(), before)
+
+            target_set(db, repo, task_id)
+            receipt_add(db, repo, task_id, "reviewer-a")
+            receipt_add(db, repo, task_id, "reviewer-b")
+            refreshed = run_taskgov(
+                "task", "show", "--repo", str(repo), "--db", str(db),
+                task_id, "--json",
+            )
+            self.assertEqual(
+                payload(refreshed)["data"]["review_evidence"]["counts"][
+                    "changes_requested_current_generation"
+                ],
+                0,
+            )
+            self.assertEqual(done(db, repo, task_id).returncode, 0)
+
     def test_same_reviewer_cannot_replace_or_contradict_receipt_in_generation(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

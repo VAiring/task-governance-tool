@@ -29,7 +29,7 @@ class TaskValidationTests(unittest.TestCase):
         validated = validate_task_input(
             title="  Add validation  ",
             kind="sequential",
-            lane="TG-M2",
+            lane="  TG-M2  ",
             lane_order="10",
             priority="high",
             status="ready",
@@ -40,6 +40,7 @@ class TaskValidationTests(unittest.TestCase):
 
         self.assertEqual(validated["title"], "Add validation")
         self.assertEqual(validated["kind"], "sequential")
+        self.assertEqual(validated["lane"], "TG-M2")
         self.assertEqual(validated["lane_order"], 10)
         self.assertEqual(validated["review_tier"], 2)
 
@@ -81,6 +82,27 @@ class TaskValidationTests(unittest.TestCase):
                     "invalid_argument",
                     validate_task_input,
                     title="Task",
+                    lane_order=value,
+                    field="lane_order",
+                )
+
+    def test_lane_order_uses_sqlite_signed_64_bit_bounds(self):
+        minimum = -(1 << 63)
+        maximum = (1 << 63) - 1
+        self.assertEqual(
+            validate_task_input(title="Minimum", lane_order=str(minimum))["lane_order"],
+            minimum,
+        )
+        self.assertEqual(
+            validate_task_input(title="Maximum", lane_order=str(maximum))["lane_order"],
+            maximum,
+        )
+        for value in (str(minimum - 1), str(maximum + 1), "9" * 5000):
+            with self.subTest(value_length=len(value)):
+                self.assert_validation_error(
+                    "invalid_argument",
+                    validate_task_input,
+                    title="Out of range",
                     lane_order=value,
                     field="lane_order",
                 )
@@ -347,7 +369,14 @@ class TaskValidationTests(unittest.TestCase):
                 )
 
     def test_privacy_patterns_are_rejected_before_storage_for_core_fields(self):
-        for field in ("title", "description", "verification", "tags", "blocked_reason"):
+        for field in (
+            "title",
+            "description",
+            "lane",
+            "verification",
+            "tags",
+            "blocked_reason",
+        ):
             with self.subTest(field=field):
                 kwargs = {"title": "Task", field: "token=secret"}
                 if field == "title":

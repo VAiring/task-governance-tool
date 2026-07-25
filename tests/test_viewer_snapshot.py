@@ -162,6 +162,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
             snapshot = result.snapshot
             self.assertEqual(snapshot["snapshot_version"], 3)
+            self.assertEqual(snapshot["source_schema_version"], 6)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {
@@ -206,6 +207,8 @@ class ViewerSnapshotTests(unittest.TestCase):
             self.assertEqual(snapshot["tasks"][0]["priority"], "urgent")
 
             serialized = json.dumps(snapshot)
+            self.assertNotIn("review_target_base_revision", serialized)
+            self.assertNotIn("target_base_revision", serialized)
             self.assertNotIn(str(target.project.canonical_repo), serialized)
             self.assertNotIn(str(target.db_path), serialized)
             self.assertEqual(table_count(target.db_path, "task_events"), task_events_before)
@@ -239,7 +242,7 @@ class ViewerSnapshotTests(unittest.TestCase):
             target = initialized_target(tmp)
             with closing(connect(target.db_path)) as connection:
                 with connection:
-                    connection.execute("DELETE FROM schema_migrations WHERE version = 5")
+                    connection.execute("DELETE FROM schema_migrations WHERE version = 6")
 
             with closing(connect_snapshot_readonly(target.db_path)) as connection:
                 with self.assertRaises(StorageError) as migration:

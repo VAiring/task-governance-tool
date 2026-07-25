@@ -38,6 +38,34 @@ def evidence_error(code: str, message: str, field: str) -> CompletionEvidenceErr
     return CompletionEvidenceError(code=code, message=message, field=field)
 
 
+def safe_git_environment() -> dict[str, str]:
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.upper().startswith("GIT_")
+    }
+    environment.update(
+        {
+            "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_NO_LAZY_FETCH": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+    )
+    return environment
+
+
+def safe_git_command(repo: Path) -> list[str]:
+    canonical_repo = repo.resolve(strict=False)
+    return [
+        "git",
+        "-c",
+        f"safe.directory={canonical_repo.as_posix()}",
+        "-C",
+        str(canonical_repo),
+    ]
+
+
 def resolve_git_commit(repo: Path, revision: str) -> str:
     """Resolve one commit-ish without using a shell or changing repository state."""
     candidate = revision.strip()
@@ -48,14 +76,9 @@ def resolve_git_commit(repo: Path, revision: str) -> str:
             "completion_revision",
         )
     try:
-        git_environment = os.environ.copy()
-        git_environment["GIT_OPTIONAL_LOCKS"] = "0"
-        git_environment["GIT_NO_LAZY_FETCH"] = "1"
         result = subprocess.run(
             [
-                "git",
-                "-C",
-                str(repo),
+                *safe_git_command(repo),
                 "rev-parse",
                 "--verify",
                 "--end-of-options",
@@ -67,7 +90,7 @@ def resolve_git_commit(repo: Path, revision: str) -> str:
             text=True,
             check=False,
             timeout=15,
-            env=git_environment,
+            env=safe_git_environment(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise evidence_error(

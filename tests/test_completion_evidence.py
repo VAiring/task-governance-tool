@@ -674,19 +674,38 @@ class CompletionEvidenceTests(unittest.TestCase):
         with mock.patch(
             "task_governance_tool.completion.subprocess.run",
             return_value=success,
-        ) as run:
+        ) as run, mock.patch.dict(
+            "task_governance_tool.completion.os.environ",
+            {
+                "PATH": "safe-path",
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_INDEX_FILE": "untrusted-index",
+            },
+            clear=True,
+        ):
             self.assertEqual(resolve_git_commit(Path("repo"), "abc1234"), "a" * 40)
             argv = run.call_args.args[0]
+            environment = run.call_args.kwargs["env"]
             self.assertEqual(argv[-2:], ["--end-of-options", "abc1234^{commit}"])
+            self.assertEqual(
+                argv[1:3],
+                [
+                    "-c",
+                    f"safe.directory={Path('repo').resolve(strict=False).as_posix()}",
+                ],
+            )
+            self.assertEqual(
+                argv[3:5],
+                ["-C", str(Path("repo").resolve(strict=False))],
+            )
             self.assertNotIn("shell", run.call_args.kwargs)
-            self.assertEqual(
-                run.call_args.kwargs["env"]["GIT_OPTIONAL_LOCKS"],
-                "0",
-            )
-            self.assertEqual(
-                run.call_args.kwargs["env"]["GIT_NO_LAZY_FETCH"],
-                "1",
-            )
+            self.assertEqual(environment["PATH"], "safe-path")
+            self.assertNotIn("GIT_CONFIG_COUNT", environment)
+            self.assertNotIn("GIT_INDEX_FILE", environment)
+            self.assertEqual(environment["GIT_OPTIONAL_LOCKS"], "0")
+            self.assertEqual(environment["GIT_NO_LAZY_FETCH"], "1")
+            self.assertEqual(environment["GIT_NO_REPLACE_OBJECTS"], "1")
+            self.assertEqual(environment["GIT_TERMINAL_PROMPT"], "0")
 
     def test_done_revalidates_unresolvable_stored_git_evidence_without_writes(self):
         missing_commit = "f" * 40

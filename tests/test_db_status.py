@@ -224,7 +224,7 @@ class DbStatusTests(unittest.TestCase):
             self.assertEqual(payload["data"]["exists"], True)
             self.assertEqual(payload["data"]["needs_init"], False)
             self.assertEqual(payload["data"]["needs_migration"], False)
-            self.assertEqual(payload["data"]["schema_version"], 5)
+            self.assertEqual(payload["data"]["schema_version"], 6)
             self.assertEqual(
                 payload["data"]["counts"],
                 {

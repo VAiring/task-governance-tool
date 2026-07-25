@@ -115,7 +115,8 @@ def durable_projection(connection: sqlite3.Connection) -> dict:
             tuple(row) for row in connection.execute(
                 """
                 SELECT task_id, status, completion_commit_hash,
-                       completion_evidence_kind, completion_evidence_revision
+                       completion_evidence_kind, completion_evidence_revision,
+                       review_target_base_revision
                   FROM tasks ORDER BY task_id
                 """
             )
@@ -177,7 +178,7 @@ def legacy_v2_projection(connection: sqlite3.Connection) -> dict:
 
 
 class RealisticMigrationAcceptanceTests(unittest.TestCase):
-    def test_v2_fixture_migrates_to_v5_without_losing_observed_state(self):
+    def test_v2_fixture_migrates_to_v6_without_losing_observed_state(self):
         fixture = load_fixture()
         self.assertEqual(fixture["schema_version"], 2)
         self.assertEqual(len(fixture["tasks"]), 12)
@@ -207,8 +208,8 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             payload = json.loads(migrated.stdout)
             self.assertEqual(payload["project_id"], project.project_id)
-            self.assertEqual(payload["data"]["migrations_applied"], [3, 4, 5])
-            self.assertEqual(payload["data"]["schema_version"], 5)
+            self.assertEqual(payload["data"]["migrations_applied"], [3, 4, 5, 6])
+            self.assertEqual(payload["data"]["schema_version"], 6)
 
             with closing(sqlite3.connect(db_path)) as connection:
                 connection.row_factory = sqlite3.Row
@@ -272,6 +273,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                         self.assertEqual(row["completion_evidence_kind"], "none")
                     self.assertEqual(row["review_target_kind"], "")
                     self.assertEqual(row["review_target_value"], "")
+                    self.assertEqual(row["review_target_base_revision"], "")
                     self.assertEqual(row["review_target_generation"], 0)
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])

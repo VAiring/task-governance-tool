@@ -1394,6 +1394,12 @@ def revalidate_done_git_evidence(
                 "stored Git review target no longer resolves to the recorded commit",
                 "review_target_value",
             )
+    elif task["review_target_kind"] == "git_snapshot":
+        raise validation_error(
+            "review_target_mismatch",
+            "Git snapshot completion binding is not active in this release unit",
+            "review_target_value",
+        )
 
 
 def enforce_done_review_gate(
@@ -1445,6 +1451,7 @@ def reopen_done_task(
             "review_target_kind": "",
             "review_target_value": "",
             "review_target_generation": generation,
+            "review_target_base_revision": "",
         }
     )
     reset_fields = (
@@ -1461,11 +1468,15 @@ def reopen_done_task(
         "review_target_kind",
         "review_target_value",
         "review_target_generation",
+        "review_target_base_revision",
     )
-    changed_fields = [
+    persisted_changed_fields = [
         field for field in reset_fields if reopened[field] != existing[field]
     ]
-    update_values = {field: reopened[field] for field in changed_fields}
+    update_values = {
+        field: reopened[field]
+        for field in persisted_changed_fields
+    }
     update_values["updated_at"] = now
     affected_lanes = (
         {str(existing["lane"])} if existing["kind"] == "sequential" else set()
@@ -1539,6 +1550,11 @@ def reopen_done_task(
         raise
     else:
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+    changed_fields = [
+        field
+        for field in persisted_changed_fields
+        if field != "review_target_base_revision"
+    ]
     return EditTaskResult(task=task, changed_fields=changed_fields, event=event)
 
 
@@ -1624,6 +1640,7 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
             or int(existing["review_target_generation"]) != 0
             or str(existing["review_target_kind"]) != ""
             or str(existing["review_target_value"]) != ""
+            or str(existing["review_target_base_revision"]) != ""
             or bool(forbidden_companions & provided_fields)
         ):
             raise TaskRepositoryError(

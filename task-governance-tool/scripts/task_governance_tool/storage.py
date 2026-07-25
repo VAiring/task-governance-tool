@@ -16,7 +16,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class StorageError(Exception):
@@ -452,6 +452,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
             "review_target_kind",
             "review_target_value",
             "review_target_generation",
+            "review_target_base_revision",
         }
         missing.extend(
             f"column:tasks.{name}" for name in sorted(required_task_columns - task_columns)
@@ -481,6 +482,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
             "verdict",
             "target_kind",
             "target_value",
+            "target_base_revision",
             "target_generation",
             "summary",
             "user_approved",
@@ -824,6 +826,188 @@ def apply_review_evidence_migration(
         raise
 
 
+def git_snapshot_review_receipts_schema_sql() -> str:
+    return """
+CREATE TABLE review_receipts_v6 (
+  review_receipt_id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  reviewer_key TEXT NOT NULL,
+  receipt_kind TEXT NOT NULL CHECK (receipt_kind IN (
+    'independent', 'self_review_fallback', 'not_required'
+  )),
+  verdict TEXT NOT NULL CHECK (verdict IN (
+    'pass', 'changes_requested', 'not_required'
+  )),
+  target_kind TEXT NOT NULL CHECK (target_kind IN (
+    'git_commit', 'diff_fingerprint', 'external_revision', 'git_snapshot'
+  )),
+  target_value TEXT NOT NULL,
+  target_base_revision TEXT NOT NULL DEFAULT '',
+  target_generation INTEGER NOT NULL CHECK (target_generation > 0),
+  summary TEXT NOT NULL DEFAULT '',
+  user_approved INTEGER NOT NULL DEFAULT 0 CHECK (user_approved IN (0, 1)),
+  created_at TEXT NOT NULL,
+  UNIQUE (task_id, target_generation, reviewer_key),
+  CHECK (reviewer_key != ''),
+  CHECK (target_value != ''),
+  CHECK (
+    (target_kind = 'git_snapshot' AND target_base_revision != '') OR
+    (target_kind != 'git_snapshot' AND target_base_revision = '')
+  ),
+  CHECK (
+    (receipt_kind = 'independent'
+      AND verdict IN ('pass', 'changes_requested')
+      AND user_approved = 0) OR
+    (receipt_kind = 'self_review_fallback'
+      AND verdict IN ('pass', 'changes_requested')) OR
+    (receipt_kind = 'not_required'
+      AND verdict = 'not_required'
+      AND user_approved = 0
+      AND summary != '')
+  ),
+  FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+);
+"""
+
+
+def create_review_receipt_indexes(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE INDEX idx_review_receipts_task_target_verdict
+          ON review_receipts(
+            task_id, target_generation, target_kind, target_value,
+            target_base_revision, verdict
+          )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX idx_review_receipts_task_reviewer_generation
+          ON review_receipts(task_id, target_generation, reviewer_key)
+        """
+    )
+
+
+def apply_git_snapshot_schema_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Add target-base storage while preserving receipt and finding identities."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "git-snapshot migration requires no active transaction",
+        )
+    connection.execute("PRAGMA foreign_keys = OFF")
+    try:
+        if int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 0:
+            raise StorageError("internal_error", "could not disable foreign key enforcement")
+        connection.execute("BEGIN IMMEDIATE")
+        if not column_exists(connection, "tasks", "review_target_base_revision"):
+            connection.execute(
+                """
+                ALTER TABLE tasks
+                  ADD COLUMN review_target_base_revision TEXT NOT NULL DEFAULT ''
+                """
+            )
+
+        receipt_rows_before = [
+            tuple(row)
+            for row in connection.execute(
+                """
+                SELECT review_receipt_id, task_id, project_id, reviewer_key,
+                       receipt_kind, verdict, target_kind, target_value,
+                       target_generation, summary, user_approved, created_at
+                  FROM review_receipts
+                 ORDER BY review_receipt_id
+                """
+            ).fetchall()
+        ]
+        finding_links_before = [
+            (str(row["review_finding_id"]), str(row["review_receipt_id"]))
+            for row in connection.execute(
+                """
+                SELECT review_finding_id, review_receipt_id
+                  FROM review_findings
+                 ORDER BY review_finding_id
+                """
+            ).fetchall()
+        ]
+        connection.execute("DROP TABLE IF EXISTS review_receipts_v6")
+        connection.execute(git_snapshot_review_receipts_schema_sql())
+        connection.execute(
+            """
+            INSERT INTO review_receipts_v6(
+              review_receipt_id, task_id, project_id, reviewer_key, receipt_kind,
+              verdict, target_kind, target_value, target_base_revision,
+              target_generation, summary, user_approved, created_at
+            )
+            SELECT
+              review_receipt_id, task_id, project_id, reviewer_key, receipt_kind,
+              verdict, target_kind, target_value, '', target_generation,
+              summary, user_approved, created_at
+              FROM review_receipts
+            """
+        )
+        if fail_stage == "after_copy":
+            raise StorageError("internal_error", "injected git-snapshot migration failure")
+        connection.execute("DROP TABLE review_receipts")
+        connection.execute("ALTER TABLE review_receipts_v6 RENAME TO review_receipts")
+        create_review_receipt_indexes(connection)
+
+        receipt_rows_after = [
+            tuple(row)
+            for row in connection.execute(
+                """
+                SELECT review_receipt_id, task_id, project_id, reviewer_key,
+                       receipt_kind, verdict, target_kind, target_value,
+                       target_generation, summary, user_approved, created_at
+                  FROM review_receipts
+                 ORDER BY review_receipt_id
+                """
+            ).fetchall()
+        ]
+        finding_links_after = [
+            (str(row["review_finding_id"]), str(row["review_receipt_id"]))
+            for row in connection.execute(
+                """
+                SELECT review_finding_id, review_receipt_id
+                  FROM review_findings
+                 ORDER BY review_finding_id
+                """
+            ).fetchall()
+        ]
+        if (
+            receipt_rows_after != receipt_rows_before
+            or finding_links_after != finding_links_before
+        ):
+            raise StorageError(
+                "internal_error",
+                "git-snapshot migration changed review evidence identities",
+            )
+        if connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise StorageError(
+                "internal_error",
+                "git-snapshot migration produced foreign key violations",
+            )
+        connection.execute(
+            "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+            (6, "git_snapshot_target_base", utc_now()),
+        )
+        if fail_stage == "before_commit":
+            raise StorageError("internal_error", "injected git-snapshot migration failure")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute("PRAGMA foreign_keys = ON")
+        if int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 1:
+            raise StorageError("internal_error", "could not restore foreign key enforcement")
+
+
 def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[dict[str, str]]]:
     version = current_schema_version(connection)
     if version > SCHEMA_VERSION:
@@ -865,6 +1049,10 @@ def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[di
     if version < 5:
         apply_review_evidence_migration(connection)
         applied.append(5)
+        version = 5
+    if version < 6:
+        apply_git_snapshot_schema_migration(connection)
+        applied.append(6)
     return applied, warnings
 
 

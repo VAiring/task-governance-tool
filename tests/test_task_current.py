@@ -344,7 +344,7 @@ class TaskCurrentTests(unittest.TestCase):
                     self.assertEqual(db.read_bytes(), before_invalid)
 
             with closing(sqlite3.connect(db)) as connection:
-                connection.execute("DELETE FROM schema_migrations WHERE version = 5")
+                connection.execute("DELETE FROM schema_migrations WHERE version = 6")
                 connection.commit()
             before_migration = db.read_bytes()
             migration = current(db, repo)

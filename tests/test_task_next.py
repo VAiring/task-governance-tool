@@ -392,7 +392,7 @@ class TaskNextTests(unittest.TestCase):
 
             with closing(sqlite3.connect(db)) as connection:
                 connection.execute(
-                    "DELETE FROM schema_migrations WHERE version = 5"
+                    "DELETE FROM schema_migrations WHERE version = 6"
                 )
                 connection.commit()
             before_migration = db.read_bytes()

@@ -11,8 +11,25 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
+SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 FINGERPRINT_A = "sha256:" + "a" * 64
 FINGERPRINT_B = "sha256:" + "b" * 64
+
+sys.path.insert(0, str(SCRIPTS_ROOT))
+try:
+    from task_governance_tool.reviews import (
+        read_review_evidence,
+        set_git_snapshot_target,
+    )
+    from task_governance_tool.storage import (
+        connect_existing,
+        connect_initialized,
+        resolve_database_target,
+        validate_current_database,
+    )
+    from task_governance_tool.tasks import list_tasks_for_viewer
+finally:
+    sys.path.pop(0)
 
 
 def run_taskgov(*args):
@@ -101,6 +118,49 @@ def done(db, repo, task_id):
         "--status", "done", "--verification-complete", "--review-complete",
         "--commit-not-required", "--json",
     )
+
+
+def database_target(db, repo):
+    return resolve_database_target(
+        repo=repo,
+        db=db,
+        script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+    )
+
+
+def internal_git_snapshot_target(db, repo, task_id):
+    target = database_target(db, repo)
+    with closing(connect_initialized(target)) as connection:
+        with connection:
+            return set_git_snapshot_target(
+                connection,
+                target.project,
+                task_id,
+            )
+
+
+def review_target_state(db, task_id):
+    with closing(sqlite3.connect(db)) as connection:
+        return connection.execute(
+            """
+            SELECT review_target_kind, review_target_value,
+                   review_target_base_revision, review_target_generation
+              FROM tasks WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+
+
+def git_status(repo):
+    return subprocess.run(
+        [
+            "git", "--no-optional-locks", "-C", str(repo),
+            "status", "--porcelain=v2", "--branch",
+        ],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout
 
 
 class ReviewEvidenceTests(unittest.TestCase):
@@ -761,6 +821,217 @@ class ReviewEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(receipt_add(db, repo, task_id, "reviewer-b").returncode, 0)
             self.assertEqual(done(db, repo, task_id).returncode, 0)
+
+    def test_internal_git_snapshot_target_and_receipt_keep_base_private_and_generation_bound(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            base = init_git_repo(repo)
+            init_db(db, repo)
+            task_id = add_task(db, repo)["task_id"]
+
+            before_db, before_git = db.read_bytes(), git_status(repo)
+            unavailable = run_taskgov(
+                "review", "target", "set",
+                "--repo", str(repo), "--db", str(db), task_id,
+                "--kind", "git_snapshot", "--revision", "internal-only",
+                "--json",
+            )
+            self.assertEqual(unavailable.returncode, 1, unavailable.stdout)
+            self.assertEqual(
+                payload(unavailable)["errors"][0]["code"],
+                "invalid_review_evidence",
+            )
+            self.assertEqual(db.read_bytes(), before_db)
+            self.assertEqual(git_status(repo), before_git)
+
+            target_result = internal_git_snapshot_target(db, repo, task_id)
+            fingerprint = target_result.task["review_target_value"]
+            self.assertEqual(
+                review_target_state(db, task_id),
+                ("git_snapshot", fingerprint, base, 1),
+            )
+            self.assertTrue(fingerprint.startswith("sha256:"))
+
+            recorded = receipt_add(db, repo, task_id, "reviewer-a")
+            self.assertEqual(recorded.returncode, 0, recorded.stdout)
+            receipt = payload(recorded)["data"]["receipt"]
+            with closing(sqlite3.connect(db)) as connection:
+                receipt_base = connection.execute(
+                    "SELECT target_base_revision FROM review_receipts "
+                    "WHERE review_receipt_id = ?",
+                    (receipt["review_receipt_id"],),
+                ).fetchone()[0]
+            self.assertEqual(receipt_base, base)
+
+            target = database_target(db, repo)
+            with closing(connect_initialized(target)) as connection:
+                evidence = read_review_evidence(
+                    connection, target.project.project_id, task_id
+                )
+                viewer_tasks = list_tasks_for_viewer(connection, target.project).tasks
+            self.assertEqual(evidence["counts"]["receipts_current_generation"], 1)
+            self.assertEqual(evidence["gate"]["qualifying_independent_passes"], 1)
+            for projection in (
+                target_result.task,
+                target_result.changed_fields,
+                target_result.event,
+                receipt,
+                evidence,
+                viewer_tasks,
+            ):
+                serialized = json.dumps(projection, sort_keys=True)
+                self.assertNotIn("review_target_base_revision", serialized)
+                self.assertNotIn("target_base_revision", serialized)
+                self.assertNotIn(base, serialized)
+
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    "UPDATE review_receipts SET target_base_revision = ? "
+                    "WHERE review_receipt_id = ?",
+                    ("0" * 40, receipt["review_receipt_id"]),
+                )
+                connection.commit()
+            with closing(connect_initialized(target)) as connection:
+                mismatched = read_review_evidence(
+                    connection, target.project.project_id, task_id
+                )
+            self.assertEqual(mismatched["counts"]["receipts_total"], 1)
+            self.assertEqual(mismatched["counts"]["receipts_current_generation"], 0)
+            self.assertEqual(mismatched["gate"]["qualifying_independent_passes"], 0)
+            self.assertFalse(mismatched["gate"]["satisfied"])
+            self.assertNotIn("target_base_revision", json.dumps(mismatched))
+
+            reset = target_set(db, repo, task_id, FINGERPRINT_B)
+            self.assertEqual(reset.returncode, 0, reset.stdout)
+            self.assertEqual(
+                review_target_state(db, task_id),
+                ("diff_fingerprint", FINGERPRINT_B, "", 2),
+            )
+            self.assertNotIn("review_target_base_revision", reset.stdout)
+
+    def test_concurrent_internal_snapshot_targets_serialize_generation_updates(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            init_git_repo(repo)
+            init_db(db, repo)
+            task_id = add_task(db, repo)["task_id"]
+            target = database_target(db, repo)
+
+            def set_target(_):
+                with closing(connect_existing(db)) as connection:
+                    validate_current_database(connection, target)
+                    self.assertFalse(connection.in_transaction)
+                    with connection:
+                        result = set_git_snapshot_target(
+                            connection, target.project, task_id
+                        )
+                    return result.task["review_target_generation"]
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                generations = list(executor.map(set_target, range(2)))
+
+            self.assertCountEqual(generations, [1, 2])
+            self.assertEqual(review_target_state(db, task_id)[3], 2)
+            with closing(sqlite3.connect(db)) as connection:
+                events = connection.execute(
+                    "SELECT COUNT(*) FROM task_events "
+                    "WHERE task_id = ? AND event_type = 'review_target_set'",
+                    (task_id,),
+                ).fetchone()[0]
+                self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+            self.assertEqual(events, 2)
+
+    def test_schema_six_reopen_clears_snapshot_base_and_advances_generation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            base = init_git_repo(repo)
+            init_db(db, repo)
+            task_id = add_task(db, repo)["task_id"]
+            old_generation = internal_git_snapshot_target(
+                db, repo, task_id
+            ).task["review_target_generation"]
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    "UPDATE tasks SET status = 'done', completed_at = ? "
+                    "WHERE task_id = ?",
+                    ("2026-07-26T00:00:00Z", task_id),
+                )
+                connection.commit()
+
+            reopened = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db), task_id,
+                "--status", "in_progress", "--reopen-reason",
+                "Acceptance changed", "--json",
+            )
+            self.assertEqual(reopened.returncode, 0, reopened.stdout)
+            self.assertEqual(
+                review_target_state(db, task_id),
+                ("", "", "", old_generation + 1),
+            )
+            serialized = json.dumps(payload(reopened), sort_keys=True)
+            self.assertNotIn("review_target_base_revision", serialized)
+            self.assertNotIn(base, serialized)
+
+    def test_review_tier_downgrade_rejects_nonempty_snapshot_base_without_write(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            repo.mkdir()
+            init_db(db, repo)
+            task_id = add_task(db, repo, tier=2)["task_id"]
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    "UPDATE tasks SET review_target_base_revision = ? "
+                    "WHERE task_id = ?",
+                    ("a" * 40, task_id),
+                )
+                connection.commit()
+            before = db.read_bytes()
+
+            rejected = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db), task_id,
+                "--review-tier", "1", "--review-tier-change-reason",
+                "Review scope is now localized", "--json",
+            )
+            self.assertEqual(rejected.returncode, 1, rejected.stdout)
+            self.assertEqual(
+                payload(rejected)["errors"][0]["code"],
+                "review_tier_downgrade_forbidden",
+            )
+            self.assertEqual(db.read_bytes(), before)
+
+    def test_schema_six_snapshot_target_done_fails_closed_without_write(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            base = init_git_repo(repo)
+            init_db(db, repo)
+            task_id = add_task(db, repo)["task_id"]
+            internal_git_snapshot_target(db, repo, task_id)
+            for reviewer in ("reviewer-a", "reviewer-b"):
+                self.assertEqual(
+                    receipt_add(db, repo, task_id, reviewer).returncode, 0
+                )
+            before_db, before_git = db.read_bytes(), git_status(repo)
+
+            rejected = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db), task_id,
+                "--status", "done", "--verification-complete", "--review-complete",
+                "--completion-commit-hash", base, "--json",
+            )
+            body = payload(rejected)
+            self.assertEqual(rejected.returncode, 1, rejected.stdout)
+            self.assertEqual(body["errors"][0]["code"], "review_target_mismatch")
+            self.assertEqual(
+                body["data"],
+                {"task": None, "changed_fields": [], "event": None},
+            )
+            self.assertEqual(db.read_bytes(), before_db)
+            self.assertEqual(git_status(repo), before_git)
 
     def test_concurrent_duplicate_reviewer_records_exactly_one_receipt(self):
         with tempfile.TemporaryDirectory() as temp:

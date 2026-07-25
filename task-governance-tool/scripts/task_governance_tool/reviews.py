@@ -8,7 +8,12 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
-from task_governance_tool.completion import CompletionEvidenceError, resolve_git_commit
+from task_governance_tool.completion import (
+    CompletionEvidenceError,
+    FULL_GIT_OBJECT_ID,
+    resolve_git_commit,
+)
+from task_governance_tool.git_snapshot import capture_git_snapshot
 from task_governance_tool.storage import ProjectIdentity, utc_now
 from task_governance_tool.tasks import (
     TaskRepositoryError,
@@ -17,6 +22,7 @@ from task_governance_tool.tasks import (
     reject_done_task_write,
     row_to_show_task,
     validate_choice,
+    validate_sqlite_int64,
     validate_task_id,
     validate_text,
 )
@@ -27,6 +33,20 @@ RECEIPT_KINDS = ("independent", "self_review_fallback", "not_required")
 REVIEW_VERDICTS = ("pass", "changes_requested", "not_required")
 FINDING_SEVERITIES = ("high", "medium", "low")
 DIFF_FINGERPRINT = re.compile(r"sha256:[0-9a-f]{64}\Z")
+PUBLIC_RECEIPT_FIELDS = (
+    "review_receipt_id",
+    "task_id",
+    "project_id",
+    "reviewer_key",
+    "receipt_kind",
+    "verdict",
+    "target_kind",
+    "target_value",
+    "target_generation",
+    "summary",
+    "user_approved",
+    "created_at",
+)
 
 
 class ReviewEvidenceError(Exception):
@@ -62,6 +82,54 @@ def review_error(code: str, message: str, field: str | None = None) -> ReviewEvi
 
 def generate_review_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(8)}"
+
+
+def public_receipt(receipt: dict[str, Any] | sqlite3.Row) -> dict[str, Any]:
+    return {field: receipt[field] for field in PUBLIC_RECEIPT_FIELDS}
+
+
+def next_review_target_generation(task: dict[str, Any]) -> int:
+    return validate_sqlite_int64(
+        int(task["review_target_generation"]) + 1,
+        field="review_target_generation",
+    )
+
+
+def lock_and_reread_target_owner(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    task_id: str,
+) -> dict[str, Any]:
+    if not connection.in_transaction:
+        connection.execute("BEGIN IMMEDIATE")
+    task = read_internal_task(connection, project.project_id, task_id)
+    if task is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+    reject_done_task_write(task)
+    return task
+
+
+def validate_stored_review_target(task: dict[str, Any]) -> None:
+    target_kind = str(task["review_target_kind"])
+    target_value = str(task["review_target_value"])
+    base_revision = str(task["review_target_base_revision"])
+    if target_kind == "git_snapshot":
+        if (
+            not DIFF_FINGERPRINT.fullmatch(target_value)
+            or not FULL_GIT_OBJECT_ID.fullmatch(base_revision)
+            or set(base_revision) == {"0"}
+        ):
+            raise review_error(
+                "invalid_review_evidence",
+                "stored Git snapshot review target is invalid",
+                "review_target_value",
+            )
+    elif base_revision:
+        raise review_error(
+            "invalid_review_evidence",
+            "non-snapshot review targets cannot retain a Git base revision",
+            "review_target_base_revision",
+        )
 
 
 def normalize_review_target(project: ProjectIdentity, kind: Any, revision: Any) -> tuple[str, str]:
@@ -105,14 +173,20 @@ def set_review_target(
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(task)
     target_kind, target_value = normalize_review_target(project, kind, revision)
+    task = lock_and_reread_target_owner(
+        connection,
+        project,
+        normalized_task_id,
+    )
 
-    generation = int(task["review_target_generation"]) + 1
+    generation = next_review_target_generation(task)
     now = utc_now()
     connection.execute(
         """
         UPDATE tasks
            SET review_target_kind = ?,
                review_target_value = ?,
+               review_target_base_revision = '',
                review_target_generation = ?,
                updated_at = ?
          WHERE project_id = ? AND task_id = ?
@@ -133,6 +207,72 @@ def set_review_target(
     ).fetchone()
     if updated_row is None:
         raise TaskRepositoryError("internal_error", "task was not readable after review target update")
+    return ReviewTargetResult(
+        task=row_to_show_task(updated_row),
+        changed_fields=[
+            "review_target_kind",
+            "review_target_value",
+            "review_target_generation",
+        ],
+        event=event,
+    )
+
+
+def set_git_snapshot_target(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    task_id: Any,
+) -> ReviewTargetResult:
+    """Internal schema-v6 target setter; the CLI activates it in TG-M11.4."""
+    normalized_task_id = validate_task_id(task_id)
+    task = read_internal_task(connection, project.project_id, normalized_task_id)
+    if task is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+    reject_done_task_write(task)
+    snapshot = capture_git_snapshot(project.canonical_repo)
+    task = lock_and_reread_target_owner(
+        connection,
+        project,
+        normalized_task_id,
+    )
+    generation = next_review_target_generation(task)
+    now = utc_now()
+    connection.execute(
+        """
+        UPDATE tasks
+           SET review_target_kind = 'git_snapshot',
+               review_target_value = ?,
+               review_target_base_revision = ?,
+               review_target_generation = ?,
+               updated_at = ?
+         WHERE project_id = ? AND task_id = ?
+        """,
+        (
+            snapshot.fingerprint,
+            snapshot.base_revision,
+            generation,
+            now,
+            project.project_id,
+            normalized_task_id,
+        ),
+    )
+    event = create_task_event(
+        connection,
+        project_id=project.project_id,
+        task_id=normalized_task_id,
+        event_type="review_target_set",
+        summary=f"Review target set: git_snapshot, generation {generation}",
+        created_at=now,
+    )
+    updated_row = connection.execute(
+        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
+        (project.project_id, normalized_task_id),
+    ).fetchone()
+    if updated_row is None:
+        raise TaskRepositoryError(
+            "internal_error",
+            "task was not readable after Git snapshot target update",
+        )
     return ReviewTargetResult(
         task=row_to_show_task(updated_row),
         changed_fields=[
@@ -245,6 +385,7 @@ def add_review_receipt(
             "set a current review target before recording a receipt",
             "review_target_kind",
         )
+    validate_stored_review_target(task)
     normalized = normalize_receipt(
         review_tier=int(task["review_tier"]),
         reviewer=reviewer,
@@ -261,6 +402,7 @@ def add_review_receipt(
         **normalized,
         "target_kind": task["review_target_kind"],
         "target_value": task["review_target_value"],
+        "target_base_revision": task["review_target_base_revision"],
         "target_generation": task["review_target_generation"],
         "created_at": now,
     }
@@ -269,12 +411,12 @@ def add_review_receipt(
             """
             INSERT INTO review_receipts(
               review_receipt_id, task_id, project_id, reviewer_key, receipt_kind,
-              verdict, target_kind, target_value, target_generation, summary,
-              user_approved, created_at
+              verdict, target_kind, target_value, target_base_revision,
+              target_generation, summary, user_approved, created_at
             ) VALUES (
               :review_receipt_id, :task_id, :project_id, :reviewer_key, :receipt_kind,
-              :verdict, :target_kind, :target_value, :target_generation, :summary,
-              :user_approved, :created_at
+              :verdict, :target_kind, :target_value, :target_base_revision,
+              :target_generation, :summary, :user_approved, :created_at
             )
             """,
             receipt,
@@ -309,7 +451,7 @@ def add_review_receipt(
         ),
         created_at=now,
     )
-    return ReviewReceiptResult(receipt=receipt, event=event)
+    return ReviewReceiptResult(receipt=public_receipt(receipt), event=event)
 
 
 def add_review_finding(
@@ -344,6 +486,8 @@ def add_review_finding(
         int(receipt["target_generation"]) != int(task["review_target_generation"])
         or str(receipt["target_kind"]) != str(task["review_target_kind"])
         or str(receipt["target_value"]) != str(task["review_target_value"])
+        or str(receipt["target_base_revision"])
+        != str(task["review_target_base_revision"])
     ):
         raise review_error(
             "review_receipt_mismatch",
@@ -469,7 +613,7 @@ def read_review_evidence(
     task = connection.execute(
         """
         SELECT review_tier, review_target_kind, review_target_value,
-               review_target_generation
+               review_target_base_revision, review_target_generation
           FROM tasks WHERE project_id = ? AND task_id = ?
         """,
         (project_id, task_id),
@@ -479,7 +623,9 @@ def read_review_evidence(
     tier = int(task["review_tier"] if review_tier is None else review_tier)
     target_kind = str(task["review_target_kind"])
     target_value = str(task["review_target_value"])
+    target_base_revision = str(task["review_target_base_revision"])
     generation = int(task["review_target_generation"])
+    validate_stored_review_target(dict(task))
 
     total_receipts = int(
         connection.execute(
@@ -492,9 +638,17 @@ def read_review_evidence(
             """
             SELECT COUNT(*) FROM review_receipts
              WHERE project_id = ? AND task_id = ?
-               AND target_kind = ? AND target_value = ? AND target_generation = ?
+               AND target_kind = ? AND target_value = ?
+               AND target_base_revision = ? AND target_generation = ?
             """,
-            (project_id, task_id, target_kind, target_value, generation),
+            (
+                project_id,
+                task_id,
+                target_kind,
+                target_value,
+                target_base_revision,
+                generation,
+            ),
         ).fetchone()[0]
     ) if generation > 0 else 0
     qualifying = int(
@@ -502,10 +656,18 @@ def read_review_evidence(
             """
             SELECT COUNT(DISTINCT reviewer_key) FROM review_receipts
              WHERE project_id = ? AND task_id = ?
-               AND target_kind = ? AND target_value = ? AND target_generation = ?
+               AND target_kind = ? AND target_value = ?
+               AND target_base_revision = ? AND target_generation = ?
                AND receipt_kind = 'independent' AND verdict = 'pass'
             """,
-            (project_id, task_id, target_kind, target_value, generation),
+            (
+                project_id,
+                task_id,
+                target_kind,
+                target_value,
+                target_base_revision,
+                generation,
+            ),
         ).fetchone()[0]
     ) if generation > 0 else 0
     changes_requested = int(
@@ -513,10 +675,18 @@ def read_review_evidence(
             """
             SELECT COUNT(*) FROM review_receipts
              WHERE project_id = ? AND task_id = ?
-               AND target_kind = ? AND target_value = ? AND target_generation = ?
+               AND target_kind = ? AND target_value = ?
+               AND target_base_revision = ? AND target_generation = ?
                AND verdict = 'changes_requested'
             """,
-            (project_id, task_id, target_kind, target_value, generation),
+            (
+                project_id,
+                task_id,
+                target_kind,
+                target_value,
+                target_base_revision,
+                generation,
+            ),
         ).fetchone()[0]
     ) if generation > 0 else 0
 
@@ -527,11 +697,20 @@ def read_review_evidence(
             """
             SELECT 1 FROM review_receipts
              WHERE project_id = ? AND task_id = ?
-               AND target_kind = ? AND target_value = ? AND target_generation = ?
+               AND target_kind = ? AND target_value = ?
+               AND target_base_revision = ? AND target_generation = ?
                AND receipt_kind = 'self_review_fallback' AND verdict = 'pass'
                AND user_approved = ? LIMIT 1
             """,
-            (project_id, task_id, target_kind, target_value, generation, expected_approval),
+            (
+                project_id,
+                task_id,
+                target_kind,
+                target_value,
+                target_base_revision,
+                generation,
+                expected_approval,
+            ),
         ).fetchone()
         if fallback is not None:
             fallback_kind = "self_review_fallback"
@@ -540,11 +719,19 @@ def read_review_evidence(
             """
             SELECT 1 FROM review_receipts
              WHERE project_id = ? AND task_id = ?
-               AND target_kind = ? AND target_value = ? AND target_generation = ?
+               AND target_kind = ? AND target_value = ?
+               AND target_base_revision = ? AND target_generation = ?
                AND receipt_kind = 'not_required' AND verdict = 'not_required'
                AND user_approved = 0 AND summary != '' LIMIT 1
             """,
-            (project_id, task_id, target_kind, target_value, generation),
+            (
+                project_id,
+                task_id,
+                target_kind,
+                target_value,
+                target_base_revision,
+                generation,
+            ),
         ).fetchone()
         if fallback is not None:
             fallback_kind = "not_required"
@@ -591,7 +778,10 @@ def read_review_evidence(
 
     receipt_rows = connection.execute(
         """
-        SELECT * FROM review_receipts
+        SELECT review_receipt_id, task_id, project_id, reviewer_key,
+               receipt_kind, verdict, target_kind, target_value,
+               target_generation, summary, user_approved, created_at
+          FROM review_receipts
          WHERE project_id = ? AND task_id = ?
          ORDER BY created_at DESC, rowid DESC LIMIT ?
         """,

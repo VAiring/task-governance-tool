@@ -9,6 +9,8 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
+from tests.review_test_helpers import seed_review_evidence
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -16,7 +18,11 @@ SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 try:
     from task_governance_tool.storage import connect_initialized, resolve_database_target
-    from task_governance_tool.tasks import TaskRepositoryError, edit_task
+    from task_governance_tool.tasks import (
+        TaskRepositoryError,
+        TaskValidationError,
+        edit_task,
+    )
 finally:
     sys.path.pop(0)
 
@@ -234,6 +240,152 @@ class SequentialTransitionTests(unittest.TestCase):
             self.assertFalse(thread.is_alive())
             self.assertEqual(outcome.get("code"), "sequential_predecessor_incomplete")
             self.assertEqual(task_state(db, second["task_id"])[0][0], "ready")
+
+    def test_reopen_rejects_advanced_successor_without_cascade(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            first = add_task(
+                db, repo, "First", "--kind", "sequential", "--lane", "REOPEN",
+                "--order", "10",
+            )
+            second = add_task(
+                db, repo, "Second", "--kind", "sequential", "--lane", "REOPEN",
+                "--order", "20",
+            )
+            for task in (first, second):
+                seed_review_evidence(db, task["task_id"])
+                completed = edit_result(
+                    db,
+                    repo,
+                    task["task_id"],
+                    "--status",
+                    "done",
+                    "--verification-complete",
+                    "--review-complete",
+                    "--commit-not-required",
+                )
+                self.assertEqual(completed.returncode, 0, completed.stdout)
+            before = db.read_bytes()
+            with closing(sqlite3.connect(db)) as connection:
+                before_rows = connection.execute(
+                    """
+                    SELECT task_id, status, review_target_generation
+                      FROM tasks
+                     ORDER BY lane_order
+                    """
+                ).fetchall()
+                before_events = connection.execute(
+                    "SELECT COUNT(*) FROM task_events"
+                ).fetchone()[0]
+
+            reopened = edit_result(
+                db,
+                repo,
+                first["task_id"],
+                "--status",
+                "in_progress",
+                "--reopen-reason",
+                "First task needs correction",
+            )
+
+            self.assertEqual(reopened.returncode, 1, reopened.stdout)
+            self.assertEqual(
+                json.loads(reopened.stdout)["errors"][0]["code"],
+                "sequential_predecessor_incomplete",
+            )
+            self.assertEqual(db.read_bytes(), before)
+            with closing(sqlite3.connect(db)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT task_id, status, review_target_generation
+                          FROM tasks
+                         ORDER BY lane_order
+                        """
+                    ).fetchall(),
+                    before_rows,
+                )
+                self.assertEqual(
+                    connection.execute("SELECT COUNT(*) FROM task_events").fetchone()[0],
+                    before_events,
+                )
+
+    def test_concurrent_exact_reopens_commit_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            task = add_task(db, repo, "Concurrent reopen")
+            seed_review_evidence(db, task["task_id"])
+            completed = edit_result(
+                db,
+                repo,
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+                "--commit-not-required",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            target = resolve_database_target(
+                repo=repo,
+                db=db,
+                script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                old_generation = connection.execute(
+                    "SELECT review_target_generation FROM tasks WHERE task_id = ?",
+                    (task["task_id"],),
+                ).fetchone()[0]
+            barrier = threading.Barrier(2)
+            outcomes = []
+            outcome_lock = threading.Lock()
+
+            def reopen_writer():
+                barrier.wait()
+                try:
+                    with closing(connect_initialized(target)) as connection:
+                        with connection:
+                            edit_task(
+                                connection,
+                                target.project,
+                                task["task_id"],
+                                status="in_progress",
+                                reopen_reason="Concurrent correction",
+                            )
+                    code = "ok"
+                except (TaskRepositoryError, TaskValidationError) as exc:
+                    code = exc.code
+                with outcome_lock:
+                    outcomes.append(code)
+
+            threads = [threading.Thread(target=reopen_writer) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(5)
+                self.assertFalse(thread.is_alive())
+
+            self.assertCountEqual(outcomes, ["ok", "invalid_argument"])
+            with closing(sqlite3.connect(db)) as connection:
+                row = connection.execute(
+                    "SELECT status, review_target_generation FROM tasks WHERE task_id = ?",
+                    (task["task_id"],),
+                ).fetchone()
+                self.assertEqual(row, ("in_progress", old_generation + 1))
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM task_events
+                         WHERE task_id = ? AND event_type = 'task_reopened'
+                        """,
+                        (task["task_id"],),
+                    ).fetchone()[0],
+                    1,
+                )
 
 
 if __name__ == "__main__":

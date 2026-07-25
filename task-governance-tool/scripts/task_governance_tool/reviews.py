@@ -14,6 +14,7 @@ from task_governance_tool.tasks import (
     TaskRepositoryError,
     create_task_event,
     read_internal_task,
+    reject_done_task_write,
     row_to_show_task,
     validate_choice,
     validate_task_id,
@@ -99,10 +100,11 @@ def set_review_target(
     revision: Any,
 ) -> ReviewTargetResult:
     normalized_task_id = validate_task_id(task_id)
-    target_kind, target_value = normalize_review_target(project, kind, revision)
     task = read_internal_task(connection, project.project_id, normalized_task_id)
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
+    reject_done_task_write(task)
+    target_kind, target_value = normalize_review_target(project, kind, revision)
 
     generation = int(task["review_target_generation"]) + 1
     now = utc_now()
@@ -232,6 +234,7 @@ def add_review_receipt(
     task = read_internal_task(connection, project.project_id, normalized_task_id)
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
+    reject_done_task_write(task)
     if (
         int(task["review_target_generation"]) <= 0
         or not str(task["review_target_kind"])
@@ -319,6 +322,10 @@ def add_review_finding(
     summary: Any,
 ) -> ReviewFindingResult:
     normalized_task_id = validate_task_id(task_id)
+    task = read_internal_task(connection, project.project_id, normalized_task_id)
+    if task is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+    reject_done_task_write(task)
     normalized_receipt_id = validate_text("review_receipt_id", receipt_id, required=True, limit=128)
     finding_severity = validate_choice(
         "severity", severity, FINDING_SEVERITIES, "invalid_review_evidence"
@@ -326,9 +333,6 @@ def add_review_finding(
     finding_summary = validate_text(
         "review_finding_summary", summary, required=True, limit=1000
     )
-    task = read_internal_task(connection, project.project_id, normalized_task_id)
-    if task is None:
-        raise TaskRepositoryError("not_found", "task was not found")
     receipt = connection.execute(
         """
         SELECT * FROM review_receipts
@@ -394,9 +398,6 @@ def resolve_review_finding(
     normalized_finding_id = validate_text(
         "review_finding_id", finding_id, required=True, limit=128
     )
-    resolution_summary = validate_text(
-        "review_finding_resolution", resolution, required=True, limit=1000
-    )
     row = connection.execute(
         """
         SELECT finding.*, receipt.task_id, receipt.project_id
@@ -409,6 +410,16 @@ def resolve_review_finding(
     ).fetchone()
     if row is None:
         raise TaskRepositoryError("not_found", "review finding was not found")
+    task = read_internal_task(connection, project.project_id, str(row["task_id"]))
+    if task is None:
+        raise TaskRepositoryError(
+            "internal_error",
+            "review finding owner was not readable",
+        )
+    reject_done_task_write(task)
+    resolution_summary = validate_text(
+        "review_finding_resolution", resolution, required=True, limit=1000
+    )
     if row["status"] != "open":
         raise review_error(
             "invalid_review_evidence",

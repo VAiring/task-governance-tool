@@ -221,6 +221,11 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--verification", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--tags", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--add-note", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--reopen-reason", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument(
+        "--review-tier-change-reason",
+        default=argparse.SUPPRESS,
+    )
     task_edit_parser.add_argument("--completion-commit-hash", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--completion-evidence-kind", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--completion-revision", default=argparse.SUPPRESS)
@@ -1176,6 +1181,8 @@ EDIT_ARGUMENT_FIELDS = (
     "verification",
     "tags",
     "add_note",
+    "reopen_reason",
+    "review_tier_change_reason",
     "completion_commit_hash",
     "completion_evidence_kind",
     "completion_revision",

@@ -668,6 +668,8 @@ class CompletionCommitCliTests(unittest.TestCase):
         self.assertIn("--commit-not-required", result.stdout)
         self.assertIn("--verification-complete", result.stdout)
         self.assertIn("--review-complete", result.stdout)
+        self.assertIn("--reopen-reason", result.stdout)
+        self.assertIn("--review-tier-change-reason", result.stdout)
 
 
 if __name__ == "__main__":

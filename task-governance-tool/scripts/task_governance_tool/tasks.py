@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import base64
 import binascii
+import hashlib
 import secrets
 import sqlite3
 from dataclasses import dataclass
@@ -84,6 +85,8 @@ TEXT_LIMITS = {
     "review_receipt_summary": 1000,
     "review_finding_summary": 1000,
     "review_finding_resolution": 1000,
+    "reopen_reason": 1000,
+    "review_tier_change_reason": 1000,
 }
 
 UPPER_ENV_NAME_PATTERN = r"[A-Z_][A-Z0-9_]*"
@@ -944,6 +947,20 @@ def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
             normalized[field] = validate_text(field, value, limit=TEXT_LIMITS["tags"])
         elif field == "add_note":
             normalized[field] = validate_text(field, value, required=True, limit=TEXT_LIMITS["add_note"])
+        elif field == "reopen_reason":
+            normalized[field] = validate_text(
+                field,
+                value,
+                required=True,
+                limit=TEXT_LIMITS["reopen_reason"],
+            )
+        elif field == "review_tier_change_reason":
+            normalized[field] = validate_text(
+                field,
+                value,
+                required=True,
+                limit=TEXT_LIMITS["review_tier_change_reason"],
+            )
         elif field == "completion_commit_hash":
             normalized[field] = validate_completion_commit_hash(value)
         elif field == "completion_evidence_kind":
@@ -1281,6 +1298,14 @@ def read_internal_task(connection: sqlite3.Connection, project_id: str, task_id:
     return row_to_internal_task(row)
 
 
+def reject_done_task_write(task: dict[str, Any]) -> None:
+    if task["status"] == "done":
+        raise TaskRepositoryError(
+            "done_task_requires_reopen",
+            "done task writes require an explicit reopen",
+        )
+
+
 def update_task_row(
     connection: sqlite3.Connection,
     *,
@@ -1392,9 +1417,157 @@ def enforce_done_review_gate(
         raise validation_error(exc.code, exc.message, exc.field) from exc
 
 
+def reopen_done_task(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    existing: dict[str, Any],
+    *,
+    reopen_reason: str,
+) -> EditTaskResult:
+    generation = validate_sqlite_int64(
+        int(existing["review_target_generation"]) + 1,
+        field="review_target_generation",
+    )
+    now = utc_now()
+    reopened = dict(existing)
+    reopened.update(
+        {
+            "status": "in_progress",
+            "completed_at": None,
+            "blocked_reason": "",
+            "pause_reason": "",
+            "completion_evidence_kind": "none",
+            "completion_evidence_revision": "",
+            "completion_evidence_reason": "",
+            "external_revision_approved": 0,
+            "completion_commit_required": 1,
+            "completion_commit_hash": "",
+            "review_target_kind": "",
+            "review_target_value": "",
+            "review_target_generation": generation,
+        }
+    )
+    reset_fields = (
+        "status",
+        "completed_at",
+        "blocked_reason",
+        "pause_reason",
+        "completion_evidence_kind",
+        "completion_evidence_revision",
+        "completion_evidence_reason",
+        "external_revision_approved",
+        "completion_commit_required",
+        "completion_commit_hash",
+        "review_target_kind",
+        "review_target_value",
+        "review_target_generation",
+    )
+    changed_fields = [
+        field for field in reset_fields if reopened[field] != existing[field]
+    ]
+    update_values = {field: reopened[field] for field in changed_fields}
+    update_values["updated_at"] = now
+    affected_lanes = (
+        {str(existing["lane"])} if existing["kind"] == "sequential" else set()
+    )
+    previous_kind = str(existing["completion_evidence_kind"])
+    raw_previous_revision = str(existing["completion_evidence_revision"])
+    try:
+        previous_revision = validate_text(
+            "previous_completion_revision",
+            raw_previous_revision,
+            limit=TEXT_LIMITS["completion_revision"],
+        ) or "(empty)"
+    except TaskValidationError:
+        previous_revision = (
+            "sha256:"
+            + hashlib.sha256(raw_previous_revision.encode("utf-8")).hexdigest()
+            + " (redacted historical revision)"
+        )
+    summary = bounded_transition_summary(
+        "Reopened: ",
+        reopen_reason,
+        recorded_markers=[
+            f"previous completion evidence {previous_kind} {previous_revision}"
+        ],
+        note=None,
+    )
+
+    savepoint = f"taskgov_reopen_{secrets.token_hex(4)}"
+    connection.execute(f"SAVEPOINT {savepoint}")
+    try:
+        update_task_row(
+            connection,
+            task_id=str(existing["task_id"]),
+            project_id=project.project_id,
+            values=update_values,
+        )
+        invalid_task_id = first_out_of_order_advanced_task(
+            connection,
+            project_id=project.project_id,
+            lanes=affected_lanes,
+        )
+        if invalid_task_id is not None:
+            raise TaskRepositoryError(
+                "sequential_predecessor_incomplete",
+                "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
+            )
+        event = create_task_event(
+            connection,
+            project_id=project.project_id,
+            task_id=str(existing["task_id"]),
+            event_type="task_reopened",
+            summary=summary,
+            created_at=now,
+        )
+        task = read_task(connection, project.project_id, str(existing["task_id"]))
+        if task is None:
+            raise TaskRepositoryError(
+                "internal_error",
+                "task was not readable after reopen",
+            )
+    except sqlite3.IntegrityError as exc:
+        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+        raise TaskRepositoryError(
+            "invalid_argument",
+            "task violates database constraints while reopening",
+        ) from exc
+    except Exception:
+        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+        raise
+    else:
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+    return EditTaskResult(task=task, changed_fields=changed_fields, event=event)
+
+
 def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id: Any, **edit_input: Any) -> EditTaskResult:
     normalized_task_id = validate_task_id(task_id)
+    existing = read_internal_task(connection, project.project_id, normalized_task_id)
+    if existing is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+    if existing["status"] == "done":
+        raw_status = edit_input.get("status")
+        exact_reopen_candidate = (
+            set(edit_input) == {"status", "reopen_reason"}
+            and isinstance(raw_status, str)
+            and raw_status.strip() == "in_progress"
+        )
+        if exact_reopen_candidate:
+            reopen_input = validate_task_edit_input(**edit_input)
+            return reopen_done_task(
+                connection,
+                project,
+                existing,
+                reopen_reason=str(reopen_input["reopen_reason"]),
+            )
+        reject_done_task_write(existing)
+
     normalized = validate_task_edit_input(**edit_input)
+    provided_fields = set(normalized)
+    reopen_reason = normalized.pop("reopen_reason", None)
+    review_tier_change_reason = normalized.pop("review_tier_change_reason", None)
     add_note = normalized.pop("add_note", None)
     completion_commit_hash = normalized.pop("completion_commit_hash", None)
     commit_not_required = bool(normalized.pop("commit_not_required", False))
@@ -1405,9 +1578,12 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
     verification_complete = bool(normalized.pop("verification_complete", False))
     review_complete = bool(normalized.pop("review_complete", False))
 
-    existing = read_internal_task(connection, project.project_id, normalized_task_id)
-    if existing is None:
-        raise TaskRepositoryError("not_found", "task was not found")
+    if reopen_reason is not None:
+        raise validation_error(
+            "invalid_argument",
+            "reopen_reason is valid only for an exact done to in_progress reopen",
+            "reopen_reason",
+        )
 
     updated = dict(existing)
     status_was_provided = "status" in normalized
@@ -1415,6 +1591,45 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
     order_was_provided = "lane_order" in normalized
     for field, value in normalized.items():
         updated[field] = value
+    review_tier_changed = (
+        "review_tier" in normalized
+        and int(updated["review_tier"]) != int(existing["review_tier"])
+    )
+    review_tier_downgrade = (
+        review_tier_changed
+        and int(updated["review_tier"]) < int(existing["review_tier"])
+    )
+    if review_tier_change_reason is not None and not review_tier_changed:
+        raise validation_error(
+            "invalid_argument",
+            "review_tier_change_reason requires a review_tier change",
+            "review_tier_change_reason",
+        )
+    if review_tier_downgrade:
+        safe_statuses = {"ready", "in_progress", "paused", "blocked"}
+        forbidden_companions = {
+            "completion_commit_hash",
+            "completion_evidence_kind",
+            "completion_revision",
+            "completion_evidence_reason",
+            "external_revision_approved",
+            "commit_not_required",
+            "verification_complete",
+            "review_complete",
+        }
+        if (
+            review_tier_change_reason is None
+            or existing["status"] not in safe_statuses
+            or updated["status"] not in safe_statuses
+            or int(existing["review_target_generation"]) != 0
+            or str(existing["review_target_kind"]) != ""
+            or str(existing["review_target_value"]) != ""
+            or bool(forbidden_companions & provided_fields)
+        ):
+            raise TaskRepositoryError(
+                "review_tier_downgrade_forbidden",
+                "review tier may be lowered only before structured review begins",
+            )
     evidence_marker: str | None = None
     requested_evidence_kind = completion_evidence_kind
     requested_revision = completion_revision or ""
@@ -1625,7 +1840,18 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
 
     pause_changed = updated["pause_reason"] != existing["pause_reason"]
-    if status_was_provided and updated["status"] == "paused":
+    if review_tier_changed and review_tier_change_reason is not None:
+        event_type = "review_tier_changed"
+        summary = bounded_transition_summary(
+            (
+                f"Review tier changed: {existing['review_tier']} -> "
+                f"{updated['review_tier']}; Reason: "
+            ),
+            review_tier_change_reason,
+            recorded_markers=recorded_markers,
+            note=add_note,
+        )
+    elif status_was_provided and updated["status"] == "paused":
         event_type = "task_updated"
         summary = bounded_transition_summary(
             "Paused: ",

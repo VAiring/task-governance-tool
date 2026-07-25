@@ -1524,6 +1524,8 @@ Editable fields:
 - `--verification`
 - `--tags`
 - `--add-note`
+- `--reopen-reason`
+- `--review-tier-change-reason`
 - `--completion-evidence-kind`, `--completion-revision`, and
   `--completion-evidence-reason`
 - `--external-revision-approved`
@@ -1645,6 +1647,8 @@ Required error codes:
 - `initial_paused_forbidden`
 - `invalid_status_transition`
 - `sequential_predecessor_incomplete`
+- `done_task_requires_reopen`
+- `review_tier_downgrade_forbidden`
 - `privacy_rejected`
 - `not_found`
 - `db_not_initialized`

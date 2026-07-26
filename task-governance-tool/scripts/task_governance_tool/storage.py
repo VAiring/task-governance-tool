@@ -71,6 +71,42 @@ def skill_root_from_script(script_path: str | os.PathLike[str]) -> Path:
     return script.parent.parent
 
 
+def lexical_skill_root_from_script(script_path: str | os.PathLike[str]) -> Path:
+    script = Path(script_path).expanduser()
+    if not script.is_absolute():
+        script = Path.cwd() / script
+    return script.absolute().parent.parent
+
+
+def _linked_install_path_candidates(script_path: Path) -> tuple[Path, ...]:
+    skill_root = script_path.parent.parent
+    candidates = [script_path, script_path.parent, skill_root]
+    if (
+        skill_root.name.casefold() == "task-governance-tool"
+        and skill_root.parent.name.casefold() == "skills"
+        and skill_root.parent.parent.name.casefold() == ".agents"
+    ):
+        candidates.extend((skill_root.parent, skill_root.parent.parent))
+    return tuple(candidates)
+
+
+def uses_unsupported_linked_install(script_path: str | os.PathLike[str]) -> bool:
+    script = Path(script_path).expanduser()
+    if not script.is_absolute():
+        script = Path.cwd() / script
+    script = script.absolute()
+    try:
+        for candidate in _linked_install_path_candidates(script):
+            if candidate.is_symlink():
+                return True
+            is_junction = getattr(candidate, "is_junction", None)
+            if is_junction is not None and is_junction():
+                return True
+        return False
+    except (OSError, RuntimeError):
+        return True
+
+
 def canonicalize_repo(repo: str | os.PathLike[str]) -> Path:
     return Path(repo).expanduser().resolve(strict=False)
 

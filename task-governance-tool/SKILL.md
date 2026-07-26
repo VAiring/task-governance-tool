@@ -10,22 +10,29 @@ task-status documents. Treat the target project's `AGENTS.md`, specs, design
 docs, tests, and user decisions as the source of truth; SQLite is only a local
 task-state helper.
 
-Install a separate copy per governed project, normally at
-`.agents/skills/task-governance-tool`. Do not use a user-wide copy as the normal
-task manager for unrelated projects.
+Use one physical copy per governed project at
+`.agents/skills/task-governance-tool`. Stateful use from a user-wide copy,
+symbolic link, or Windows junction is unsupported. The verified runtime is
+Windows with Python 3.12 or later; Linux and macOS are unverified.
 
 ## Quick Start
 
-Run the bundled CLI from the installed skill folder:
+From the target-project root, run the bundled CLI through its project-scoped
+path:
 
 ```powershell
-python scripts/taskgov.py db status --repo <target-project> --json
-python scripts/taskgov.py task current --repo <target-project> --json
-python scripts/taskgov.py task current --repo <target-project> --status paused --json
-python scripts/taskgov.py task next --repo <target-project> --json
-python scripts/taskgov.py task show --repo <target-project> <task-id> --json
-python scripts/taskgov.py handoff list --repo <target-project> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py db status --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task current --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task current --status paused --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task next --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task show <task-id> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff list --json
 ```
+
+If the current directory is the installed Skill folder, pass
+`--repo <target-project>` explicitly. Without `--repo`, the current directory
+is the governed directory; no Git-root search occurs, and non-Git directories
+are valid.
 
 First-use flow:
 
@@ -41,9 +48,9 @@ First-use flow:
    only for new ready work, then inspect with `task show`.
 
 Use `--db <path>` only when explicitly required. The default is
-`state/projects/<project-id>/taskgov.sqlite` under this installed skill. If the
-skill came from a global install, do not initialize state until the user
-confirms that non-standard setup or installs a project-scoped copy.
+`state/projects/<project-id>/taskgov.sqlite` under this installed skill.
+Canonical absolute-path identity changes when a project moves; do not infer or
+rewrite relocation.
 
 ## Static Task Viewer
 
@@ -54,13 +61,13 @@ write.
 Preview without writing:
 
 ```powershell
-python scripts/taskgov.py web export --repo <target-project> --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py web export --read-only --json
 ```
 
 After explicit user intent, generate the default snapshot:
 
 ```powershell
-python scripts/taskgov.py web export --repo <target-project> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py web export --json
 ```
 
 Use this exact command surface. There is no `viewer` command group,
@@ -107,6 +114,10 @@ browser launch.
   replay returns the same row; a distinct recurrence requires an explicit
   stable `--occurrence-id`. Use `handoff list`/`show` to rediscover it.
   `db status.counts.handoff_pending` is the exact population count.
+- If the privacy guard rejects handoff input, never repeat, quote, log, store,
+  or forward that rejected raw content. Make at most one new attempt using a
+  newly written concise sanitized abstraction. If it is rejected again, stop
+  that recovery attempt and report only the fixed sanitized error.
 - A failed local handoff write returns `handoff_not_persisted`; stop only that
   execution unit until the same record is durable or the user explicitly
   accepts forgetting risk. A successful pending handoff never changes task

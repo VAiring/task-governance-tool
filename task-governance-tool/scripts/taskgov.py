@@ -6,10 +6,12 @@ from pathlib import Path
 
 
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+ENTRYPOINT_PATH = Path(__file__).absolute()
+sys.path.insert(0, str(ENTRYPOINT_PATH.resolve().parent))
 
-from task_governance_tool.cli import main
+from task_governance_tool.cli import main, set_cli_script_path
 
 
 if __name__ == "__main__":
+    set_cli_script_path(ENTRYPOINT_PATH)
     raise SystemExit(main())

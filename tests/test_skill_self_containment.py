@@ -1,5 +1,8 @@
 import os
 import json
+import argparse
+import ast
+import re
 import shutil
 import subprocess
 import sys
@@ -10,6 +13,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
+SCRIPTS_ROOT = SKILL_ROOT / "scripts"
+if str(SCRIPTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_ROOT))
+
+from task_governance_tool.cli import build_parser  # noqa: E402
 
 
 def copy_skill_to(destination: Path, *, source: Path = SKILL_ROOT) -> Path:
@@ -17,7 +25,21 @@ def copy_skill_to(destination: Path, *, source: Path = SKILL_ROOT) -> Path:
     shutil.copytree(
         source,
         copied,
-        ignore=shutil.ignore_patterns("state", "__pycache__", "*.pyc", ".pytest_cache"),
+        ignore=shutil.ignore_patterns(
+            "state",
+            "__pycache__",
+            "*.pyc",
+            ".pytest_cache",
+            "*.sqlite",
+            "*.sqlite3",
+            "*.db",
+            "*-wal",
+            "*-shm",
+            "*-journal",
+            "task-viewer.html",
+            "*.log",
+            "*.tmp",
+        ),
     )
     return copied
 
@@ -48,6 +70,24 @@ def git_is_ignored(path: str) -> bool:
         check=False,
     )
     return result.returncode == 0
+
+
+def parser_leaf_commands(
+    parser: argparse.ArgumentParser,
+    prefix: tuple[str, ...] = (),
+) -> set[str]:
+    subparsers = [
+        action
+        for action in parser._actions
+        if isinstance(action, argparse._SubParsersAction)
+    ]
+    if not subparsers:
+        return {" ".join(prefix)}
+    leaves: set[str] = set()
+    for subparser_action in subparsers:
+        for name, child in subparser_action.choices.items():
+            leaves.update(parser_leaf_commands(child, (*prefix, name)))
+    return leaves
 
 
 class SkillSelfContainmentTests(unittest.TestCase):
@@ -163,6 +203,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("handoff record", text)
             self.assertIn("pending_handoff", text)
             self.assertIn("Task Contract", text)
+            self.assertIn("at most one", text.lower())
+            self.assertIn("rejected raw", text.lower())
         for text in (skill_md, workflow, contracts, release_note):
             self.assertIn("handoff_not_persisted", text)
         self.assertIn("schema v7", release_note)
@@ -394,7 +436,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         )
 
         self.assertIn("creating or regenerating a user-requested offline static Task Viewer", skill_md)
-        self.assertIn("python scripts/taskgov.py web export --repo <target-project>", skill_md)
+        self.assertIn(
+            "python .agents/skills/task-governance-tool/scripts/taskgov.py web export",
+            skill_md,
+        )
         self.assertIn("no `viewer` command group", skill_md)
         self.assertIn("`--project-root` option", skill_md)
         for text in (skill_md, workflow, contracts, readme):
@@ -428,19 +473,138 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertGreaterEqual(len(short_description), 25)
         self.assertLessEqual(len(short_description), 64)
 
-    def test_guidance_prefers_project_scoped_install(self):
+    def test_guidance_requires_physical_project_scoped_install(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
+            encoding="utf-8"
+        )
+        contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
+            encoding="utf-8"
+        )
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         release_note = (ROOT / "docs" / "release-install.md").read_text(encoding="utf-8")
         specification = (ROOT / "docs" / "specification.md").read_text(encoding="utf-8")
 
-        for text in (skill_md, readme, release_note, specification):
+        for text in (skill_md, workflow, contracts, readme, release_note, specification):
             self.assertIn(".agents", text)
             self.assertIn("project-scoped", text)
+            self.assertIn("physical", text.lower())
 
-        self.assertIn("not recommended", release_note)
-        self.assertIn("not recommended", readme)
-        self.assertIn("user-wide", skill_md)
+        active_guidance = (skill_md, workflow, contracts, readme, release_note)
+        for text in active_guidance:
+            lowered = text.lower()
+            self.assertIn("user-wide", lowered)
+            self.assertIn("unsupported", lowered)
+            self.assertNotIn("codex_home", lowered)
+            self.assertNotIn(".codex\\skills", lowered)
+            self.assertNotIn(".codex/skills", lowered)
+
+    def test_target_ignore_guidance_is_only_the_root_anchored_skill_state(self):
+        expected = "/.agents/skills/task-governance-tool/state/"
+        for relative in ("README.md", "docs/release-install.md"):
+            with self.subTest(relative=relative):
+                text = (ROOT / relative).read_text(encoding="utf-8")
+                matching_blocks = [
+                    block.strip()
+                    for block in re.findall(r"```(?:text|gitignore)\n(.*?)```", text, re.DOTALL)
+                    if expected in block.splitlines()
+                ]
+                self.assertEqual(matching_blocks, [expected])
+
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertIn(expected, gitignore)
+        self.assertNotIn("*.sqlite", gitignore)
+        self.assertNotIn("*.sqlite3", gitignore)
+        self.assertNotIn("*.db", gitignore)
+
+    def test_runtime_source_parses_with_python_3_12_grammar(self):
+        runtime_files = sorted(
+            (SKILL_ROOT / "scripts").rglob("*.py"),
+            key=lambda path: path.as_posix(),
+        )
+        self.assertTrue(runtime_files)
+        for path in runtime_files:
+            with self.subTest(path=path.relative_to(SKILL_ROOT).as_posix()):
+                ast.parse(
+                    path.read_text(encoding="utf-8"),
+                    filename=str(path),
+                    feature_version=(3, 12),
+                )
+
+    def test_documented_target_root_invocation_uses_physical_install_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target-project"
+            skill_parent = target / ".agents" / "skills"
+            skill_parent.mkdir(parents=True)
+            installed = copy_skill_to(skill_parent)
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            entrypoint = (
+                ".agents/skills/task-governance-tool/scripts/taskgov.py"
+            )
+
+            def run(*args):
+                return subprocess.run(
+                    [sys.executable, "-I", "-S", entrypoint, *args, "--json"],
+                    cwd=target,
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+
+            package = run("self", "status", "--read-only")
+            self.assertEqual(package.returncode, 0, package.stderr)
+            self.assertEqual(json.loads(package.stdout)["data"]["status"], "clean")
+            missing = run("db", "status", "--read-only")
+            self.assertEqual(missing.returncode, 2, missing.stderr)
+            self.assertEqual(
+                json.loads(missing.stdout)["errors"][0]["code"],
+                "db_not_initialized",
+            )
+            self.assertFalse((installed / "state").exists())
+
+            initialized = run("db", "init")
+            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            payload = json.loads(initialized.stdout)
+            db_path = Path(payload["db_path"])
+            self.assertTrue(db_path.is_file())
+            self.assertTrue(db_path.is_relative_to(installed / "state"))
+            self.assertEqual(payload["data"]["schema_version"], 9)
+
+            from_skill_root = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-S",
+                    "scripts/taskgov.py",
+                    "db",
+                    "status",
+                    "--repo",
+                    str(target),
+                    "--read-only",
+                    "--json",
+                ],
+                cwd=installed,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(from_skill_root.returncode, 0, from_skill_root.stderr)
+            from_skill_payload = json.loads(from_skill_root.stdout)
+            self.assertEqual(from_skill_payload["project_id"], payload["project_id"])
+            self.assertEqual(from_skill_payload["db_path"], payload["db_path"])
+
+    def test_readme_command_inventory_matches_parser_leaves(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        command_section = readme.split("## Commands", 1)[1].split("## Non-Goals", 1)[0]
+        documented = set(re.findall(r"^- `taskgov ([^`]+)`$", command_section, re.MULTILINE))
+
+        self.assertEqual(documented, parser_leaf_commands(build_parser()))
+        self.assertEqual(len(documented), 19)
 
     def test_copied_skill_folder_help_runs_without_repo_python_path(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -475,9 +639,31 @@ class SkillSelfContainmentTests(unittest.TestCase):
             generated_viewer = generated / "viewer" / "task-viewer.html"
             generated_viewer.parent.mkdir()
             generated_viewer.write_text("generated", encoding="utf-8")
+            for name in (
+                "scratch.sqlite",
+                "scratch.sqlite3",
+                "scratch.db",
+                "scratch.sqlite-wal",
+                "scratch.db-journal",
+                "task-viewer.html",
+                "scratch.log",
+                "scratch.tmp",
+            ):
+                (source / name).write_text("generated", encoding="utf-8")
             copied = copy_skill_to(workspace / "release", source=source)
 
             self.assertFalse((copied / "state").exists())
+            for name in (
+                "scratch.sqlite",
+                "scratch.sqlite3",
+                "scratch.db",
+                "scratch.sqlite-wal",
+                "scratch.db-journal",
+                "task-viewer.html",
+                "scratch.log",
+                "scratch.tmp",
+            ):
+                self.assertFalse((copied / name).exists())
             self.assertTrue((copied / "assets" / "task-viewer.template.html").is_file())
             self.assertTrue(
                 (copied / "scripts" / "task_governance_tool" / "viewer.py").is_file()
@@ -540,6 +726,15 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("SCHEMA_VERSION", workflow)
         self.assertIn("0\\.7\\.0", workflow)
         self.assertIn("task-viewer\\.html$", workflow)
+        self.assertIn('Windows skill checks (Python ${{ matrix.python-version }})', workflow)
+        matrix_block = workflow.split("matrix:", 1)[1].split("\n\n    steps:", 1)[0]
+        self.assertEqual(
+            set(re.findall(r'- "([0-9]+\.[0-9]+)"', matrix_block)),
+            {"3.12", "3.14"},
+        )
+        self.assertIn("runs-on: windows-latest", workflow)
+        self.assertNotIn("ubuntu-", workflow)
+        self.assertNotIn("macos-", workflow)
 
     def test_tracked_skill_package_contains_runtime_but_no_generated_state(self):
         result = subprocess.run(
@@ -582,7 +777,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))
         self.assertFalse(any(path.endswith("/task-viewer.html") for path in tracked))
 
-    def test_git_ignores_generated_state_and_sqlite_artifacts(self):
+    def test_git_ignores_only_project_state_not_repository_database_globs(self):
         ignored_paths = [
             "references/copied-reference.md",
             "task-governance-tool/state/projects/example-123456789abc/taskgov.sqlite",
@@ -591,6 +786,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "task-governance-tool/state/projects/example-123456789abc/viewer/task-viewer.html",
             ".agents/skills/task-governance-tool/state/.keep",
             ".agents/skills/task-governance-tool/state/projects/example/viewer/task-viewer.html",
+        ]
+        visible_database_paths = [
+            ".agents/skills/other-skill/state/taskgov.sqlite",
             "scratch.sqlite",
             "scratch.sqlite3",
             "scratch.sqlite-wal",
@@ -608,6 +806,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
         for path in ignored_paths:
             with self.subTest(path=path):
                 self.assertIn(path, git_check_ignore(path))
+        for path in visible_database_paths:
+            with self.subTest(path=path):
+                self.assertFalse(git_is_ignored(path))
 
     def test_repo_scoped_skill_folder_is_not_wholesale_ignored(self):
         self.assertFalse(git_is_ignored(".agents/skills/task-governance-tool/SKILL.md"))

@@ -19,9 +19,14 @@ installable skill artifact:
 Do not publish generated runtime state, copied root reference material, test
 outputs, caches, logs, or local databases.
 
-The skill should be installed per governed project, not as a user-wide shared
-skill. A separate project-scoped copy keeps task state attached to the project
-whose tasks it manages.
+The skill must be installed as one physical copy per governed project, not as a
+user-wide shared skill, symbolic link, or Windows junction. A separate
+project-scoped copy keeps task state attached to the project whose tasks it
+manages.
+
+The supported runtime baseline is Python 3.12 or later on Windows. Windows is
+the CI-verified platform. Linux and macOS are unverified and have no support
+claim in this release.
 
 ## Release Artifact Contents
 
@@ -69,14 +74,15 @@ The artifact must exclude:
 
 ## Install Path
 
-For normal use, install the artifact into the governed target project:
+For normal stateful use, install a physical artifact copy into the governed
+target project:
 
 ```text
 <target-project>\.agents\skills\task-governance-tool
 ```
 
-This repo-scoped location is the Codex skill discovery path for a project. It
-also keeps the default database path project-local:
+This project-scoped location is the Codex skill discovery path for a project.
+It also keeps the default database path project-local:
 
 ```text
 <target-project>\.agents\skills\task-governance-tool\state\projects\<project-id>\taskgov.sqlite
@@ -93,29 +99,25 @@ generated state is kept out of commits. The target project should ignore at
 least:
 
 ```text
-.agents/skills/task-governance-tool/state/
-*.sqlite
-*.sqlite3
-*.db
-*.sqlite-wal
-*.sqlite-shm
-*.sqlite-journal
-*.sqlite3-wal
-*.sqlite3-shm
-*.sqlite3-journal
-*.db-wal
-*.db-shm
-*.db-journal
+/.agents/skills/task-governance-tool/state/
 ```
 
-Then inspect and initialize explicitly:
+From the target-project root, inspect and initialize explicitly:
 
 ```powershell
-python scripts/taskgov.py self status --read-only --json
-python scripts/taskgov.py db status --repo <target-project> --json
-python scripts/taskgov.py db init --repo <target-project> --json
-python scripts/taskgov.py db status --repo <target-project> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py self status --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py db status --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py db init --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py db status --json
 ```
+
+If a command is launched from inside the installed Skill directory, pass
+`--repo <target-project>` explicitly. Omitting it always selects the current
+directory and never searches for a Git root; non-Git governed directories are
+valid. Stateful commands reject a linked Skill install path before creating
+state.
+`self status` diagnoses that unsupported layout as `unknown` while retaining
+its fixed `suggested_action=continue`.
 
 `self status` checks only the installed package and does not touch SQLite,
 Git, or the network. Only `db init` creates or migrates the database. Version
@@ -136,6 +138,11 @@ by inference:
 `db init` returns `migration_required` without mutation so the operator can
 restore a valid backup or inspect the history.
 
+Project identity remains derived from the canonical absolute target path.
+Moving or renaming the governed directory therefore changes its default
+identity and can make existing state appear uninitialized. This release does
+not provide automatic relocation, a relocation command, or a project UUID.
+
 ## Git Snapshot Completion Workflow
 
 Version `0.3.0` supports review before the project creates its completion
@@ -145,11 +152,11 @@ required reviews, create the project commit, and then complete the task:
 
 ```powershell
 git add <intended-project-paths>
-python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_snapshot --json
-python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
-python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review target set <task-id> --kind git_snapshot --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --json
 git commit -m "<project-approved message>"
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
 ```
 
 `review target set --kind git_snapshot` accepts no `--revision`. It reads the
@@ -165,7 +172,7 @@ After a task is `done`, all task and review writes are rejected except this
 exact reason-required reopen:
 
 ```powershell
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --reopen-reason "<sanitized reason>" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --reopen-reason "<sanitized reason>" --json
 ```
 
 Reopen preserves historical evidence but requires fresh verification, review,
@@ -178,9 +185,9 @@ After classifying a finding once as current Task, blocker, or handoff, record
 the last category before continuing:
 
 ```powershell
-python scripts/taskgov.py handoff record --repo <target-project> <task-id> --summary "Concise discovery" --rationale "Outside current acceptance" --json
-python scripts/taskgov.py handoff list --repo <target-project> --json
-python scripts/taskgov.py handoff show --repo <target-project> <handoff-id> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff record <task-id> --summary "Concise discovery" --rationale "Outside current acceptance" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff list --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff show <handoff-id> --json
 ```
 
 This release has no Issue adapter, receiver detection, delivery, or
@@ -192,13 +199,17 @@ selection, task events, timestamps, review, or completion.
 Only explicit user direction may withdraw a never-attempted pending record:
 
 ```powershell
-python scripts/taskgov.py handoff withdraw --repo <target-project> <handoff-id> --reason "Handled outside Task Skill" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff withdraw <handoff-id> --reason "Handled outside Task Skill" --json
 ```
 
 The release artifact stores no Issue priority/lifecycle/resulting-task field,
 claim token output, raw logs, secrets, private prompts, stack traces, or large
 diffs. A failed local record is never reported durable and returns
 `handoff_not_persisted` after its bounded local persistence retry is exhausted.
+If input is rejected by the privacy guard, never repeat, quote, log, store, or
+forward the rejected raw content. The packaged workflow permits at most one
+new `handoff record` attempt using a concise sanitized abstraction; a second
+privacy rejection ends that recovery attempt with only the fixed error.
 
 ## Optional Task Contract Workflow
 
@@ -239,7 +250,7 @@ state, asks a question, or creates a stop.
 Version `0.7.0` adds the offline package-local command:
 
 ```powershell
-python scripts/taskgov.py self status --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py self status --read-only --json
 ```
 
 It compares every packaged core file with `release-manifest.json` and reports
@@ -277,12 +288,8 @@ regeneration. It has no server, live database refresh, browser editing, or
 automatic browser launch. Generated viewers remain runtime state and must not
 be added to the release artifact.
 
-User-wide installation locations such as
-`%USERPROFILE%\.codex\skills\task-governance-tool`, `%CODEX_HOME%\skills`, or a
-personal global skills directory are not recommended for normal use. Use
-them only for explicit local experimentation, preferably with an explicit
-`--db` path, because one global copy can otherwise accumulate task state for
-multiple unrelated projects.
+User-wide and linked Skill locations are not public stateful operating modes.
+Use only the physical project-scoped layout documented above.
 
 ## Pre-Release Checks
 

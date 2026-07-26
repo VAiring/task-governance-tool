@@ -5,8 +5,9 @@ LLM quick read:
 - This repository publishes a Codex skill in `task-governance-tool/`.
 - The installable skill folder is `task-governance-tool/`, not the repository
   root.
-- Install it per governed project under `.agents/skills/task-governance-tool`;
-  user-wide installs are not recommended for normal use.
+- Install one physical copy per governed project under
+  `.agents/skills/task-governance-tool`; linked and user-wide copies are not
+  supported for stateful governed-project use.
 - Use it to replace large `TASK_STATUS.md` files with local SQLite task state.
 - It supports explicit task registration, current/next task inspection,
   optional explicit Task Contracts, pause/resume and blocker handling,
@@ -25,16 +26,21 @@ specs, design docs, tests, and current user decisions still govern the work.
 
 ## Install
 
-Install the skill folder into each governed project that needs task tracking:
+The supported runtime is Python 3.12 or later on Windows. Windows is the
+CI-verified platform; Linux and macOS have not been verified and are not
+claimed as supported.
+
+Install a physical copy of the skill folder into each governed project that
+needs task tracking:
 
 ```text
 <target-project>\.agents\skills\task-governance-tool
 ```
 
 Use the release artifact or this repository's `task-governance-tool/` folder as
-the source package. Do not install the MVP into a user-wide skill directory such
-as `%USERPROFILE%\.codex\skills` for normal governed-project use; that makes one
-copy responsible for unrelated project task state.
+the source package. Stateful use from a user-wide copy, symbolic link, or
+Windows junction is unsupported because code location and project-local state
+ownership can otherwise diverge.
 
 Prefer the release artifact. If copying from a development working tree,
 exclude `state/`, caches, generated viewers, and SQLite files instead of making
@@ -44,49 +50,43 @@ Before running write commands in the target project, ensure generated state is
 ignored there:
 
 ```text
-.agents/skills/task-governance-tool/state/
-*.sqlite
-*.sqlite3
-*.db
-*.sqlite-wal
-*.sqlite-shm
-*.sqlite-journal
-*.sqlite3-wal
-*.sqlite3-shm
-*.sqlite3-journal
-*.db-wal
-*.db-shm
-*.db-journal
+/.agents/skills/task-governance-tool/state/
 ```
 
-After project-scoped installation, verify the ignore rules, run `db status`,
-and—with explicit intent to start local tracking—run `db init`. Skill package
+After project-scoped installation, verify the ignore rule, run `db status`,
+and, with explicit intent to start local tracking, run `db init`. Skill package
 creation itself must not initialize a target database. Restart Codex or start a
 new session from inside that project so the skill metadata can be discovered.
 
-To verify a newly copied release package without touching task state, run:
+From the target-project root, verify a newly copied release package without
+touching task state:
 
 ```powershell
-python scripts/taskgov.py self status --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py self status --read-only --json
 ```
+
+If a command is launched from inside the installed Skill directory instead,
+pass `--repo <target-project>` explicitly. Omitting `--repo` always means the
+current directory; it does not search for a Git root. Non-Git governed
+directories are valid.
 
 ## Minimal Workflow
 
-Run commands from the project-scoped installed skill folder:
+Run the normal workflow from the target-project root:
 
 ```powershell
-python scripts/taskgov.py db status --repo <target-project> --json
-python scripts/taskgov.py db init --repo <target-project> --json
-python scripts/taskgov.py task add --repo <target-project> --title "Example task" --json
-python scripts/taskgov.py task current --repo <target-project> --json
-python scripts/taskgov.py task current --repo <target-project> --status paused --json
-python scripts/taskgov.py task next --repo <target-project> --json
-python scripts/taskgov.py task show --repo <target-project> <task-id> --json
-python scripts/taskgov.py handoff record --repo <target-project> <task-id> --summary "Concise out-of-scope discovery" --json
-python scripts/taskgov.py handoff list --repo <target-project> --json
-python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_commit --revision <hash> --json
-python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py db status --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py db init --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task add --title "Example task" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task current --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task current --status paused --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task next --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task show <task-id> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff record <task-id> --summary "Concise out-of-scope discovery" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff list --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review target set <task-id> --kind git_commit --revision <hash> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
 ```
 
 Start with `db status`. It inspects without creating files. Use `db init` only
@@ -109,6 +109,11 @@ Pending rows do not change task selection or completion. Only final local
 persistence failure stops the current execution unit, because continuing would
 reintroduce context-compression forgetting risk.
 
+If `handoff record` rejects private or raw content, do not repeat, quote, log,
+or forward that rejected raw input. Make at most one new attempt using a newly
+written concise sanitized abstraction. If that attempt is also rejected,
+leave the record unpersisted and report only the fixed sanitized error.
+
 Version 0.5.0 added optional immutable Task Contracts. Use the five
 `--contract-*` options only when scope and acceptance already exist in user or
 approved-roadmap authority; otherwise keep revision zero without asking
@@ -128,7 +133,7 @@ profile, normal Task output and behavior are unchanged.
 Version 0.7.0 adds optional Local Package Self-Status:
 
 ```powershell
-python scripts/taskgov.py self status --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py self status --read-only --json
 ```
 
 It compares packaged core files with the co-located release manifest and
@@ -157,11 +162,11 @@ and review that staged state:
 
 ```powershell
 git add <intended-project-paths>
-python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_snapshot --json
-python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
-python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review target set <task-id> --kind git_snapshot --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --json
 git commit -m "<project-approved message>"
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
 ```
 
 The snapshot target takes no `--revision`. It fingerprints stage-0 index
@@ -177,7 +182,7 @@ A completed task is locked against all writes except an explicit, reasoned
 reopen:
 
 ```powershell
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --reopen-reason "<sanitized reason>" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --reopen-reason "<sanitized reason>" --json
 ```
 
 Reopen clears current completion/review eligibility while preserving history;
@@ -194,19 +199,24 @@ folder:
 Use `--db <path>` only when a project or user explicitly needs a different
 database path.
 
+Project identity is derived from the canonical absolute target path. Moving or
+renaming the governed directory therefore changes its default identity and can
+make the prior database appear uninitialized. This release does not
+automatically relocate or rewrite that state.
+
 ## Offline Task Viewer
 
 When the user explicitly asks to create or regenerate a browser-readable task
 snapshot, run:
 
 ```powershell
-python scripts/taskgov.py web export --repo <target-project> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py web export --json
 ```
 
 Preview without creating a directory or file:
 
 ```powershell
-python scripts/taskgov.py web export --repo <target-project> --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py web export --read-only --json
 ```
 
 The default output is:
@@ -234,6 +244,7 @@ open a browser automatically.
 - `taskgov task list`
 - `taskgov task next`
 - `taskgov task current`
+- `taskgov task effort`
 - `taskgov task show`
 - `taskgov task edit`
 - `taskgov handoff record`

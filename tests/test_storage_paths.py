@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +17,7 @@ try:
         resolve_database_target,
         sanitize_project_basename,
         skill_root_from_script,
+        uses_unsupported_linked_install,
     )
 finally:
     sys.path.pop(0)
@@ -24,6 +26,18 @@ finally:
 class StoragePathTests(unittest.TestCase):
     def test_skill_root_is_inferred_from_script_path(self):
         self.assertEqual(skill_root_from_script(SCRIPT), SKILL_ROOT.resolve())
+
+    def test_entrypoint_symlink_install_branch_is_rejected(self):
+        with (
+            mock.patch.object(
+                Path,
+                "is_symlink",
+                autospec=True,
+                side_effect=lambda path: path == SCRIPT.absolute(),
+            ),
+            mock.patch.object(Path, "is_junction", return_value=False),
+        ):
+            self.assertTrue(uses_unsupported_linked_install(SCRIPT))
 
     def test_project_id_sanitizes_name_and_hides_parent_path(self):
         with tempfile.TemporaryDirectory(prefix="Task Gov Parent ") as tmp:

@@ -22,6 +22,8 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_initial_schema_migration,
     apply_paused_state_migration,
     apply_review_evidence_migration,
+    apply_task_contract_migration,
+    apply_effort_advisory_migration,
     connect,
     connect_snapshot_readonly,
     ensure_project_meta,
@@ -55,8 +57,8 @@ def table_count(db: Path, table: str) -> int:
 
 
 class ViewerSnapshotTests(unittest.TestCase):
-    def test_snapshot_v3_reads_schema_v5_through_v7_without_new_fields(self):
-        for source_version in (5, 6, 7):
+    def test_snapshot_v3_reads_schema_v5_through_v9_without_new_fields(self):
+        for source_version in (5, 6, 7, 8, 9):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 db = Path(tmp) / "taskgov.sqlite"
                 repo = Path(tmp) / "repo"
@@ -76,12 +78,24 @@ class ViewerSnapshotTests(unittest.TestCase):
                         apply_git_snapshot_schema_migration(connection)
                     if source_version >= 7:
                         apply_handoff_outbox_migration(connection)
+                    if source_version >= 8:
+                        apply_task_contract_migration(connection)
+                    if source_version >= 9:
+                        apply_effort_advisory_migration(connection)
                     with connection:
                         ensure_project_meta(connection, target.project)
                         add_task(
                             connection,
                             target.project,
                             title=f"Schema {source_version} viewer task",
+                            **(
+                                {
+                                    "contract_scope": "SCHEMA_8_PRIVATE_SCOPE",
+                                    "contract_acceptance": "Viewer compatibility passes",
+                                }
+                                if source_version >= 8
+                                else {}
+                            ),
                         )
 
                 with closing(connect_snapshot_readonly(db)) as connection:
@@ -105,6 +119,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 serialized = json.dumps(result.snapshot)
                 self.assertNotIn("handoff", serialized.lower())
                 self.assertNotIn("review_target_base_revision", serialized)
+                self.assertNotIn("SCHEMA_8_PRIVATE_SCOPE", serialized)
 
     def test_snapshot_projects_all_statuses_show_fields_and_bounded_events(self):
         with tempfile.TemporaryDirectory() as tmp:

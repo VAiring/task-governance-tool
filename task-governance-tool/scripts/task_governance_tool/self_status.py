@@ -312,13 +312,13 @@ def _is_excluded_entry(
 def _observe_directory(path: Path) -> os.stat_result:
     try:
         observed = path.lstat()
-        if (
-            not stat.S_ISDIR(observed.st_mode)
-            or path.is_symlink()
-            or _is_junction(path)
-        ):
+        if path.is_symlink() or _is_junction(path):
+            raise _InspectionIncomplete("unsupported_install_layout")
+        if not stat.S_ISDIR(observed.st_mode):
             raise _InspectionIncomplete()
         return observed
+    except _InspectionIncomplete:
+        raise
     except (OSError, RuntimeError):
         raise _InspectionIncomplete() from None
 
@@ -459,10 +459,23 @@ def inspect_local_package(
     skill_root: str | os.PathLike[str],
     *,
     installed_version: str,
+    unsupported_install_layout: bool = False,
 ) -> PackageSelfStatus:
     """Compare packaged core files with the co-located release manifest."""
 
+    if unsupported_install_layout:
+        return _unknown_status(
+            package_version=installed_version,
+            reason="unsupported_install_layout",
+        )
     root = Path(skill_root)
+    try:
+        _observe_directory(root)
+    except _InspectionIncomplete as exc:
+        return _unknown_status(
+            package_version=installed_version,
+            reason=exc.reason,
+        )
     try:
         manifest = _load_manifest(root)
     except _ManifestInvalid:

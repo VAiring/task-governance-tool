@@ -28,6 +28,8 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_initial_schema_migration,
     apply_paused_state_migration,
     apply_review_evidence_migration,
+    apply_task_contract_migration,
+    apply_effort_advisory_migration,
     connect,
     default_viewer_output_path,
     ensure_project_meta,
@@ -127,8 +129,8 @@ def empty_export_data(output_path):
 
 
 class WebExportTests(unittest.TestCase):
-    def test_export_reads_schema_v5_through_v7_in_normal_and_read_only_modes(self):
-        for source_version in (5, 6, 7):
+    def test_export_reads_schema_v5_through_v9_in_normal_and_read_only_modes(self):
+        for source_version in (5, 6, 7, 8, 9):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 db = root / "taskgov.sqlite"
@@ -149,12 +151,24 @@ class WebExportTests(unittest.TestCase):
                         apply_git_snapshot_schema_migration(connection)
                     if source_version >= 7:
                         apply_handoff_outbox_migration(connection)
+                    if source_version >= 8:
+                        apply_task_contract_migration(connection)
+                    if source_version >= 9:
+                        apply_effort_advisory_migration(connection)
                     with connection:
                         ensure_project_meta(connection, target.project)
                         add_task_service(
                             connection,
                             target.project,
                             title=f"Schema {source_version} export",
+                            **(
+                                {
+                                    "contract_scope": "SCHEMA_8_EXPORT_PRIVATE_SCOPE",
+                                    "contract_acceptance": "Export compatibility passes",
+                                }
+                                if source_version >= 8
+                                else {}
+                            ),
                         )
 
                 before = db.read_bytes()
@@ -178,6 +192,10 @@ class WebExportTests(unittest.TestCase):
                 snapshot = embedded_snapshot(output)
                 self.assertEqual(snapshot["source_schema_version"], source_version)
                 self.assertNotIn("handoff", json.dumps(snapshot).lower())
+                self.assertNotIn(
+                    "SCHEMA_8_EXPORT_PRIVATE_SCOPE",
+                    json.dumps(snapshot),
+                )
                 self.assertEqual(db.read_bytes(), before)
                 for suffix in ("-wal", "-shm", "-journal"):
                     self.assertFalse(Path(str(db) + suffix).exists())

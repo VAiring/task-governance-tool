@@ -647,6 +647,68 @@ class HandoffCommandTests(unittest.TestCase):
                     "pending_handoff",
                 )
 
+    def test_one_sanitized_abstraction_after_privacy_rejection_stores_no_raw_input(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / "taskgov.sqlite"
+            repo = root / "repo"
+            init_db(db, repo)
+            task = add_task(db, repo)
+            rejected_value = "Authorization: Bearer raw-m13-secret-value"
+
+            rejected, rejected_payload = json_command(
+                "handoff",
+                "record",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--summary",
+                rejected_value,
+            )
+
+            self.assertEqual(rejected.returncode, 1)
+            self.assertEqual(
+                rejected_payload["errors"][0]["code"],
+                "privacy_rejected",
+            )
+            self.assertNotIn("raw-m13-secret-value", rejected.stdout)
+            self.assertNotIn("raw-m13-secret-value", rejected.stderr)
+
+            sanitized, sanitized_payload = json_command(
+                "handoff",
+                "record",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--summary",
+                "Authentication configuration needs separate investigation",
+                "--rationale",
+                "Outside the current acceptance criteria",
+            )
+
+            self.assertEqual(sanitized.returncode, 0, sanitized.stderr)
+            self.assertTrue(
+                sanitized_payload["data"]["local_record"]["durable"],
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                rows = connection.execute(
+                    "SELECT summary, rationale FROM handoff_records"
+                ).fetchall()
+            self.assertEqual(
+                rows,
+                [
+                    (
+                        "Authentication configuration needs separate investigation",
+                        "Outside the current acceptance criteria",
+                    )
+                ],
+            )
+            self.assertNotIn(b"raw-m13-secret-value", db.read_bytes())
+
     def test_read_only_and_missing_database_paths_do_not_write(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

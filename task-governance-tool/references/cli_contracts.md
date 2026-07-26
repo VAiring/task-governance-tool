@@ -31,6 +31,9 @@ run from the target-project root:
 python .agents/skills/task-governance-tool/scripts/taskgov.py <command> [options]
 ```
 
+The verified runtime is Windows with Python 3.12 or later. Linux and macOS are
+unverified and have no support claim in this release.
+
 For a new target project, start with `db status`. It reports missing or
 outdated databases without creating files. Use `db init` only when local task
 tracking should be created or migrated for that project-scoped install. A
@@ -47,7 +50,15 @@ Omitting `--repo` always means the current directory; it does not search for a
 Git root. A physical copy at
 `<target-project>/.agents/skills/task-governance-tool` is the only documented
 stateful governed-project layout. Symlink, junction, and user-wide operating
-paths are unsupported.
+paths are unsupported. Except for package-local `self status`, a linked Skill
+install path returns exit code 2, `unsupported_install_layout`, and exact message
+`stateful commands require a physical project-scoped skill copy` before
+resolving a database or creating state.
+
+Project identity is derived from the canonical absolute governed-directory
+path. Moving or renaming that directory changes its default identity and may
+make prior state appear uninitialized. This release performs no automatic
+relocation and provides no relocation command or project UUID.
 
 Common options:
 
@@ -158,6 +169,10 @@ Modified core adds warning `package_core_modified`; unknown adds
 while `changed_core_count` is exact after a complete comparison. Missing or
 invalid manifests and package-version mismatches return `unknown` with a stable
 reason and no changed-path claim.
+
+A symbolic-link or junction Skill install path returns `unknown` reason
+`unsupported_install_layout`, warning `package_status_unknown`, and the same
+fixed `suggested_action=continue`. This package-only diagnosis creates no state.
 
 Root `config/`, `adapters/`, generated `state/`, `__pycache__/`, and `*.pyc`
 are outside core. Output never contains package-absolute paths, file content,
@@ -823,6 +838,12 @@ fixed non-durable data:
 }
 ```
 
+Privacy rejection is not the SQLite persistence retry above. The packaged
+workflow must not repeat, quote, log, store, or forward rejected raw input. It
+may make at most one new `handoff record` attempt using a newly written concise
+sanitized abstraction. A second `privacy_rejected` ends that recovery attempt
+and emits only the fixed sanitized error.
+
 List pending records oldest-first by `created_at, handoff_id`:
 
 ```powershell
@@ -1046,6 +1067,7 @@ Known error codes include:
 - `migration_required`
 - `project_mismatch`
 - `unsupported_journal_mode`
+- `unsupported_install_layout`
 - `database_busy`
 - `output_path_invalid`
 - `output_parent_missing`

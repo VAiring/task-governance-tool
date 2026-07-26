@@ -29,17 +29,24 @@ project's applicable `AGENTS.md`, specs, design docs, tests, and local rules.
 The task database stores compact execution state only. Do not treat it as a
 hidden authority for product decisions.
 
-Use the project-scoped installed copy for the governed project, normally under
-`.agents/skills/task-governance-tool`. If this skill is available only from a
-user-wide or global install, ask the user before initializing state; normal
-operation expects a separate installed copy per project.
+Use one physical project-scoped copy for the governed project at
+`.agents/skills/task-governance-tool`. User-wide, symbolic-link, and Windows
+junction installs are unsupported for stateful use. From the target-project
+root, invoke `.agents/skills/task-governance-tool/scripts/taskgov.py`; from
+inside the Skill directory, pass `--repo <target-project>` explicitly.
+Omitting `--repo` means the current directory and never searches for a Git
+root, so a non-Git governed directory remains valid.
+
+The default project identity uses the canonical absolute governed-directory
+path. Moving or renaming that directory changes its default identity; do not
+infer a relocation or rewrite prior state.
 
 ## Inspect Local Package Status
 
 For explicit install validation or local-core inspection, run:
 
 ```powershell
-python scripts/taskgov.py self status --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py self status --read-only --json
 ```
 
 This command compares the installed package with its co-located release
@@ -79,33 +86,33 @@ the bounded paused subset with `task current --status paused`.
 1. Check database state without mutation:
 
    ```powershell
-   python scripts/taskgov.py db status --repo <target-project> --json
+   python .agents/skills/task-governance-tool/scripts/taskgov.py db status --json
    ```
 
 2. Ask for ready candidates:
 
    ```powershell
-   python scripts/taskgov.py task next --repo <target-project> --limit 5 --json
+   python .agents/skills/task-governance-tool/scripts/taskgov.py task next --limit 5 --json
    ```
 
    A `paused_tasks_present` warning is an advisory recall hint, not a stop or a
    change to the returned ready candidates. Follow it with:
 
    ```powershell
-   python scripts/taskgov.py task current --repo <target-project> --status paused --json
+   python .agents/skills/task-governance-tool/scripts/taskgov.py task current --status paused --json
    ```
 
 3. Inspect the chosen task before acting:
 
    ```powershell
-   python scripts/taskgov.py task show --repo <target-project> <task-id> --json
+   python .agents/skills/task-governance-tool/scripts/taskgov.py task show <task-id> --json
    ```
 
 If the database is missing, initialize it only when the user intends to use this
 local state store for the current project-scoped install:
 
 ```powershell
-python scripts/taskgov.py db init --repo <target-project> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py db init --json
 ```
 
 ## Selection Semantics
@@ -249,6 +256,12 @@ This version records `pending_handoff` locally and has no Issue adapter,
 receiver detection, delivery, or `handoff sync` command. Do not ask another
 question merely to decide whether the handoff exists or whether accepted work
 may continue.
+
+If `handoff record` returns `privacy_rejected`, never repeat, quote, log, store,
+or forward the rejected raw input. Make at most one new attempt using a newly
+written concise sanitized abstraction. If that attempt is also rejected, end
+the recovery attempt and report only the fixed sanitized error; do not keep
+asking the LLM for another rewrite.
 
 Exact replay of the same canonical payload returns the existing row. Supply
 `--occurrence-id <stable-id>` only when the user or a deterministic source

@@ -1,12 +1,12 @@
 {
   "core_files": {
-    "SKILL.md": "sha256:aa074fcce15f67d7e09d3ca53f2da2da216c749547e4a30bab26d97f71261730",
+    "SKILL.md": "sha256:62697d6cfc2f1e4b362621b224897bad784200b0bc4be975b4d133fc1a4f4f48",
     "agents/openai.yaml": "sha256:9c1d8307b4fc733598eb1740a020329253a1da228dda230e56a274c4d79811e8",
     "assets/task-viewer.template.html": "sha256:a627fa361e52234e1f8f9ee1b893537e2120c7ad346aaa2d989249055a96132a",
-    "references/cli_contracts.md": "sha256:7444fc0dbba4800445ce25da3fd08a6679106a9b92386d5605faeee22c29cd93",
-    "references/task_workflow.md": "sha256:4edee3ea0c2a02d34afb600da77a539099385b966388cc9c1cb2a61c6dbdb1cc",
+    "references/cli_contracts.md": "sha256:53ffb06989c3d75e802e42c90a8cf550cd3d813a67f1b3565f4c926ff61d7352",
+    "references/task_workflow.md": "sha256:7fd27067d3dfd190c00d57abefc98417012faec3ccfd1144b1289aeb8cb07031",
     "scripts/task_governance_tool/__init__.py": "sha256:22fe5c39116379ccdf9564ddeb3d6b8f7c9e8c26aa9feb64a6366580c6ae7e50",
-    "scripts/task_governance_tool/cli.py": "sha256:d60c1d3998a414415dfc52ef8086a1967683d788bd2aec254ff28276a7256728",
+    "scripts/task_governance_tool/cli.py": "sha256:7cb8c712c8dadd9e65e8a040e63d2837f50b7e3c2c499f8e85cb9eae46196ae6",
     "scripts/task_governance_tool/completion.py": "sha256:291b5f80fa7753b73f88de52b957b9a1a864fe7f3e9dede534be0763ddf23c03",
     "scripts/task_governance_tool/contracts.py": "sha256:df999286795efed6841ed3dbe96a593eacbc1c9e5809fef1e8c20c3ebe6b5469",
     "scripts/task_governance_tool/effort.py": "sha256:30b40ee45814ff668e00cdf2b13893cf0542df906d7ca49a64160352ecb47b7c",
@@ -15,11 +15,11 @@
     "scripts/task_governance_tool/ordering.py": "sha256:3dbc5ca110a4cfa4c9092f404629a53779577c40e7b667e9ad989a7feb193740",
     "scripts/task_governance_tool/reviews.py": "sha256:dcaf26d98785db9efc7bae88cfc86d4827a10f30b3ee40d7756b505a50b9d407",
     "scripts/task_governance_tool/selection.py": "sha256:ceeb3ef2975d063e05e1c9bd80317b1b330d0ef1be899c7f5ccdd12f09e10c11",
-    "scripts/task_governance_tool/self_status.py": "sha256:673d563a8d973833b7c4f68ad6dcdcc1a6b7cc875dfb25e5c16ee72b8c08b3d8",
-    "scripts/task_governance_tool/storage.py": "sha256:9f6d44f721025a0d424f94540d3cfc39fc850efd8970b40b3668eed1f7834c66",
+    "scripts/task_governance_tool/self_status.py": "sha256:55b9f59c0842ff0e230c374edbf471aa465aac1d88fc6dd6cc6ecfffe40292c9",
+    "scripts/task_governance_tool/storage.py": "sha256:5a77fa5b964c7d1207753e2dd053b21ddeff9b34cd78eedfc53f492221b8b175",
     "scripts/task_governance_tool/tasks.py": "sha256:bb7e01681ea697e8aeec6856491823fa41b3361d973bb0cd2cdad1e2a4f33323",
     "scripts/task_governance_tool/viewer.py": "sha256:7406f4eae3975e7bca61317a10cc8c63392ee0c5bd1323d1d50def7e451ad39e",
-    "scripts/taskgov.py": "sha256:7d6c07e4772f151c90d7000eb82a6397cf6f2e83e6c6ea7a29bf8974ed166b7d"
+    "scripts/taskgov.py": "sha256:ec4291cb1cbd985a8c088eb2ff98fbd72bd2859137f5ff98d785a59aa30c52d2"
   },
   "manifest_version": 1,
   "package_name": "task-governance-tool",

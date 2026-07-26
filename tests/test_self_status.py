@@ -85,6 +85,18 @@ def content_snapshot(root: Path) -> dict[str, str]:
     }
 
 
+def create_windows_junction(link: Path, target: Path) -> None:
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stderr or result.stdout)
+
+
 class SelfStatusTests(unittest.TestCase):
     def test_isolated_cli_reports_clean_without_writing(self):
         source_result = inspect_local_package(SKILL_ROOT, installed_version="0.7.0")
@@ -312,6 +324,318 @@ class SelfStatusTests(unittest.TestCase):
             )
             self.assertEqual(origin_result.status, "unknown")
             self.assertEqual(origin_result.unknown_reasons, ("manifest_invalid",))
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction behavior")
+    def test_junction_install_is_diagnosed_and_stateful_commands_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            physical = copy_skill(root / "physical")
+            write_manifest(physical)
+            junction = root / "linked-skill"
+            create_windows_junction(junction, physical)
+            before = content_snapshot(physical)
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+
+            with mock.patch.object(self_status_module, "_load_manifest") as load_manifest:
+                direct = inspect_local_package(
+                    junction,
+                    installed_version="0.7.0",
+                )
+            load_manifest.assert_not_called()
+            self.assertEqual(
+                direct.unknown_reasons,
+                ("unsupported_install_layout",),
+            )
+
+            status = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-S",
+                    "scripts/taskgov.py",
+                    "self",
+                    "status",
+                    "--read-only",
+                    "--json",
+                ],
+                cwd=junction,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(status.returncode, 0, status.stderr)
+            status_payload = json.loads(status.stdout)
+            self.assertEqual(status_payload["data"]["status"], "unknown")
+            self.assertEqual(
+                status_payload["data"]["unknown_reasons"],
+                ["unsupported_install_layout"],
+            )
+            self.assertEqual(
+                status_payload["data"]["suggested_action"],
+                "continue",
+            )
+            self.assertEqual(status_payload["command"], "self.status")
+            self.assertIsNone(status_payload["project_id"])
+            self.assertIsNone(status_payload["db_path"])
+            self.assertEqual(status_payload["errors"], [])
+            self.assertEqual(
+                status_payload["warnings"],
+                [
+                    {
+                        "code": "package_status_unknown",
+                        "message": "package self-status is unknown; continue current task",
+                    }
+                ],
+            )
+
+            repo = root / "target-project"
+            initialized = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-S",
+                    "scripts/taskgov.py",
+                    "db",
+                    "init",
+                    "--repo",
+                    str(repo),
+                    "--json",
+                ],
+                cwd=junction,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(initialized.returncode, 2, initialized.stderr)
+            initialized_payload = json.loads(initialized.stdout)
+            self.assertEqual(
+                initialized_payload,
+                {
+                    "ok": False,
+                    "command": "db.init",
+                    "project_id": None,
+                    "db_path": None,
+                    "data": {},
+                    "warnings": [],
+                    "errors": [
+                        {
+                            "code": "unsupported_install_layout",
+                            "message": (
+                                "stateful commands require a physical "
+                                "project-scoped skill copy"
+                            ),
+                        }
+                    ],
+                },
+            )
+            serialized = json.dumps(initialized_payload)
+            self.assertNotIn(str(junction), serialized)
+            self.assertNotIn(str(physical), serialized)
+            self.assertFalse((physical / "state").exists())
+            self.assertFalse(repo.exists())
+            self.assertEqual(content_snapshot(physical), before)
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction behavior")
+    def test_junction_skills_parent_cannot_redirect_project_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shared_skills = root / "shared-skills"
+            shared_skills.mkdir()
+            physical = copy_skill(shared_skills)
+            write_manifest(physical)
+            target = root / "target-project"
+            agents = target / ".agents"
+            agents.mkdir(parents=True)
+            create_windows_junction(agents / "skills", shared_skills)
+            before = content_snapshot(physical)
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            entrypoint = (
+                ".agents/skills/task-governance-tool/scripts/taskgov.py"
+            )
+
+            status = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-S",
+                    entrypoint,
+                    "self",
+                    "status",
+                    "--read-only",
+                    "--json",
+                ],
+                cwd=target,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(status.returncode, 0, status.stderr)
+            status_payload = json.loads(status.stdout)
+            self.assertEqual(status_payload["data"]["status"], "unknown")
+            self.assertEqual(
+                status_payload["data"]["unknown_reasons"],
+                ["unsupported_install_layout"],
+            )
+            self.assertEqual(status_payload["command"], "self.status")
+            self.assertIsNone(status_payload["project_id"])
+            self.assertIsNone(status_payload["db_path"])
+            self.assertEqual(status_payload["errors"], [])
+            self.assertEqual(
+                status_payload["warnings"],
+                [
+                    {
+                        "code": "package_status_unknown",
+                        "message": "package self-status is unknown; continue current task",
+                    }
+                ],
+            )
+
+            initialized = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-S",
+                    entrypoint,
+                    "db",
+                    "init",
+                    "--json",
+                ],
+                cwd=target,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(initialized.returncode, 2, initialized.stderr)
+            initialized_payload = json.loads(initialized.stdout)
+            self.assertEqual(
+                initialized_payload,
+                {
+                    "ok": False,
+                    "command": "db.init",
+                    "project_id": None,
+                    "db_path": None,
+                    "data": {},
+                    "warnings": [],
+                    "errors": [
+                        {
+                            "code": "unsupported_install_layout",
+                            "message": (
+                                "stateful commands require a physical "
+                                "project-scoped skill copy"
+                            ),
+                        }
+                    ],
+                },
+            )
+            serialized = json.dumps(initialized_payload)
+            self.assertNotIn(str(agents / "skills"), serialized)
+            self.assertNotIn(str(shared_skills), serialized)
+            self.assertFalse((physical / "state").exists())
+            self.assertEqual(content_snapshot(physical), before)
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction behavior")
+    def test_junction_scripts_directory_cannot_redirect_project_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shared = copy_skill(root / "shared")
+            write_manifest(shared)
+            target = root / "target-project"
+            installed = copy_skill(
+                target / ".agents" / "skills",
+            )
+            write_manifest(installed)
+            shutil.rmtree(installed / "scripts")
+            create_windows_junction(installed / "scripts", shared / "scripts")
+            shared_before = content_snapshot(shared)
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            entrypoint = (
+                ".agents/skills/task-governance-tool/scripts/taskgov.py"
+            )
+
+            status = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-S",
+                    entrypoint,
+                    "self",
+                    "status",
+                    "--read-only",
+                    "--json",
+                ],
+                cwd=target,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(status.returncode, 0, status.stderr)
+            status_payload = json.loads(status.stdout)
+            self.assertEqual(status_payload["data"]["status"], "unknown")
+            self.assertEqual(
+                status_payload["data"]["unknown_reasons"],
+                ["unsupported_install_layout"],
+            )
+            self.assertEqual(
+                status_payload["data"]["suggested_action"],
+                "continue",
+            )
+
+            initialized = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-S",
+                    entrypoint,
+                    "db",
+                    "init",
+                    "--json",
+                ],
+                cwd=target,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(initialized.returncode, 2, initialized.stderr)
+            self.assertEqual(
+                json.loads(initialized.stdout),
+                {
+                    "ok": False,
+                    "command": "db.init",
+                    "project_id": None,
+                    "db_path": None,
+                    "data": {},
+                    "warnings": [],
+                    "errors": [
+                        {
+                            "code": "unsupported_install_layout",
+                            "message": (
+                                "stateful commands require a physical "
+                                "project-scoped skill copy"
+                            ),
+                        }
+                    ],
+                },
+            )
+            self.assertFalse((shared / "state").exists())
+            self.assertFalse((installed / "state").exists())
+            self.assertEqual(content_snapshot(shared), shared_before)
 
     def test_entry_limit_is_unknown(self):
         with tempfile.TemporaryDirectory() as tmp:

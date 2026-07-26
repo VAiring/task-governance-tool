@@ -155,10 +155,10 @@ The product must not become:
   links.
 - Do not install or overwrite a user or project skill directory without
   explicit user approval and a shown destination path.
-- For the MVP, prefer project-scoped skill installation under a target
-  project's `.agents/skills/task-governance-tool` directory. User-wide
-  installation is discouraged unless the user explicitly asks for local
-  experimentation outside a governed project.
+- Governed-project stateful use supports only one physical project-scoped copy
+  under the target project's `.agents/skills/task-governance-tool` directory.
+  User-wide, symbolic-link, and Windows junction installs are unsupported
+  stateful layouts.
 
 ## Architecture Rules
 

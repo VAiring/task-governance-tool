@@ -39,9 +39,11 @@ from task_governance_tool.storage import (
     initialize_database,
     inspect_database,
     is_sqlite_busy_or_locked,
+    lexical_skill_root_from_script,
     operational_sqlite_error,
     resolve_database_target,
     skill_root_from_script,
+    uses_unsupported_linked_install,
 )
 from task_governance_tool.selection import select_next_tasks
 from task_governance_tool.reviews import (
@@ -413,6 +415,16 @@ def make_context(args: argparse.Namespace) -> CommandContext:
 
 
 def handle_command(context: CommandContext) -> CommandResult:
+    if (
+        context.command != "self.status"
+        and uses_unsupported_linked_install(cli_script_path())
+    ):
+        return error_result(
+            context.command,
+            "unsupported_install_layout",
+            "stateful commands require a physical project-scoped skill copy",
+            EXIT_TOOL_ERROR,
+        )
     if context.command == "db.init":
         return handle_db_init(context)
     if context.command == "db.status":
@@ -447,8 +459,19 @@ def handle_command(context: CommandContext) -> CommandResult:
     )
 
 
+_CLI_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "taskgov.py"
+
+
+def set_cli_script_path(script_path: str | Path) -> None:
+    global _CLI_SCRIPT_PATH
+    script = Path(script_path).expanduser()
+    if not script.is_absolute():
+        script = Path.cwd() / script
+    _CLI_SCRIPT_PATH = script.absolute()
+
+
 def cli_script_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "taskgov.py"
+    return _CLI_SCRIPT_PATH
 
 
 def self_status_text(data: dict[str, Any]) -> str:
@@ -471,9 +494,11 @@ def self_status_text(data: dict[str, Any]) -> str:
 
 
 def handle_self_status(context: CommandContext) -> CommandResult:
+    script_path = cli_script_path()
     package_status = inspect_local_package(
-        skill_root_from_script(cli_script_path()),
+        lexical_skill_root_from_script(script_path),
         installed_version=__version__,
+        unsupported_install_layout=uses_unsupported_linked_install(script_path),
     )
     data = package_status.to_data()
     warnings: list[dict[str, str]] = []

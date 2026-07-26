@@ -1,8 +1,8 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through TG-M12.O1 Effort Advisory are complete at
-v0.6.0/schema v9. TG-M12.O2 local self-status remains next; TG-M12.3 remains
-blocked on a future Issue Skill intake contract.
+Status: implementation units through TG-M12.O2 Local Package Self-Status are
+complete at v0.7.0/schema v9. TG-M12.3 remains blocked on a future Issue Skill
+intake contract.
 The default-browser launch follow-up remains requirements-only pending design
 and roadmap approval.
 
@@ -2090,7 +2090,7 @@ Kind: optional
 Lane: `SCOPE-ADVISORY`
 Depends on: TG-M12.0 and separate user approval
 Review tier: Tier 2
-Initial status: blocked
+Status: complete at v0.7.0/schema v9
 
 Intended outcome:
 
@@ -2102,12 +2102,17 @@ Write scope:
 - versioned release manifest and read-only `self status`
 - package/config/adapter boundary tests
 - Skill and release guidance only after the behavior is implemented
+- synchronized version `0.7.0` metadata; schema v9 and Viewer snapshot v3 stay
+  unchanged
 
 Implementation notes:
 
 - Report only clean, modified, or unknown with bounded changed core paths.
 - Exclude generated state, declared configuration, and adapter files.
 - Do not contact GitHub, download, install, repair, or block task work.
+- Treat manifest-declared origin as visible provenance, not authenticity.
+- Keep the command outside the minimum Task loop; all results use the fixed
+  `suggested_action=continue` and add no LLM decision.
 
 Verification gate:
 
@@ -2115,6 +2120,8 @@ Verification gate:
   are deterministic and read-only.
 - Installed-copy packaging, privacy, compact output, and full offline tests
   pass.
+- The checked-in artifact and manifest agree exactly, and inspection creates no
+  Python cache, database, Git, target-project, or network state.
 
 Completion criteria:
 
@@ -2153,10 +2160,9 @@ parent/child task structure, default-browser launch, network access, or Git
 writes by task-governance-tool.
 
 TG-M12.0 records the scope-control/local-handoff contract and task baseline.
-The current task-consumption request has consumed TG-M12.1, TG-M12.2, and
-TG-M12.O1 and continues to authorize TG-M12.O2 after its documented
-dependencies. TG-M12.3 remains blocked until an Issue Skill intake contract,
+The current task-consumption request consumed TG-M12.1, TG-M12.2, TG-M12.O1,
+and TG-M12.O2. TG-M12.3 remains blocked until an Issue Skill intake contract,
 governing permission update, and the integration boundary are separately
 approved. None of these approvals authorizes semantic Issue triage, paging,
-child tasks, signed evidence, external Issue import/lifecycle sync, or daily
-GitHub update checking.
+child tasks, signed evidence, external Issue import/lifecycle sync, package
+repair/update, or daily GitHub update checking.

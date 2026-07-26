@@ -1,0 +1,28 @@
+{
+  "core_files": {
+    "SKILL.md": "sha256:aa074fcce15f67d7e09d3ca53f2da2da216c749547e4a30bab26d97f71261730",
+    "agents/openai.yaml": "sha256:9c1d8307b4fc733598eb1740a020329253a1da228dda230e56a274c4d79811e8",
+    "assets/task-viewer.template.html": "sha256:a627fa361e52234e1f8f9ee1b893537e2120c7ad346aaa2d989249055a96132a",
+    "references/cli_contracts.md": "sha256:9a2057d80d310acd31852761b3d0e5ec7e30659b79107e6dc8b148b84877f4fc",
+    "references/task_workflow.md": "sha256:4edee3ea0c2a02d34afb600da77a539099385b966388cc9c1cb2a61c6dbdb1cc",
+    "scripts/task_governance_tool/__init__.py": "sha256:22fe5c39116379ccdf9564ddeb3d6b8f7c9e8c26aa9feb64a6366580c6ae7e50",
+    "scripts/task_governance_tool/cli.py": "sha256:fb0af4324bd2ce67375b2db920ce40ad70e88da402f10a67e052506fc263a7c3",
+    "scripts/task_governance_tool/completion.py": "sha256:291b5f80fa7753b73f88de52b957b9a1a864fe7f3e9dede534be0763ddf23c03",
+    "scripts/task_governance_tool/contracts.py": "sha256:df999286795efed6841ed3dbe96a593eacbc1c9e5809fef1e8c20c3ebe6b5469",
+    "scripts/task_governance_tool/effort.py": "sha256:968da70a3c74f493f18009a735b4290fdaf6783a239ab36c026de4fdbcd47fe4",
+    "scripts/task_governance_tool/git_snapshot.py": "sha256:046853b1b87cbc06e2441b8a571820f7a64c25e7db1f6f80cb0e4b247df5dd4a",
+    "scripts/task_governance_tool/handoffs.py": "sha256:46216eae8d9df56111e7eef23cfe7e11fe693d3dce01c81e686cb9a263854921",
+    "scripts/task_governance_tool/ordering.py": "sha256:3dbc5ca110a4cfa4c9092f404629a53779577c40e7b667e9ad989a7feb193740",
+    "scripts/task_governance_tool/reviews.py": "sha256:e2397b4d4dfb48ac4b2b110d8b18fc17383005482986fb3090789dd6fe5d8baf",
+    "scripts/task_governance_tool/selection.py": "sha256:ceeb3ef2975d063e05e1c9bd80317b1b330d0ef1be899c7f5ccdd12f09e10c11",
+    "scripts/task_governance_tool/self_status.py": "sha256:673d563a8d973833b7c4f68ad6dcdcc1a6b7cc875dfb25e5c16ee72b8c08b3d8",
+    "scripts/task_governance_tool/storage.py": "sha256:1bfefce9803aef9445e1cd50acc29ccfa2683f1790dbe773a5dad02ccf80ef21",
+    "scripts/task_governance_tool/tasks.py": "sha256:f95fb06fd8e8f3468fe0bf8d9576cd706571a6d53a0f09d72c885e9b9b2f78d7",
+    "scripts/task_governance_tool/viewer.py": "sha256:419b31ced7361d43af1059b8edf484ce130bde9827cc94dfc3cf57ab13c8fcf0",
+    "scripts/taskgov.py": "sha256:7d6c07e4772f151c90d7000eb82a6397cf6f2e83e6c6ea7a29bf8974ed166b7d"
+  },
+  "manifest_version": 1,
+  "package_name": "task-governance-tool",
+  "package_version": "0.7.0",
+  "release_origin": "github:VAiring/task-governance-tool"
+}

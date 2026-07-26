@@ -1,8 +1,7 @@
 # task-governance-tool Initial Plan
 
-Status: MVP through TG-M12.O1 Effort Advisory is implemented at
-v0.6.0/schema v9. Local self-status is next; the TG-M12.3 Issue adapter remains
-blocked.
+Status: MVP through TG-M12.O2 Local Package Self-Status is implemented at
+v0.7.0/schema v9. The TG-M12.3 Issue adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -872,6 +871,14 @@ Confirmed decisions:
   profile is absent/disabled by default, the initial metrics are limited to
   Git file/line/module plus existing Contract/handoff counts, and normal task
   behavior remains unchanged when it is off.
+- TG-M12.O2 uses version `0.7.0` without a schema or Viewer snapshot change.
+  The optional offline `self status` command compares packaged core against a
+  co-located versioned manifest, exposes installed version, manifest-declared
+  origin, and bounded local differences, and always returns
+  `suggested_action=continue`. Root `config/`, `adapters/`, generated `state/`,
+  and Python caches stay outside core. This is local drift visibility, not
+  signature, update, repair, GitHub, Issue/PR, persistence, or task-loop
+  automation.
 - The initial optional Effort Advisory is default-off and informational:
   `suggested_action=continue`, unknown attribution when evidence is unreliable,
   and no automatic ask/handoff/pause/block/failure/acceptance mutation.
@@ -914,10 +921,8 @@ Open issues:
 
 ## Implementation Execution Status
 
-All implementation units through TG-M12.O1 are complete. TG-M9.1 through
-TG-M12.O1 were consumed after explicit user approval. The current
-task-consumption request continues with the separately requested TG-M12.O2
-optional feature after its documented dependencies. TG-M12.3 remains blocked
+All implementation units through TG-M12.O2 are complete. TG-M9.1 through
+TG-M12.O2 were consumed after explicit user approval. TG-M12.3 remains blocked
 on an Issue intake contract, governing permission update, and separate
 integration approval.
 

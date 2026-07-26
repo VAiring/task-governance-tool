@@ -75,6 +75,10 @@ browser launch.
 
 ## Operating Rules
 
+- For an explicit installed-package or release-copy inspection, run
+  `self status --read-only --json`. Follow its fixed
+  `suggested_action=continue`; `modified` or `unknown` must not create a
+  question, handoff, Issue/PR action, update, repair, GitHub call, or task stop.
 - `db status`, `task list`, `task next`, `task current`, and `task show` must
   not create or migrate databases. Only `db init` creates or migrates one.
 - `task add --status done` is prohibited. Initial `paused` is also prohibited.
@@ -154,4 +158,5 @@ session handoff checkpoints, page event or handoff history, create
 child/checklist tasks, deliver records to an Issue Skill, or create
 commits, branches, PRs, issue comments, network services, browser edit controls,
 generic risk profiles, fixture/retry/test-metric scanners, or unapproved
-target-project mutations.
+target-project mutations. Package self-status is not a signature, upstream
+update check, downloader, installer, or repair tool.

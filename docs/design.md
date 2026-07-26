@@ -1,8 +1,8 @@
 # task-governance-tool MVP Design
 
-Status: formal implemented design baseline through TG-M12.O1 Effort Advisory
-at release v0.6.0/schema v9. TG-M12.O2 local self-status remains next;
-TG-M12.3 Issue adapter remains blocked.
+Status: formal implemented design baseline through TG-M12.O2 Local Package
+Self-Status at release v0.7.0/schema v9. TG-M12.3 Issue adapter remains
+blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -32,6 +32,7 @@ docs/
   specification.md
   design.md
 task-governance-tool/
+  release-manifest.json
   SKILL.md
   agents/
     openai.yaml
@@ -52,6 +53,7 @@ task-governance-tool/
       handoffs.py
       contracts.py
       effort.py
+      self_status.py
       viewer.py
   references/
     task_workflow.md
@@ -167,6 +169,16 @@ behavior is self-contained. Tests may add `task-governance-tool/scripts/` to
 - Render and atomically write the output file.
 - Contain no raw SQLite queries; task and event reads remain in the task
   repository boundary.
+
+`task-governance-tool/scripts/task_governance_tool/self_status.py`
+
+- Strictly parse the co-located versioned release manifest.
+- Enumerate only the installed Skill package and compare regular core files by
+  streaming SHA-256.
+- Exclude only declared root configuration, adapter, generated-state, and
+  Python cache boundaries.
+- Return bounded relative paths and stable status/reason values without
+  reading a database, Git repository, network service, or target project.
 
 `task-governance-tool/assets/task-viewer.template.html`
 
@@ -1186,7 +1198,8 @@ The implementation remains split by responsibility:
   lifecycle invalidation;
 - `storage.py` owns migrations and repository connection boundaries;
 - a later `effort.py` may own the optional informational calculation; and
-- a later `self_status.py` may verify package-manifest integrity read-only.
+- `self_status.py` owns package-manifest integrity inspection and has no Task,
+  SQLite, Git, network, or repair dependency.
 
 Neither handoff nor Contract logic is folded into selection. `task next`
 continues to read task rows only.
@@ -1646,16 +1659,61 @@ invoke it after every command.
 
 ### Local Package Self-Status
 
-A later `self status` inspection compares a versioned release manifest of core
-package file hashes with the installed copy. It reports package version,
-manifest version, and `clean`, `modified`, or `unknown`, plus bounded changed
-core paths. Configuration, generated state, and explicitly declared adapter
-files are outside the core manifest.
+`self status` is a package-local inspection handler. `cli.py` resolves only the
+installed Skill root from its own entry point and calls
+`inspect_local_package()`. It deliberately does not resolve caller `--repo` or
+`--db`, open SQLite, invoke Git, load an adapter, or contact a network.
+The common options remain accepted for CLI compatibility; `--read-only` is
+redundant.
 
-The command is read-only and offline. It never restores files, installs an
-update, changes task state, or contacts GitHub. The Skill may advise upstream
-Issue or pull-request handling for a modified core but must not stop normal
-work solely because of this advisory.
+The root `release-manifest.json` has this fixed version-1 shape:
+
+```json
+{
+  "manifest_version": 1,
+  "package_name": "task-governance-tool",
+  "package_version": "0.7.0",
+  "release_origin": "github:VAiring/task-governance-tool",
+  "core_files": {
+    "SKILL.md": "sha256:<64-lowercase-hex>"
+  }
+}
+```
+
+The loader rejects duplicate or unknown top-level keys, unsupported versions,
+malformed identity/origin/version/hash values, more than 512 core entries,
+non-portable paths, traversal, absolute/backslash paths, case-fold collisions,
+and entries under excluded boundaries. The manifest is capped at 256 KiB.
+The manifest excludes itself to avoid a recursive digest.
+
+Core enumeration is deterministic and does not follow symbolic links or
+Windows junctions. The only excluded package regions are root `config/`,
+`adapters/`, generated `state/`, any `__pycache__/`, and `*.pyc`. A regular
+file outside those regions that is not listed in the manifest is modified
+core. Missing, digest-mismatched, link-like, or other non-regular listed
+entries are also modifications. Expected core files are hashed in streaming
+chunks with per-file, total-byte, and entry-count limits; a read race, unsafe
+path, permission failure, or exceeded bound yields `unknown` rather than a
+guess. The executable entry point disables bytecode generation before runtime
+imports so the inspection command itself creates no Python cache.
+
+After a complete comparison, changed paths are sorted, counted exactly, and
+truncated to 20 output values. Output contains no absolute package path,
+content, digest, symlink target, or operating-system exception detail. Missing
+or invalid manifest, unsupported manifest, package identity/version mismatch,
+or incomplete inspection is a successful `unknown` advisory. Modified and
+unknown results add a fixed warning, but every result returns
+`suggested_action=continue`, exit code 0, and no Task/Issue/handoff action.
+
+The manifest-declared release origin is provenance display, not authentication.
+Because the manifest is co-located and unsigned, simultaneous modification of
+core and manifest can evade detection. Signing, upstream comparison, GitHub
+checking, repair, update, download, install, persistence, and automatic
+Issue/PR creation are excluded. Package inspection is an explicit setup or
+diagnostic surface; it is not inserted into the minimum Task loop.
+The diagnostic covers stable local drift and ordinary file-read races; an
+adversarial directory swap-and-restore between observations is outside its
+non-authenticating threat model.
 
 ### Migration, Viewer, And Old-Binary Compatibility
 
@@ -1702,9 +1760,10 @@ surface, beginning with TG-M12.1 at v0.4.0/schema v7.
 
 Each implementation unit synchronizes only the CLI and internal contracts it
 has actually delivered. The concise Skill workflow adds deterministic Contract
-copying and handoff behavior only after their acceptance gates. Issue adapter,
-Effort Advisory, and self-status remain unadvertised until their separate
-default-off or integration units pass.
+copying and handoff behavior only after their acceptance gates. Effort Advisory
+and package self-status are now documented only at their bounded optional
+surfaces; the Issue adapter remains unadvertised until its integration unit
+passes.
 
 ## Static Task Viewer Design
 
@@ -1784,7 +1843,7 @@ extends snapshot version 3 without adding new viewer fields:
 - snapshot version 1: schema version 2 and the original six statuses;
 - snapshot version 2: schema versions 3-4, adding `paused`, `pause_reason`, and
   seven-status counts; and
-- snapshot version 3: schema versions 5-8, adding the final completion/review
+- snapshot version 3: schema versions 5-9, adding the final completion/review
   evidence projection while excluding schema-v6 target bases, schema-v7
   handoffs, and schema-v8 Contracts.
 
@@ -2086,6 +2145,7 @@ Release artifacts should include the installable skill folder only:
 
 ```text
 task-governance-tool/
+  release-manifest.json
   SKILL.md
   agents/
   assets/
@@ -2093,6 +2153,7 @@ task-governance-tool/
   scripts/
     taskgov.py
     task_governance_tool/
+      self_status.py
   references/
 ```
 

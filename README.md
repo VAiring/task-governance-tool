@@ -12,7 +12,8 @@ LLM quick read:
   optional explicit Task Contracts, pause/resume and blocker handling,
   sequential guards, typed completion evidence, structured review
   receipts/findings, durable local handoff of out-of-scope discoveries, and an
-  explicitly requested offline static Task Viewer.
+  explicitly requested offline static Task Viewer. It can also inspect the
+  installed package version and local core drift offline.
 - It does not import planning files, manage dependency graphs, write Git state,
   create PRs/issues, run a service, provide live browser editing, or store raw
   logs/secrets.
@@ -62,6 +63,12 @@ After project-scoped installation, verify the ignore rules, run `db status`,
 and—with explicit intent to start local tracking—run `db init`. Skill package
 creation itself must not initialize a target database. Restart Codex or start a
 new session from inside that project so the skill metadata can be discovered.
+
+To verify a newly copied release package without touching task state, run:
+
+```powershell
+python scripts/taskgov.py self status --read-only --json
+```
 
 ## Minimal Workflow
 
@@ -117,6 +124,22 @@ counts, conservative attribution, and configured threshold comparisons.
 Every result keeps `suggested_action=continue`: it never asks, stops, hands
 off, changes acceptance, or mutates Task/Git state. Without an enabled valid
 profile, normal Task output and behavior are unchanged.
+
+Version 0.7.0 adds optional Local Package Self-Status:
+
+```powershell
+python scripts/taskgov.py self status --read-only --json
+```
+
+It compares packaged core files with the co-located release manifest and
+returns `clean`, `modified`, or `unknown`, the installed version, a
+manifest-declared origin, and at most 20 relative changed paths. Every result
+uses `suggested_action=continue`. Root `config/`, `adapters/`, generated
+`state/`, and Python caches are outside core. The declared origin is not a
+signature, and the command does not use SQLite, inspect Git, contact GitHub,
+update, repair, download, install, create an Issue/PR/handoff, or stop task
+work. Use it for explicit install/package inspection; it is not another step
+in the minimum task loop.
 
 Tier 1 normally needs one independent PASS; a documented self-review fallback
 is allowed when independent tooling is unavailable. Tier 2 normally needs two
@@ -196,7 +219,7 @@ Use `--output <html-path>` only after the user approves that complete
 destination; its parent must already exist. The HTML is self-contained and
 opens through `file://` without a server or network. Snapshot v3 includes typed
 completion and bounded structured review evidence for source schemas 5 through
-8 while omitting the internal `review_target_base_revision`, handoff rows,
+9 while omitting the internal `review_target_base_revision`, handoff rows,
 handoff summaries, and all Contract fields/revisions. It is a timestamped
 snapshot, not a live view: task changes appear only after an explicitly
 requested regeneration. The page cannot edit tasks, and `taskgov` does not
@@ -204,6 +227,7 @@ open a browser automatically.
 
 ## Commands
 
+- `taskgov self status`
 - `taskgov db init`
 - `taskgov db status`
 - `taskgov task add`
@@ -240,6 +264,8 @@ The current release intentionally does not include:
 - Review request generation or raw review transcript retention.
 - Git commits, branches, PRs, issue comments, or target-project mutation.
 - Network services, live dashboards, browser editing, sync, or cloud workflows.
+- Package signing, automatic repair/update/download/install, or GitHub update
+  checking.
 - Raw command-output, stack-trace, prompt, diff, log, or secret retention.
 
 ## Development Checks
@@ -250,6 +276,7 @@ Run the local checks before publishing:
 python -m unittest discover -s tests
 python task-governance-tool\scripts\taskgov.py --help
 python task-governance-tool\scripts\taskgov.py --version
+python task-governance-tool\scripts\taskgov.py self status --read-only --json
 python task-governance-tool\scripts\taskgov.py task next --help
 python task-governance-tool\scripts\taskgov.py handoff --help
 python task-governance-tool\scripts\taskgov.py review target set --help

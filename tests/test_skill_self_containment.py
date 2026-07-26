@@ -124,7 +124,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 or "exactly one parent" in normalized
             )
             self.assertIn("fresh", normalized)
-        self.assertIn('__version__ = "0.6.0"', runtime_init)
+        self.assertIn('__version__ = "0.7.0"', runtime_init)
         self.assertIn("SCHEMA_VERSION = 9", storage)
         self.assertIn("SNAPSHOT_VERSION = 3", viewer)
         self.assertIn("review_target_base_revision", release_note)
@@ -142,7 +142,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertIn("0.6.0", version.stdout)
+        self.assertIn("0.7.0", version.stdout)
 
     def test_tg_m12_local_handoff_guidance_and_isolated_flow_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -173,6 +173,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("version `0.6.0`", release_note.lower())
         for text in (skill_md, workflow, contracts, readme, release_note):
             self.assertIn("Effort Advisory", text)
+            self.assertIn("self status", text)
         self.assertIn("task effort", skill_md)
         self.assertIn("task effort", workflow)
         self.assertIn("task effort", contracts)
@@ -494,6 +495,15 @@ class SkillSelfContainmentTests(unittest.TestCase):
                     copied
                     / "scripts"
                     / "task_governance_tool"
+                    / "self_status.py"
+                ).is_file()
+            )
+            self.assertTrue((copied / "release-manifest.json").is_file())
+            self.assertTrue(
+                (
+                    copied
+                    / "scripts"
+                    / "task_governance_tool"
                     / "handoffs.py"
                 ).is_file()
             )
@@ -523,8 +533,12 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("$skillRoot/scripts/task_governance_tool/handoffs.py", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/contracts.py", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/effort.py", workflow)
+        self.assertIn("$skillRoot/scripts/task_governance_tool/self_status.py", workflow)
+        self.assertIn("$skillRoot/release-manifest.json", workflow)
+        self.assertIn("$selfStatusJson | ConvertFrom-Json", workflow)
+        self.assertIn("$selfStatus.data.status -ne 'clean'", workflow)
         self.assertIn("SCHEMA_VERSION", workflow)
-        self.assertIn("0\\.6\\.0", workflow)
+        self.assertIn("0\\.7\\.0", workflow)
         self.assertIn("task-viewer\\.html$", workflow)
 
     def test_tracked_skill_package_contains_runtime_but_no_generated_state(self):
@@ -560,6 +574,11 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "task-governance-tool/scripts/task_governance_tool/effort.py",
             tracked,
         )
+        self.assertIn(
+            "task-governance-tool/scripts/task_governance_tool/self_status.py",
+            tracked,
+        )
+        self.assertIn("task-governance-tool/release-manifest.json", tracked)
         self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))
         self.assertFalse(any(path.endswith("/task-viewer.html") for path in tracked))
 

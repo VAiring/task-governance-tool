@@ -47,6 +47,7 @@ from task_governance_tool.reviews import (
     resolve_review_finding,
     set_requested_review_target,
 )
+from task_governance_tool.self_status import inspect_local_package
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
     TaskRepositoryError,
@@ -183,6 +184,14 @@ def build_parser() -> argparse.ArgumentParser:
     db_subparsers = db_parser.add_subparsers(dest="db_command")
     add_common_options(db_subparsers.add_parser("init", help="create or migrate the task database"))
     add_common_options(db_subparsers.add_parser("status", help="inspect database status without mutation"))
+
+    self_parser = subparsers.add_parser("self", help="installed package inspection commands")
+    self_subparsers = self_parser.add_subparsers(dest="self_command")
+    self_status_parser = self_subparsers.add_parser(
+        "status",
+        help="compare packaged core files with the release manifest",
+    )
+    add_common_options(self_status_parser)
 
     task_parser = subparsers.add_parser("task", help="task commands")
     task_subparsers = task_parser.add_subparsers(dest="task_command")
@@ -373,6 +382,8 @@ def build_parser() -> argparse.ArgumentParser:
 def command_name(args: argparse.Namespace) -> str:
     if args.command == "db" and args.db_command:
         return f"db.{args.db_command}"
+    if args.command == "self" and args.self_command:
+        return f"self.{args.self_command}"
     if args.command == "task" and args.task_command:
         return f"task.{args.task_command}"
     if args.command == "handoff" and args.handoff_command:
@@ -402,6 +413,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_db_init(context)
     if context.command == "db.status":
         return handle_db_status(context)
+    if context.command == "self.status":
+        return handle_self_status(context)
     if context.command == "task.add":
         return handle_task_add(context)
     if context.command == "task.list":
@@ -432,6 +445,59 @@ def handle_command(context: CommandContext) -> CommandResult:
 
 def cli_script_path() -> Path:
     return Path(__file__).resolve().parents[1] / "taskgov.py"
+
+
+def self_status_text(data: dict[str, Any]) -> str:
+    lines = [
+        f"Package: {data['package_name']} {data['package_version']}",
+        f"Release origin: {data['release_origin'] or 'unknown'}",
+        f"Manifest version: {data['manifest_version'] if data['manifest_version'] is not None else 'unknown'}",
+        f"Status: {data['status']}",
+        f"Changed core files: {data['changed_core_count']}",
+    ]
+    if data["changed_core_paths"]:
+        lines.append("Changed paths:")
+        lines.extend(f"- {path}" for path in data["changed_core_paths"])
+        if data["changed_core_paths_truncated"]:
+            lines.append("- ...")
+    if data["unknown_reasons"]:
+        lines.append(f"Unknown reasons: {', '.join(data['unknown_reasons'])}")
+    lines.append(f"Suggested action: {data['suggested_action']}")
+    return "\n".join(lines)
+
+
+def handle_self_status(context: CommandContext) -> CommandResult:
+    package_status = inspect_local_package(
+        skill_root_from_script(cli_script_path()),
+        installed_version=__version__,
+    )
+    data = package_status.to_data()
+    warnings: list[dict[str, str]] = []
+    if package_status.status == "modified":
+        warnings.append(
+            {
+                "code": "package_core_modified",
+                "message": (
+                    f"{package_status.changed_core_count} packaged core file(s) "
+                    "differ from the release manifest; continue current task"
+                ),
+            }
+        )
+    elif package_status.status == "unknown":
+        warnings.append(
+            {
+                "code": "package_status_unknown",
+                "message": "package self-status is unknown; continue current task",
+            }
+        )
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        data=data,
+        warnings=warnings,
+        text=self_status_text(data),
+        exit_code=EXIT_SUCCESS,
+    )
 
 
 def web_export_empty_data(output_path: str | None) -> dict[str, Any]:
@@ -2165,6 +2231,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_SUCCESS
         if args.command == "db" and args.db_command is None:
             raise CommandLineError("invalid_argument", "db requires a subcommand: init or status")
+        if args.command == "self" and args.self_command is None:
+            raise CommandLineError("invalid_argument", "self requires a subcommand: status")
         if args.command == "task" and args.task_command is None:
             raise CommandLineError(
                 "invalid_argument",

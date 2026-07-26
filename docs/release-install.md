@@ -29,6 +29,7 @@ The installable artifact should contain:
 
 ```text
 task-governance-tool/
+  release-manifest.json
   SKILL.md
   agents/
     openai.yaml
@@ -48,6 +49,8 @@ task-governance-tool/
       git_snapshot.py
       handoffs.py
       contracts.py
+      effort.py
+      self_status.py
       viewer.py
   references/
     task_workflow.md
@@ -108,12 +111,15 @@ least:
 Then inspect and initialize explicitly:
 
 ```powershell
+python scripts/taskgov.py self status --read-only --json
 python scripts/taskgov.py db status --repo <target-project> --json
 python scripts/taskgov.py db init --repo <target-project> --json
 python scripts/taskgov.py db status --repo <target-project> --json
 ```
 
-Only `db init` creates or migrates the database. Version `0.6.0` uses schema v9
+`self status` checks only the installed package and does not touch SQLite,
+Git, or the network. Only `db init` creates or migrates the database. Version
+`0.7.0` uses schema v9
 and migrates supported schema-v2 through v8 databases through the explicit
 ordered migration path while retaining task/event IDs, completion hashes, and
 structured review history. Schema v7 adds an empty local handoff outbox without
@@ -228,6 +234,30 @@ unknown rather than guessing when Git coverage or exclusive-task attribution
 is unreliable. It never records an acknowledgement, changes Task or handoff
 state, asks a question, or creates a stop.
 
+## Local Package Self-Status
+
+Version `0.7.0` adds the offline package-local command:
+
+```powershell
+python scripts/taskgov.py self status --read-only --json
+```
+
+It compares every packaged core file with `release-manifest.json` and reports
+`clean`, `modified`, or `unknown`, installed version, manifest-declared release
+origin, and at most 20 relative changed paths. Root `config/`, `adapters/`,
+generated `state/`, and Python caches are explicitly outside core. Added files
+elsewhere are local core modifications. `--repo` and `--db` are accepted for
+CLI compatibility but are not read or resolved.
+
+Every result is successful advisory output with
+`suggested_action=continue`. Missing or invalid manifests, version mismatch, or
+an incomplete bounded inspection are `unknown`; they do not stop task work.
+The command does not restore, update, download, install, contact GitHub,
+inspect Git, write a cache/database, or create an Issue, PR, or handoff.
+The declared origin and co-located hashes are useful for accidental local
+drift, but are not a signature: coordinated replacement of core and manifest
+can evade the check.
+
 ## Viewer Runtime State
 
 After installation, an explicitly requested `web export` writes the default
@@ -238,7 +268,7 @@ viewer to:
 ```
 
 Use an explicit `--output` only after the user approves that complete path; its
-parent must already exist. Snapshot v3 continues to serve schemas v5-v8,
+parent must already exist. Snapshot v3 continues to serve schemas v5-v9,
 includes typed completion and bounded structured review evidence, carries the
 actual source schema, and omits the internal
 `review_target_base_revision`, handoff rows, handoff summaries, and all
@@ -263,16 +293,17 @@ Before creating a release artifact:
 3. Run the fallback skill self-check or official skill validation helper when
    available.
 4. Run the installed skill self-containment smoke test.
-5. Confirm an isolated installed copy can run `web export` and that the
-   artifact includes `assets/task-viewer.template.html`, `viewer.py`,
-   `git_snapshot.py`, `handoffs.py`, and `contracts.py`.
+5. Confirm an isolated installed copy reports `self status=clean`, can run
+   `web export`, and that the artifact includes `release-manifest.json`,
+   `assets/task-viewer.template.html`, `viewer.py`, `git_snapshot.py`,
+   `handoffs.py`, `contracts.py`, `effort.py`, and `self_status.py`.
 6. Confirm generated `state/`, SQLite files, generated `task-viewer.html`, root
    copied references, logs, and caches are ignored and absent from the artifact.
 7. Confirm `task-governance-tool/SKILL.md` frontmatter contains only `name` and
    `description`, and the `name` matches the folder.
-8. Confirm `taskgov --version` reports `0.6.0`, storage reports schema v9, and
+8. Confirm `taskgov --version` reports `0.7.0`, storage reports schema v9, and
    the Skill, workflow, CLI contracts, README, and this note describe the same
-   snapshot/reopen/local-handoff/Contract/Effort-Advisory behavior.
+   snapshot/reopen/local-handoff/Contract/Effort-Advisory/self-status behavior.
 
 ## Publication Notes
 
@@ -287,8 +318,10 @@ review gates, exact paused counts, the bounded current-status filter, the
 advisory paused-work warning, schema v6 migration, deterministic staged-snapshot
 completion binding, done/reopen safety, schema-v7 local handoff, schema-v8
 optional Task Contracts, schema-v9 default-off Effort Advisory, and snapshot-v3
-offline Viewer export. Version `0.6.0` adds schema v9 and the read-only
-advisory beyond version `0.5.0`, which added schema v8 and Task Contracts.
+offline Viewer export. Version `0.7.0` adds offline local package self-status
+without changing schema v9 or Viewer snapshot v3. Version `0.6.0` added schema
+v9 and the read-only advisory beyond version `0.5.0`, which added schema v8 and
+Task Contracts.
 TG-M12.1 version `0.4.0` added schema v7 and local-only handoff behavior.
 Earlier history includes the TG-M11 version `0.3.0` completion-integrity
 release, historical `0.2.0` TG-M8 release candidate, and the `0.1.0` trial.

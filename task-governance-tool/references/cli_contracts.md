@@ -7,6 +7,7 @@ matter.
 
 - [Invocation](#invocation)
 - [Commands](#commands)
+- [`self status`](#self-status)
 - [`db init`](#db-init)
 - [`db status`](#db-status)
 - [`task add`](#task-add)
@@ -57,9 +58,10 @@ All JSON output uses this envelope:
 }
 ```
 
-Inspection commands are read-only by default: `db status`, `task list`,
-`task next`, `task current`, `task effort`, `task show`, `handoff list`, and
-`handoff show`.
+Inspection commands are read-only by default: `self status`, `db status`,
+`task list`, `task next`, `task current`, `task effort`, `task show`,
+`handoff list`, and `handoff show`. `self status` is package-local: it accepts
+the common `--repo` and `--db` spellings but does not read or resolve either.
 
 Database write commands are `db init`, `task add`, `task edit`, and the four
 `review` evidence commands, plus `handoff record` and `handoff withdraw`. Only
@@ -71,6 +73,47 @@ one generated HTML file after explicit user intent. Use
 `web export --read-only` for a no-file-write preview.
 
 ## Commands
+
+### `self status`
+
+Inspect the installed Skill package against its co-located release manifest:
+
+```powershell
+python scripts/taskgov.py self status --read-only --json
+```
+
+This command needs no initialized database or Git repository. The envelope has
+`project_id=null` and `db_path=null`. `--read-only` is accepted but redundant.
+
+`data`:
+
+```json
+{
+  "package_name": "task-governance-tool",
+  "package_version": "0.7.0",
+  "release_origin": "github:VAiring/task-governance-tool",
+  "manifest_version": 1,
+  "status": "clean",
+  "changed_core_count": 0,
+  "changed_core_paths": [],
+  "changed_core_paths_truncated": false,
+  "unknown_reasons": [],
+  "suggested_action": "continue"
+}
+```
+
+`clean`, `modified`, and `unknown` all return `ok=true` and exit code 0.
+Modified core adds warning `package_core_modified`; unknown adds
+`package_status_unknown`. The changed-path list is sorted and limited to 20,
+while `changed_core_count` is exact after a complete comparison. Missing or
+invalid manifests and package-version mismatches return `unknown` with a stable
+reason and no changed-path claim.
+
+Root `config/`, `adapters/`, generated `state/`, `__pycache__/`, and `*.pyc`
+are outside core. Output never contains package-absolute paths, file content,
+digests, symlink targets, or operating-system exception text. The declared
+origin is not a signature. The command performs no SQLite, Git, network,
+GitHub, update, repair, download, install, Issue/PR, handoff, or Task action.
 
 ### `db init`
 
@@ -952,6 +995,10 @@ Known error codes include:
 - `output_parent_missing`
 - `output_write_failed`
 - `internal_error`
+
+Advisory warning codes include `package_core_modified`,
+`package_status_unknown`, `paused_tasks_present`,
+`effort_advisory_profile_invalid`, and `effort_advisory_threshold_exceeded`.
 
 Some commands define an explicit empty `data` shape for specific error paths.
 For example, `task.next` errors return empty `tasks`, `count`, `limit`, and

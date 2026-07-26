@@ -30,9 +30,18 @@ jobs:
         run: python -m unittest discover -s tests
 
       - name: Check CLI help
+        shell: pwsh
         run: |
           python task-governance-tool/scripts/taskgov.py --help
           python task-governance-tool/scripts/taskgov.py --version
+          $selfStatusJson = python task-governance-tool/scripts/taskgov.py self status --read-only --json
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Local package self-status command failed'
+          }
+          $selfStatus = $selfStatusJson | ConvertFrom-Json
+          if (-not $selfStatus.ok -or $selfStatus.data.status -ne 'clean') {
+            throw "Checked-in package is not clean: $($selfStatus.data.status)"
+          }
           python task-governance-tool/scripts/taskgov.py task next --help
           python task-governance-tool/scripts/taskgov.py handoff --help
           python task-governance-tool/scripts/taskgov.py review target set --help
@@ -75,6 +84,7 @@ jobs:
           }
 
           $requiredFiles = @(
+            "$skillRoot/release-manifest.json",
             "$skillRoot/SKILL.md",
             "$skillRoot/agents/openai.yaml",
             "$skillRoot/scripts/taskgov.py",
@@ -90,6 +100,7 @@ jobs:
             "$skillRoot/scripts/task_governance_tool/handoffs.py",
             "$skillRoot/scripts/task_governance_tool/contracts.py",
             "$skillRoot/scripts/task_governance_tool/effort.py",
+            "$skillRoot/scripts/task_governance_tool/self_status.py",
             "$skillRoot/scripts/task_governance_tool/viewer.py",
             "$skillRoot/assets/task-viewer.template.html",
             "$skillRoot/references/task_workflow.md",
@@ -108,8 +119,8 @@ jobs:
           $contracts = Get-Content -Raw "$skillRoot/references/cli_contracts.md"
           $readme = Get-Content -Raw 'README.md'
           $release = Get-Content -Raw 'docs/release-install.md'
-          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.6\.0"') {
-            throw 'Runtime package version is not 0.6.0'
+          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.7\.0"') {
+            throw 'Runtime package version is not 0.7.0'
           }
           if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*9') {
             throw 'Runtime schema version is not 9'
@@ -133,9 +144,12 @@ jobs:
             if ($document -notmatch 'Effort Advisory') {
               throw 'Public guidance is missing Effort Advisory behavior'
             }
+            if ($document -notmatch 'self status') {
+              throw 'Public guidance is missing local package self-status'
+            }
           }
-          if ($release -notmatch 'schema v9' -or $release -notmatch '0\.6\.0') {
-            throw 'Release guidance is inconsistent with version 0.6.0/schema v9'
+          if ($release -notmatch 'schema v9' -or $release -notmatch '0\.7\.0') {
+            throw 'Release guidance is inconsistent with version 0.7.0/schema v9'
           }
 
       - name: Guard generated artifacts

@@ -6,6 +6,7 @@ tasks with `task-governance-tool`.
 ## Contents
 
 - [Source Of Truth](#source-of-truth)
+- [Inspect Local Package Status](#inspect-local-package-status)
 - [Minimal Operating Loop](#minimal-operating-loop)
 - [Inspect Ready Work](#inspect-ready-work)
 - [Selection Semantics](#selection-semantics)
@@ -32,6 +33,25 @@ Use the project-scoped installed copy for the governed project, normally under
 `.agents/skills/task-governance-tool`. If this skill is available only from a
 user-wide or global install, ask the user before initializing state; normal
 operation expects a separate installed copy per project.
+
+## Inspect Local Package Status
+
+For explicit install validation or local-core inspection, run:
+
+```powershell
+python scripts/taskgov.py self status --read-only --json
+```
+
+This command compares the installed package with its co-located release
+manifest. It does not use `--repo` or `--db`, even when those common options
+are supplied. `clean`, `modified`, and `unknown` are all advisory successes
+with the same fixed `suggested_action=continue`.
+
+Do not turn a modified or unknown result into a new user question, Task
+blocker, handoff, Issue/PR, update, repair, download, install, or GitHub call.
+The manifest origin is a declaration, not signed authenticity. Use this
+surface when package inspection is actually requested or during explicit
+install/release validation; do not insert it into the minimum Task loop.
 
 ## Minimal Operating Loop
 

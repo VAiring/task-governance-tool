@@ -1,8 +1,8 @@
 # task-governance-tool MVP Specification
 
-Status: formal implemented baseline through TG-M12.O1 Effort Advisory at
-release v0.6.0/schema v9. TG-M12.O2 local self-status remains next; TG-M12.3
-Issue adapter remains blocked on a future intake contract.
+Status: formal implemented baseline through TG-M12.O2 Local Package
+Self-Status at release v0.7.0/schema v9. TG-M12.3 Issue adapter remains
+blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -91,6 +91,7 @@ The skill package should contain only files needed by Codex to use the skill:
 
 ```text
 task-governance-tool/
+  release-manifest.json
   SKILL.md
   agents/
     openai.yaml
@@ -1101,10 +1102,41 @@ adapter. Core Task Skill improvements belong in an upstream Issue or pull
 request. If a consuming project modifies core package files, it must make the
 installed version, origin, and local difference visible.
 
-A later read-only `self status` command may compare packaged core files with a
-release manifest and report `clean`, `modified`, or `unknown`. It must not
-repair, update, download, contact GitHub, or stop task work. The once-daily
-GitHub update-check proposal remains separately deferred.
+TG-M12.O2 adds the offline read-only command `taskgov self status`. It compares
+the installed core package with the co-located version-1
+`release-manifest.json` and reports:
+
+- installed `package_name` and `package_version`;
+- manifest-declared `release_origin` and `manifest_version`;
+- `status` as `clean`, `modified`, or `unknown`;
+- exact `changed_core_count` and at most 20 sorted relative
+  `changed_core_paths` after a complete comparison;
+- stable `unknown_reasons`; and
+- fixed `suggested_action=continue`.
+
+The manifest contains a sorted map from portable package-relative core paths
+to `sha256:<lowercase digest>`. It excludes itself to avoid recursive hashing.
+Only root `config/`, `adapters/`, generated `state/`, and Python bytecode/cache
+entries are non-core. An added file outside those boundaries is a core
+modification. Manifest paths are strict relative POSIX paths; absolute,
+traversal, duplicate, case-colliding, excluded, or malformed entries make the
+result `unknown` without reading outside the package.
+
+Missing, invalid, unsupported, identity-mismatched, version-mismatched, or
+incompletely inspected packages return `ok=true`, `status=unknown`, and
+`suggested_action=continue`. Confirmed missing, changed, non-regular, or
+unexpected core entries return `modified`. Changed paths are bounded and never
+include absolute paths, file content, expected or actual hashes, link targets,
+or operating-system exception text.
+
+`release_origin` is a sanitized declaration from the co-located manifest, not
+a signature or authenticity proof. Simultaneously replacing core files and the
+manifest can evade this local-drift check. The command does not use SQLite,
+inspect target-project Git, contact GitHub or another network service, write a
+cache, update, repair, download, install, create an Issue/PR/handoff, or stop
+task work. It is an explicit package-inspection/setup surface and is not added
+to the minimum task-consumption loop. The once-daily GitHub update-check
+proposal remains separately deferred.
 
 ### Compatibility, Judgment Budget, And Acceptance
 
@@ -1136,6 +1168,7 @@ The decision budget is:
   scope handling, with no second Issue-presence or continuation judgment;
 - adapter delivery and due retry: zero judgments;
 - Effort Advisory: zero judgments and zero stop decisions; and
+- Local Package Self-Status: zero judgments and zero stop decisions; and
 - normal Tier 2 review: the existing two independent review judgments.
 
 The sole new stop is failure to make an out-of-scope discovery durable after
@@ -1173,6 +1206,9 @@ Acceptance requires automated proof that:
   prior basis it may advance only hidden activity counters; enabled threshold
   or unknown results always continue and never mutate
   Task/handoff/acceptance/review state;
+- package self-status is deterministic and read-only for clean, modified,
+  missing/invalid-manifest, excluded-directory, and installed-copy cases;
+  every result continues and changes no package, SQLite, Git, or target state;
 - privacy, compact envelopes, read-only behavior, project separation,
   concurrency, and no-target-project-mutation behavior do not regress; and
 - the implemented Skill remains concise and advertises each surface only after
@@ -1445,6 +1481,26 @@ Inspection commands must not create or migrate databases by default. Commands
 that write to the task-governance-tool database must state what they recorded in
 both JSON and text output.
 
+### `taskgov self status`
+
+Purpose: inspect installed package version and local core drift without a
+database, Git repository, or network.
+
+`--repo` and `--db` are accepted for common CLI compatibility but are not read
+or resolved by this package-local command. `--read-only` is accepted and
+redundant because the command is always read-only. All three statuses are
+successful advisory results with exit code 0.
+
+Required output:
+
+- package name and installed package version
+- manifest-declared release origin and manifest version, or null when unknown
+- `clean`, `modified`, or `unknown`
+- exact changed-core count and bounded sorted relative paths after a complete
+  comparison
+- stable unknown-reason list
+- fixed `suggested_action=continue`
+
 ### `taskgov db init`
 
 Purpose: explicitly create or migrate the current project database.
@@ -1664,6 +1720,7 @@ Human-readable output should be concise and should not replace JSON contracts.
 
 Command names must be stable:
 
+- `self.status`
 - `db.init`
 - `db.status`
 - `task.add`
@@ -1689,6 +1746,9 @@ details.
 
 Required `data` payloads:
 
+- `self.status`: `package_name`, `package_version`, `release_origin`,
+  `manifest_version`, `status`, `changed_core_count`, `changed_core_paths`,
+  `changed_core_paths_truncated`, `unknown_reasons`, and `suggested_action`.
 - `db.init`: `created`, `migrations_applied`, `schema_version`.
 - `db.status`: `exists`, `needs_init`, `needs_migration`, `schema_version`,
   `counts`.
@@ -1760,6 +1820,11 @@ Required error codes:
 Required TG-M9 warning code:
 
 - `paused_tasks_present`
+
+Required TG-M12.O2 advisory warning codes:
+
+- `package_core_modified`
+- `package_status_unknown`
 
 ## Privacy And Safety
 

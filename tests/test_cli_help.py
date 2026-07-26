@@ -141,6 +141,35 @@ class CliHelpTests(unittest.TestCase):
         self.assertEqual(payload["errors"][0]["code"], "invalid_argument")
         self.assertIn("record, list, show, or withdraw", payload["errors"][0]["message"])
 
+    def test_self_status_help_and_bare_group_contract(self):
+        help_result = subprocess.run(
+            [sys.executable, "scripts/taskgov.py", "self", "status", "--help"],
+            cwd=SKILL_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn("--repo", help_result.stdout)
+        self.assertIn("--db", help_result.stdout)
+        self.assertIn("--json", help_result.stdout)
+        self.assertIn("--read-only", help_result.stdout)
+
+        bare = subprocess.run(
+            [sys.executable, "scripts/taskgov.py", "--json", "self"],
+            cwd=SKILL_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(bare.returncode, 1)
+        payload = json.loads(bare.stdout)
+        self.assertEqual(payload["command"], "parse")
+        self.assertEqual(payload["errors"][0]["code"], "invalid_argument")
+        self.assertIn("self requires a subcommand: status", payload["errors"][0]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

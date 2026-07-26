@@ -324,7 +324,7 @@ def legacy_v2_projection(connection: sqlite3.Connection) -> dict:
 
 
 class RealisticMigrationAcceptanceTests(unittest.TestCase):
-    def test_v2_fixture_migrates_to_v7_without_losing_observed_state(self):
+    def test_v2_fixture_migrates_to_v8_without_losing_observed_state(self):
         fixture = load_fixture()
         self.assertEqual(fixture["schema_version"], 2)
         self.assertEqual(len(fixture["tasks"]), 12)
@@ -354,8 +354,8 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             payload = json.loads(migrated.stdout)
             self.assertEqual(payload["project_id"], project.project_id)
-            self.assertEqual(payload["data"]["migrations_applied"], [3, 4, 5, 6, 7])
-            self.assertEqual(payload["data"]["schema_version"], 7)
+            self.assertEqual(payload["data"]["migrations_applied"], [3, 4, 5, 6, 7, 8])
+            self.assertEqual(payload["data"]["schema_version"], 8)
 
             with closing(sqlite3.connect(db_path)) as connection:
                 connection.row_factory = sqlite3.Row
@@ -421,6 +421,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                     self.assertEqual(row["review_target_value"], "")
                     self.assertEqual(row["review_target_base_revision"], "")
                     self.assertEqual(row["review_target_generation"], 0)
+                    self.assertEqual(row["current_contract_revision"], 0)
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
                 self.assertEqual(
@@ -437,9 +438,9 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             with closing(sqlite3.connect(db_path)) as connection:
                 self.assertEqual(durable_projection(connection), before_second_init)
 
-    def test_v5_and_v6_fixture_migrate_to_v7_with_review_evidence_intact(self):
+    def test_v5_and_v6_fixture_migrate_to_v8_with_review_evidence_intact(self):
         fixture = load_fixture()
-        for source_version, expected_migrations in ((5, [6, 7]), (6, [7])):
+        for source_version, expected_migrations in ((5, [6, 7, 8]), (6, [7, 8])):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 repo = root / "governed-project"
@@ -470,7 +471,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                     payload["data"]["migrations_applied"],
                     expected_migrations,
                 )
-                self.assertEqual(payload["data"]["schema_version"], 7)
+                self.assertEqual(payload["data"]["schema_version"], 8)
                 self.assertEqual(payload["project_id"], project.project_id)
                 with closing(sqlite3.connect(db_path)) as connection:
                     self.assertEqual(post_v5_durable_projection(connection), before)

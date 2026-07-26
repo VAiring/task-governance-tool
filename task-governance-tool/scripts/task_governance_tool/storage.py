@@ -16,7 +16,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 class StorageError(Exception):
@@ -420,6 +420,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "review_receipts",
         "review_findings",
         "handoff_records",
+        "task_contract_revisions",
     }
     required_indexes = {
         "idx_tasks_project_status",
@@ -434,6 +435,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "idx_handoff_project_state_created",
         "idx_handoff_project_source",
         "idx_handoff_due_claim",
+        "idx_contract_project_task_revision",
     }
     table_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     index_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
@@ -472,6 +474,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
             "review_target_value",
             "review_target_generation",
             "review_target_base_revision",
+            "current_contract_revision",
         }
         missing.extend(
             f"column:tasks.{name}" for name in sorted(required_task_columns - task_columns)
@@ -559,6 +562,27 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         missing.extend(
             f"column:handoff_records.{name}"
             for name in sorted(required_handoff_columns - handoff_columns)
+        )
+    if "task_contract_revisions" in tables:
+        contract_column_rows = connection.execute(
+            "PRAGMA table_info(task_contract_revisions)"
+        ).fetchall()
+        contract_columns = {str(row["name"]) for row in contract_column_rows}
+        required_contract_columns = {
+            "contract_revision_id",
+            "task_id",
+            "project_id",
+            "revision",
+            "scope",
+            "acceptance",
+            "constraints_text",
+            "authority_ref",
+            "change_reason",
+            "created_at",
+        }
+        missing.extend(
+            f"column:task_contract_revisions.{name}"
+            for name in sorted(required_contract_columns - contract_columns)
         )
     return missing
 
@@ -1141,6 +1165,76 @@ def apply_handoff_outbox_migration(
         raise
 
 
+def apply_task_contract_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Add immutable Task Contract revisions without rewriting legacy task rows."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "task-contract migration requires no active transaction",
+        )
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        connection.execute(
+            """
+            ALTER TABLE tasks
+              ADD COLUMN current_contract_revision INTEGER NOT NULL DEFAULT 0
+              CHECK (current_contract_revision >= 0)
+            """
+        )
+        if fail_stage == "after_task_column":
+            raise StorageError("internal_error", "injected task-contract migration failure")
+        connection.execute(
+            """
+            CREATE TABLE task_contract_revisions (
+              contract_revision_id TEXT PRIMARY KEY,
+              task_id TEXT NOT NULL,
+              project_id TEXT NOT NULL,
+              revision INTEGER NOT NULL CHECK (revision > 0),
+              scope TEXT NOT NULL,
+              acceptance TEXT NOT NULL,
+              constraints_text TEXT NOT NULL DEFAULT '',
+              authority_ref TEXT NOT NULL DEFAULT '',
+              change_reason TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL,
+              UNIQUE (task_id, revision),
+              FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX idx_contract_project_task_revision
+              ON task_contract_revisions(project_id, task_id, revision)
+            """
+        )
+        if fail_stage == "after_schema":
+            raise StorageError("internal_error", "injected task-contract migration failure")
+        nonzero_pointer_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM tasks WHERE current_contract_revision != 0"
+            ).fetchone()[0]
+        )
+        if nonzero_pointer_count:
+            raise StorageError(
+                "internal_error",
+                "task-contract migration did not preserve revision-zero compatibility",
+            )
+        connection.execute(
+            "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+            (8, "task_contract_revisions", utc_now()),
+        )
+        if fail_stage == "before_commit":
+            raise StorageError("internal_error", "injected task-contract migration failure")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[dict[str, str]]]:
     version = current_schema_version(connection)
     if version > SCHEMA_VERSION:
@@ -1198,6 +1292,10 @@ def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[di
     if version < 7:
         apply_handoff_outbox_migration(connection)
         applied.append(7)
+        version = 7
+    if version < 8:
+        apply_task_contract_migration(connection)
+        applied.append(8)
     return applied, warnings
 
 

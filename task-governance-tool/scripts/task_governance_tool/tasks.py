@@ -100,6 +100,11 @@ TEXT_LIMITS = {
     "handoff_rationale": 1000,
     "handoff_occurrence_id": 200,
     "handoff_withdraw_reason": 1000,
+    "contract_scope": 4000,
+    "contract_acceptance": 4000,
+    "contract_constraints": 2000,
+    "contract_authority_ref": 500,
+    "contract_change_reason": 1000,
 }
 
 UPPER_ENV_NAME_PATTERN = r"[A-Z_][A-Z0-9_]*"
@@ -220,6 +225,11 @@ STRICT_RAW_OUTPUT_FIELDS = {
     "handoff_adapter_version",
     "handoff_last_delivery_code",
     "handoff_receiver_receipt",
+    "contract_scope",
+    "contract_acceptance",
+    "contract_constraints",
+    "contract_authority_ref",
+    "contract_change_reason",
 }
 BENIGN_TITLE_RAW_OUTPUT_PREFIXES = (
     "add ",
@@ -264,6 +274,7 @@ class TaskRepositoryError(Exception):
 class AddTaskResult:
     task: dict[str, Any]
     event: dict[str, Any]
+    contract_write: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -280,6 +291,7 @@ class TaskShowResult:
     suggested_next_action: str
     review_evidence: dict[str, Any]
     handoff_summary: dict[str, int]
+    contract: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -300,7 +312,8 @@ class CurrentTaskResult:
 class EditTaskResult:
     task: dict[str, Any]
     changed_fields: list[str]
-    event: dict[str, Any]
+    event: dict[str, Any] | None
+    contract_write: dict[str, Any] | None = None
 
 
 def validation_error(code: str, message: str, field: str | None = None) -> TaskValidationError:
@@ -667,6 +680,25 @@ def create_task_event(
 
 
 def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_input: Any) -> AddTaskResult:
+    from task_governance_tool.contracts import (
+        CONTRACT_ADD_STATUSES,
+        add_initial_contract,
+        split_contract_input,
+    )
+
+    task_input, contract_input = split_contract_input(task_input)
+    raw_status = task_input.get("status", "ready")
+    if (
+        contract_input
+        and isinstance(raw_status, str)
+        and raw_status.strip() in STATUSES
+        and raw_status.strip() not in CONTRACT_ADD_STATUSES
+    ):
+        raise validation_error(
+            "contract_activation_forbidden",
+            "an initial Contract is not allowed for this task status",
+            "status",
+        )
     normalized = validate_task_input(**task_input)
     lane = normalized["lane"]
     lane_order = normalized["lane_order"]
@@ -698,6 +730,7 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
         "completed_at": completed_at,
     }
     savepoint = f"taskgov_ordering_{secrets.token_hex(4)}"
+    contract_write: dict[str, Any] | None = None
     connection.execute(f"SAVEPOINT {savepoint}")
     try:
         connection.execute(
@@ -765,6 +798,32 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
                     "sequential_predecessor_incomplete",
                     "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
                 )
+        if contract_input:
+            contract_write = add_initial_contract(
+                connection,
+                project_id=project.project_id,
+                task_id=task_id,
+                status=str(row["status"]),
+                contract_input=contract_input,
+                created_at=now,
+            ).to_dict()
+        event = create_task_event(
+            connection,
+            project_id=project.project_id,
+            task_id=task_id,
+            event_type="task_added",
+            summary="Task registered",
+            created_at=now,
+        )
+        task = connection.execute(
+            "SELECT * FROM tasks WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        if task is None:
+            raise TaskRepositoryError(
+                "internal_error",
+                "task was not readable after insert",
+            )
     except sqlite3.IntegrityError as exc:
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
@@ -779,18 +838,11 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
     else:
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
 
-    event = create_task_event(
-        connection,
-        project_id=project.project_id,
-        task_id=task_id,
-        event_type="task_added",
-        summary="Task registered",
-        created_at=now,
+    return AddTaskResult(
+        task=row_to_task(task),
+        event=event,
+        contract_write=contract_write,
     )
-    task = connection.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
-    if task is None:
-        raise TaskRepositoryError("internal_error", "task was not readable after insert")
-    return AddTaskResult(task=row_to_task(task), event=event)
 
 
 def validate_limit(value: Any, *, default: int = 20) -> int:
@@ -1106,8 +1158,9 @@ def show_task(
         """,
         (project.project_id, normalized_task_id, event_limit),
     ).fetchall()
-    from task_governance_tool.reviews import read_review_evidence
+    from task_governance_tool.contracts import read_current_contract
     from task_governance_tool.handoffs import handoff_summary_for_task
+    from task_governance_tool.reviews import read_review_evidence
 
     return TaskShowResult(
         task=task,
@@ -1122,6 +1175,12 @@ def show_task(
             connection,
             project.project_id,
             normalized_task_id,
+        ),
+        contract=read_current_contract(
+            connection,
+            project_id=project.project_id,
+            task_id=normalized_task_id,
+            current_revision=task_row["current_contract_revision"],
         ),
     )
 
@@ -1719,6 +1778,24 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
                 reopen_reason=str(reopen_input["reopen_reason"]),
             )
         reject_done_task_write(existing)
+
+    from task_governance_tool.contracts import edit_contract, split_contract_input
+
+    edit_input, contract_input = split_contract_input(edit_input)
+    if contract_input:
+        result = edit_contract(
+            connection,
+            project,
+            existing,
+            caller_edit_input=edit_input,
+            contract_input=contract_input,
+        )
+        return EditTaskResult(
+            task=result.task,
+            changed_fields=result.changed_fields,
+            event=result.event,
+            contract_write=result.contract_write.to_dict(),
+        )
 
     normalized = validate_task_edit_input(**edit_input)
     provided_fields = set(normalized)

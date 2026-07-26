@@ -1,4 +1,4 @@
 interface:
   display_name: "Task Governance Tool"
   short_description: "Resume and govern project-scoped task work"
-  default_prompt: "Use $task-governance-tool to rediscover current work, choose ready tasks, durably hand off out-of-scope discoveries, enforce review and completion evidence, and export an offline Task Viewer only when requested."
+  default_prompt: "Use $task-governance-tool to rediscover current work, preserve any explicit Task Contract without new questions, choose ready tasks, durably hand off out-of-scope discoveries, enforce review and completion evidence, and export an offline Task Viewer only when requested."

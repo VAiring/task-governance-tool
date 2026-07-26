@@ -83,8 +83,8 @@ python scripts/taskgov.py db init --repo <target-project> --json
 ```json
 {
   "created": true,
-  "migrations_applied": [1, 2, 3, 4, 5, 6, 7],
-  "schema_version": 7
+  "migrations_applied": [1, 2, 3, 4, 5, 6, 7, 8],
+  "schema_version": 8
 }
 ```
 
@@ -108,7 +108,7 @@ python scripts/taskgov.py db status --repo <target-project> --json
   "exists": true,
   "needs_init": false,
   "needs_migration": false,
-  "schema_version": 7,
+  "schema_version": 8,
   "counts": {
     "active": 3,
     "paused": 1,
@@ -130,7 +130,7 @@ python scripts/taskgov.py db status --repo <target-project> --json
 `counts.paused` is the exact project-scoped paused population and does not
 remove paused tasks from `counts.active`.
 `counts.handoff_pending` is the exact project-scoped pending-handoff
-population. In schema v7, delivery is not implemented, so `adapter_enabled`
+population. Delivery is not implemented, so `adapter_enabled`
 and `sync_due` are always `false`; pending rows produce no warning.
 
 ### `task add`
@@ -153,8 +153,34 @@ Useful options:
 - `--review-tier 0|1|2`
 - `--verification`
 - `--tags`
+- optional Contract group:
+  - `--contract-scope`
+  - `--contract-acceptance`
+  - `--contract-constraints`
+  - `--contract-authority-ref`
+  - `--contract-change-reason`
 
 `data`: `task`, `event`.
+
+The optional Task Contract group is per-task and never inferred. When any
+Contract option is supplied, both scope and acceptance are required.
+An initial Contract accepts optional constraints and authority reference but
+rejects a change reason. It is allowed only when the resulting status is
+`ready`, `in_progress`, `blocked`, or `review_pending`. Successful Contract
+input adds:
+
+```json
+{
+  "contract_write": {
+    "recorded": true,
+    "revision": 1
+  }
+}
+```
+
+Without Contract input, the existing `task`/`event` shape is unchanged and the
+task remains at Contract revision zero. Missing Contract fields are not
+prompted for or inferred.
 
 An initial status of `done` is prohibited. Add the task in another supported
 initial state, then complete it with `task edit --status done` so the normal
@@ -281,7 +307,7 @@ python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 ```
 
 `data`: `task`, `events`, `suggested_next_action`, `review_evidence`,
-`handoff_summary`.
+`handoff_summary`, `contract`.
 
 `task` includes typed completion evidence and the legacy commit projection:
 
@@ -316,6 +342,24 @@ reasoning.
 It contains exact per-state counts for this source task and is excluded from
 task list/current/next rows and Viewer snapshots. On readiness or not-found
 errors, its fixed value is `null`.
+
+`contract` is a sibling, not a task field. Revision zero has this fixed shape:
+
+```json
+{
+  "revision": 0,
+  "scope": "",
+  "acceptance": "",
+  "constraints": "",
+  "authority_ref": "",
+  "change_reason": "",
+  "created_at": null
+}
+```
+
+A current immutable revision fills the same keys. The Contract pointer and
+fields remain absent from list/current/next and Viewer task objects. On
+readiness or not-found errors, `contract` is `null`.
 
 ### `task edit`
 
@@ -360,8 +404,48 @@ Editable options:
   required verification passed or has an approved exception.
 - `--review-complete`: record a concise command-time confirmation that the
   required review gate passed or has a valid fallback.
+- the optional Contract group:
+  `--contract-scope`, `--contract-acceptance`, `--contract-constraints`,
+  `--contract-authority-ref`, and `--contract-change-reason`.
 
 `data`: `task`, `changed_fields`, `event`.
+
+For a revision-zero task, Contract input is accepted only with an exact
+`ready|blocked -> in_progress` transition, empty completion/review evidence,
+and no other caller edit. It records revision 1 and returns
+`event.event_type=contract_recorded`.
+
+For a task with a Contract, later input is Contract-only and allowed in
+`ready`, `in_progress`, `paused`, `blocked`, or `review_pending`. Scope and
+acceptance remain required. Line endings and outer whitespace are normalized;
+omitted later constraints preserve the current value and explicit empty
+constraints remove it. Canonically equal content is a write-free replay:
+
+```json
+{
+  "task": {},
+  "changed_fields": [],
+  "event": null,
+  "contract_write": {
+    "recorded": false,
+    "revision": 2
+  }
+}
+```
+
+The shown `task` object is the normal public projection, abbreviated above.
+Authority and change reason may be omitted for replay. A semantic change
+requires both and returns `contract_revised`; it clears current completion
+evidence, invalidates a started review target/generation, and returns
+`review_pending` to `in_progress`. The exact
+`user_instruction:<task-id>:<revision>` form is checked mechanically. An exact
+replay accepts an older positive revision placeholder for the same task;
+semantic change requires the current-or-next placeholder.
+Different valid concurrent semantic inputs serialize as successive revisions;
+the first version has no expected-revision option. A current-or-next
+`user_instruction` placeholder formed before the write lock is rebound
+deterministically to the revision allocated by that locked write. Retrying its
+lost response with the original placeholder is therefore a write-free replay.
 
 After a task reaches `done`, every otherwise-valid task and structured-review
 write returns `done_task_requires_reopen`. The only exception is an isolated
@@ -452,7 +536,7 @@ occurrence ID means an exact canonical replay returns the existing row.
 Supplying it explicitly requires a non-empty stable identity already provided
 by user instruction or a deterministic source; invalid explicit values return
 `handoff_occurrence_invalid`. The canonical identity includes project, source
-task, source Contract revision (always `0` in schema v7), normalized summary
+task, the source task's current Contract revision, normalized summary
 and rationale, and occurrence ID.
 
 Successful `data`:
@@ -659,10 +743,11 @@ generated `state/` directory.
 }
 ```
 
-Snapshot version 3 reads source schemas 5 through 7 in this release, includes
+Snapshot version 3 reads source schemas 5 through 8 in this release, includes
 the task-show typed completion fields and the same bounded structured
 review-evidence projection, but excludes `review_target_base_revision`,
-`handoff_summary`, and all handoff records. The generated file is stale until
+`handoff_summary`, all handoff records, the Contract pointer, and all Contract
+fields/revisions. The generated file is stale until
 `web export` is explicitly run again. The command does not start a server,
 open a browser, edit tasks, or write database events. Databases using WAL mode
 are rejected before the snapshot connection so even a preview does not create
@@ -723,6 +808,9 @@ Known error codes include:
 - `handoff_not_persisted`
 - `handoff_not_withdrawable`
 - `handoff_occurrence_invalid`
+- `contract_activation_forbidden`
+- `contract_authority_required`
+- `contract_write_conflict`
 - `privacy_rejected`
 - `not_found`
 - `db_not_initialized`

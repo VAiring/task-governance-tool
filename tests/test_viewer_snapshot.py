@@ -18,6 +18,7 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_completion_commit_migration,
     apply_completion_evidence_migration,
     apply_git_snapshot_schema_migration,
+    apply_handoff_outbox_migration,
     apply_initial_schema_migration,
     apply_paused_state_migration,
     apply_review_evidence_migration,
@@ -55,8 +56,8 @@ def table_count(db: Path, table: str) -> int:
 
 
 class ViewerSnapshotTests(unittest.TestCase):
-    def test_snapshot_v3_reads_schema_v5_and_v6_without_new_fields(self):
-        for source_version in (5, 6):
+    def test_snapshot_v3_reads_schema_v5_through_v7_without_new_fields(self):
+        for source_version in (5, 6, 7):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 db = Path(tmp) / "taskgov.sqlite"
                 repo = Path(tmp) / "repo"
@@ -72,8 +73,10 @@ class ViewerSnapshotTests(unittest.TestCase):
                     apply_paused_state_migration(connection)
                     apply_completion_evidence_migration(connection)
                     apply_review_evidence_migration(connection)
-                    if source_version == 6:
+                    if source_version >= 6:
                         apply_git_snapshot_schema_migration(connection)
+                    if source_version >= 7:
+                        apply_handoff_outbox_migration(connection)
                     with connection:
                         ensure_project_meta(connection, target.project)
                         add_task(
@@ -116,6 +119,14 @@ class ViewerSnapshotTests(unittest.TestCase):
                             "in_progress" if status == "paused" else
                             status
                         )
+                        contract_input = (
+                            {
+                                "contract_scope": "VIEWER_CONTRACT_SCOPE_MUST_STAY_LOCAL",
+                                "contract_acceptance": "Focused Contract checks pass",
+                            }
+                            if status == "ready"
+                            else {}
+                        )
                         tasks[status] = add_task(
                             connection,
                             target.project,
@@ -123,6 +134,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                             status=initial_status,
                             blocked_reason=("Waiting for input" if status == "blocked" else ""),
                             priority=("urgent" if index == 0 else "normal"),
+                            **contract_input,
                         ).task
                         if status == "done":
                             # Viewer projection deliberately seeds a historical row;
@@ -216,7 +228,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
             snapshot = result.snapshot
             self.assertEqual(snapshot["snapshot_version"], 3)
-            self.assertEqual(snapshot["source_schema_version"], 7)
+            self.assertEqual(snapshot["source_schema_version"], 8)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {
@@ -263,6 +275,9 @@ class ViewerSnapshotTests(unittest.TestCase):
             serialized = json.dumps(snapshot)
             self.assertNotIn("review_target_base_revision", serialized)
             self.assertNotIn("target_base_revision", serialized)
+            self.assertNotIn("VIEWER_CONTRACT_SCOPE_MUST_STAY_LOCAL", serialized)
+            self.assertNotIn("current_contract_revision", serialized)
+            self.assertNotIn("task_contract_revisions", serialized)
             self.assertNotIn(str(target.project.canonical_repo), serialized)
             self.assertNotIn(str(target.db_path), serialized)
             self.assertEqual(table_count(target.db_path, "task_events"), task_events_before)

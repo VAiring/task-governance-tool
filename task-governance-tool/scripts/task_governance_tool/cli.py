@@ -190,6 +190,11 @@ def build_parser() -> argparse.ArgumentParser:
     task_add_parser.add_argument("--review-tier", default=1)
     task_add_parser.add_argument("--verification", default="")
     task_add_parser.add_argument("--tags", default="")
+    task_add_parser.add_argument("--contract-scope", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--contract-acceptance", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--contract-constraints", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--contract-authority-ref", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--contract-change-reason", default=argparse.SUPPRESS)
     task_list_parser = task_subparsers.add_parser("list", help="list compact task slices")
     add_common_options(task_list_parser)
     task_list_parser.add_argument("--status", default=None)
@@ -245,6 +250,11 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--commit-not-required", action="store_true", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--verification-complete", action="store_true", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--review-complete", action="store_true", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--contract-scope", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--contract-acceptance", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--contract-constraints", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--contract-authority-ref", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--contract-change-reason", default=argparse.SUPPRESS)
 
     handoff_parser = subparsers.add_parser("handoff", help="local handoff outbox commands")
     handoff_subparsers = handoff_parser.add_subparsers(dest="handoff_command")
@@ -691,7 +701,7 @@ def handle_db_status(context: CommandContext) -> CommandResult:
 
 
 def task_add_input(args: argparse.Namespace) -> dict[str, Any]:
-    return {
+    task_input = {
         "title": getattr(args, "title", ""),
         "description": getattr(args, "description", ""),
         "kind": getattr(args, "kind", "optional"),
@@ -704,6 +714,16 @@ def task_add_input(args: argparse.Namespace) -> dict[str, Any]:
         "verification": getattr(args, "verification", ""),
         "tags": getattr(args, "tags", ""),
     }
+    for field in (
+        "contract_scope",
+        "contract_acceptance",
+        "contract_constraints",
+        "contract_authority_ref",
+        "contract_change_reason",
+    ):
+        if hasattr(args, field):
+            task_input[field] = getattr(args, field)
+    return task_input
 
 
 def validation_failure_result(
@@ -724,7 +744,11 @@ def validation_failure_result(
     )
 
 
-def task_add_text(task: dict[str, Any], event: dict[str, Any]) -> str:
+def task_add_text(
+    task: dict[str, Any],
+    event: dict[str, Any],
+    contract_write: dict[str, Any] | None = None,
+) -> str:
     lines = [
         f"Task added: {task['task_id']}",
         f"Title: {task['title']}",
@@ -734,6 +758,12 @@ def task_add_text(task: dict[str, Any], event: dict[str, Any]) -> str:
     ]
     if task["kind"] == "sequential":
         lines.insert(3, f"Lane: {task['lane']}  Order: {task['lane_order']}")
+    if contract_write is not None:
+        lines.append(
+            "Contract: "
+            f"revision {contract_write['revision']} "
+            f"recorded={str(contract_write['recorded']).lower()}"
+        )
     return "\n".join(lines)
 
 
@@ -793,13 +823,15 @@ def handle_task_add(context: CommandContext) -> CommandResult:
         )
 
     data = {"task": result.task, "event": result.event}
+    if result.contract_write is not None:
+        data["contract_write"] = result.contract_write
     return CommandResult(
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
         db_path=str(target.db_path),
         data=data,
-        text=task_add_text(result.task, result.event),
+        text=task_add_text(result.task, result.event, result.contract_write),
         exit_code=EXIT_SUCCESS,
     )
 
@@ -1101,6 +1133,7 @@ def task_show_text(
     suggested_next_action: str,
     review_evidence: dict[str, Any],
     handoff_summary: dict[str, int],
+    contract: dict[str, Any],
 ) -> str:
     lines = [
         f"Task: {task['task_id']}",
@@ -1113,6 +1146,7 @@ def task_show_text(
             lane += f"  Order: {task['lane_order']}"
         lines.append(lane)
     lines.append(f"Review tier: {task['review_tier']}")
+    lines.append(f"Contract revision: {contract['revision']}")
     review_target = review_evidence["target"]
     review_gate = review_evidence["gate"]
     lines.append(
@@ -1167,6 +1201,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                 "suggested_next_action": "",
                 "review_evidence": None,
                 "handoff_summary": None,
+                "contract": None,
             },
             errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
             exit_code=EXIT_TOOL_ERROR,
@@ -1195,6 +1230,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                     "suggested_next_action": "",
                     "review_evidence": None,
                     "handoff_summary": None,
+                    "contract": None,
                 },
                 errors=[{"code": exc.code, "message": exc.message}],
                 exit_code=EXIT_USAGE,
@@ -1217,6 +1253,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                 "suggested_next_action": "",
                 "review_evidence": None,
                 "handoff_summary": None,
+                "contract": None,
             },
             errors=[{"code": "internal_error", "message": "could not show task"}],
             exit_code=EXIT_TOOL_ERROR,
@@ -1233,6 +1270,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                 "suggested_next_action": "",
                 "review_evidence": None,
                 "handoff_summary": None,
+                "contract": None,
             },
             errors=[{"code": "internal_error", "message": "could not show task"}],
             exit_code=EXIT_TOOL_ERROR,
@@ -1244,6 +1282,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         "suggested_next_action": result.suggested_next_action,
         "review_evidence": result.review_evidence,
         "handoff_summary": result.handoff_summary,
+        "contract": result.contract,
     }
     return CommandResult(
         ok=True,
@@ -1257,6 +1296,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             result.suggested_next_action,
             result.review_evidence,
             result.handoff_summary,
+            result.contract,
         ),
         exit_code=EXIT_SUCCESS,
     )
@@ -1286,6 +1326,11 @@ EDIT_ARGUMENT_FIELDS = (
     "commit_not_required",
     "verification_complete",
     "review_complete",
+    "contract_scope",
+    "contract_acceptance",
+    "contract_constraints",
+    "contract_authority_ref",
+    "contract_change_reason",
 )
 
 
@@ -1317,18 +1362,28 @@ def task_edit_failure_result(
     )
 
 
-def task_edit_text(task: dict[str, Any], changed_fields: list[str], event: dict[str, Any]) -> str:
+def task_edit_text(
+    task: dict[str, Any],
+    changed_fields: list[str],
+    event: dict[str, Any] | None,
+    contract_write: dict[str, Any] | None = None,
+) -> str:
     changed = ", ".join(changed_fields) if changed_fields else "none"
-    event_summary = event["summary"]
-    return "\n".join(
-        [
-            f"Task updated: {task['task_id']}",
-            f"Title: {task['title']}",
-            f"Status: {task['status']}  Priority: {task['priority']}  Kind: {task['kind']}",
-            f"Changed: {changed}",
-            f"Event: {event['event_type']} - {event_summary}",
-        ]
-    )
+    lines = [
+        f"Task updated: {task['task_id']}",
+        f"Title: {task['title']}",
+        f"Status: {task['status']}  Priority: {task['priority']}  Kind: {task['kind']}",
+        f"Changed: {changed}",
+    ]
+    if event is not None:
+        lines.append(f"Event: {event['event_type']} - {event['summary']}")
+    if contract_write is not None:
+        lines.append(
+            "Contract: "
+            f"revision {contract_write['revision']} "
+            f"recorded={str(contract_write['recorded']).lower()}"
+        )
+    return "\n".join(lines)
 
 
 def handle_task_edit(context: CommandContext) -> CommandResult:
@@ -1392,13 +1447,20 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
         )
 
     data = {"task": result.task, "changed_fields": result.changed_fields, "event": result.event}
+    if result.contract_write is not None:
+        data["contract_write"] = result.contract_write
     return CommandResult(
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
         db_path=str(target.db_path),
         data=data,
-        text=task_edit_text(result.task, result.changed_fields, result.event),
+        text=task_edit_text(
+            result.task,
+            result.changed_fields,
+            result.event,
+            result.contract_write,
+        ),
         exit_code=EXIT_SUCCESS,
     )
 
@@ -1523,7 +1585,7 @@ def _handle_handoff_record(
                 )
                 connection.commit()
             break
-        except (TaskValidationError, HandoffError) as exc:
+        except (TaskValidationError, TaskRepositoryError, HandoffError) as exc:
             exit_code = (
                 EXIT_TOOL_ERROR
                 if exc.code in {"internal_error", "handoff_not_persisted"}

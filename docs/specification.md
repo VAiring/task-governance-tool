@@ -1,9 +1,9 @@
 # task-governance-tool MVP Specification
 
-Status: formal implemented baseline through TG-M12.1 local handoff at release
-v0.4.0/schema v7. TG-M12.2 Task Contract and the approved optional follow-ups
-remain next after their documented dependencies; TG-M12.3 Issue adapter
-remains blocked on a future intake contract.
+Status: formal implemented baseline through TG-M12.2 Task Contract at release
+v0.5.0/schema v8. The approved optional follow-ups remain next after their
+documented dependencies; TG-M12.3 Issue adapter remains blocked on a future
+intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -683,9 +683,10 @@ Acceptance requires automated proof that:
 
 TG-M12 incorporates the accepted task-scope and effort-growth feedback without
 turning Task Skill into an Issue tracker, workflow engine, or audit platform.
-Until each separately approved implementation unit passes its gates, product
-code, schema, CLI, Skill guidance, README, release metadata, and installed
-behavior remain at the implemented v0.3.0/schema-v6 baseline.
+It was approved as a staged extension from the v0.3.0/schema-v6 baseline.
+Each separately approved implementation unit changes and advertises only the
+behavior that passes that unit's gates; TG-M12.1 advanced the implemented
+baseline to v0.4.0/schema v7 without pre-advertising later units.
 
 The extension has two core capabilities:
 
@@ -753,15 +754,21 @@ explicit in at least one of:
 - an approved implementation roadmap; or
 - explicit task-registration input.
 
-The CLI copies that information during `task add`, or during an explicit
+The CLI options are `--contract-scope`, `--contract-acceptance`,
+`--contract-constraints`, `--contract-authority-ref`, and
+`--contract-change-reason`. Supplying any Contract option supplies the group;
+an explicit partial group is rejected rather than silently discarded. The CLI
+copies that information during `task add`, or during an explicit
 revision-0 transition from `ready` or `blocked` to `in_progress`. On add, the
 resulting status must be `ready`, `in_progress`, `blocked`, or
 `review_pending`. On edit, the Contract group may be combined only with that
 status transition and requires empty completion evidence, target, and target
 generation. It cannot be combined with notes, metadata, review-tier,
-completion-evidence, or gate-confirmation changes. If either Contract field is
-absent, the task remains at revision `0`; the agent must not ask for missing
-fields or infer that a task is "long enough" to need them.
+completion-evidence, or gate-confirmation changes. When no Contract option is
+supplied, the task remains at revision `0`; the agent must not ask for missing
+fields or infer that a task is "long enough" to need them. If the caller
+explicitly starts a Contract group but omits scope or acceptance, the command
+fails with `invalid_argument`.
 
 A revision-0 task that does not use one of those activation boundaries remains
 revision 0. `paused`, `review_pending`, `done`, and `cancelled` existing tasks
@@ -796,13 +803,22 @@ change in the same command. The service itself moves `review_pending` to
 `in_progress` when invalidating review. A `done` task must be reopened first;
 `cancelled` rejects Contract writes.
 
+Contract content is canonicalized by converting CRLF or CR to LF and removing
+outer whitespace; internal text is otherwise preserved. Initial omitted
+constraints are empty. On a later edit, omitted constraints preserve the
+current value, while an explicitly supplied empty value removes them.
+
 Supplying scope, acceptance, and constraints that canonically equal the current
-Contract is an exact replay regardless of repeated authority/change metadata.
+Contract is an exact replay regardless of omitted, repeated, or re-labeled
+authority/change metadata. Any supplied metadata is still privacy- and
+size-validated before replay is accepted. A supplied `user_instruction`
+reference must still name the same task and a positive revision, but an older
+revision placeholder does not block an otherwise exact replay.
 It returns `recorded=false` with the current revision and performs no task,
 evidence, target, timestamp, or event write. A semantic revision requires at
-least one of those three Contract-content fields to change. A crash retry or
-authority re-label therefore cannot create a new Contract generation or force
-another review.
+least one of those three Contract-content fields to change and then requires
+both authority reference and change reason. A crash retry or authority re-label
+therefore cannot create a new Contract generation or force another review.
 
 For an explicit current user instruction with no external decision ID, the
 agent may generate `user_instruction:<task-id>:<next-revision>` as the stable
@@ -832,6 +848,25 @@ broaden the compact task object used by list/current/next.
 Only `task show` gains an additive sibling `contract` projection. Contract
 fields do not appear in `task list`, `task current`, `task next`, or the static
 Viewer.
+An exact replay returns `event=null` and `changed_fields=[]`. The fixed
+`task show` projection contains revision, scope, acceptance, constraints,
+authority reference, change reason, and creation time; revision zero uses
+empty strings and `created_at=null`. The task object itself never contains the
+current pointer.
+
+The service validates the exact
+`user_instruction:<task-id>:<revision>` form mechanically. Other sanitized
+governing-file or roadmap identifiers remain caller-provided provenance; the
+workflow rule that current-task outputs cannot self-authorize scope expansion
+remains a documented authority boundary rather than a general provenance
+engine. Concurrent same-content writes become one record plus one replay.
+Without an expected-revision option, different valid semantic inputs serialize
+as successive immutable revisions. If concurrent callers formed the exact
+current-or-next `user_instruction` placeholder before locking, the service
+binds it deterministically to the revision allocated by the locked write;
+semantic changes reject other revision numbers, while exact replay accepts an
+older same-task positive placeholder. Pointer or companion-input races return
+`contract_write_conflict`.
 
 ### Local Handoff Outbox
 
@@ -1103,7 +1138,7 @@ Acceptance requires automated proof that:
   fixture history, nine completion hashes, review evidence, handoffs, Contract
   pointers/revisions, and project identity with rollback, quick, and
   foreign-key checks;
-- Viewer snapshot v3 remains safe and unchanged at schemas 6, 7, and 8;
+- Viewer snapshot v3 remains safe and unchanged at schemas 5, 6, 7, and 8;
 - privacy, compact envelopes, read-only behavior, project separation,
   concurrency, and no-target-project-mutation behavior do not regress; and
 - the implemented Skill remains concise and advertises each surface only after

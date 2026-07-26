@@ -88,6 +88,7 @@ jobs:
             "$skillRoot/scripts/task_governance_tool/reviews.py",
             "$skillRoot/scripts/task_governance_tool/git_snapshot.py",
             "$skillRoot/scripts/task_governance_tool/handoffs.py",
+            "$skillRoot/scripts/task_governance_tool/contracts.py",
             "$skillRoot/scripts/task_governance_tool/viewer.py",
             "$skillRoot/assets/task-viewer.template.html",
             "$skillRoot/references/task_workflow.md",
@@ -106,11 +107,11 @@ jobs:
           $contracts = Get-Content -Raw "$skillRoot/references/cli_contracts.md"
           $readme = Get-Content -Raw 'README.md'
           $release = Get-Content -Raw 'docs/release-install.md'
-          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.4\.0"') {
-            throw 'Runtime package version is not 0.4.0'
+          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.5\.0"') {
+            throw 'Runtime package version is not 0.5.0'
           }
-          if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*7') {
-            throw 'Runtime schema version is not 7'
+          if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*8') {
+            throw 'Runtime schema version is not 8'
           }
           if ($viewer -notmatch 'SNAPSHOT_VERSION\s*=\s*3') {
             throw 'Viewer snapshot version is not 3'
@@ -125,9 +126,12 @@ jobs:
             if ($document -notmatch 'handoff record') {
               throw 'Public guidance is missing local handoff behavior'
             }
+            if ($document -notmatch 'Task Contract') {
+              throw 'Public guidance is missing Task Contract behavior'
+            }
           }
-          if ($release -notmatch 'schema v7' -or $release -notmatch '0\.4\.0') {
-            throw 'Release guidance is inconsistent with version 0.4.0/schema v7'
+          if ($release -notmatch 'schema v8' -or $release -notmatch '0\.5\.0') {
+            throw 'Release guidance is inconsistent with version 0.5.0/schema v8'
           }
 
       - name: Guard generated artifacts

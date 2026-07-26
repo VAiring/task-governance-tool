@@ -50,6 +50,28 @@ class CliHelpTests(unittest.TestCase):
         parser = build_parser()
         self.assertEqual(parser.prog, "taskgov")
 
+    def test_task_contract_options_are_available_on_add_and_edit(self):
+        expected_options = (
+            "--contract-scope",
+            "--contract-acceptance",
+            "--contract-constraints",
+            "--contract-authority-ref",
+            "--contract-change-reason",
+        )
+        for command in (("task", "add"), ("task", "edit")):
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    [sys.executable, "scripts/taskgov.py", *command, "--help"],
+                    cwd=SKILL_ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for option in expected_options:
+                    self.assertIn(option, result.stdout)
+
     def test_structured_review_command_help_is_available(self):
         commands = (
             ("review", "target", "set", "--help"),

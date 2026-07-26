@@ -47,6 +47,7 @@ task-governance-tool/
       reviews.py
       git_snapshot.py
       handoffs.py
+      contracts.py
       viewer.py
   references/
     task_workflow.md
@@ -112,15 +113,17 @@ python scripts/taskgov.py db init --repo <target-project> --json
 python scripts/taskgov.py db status --repo <target-project> --json
 ```
 
-Only `db init` creates or migrates the database. Version `0.4.0` uses schema v7
-and migrates supported schema-v2 through v6 databases through the explicit
+Only `db init` creates or migrates the database. Version `0.5.0` uses schema v8
+and migrates supported schema-v2 through v7 databases through the explicit
 ordered migration path while retaining task/event IDs, completion hashes, and
 structured review history. Schema v7 adds an empty local handoff outbox without
-rewriting existing tasks or evidence. Skill installation or an ordinary task
-command does not migrate a database. Back up the project-local database before
-updating the skill, then run `db init` explicitly. Migrations are transactional,
-repeatable, and never downgrade a database; an older runtime rejects a newer
-schema. An incomplete migration history is not repaired by inference:
+rewriting existing tasks or evidence. Schema v8 adds revision-zero pointers and
+an empty immutable Contract table without rewriting existing task or handoff
+history. Skill installation or an ordinary task command does not migrate a
+database. Back up the project-local database before updating the skill, then
+run `db init` explicitly. Migrations are transactional, repeatable, and never
+downgrade a database; an older runtime rejects a newer schema. An incomplete
+migration history is not repaired by inference:
 `db init` returns `migration_required` without mutation so the operator can
 restore a valid backup or inspect the history.
 
@@ -188,6 +191,21 @@ claim token output, raw logs, secrets, private prompts, stack traces, or large
 diffs. A failed local record is never reported durable and returns
 `handoff_not_persisted` after its bounded local persistence retry is exhausted.
 
+## Optional Task Contract Workflow
+
+Version `0.5.0` adds an optional immutable Contract copied from already
+explicit scope and acceptance. It does not ask the user for missing fields or
+infer activation from task size. Use the documented `--contract-*` group on
+`task add`, or on an exact revision-zero `ready|blocked -> in_progress`
+transition. Later semantic revisions are Contract-only and require explicit
+later authority plus a concise reason. Exact replay is write-free.
+
+Contract revisions remain SQLite helper state subordinate to governing docs and
+user decisions. They are excluded from list/current/next and Viewer snapshots.
+New handoffs capture the current Contract revision in their identity; existing
+schema-v7 handoffs remain revision zero. There is no expected-revision,
+signature, Issue, or general workflow engine in this release.
+
 ## Viewer Runtime State
 
 After installation, an explicitly requested `web export` writes the default
@@ -198,13 +216,14 @@ viewer to:
 ```
 
 Use an explicit `--output` only after the user approves that complete path; its
-parent must already exist. Snapshot v3 continues to serve schemas v5-v7,
+parent must already exist. Snapshot v3 continues to serve schemas v5-v8,
 includes typed completion and bounded structured review evidence, carries the
 actual source schema, and omits the internal
-`review_target_base_revision`, handoff rows, and handoff summaries. The HTML is
-stale until the user requests regeneration. It has no server, live database
-refresh, browser editing, or automatic browser launch. Generated viewers
-remain runtime state and must not be added to the release artifact.
+`review_target_base_revision`, handoff rows, handoff summaries, and all
+Contract fields/revisions. The HTML is stale until the user requests
+regeneration. It has no server, live database refresh, browser editing, or
+automatic browser launch. Generated viewers remain runtime state and must not
+be added to the release artifact.
 
 User-wide installation locations such as
 `%USERPROFILE%\.codex\skills\task-governance-tool`, `%CODEX_HOME%\skills`, or a
@@ -223,15 +242,15 @@ Before creating a release artifact:
    available.
 4. Run the installed skill self-containment smoke test.
 5. Confirm an isolated installed copy can run `web export` and that the
-   artifact includes `assets/task-viewer.template.html`, `viewer.py`, and
-   `git_snapshot.py`, and `handoffs.py`.
+   artifact includes `assets/task-viewer.template.html`, `viewer.py`,
+   `git_snapshot.py`, `handoffs.py`, and `contracts.py`.
 6. Confirm generated `state/`, SQLite files, generated `task-viewer.html`, root
    copied references, logs, and caches are ignored and absent from the artifact.
 7. Confirm `task-governance-tool/SKILL.md` frontmatter contains only `name` and
    `description`, and the `name` matches the folder.
-8. Confirm `taskgov --version` reports `0.4.0`, storage reports schema v7, and
+8. Confirm `taskgov --version` reports `0.5.0`, storage reports schema v8, and
    the Skill, workflow, CLI contracts, README, and this note describe the same
-   snapshot/reopen/local-handoff behavior.
+   snapshot/reopen/local-handoff/Contract behavior.
 
 ## Publication Notes
 
@@ -244,8 +263,9 @@ should name current/next task inspection, pause/resume, sequential transition
 guards, typed completion evidence with read-only Git validation, structured
 review gates, exact paused counts, the bounded current-status filter, the
 advisory paused-work warning, schema v6 migration, deterministic staged-snapshot
-completion binding, done/reopen safety, schema-v7 local handoff, and
-snapshot-v3 offline Viewer export. The implemented TG-M12.1 version `0.4.0`
-adds schema v7 and local-only handoff behavior beyond the TG-M11
-version `0.3.0` completion-integrity release, historical `0.2.0` TG-M8 release
-candidate, and the `0.1.0` trial.
+completion binding, done/reopen safety, schema-v7 local handoff, schema-v8
+optional Task Contracts, and snapshot-v3 offline Viewer export. Version
+`0.5.0` adds schema v8 and the Contract surface beyond TG-M12.1 version
+`0.4.0`, which added schema v7 and local-only handoff behavior. Earlier
+history includes the TG-M11 version `0.3.0` completion-integrity release,
+historical `0.2.0` TG-M8 release candidate, and the `0.1.0` trial.

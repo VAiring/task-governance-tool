@@ -1,9 +1,8 @@
 # task-governance-tool MVP Design
 
-Status: formal implemented design baseline through TG-M12.1 local handoff at
-release v0.4.0/schema v7. TG-M12.2 Task Contract and the approved optional
-follow-ups remain next after their documented dependencies; TG-M12.3 Issue
-adapter remains blocked.
+Status: formal implemented design baseline through TG-M12.2 Task Contract at
+release v0.5.0/schema v8. The approved optional follow-ups remain next after
+their documented dependencies; TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -49,6 +48,9 @@ task-governance-tool/
       selection.py
       completion.py
       reviews.py
+      git_snapshot.py
+      handoffs.py
+      contracts.py
       viewer.py
   references/
     task_workflow.md
@@ -1482,8 +1484,10 @@ for the same project/task. Revision `0` intentionally has no table row. Existing
 tasks migrate to `0`, so all legacy JSON and lifecycle behavior remains
 unchanged.
 
-Contract input is accepted as an optional group. Both scope and acceptance are
-required. The activation matrix is:
+Contract input uses `--contract-scope`, `--contract-acceptance`,
+`--contract-constraints`, `--contract-authority-ref`, and
+`--contract-change-reason`. Supplying any option supplies the optional group;
+both scope and acceptance are then required. The activation matrix is:
 
 - `task add`: allow the group only with resulting status `ready`,
   `in_progress`, `blocked`, or `review_pending`;
@@ -1509,11 +1513,18 @@ known revision/hash, roadmap-decision ID, or
 may not. The user-instruction form is generated without another user question
 when the current instruction explicitly changes the Contract.
 
-Before allocating a revision, `contracts.py` canonically compares scope,
-acceptance, and constraints with the current row. If all three match, it
-returns `recorded=false` with the current revision and performs no write,
-regardless of repeated or re-labeled authority/change metadata. A semantic
-revision requires at least one of those three fields to change.
+Before allocating a revision, `contracts.py` normalizes CRLF/CR to LF, strips
+outer whitespace, and otherwise preserves internal text. Initial omitted
+constraints are empty; later omitted constraints preserve the current value,
+while an explicit empty value removes them. It compares scope, acceptance, and
+constraints with the current row. If all three match, it returns
+`recorded=false` with the current revision and performs no write, regardless
+of omitted, repeated, or re-labeled authority/change metadata. Supplied
+metadata is still privacy/limit validated. A supplied `user_instruction`
+reference must use the exact same-task positive-revision syntax, but replay
+does not require that placeholder to remain current. A semantic revision
+requires at least one of those three fields to change and only then requires
+non-empty authority and change reason plus current-or-next revision binding.
 
 For a semantic change, in one savepoint `contracts.py`:
 
@@ -1532,7 +1543,8 @@ Failure rolls back every row. Existing Contract revisions, review receipts,
 findings, and task history remain. The event stores revision number, sanitized
 authority reference, and reason, not the full Contract text.
 
-Only responses whose command supplied Contract input gain an additive sibling:
+Only successful responses whose command supplied Contract input gain an
+additive sibling:
 
 ```json
 {
@@ -1547,6 +1559,31 @@ Exact replay reports `recorded=false` and the task's current revision. Commands
 without Contract input retain their existing payload exactly.
 `task.show.data.contract` returns the current revision and sanitized fields or
 revision `0`; list/current/next and Viewer task shapes remain unchanged.
+The fixed revision-zero projection uses empty `scope`, `acceptance`,
+`constraints`, `authority_ref`, and `change_reason`, plus `created_at=null`.
+Exact replay returns the normal edit shape with `changed_fields=[]` and
+`event=null`; recorded edits return `contract_recorded` or
+`contract_revised`. Add continues to return `task_added`.
+
+`contract_activation_forbidden` covers invalid status/activation boundaries,
+`contract_authority_required` covers missing or invalid semantic authority,
+and `contract_write_conflict` covers forbidden companion input or a pointer/
+write race. Partial groups, missing semantic change reasons, and initial change
+reasons use `invalid_argument`. The current CLI deliberately has no expected-
+revision option: concurrent identical input records once and replays once,
+while different valid semantic input is serialized into successive immutable
+revisions. A current-or-next `user_instruction` placeholder formed before the
+write lock is rebound deterministically to the revision allocated by the
+locked write. A lost-response retry with its older placeholder remains a
+write-free exact replay; an actual semantic change with an unrelated revision
+placeholder is rejected. Repository reads verify that the pointer is the latest
+revision for the same project/task.
+
+`user_instruction:<task-id>:<revision>` is validated exactly. Other stable
+governing-file or roadmap identifiers are sanitized opaque references. Their
+semantic provenance and the prohibition on current-task-output
+self-authorization stay in the Skill workflow; schema version 8 does not add a
+general authority or signature engine.
 
 ### Optional Effort Advisory Design
 
@@ -1617,17 +1654,17 @@ and still enforces project identity. This prevents schema-v7 rollout from
 breaking schema-v5/v6 export without allowing writes through an old schema.
 
 Every snapshot carries its actual `source_schema_version`. The snapshot-v3
-allow-list remains unchanged at schemas 6, 7, and 8: it excludes
+allow-list remains unchanged from schema 5 through schema 8: it excludes
 `review_target_base_revision`, handoff rows, Contract pointers, and Contract
 revisions. Normal and `--read-only` export tests run against each intermediate
 schema and prove identical privacy, no-sidecar, and task-shape behavior.
 
 ### TG-M12 Guidance Boundary
 
-Before implementation, only governing documents, `plan.md`, and ignored local
-task state describe TG-M12. Product code, migrations, `SKILL.md`, installed
-references, README, release/version metadata, and Viewer code remain at
-v0.3.0/schema version 6.
+When TG-M12 was approved, only governing documents, `plan.md`, and ignored
+local task state described it; product behavior remained at v0.3.0/schema
+version 6. Each gated implementation unit then synchronizes only its delivered
+surface, beginning with TG-M12.1 at v0.4.0/schema v7.
 
 Each implementation unit synchronizes only the CLI and internal contracts it
 has actually delivered. The concise Skill workflow adds deterministic Contract

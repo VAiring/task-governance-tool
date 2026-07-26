@@ -85,6 +85,10 @@ browser launch.
   `paused_tasks_present` warning on successful `task next` is advisory only
   and never changes ready candidates.
 - Direct sequential transitions use the same predecessor rule as `task next`.
+- Copy an optional Task Contract only when explicit scope and acceptance
+  already exist in current authority. Otherwise keep revision zero without a
+  question. Later semantic revisions require explicit later authority and a
+  reason; canonically unchanged input is a write-free replay.
 - Classify a new finding once: keep safely authorized acceptance work in the
   current task, record an unmet condition that prevents acceptance as its
   blocker, and durably `handoff record` everything else before continuing.

@@ -1,9 +1,9 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through TG-M12.1 local handoff are complete at
-v0.4.0/schema v7. TG-M12.2 Task Contract and the approved optional follow-ups
-remain next after their documented dependencies; TG-M12.3 remains blocked on
-a future Issue Skill intake contract.
+Status: implementation units through TG-M12.2 Task Contract are complete at
+v0.5.0/schema v8. The approved optional follow-ups remain next after their
+documented dependencies; TG-M12.3 remains blocked on a future Issue Skill
+intake contract.
 The default-browser launch follow-up remains requirements-only pending design
 and roadmap approval.
 
@@ -1883,6 +1883,7 @@ Kind: sequential
 Lane: `SCOPE-CONTROL`
 Depends on: TG-M12.1
 Review tier: Tier 2
+Status: complete at v0.5.0/schema v8
 
 Intended outcome:
 
@@ -1914,6 +1915,17 @@ Implementation notes:
 - Require an actual scope, acceptance, or constraints change. Treat canonical
   equality as `recorded=false` regardless of authority/reason replay and
   perform no evidence, target, status, timestamp, or event write.
+- Use the documented five `--contract-*` options. Normalize only line endings
+  and outer whitespace; preserve omitted later constraints and treat explicit
+  empty constraints as removal. Partial groups and initial change reasons
+  fail instead of being silently ignored.
+- Permit same-content replay without repeated authority/reason metadata after
+  validating any supplied text and same-task positive user-instruction syntax.
+  An older placeholder does not block exact replay. Require both metadata
+  fields and current-or-next binding only for semantic change. Do not add an
+  expected-revision option in this unit; different valid semantic inputs
+  serialize as immutable revisions, with a current-or-next user-instruction
+  placeholder rebound to the locked allocated revision.
 - Clear completion evidence on a semantic revision. Keep review generation 0
   when no review target has ever existed; otherwise clear target/base, advance
   generation, and return review-pending to in-progress atomically.
@@ -2131,9 +2143,10 @@ parent/child task structure, default-browser launch, network access, or Git
 writes by task-governance-tool.
 
 TG-M12.0 records the scope-control/local-handoff contract and task baseline.
-The current task-consumption request authorizes TG-M12.1, TG-M12.2, TG-M12.O1,
-and TG-M12.O2 after their documented dependencies. TG-M12.3 remains blocked
-until an Issue Skill intake contract, governing permission update, and the
-integration boundary are separately approved. None of these approvals
-authorizes semantic Issue triage, paging, child tasks, signed evidence,
-external Issue import/lifecycle sync, or daily GitHub update checking.
+The current task-consumption request has consumed TG-M12.1 and TG-M12.2 and
+continues to authorize TG-M12.O1 and TG-M12.O2 after their documented
+dependencies. TG-M12.3 remains blocked until an Issue Skill intake contract,
+governing permission update, and the integration boundary are separately
+approved. None of these approvals authorizes semantic Issue triage, paging,
+child tasks, signed evidence, external Issue import/lifecycle sync, or daily
+GitHub update checking.

@@ -10,6 +10,7 @@ tasks with `task-governance-tool`.
 - [Inspect Ready Work](#inspect-ready-work)
 - [Selection Semantics](#selection-semantics)
 - [Execution Unit Boundary](#execution-unit-boundary)
+- [Optional Task Contract](#optional-task-contract)
 - [Pause And Resume](#pause-and-resume)
 - [Blockers](#blockers)
 - [Scope Control And Local Handoff](#scope-control-and-local-handoff)
@@ -112,6 +113,41 @@ tracking:
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --json
 ```
 
+## Optional Task Contract
+
+Use a Contract only when scope and acceptance are already explicit in current
+user authority, an approved roadmap, or explicit registration input. Copy both
+fields deterministically; never ask for missing Contract fields and never infer
+that duration or risk makes a Contract mandatory.
+
+Record revision 1 during registration:
+
+```powershell
+python scripts/taskgov.py task add --repo <target-project> --title "Bounded change" --contract-scope "Files and behavior in scope" --contract-acceptance "Exact completion condition" --contract-constraints "No network or unrelated cleanup" --contract-authority-ref "roadmap:TG-M12.2" --json
+```
+
+Alternatively, activate revision 1 only on an exact revision-zero
+`ready|blocked -> in_progress` transition:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --contract-scope "Files and behavior in scope" --contract-acceptance "Exact completion condition" --json
+```
+
+Later semantic revisions are Contract-only and require explicit later
+authority plus a concise reason:
+
+```powershell
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --contract-scope "Revised explicit scope" --contract-acceptance "Revised explicit acceptance" --contract-authority-ref "user_instruction:<task-id>:<next-revision>" --contract-change-reason "User changed the accepted boundary" --json
+```
+
+Do not use a governing document produced by the current task to authorize that
+task's own expansion. Record proposed hardening outside the current Contract as
+a handoff. Canonically unchanged input is a write-free replay and does not need
+repeated authority metadata. Omitted constraints on a later edit preserve the
+current value; supply an explicit empty string only to remove them. A semantic
+revision clears stale completion evidence and any started review target, so
+fresh gates apply without another scope question.
+
 ## Pause And Resume
 
 Pause only work already in `in_progress` or `review_pending`, with a concise
@@ -169,6 +205,9 @@ Exact replay of the same canonical payload returns the existing row. Supply
 `--occurrence-id <stable-id>` only when the user or a deterministic source
 already provides a stable identity for a genuinely distinct occurrence; do not
 ask an LLM to infer recurrence.
+
+Each new handoff automatically captures the source task's current Contract
+revision. Existing revision-zero handoffs remain unchanged.
 
 Rediscover pending records oldest-first:
 

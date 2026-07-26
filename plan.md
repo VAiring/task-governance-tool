@@ -1,9 +1,8 @@
 # task-governance-tool Initial Plan
 
-Status: MVP through TG-M12.1 local handoff is implemented at v0.4.0/schema v7.
-TG-M12.2 Task Contract, Effort Advisory, and local self-status are authorized
-after their documented dependencies; the TG-M12.3 Issue adapter remains
-blocked.
+Status: MVP through TG-M12.2 Task Contract is implemented at v0.5.0/schema v8.
+Effort Advisory and local self-status are authorized after their documented
+dependencies; the TG-M12.3 Issue adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -836,11 +835,25 @@ Confirmed decisions:
   stays subordinate to governing authority.
 - Later Contract revisions require explicit user or independent later
   authority. Current-task document edits cannot self-authorize scope growth.
-  Canonically equal content is a write-free replay regardless of authority
-  relabeling. Semantic revision preserves history and clears completion
-  evidence; it keeps review generation 0 if review has never started, otherwise
-  clears the current review target, advances review generation, returns
-  review-pending to in-progress, and requires fresh gates.
+  Canonicalization normalizes line endings and outer whitespace only. Later
+  omitted constraints preserve the current value; an explicit empty value
+  removes them. Canonically equal content is a write-free replay even when
+  authority/change metadata is omitted or relabeled; a semantic revision then
+  requires both fields. Semantic revision preserves history and clears
+  completion evidence; it keeps review generation 0 if review has never
+  started, otherwise clears the current review target, advances review
+  generation, returns review-pending to in-progress, and requires fresh gates.
+- Schema-v8 Contract options and output shapes are fixed in the CLI reference.
+  Partial groups and initial change reasons fail rather than being ignored.
+  Same-content concurrent input becomes one record plus one replay. The first
+  version has no expected-revision option, so different valid semantic inputs
+  serialize as successive revisions; a current-or-next user-instruction
+  placeholder is rebound deterministically to the locked allocated revision,
+  and a lost-response retry with its older same-task positive placeholder is
+  still an exact no-op. Semantic change rejects unrelated revision numbers.
+  Exact `user_instruction` references are checked mechanically; other sanitized
+  authority identifiers retain the documented workflow provenance boundary
+  instead of adding a signature engine.
 - TG-M12 uses schema v7 for the outbox and schema v8 for Contract revisions,
   after TG-M11 schema v6. Static Viewer snapshot v3 remains the projection for
   schemas 5-8, carries the actual source schema, and excludes new outbox and
@@ -849,6 +862,9 @@ Confirmed decisions:
   schema-v7 migration warrant the next pre-1.0 minor version. Later TG-M12
   units choose and synchronize their own release version when their public
   surface is implemented rather than silently changing the `0.4.0` artifact.
+- TG-M12.2 uses version `0.5.0`: schema v8 and the optional public Task
+  Contract inputs/show projection are a new pre-1.0 feature, while ordinary
+  revision-zero task flows remain shape-compatible.
 - The initial optional Effort Advisory is default-off and informational:
   `suggested_action=continue`, unknown attribution when evidence is unreliable,
   and no automatic ask/handoff/pause/block/failure/acceptance mutation.
@@ -891,12 +907,12 @@ Open issues:
 
 ## Implementation Execution Status
 
-All implementation units through TG-M11 are complete. TG-M9.1 through TG-M11.4
-were consumed after explicit user approval. The current task-consumption
-request continues with TG-M12.1 and TG-M12.2, plus the separately requested
-TG-M12.O1/O2 optional features after their documented dependencies. TG-M12.3
-remains blocked on an Issue intake contract, governing permission update, and
-separate integration approval.
+All implementation units through TG-M12.2 are complete. TG-M9.1 through
+TG-M12.2 were consumed after explicit user approval. The current
+task-consumption request continues with the separately requested TG-M12.O1/O2
+optional features after their documented dependencies. TG-M12.3 remains
+blocked on an Issue intake contract, governing permission update, and separate
+integration approval.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local
 SQLite database. Do not append another large per-task execution log here; use

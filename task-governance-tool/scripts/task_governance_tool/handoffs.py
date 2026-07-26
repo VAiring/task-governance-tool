@@ -354,7 +354,7 @@ def record_handoff(
 
     task_row = connection.execute(
         """
-        SELECT task_id
+        SELECT task_id, current_contract_revision
           FROM tasks
          WHERE project_id = ?
            AND task_id = ?
@@ -364,7 +364,18 @@ def record_handoff(
     if task_row is None:
         raise HandoffError("not_found", "source task was not found")
 
-    source_contract_revision = 0
+    source_contract_revision = _stored_nonnegative_int(
+        task_row,
+        "current_contract_revision",
+    )
+    from task_governance_tool.contracts import read_current_contract
+
+    read_current_contract(
+        connection,
+        project_id=project.project_id,
+        task_id=normalized_task_id,
+        current_revision=source_contract_revision,
+    )
     idempotency_key = _idempotency_key(
         project_id=project.project_id,
         source_task_id=normalized_task_id,

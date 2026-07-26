@@ -9,10 +9,10 @@ LLM quick read:
   user-wide installs are not recommended for normal use.
 - Use it to replace large `TASK_STATUS.md` files with local SQLite task state.
 - It supports explicit task registration, current/next task inspection,
-  pause/resume and blocker handling, sequential guards, typed completion
-  evidence, structured review receipts/findings, durable local handoff of
-  out-of-scope discoveries, and an explicitly requested offline static Task
-  Viewer.
+  optional explicit Task Contracts, pause/resume and blocker handling,
+  sequential guards, typed completion evidence, structured review
+  receipts/findings, durable local handoff of out-of-scope discoveries, and an
+  explicitly requested offline static Task Viewer.
 - It does not import planning files, manage dependency graphs, write Git state,
   create PRs/issues, run a service, provide live browser editing, or store raw
   logs/secrets.
@@ -102,6 +102,13 @@ Pending rows do not change task selection or completion. Only final local
 persistence failure stops the current execution unit, because continuing would
 reintroduce context-compression forgetting risk.
 
+Version 0.5.0 adds optional immutable Task Contracts. Use the five
+`--contract-*` options only when scope and acceptance already exist in user or
+approved-roadmap authority; otherwise keep revision zero without asking
+another question. Canonically unchanged input is a write-free replay. A later
+semantic change requires explicit later authority and a reason, then
+deterministically invalidates stale completion/review eligibility.
+
 Tier 1 normally needs one independent PASS; a documented self-review fallback
 is allowed when independent tooling is unavailable. Tier 2 normally needs two
 distinct reviewers for the same target generation; its self-review fallback
@@ -180,10 +187,11 @@ Use `--output <html-path>` only after the user approves that complete
 destination; its parent must already exist. The HTML is self-contained and
 opens through `file://` without a server or network. Snapshot v3 includes typed
 completion and bounded structured review evidence for source schemas 5 through
-7 while omitting the internal `review_target_base_revision`, handoff rows, and
-handoff summaries. It is a timestamped snapshot, not a live view: task changes
-appear only after an explicitly requested regeneration. The page cannot edit
-tasks, and `taskgov` does not open a browser automatically.
+8 while omitting the internal `review_target_base_revision`, handoff rows,
+handoff summaries, and all Contract fields/revisions. It is a timestamped
+snapshot, not a live view: task changes appear only after an explicitly
+requested regeneration. The page cannot edit tasks, and `taskgov` does not
+open a browser automatically.
 
 ## Commands
 

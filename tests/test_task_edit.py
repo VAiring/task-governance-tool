@@ -499,7 +499,11 @@ class TaskEditTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             init_db(db, repo)
             with closing(sqlite3.connect(db)) as connection:
-                connection.execute("DELETE FROM schema_migrations WHERE version = 7")
+                connection.execute("DELETE FROM schema_migrations WHERE version = 8")
+                connection.execute("DROP TABLE task_contract_revisions")
+                connection.execute(
+                    "ALTER TABLE tasks DROP COLUMN current_contract_revision"
+                )
                 connection.commit()
             before = db.read_bytes()
 
@@ -524,7 +528,7 @@ class TaskEditTests(unittest.TestCase):
                 versions = [row[0] for row in connection.execute(
                     "SELECT version FROM schema_migrations ORDER BY version"
                 )]
-            self.assertEqual(versions, [1, 2, 3, 4, 5, 6])
+            self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7])
 
     def test_task_edit_duplicate_sequential_order_rolls_back(self):
         with tempfile.TemporaryDirectory() as tmp:

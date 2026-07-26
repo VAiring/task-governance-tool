@@ -228,6 +228,7 @@ class TaskShowTests(unittest.TestCase):
                 "suggested_next_action": "",
                 "review_evidence": None,
                 "handoff_summary": None,
+                "contract": None,
             })
 
     def test_task_show_missing_db_does_not_create_files(self):
@@ -256,6 +257,7 @@ class TaskShowTests(unittest.TestCase):
                 "suggested_next_action": "",
                 "review_evidence": None,
                 "handoff_summary": None,
+                "contract": None,
             })
             self.assertFalse(db.exists())
             self.assertFalse(db.parent.exists())
@@ -322,7 +324,7 @@ class TaskShowTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stderr, "")
             lines = result.stdout.strip().splitlines()
-            self.assertLessEqual(len(lines), 8)
+            self.assertLessEqual(len(lines), 9)
             self.assertIn(f"Task: {task['task_id']}", result.stdout)
             self.assertIn("Title: Ready optional", result.stdout)
             self.assertIn("Completion evidence: none", result.stdout)

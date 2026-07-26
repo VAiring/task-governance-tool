@@ -542,7 +542,11 @@ class TaskAddTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             init_db(db, repo)
             with closing(sqlite3.connect(db)) as connection:
-                connection.execute("DELETE FROM schema_migrations WHERE version = 7")
+                connection.execute("DELETE FROM schema_migrations WHERE version = 8")
+                connection.execute("DROP TABLE task_contract_revisions")
+                connection.execute(
+                    "ALTER TABLE tasks DROP COLUMN current_contract_revision"
+                )
                 connection.commit()
             before = db.read_bytes()
 
@@ -569,7 +573,7 @@ class TaskAddTests(unittest.TestCase):
                     "SELECT version FROM schema_migrations ORDER BY version"
                 )]
                 task_count = connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-            self.assertEqual(versions, [1, 2, 3, 4, 5, 6])
+            self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7])
             self.assertEqual(task_count, 0)
 
 

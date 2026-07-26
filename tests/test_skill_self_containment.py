@@ -124,8 +124,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 or "exactly one parent" in normalized
             )
             self.assertIn("fresh", normalized)
-        self.assertIn('__version__ = "0.4.0"', runtime_init)
-        self.assertIn("SCHEMA_VERSION = 7", storage)
+        self.assertIn('__version__ = "0.5.0"', runtime_init)
+        self.assertIn("SCHEMA_VERSION = 8", storage)
         self.assertIn("SNAPSHOT_VERSION = 3", viewer)
         self.assertIn("review_target_base_revision", release_note)
         self.assertIn("omits", release_note)
@@ -142,7 +142,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertIn("0.4.0", version.stdout)
+        self.assertIn("0.5.0", version.stdout)
 
     def test_tg_m12_local_handoff_guidance_and_isolated_flow_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -156,13 +156,22 @@ class SkillSelfContainmentTests(unittest.TestCase):
         release_note = (ROOT / "docs" / "release-install.md").read_text(
             encoding="utf-8"
         )
+        forward_note = (
+            ROOT / "docs" / "forward-tests" / "tg-m12-task-contract.md"
+        ).read_text(encoding="utf-8")
         for text in (skill_md, workflow, contracts, readme, release_note):
             self.assertIn("handoff record", text)
             self.assertIn("pending_handoff", text)
+            self.assertIn("Task Contract", text)
         for text in (skill_md, workflow, contracts, release_note):
             self.assertIn("handoff_not_persisted", text)
         self.assertIn("schema v7", release_note)
-        self.assertIn("version `0.4.0`", release_note)
+        self.assertIn("version `0.4.0`", release_note.lower())
+        self.assertIn("schema v8", release_note)
+        self.assertIn("version `0.5.0`", release_note.lower())
+        self.assertIn("Result: PASS", forward_note)
+        self.assertIn("Additional Task Contract judgments: 0", forward_note)
+        self.assertIn("Additional Task Contract user questions: 0", forward_note)
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -200,7 +209,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 str(db),
             )
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
-            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_version"], 7)
+            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_version"], 8)
             added = run(
                 "task",
                 "add",
@@ -262,6 +271,40 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertEqual(
                 json.loads(withdrawn.stdout)["data"]["handoff"]["state"],
                 "handoff_withdrawn_by_user",
+            )
+            contract_added = run(
+                "task",
+                "add",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--title",
+                "Isolated Contract task",
+                "--contract-scope",
+                "Isolated bounded scope",
+                "--contract-acceptance",
+                "Isolated acceptance passes",
+            )
+            self.assertEqual(contract_added.returncode, 0, contract_added.stderr)
+            contract_payload = json.loads(contract_added.stdout)
+            self.assertEqual(
+                contract_payload["data"]["contract_write"],
+                {"recorded": True, "revision": 1},
+            )
+            contract_shown = run(
+                "task",
+                "show",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                contract_payload["data"]["task"]["task_id"],
+            )
+            self.assertEqual(contract_shown.returncode, 0, contract_shown.stderr)
+            self.assertEqual(
+                json.loads(contract_shown.stdout)["data"]["contract"]["revision"],
+                1,
             )
 
             help_result = subprocess.run(
@@ -447,6 +490,14 @@ class SkillSelfContainmentTests(unittest.TestCase):
                     / "handoffs.py"
                 ).is_file()
             )
+            self.assertTrue(
+                (
+                    copied
+                    / "scripts"
+                    / "task_governance_tool"
+                    / "contracts.py"
+                ).is_file()
+            )
 
     def test_ci_requires_viewer_runtime_and_rejects_generated_viewer(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -455,8 +506,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("$skillRoot/scripts/task_governance_tool/viewer.py", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/git_snapshot.py", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/handoffs.py", workflow)
+        self.assertIn("$skillRoot/scripts/task_governance_tool/contracts.py", workflow)
         self.assertIn("SCHEMA_VERSION", workflow)
-        self.assertIn("0\\.4\\.0", workflow)
+        self.assertIn("0\\.5\\.0", workflow)
         self.assertIn("task-viewer\\.html$", workflow)
 
     def test_tracked_skill_package_contains_runtime_but_no_generated_state(self):
@@ -482,6 +534,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         )
         self.assertIn(
             "task-governance-tool/scripts/task_governance_tool/handoffs.py",
+            tracked,
+        )
+        self.assertIn(
+            "task-governance-tool/scripts/task_governance_tool/contracts.py",
             tracked,
         )
         self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))

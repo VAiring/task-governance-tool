@@ -16,7 +16,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 class StorageError(Exception):
@@ -238,6 +238,20 @@ def current_schema_version(connection: sqlite3.Connection) -> int:
     return int(row["version"])
 
 
+def missing_migration_versions(
+    connection: sqlite3.Connection,
+    version: int,
+) -> list[int]:
+    if version <= 0 or not table_exists(connection, "schema_migrations"):
+        return list(range(1, max(version, 0) + 1))
+    rows = connection.execute(
+        "SELECT version FROM schema_migrations WHERE version BETWEEN 1 AND ?",
+        (version,),
+    ).fetchall()
+    present = {int(row["version"]) for row in rows}
+    return [candidate for candidate in range(1, version + 1) if candidate not in present]
+
+
 def initial_schema_sql() -> str:
     return """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -392,6 +406,7 @@ def empty_counts() -> dict[str, int]:
         "review_pending": 0,
         "done": 0,
         "next_actionable": 0,
+        "handoff_pending": 0,
     }
 
 
@@ -404,6 +419,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "tool_events",
         "review_receipts",
         "review_findings",
+        "handoff_records",
     }
     required_indexes = {
         "idx_tasks_project_status",
@@ -415,6 +431,9 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "idx_review_receipts_task_target_verdict",
         "idx_review_receipts_task_reviewer_generation",
         "idx_review_findings_status_severity_receipt",
+        "idx_handoff_project_state_created",
+        "idx_handoff_project_source",
+        "idx_handoff_due_claim",
     }
     table_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     index_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
@@ -507,6 +526,39 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         missing.extend(
             f"column:{table_name}.{name}"
             for name in sorted(required_columns - columns)
+        )
+    if "handoff_records" in tables:
+        handoff_column_rows = connection.execute(
+            "PRAGMA table_info(handoff_records)"
+        ).fetchall()
+        handoff_columns = {str(row["name"]) for row in handoff_column_rows}
+        required_handoff_columns = {
+            "handoff_id",
+            "project_id",
+            "source_task_id",
+            "source_contract_revision",
+            "idempotency_key",
+            "occurrence_id",
+            "summary",
+            "rationale",
+            "state",
+            "adapter_key",
+            "adapter_version",
+            "delivery_attempts",
+            "last_delivery_code",
+            "next_attempt_at",
+            "claim_token",
+            "claim_expires_at",
+            "receiver_receipt",
+            "withdraw_reason",
+            "created_at",
+            "updated_at",
+            "handed_off_at",
+            "withdrawn_at",
+        }
+        missing.extend(
+            f"column:handoff_records.{name}"
+            for name in sorted(required_handoff_columns - handoff_columns)
         )
     return missing
 
@@ -1008,12 +1060,101 @@ def apply_git_snapshot_schema_migration(
             raise StorageError("internal_error", "could not restore foreign key enforcement")
 
 
+def apply_handoff_outbox_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Add the local handoff outbox without changing existing task data."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "handoff-outbox migration requires no active transaction",
+        )
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        connection.execute(
+            """
+            CREATE TABLE handoff_records (
+              handoff_id TEXT PRIMARY KEY,
+              project_id TEXT NOT NULL,
+              source_task_id TEXT NOT NULL,
+              source_contract_revision INTEGER NOT NULL DEFAULT 0
+                CHECK (source_contract_revision >= 0),
+              idempotency_key TEXT NOT NULL,
+              occurrence_id TEXT NOT NULL DEFAULT '',
+              summary TEXT NOT NULL,
+              rationale TEXT NOT NULL DEFAULT '',
+              state TEXT NOT NULL CHECK (state IN (
+                'pending_handoff',
+                'handed_off',
+                'handoff_withdrawn_by_user'
+              )),
+              adapter_key TEXT NOT NULL DEFAULT '',
+              adapter_version TEXT NOT NULL DEFAULT '',
+              delivery_attempts INTEGER NOT NULL DEFAULT 0
+                CHECK (delivery_attempts >= 0),
+              last_delivery_code TEXT NOT NULL DEFAULT '',
+              next_attempt_at TEXT,
+              claim_token TEXT NOT NULL DEFAULT '',
+              claim_expires_at TEXT,
+              receiver_receipt TEXT NOT NULL DEFAULT '',
+              withdraw_reason TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              handed_off_at TEXT,
+              withdrawn_at TEXT,
+              UNIQUE (project_id, idempotency_key),
+              FOREIGN KEY (source_task_id) REFERENCES tasks(task_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX idx_handoff_project_state_created
+              ON handoff_records(project_id, state, created_at, handoff_id)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX idx_handoff_project_source
+              ON handoff_records(project_id, source_task_id, created_at, handoff_id)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX idx_handoff_due_claim
+              ON handoff_records(project_id, state, claim_expires_at)
+            """
+        )
+        if fail_stage == "after_schema":
+            raise StorageError("internal_error", "injected handoff-outbox migration failure")
+        connection.execute(
+            "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+            (7, "local_handoff_outbox", utc_now()),
+        )
+        if fail_stage == "before_commit":
+            raise StorageError("internal_error", "injected handoff-outbox migration failure")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[dict[str, str]]]:
     version = current_schema_version(connection)
     if version > SCHEMA_VERSION:
         raise StorageError(
             "migration_required",
             f"database schema version {version} is newer than supported version {SCHEMA_VERSION}",
+        )
+    if version > 0 and missing_migration_versions(connection, version):
+        raise StorageError(
+            "migration_required",
+            (
+                "database migration history is incomplete; restore a valid "
+                "database backup or inspect the migration history"
+            ),
         )
 
     applied: list[int] = []
@@ -1053,6 +1194,10 @@ def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[di
     if version < 6:
         apply_git_snapshot_schema_migration(connection)
         applied.append(6)
+        version = 6
+    if version < 7:
+        apply_handoff_outbox_migration(connection)
+        applied.append(7)
     return applied, warnings
 
 
@@ -1104,6 +1249,15 @@ def validate_current_database(
             (
                 f"database schema version {version} does not match supported "
                 f"version {SCHEMA_VERSION}; run db init to migrate"
+            ),
+        )
+
+    if missing_migration_versions(connection, version):
+        raise StorageError(
+            "migration_required",
+            (
+                "database migration history is incomplete; restore a valid "
+                "database backup or inspect the migration history"
             ),
         )
 
@@ -1168,7 +1322,91 @@ def validate_snapshot_database(
             "viewer snapshot requires an active query-only transaction",
         )
 
-    return validate_current_database(connection, target)
+    version = current_schema_version(connection)
+    if version < 5 or version > SCHEMA_VERSION:
+        raise StorageError(
+            "migration_required",
+            (
+                f"database schema version {version} is not supported by "
+                "Viewer snapshot version 3"
+            ),
+        )
+    if missing_migration_versions(connection, version):
+        raise StorageError(
+            "migration_required",
+            "database migration history is incomplete",
+        )
+
+    required_tables = {
+        "schema_migrations",
+        "project_meta",
+        "tasks",
+        "task_events",
+        "review_receipts",
+        "review_findings",
+    }
+    table_rows = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ).fetchall()
+    tables = {str(row["name"]) for row in table_rows}
+    if required_tables - tables:
+        raise StorageError(
+            "migration_required",
+            "database schema is incomplete for Viewer snapshot version 3",
+        )
+
+    from task_governance_tool.tasks import VIEWER_TASK_FIELDS
+
+    task_columns = {
+        str(row["name"])
+        for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
+    }
+    if set(VIEWER_TASK_FIELDS) - task_columns:
+        raise StorageError(
+            "migration_required",
+            "database task schema is incomplete for Viewer snapshot version 3",
+        )
+    receipt_columns = {
+        str(row["name"])
+        for row in connection.execute("PRAGMA table_info(review_receipts)").fetchall()
+    }
+    required_receipt_columns = {
+        "review_receipt_id",
+        "task_id",
+        "project_id",
+        "reviewer_key",
+        "receipt_kind",
+        "verdict",
+        "target_kind",
+        "target_value",
+        "target_generation",
+        "summary",
+        "user_approved",
+        "created_at",
+    }
+    if version >= 6:
+        required_receipt_columns.add("target_base_revision")
+    if required_receipt_columns - receipt_columns:
+        raise StorageError(
+            "migration_required",
+            "database review schema is incomplete for Viewer snapshot version 3",
+        )
+
+    existing_project_id = read_project_meta_id(connection)
+    if existing_project_id is None:
+        raise StorageError(
+            "migration_required",
+            "database project metadata is missing",
+        )
+    if existing_project_id != target.project.project_id:
+        raise StorageError(
+            "project_mismatch",
+            (
+                f"database belongs to project {existing_project_id}, "
+                f"not {target.project.project_id}"
+            ),
+        )
+    return version
 
 
 def count_tasks(connection: sqlite3.Connection, project_id: str) -> dict[str, int]:
@@ -1199,6 +1437,17 @@ def count_tasks(connection: sqlite3.Connection, project_id: str) -> dict[str, in
             ).fetchone()["count"]
         )
     counts["next_actionable"] = count_next_tasks(connection, project_id)
+    counts["handoff_pending"] = int(
+        connection.execute(
+            """
+            SELECT COUNT(*) AS count
+              FROM handoff_records
+             WHERE project_id = ?
+               AND state = 'pending_handoff'
+            """,
+            (project_id,),
+        ).fetchone()["count"]
+    )
     return counts
 
 
@@ -1261,6 +1510,20 @@ def inspect_database(target: DatabaseTarget) -> StatusResult:
                     message=(
                         f"database schema version {version} does not match supported "
                         f"version {SCHEMA_VERSION}; run db init to migrate"
+                    ),
+                )
+
+            if missing_migration_versions(connection, version):
+                return status_error(
+                    target,
+                    exists=True,
+                    needs_init=False,
+                    needs_migration=True,
+                    schema_version=version,
+                    code="migration_required",
+                    message=(
+                        "database migration history is incomplete; restore a valid "
+                        "database backup or inspect the migration history"
                     ),
                 )
 
@@ -1339,7 +1602,7 @@ def initialize_database(target: DatabaseTarget) -> InitResult:
                         )
                 migrations_applied, warnings = apply_migrations(connection)
                 ensure_project_meta(connection, target.project)
-                version = current_schema_version(connection)
+                version = validate_current_database(connection, target)
     except StorageError:
         raise
     except OSError as exc:

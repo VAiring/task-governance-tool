@@ -1,4 +1,5 @@
 import os
+import json
 import shutil
 import subprocess
 import sys
@@ -123,8 +124,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 or "exactly one parent" in normalized
             )
             self.assertIn("fresh", normalized)
-        self.assertIn('__version__ = "0.3.0"', runtime_init)
-        self.assertIn("SCHEMA_VERSION = 6", storage)
+        self.assertIn('__version__ = "0.4.0"', runtime_init)
+        self.assertIn("SCHEMA_VERSION = 7", storage)
         self.assertIn("SNAPSHOT_VERSION = 3", viewer)
         self.assertIn("review_target_base_revision", release_note)
         self.assertIn("omits", release_note)
@@ -141,7 +142,139 @@ class SkillSelfContainmentTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertIn("0.3.0", version.stdout)
+        self.assertIn("0.4.0", version.stdout)
+
+    def test_tg_m12_local_handoff_guidance_and_isolated_flow_are_synchronized(self):
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
+            encoding="utf-8"
+        )
+        contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
+            encoding="utf-8"
+        )
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        release_note = (ROOT / "docs" / "release-install.md").read_text(
+            encoding="utf-8"
+        )
+        for text in (skill_md, workflow, contracts, readme, release_note):
+            self.assertIn("handoff record", text)
+            self.assertIn("pending_handoff", text)
+        for text in (skill_md, workflow, contracts, release_note):
+            self.assertIn("handoff_not_persisted", text)
+        self.assertIn("schema v7", release_note)
+        self.assertIn("version `0.4.0`", release_note)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            copied = copy_skill_to(root)
+            repo = root / "repo"
+            repo.mkdir()
+            db = root / "taskgov.sqlite"
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+
+            def run(*args):
+                return subprocess.run(
+                    [
+                        sys.executable,
+                        "-I",
+                        "-S",
+                        "scripts/taskgov.py",
+                        *args,
+                        "--json",
+                    ],
+                    cwd=copied,
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+
+            initialized = run(
+                "db",
+                "init",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+            )
+            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_version"], 7)
+            added = run(
+                "task",
+                "add",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--title",
+                "Isolated source task",
+            )
+            self.assertEqual(added.returncode, 0, added.stderr)
+            task_id = json.loads(added.stdout)["data"]["task"]["task_id"]
+            recorded = run(
+                "handoff",
+                "record",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task_id,
+                "--summary",
+                "Isolated discovery",
+            )
+            self.assertEqual(recorded.returncode, 0, recorded.stderr)
+            record_payload = json.loads(recorded.stdout)
+            handoff_id = record_payload["data"]["handoff"]["handoff_id"]
+            self.assertTrue(record_payload["data"]["local_record"]["durable"])
+            listed = run(
+                "handoff",
+                "list",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+            )
+            self.assertEqual(json.loads(listed.stdout)["data"]["total_matching"], 1)
+            shown = run(
+                "handoff",
+                "show",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                handoff_id,
+            )
+            self.assertEqual(shown.returncode, 0, shown.stderr)
+            withdrawn = run(
+                "handoff",
+                "withdraw",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                handoff_id,
+                "--reason",
+                "Explicit isolated test direction",
+            )
+            self.assertEqual(withdrawn.returncode, 0, withdrawn.stderr)
+            self.assertEqual(
+                json.loads(withdrawn.stdout)["data"]["handoff"]["state"],
+                "handoff_withdrawn_by_user",
+            )
+
+            help_result = subprocess.run(
+                [sys.executable, "-I", "-S", "scripts/taskgov.py", "handoff", "--help"],
+                cwd=copied,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(help_result.returncode, 0, help_result.stderr)
+            self.assertNotIn("sync", help_result.stdout)
 
     def test_tg_m9_paused_visibility_guidance_is_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -306,6 +439,14 @@ class SkillSelfContainmentTests(unittest.TestCase):
                     / "git_snapshot.py"
                 ).is_file()
             )
+            self.assertTrue(
+                (
+                    copied
+                    / "scripts"
+                    / "task_governance_tool"
+                    / "handoffs.py"
+                ).is_file()
+            )
 
     def test_ci_requires_viewer_runtime_and_rejects_generated_viewer(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -313,8 +454,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("$skillRoot/assets/task-viewer.template.html", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/viewer.py", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/git_snapshot.py", workflow)
+        self.assertIn("$skillRoot/scripts/task_governance_tool/handoffs.py", workflow)
         self.assertIn("SCHEMA_VERSION", workflow)
-        self.assertIn("0\\.3\\.0", workflow)
+        self.assertIn("0\\.4\\.0", workflow)
         self.assertIn("task-viewer\\.html$", workflow)
 
     def test_tracked_skill_package_contains_runtime_but_no_generated_state(self):
@@ -336,6 +478,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         )
         self.assertIn(
             "task-governance-tool/scripts/task_governance_tool/git_snapshot.py",
+            tracked,
+        )
+        self.assertIn(
+            "task-governance-tool/scripts/task_governance_tool/handoffs.py",
             tracked,
         )
         self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))

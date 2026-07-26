@@ -46,6 +46,7 @@ task-governance-tool/
       completion.py
       reviews.py
       git_snapshot.py
+      handoffs.py
       viewer.py
   references/
     task_workflow.md
@@ -111,13 +112,17 @@ python scripts/taskgov.py db init --repo <target-project> --json
 python scripts/taskgov.py db status --repo <target-project> --json
 ```
 
-Only `db init` creates or migrates the database. Version `0.3.0` uses schema v6
-and migrates supported schema-v2, v3, v4, and v5 databases through the explicit
+Only `db init` creates or migrates the database. Version `0.4.0` uses schema v7
+and migrates supported schema-v2 through v6 databases through the explicit
 ordered migration path while retaining task/event IDs, completion hashes, and
-structured review history. Skill installation or an ordinary task command does
-not migrate a database. Back up the project-local database before updating the
-skill, then run `db init` explicitly. Migrations are transactional, repeatable,
-and never downgrade a database; an older runtime rejects a newer schema.
+structured review history. Schema v7 adds an empty local handoff outbox without
+rewriting existing tasks or evidence. Skill installation or an ordinary task
+command does not migrate a database. Back up the project-local database before
+updating the skill, then run `db init` explicitly. Migrations are transactional,
+repeatable, and never downgrade a database; an older runtime rejects a newer
+schema. An incomplete migration history is not repaired by inference:
+`db init` returns `migration_required` without mutation so the operator can
+restore a valid backup or inspect the history.
 
 ## Git Snapshot Completion Workflow
 
@@ -154,6 +159,35 @@ python scripts/taskgov.py task edit --repo <target-project> <task-id> --status i
 Reopen preserves historical evidence but requires fresh verification, review,
 and completion evidence before the task can be completed again.
 
+## Local Handoff Workflow
+
+Version `0.4.0` adds a Task-DB-local outbox for out-of-scope discoveries.
+After classifying a finding once as current Task, blocker, or handoff, record
+the last category before continuing:
+
+```powershell
+python scripts/taskgov.py handoff record --repo <target-project> <task-id> --summary "Concise discovery" --rationale "Outside current acceptance" --json
+python scripts/taskgov.py handoff list --repo <target-project> --json
+python scripts/taskgov.py handoff show --repo <target-project> <handoff-id> --json
+```
+
+This release has no Issue adapter, receiver detection, delivery, or
+`handoff sync`; every successful record remains locally rediscoverable as
+`pending_handoff`. Exact replay is idempotent. A distinct occurrence requires
+an explicit stable `--occurrence-id`. Pending rows do not change task
+selection, task events, timestamps, review, or completion.
+
+Only explicit user direction may withdraw a never-attempted pending record:
+
+```powershell
+python scripts/taskgov.py handoff withdraw --repo <target-project> <handoff-id> --reason "Handled outside Task Skill" --json
+```
+
+The release artifact stores no Issue priority/lifecycle/resulting-task field,
+claim token output, raw logs, secrets, private prompts, stack traces, or large
+diffs. A failed local record is never reported durable and returns
+`handoff_not_persisted` after its bounded local persistence retry is exhausted.
+
 ## Viewer Runtime State
 
 After installation, an explicitly requested `web export` writes the default
@@ -164,13 +198,13 @@ viewer to:
 ```
 
 Use an explicit `--output` only after the user approves that complete path; its
-parent must already exist. Snapshot v3 continues to serve schemas v5-v6,
+parent must already exist. Snapshot v3 continues to serve schemas v5-v7,
 includes typed completion and bounded structured review evidence, carries the
 actual source schema, and omits the internal
-`review_target_base_revision`. The HTML is stale until the user requests
-regeneration. It has no server, live database refresh, browser editing, or
-automatic browser launch. Generated viewers remain runtime state and must not
-be added to the release artifact.
+`review_target_base_revision`, handoff rows, and handoff summaries. The HTML is
+stale until the user requests regeneration. It has no server, live database
+refresh, browser editing, or automatic browser launch. Generated viewers
+remain runtime state and must not be added to the release artifact.
 
 User-wide installation locations such as
 `%USERPROFILE%\.codex\skills\task-governance-tool`, `%CODEX_HOME%\skills`, or a
@@ -190,14 +224,14 @@ Before creating a release artifact:
 4. Run the installed skill self-containment smoke test.
 5. Confirm an isolated installed copy can run `web export` and that the
    artifact includes `assets/task-viewer.template.html`, `viewer.py`, and
-   `git_snapshot.py`.
+   `git_snapshot.py`, and `handoffs.py`.
 6. Confirm generated `state/`, SQLite files, generated `task-viewer.html`, root
    copied references, logs, and caches are ignored and absent from the artifact.
 7. Confirm `task-governance-tool/SKILL.md` frontmatter contains only `name` and
    `description`, and the `name` matches the folder.
-8. Confirm `taskgov --version` reports `0.3.0`, storage reports schema v6, and
+8. Confirm `taskgov --version` reports `0.4.0`, storage reports schema v7, and
    the Skill, workflow, CLI contracts, README, and this note describe the same
-   snapshot/reopen behavior.
+   snapshot/reopen/local-handoff behavior.
 
 ## Publication Notes
 
@@ -209,8 +243,9 @@ Versioning follows the runtime package version in
 should name current/next task inspection, pause/resume, sequential transition
 guards, typed completion evidence with read-only Git validation, structured
 review gates, exact paused counts, the bounded current-status filter, the
-advisory paused-work warning, schema-v6 migration, deterministic staged-snapshot
-completion binding, done/reopen safety, and snapshot-v3 offline Viewer export.
-The implemented TG-M11 release is version `0.3.0`. It adds schema v6 and
-completion-integrity behavior beyond the historical `0.2.0` TG-M8 release
-candidate and the `0.1.0` trial.
+advisory paused-work warning, schema v6 migration, deterministic staged-snapshot
+completion binding, done/reopen safety, schema-v7 local handoff, and
+snapshot-v3 offline Viewer export. The implemented TG-M12.1 version `0.4.0`
+adds schema v7 and local-only handoff behavior beyond the TG-M11
+version `0.3.0` completion-integrity release, historical `0.2.0` TG-M8 release
+candidate, and the `0.1.0` trial.

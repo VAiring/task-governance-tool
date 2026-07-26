@@ -34,6 +34,7 @@ jobs:
           python task-governance-tool/scripts/taskgov.py --help
           python task-governance-tool/scripts/taskgov.py --version
           python task-governance-tool/scripts/taskgov.py task next --help
+          python task-governance-tool/scripts/taskgov.py handoff --help
           python task-governance-tool/scripts/taskgov.py review target set --help
           python task-governance-tool/scripts/taskgov.py web export --help
 
@@ -86,6 +87,7 @@ jobs:
             "$skillRoot/scripts/task_governance_tool/completion.py",
             "$skillRoot/scripts/task_governance_tool/reviews.py",
             "$skillRoot/scripts/task_governance_tool/git_snapshot.py",
+            "$skillRoot/scripts/task_governance_tool/handoffs.py",
             "$skillRoot/scripts/task_governance_tool/viewer.py",
             "$skillRoot/assets/task-viewer.template.html",
             "$skillRoot/references/task_workflow.md",
@@ -104,11 +106,11 @@ jobs:
           $contracts = Get-Content -Raw "$skillRoot/references/cli_contracts.md"
           $readme = Get-Content -Raw 'README.md'
           $release = Get-Content -Raw 'docs/release-install.md'
-          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.3\.0"') {
-            throw 'Runtime package version is not 0.3.0'
+          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.4\.0"') {
+            throw 'Runtime package version is not 0.4.0'
           }
-          if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*6') {
-            throw 'Runtime schema version is not 6'
+          if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*7') {
+            throw 'Runtime schema version is not 7'
           }
           if ($viewer -notmatch 'SNAPSHOT_VERSION\s*=\s*3') {
             throw 'Viewer snapshot version is not 3'
@@ -120,9 +122,12 @@ jobs:
             if ($document -notmatch 'reopen') {
               throw 'Public guidance is missing done/reopen behavior'
             }
+            if ($document -notmatch 'handoff record') {
+              throw 'Public guidance is missing local handoff behavior'
+            }
           }
-          if ($release -notmatch 'schema v6' -or $release -notmatch '0\.3\.0') {
-            throw 'Release guidance is inconsistent with version 0.3.0/schema v6'
+          if ($release -notmatch 'schema v7' -or $release -notmatch '0\.4\.0') {
+            throw 'Release guidance is inconsistent with version 0.4.0/schema v7'
           }
 
       - name: Guard generated artifacts

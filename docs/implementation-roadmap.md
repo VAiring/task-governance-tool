@@ -1,8 +1,9 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through TG-M11 completion integrity are complete
-at v0.3.0/schema v6. TG-M12 scope control and local handoff are authorized
-next, except TG-M12.3 remains blocked on a future Issue Skill intake contract.
+Status: implementation units through TG-M12.1 local handoff are complete at
+v0.4.0/schema v7. TG-M12.2 Task Contract and the approved optional follow-ups
+remain next after their documented dependencies; TG-M12.3 remains blocked on
+a future Issue Skill intake contract.
 The default-browser launch follow-up remains requirements-only pending design
 and roadmap approval.
 
@@ -1811,6 +1812,7 @@ Kind: sequential
 Lane: `SCOPE-CONTROL`
 Depends on: TG-M11.4 and separate user approval of TG-M12 implementation
 Review tier: Tier 2
+Status: complete at v0.4.0/schema v7
 
 Intended outcome:
 
@@ -1825,6 +1827,7 @@ Write scope:
 - additive `db status` and `task show` projections
 - `task-governance-tool/SKILL.md`, one-level workflow/CLI references, and
   README/release guidance for the implemented local-only handoff
+- synchronized version `0.4.0` metadata for the public command/schema addition
 - focused migration, privacy, idempotency, concurrency, and no-task-mutation
   tests
 - governing docs only for necessary contract corrections

@@ -16,6 +16,11 @@ from task_governance_tool.storage import (  # noqa: E402
     SCHEMA_VERSION,
     StorageError,
     apply_completion_commit_migration,
+    apply_completion_evidence_migration,
+    apply_git_snapshot_schema_migration,
+    apply_initial_schema_migration,
+    apply_paused_state_migration,
+    apply_review_evidence_migration,
     connect,
     connect_snapshot_readonly,
     ensure_project_meta,
@@ -50,6 +55,55 @@ def table_count(db: Path, table: str) -> int:
 
 
 class ViewerSnapshotTests(unittest.TestCase):
+    def test_snapshot_v3_reads_schema_v5_and_v6_without_new_fields(self):
+        for source_version in (5, 6):
+            with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
+                db = Path(tmp) / "taskgov.sqlite"
+                repo = Path(tmp) / "repo"
+                target = resolve_database_target(
+                    repo=repo,
+                    db=db,
+                    script_path=SCRIPT_PATH,
+                )
+                with closing(connect(db)) as connection:
+                    apply_initial_schema_migration(connection)
+                    apply_completion_commit_migration(connection)
+                    connection.commit()
+                    apply_paused_state_migration(connection)
+                    apply_completion_evidence_migration(connection)
+                    apply_review_evidence_migration(connection)
+                    if source_version == 6:
+                        apply_git_snapshot_schema_migration(connection)
+                    with connection:
+                        ensure_project_meta(connection, target.project)
+                        add_task(
+                            connection,
+                            target.project,
+                            title=f"Schema {source_version} viewer task",
+                        )
+
+                with closing(connect_snapshot_readonly(db)) as connection:
+                    result = build_viewer_snapshot(
+                        connection,
+                        target,
+                        generated_at="2026-07-26T00:00:00Z",
+                    )
+
+                self.assertEqual(result.snapshot["snapshot_version"], 3)
+                self.assertEqual(
+                    result.snapshot["source_schema_version"],
+                    source_version,
+                )
+                self.assertEqual(result.task_count, 1)
+                projected = result.snapshot["tasks"][0]
+                self.assertEqual(
+                    set(projected),
+                    set(VIEWER_TASK_FIELDS) | {"events", "review_evidence"},
+                )
+                serialized = json.dumps(result.snapshot)
+                self.assertNotIn("handoff", serialized.lower())
+                self.assertNotIn("review_target_base_revision", serialized)
+
     def test_snapshot_projects_all_statuses_show_fields_and_bounded_events(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = initialized_target(tmp)
@@ -162,7 +216,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
             snapshot = result.snapshot
             self.assertEqual(snapshot["snapshot_version"], 3)
-            self.assertEqual(snapshot["source_schema_version"], 6)
+            self.assertEqual(snapshot["source_schema_version"], 7)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {

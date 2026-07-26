@@ -662,10 +662,28 @@ def read_review_evidence(
 ) -> dict[str, Any]:
     if not 1 <= recent_limit <= 10:
         raise review_error("invalid_review_evidence", "recent review evidence limit must be 1 to 10")
+    task_has_base = any(
+        str(row["name"]) == "review_target_base_revision"
+        for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
+    )
+    receipt_has_base = any(
+        str(row["name"]) == "target_base_revision"
+        for row in connection.execute("PRAGMA table_info(review_receipts)").fetchall()
+    )
+    if task_has_base != receipt_has_base:
+        raise ReviewEvidenceError(
+            "invalid_review_evidence",
+            "stored review target and receipt schemas are inconsistent",
+        )
+    task_base_projection = (
+        "review_target_base_revision"
+        if task_has_base
+        else "'' AS review_target_base_revision"
+    )
     task = connection.execute(
-        """
+        f"""
         SELECT review_tier, review_target_kind, review_target_value,
-               review_target_base_revision, review_target_generation
+               {task_base_projection}, review_target_generation
           FROM tasks WHERE project_id = ? AND task_id = ?
         """,
         (project_id, task_id),
@@ -685,60 +703,48 @@ def read_review_evidence(
             (project_id, task_id),
         ).fetchone()[0]
     )
+    target_predicate = """
+           project_id = ? AND task_id = ?
+           AND target_kind = ? AND target_value = ?
+    """
+    target_parameters: list[Any] = [
+        project_id,
+        task_id,
+        target_kind,
+        target_value,
+    ]
+    if receipt_has_base:
+        target_predicate += " AND target_base_revision = ?"
+        target_parameters.append(target_base_revision)
+    target_predicate += " AND target_generation = ?"
+    target_parameters.append(generation)
     current_receipts = int(
         connection.execute(
-            """
+            f"""
             SELECT COUNT(*) FROM review_receipts
-             WHERE project_id = ? AND task_id = ?
-               AND target_kind = ? AND target_value = ?
-               AND target_base_revision = ? AND target_generation = ?
+             WHERE {target_predicate}
             """,
-            (
-                project_id,
-                task_id,
-                target_kind,
-                target_value,
-                target_base_revision,
-                generation,
-            ),
+            target_parameters,
         ).fetchone()[0]
     ) if generation > 0 else 0
     qualifying = int(
         connection.execute(
-            """
+            f"""
             SELECT COUNT(DISTINCT reviewer_key) FROM review_receipts
-             WHERE project_id = ? AND task_id = ?
-               AND target_kind = ? AND target_value = ?
-               AND target_base_revision = ? AND target_generation = ?
+             WHERE {target_predicate}
                AND receipt_kind = 'independent' AND verdict = 'pass'
             """,
-            (
-                project_id,
-                task_id,
-                target_kind,
-                target_value,
-                target_base_revision,
-                generation,
-            ),
+            target_parameters,
         ).fetchone()[0]
     ) if generation > 0 else 0
     changes_requested = int(
         connection.execute(
-            """
+            f"""
             SELECT COUNT(*) FROM review_receipts
-             WHERE project_id = ? AND task_id = ?
-               AND target_kind = ? AND target_value = ?
-               AND target_base_revision = ? AND target_generation = ?
+             WHERE {target_predicate}
                AND verdict = 'changes_requested'
             """,
-            (
-                project_id,
-                task_id,
-                target_kind,
-                target_value,
-                target_base_revision,
-                generation,
-            ),
+            target_parameters,
         ).fetchone()[0]
     ) if generation > 0 else 0
 
@@ -746,44 +752,25 @@ def read_review_evidence(
     if generation > 0 and tier in {1, 2}:
         expected_approval = 1 if tier == 2 else 0
         fallback = connection.execute(
-            """
+            f"""
             SELECT 1 FROM review_receipts
-             WHERE project_id = ? AND task_id = ?
-               AND target_kind = ? AND target_value = ?
-               AND target_base_revision = ? AND target_generation = ?
+             WHERE {target_predicate}
                AND receipt_kind = 'self_review_fallback' AND verdict = 'pass'
                AND user_approved = ? LIMIT 1
             """,
-            (
-                project_id,
-                task_id,
-                target_kind,
-                target_value,
-                target_base_revision,
-                generation,
-                expected_approval,
-            ),
+            [*target_parameters, expected_approval],
         ).fetchone()
         if fallback is not None:
             fallback_kind = "self_review_fallback"
     elif generation > 0 and tier == 0:
         fallback = connection.execute(
-            """
+            f"""
             SELECT 1 FROM review_receipts
-             WHERE project_id = ? AND task_id = ?
-               AND target_kind = ? AND target_value = ?
-               AND target_base_revision = ? AND target_generation = ?
+             WHERE {target_predicate}
                AND receipt_kind = 'not_required' AND verdict = 'not_required'
                AND user_approved = 0 AND summary != '' LIMIT 1
             """,
-            (
-                project_id,
-                task_id,
-                target_kind,
-                target_value,
-                target_base_revision,
-                generation,
-            ),
+            target_parameters,
         ).fetchone()
         if fallback is not None:
             fallback_kind = "not_required"

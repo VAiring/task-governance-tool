@@ -17,7 +17,13 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool.storage import (  # noqa: E402
     apply_completion_commit_migration,
+    apply_completion_evidence_migration,
+    apply_git_snapshot_schema_migration,
+    apply_handoff_outbox_migration,
     apply_initial_schema_migration,
+    apply_paused_state_migration,
+    apply_review_evidence_migration,
+    connect,
     ensure_project_meta,
     project_identity,
 )
@@ -109,6 +115,146 @@ def create_realistic_v2_database(db_path: Path, repo: Path, fixture: dict):
     return project
 
 
+def create_realistic_review_database(
+    db_path: Path,
+    repo: Path,
+    fixture: dict,
+    *,
+    schema_version: int,
+):
+    if schema_version not in {5, 6}:
+        raise ValueError("schema_version must be 5 or 6")
+    project = create_realistic_v2_database(db_path, repo, fixture)
+    with closing(connect(db_path)) as connection:
+        apply_paused_state_migration(connection)
+        apply_completion_evidence_migration(connection)
+        apply_review_evidence_migration(connection)
+        task_id = fixture["tasks"][0]["task_id"]
+        fingerprint = "sha256:" + ("b" * 64)
+        connection.execute(
+            """
+            UPDATE tasks
+               SET review_target_kind = 'diff_fingerprint',
+                   review_target_value = ?,
+                   review_target_generation = 1
+             WHERE task_id = ?
+            """,
+            (fingerprint, task_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO review_receipts(
+              review_receipt_id, task_id, project_id, reviewer_key,
+              receipt_kind, verdict, target_kind, target_value,
+              target_generation, summary, user_approved, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "tg_receipt_migration_001",
+                task_id,
+                project.project_id,
+                "migration-reviewer",
+                "independent",
+                "pass",
+                "diff_fingerprint",
+                fingerprint,
+                1,
+                "Sanitized migration review",
+                0,
+                "2026-07-20T14:00:00Z",
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO review_findings(
+              review_finding_id, review_receipt_id, severity, status,
+              summary, resolution_summary, created_at, resolved_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "tg_finding_migration_001",
+                "tg_receipt_migration_001",
+                "low",
+                "resolved",
+                "Sanitized migration finding",
+                "Verified as resolved",
+                "2026-07-20T14:01:00Z",
+                "2026-07-20T14:02:00Z",
+            ),
+        )
+        connection.commit()
+        if schema_version == 6:
+            apply_git_snapshot_schema_migration(connection)
+    return project
+
+
+def post_v5_durable_projection(connection: sqlite3.Connection) -> dict:
+    return {
+        "project_meta": [
+            tuple(row)
+            for row in connection.execute(
+                """
+                SELECT project_id, canonical_path_hash, display_name, created_at
+                  FROM project_meta ORDER BY project_id
+                """
+            )
+        ],
+        "tasks": [
+            tuple(row)
+            for row in connection.execute(
+                """
+                SELECT task_id, project_id, status, completion_commit_hash,
+                       completion_evidence_kind, completion_evidence_revision,
+                       review_target_kind, review_target_value,
+                       review_target_generation
+                  FROM tasks ORDER BY task_id
+                """
+            )
+        ],
+        "task_events": [
+            tuple(row)
+            for row in connection.execute(
+                """
+                SELECT task_event_id, task_id, project_id, event_type, summary,
+                       created_at
+                  FROM task_events ORDER BY task_event_id
+                """
+            )
+        ],
+        "tool_events": [
+            tuple(row)
+            for row in connection.execute(
+                """
+                SELECT tool_event_id, project_id, command, status, summary,
+                       created_at
+                  FROM tool_events ORDER BY tool_event_id
+                """
+            )
+        ],
+        "review_receipts": [
+            tuple(row)
+            for row in connection.execute(
+                """
+                SELECT review_receipt_id, task_id, project_id, reviewer_key,
+                       receipt_kind, verdict, target_kind, target_value,
+                       target_generation, summary, user_approved, created_at
+                  FROM review_receipts ORDER BY review_receipt_id
+                """
+            )
+        ],
+        "review_findings": [
+            tuple(row)
+            for row in connection.execute(
+                """
+                SELECT review_finding_id, review_receipt_id, severity, status,
+                       summary, resolution_summary, created_at, resolved_at
+                  FROM review_findings ORDER BY review_finding_id
+                """
+            )
+        ],
+    }
+
+
 def durable_projection(connection: sqlite3.Connection) -> dict:
     return {
         "tasks": [
@@ -178,7 +324,7 @@ def legacy_v2_projection(connection: sqlite3.Connection) -> dict:
 
 
 class RealisticMigrationAcceptanceTests(unittest.TestCase):
-    def test_v2_fixture_migrates_to_v6_without_losing_observed_state(self):
+    def test_v2_fixture_migrates_to_v7_without_losing_observed_state(self):
         fixture = load_fixture()
         self.assertEqual(fixture["schema_version"], 2)
         self.assertEqual(len(fixture["tasks"]), 12)
@@ -208,8 +354,8 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             payload = json.loads(migrated.stdout)
             self.assertEqual(payload["project_id"], project.project_id)
-            self.assertEqual(payload["data"]["migrations_applied"], [3, 4, 5, 6])
-            self.assertEqual(payload["data"]["schema_version"], 6)
+            self.assertEqual(payload["data"]["migrations_applied"], [3, 4, 5, 6, 7])
+            self.assertEqual(payload["data"]["schema_version"], 7)
 
             with closing(sqlite3.connect(db_path)) as connection:
                 connection.row_factory = sqlite3.Row
@@ -277,6 +423,10 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                     self.assertEqual(row["review_target_generation"], 0)
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+                self.assertEqual(
+                    connection.execute("SELECT COUNT(*) FROM handoff_records").fetchone()[0],
+                    0,
+                )
                 before_second_init = durable_projection(connection)
 
             repeated = run_taskgov(
@@ -286,6 +436,141 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             self.assertEqual(json.loads(repeated.stdout)["data"]["migrations_applied"], [])
             with closing(sqlite3.connect(db_path)) as connection:
                 self.assertEqual(durable_projection(connection), before_second_init)
+
+    def test_v5_and_v6_fixture_migrate_to_v7_with_review_evidence_intact(self):
+        fixture = load_fixture()
+        for source_version, expected_migrations in ((5, [6, 7]), (6, [7])):
+            with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "governed-project"
+                repo.mkdir()
+                db_path = root / "taskgov.sqlite"
+                project = create_realistic_review_database(
+                    db_path,
+                    repo,
+                    fixture,
+                    schema_version=source_version,
+                )
+                with closing(sqlite3.connect(db_path)) as connection:
+                    before = post_v5_durable_projection(connection)
+
+                migrated = run_taskgov(
+                    "db",
+                    "init",
+                    "--repo",
+                    str(repo),
+                    "--db",
+                    str(db_path),
+                    "--json",
+                )
+
+                self.assertEqual(migrated.returncode, 0, migrated.stderr)
+                payload = json.loads(migrated.stdout)
+                self.assertEqual(
+                    payload["data"]["migrations_applied"],
+                    expected_migrations,
+                )
+                self.assertEqual(payload["data"]["schema_version"], 7)
+                self.assertEqual(payload["project_id"], project.project_id)
+                with closing(sqlite3.connect(db_path)) as connection:
+                    self.assertEqual(post_v5_durable_projection(connection), before)
+                    self.assertEqual(
+                        connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0],
+                        12,
+                    )
+                    self.assertEqual(
+                        connection.execute("SELECT COUNT(*) FROM task_events").fetchone()[0],
+                        191,
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            """
+                            SELECT COUNT(*) FROM tasks
+                             WHERE completion_commit_hash != ''
+                            """
+                        ).fetchone()[0],
+                        9,
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT COUNT(*) FROM review_receipts"
+                        ).fetchone()[0],
+                        1,
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT COUNT(*) FROM review_findings"
+                        ).fetchone()[0],
+                        1,
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            """
+                            SELECT COUNT(*) FROM tasks
+                             WHERE review_target_base_revision != ''
+                            """
+                        ).fetchone()[0],
+                        0,
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT COUNT(*) FROM handoff_records"
+                        ).fetchone()[0],
+                        0,
+                    )
+                    self.assertEqual(
+                        connection.execute("PRAGMA quick_check").fetchone()[0],
+                        "ok",
+                    )
+                    self.assertEqual(
+                        connection.execute("PRAGMA foreign_key_check").fetchall(),
+                        [],
+                    )
+
+    def test_v7_migration_rollback_preserves_realistic_v6_fixture(self):
+        fixture = load_fixture()
+        for fail_stage in ("after_schema", "before_commit"):
+            with self.subTest(fail_stage=fail_stage), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "governed-project"
+                repo.mkdir()
+                db_path = root / "taskgov.sqlite"
+                create_realistic_review_database(
+                    db_path,
+                    repo,
+                    fixture,
+                    schema_version=6,
+                )
+                with closing(connect(db_path)) as connection:
+                    before = post_v5_durable_projection(connection)
+                    with self.assertRaisesRegex(Exception, "injected handoff-outbox"):
+                        apply_handoff_outbox_migration(
+                            connection,
+                            fail_stage=fail_stage,
+                        )
+                    self.assertEqual(post_v5_durable_projection(connection), before)
+                    self.assertIsNone(
+                        connection.execute(
+                            """
+                            SELECT name FROM sqlite_master
+                             WHERE type = 'table' AND name = 'handoff_records'
+                            """
+                        ).fetchone()
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT MAX(version) FROM schema_migrations"
+                        ).fetchone()[0],
+                        6,
+                    )
+                    self.assertEqual(
+                        connection.execute("PRAGMA quick_check").fetchone()[0],
+                        "ok",
+                    )
+                    self.assertEqual(
+                        connection.execute("PRAGMA foreign_key_check").fetchall(),
+                        [],
+                    )
 
 
 if __name__ == "__main__":

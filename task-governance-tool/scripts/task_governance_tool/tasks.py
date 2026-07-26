@@ -96,6 +96,10 @@ TEXT_LIMITS = {
     "review_finding_resolution": 1000,
     "reopen_reason": 1000,
     "review_tier_change_reason": 1000,
+    "handoff_summary": 1000,
+    "handoff_rationale": 1000,
+    "handoff_occurrence_id": 200,
+    "handoff_withdraw_reason": 1000,
 }
 
 UPPER_ENV_NAME_PATTERN = r"[A-Z_][A-Z0-9_]*"
@@ -208,6 +212,14 @@ STRICT_RAW_OUTPUT_FIELDS = {
     "review_receipt_summary",
     "review_finding_summary",
     "review_finding_resolution",
+    "handoff_summary",
+    "handoff_rationale",
+    "handoff_occurrence_id",
+    "handoff_withdraw_reason",
+    "handoff_adapter_key",
+    "handoff_adapter_version",
+    "handoff_last_delivery_code",
+    "handoff_receiver_receipt",
 }
 BENIGN_TITLE_RAW_OUTPUT_PREFIXES = (
     "add ",
@@ -267,6 +279,7 @@ class TaskShowResult:
     events: list[dict[str, Any]]
     suggested_next_action: str
     review_evidence: dict[str, Any]
+    handoff_summary: dict[str, int]
 
 
 @dataclass(frozen=True)
@@ -1094,12 +1107,18 @@ def show_task(
         (project.project_id, normalized_task_id, event_limit),
     ).fetchall()
     from task_governance_tool.reviews import read_review_evidence
+    from task_governance_tool.handoffs import handoff_summary_for_task
 
     return TaskShowResult(
         task=task,
         events=[row_to_event(row) for row in event_rows],
         suggested_next_action=suggested_next_action(task),
         review_evidence=read_review_evidence(
+            connection,
+            project.project_id,
+            normalized_task_id,
+        ),
+        handoff_summary=handoff_summary_for_task(
             connection,
             project.project_id,
             normalized_task_id,

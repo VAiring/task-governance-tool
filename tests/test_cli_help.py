@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import json
 import unittest
 from pathlib import Path
 
@@ -69,6 +70,54 @@ class CliHelpTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--repo", result.stdout)
                 self.assertIn("--read-only", result.stdout)
+
+    def test_local_handoff_help_exposes_only_implemented_commands(self):
+        group = subprocess.run(
+            [sys.executable, "scripts/taskgov.py", "handoff", "--help"],
+            cwd=SKILL_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(group.returncode, 0, group.stderr)
+        for command in ("record", "list", "show", "withdraw"):
+            self.assertIn(command, group.stdout)
+        self.assertNotIn("sync", group.stdout)
+
+        for command in ("record", "list", "show", "withdraw"):
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "scripts/taskgov.py",
+                        "handoff",
+                        command,
+                        "--help",
+                    ],
+                    cwd=SKILL_ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("--repo", result.stdout)
+                self.assertIn("--read-only", result.stdout)
+
+        bare = subprocess.run(
+            [sys.executable, "scripts/taskgov.py", "--json", "handoff"],
+            cwd=SKILL_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(bare.returncode, 1)
+        payload = json.loads(bare.stdout)
+        self.assertEqual(payload["command"], "parse")
+        self.assertEqual(payload["errors"][0]["code"], "invalid_argument")
+        self.assertIn("record, list, show, or withdraw", payload["errors"][0]["message"])
 
 
 if __name__ == "__main__":

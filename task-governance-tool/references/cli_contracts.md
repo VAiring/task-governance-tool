@@ -15,6 +15,7 @@ matter.
 - [`task current`](#task-current)
 - [`task show`](#task-show)
 - [`task edit`](#task-edit)
+- [Local handoff commands](#local-handoff-commands)
 - [Review evidence commands](#review-evidence-commands)
 - [`web export`](#web-export)
 - [Error Codes](#error-codes)
@@ -56,15 +57,16 @@ All JSON output uses this envelope:
 ```
 
 Inspection commands are read-only by default: `db status`, `task list`,
-`task next`, `task current`, and `task show`.
+`task next`, `task current`, `task show`, `handoff list`, and `handoff show`.
 
 Database write commands are `db init`, `task add`, `task edit`, and the four
-`review` evidence commands. Only `db init` may create or migrate a database.
-Other write commands require an already initialized database at the current
-schema version; they return `db_not_initialized` or `migration_required`
-without creating or migrating files otherwise. `web export` never writes
-SQLite, but its normal mode writes one generated HTML file after explicit user
-intent. Use `web export --read-only` for a no-file-write preview.
+`review` evidence commands, plus `handoff record` and `handoff withdraw`. Only
+`db init` may create or migrate a database. Other write commands require an
+already initialized database at the current schema version; they return
+`db_not_initialized` or `migration_required` without creating or migrating
+files otherwise. `web export` never writes SQLite, but its normal mode writes
+one generated HTML file after explicit user intent. Use
+`web export --read-only` for a no-file-write preview.
 
 ## Commands
 
@@ -81,10 +83,15 @@ python scripts/taskgov.py db init --repo <target-project> --json
 ```json
 {
   "created": true,
-  "migrations_applied": [1, 2, 3, 4, 5, 6],
-  "schema_version": 6
+  "migrations_applied": [1, 2, 3, 4, 5, 6, 7],
+  "schema_version": 7
 }
 ```
+
+`db init` validates contiguous migration history before and after applying an
+ordered migration. A gap is not inferred or stamped as repaired: the command
+returns `migration_required` without mutation and directs the operator to
+restore a valid database backup or inspect the migration history.
 
 ### `db status`
 
@@ -101,14 +108,19 @@ python scripts/taskgov.py db status --repo <target-project> --json
   "exists": true,
   "needs_init": false,
   "needs_migration": false,
-  "schema_version": 6,
+  "schema_version": 7,
   "counts": {
     "active": 3,
     "paused": 1,
     "blocked": 1,
     "review_pending": 0,
     "done": 2,
-    "next_actionable": 2
+    "next_actionable": 2,
+    "handoff_pending": 3
+  },
+  "handoff_delivery": {
+    "adapter_enabled": false,
+    "sync_due": false
   }
 }
 ```
@@ -117,6 +129,9 @@ python scripts/taskgov.py db status --repo <target-project> --json
 `review_pending`; it excludes terminal `done` and `cancelled` tasks.
 `counts.paused` is the exact project-scoped paused population and does not
 remove paused tasks from `counts.active`.
+`counts.handoff_pending` is the exact project-scoped pending-handoff
+population. In schema v7, delivery is not implemented, so `adapter_enabled`
+and `sync_due` are always `false`; pending rows produce no warning.
 
 ### `task add`
 
@@ -265,7 +280,8 @@ Show one task plus recent event history and suggested next action.
 python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 ```
 
-`data`: `task`, `events`, `suggested_next_action`, `review_evidence`.
+`data`: `task`, `events`, `suggested_next_action`, `review_evidence`,
+`handoff_summary`.
 
 `task` includes typed completion evidence and the legacy commit projection:
 
@@ -286,6 +302,20 @@ target and generation, tier gate/pass/fallback state, receipt and open-finding
 counts, blocking findings, and at most ten recent receipts and findings. It
 never contains the snapshot base revision, raw review transcripts, or private
 reasoning.
+
+`handoff_summary` is a compact sibling, not a task field:
+
+```json
+{
+  "pending_handoff": 2,
+  "handed_off": 0,
+  "handoff_withdrawn_by_user": 1
+}
+```
+
+It contains exact per-state counts for this source task and is excluded from
+task list/current/next rows and Viewer snapshots. On readiness or not-found
+errors, its fixed value is `null`.
 
 ### `task edit`
 
@@ -407,6 +437,131 @@ valid `git_snapshot` binding; `external_revision` requires the identical
 external target; and `commit_not_required` requires a `diff_fingerprint`
 target. A mismatch returns `review_target_mismatch` without a success write.
 
+### Local handoff commands
+
+Record one sanitized out-of-scope discovery after a single
+task/blocker/handoff classification:
+
+```powershell
+python scripts/taskgov.py handoff record --repo <target-project> <source-task-id> --summary "Concise discovery" --rationale "Outside current acceptance" --json
+```
+
+Options are `--summary` (required, at most 1000 characters), `--rationale`
+(at most 1000), and optional `--occurrence-id` (at most 200). Omitting the
+occurrence ID means an exact canonical replay returns the existing row.
+Supplying it explicitly requires a non-empty stable identity already provided
+by user instruction or a deterministic source; invalid explicit values return
+`handoff_occurrence_invalid`. The canonical identity includes project, source
+task, source Contract revision (always `0` in schema v7), normalized summary
+and rationale, and occurrence ID.
+
+Successful `data`:
+
+```json
+{
+  "handoff": {
+    "handoff_id": "tg_handoff_...",
+    "project_id": "project-a1b2c3d4e5f6",
+    "source_task_id": "tg_task_...",
+    "source_contract_revision": 0,
+    "idempotency_key": "<sha256>",
+    "occurrence_id": "",
+    "summary": "Concise discovery",
+    "rationale": "Outside current acceptance",
+    "state": "pending_handoff",
+    "adapter_key": "",
+    "adapter_version": "",
+    "delivery_attempts": 0,
+    "last_delivery_code": "",
+    "next_attempt_at": null,
+    "claim_expires_at": null,
+    "receiver_receipt": "",
+    "withdraw_reason": "",
+    "created_at": "2026-07-26T00:00:00Z",
+    "updated_at": "2026-07-26T00:00:00Z",
+    "handed_off_at": null,
+    "withdrawn_at": null
+  },
+  "local_record": {
+    "durable": true,
+    "created": true,
+    "replayed": false,
+    "handoff_id": "tg_handoff_..."
+  }
+}
+```
+
+`claim_token` is always private. `durable=true` is assembled only after the
+local commit succeeds. Exact replay returns `created=false`,
+`replayed=true`, and the same row/ID without updating it. Local SQLite
+busy/locked persistence receives at most one retry of the complete
+transaction. Final local failure returns `handoff_not_persisted` and this
+fixed non-durable data:
+
+```json
+{
+  "handoff": null,
+  "local_record": {
+    "durable": false,
+    "created": false,
+    "replayed": false,
+    "handoff_id": null
+  }
+}
+```
+
+List pending records oldest-first by `created_at, handoff_id`:
+
+```powershell
+python scripts/taskgov.py handoff list --repo <target-project> --limit 20 --json
+python scripts/taskgov.py handoff list --repo <target-project> --state handed_off --state handoff_withdrawn_by_user --json
+```
+
+The default limit is 20 and maximum is 100. Optional `--source-task-id`
+filters one source. Terminal rows appear only through explicit repeatable
+`--state`. `data` contains `handoffs`, returned `count`, exact
+`total_matching`, effective `limit`, and selected `states`. Each compact list
+row contains only `handoff_id`, `source_task_id`,
+`source_contract_revision`, `summary`, `state`, `created_at`, and
+`updated_at`. Count and rows come from one read snapshot. Paging is not
+implemented.
+
+Show one full sanitized record:
+
+```powershell
+python scripts/taskgov.py handoff show --repo <target-project> <handoff-id> --json
+```
+
+`data` is `handoff`. Both list and show revalidate stored privacy limits and
+the state-field matrix before emission. Corrupt/private stored content returns
+`internal_error` without exposing it.
+
+Withdraw an undelivered pending record only on explicit user direction:
+
+```powershell
+python scripts/taskgov.py handoff withdraw --repo <target-project> <handoff-id> --reason "Handled outside Task Skill" --json
+```
+
+The sanitized reason is required and limited to 1000 characters. Success
+returns `handoff` and
+`changed_fields=["state","withdraw_reason","withdrawn_at"]`. The conditional
+write accepts only `pending_handoff` with no claim or delivery attempt;
+terminal, claimed, or attempted rows return `handoff_not_withdrawable`.
+Withdrawal does not append a task event or update the source task.
+
+Error `data` is fixed by command: list returns empty `handoffs`, zero
+`count`/`total_matching`/`limit`, and empty `states`; show returns
+`{"handoff": null}`; withdraw returns a null `handoff` and empty
+`changed_fields`. Missing, old-schema, and wrong-project databases retain
+`db_not_initialized`, `migration_required`, and `project_mismatch`
+respectively. `handoff_not_persisted` is reserved for failure of the local
+record transaction after readiness validation.
+
+Schema v7 implements no Issue adapter, receiver detection, claim acquisition,
+delivery, or `handoff sync` command. The agent always uses `handoff record`
+regardless of Issue Skill presence. A pending record never changes task
+selection or completion and emits no warning.
+
 ### Review evidence commands
 
 Set or replace the current review target:
@@ -504,13 +659,14 @@ generated `state/` directory.
 }
 ```
 
-Snapshot version 3 includes the task-show typed completion fields and the same
-bounded structured review-evidence projection, but excludes
-`review_target_base_revision`. The generated file is stale until `web export`
-is explicitly run again. The command does not start a server, open a browser,
-edit tasks, or write database events. Databases using WAL mode are rejected
-before the snapshot connection so even a preview does not create SQLite
-sidecar files.
+Snapshot version 3 reads source schemas 5 through 7 in this release, includes
+the task-show typed completion fields and the same bounded structured
+review-evidence projection, but excludes `review_target_base_revision`,
+`handoff_summary`, and all handoff records. The generated file is stale until
+`web export` is explicitly run again. The command does not start a server,
+open a browser, edit tasks, or write database events. Databases using WAL mode
+are rejected before the snapshot connection so even a preview does not create
+SQLite sidecar files.
 
 After command and output resolution, every `web.export` error preserves this
 fixed `data` shape. `output_path` is `null` only when output resolution itself
@@ -564,6 +720,9 @@ Known error codes include:
 - `review_tier_downgrade_forbidden`
 - `review_changes_requested`
 - `review_target_mismatch`
+- `handoff_not_persisted`
+- `handoff_not_withdrawable`
+- `handoff_occurrence_invalid`
 - `privacy_rejected`
 - `not_found`
 - `db_not_initialized`

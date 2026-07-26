@@ -227,6 +227,7 @@ class TaskShowTests(unittest.TestCase):
                 "events": [],
                 "suggested_next_action": "",
                 "review_evidence": None,
+                "handoff_summary": None,
             })
 
     def test_task_show_missing_db_does_not_create_files(self):
@@ -254,6 +255,7 @@ class TaskShowTests(unittest.TestCase):
                 "events": [],
                 "suggested_next_action": "",
                 "review_evidence": None,
+                "handoff_summary": None,
             })
             self.assertFalse(db.exists())
             self.assertFalse(db.parent.exists())

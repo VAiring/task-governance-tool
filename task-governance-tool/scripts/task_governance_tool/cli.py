@@ -13,6 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from task_governance_tool import __version__
+from task_governance_tool.handoffs import (
+    HandoffError,
+    list_handoffs,
+    record_handoff,
+    show_handoff,
+    withdraw_handoff,
+)
 from task_governance_tool.storage import (
     StatusResult,
     StorageError,
@@ -239,6 +246,45 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--verification-complete", action="store_true", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--review-complete", action="store_true", default=argparse.SUPPRESS)
 
+    handoff_parser = subparsers.add_parser("handoff", help="local handoff outbox commands")
+    handoff_subparsers = handoff_parser.add_subparsers(dest="handoff_command")
+    handoff_record_parser = handoff_subparsers.add_parser(
+        "record",
+        help="durably record one out-of-scope discovery",
+    )
+    add_common_options(handoff_record_parser)
+    handoff_record_parser.add_argument("source_task_id")
+    handoff_record_parser.add_argument("--summary", required=True)
+    handoff_record_parser.add_argument("--rationale", default="")
+    handoff_record_parser.add_argument("--occurrence-id", default=None)
+    handoff_list_parser = handoff_subparsers.add_parser(
+        "list",
+        help="list bounded local handoff records",
+    )
+    add_common_options(handoff_list_parser)
+    handoff_list_parser.add_argument(
+        "--state",
+        dest="states",
+        action="append",
+        default=None,
+        help="select a handoff state; repeat to include multiple states",
+    )
+    handoff_list_parser.add_argument("--source-task-id", default=None)
+    handoff_list_parser.add_argument("--limit", default=None)
+    handoff_show_parser = handoff_subparsers.add_parser(
+        "show",
+        help="show one local handoff record",
+    )
+    add_common_options(handoff_show_parser)
+    handoff_show_parser.add_argument("handoff_id")
+    handoff_withdraw_parser = handoff_subparsers.add_parser(
+        "withdraw",
+        help="withdraw an undelivered pending handoff by explicit user request",
+    )
+    add_common_options(handoff_withdraw_parser)
+    handoff_withdraw_parser.add_argument("handoff_id")
+    handoff_withdraw_parser.add_argument("--reason", required=True)
+
     review_parser = subparsers.add_parser("review", help="structured review evidence commands")
     review_subparsers = review_parser.add_subparsers(dest="review_entity")
 
@@ -304,6 +350,8 @@ def command_name(args: argparse.Namespace) -> str:
         return f"db.{args.db_command}"
     if args.command == "task" and args.task_command:
         return f"task.{args.task_command}"
+    if args.command == "handoff" and args.handoff_command:
+        return f"handoff.{args.handoff_command}"
     if args.command == "review" and args.review_entity and args.review_action:
         return f"review.{args.review_entity}.{args.review_action}"
     if args.command == "web" and args.web_command:
@@ -341,6 +389,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_task_show(context)
     if context.command == "task.edit":
         return handle_task_edit(context)
+    if context.command.startswith("handoff."):
+        return handle_handoff_command(context)
     if context.command.startswith("review."):
         return handle_review_command(context)
     if context.command == "web.export":
@@ -430,15 +480,14 @@ def handle_web_export(context: CommandContext) -> CommandResult:
         )
 
     output_path = str(output_target.path)
-    status = inspect_database(target)
-    if status.error_code:
+    if not target.db_path.exists():
         return web_export_failure_result(
             context,
             project_id=project_id,
             db_path=db_path,
             output_path=output_path,
-            code=status.error_code,
-            message=status.error_message or status.error_code,
+            code="db_not_initialized",
+            message="database is not initialized; run db init first",
             exit_code=EXIT_TOOL_ERROR,
         )
 
@@ -583,6 +632,10 @@ def status_data(status: StatusResult) -> dict[str, Any]:
         "needs_migration": status.needs_migration,
         "schema_version": status.schema_version,
         "counts": status.counts,
+        "handoff_delivery": {
+            "adapter_enabled": False,
+            "sync_due": False,
+        },
     }
 
 
@@ -605,7 +658,9 @@ def status_text(status: StatusResult) -> str:
         f"Active: {counts['active']}  Paused: {counts['paused']}  "
         f"Blocked: {counts['blocked']}  "
         f"Review pending: {counts['review_pending']}  Done: {counts['done']}\n"
-        f"Next actionable: {counts['next_actionable']}"
+        f"Next actionable: {counts['next_actionable']}\n"
+        f"Pending handoffs: {counts['handoff_pending']}  "
+        "Adapter enabled: false  Sync due: false"
     )
 
 
@@ -1045,6 +1100,7 @@ def task_show_text(
     events: list[dict[str, Any]],
     suggested_next_action: str,
     review_evidence: dict[str, Any],
+    handoff_summary: dict[str, int],
 ) -> str:
     lines = [
         f"Task: {task['task_id']}",
@@ -1081,6 +1137,14 @@ def task_show_text(
             lines.append("Completion commit: not required")
     if task["blocked_reason"]:
         lines.append(f"Blocked: {task['blocked_reason']}")
+    handoff_total = sum(handoff_summary.values())
+    if handoff_total:
+        lines.append(
+            "Handoffs: "
+            f"pending={handoff_summary['pending_handoff']} "
+            f"handed_off={handoff_summary['handed_off']} "
+            f"withdrawn={handoff_summary['handoff_withdrawn_by_user']}"
+        )
     lines.append(f"Suggested next action: {suggested_next_action}")
     if events:
         latest = events[0]
@@ -1102,6 +1166,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                 "events": [],
                 "suggested_next_action": "",
                 "review_evidence": None,
+                "handoff_summary": None,
             },
             errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
             exit_code=EXIT_TOOL_ERROR,
@@ -1129,6 +1194,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                     "events": [],
                     "suggested_next_action": "",
                     "review_evidence": None,
+                    "handoff_summary": None,
                 },
                 errors=[{"code": exc.code, "message": exc.message}],
                 exit_code=EXIT_USAGE,
@@ -1139,12 +1205,35 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             db_path=str(target.db_path),
             exc=exc,
         )
+    except HandoffError:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data={
+                "task": None,
+                "events": [],
+                "suggested_next_action": "",
+                "review_evidence": None,
+                "handoff_summary": None,
+            },
+            errors=[{"code": "internal_error", "message": "could not show task"}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
     except sqlite3.Error as exc:
         return CommandResult(
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
+            data={
+                "task": None,
+                "events": [],
+                "suggested_next_action": "",
+                "review_evidence": None,
+                "handoff_summary": None,
+            },
             errors=[{"code": "internal_error", "message": "could not show task"}],
             exit_code=EXIT_TOOL_ERROR,
         )
@@ -1154,6 +1243,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         "events": result.events,
         "suggested_next_action": result.suggested_next_action,
         "review_evidence": result.review_evidence,
+        "handoff_summary": result.handoff_summary,
     }
     return CommandResult(
         ok=True,
@@ -1166,6 +1256,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             result.events,
             result.suggested_next_action,
             result.review_evidence,
+            result.handoff_summary,
         ),
         exit_code=EXIT_SUCCESS,
     )
@@ -1308,6 +1399,341 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
         db_path=str(target.db_path),
         data=data,
         text=task_edit_text(result.task, result.changed_fields, result.event),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
+def handoff_empty_data(command: str) -> dict[str, Any]:
+    if command == "handoff.record":
+        return {
+            "handoff": None,
+            "local_record": {
+                "durable": False,
+                "created": False,
+                "replayed": False,
+                "handoff_id": None,
+            },
+        }
+    if command == "handoff.list":
+        return {
+            "handoffs": [],
+            "count": 0,
+            "total_matching": 0,
+            "limit": 0,
+            "states": [],
+        }
+    if command == "handoff.withdraw":
+        return {"handoff": None, "changed_fields": []}
+    return {"handoff": None}
+
+
+def handoff_failure_result(
+    context: CommandContext,
+    *,
+    project_id: str,
+    db_path: str,
+    code: str,
+    message: str,
+    exit_code: int,
+) -> CommandResult:
+    return CommandResult(
+        ok=False,
+        command=context.command,
+        project_id=project_id,
+        db_path=db_path,
+        data=handoff_empty_data(context.command),
+        errors=[{"code": code, "message": message}],
+        exit_code=exit_code,
+    )
+
+
+def handoff_text(command: str, data: dict[str, Any]) -> str:
+    if command == "handoff.record":
+        handoff = data["handoff"]
+        local = data["local_record"]
+        action = "recorded" if local["created"] else "replayed"
+        return "\n".join(
+            [
+                f"Handoff {action}: {handoff['handoff_id']}",
+                f"Source task: {handoff['source_task_id']}",
+                f"State: {handoff['state']}",
+                f"Summary: {handoff['summary']}",
+            ]
+        )
+    if command == "handoff.list":
+        lines = [
+            f"Handoffs: {data['count']} of {data['total_matching']} "
+            f"(limit {data['limit']})"
+        ]
+        for handoff in data["handoffs"]:
+            lines.append(
+                f"{handoff['handoff_id']} [{handoff['state']}] "
+                f"{handoff['source_task_id']} - {handoff['summary']}"
+            )
+        return "\n".join(lines)
+    if command == "handoff.withdraw":
+        handoff = data["handoff"]
+        return "\n".join(
+            [
+                f"Handoff withdrawn: {handoff['handoff_id']}",
+                f"State: {handoff['state']}",
+                f"Reason: {handoff['withdraw_reason']}",
+            ]
+        )
+    handoff = data["handoff"]
+    return "\n".join(
+        [
+            f"Handoff: {handoff['handoff_id']}",
+            f"Source task: {handoff['source_task_id']}",
+            f"State: {handoff['state']}",
+            f"Summary: {handoff['summary']}",
+            f"Created: {handoff['created_at']}",
+        ]
+    )
+
+
+def _is_transient_sqlite_lock(exc: sqlite3.Error) -> bool:
+    error_code = getattr(exc, "sqlite_errorcode", None)
+    if isinstance(error_code, int):
+        primary_code = error_code & 0xFF
+        if primary_code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+            return True
+    message = str(exc).lower()
+    return "locked" in message or "busy" in message
+
+
+def _handle_handoff_record(
+    context: CommandContext,
+    *,
+    target: Any,
+    project_id: str,
+    db_path: str,
+) -> CommandResult:
+    result = None
+    for attempt in range(2):
+        try:
+            with closing(connect_initialized(target)) as connection:
+                result = record_handoff(
+                    connection,
+                    target.project,
+                    getattr(context.args, "source_task_id", ""),
+                    summary=getattr(context.args, "summary", ""),
+                    rationale=getattr(context.args, "rationale", ""),
+                    occurrence_id=getattr(context.args, "occurrence_id", ""),
+                )
+                connection.commit()
+            break
+        except (TaskValidationError, HandoffError) as exc:
+            exit_code = (
+                EXIT_TOOL_ERROR
+                if exc.code in {"internal_error", "handoff_not_persisted"}
+                else EXIT_USAGE
+            )
+            return handoff_failure_result(
+                context,
+                project_id=project_id,
+                db_path=db_path,
+                code=exc.code,
+                message=exc.message,
+                exit_code=exit_code,
+            )
+        except StorageError as exc:
+            return handoff_failure_result(
+                context,
+                project_id=project_id,
+                db_path=db_path,
+                code=exc.code,
+                message=exc.message,
+                exit_code=EXIT_TOOL_ERROR,
+            )
+        except sqlite3.Error as exc:
+            if attempt == 0 and _is_transient_sqlite_lock(exc):
+                continue
+            return handoff_failure_result(
+                context,
+                project_id=project_id,
+                db_path=db_path,
+                code="handoff_not_persisted",
+                message="local handoff could not be persisted",
+                exit_code=EXIT_TOOL_ERROR,
+            )
+    if result is None:
+        return handoff_failure_result(
+            context,
+            project_id=project_id,
+            db_path=db_path,
+            code="handoff_not_persisted",
+            message="local handoff could not be persisted",
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    data = {
+        "handoff": result.handoff,
+        "local_record": {
+            "durable": True,
+            "created": result.created,
+            "replayed": result.replayed,
+            "handoff_id": result.handoff["handoff_id"],
+        },
+    }
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=project_id,
+        db_path=db_path,
+        data=data,
+        text=handoff_text(context.command, data),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
+def handle_handoff_command(context: CommandContext) -> CommandResult:
+    target = resolve_database_target(
+        repo=context.repo,
+        db=context.db,
+        script_path=cli_script_path(),
+    )
+    project_id = target.project.project_id
+    db_path = str(target.db_path)
+    if context.command in {"handoff.record", "handoff.withdraw"} and context.read_only:
+        return handoff_failure_result(
+            context,
+            project_id=project_id,
+            db_path=db_path,
+            code="invalid_argument",
+            message=(
+                f"{context.command.replace('.', ' ')} cannot run with --read-only "
+                "because it writes the database"
+            ),
+            exit_code=EXIT_USAGE,
+        )
+    if context.command == "handoff.record":
+        return _handle_handoff_record(
+            context,
+            target=target,
+            project_id=project_id,
+            db_path=db_path,
+        )
+
+    if context.command in {"handoff.list", "handoff.show"}:
+        status = inspect_database(target)
+        if status.error_code:
+            return handoff_failure_result(
+                context,
+                project_id=project_id,
+                db_path=db_path,
+                code=status.error_code,
+                message=status.error_message or status.error_code,
+                exit_code=EXIT_TOOL_ERROR,
+            )
+        try:
+            connection_factory = (
+                connect_snapshot_readonly
+                if context.command == "handoff.list"
+                else connect_readonly
+            )
+            with closing(connection_factory(target.db_path)) as connection:
+                if context.command == "handoff.list":
+                    result = list_handoffs(
+                        connection,
+                        target.project,
+                        states=getattr(context.args, "states", None),
+                        source_task_id=getattr(context.args, "source_task_id", None),
+                        limit=getattr(context.args, "limit", None),
+                    )
+                    data = {
+                        "handoffs": result.handoffs,
+                        "count": result.count,
+                        "total_matching": result.total_matching,
+                        "limit": result.limit,
+                        "states": list(result.states),
+                    }
+                else:
+                    handoff = show_handoff(
+                        connection,
+                        target.project,
+                        getattr(context.args, "handoff_id", ""),
+                    )
+                    data = {"handoff": handoff}
+        except (TaskValidationError, HandoffError) as exc:
+            return handoff_failure_result(
+                context,
+                project_id=project_id,
+                db_path=db_path,
+                code=exc.code,
+                message=exc.message,
+                exit_code=(
+                    EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE
+                ),
+            )
+        except StorageError as exc:
+            return handoff_failure_result(
+                context,
+                project_id=project_id,
+                db_path=db_path,
+                code=exc.code,
+                message=exc.message,
+                exit_code=EXIT_TOOL_ERROR,
+            )
+        except sqlite3.Error:
+            return handoff_failure_result(
+                context,
+                project_id=project_id,
+                db_path=db_path,
+                code="internal_error",
+                message="could not read local handoffs",
+                exit_code=EXIT_TOOL_ERROR,
+            )
+    else:
+        try:
+            with closing(connect_initialized(target)) as connection:
+                result = withdraw_handoff(
+                    connection,
+                    target.project,
+                    getattr(context.args, "handoff_id", ""),
+                    reason=getattr(context.args, "reason", ""),
+                )
+                connection.commit()
+            data = {
+                "handoff": result.handoff,
+                "changed_fields": result.changed_fields,
+            }
+        except (TaskValidationError, HandoffError) as exc:
+            return handoff_failure_result(
+                context,
+                project_id=project_id,
+                db_path=db_path,
+                code=exc.code,
+                message=exc.message,
+                exit_code=(
+                    EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE
+                ),
+            )
+        except StorageError as exc:
+            return handoff_failure_result(
+                context,
+                project_id=project_id,
+                db_path=db_path,
+                code=exc.code,
+                message=exc.message,
+                exit_code=EXIT_TOOL_ERROR,
+            )
+        except sqlite3.Error:
+            return handoff_failure_result(
+                context,
+                project_id=project_id,
+                db_path=db_path,
+                code="internal_error",
+                message="could not withdraw local handoff",
+                exit_code=EXIT_TOOL_ERROR,
+            )
+
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=project_id,
+        db_path=db_path,
+        data=data,
+        text=handoff_text(context.command, data),
         exit_code=EXIT_SUCCESS,
     )
 
@@ -1492,6 +1918,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise CommandLineError(
                 "invalid_argument",
                 "task requires a subcommand: add, list, next, show, or edit",
+            )
+        if args.command == "handoff" and args.handoff_command is None:
+            raise CommandLineError(
+                "invalid_argument",
+                "handoff requires a subcommand: record, list, show, or withdraw",
             )
         if args.command == "review" and (
             getattr(args, "review_entity", None) is None

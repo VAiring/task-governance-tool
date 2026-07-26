@@ -1,10 +1,9 @@
 # task-governance-tool Initial Plan
 
-Status: MVP, completion commit extension, static Task Viewer, TG-M8 governance
-hardening, TG-M9 paused-work visibility, and TG-M11 completion integrity are
-implemented at v0.3.0/schema v6. TG-M12 scope-control, local handoff, Task
-Contract, Effort Advisory, and local self-status are authorized after their
-documented dependencies; the Issue adapter remains blocked.
+Status: MVP through TG-M12.1 local handoff is implemented at v0.4.0/schema v7.
+TG-M12.2 Task Contract, Effort Advisory, and local self-status are authorized
+after their documented dependencies; the TG-M12.3 Issue adapter remains
+blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -846,6 +845,10 @@ Confirmed decisions:
   after TG-M11 schema v6. Static Viewer snapshot v3 remains the projection for
   schemas 5-8, carries the actual source schema, and excludes new outbox and
   Contract fields. Older binaries reject newer schemas rather than downgrading.
+- TG-M12.1 is version `0.4.0`: the new public local-handoff command family and
+  schema-v7 migration warrant the next pre-1.0 minor version. Later TG-M12
+  units choose and synchronize their own release version when their public
+  surface is implemented rather than silently changing the `0.4.0` artifact.
 - The initial optional Effort Advisory is default-off and informational:
   `suggested_action=continue`, unknown attribution when evidence is unreliable,
   and no automatic ask/handoff/pause/block/failure/acceptance mutation.

@@ -12,6 +12,7 @@ tasks with `task-governance-tool`.
 - [Execution Unit Boundary](#execution-unit-boundary)
 - [Pause And Resume](#pause-and-resume)
 - [Blockers](#blockers)
+- [Scope Control And Local Handoff](#scope-control-and-local-handoff)
 - [Completion And Review](#completion-and-review)
 - [Create An Offline Task Viewer](#create-an-offline-task-viewer)
 - [Register Tasks](#register-tasks)
@@ -40,7 +41,9 @@ Use this loop when the user asks to work from local task state:
 4. Rediscover started work: `task current`.
 5. If no current task should resume, choose ready work: `task next`.
 6. Inspect the chosen task: `task show`.
-7. Update local state: `task edit`.
+7. Record any out-of-scope discovery locally before continuing:
+   `handoff record`.
+8. Update local state: `task edit`.
 
 If a task blocks, mark that task `blocked` with a concise reason, then return to
 `task next` for unrelated ready work.
@@ -140,6 +143,59 @@ python scripts/taskgov.py task edit --repo <target-project> <task-id> --status b
 
 After recording a blocker, ask for another ready task with `task next`. Do not
 let one blocked lane stop unrelated optional work or work in other lanes.
+
+## Scope Control And Local Handoff
+
+Classify each newly discovered defect, improvement, or request once:
+
+1. If current acceptance requires it and current authority safely permits it,
+   keep it in the current task.
+2. If an unmet condition prevents current acceptance and cannot be resolved
+   safely within current authority, record that task's blocker.
+3. Otherwise, durably record one sanitized handoff and continue the current
+   task:
+
+   ```powershell
+   python scripts/taskgov.py handoff record --repo <target-project> <task-id> --summary "Concise out-of-scope discovery" --rationale "Why it is outside current acceptance" --json
+   ```
+
+Use the same command whether an Issue Skill is absent or may be added later.
+This version records `pending_handoff` locally and has no Issue adapter,
+receiver detection, delivery, or `handoff sync` command. Do not ask another
+question merely to decide whether the handoff exists or whether accepted work
+may continue.
+
+Exact replay of the same canonical payload returns the existing row. Supply
+`--occurrence-id <stable-id>` only when the user or a deterministic source
+already provides a stable identity for a genuinely distinct occurrence; do not
+ask an LLM to infer recurrence.
+
+Rediscover pending records oldest-first:
+
+```powershell
+python scripts/taskgov.py handoff list --repo <target-project> --json
+python scripts/taskgov.py handoff show --repo <target-project> <handoff-id> --json
+```
+
+`db status.counts.handoff_pending` is the exact population count; the bounded
+list defaults to 20 and caps at 100. Pending records do not change task
+selection, completion gates, events, or task timestamps.
+
+If local persistence still fails after its one bounded SQLite retry,
+`handoff_not_persisted` stops only the current execution unit. Inspect
+`db status`, obtain any required explicit initialization/migration or storage
+repair, and replay the same record. Never claim that a failed local write was
+handed off.
+
+Withdraw only when the user explicitly says the undelivered record was handled
+outside Task Skill or should no longer be delivered:
+
+```powershell
+python scripts/taskgov.py handoff withdraw --repo <target-project> <handoff-id> --reason "Explicit user direction" --json
+```
+
+Withdrawal does not assert that an external Issue was resolved. A terminal or
+ever-attempted record is not withdrawable.
 
 ## Completion And Review
 

@@ -1,6 +1,6 @@
 ---
 name: task-governance-tool
-description: Project-scoped local-first task tracking for Codex using the bundled taskgov CLI and skill-local SQLite state. Use when planning or registering explicit tasks, initializing or inspecting task state, rediscovering current work, selecting next actionable work, pausing or handling blockers, updating or completing tasks with structured review and completion evidence, or creating or regenerating a user-requested offline static Task Viewer.
+description: Project-scoped local-first task tracking for Codex using the bundled taskgov CLI and skill-local SQLite state. Use when planning or registering explicit tasks, initializing or inspecting task state, rediscovering current work, selecting next actionable work, pausing or handling blockers, durably handing off out-of-scope discoveries, updating or completing tasks with structured review and completion evidence, or creating or regenerating a user-requested offline static Task Viewer.
 ---
 
 # Task Governance Tool
@@ -24,6 +24,7 @@ python scripts/taskgov.py task current --repo <target-project> --json
 python scripts/taskgov.py task current --repo <target-project> --status paused --json
 python scripts/taskgov.py task next --repo <target-project> --json
 python scripts/taskgov.py task show --repo <target-project> <task-id> --json
+python scripts/taskgov.py handoff list --repo <target-project> --json
 ```
 
 First-use flow:
@@ -84,6 +85,22 @@ browser launch.
   `paused_tasks_present` warning on successful `task next` is advisory only
   and never changes ready candidates.
 - Direct sequential transitions use the same predecessor rule as `task next`.
+- Classify a new finding once: keep safely authorized acceptance work in the
+  current task, record an unmet condition that prevents acceptance as its
+  blocker, and durably `handoff record` everything else before continuing.
+  Do not ask whether an Issue Skill exists or whether a pending handoff should
+  stop otherwise accepted work.
+- `handoff record` writes only a sanitized local `pending_handoff`. Exact
+  replay returns the same row; a distinct recurrence requires an explicit
+  stable `--occurrence-id`. Use `handoff list`/`show` to rediscover it.
+  `db status.counts.handoff_pending` is the exact population count.
+- A failed local handoff write returns `handoff_not_persisted`; stop only that
+  execution unit until the same record is durable or the user explicitly
+  accepts forgetting risk. A successful pending handoff never changes task
+  selection, completion, events, or timestamps.
+- Use `handoff withdraw` only on an explicit user request to withdraw or
+  out-of-band-handle an undelivered record. This version has no Issue adapter,
+  delivery, claim, or `handoff sync` command.
 - Treat `done` as write-locked. Reopen it only with an isolated transition to
   `in_progress` and a concise `--reopen-reason`; every other write is rejected,
   and re-completion requires fresh gates.
@@ -124,6 +141,7 @@ Read [references/cli_contracts.md](references/cli_contracts.md) for exact
 arguments, JSON shapes, errors, and examples.
 
 This version does not record verification receipts, detect stale work, persist
-handoff checkpoints, page event history, create child/checklist tasks, or create
+session handoff checkpoints, page event or handoff history, create
+child/checklist tasks, deliver records to an Issue Skill, or create
 commits, branches, PRs, issue comments, network services, browser edit controls,
 or unapproved target-project mutations.

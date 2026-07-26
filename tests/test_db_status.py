@@ -133,6 +133,11 @@ class DbStatusTests(unittest.TestCase):
                         "review_pending": 0,
                         "done": 0,
                         "next_actionable": 0,
+                        "handoff_pending": 0,
+                    },
+                    "handoff_delivery": {
+                        "adapter_enabled": False,
+                        "sync_due": False,
                     },
                 },
             )
@@ -224,7 +229,7 @@ class DbStatusTests(unittest.TestCase):
             self.assertEqual(payload["data"]["exists"], True)
             self.assertEqual(payload["data"]["needs_init"], False)
             self.assertEqual(payload["data"]["needs_migration"], False)
-            self.assertEqual(payload["data"]["schema_version"], 6)
+            self.assertEqual(payload["data"]["schema_version"], 7)
             self.assertEqual(
                 payload["data"]["counts"],
                 {
@@ -234,7 +239,12 @@ class DbStatusTests(unittest.TestCase):
                     "review_pending": 1,
                     "done": 2,
                     "next_actionable": 2,
+                    "handoff_pending": 0,
                 },
+            )
+            self.assertEqual(
+                payload["data"]["handoff_delivery"],
+                {"adapter_enabled": False, "sync_due": False},
             )
 
     def test_migration_required_status_does_not_migrate_existing_file(self):
@@ -262,6 +272,7 @@ class DbStatusTests(unittest.TestCase):
                     "review_pending": 0,
                     "done": 0,
                     "next_actionable": 0,
+                    "handoff_pending": 0,
                 },
             )
             with closing(sqlite3.connect(db)) as connection:
@@ -348,6 +359,7 @@ class DbStatusTests(unittest.TestCase):
                     "review_pending": 0,
                     "done": 0,
                     "next_actionable": 0,
+                    "handoff_pending": 0,
                 },
             )
             self.assertEqual(db.read_bytes(), before_bytes)
@@ -469,10 +481,11 @@ class DbStatusTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stderr, "")
             lines = result.stdout.strip().splitlines()
-            self.assertLessEqual(len(lines), 6)
+            self.assertLessEqual(len(lines), 7)
             self.assertIn("Status: ready", result.stdout)
             self.assertIn("Paused: 0", result.stdout)
             self.assertIn("Next actionable: 0", result.stdout)
+            self.assertIn("Pending handoffs: 0", result.stdout)
 
     def test_status_returns_json_error_for_invalid_db_path(self):
         with tempfile.TemporaryDirectory() as tmp:

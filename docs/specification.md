@@ -1,8 +1,8 @@
 # task-governance-tool MVP Specification
 
-Status: formal implemented baseline through TG-M11 completion integrity at
-release v0.3.0/schema v6. The TG-M12 scope-control and local-handoff contract
-is approved for staged implementation after TG-M11, except its Issue adapter
+Status: formal implemented baseline through TG-M12.1 local handoff at release
+v0.4.0/schema v7. TG-M12.2 Task Contract and the approved optional follow-ups
+remain next after their documented dependencies; TG-M12.3 Issue adapter
 remains blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
@@ -872,7 +872,10 @@ Exact replay of the same source task and canonical payload returns the existing
 handoff. A distinct occurrence requires a stable explicit occurrence ID
 provided by user instruction or another deterministic source. The first
 version does not ask an LLM to distinguish a crash retry from a semantic
-recurrence.
+recurrence. Omitting `--occurrence-id` uses the canonical empty value.
+Supplying it explicitly with an empty, non-string, or over-200-character value
+returns `handoff_occurrence_invalid`; privacy rejection remains
+`privacy_rejected`.
 
 The local commit is the success boundary. Only a successful local commit may
 return `ok=true`. Transient SQLite failure may receive one bounded retry and a
@@ -916,13 +919,19 @@ Stable command names are `handoff.record`, `handoff.list`, `handoff.show`,
 - list: `handoffs`, returned `count`, exact `total_matching`, `limit`, and
   selected `states`;
 - show: `handoff`;
-- withdraw: `handoff` and `changed_fields`; and
+- withdraw: `handoff` and
+  `changed_fields=["state","withdraw_reason","withdrawn_at"]`; and
 - sync: bounded `claimed`, `accepted`, `pending`, and `failed` counts.
 
 `handoff list` defaults to `pending_handoff` and oldest-first
 `created_at, handoff_id` order. Terminal records appear only with an explicit
 state filter. The default limit is 20 and maximum is 100; paging remains
-deferred.
+deferred. Count and rows come from one read snapshot. Its compact rows contain
+only `handoff_id`, `source_task_id`, `source_contract_revision`, `summary`,
+`state`, `created_at`, and `updated_at`. Record/show/withdraw may return the
+full sanitized public record, but never the internal `claim_token`. Every
+public projection revalidates stored privacy limits and the cross-field state
+matrix rather than emitting corrupt or private stored text.
 
 New stable error codes are `handoff_not_persisted`,
 `handoff_not_withdrawable`, `handoff_occurrence_invalid`,
@@ -931,8 +940,13 @@ and `contract_write_conflict`. Canonically unchanged Contract input is a
 successful no-op, not an error. `handoff_delivery_pending` is a warning code,
 never a completion error.
 
-`task show` gains only a compact sibling handoff summary. Full records remain
-behind the handoff commands.
+`task show` gains only a compact sibling `handoff_summary` with exact
+`pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user` counts. Full
+records remain behind the handoff commands. Handoff command errors use fixed
+empty data shapes. Database readiness failures retain
+`db_not_initialized`, `migration_required`, or `project_mismatch`;
+`handoff_not_persisted` applies only after readiness validation when the local
+record transaction cannot be committed.
 
 ### Pending Rediscovery And Delivery
 

@@ -21,9 +21,18 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool.cli import build_parser, handle_web_export, make_context  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
+    apply_completion_commit_migration,
+    apply_completion_evidence_migration,
+    apply_git_snapshot_schema_migration,
+    apply_initial_schema_migration,
+    apply_paused_state_migration,
+    apply_review_evidence_migration,
+    connect,
     default_viewer_output_path,
+    ensure_project_meta,
     resolve_database_target,
 )
+from task_governance_tool.tasks import add_task as add_task_service  # noqa: E402
 from task_governance_tool.viewer import (  # noqa: E402
     ViewerError,
     ViewerOutputTarget,
@@ -117,6 +126,78 @@ def empty_export_data(output_path):
 
 
 class WebExportTests(unittest.TestCase):
+    def test_export_reads_schema_v5_and_v6_in_normal_and_read_only_modes(self):
+        for source_version in (5, 6):
+            with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                db = root / "taskgov.sqlite"
+                repo = root / "repo"
+                target = resolve_database_target(
+                    repo=repo,
+                    db=db,
+                    script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+                )
+                with closing(connect(db)) as connection:
+                    apply_initial_schema_migration(connection)
+                    apply_completion_commit_migration(connection)
+                    connection.commit()
+                    apply_paused_state_migration(connection)
+                    apply_completion_evidence_migration(connection)
+                    apply_review_evidence_migration(connection)
+                    if source_version == 6:
+                        apply_git_snapshot_schema_migration(connection)
+                    with connection:
+                        ensure_project_meta(connection, target.project)
+                        add_task_service(
+                            connection,
+                            target.project,
+                            title=f"Schema {source_version} export",
+                        )
+
+                before = db.read_bytes()
+                output = root / f"schema-{source_version}.html"
+                normal = run_taskgov(
+                    "web",
+                    "export",
+                    "--repo",
+                    str(repo),
+                    "--db",
+                    str(db),
+                    "--output",
+                    str(output),
+                    "--json",
+                )
+                self.assertEqual(normal.returncode, 0, normal.stderr)
+                self.assertTrue(output.is_file())
+                normal_payload = json.loads(normal.stdout)
+                self.assertTrue(normal_payload["data"]["written"])
+                self.assertEqual(normal_payload["data"]["snapshot_version"], 3)
+                snapshot = embedded_snapshot(output)
+                self.assertEqual(snapshot["source_schema_version"], source_version)
+                self.assertNotIn("handoff", json.dumps(snapshot).lower())
+                self.assertEqual(db.read_bytes(), before)
+                for suffix in ("-wal", "-shm", "-journal"):
+                    self.assertFalse(Path(str(db) + suffix).exists())
+
+                preview_output = root / f"schema-{source_version}-preview.html"
+                preview = run_taskgov(
+                    "web",
+                    "export",
+                    "--repo",
+                    str(repo),
+                    "--db",
+                    str(db),
+                    "--output",
+                    str(preview_output),
+                    "--read-only",
+                    "--json",
+                )
+                self.assertEqual(preview.returncode, 0, preview.stderr)
+                preview_payload = json.loads(preview.stdout)
+                self.assertFalse(preview_payload["data"]["written"])
+                self.assertFalse(preview_output.exists())
+                self.assertEqual(db.read_bytes(), before)
+
     def test_web_export_help_exposes_output_and_read_only(self):
         result = run_taskgov("web", "export", "--help")
 

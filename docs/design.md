@@ -1,8 +1,9 @@
 # task-governance-tool MVP Design
 
-Status: formal implemented design baseline through TG-M11 completion integrity
-at release v0.3.0/schema v6. TG-M12 scope-control and local-handoff
-implementation is authorized next except for the blocked Issue adapter.
+Status: formal implemented design baseline through TG-M12.1 local handoff at
+release v0.4.0/schema v7. TG-M12.2 Task Contract and the approved optional
+follow-ups remain next after their documented dependencies; TG-M12.3 Issue
+adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -318,9 +319,14 @@ deferred.
 2. Resolve repo and database path.
 3. If `--read-only` is present, reject the command before creating,
    migrating, or writing.
-4. Initialize or migrate the database when needed.
-5. Emit JSON or concise text.
-6. Return a stable exit code.
+4. Validate that existing migration history is contiguous, then initialize or
+   apply only the next supported ordered migration.
+5. Revalidate migration history, required schema objects, and project identity
+   before reporting success.
+6. If history has a gap, return `migration_required` without mutation and
+   require a valid backup or explicit migration-history inspection; do not
+   infer or stamp a missing version.
+7. Emit JSON or concise text and return a stable exit code.
 
 All other write commands, including `task add`, `task edit`, and TG-M8 review
 commands, must use this flow:
@@ -1267,11 +1273,18 @@ task's current pointer without copying Contract text. The SHA-256 digest is
 stored as `idempotency_key`. Without an occurrence ID, an exact replay returns
 the existing row. A caller may supply a distinct stable occurrence ID only from
 an explicit user instruction or deterministic external occurrence identity.
-There is no fuzzy duplicate or recurrence algorithm.
+There is no fuzzy duplicate or recurrence algorithm. CLI omission is `None`
+and canonicalizes to an empty occurrence value; explicit invalid occurrence
+input maps to `handoff_occurrence_invalid`, allowing omission to remain
+distinct from an invalid explicit value.
 
-`handoff record` uses an immediate transaction to validate the source task,
-insert or fetch the exact existing record, and commit before any delivery
-attempt. The command's success envelope includes the resulting handoff and:
+`handoff record` uses the immediate transaction already acquired by the
+initialized write connection to validate the source task, insert or fetch the
+exact existing record, and commit before any delivery attempt. Hash replay
+also compares all canonical identity fields; collision or corrupt mismatch is
+an internal error, never a replay. The repository returns created/replayed
+state, but the CLI assembles `durable=true` only after commit succeeds. The
+command's success envelope includes the resulting handoff and:
 
 ```json
 {
@@ -1300,6 +1313,13 @@ the storage layer does not silently redact and claim equivalence.
 `created_at ASC, handoff_id ASC` order, limit 20, and maximum 100. State and
 source-task filters are optional; terminal states appear only when explicitly
 selected. It returns `count` plus exact `total_matching`.
+Both values and the bounded rows are read under one SQLite snapshot. Compact
+list rows contain only `handoff_id`, `source_task_id`,
+`source_contract_revision`, `summary`, `state`, `created_at`, and
+`updated_at`; show/record/withdraw use a separate full public allow-list that
+never includes `claim_token`. Every projection revalidates all stored
+free-form fields and the state matrix, returning a fixed internal error rather
+than redacting or exposing corrupt/private stored content.
 `db status.counts.handoff_pending` remains the exact project population signal.
 Paging is deferred; after old pending rows are delivered, withdrawn, or
 otherwise filtered, later rows move into the bounded window. `handoff show`
@@ -1310,6 +1330,7 @@ per-state counts for that source task.
 pending, `delivery_attempts=0`, and no claim was ever acquired. It requires one
 sanitized user-provided reason. Handed-off, withdrawn, claimed, attempted, or
 expired-claim records fail `handoff_not_withdrawable` without mutation.
+Success reports changed fields `state`, `withdraw_reason`, and `withdrawn_at`.
 
 ### Claim, Delivery, And Sync State Machine
 
@@ -1587,6 +1608,13 @@ Viewer snapshot mapping becomes:
 - snapshot version 1: schema version 2;
 - snapshot version 2: schema versions 3-4; and
 - snapshot version 3: schema versions 5-8.
+
+Normal Task and handoff commands continue to require the runtime's exact
+current schema. Viewer export uses a separate query-only validator that accepts
+snapshot-v3-compatible schemas 5 through the runtime's current schema,
+requires contiguous migration history and only the tables/columns it reads,
+and still enforces project identity. This prevents schema-v7 rollout from
+breaking schema-v5/v6 export without allowing writes through an old schema.
 
 Every snapshot carries its actual `source_schema_version`. The snapshot-v3
 allow-list remains unchanged at schemas 6, 7, and 8: it excludes

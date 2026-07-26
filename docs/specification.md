@@ -77,9 +77,10 @@ the skill into each governed project that needs task tracking:
 <target-project>/.agents/skills/task-governance-tool/
 ```
 
-User-wide installation is not recommended for normal MVP use because it can
-blur task state across projects. Use a user-wide install only for explicit local
-experimentation, and prefer an explicit `--db` path if doing so.
+Stateful governed-project use supports only a physical project-scoped copy.
+User-wide, symlink, and junction installs are not public operating modes because
+they can blur state ownership across projects. Source-checkout development and
+tests remain separate from installing the Skill to govern another project.
 
 Project-scoped setup is a distinct, explicit step after installation. The
 installer or agent must verify that generated `state/` is ignored, inspect with
@@ -1219,6 +1220,163 @@ Issue receivers, Issue import/sync/priority/triage, automatic Task creation,
 advanced risk or fixture analysis, child/checklist tasks, signed evidence, and
 daily GitHub update checking remain separate Issue candidates.
 
+## Approved Post-MVP Extension: TG-M13 Operational Release Hardening
+
+TG-M13 corrects operational consistency, lock duration, and distribution
+guidance discovered during the independent v0.7.0 review. It adds no Task
+lifecycle, Issue lifecycle, workflow-engine behavior, or normal-path LLM
+judgment. The units are sequential:
+
+1. TG-M13.1 makes live SQLite reads transactionally coherent, fixes the
+   operational journal-mode contract, and maps read-side lock contention.
+2. TG-M13.2 moves Git and Effort preflight outside short SQLite write
+   transactions and extends the sanitized lock-contention error to writes.
+3. TG-M13.3 synchronizes project-scoped installation, runtime, CI, Viewer, and
+   privacy compatibility guidance.
+4. TG-M13.4 performs integrated local acceptance and, only when separately
+   authorized, records final-commit GitHub CI evidence.
+
+### Operational SQLite Read And Journal Contract
+
+The live task-governance-tool database supports SQLite rollback-journal mode
+only. Before any operational SQLite read or write, the tool must inspect the
+database header and adjacent WAL sidecar names without opening a mutable
+connection. A persistent WAL header or an existing `-wal` or `-shm` sidecar
+returns `unsupported_journal_mode` with the exact sanitized message
+`task database uses unsupported WAL journal mode`. The tool must not open the
+database, create a sidecar, checkpoint, delete a sidecar, or convert journal
+mode on that path. Rollback-journal `-journal` files are not rejected merely
+for existing; SQLite locking and recovery rules decide whether the requested
+read can proceed.
+
+Every live operational read must remove `immutable=1`. It opens the database
+with `mode=ro`, enables `PRAGMA query_only=ON`, and begins one explicit read
+transaction before validating schema, project identity, and the rows that form
+one internally coherent response. Related counts and rows, task/event/review/
+Contract projections, and handoff count/list projections must come from that
+same response transaction. Each read therefore returns one committed-consistent
+response or a structured concurrency error; it must never report uncommitted,
+rolled-back, or internally mixed state.
+
+In TG-M13.1, residual read-side `SQLITE_BUSY` or `SQLITE_LOCKED` after the
+normal driver wait returns exit code 2, code `database_busy`, and the exact
+message `task database is busy; run the command again later`. TG-M13.2 extends
+that same mapping to write-side contention.
+
+`task next` retains only its already documented advisory freshness boundary:
+the paused/status inspection and candidate selection may be two committed read
+transactions, so a commit between them may make the warning and candidates
+briefly differ. Each half must remain internally coherent. This is not a
+cross-command snapshot or blanket linearizability guarantee.
+
+`task effort` is the other explicit phased inspection when the enabled advisory
+has a stored basis. It reads the task, Contract count, handoff count, and stored
+basis in one transaction and closes that transaction before Git observation. It
+then refreshes activity generations in a second validated transaction. Each
+phase is internally coherent; the generation comparison is the deliberate
+bridge across them. Without a stored basis there is no generation comparison,
+so the command does not add a valueless second database read. A post-Git
+busy/locked read returns `database_busy`, and a newly detected WAL state returns
+`unsupported_journal_mode`; neither is converted into a successful advisory.
+Other bounded observation failures may retain the existing
+`activity_generation_uncertain` advisory behavior.
+
+### Short Write Transactions And Stable Contention
+
+Potentially slow Git commit resolution, Git snapshot capture/comparison,
+completion verification, and Effort observation must finish before
+`BEGIN IMMEDIATE`. After acquiring the short write transaction, the service
+must reread and revalidate schema/project identity plus the relevant task,
+review generation, target/base, Task Contract revision, and completion basis.
+Stale governance state returns the existing applicable domain conflict and
+performs no partial write.
+
+For optional Effort basis capture, preflight records the starting project and
+subject activity generations plus whether another task is active, then observes
+Git outside the write transaction. Under the short lock, the transition is
+reread and the generations are compared before a basis is stored. Any
+generation regression or impossible delta discards the best-effort basis.
+Activity attributable to another task during capture, or another task active
+before or after capture, sets `other_active_at_capture`; it must never be
+reported later as an exclusive task window.
+
+A `git_snapshot` is a stable observation of canonical HEAD and the stage-0
+index at capture time. It neither acquires nor promises a persistent Git index
+lock. A later index change is handled through the existing completion binding
+and fresh-target rules.
+
+Residual write-side SQLite `SQLITE_BUSY` or `SQLITE_LOCKED` after the normal
+driver wait uses the same exit code 2, `database_busy`, and exact sanitized
+message introduced for reads in TG-M13.1.
+The envelope gains no `retryable` or `suggested_action` field, and the tool
+does not increase the busy timeout or add sleep, backoff, or generic retries.
+The existing handoff-record retry of one complete fresh transaction remains
+the sole bounded exception. A failed write leaves no row, event, receipt, Git
+change, or target-project change.
+
+### Distribution And Compatibility Boundary
+
+Normal governed-project use is documented only for a physical project-scoped
+copy at:
+
+```text
+<target-project>/.agents/skills/task-governance-tool
+```
+
+When a command is launched from the target-project root, omitted `--repo`
+continues to mean that whole directory, whether or not it is a Git repository.
+When launched from inside the installed Skill directory, project commands must
+pass the target-project path explicitly with `--repo`. Symlink and Windows
+junction installs are unsupported for stateful use because code location and
+project-local state ownership must not silently diverge. User-wide
+`$CODEX_HOME/skills`, `%USERPROFILE%\.codex\skills`, and user-wide
+`.agents/skills` operating paths are not part of the public governed-project
+workflow.
+
+Project identity remains derived from the canonical absolute target path, so
+moving the project changes its default identity and can require explicit state
+recovery. TG-M13 does not add a relocation command, project UUID, runtime
+`--repo` requirement, or Git-repository existence requirement.
+
+Target-project ignore guidance must name only the root-anchored Skill state
+directory; broad repository-wide `*.sqlite`, `*.sqlite3`, or `*.db` guidance
+is not acceptable. Release-archive artifact exclusions remain a separate
+packaging concern.
+
+The documented minimum runtime is Python 3.12. Windows CI must exercise exact
+Python 3.12 and 3.14 entries, including unsupported-junction detection. Windows
+is the CI-verified platform; Linux and macOS remain unverified without a
+support claim. Viewer snapshot v3 continues to accept source schemas 5 through
+9, including automated schema-v8 coverage. No schema or Viewer snapshot version
+changes in TG-M13.
+
+### TG-M13 Acceptance And Judgment Budget
+
+Acceptance requires automated proof that:
+
+- rollback-journal cache spill and concurrent writers cannot produce an
+  uncommitted, partial, or internally mixed successful inspection;
+- persistent WAL header, WAL sidecar, and SHM sidecar paths fail before
+  operational access without new sidecars or conversion;
+- `db status`, task list/next/current/show/effort, handoff list/show, and Viewer
+  projections preserve their compact success/error shapes and no-write rules;
+- deliberately delayed Git or Effort preflight does not prevent an unrelated
+  task or handoff write from completing;
+- post-lock stale state is rejected atomically and residual lock contention
+  maps only to `database_busy`;
+- project-scoped install, ignore, relocation-limit, Python, Windows CI,
+  junction, privacy recovery, and Viewer schema-compatibility contracts are
+  synchronized and tested; and
+- the final revision passes the full offline suite, integrity checks, package
+  self-status, two independent Tier 2 reviews, and any separately authorized
+  final-commit CI gate.
+
+These corrections add zero normal-path LLM judgments, questions, retry choices,
+or stop decisions. A deterministic SQLite error may fail the affected command,
+but the Skill does not ask the model to choose a recovery policy. External CI
+dispatch, push, PR creation, or publication remains outside local task
+authority and requires explicit user authorization.
+
 ## Approved Post-MVP Extension: Static Task Viewer
 
 The tool must provide a user-facing, non-server task viewer after the core task
@@ -1800,6 +1958,8 @@ Required error codes:
 - `db_not_initialized`
 - `migration_required`
 - `project_mismatch`
+- `unsupported_journal_mode`
+- `database_busy`
 - `review_target_required`
 - `review_changes_requested`
 - `review_receipts_insufficient`

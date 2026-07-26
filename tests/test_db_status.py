@@ -371,7 +371,7 @@ class DbStatusTests(unittest.TestCase):
                 row = connection.execute("SELECT project_id FROM project_meta").fetchone()
             self.assertEqual(row[0], init_payload["project_id"])
 
-    def test_status_does_not_create_wal_sidecar_files(self):
+    def test_status_rejects_persistent_wal_header_without_creating_sidecars(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
@@ -387,7 +387,16 @@ class DbStatusTests(unittest.TestCase):
 
             result = run_taskgov("db", "status", "--repo", str(repo), "--db", str(db), "--json")
 
-            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(
+                payload["errors"][0],
+                {
+                    "code": "unsupported_journal_mode",
+                    "message": "task database uses unsupported WAL journal mode",
+                },
+            )
             after = sorted(path.name for path in db.parent.iterdir())
             self.assertEqual(after, before)
             self.assertEqual(after, ["taskgov.sqlite"])
@@ -409,6 +418,7 @@ class DbStatusTests(unittest.TestCase):
                     if path.name.startswith("taskgov.sqlite-")
                 )
                 self.assertIn("taskgov.sqlite-wal", sidecars)
+                self.assertIn("taskgov.sqlite-shm", sidecars)
                 before = sorted(path.name for path in db.parent.iterdir())
 
                 result = run_taskgov("db", "status", "--repo", str(repo), "--db", str(db), "--json")
@@ -419,8 +429,13 @@ class DbStatusTests(unittest.TestCase):
             self.assertEqual(after, before)
             payload = json.loads(result.stdout)
             self.assertFalse(payload["ok"])
-            self.assertEqual(payload["errors"][0]["code"], "internal_error")
-            self.assertIn("WAL sidecar", payload["errors"][0]["message"])
+            self.assertEqual(
+                payload["errors"][0],
+                {
+                    "code": "unsupported_journal_mode",
+                    "message": "task database uses unsupported WAL journal mode",
+                },
+            )
             self.assertEqual(payload["data"]["counts"]["active"], 0)
             self.assertEqual(payload["data"]["counts"]["paused"], 0)
 

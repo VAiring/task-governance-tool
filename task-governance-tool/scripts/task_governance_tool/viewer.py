@@ -17,6 +17,7 @@ from task_governance_tool.storage import (
     DatabaseTarget,
     StorageError,
     default_viewer_output_path,
+    operational_sqlite_error,
     utc_now,
     validate_snapshot_database,
 )
@@ -71,7 +72,10 @@ def build_viewer_snapshot(
     except StorageError:
         raise
     except sqlite3.Error as exc:
-        raise StorageError("internal_error", "could not read viewer snapshot") from exc
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="could not read viewer snapshot",
+        ) from exc
     timestamp = generated_at or utc_now()
     counts = {"total": len(task_result.tasks)}
     counts.update(

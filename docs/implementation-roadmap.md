@@ -1461,7 +1461,9 @@ Implementation notes:
   by the status inspection. Keep `task.next.data` unchanged.
 - Treat status inspection and candidate selection as successive advisory reads,
   not a linearizable snapshot. Do not replace the existing task inspection
-  connection with the Viewer-specific snapshot/WAL policy in this milestone.
+  connection with the Viewer-specific snapshot/WAL policy in this milestone;
+  TG-M13.1 later applies one shared rollback-journal/coherent-read policy while
+  preserving the two-read advisory boundary.
 - Include only the integer count and fixed `taskgov task current --status
   paused` suggestion; never serialize paused-task text into the warning.
 - Describe the result as bounded. Do not add or advertise pagination,
@@ -2051,7 +2053,9 @@ Write scope:
 Implementation notes:
 
 - Always return `suggested_action=continue`.
-- Never auto-handoff, ask, pause, block, fail, or change acceptance.
+- Never auto-handoff, ask, pause, block, fail a task because of an advisory
+  result, or change acceptance. Ordinary database readiness, journal, and
+  contention errors remain command errors.
 - Basis capture is best-effort on the existing first in-progress write and
   cannot block start.
 - Return attribution unknown for non-Git, dirty/uncertain endpoints, missing
@@ -2128,6 +2132,280 @@ Completion criteria:
 - Two independent Tier 2 reviews find no blocking high or medium issue.
 - The verified optional-feature commit is recorded on the task.
 
+## Approved Post-MVP Extension: TG-M13 Operational Release Hardening
+
+TG-M13 incorporates the accepted independent-review corrections without adding
+Task or Issue lifecycle. The units use sequential lane `REVIEW-HARDENING`.
+Current status and immutable Task Contract revisions are maintained in the
+project-local Task database.
+
+### TG-M13.1 Live SQLite Read Consistency
+
+Kind: sequential
+Lane: `REVIEW-HARDENING`
+Depends on: TG-M12.O2
+Review tier: Tier 2
+
+Intended outcome:
+
+- Replace unsafe immutable live-database reads with lock-respecting,
+  response-coherent read transactions.
+- Make rollback-journal mode the only supported operational database mode and
+  reject persistent WAL before access without mutation.
+- Promote the complete M13.1 through M13.4 contract into governing documents
+  before the first runtime edit.
+
+Write scope:
+
+- `docs/specification.md`
+- `docs/design.md`
+- `docs/implementation-roadmap.md`
+- `plan.md`
+- `task-governance-tool/references/cli_contracts.md`
+- `task-governance-tool/release-manifest.json` for mechanical digest sync only
+- `task-governance-tool/scripts/task_governance_tool/storage.py`
+- directly coupled read repositories/handlers in `tasks.py`, `handoffs.py`,
+  `effort.py`, `viewer.py`, and `cli.py`
+- focused live-read, rollback-journal, WAL-rejection, response-coherence, and
+  no-write tests
+
+Implementation notes:
+
+- First pass the docs-only consistency sub-gate for all four M13 units; do not
+  use Task DB contract text as the only authority.
+- Remove `immutable=1` from every live operational database connection.
+- Open `mode=ro`, enable `query_only`, and begin one explicit transaction before
+  schema/project validation and related response queries.
+- Reuse one connection for each internally coherent response. `task next` may
+  retain only the documented committed inter-read staleness between status/
+  paused-warning inspection and candidate selection.
+- When the enabled advisory has a stored basis, split `task effort` into one
+  validated pre-Git transaction and one validated post-Git
+  activity-generation transaction; hold no read transaction across Git.
+  Without a stored basis, omit the valueless second DB read. Busy/locked
+  refresh and WAL state are command errors, while other bounded refresh
+  failures remain attribution-unknown.
+- Reject a persistent WAL header or existing WAL/SHM sidecar with
+  `unsupported_journal_mode` and exact message
+  `task database uses unsupported WAL journal mode` before operational reads or
+  writes. Do not open, checkpoint, delete, or convert that database.
+- Allow rollback-journal files to follow SQLite locking/recovery behavior.
+- Map residual read-side `SQLITE_BUSY`/`SQLITE_LOCKED` to exit code 2,
+  `database_busy`, and exact message
+  `task database is busy; run the command again later`. M13.2 owns the
+  write-side extension.
+- Do not change schema, selection rules, compact payloads, normal Task
+  judgments, or target-project state.
+
+Verification gate:
+
+- Cross-document consistency proves specification, design, roadmap, and CLI
+  reference agree on M13 ordering, transaction boundaries, journal policy,
+  compatibility, gates, and excluded scope before runtime edits.
+- A rollback-journal writer with cache spill cannot make any inspection return
+  uncommitted, rolled-back, partial, or internally mixed state; the read either
+  returns one committed snapshot or the exact read-side `database_busy` error.
+- Persistent-WAL header, WAL-sidecar, and SHM-sidecar fixtures fail before
+  operational access and create no sidecars or conversions.
+- `db status`, task list/next/current/show/effort, handoff list/show, and Viewer
+  tests cover success, readiness errors, coherent related rows/counts, compact
+  envelopes, privacy, and no-write behavior.
+- Full offline unittest suite and `git diff --check` pass. Mechanically
+  synchronize the release-manifest digest for changed packaged core so package
+  `self status --read-only --json` returns `clean`; M13.3 still owns public
+  release/install guidance.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified docs/runtime revision and completion evidence are recorded on
+  the task.
+
+### TG-M13.2 Short SQLite Write Transactions
+
+Kind: sequential
+Lane: `REVIEW-HARDENING`
+Depends on: TG-M13.1
+Review tier: Tier 2
+
+Intended outcome:
+
+- Finish slow Git, completion, and Effort preflight before acquiring the
+  SQLite immediate write transaction.
+- Revalidate the operation-specific governance basis after the lock and return
+  stable sanitized contention errors.
+
+Write scope:
+
+- directly governing specification/design/CLI corrections if implementation
+  discovery requires them
+- storage and repository write-transaction helpers
+- `task-governance-tool/release-manifest.json` for mechanical digest sync only
+- task edit/completion, review target, Git snapshot, Effort, handoff, and event
+  persistence paths
+- deterministic delayed-preflight, stale-state, rollback, and contention tests
+
+Implementation notes:
+
+- Resolve Git commits, capture/compare Git snapshots, verify completion
+  bindings, and perform Effort preflight outside `BEGIN IMMEDIATE`.
+- Treat `git_snapshot` as a stable observed HEAD/stage-0 index capture, not a
+  Git index lock or future-stability promise.
+- After the short write lock, reread schema/project identity and every relevant
+  task status/order, review target/base/generation, Contract revision, and
+  completion-basis component. Do not use `updated_at` alone.
+- For Effort basis capture, retain starting project/subject generations and
+  other-active state around the out-of-lock Git observation. Under the lock,
+  discard impossible/regressed deltas and mark `other_active_at_capture` when
+  non-subject activity occurred or another task was active before/after; store
+  the locked post-transition generations.
+- Extend M13.1's exact `database_busy` code/message to residual write-side
+  `SQLITE_BUSY` and `SQLITE_LOCKED`.
+- Add no `retryable` or `suggested_action` field, timeout increase, sleep,
+  backoff, generic retry, or retry question. Preserve only handoff record's
+  existing one fresh-transaction retry.
+- Keep every successful row/event write exactly once and all existing review/
+  completion gates unchanged.
+
+Verification gate:
+
+- Deliberately delayed Git commit resolution, snapshot capture/comparison, and
+  Effort preflight permit an unrelated task or handoff write to complete.
+- A relevant state change between preflight and lock returns the applicable
+  existing domain conflict and stores no partial task, target, event, receipt,
+  Contract, handoff, or completion state.
+- Residual busy/locked failures use exactly `database_busy`, exit code 2,
+  command-specific empty data, and no raw SQLite/path/timeout detail.
+- Uncontended task, review, completion, Contract, handoff, and Effort flows
+  preserve behavior and event counts.
+- SQLite `quick_check`, `foreign_key_check`, focused tests, full offline suite,
+  and diff check pass. Mechanically synchronize the release-manifest digest
+  for changed packaged core so package self-status returns `clean`.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified short-transaction revision and completion evidence are recorded
+  on the task.
+
+### TG-M13.3 Release And Compatibility Hardening
+
+Kind: sequential
+Lane: `REVIEW-HARDENING`
+Depends on: TG-M13.2
+Review tier: Tier 2
+
+Intended outcome:
+
+- Correct installation, ignore, runtime, platform, Viewer, and privacy guidance
+  without adding another state mode or command.
+- Prove the documented project-scoped package is self-contained on the
+  supported Windows Python range.
+
+Write scope:
+
+- root README and `.gitignore` guidance
+- `docs/release-install.md` and narrowly coupled governing corrections
+- packaged `SKILL.md`, workflow/CLI references, metadata, release manifest, and
+  release/package guards
+- `.github/workflows/ci.yml`
+- install, junction, Python-version, command-inventory, Viewer schema-v8, and
+  packaged privacy-workflow tests
+
+Implementation notes:
+
+- Document governed-project use only at a physical
+  `<target-project>/.agents/skills/task-governance-tool` copy.
+- Primary examples run from `<target-project>` through the relative Skill
+  script. Examples that start in the Skill folder require explicit
+  `--repo <target-project>`.
+- Remove `$CODEX_HOME/skills`, `%USERPROFILE%\.codex\skills`, and user-wide
+  `.agents/skills` operating paths from public guidance and CI.
+- Mark symlink and Windows junction installs unsupported. Do not implement
+  lexical state-root recovery or another install mode.
+- Retain optional `--repo` because non-Git governed directories are valid; do
+  not search for a Git root or add a Git-repository existence guard.
+- Narrow target-project ignore guidance to the root-anchored Skill `state/`
+  path. Keep release-archive database exclusions separate.
+- Explain canonical-path identity relocation limits without adding project
+  UUID, relocation command, or automatic recovery.
+- Document Python 3.12+ and run exact Windows 3.12/3.14 CI matrix entries.
+  Linux/macOS remain unverified.
+- Keep implemented command inventory synchronized, add automated Viewer
+  schema-v8 coverage, and permit at most one sanitized handoff abstraction
+  retry after privacy rejection.
+
+Verification gate:
+
+- Documentation and command-inventory consistency checks find no user-wide
+  governed-project operating path or broad target-project database glob.
+- Physical installed-copy smoke tests pass; symlink/junction stateful use is
+  rejected or diagnosed deterministically without state mutation.
+- Exact Windows Python 3.12 and 3.14 CI configuration and minimum-version
+  guidance agree.
+- Viewer snapshot v3 covers source schemas 5 through 9, including schema 8.
+- The packaged handoff privacy recovery never stores or emits the rejected raw
+  content and attempts at most one sanitized abstraction.
+- Skill self-check, full offline suite, package self-status, artifact guards,
+  and diff check pass.
+
+Completion criteria:
+
+- Two independent Tier 2 reviews find no blocking high or medium issue.
+- The verified release/compatibility revision and completion evidence are
+  recorded on the task.
+
+### TG-M13.4 Integrated Regression And Release Acceptance
+
+Kind: sequential
+Lane: `REVIEW-HARDENING`
+Depends on: TG-M13.3
+Review tier: Tier 2
+
+Intended outcome:
+
+- Verify M13.1 through M13.3 together against realistic local concurrency,
+  migration, Viewer, privacy, package, and no-mutation scenarios.
+- Record external final-commit CI evidence only after explicit authorization.
+
+Write scope:
+
+- integration/forward fixtures and acceptance documentation
+- only narrow corrections required by an M13 acceptance failure
+- Task DB review/completion evidence
+- no push, PR, workflow dispatch, or publication without explicit user
+  authorization
+
+Implementation notes:
+
+- Do not add another feature or broaden scope during acceptance. Record
+  nonblocking discoveries as local handoffs.
+- Review one final revision twice. Any meaningful correction requires a new
+  target and two fresh PASS receipts.
+- Local acceptance may complete independently of the external release gate.
+  Missing authorization blocks only CI dispatch/push/PR/publication evidence.
+
+Verification gate:
+
+- Full offline unittest suite has only documented skips.
+- Explicit rollback-journal cache-spill and delayed Git/Effort concurrent-writer
+  scenarios pass.
+- Migration preservation, Viewer schemas 5-9, privacy, compact JSON, package
+  manifest, project-scoped installation, Windows CI configuration, and DB/Git/
+  target-project no-mutation checks pass.
+- `self status --read-only --json`, `git diff --check`, and clean-scope Git
+  inspection pass.
+- Two independent Tier 2 reviews for the same final revision pass with no open
+  high/medium finding.
+- Before merge/publication, the final commit has successful GitHub CI through
+  a PR or explicitly authorized workflow dispatch.
+
+Completion criteria:
+
+- All local gates and final-revision review evidence are recorded.
+- The external release gate is recorded when authorized; its absence does not
+  authorize an external action or invalidate completed local verification.
+
 ## Roadmap Completion Criteria
 
 The MVP implementation roadmap is complete when:
@@ -2166,3 +2444,10 @@ governing permission update, and the integration boundary are separately
 approved. None of these approvals authorizes semantic Issue triage, paging,
 child tasks, signed evidence, external Issue import/lifecycle sync, package
 repair/update, or daily GitHub update checking.
+
+TG-M13.1 through TG-M13.4 were approved as one sequential release-hardening
+lane. This approval covers only the documented SQLite consistency,
+short-transaction, project-scoped distribution, compatibility, and acceptance
+corrections. It does not authorize a new schema, command, workflow engine,
+Git write, external CI dispatch, PR, push, or publication. External release
+actions still require explicit user authorization.

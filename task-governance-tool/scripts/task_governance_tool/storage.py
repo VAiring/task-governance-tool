@@ -17,6 +17,10 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 PROJECT_ID_HASH_LENGTH = 12
 SCHEMA_VERSION = 9
+UNSUPPORTED_JOURNAL_MODE_MESSAGE = (
+    "task database uses unsupported WAL journal mode"
+)
+DATABASE_BUSY_MESSAGE = "task database is busy; run the command again later"
 
 
 class StorageError(Exception):
@@ -150,6 +154,24 @@ def configure_connection(connection: sqlite3.Connection) -> sqlite3.Connection:
     return connection
 
 
+def is_sqlite_busy_or_locked(exc: sqlite3.Error) -> bool:
+    error_code = getattr(exc, "sqlite_errorcode", None)
+    if isinstance(error_code, int):
+        return (error_code & 0xFF) in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
+    message = str(exc).lower()
+    return "locked" in message or "busy" in message
+
+
+def operational_sqlite_error(
+    exc: sqlite3.Error,
+    *,
+    fallback_message: str,
+) -> StorageError:
+    if is_sqlite_busy_or_locked(exc):
+        return StorageError("database_busy", DATABASE_BUSY_MESSAGE)
+    return StorageError("internal_error", fallback_message)
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     return configure_connection(sqlite3.connect(db_path))
 
@@ -161,23 +183,40 @@ def connect_existing(db_path: Path) -> sqlite3.Connection:
 
 
 def connect_readonly(db_path: Path) -> sqlite3.Connection:
-    uri = db_path.resolve(strict=False).as_uri() + "?mode=ro&immutable=1"
-    return configure_connection(sqlite3.connect(uri, uri=True))
-
-
-def connect_snapshot_readonly(db_path: Path) -> sqlite3.Connection:
-    """Open a point-in-time read transaction without immutable SQLite mode."""
-    validate_snapshot_journal_state(db_path)
+    """Open one lock-respecting query-only read transaction."""
+    validate_operational_journal_state(db_path)
+    if not db_path.exists():
+        raise StorageError(
+            "db_not_initialized",
+            "database is not initialized; run db init first",
+        )
     uri = db_path.resolve(strict=False).as_uri() + "?mode=ro"
-    connection = sqlite3.connect(uri, uri=True)
+    try:
+        connection = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as exc:
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="could not open database",
+        ) from exc
     try:
         configure_connection(connection)
         connection.execute("PRAGMA query_only = ON")
         connection.execute("BEGIN")
+    except sqlite3.Error as exc:
+        connection.close()
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="could not open database",
+        ) from exc
     except Exception:
         connection.close()
         raise
     return connection
+
+
+def connect_snapshot_readonly(db_path: Path) -> sqlite3.Connection:
+    """Open a Viewer-compatible point-in-time read transaction."""
+    return connect_readonly(db_path)
 
 
 def sqlite_sidecar_paths(db_path: Path) -> list[Path]:
@@ -195,24 +234,27 @@ def sqlite_header_uses_wal(db_path: Path) -> bool:
             header = stream.read(20)
     except OSError as exc:
         raise StorageError("internal_error", "could not inspect database journal mode") from exc
-    return (
-        len(header) >= 20
-        and header[:16] == b"SQLite format 3\x00"
-        and (header[18] == 2 or header[19] == 2)
-    )
+    if len(header) < 20 or header[:16] != b"SQLite format 3\x00":
+        return False
+    journal_versions = (header[18], header[19])
+    if any(version not in {1, 2} for version in journal_versions):
+        return False
+    return 2 in journal_versions
 
 
-def validate_snapshot_journal_state(db_path: Path) -> None:
-    """Reject SQLite states that can make a read create WAL/SHM sidecars."""
+def validate_operational_journal_state(db_path: Path) -> None:
+    """Reject persistent WAL state before any operational SQLite access."""
     if existing_sqlite_sidecars(db_path):
         raise StorageError(
-            "internal_error",
-            "database has active WAL sidecar files; close writers or checkpoint before export",
+            "unsupported_journal_mode",
+            UNSUPPORTED_JOURNAL_MODE_MESSAGE,
         )
+    if not db_path.exists():
+        return
     if sqlite_header_uses_wal(db_path):
         raise StorageError(
-            "internal_error",
-            "database uses WAL journal mode; switch to a rollback journal before export",
+            "unsupported_journal_mode",
+            UNSUPPORTED_JOURNAL_MODE_MESSAGE,
         )
 
 
@@ -1506,6 +1548,7 @@ def validate_current_database(
 
 def connect_initialized(target: DatabaseTarget) -> sqlite3.Connection:
     """Open a current, project-matching database without creation or migration."""
+    validate_operational_journal_state(target.db_path)
     if not target.db_path.exists():
         raise StorageError(
             "db_not_initialized",
@@ -1523,6 +1566,38 @@ def connect_initialized(target: DatabaseTarget) -> sqlite3.Connection:
     try:
         connection.execute("BEGIN IMMEDIATE")
         validate_current_database(connection, target)
+    except Exception:
+        connection.rollback()
+        connection.close()
+        raise
+    return connection
+
+
+def connect_initialized_readonly(target: DatabaseTarget) -> sqlite3.Connection:
+    """Open one validated current-schema read transaction."""
+    try:
+        connection = connect_readonly(target.db_path)
+    except StorageError:
+        raise
+    except sqlite3.Error as exc:
+        if not target.db_path.exists():
+            raise StorageError(
+                "db_not_initialized",
+                "database is not initialized; run db init first",
+            ) from exc
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="could not open database",
+        ) from exc
+    try:
+        validate_current_database(connection, target)
+    except sqlite3.Error as exc:
+        connection.rollback()
+        connection.close()
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="could not inspect database",
+        ) from exc
     except Exception:
         connection.rollback()
         connection.close()
@@ -1694,28 +1769,6 @@ def status_error(
 
 
 def inspect_database(target: DatabaseTarget) -> StatusResult:
-    if not target.db_path.exists():
-        return status_error(
-            target,
-            exists=False,
-            needs_init=True,
-            needs_migration=False,
-            schema_version=None,
-            code="db_not_initialized",
-            message="database is not initialized; run db init first",
-        )
-
-    if existing_sqlite_sidecars(target.db_path):
-        return status_error(
-            target,
-            exists=True,
-            needs_init=False,
-            needs_migration=False,
-            schema_version=None,
-            code="internal_error",
-            message="database has active WAL sidecar files; close writers or checkpoint before status",
-        )
-
     try:
         with closing(connect_readonly(target.db_path)) as connection:
             version = current_schema_version(connection)
@@ -1792,21 +1845,39 @@ def inspect_database(target: DatabaseTarget) -> StatusResult:
                 schema_version=version,
                 counts=count_tasks(connection, target.project.project_id),
             )
+    except StorageError as exc:
+        database_exists = target.db_path.exists()
+        return status_error(
+            target,
+            exists=database_exists,
+            needs_init=(
+                not database_exists and exc.code == "db_not_initialized"
+            ),
+            needs_migration=False,
+            schema_version=None,
+            code=exc.code,
+            message=exc.message,
+        )
     except sqlite3.Error as exc:
+        mapped = operational_sqlite_error(
+            exc,
+            fallback_message="could not inspect database",
+        )
         return status_error(
             target,
             exists=True,
             needs_init=False,
             needs_migration=False,
             schema_version=None,
-            code="internal_error",
-            message="could not inspect database",
+            code=mapped.code,
+            message=mapped.message,
         )
 
 
 def initialize_database(target: DatabaseTarget) -> InitResult:
     created = not target.db_path.exists()
     try:
+        validate_operational_journal_state(target.db_path)
         target.db_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(connect(target.db_path)) as connection:
             with connection:

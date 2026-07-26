@@ -23,7 +23,7 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_migrations,
     connect,
     connect_initialized,
-    connect_snapshot_readonly,
+    connect_initialized_readonly,
     project_identity,
 )
 
@@ -382,15 +382,16 @@ class HandoffCommandTests(unittest.TestCase):
                 created["data"]["handoff"]["handoff_id"],
             )
 
-    def test_cli_list_uses_nonimmutable_snapshot_reader(self):
+    def test_cli_list_and_show_use_one_validated_read_transaction_each(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
             init_db(db, repo)
             task = add_task(db, repo)
-            record(db, repo, task["task_id"])
-            args = build_parser().parse_args(
+            _, created = record(db, repo, task["task_id"])
+            handoff_id = created["data"]["handoff"]["handoff_id"]
+            list_args = build_parser().parse_args(
                 [
                     "handoff",
                     "list",
@@ -402,25 +403,55 @@ class HandoffCommandTests(unittest.TestCase):
                     "--json",
                 ]
             )
-            with mock.patch(
-                "task_governance_tool.cli.connect_snapshot_readonly",
-                wraps=connect_snapshot_readonly,
-            ) as snapshot_reader:
-                result = handle_command(make_context(args))
+            show_args = build_parser().parse_args(
+                [
+                    "handoff",
+                    "show",
+                    "--repo",
+                    str(repo),
+                    "--db",
+                    str(db),
+                    handoff_id,
+                    "--read-only",
+                    "--json",
+                ]
+            )
 
-            self.assertTrue(result.ok)
-            self.assertEqual(result.data["count"], 1)
-            self.assertEqual(result.data["total_matching"], 1)
-            snapshot_reader.assert_called_once_with(db.resolve())
+            def open_validated(target):
+                connection = connect_initialized_readonly(target)
+                self.assertTrue(connection.in_transaction)
+                self.assertEqual(
+                    connection.execute("PRAGMA query_only").fetchone()[0],
+                    1,
+                )
+                return connection
 
             with mock.patch(
-                "task_governance_tool.cli.connect_snapshot_readonly",
+                "task_governance_tool.cli.connect_initialized_readonly",
+                side_effect=open_validated,
+            ) as validated_reader:
+                list_result = handle_command(make_context(list_args))
+                show_result = handle_command(make_context(show_args))
+
+            self.assertTrue(list_result.ok)
+            self.assertEqual(list_result.data["count"], 1)
+            self.assertEqual(list_result.data["total_matching"], 1)
+            self.assertTrue(show_result.ok)
+            self.assertEqual(show_result.data["handoff"]["handoff_id"], handoff_id)
+            self.assertEqual(validated_reader.call_count, 2)
+            for call in validated_reader.call_args_list:
+                target = call.args[0]
+                self.assertEqual(target.db_path, db.resolve())
+                self.assertEqual(target.project.project_id, task["project_id"])
+
+            with mock.patch(
+                "task_governance_tool.cli.connect_initialized_readonly",
                 side_effect=StorageError(
                     "internal_error",
-                    "snapshot reader unavailable",
+                    "validated reader unavailable",
                 ),
             ):
-                failure = handle_command(make_context(args))
+                failure = handle_command(make_context(list_args))
             self.assertFalse(failure.ok)
             self.assertEqual(failure.errors[0]["code"], "internal_error")
             self.assertEqual(

@@ -32,7 +32,7 @@ from task_governance_tool.storage import (
     StatusResult,
     StorageError,
     connect_initialized,
-    connect_readonly,
+    connect_initialized_readonly,
     connect_snapshot_readonly,
     initialize_database,
     inspect_database,
@@ -573,17 +573,6 @@ def handle_web_export(context: CommandContext) -> CommandResult:
         )
 
     output_path = str(output_target.path)
-    if not target.db_path.exists():
-        return web_export_failure_result(
-            context,
-            project_id=project_id,
-            db_path=db_path,
-            output_path=output_path,
-            code="db_not_initialized",
-            message="database is not initialized; run db init first",
-            exit_code=EXIT_TOOL_ERROR,
-        )
-
     try:
         with closing(connect_snapshot_readonly(target.db_path)) as connection:
             snapshot_result = build_viewer_snapshot(connection, target)
@@ -996,20 +985,8 @@ def task_list_text(tasks: list[dict[str, Any]], count: int, limit: int) -> str:
 
 def handle_task_list(context: CommandContext) -> CommandResult:
     target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
-    status = inspect_database(target)
-    if status.error_code:
-        return CommandResult(
-            ok=False,
-            command=context.command,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            data={"tasks": [], "count": 0, "limit": 0},
-            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
-            exit_code=EXIT_TOOL_ERROR,
-        )
-
     try:
-        with closing(connect_readonly(target.db_path)) as connection:
+        with closing(connect_initialized_readonly(target)) as connection:
             result = list_tasks(connection, target.project, **task_list_input(context.args))
     except TaskValidationError as exc:
         return validation_failure_result(
@@ -1018,13 +995,30 @@ def handle_task_list(context: CommandContext) -> CommandResult:
             db_path=str(target.db_path),
             exc=exc,
         )
-    except sqlite3.Error as exc:
+    except StorageError as exc:
         return CommandResult(
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            errors=[{"code": "internal_error", "message": "could not list tasks"}],
+            data={"tasks": [], "count": 0, "limit": 0},
+            errors=[{"code": exc.code, "message": exc.message}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error as exc:
+        code = "database_busy" if _is_transient_sqlite_lock(exc) else "internal_error"
+        message = (
+            "task database is busy; run the command again later"
+            if code == "database_busy"
+            else "could not list tasks"
+        )
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data={"tasks": [], "count": 0, "limit": 0},
+            errors=[{"code": code, "message": message}],
             exit_code=EXIT_TOOL_ERROR,
         )
 
@@ -1107,7 +1101,7 @@ def handle_task_next(context: CommandContext) -> CommandResult:
         )
 
     try:
-        with closing(connect_readonly(target.db_path)) as connection:
+        with closing(connect_initialized_readonly(target)) as connection:
             result = select_next_tasks(connection, target.project, **task_next_input(context.args))
     except TaskValidationError as exc:
         return task_next_failure_result(
@@ -1118,13 +1112,27 @@ def handle_task_next(context: CommandContext) -> CommandResult:
             message=exc.message,
             exit_code=EXIT_USAGE,
         )
-    except sqlite3.Error:
+    except StorageError as exc:
         return task_next_failure_result(
             context,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            code="internal_error",
-            message="could not select next tasks",
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error as exc:
+        code = "database_busy" if _is_transient_sqlite_lock(exc) else "internal_error"
+        return task_next_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            code=code,
+            message=(
+                "task database is busy; run the command again later"
+                if code == "database_busy"
+                else "could not select next tasks"
+            ),
             exit_code=EXIT_TOOL_ERROR,
         )
 
@@ -1203,19 +1211,8 @@ def handle_task_current(context: CommandContext) -> CommandResult:
     effective_statuses = (
         CURRENT_STATUSES if status_filter is None else (status_filter,)
     )
-    status = inspect_database(target)
-    if status.error_code:
-        return CommandResult(
-            ok=False,
-            command=context.command,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            data=task_current_empty_data(effective_statuses),
-            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
-            exit_code=EXIT_TOOL_ERROR,
-        )
     try:
-        with closing(connect_readonly(target.db_path)) as connection:
+        with closing(connect_initialized_readonly(target)) as connection:
             result = list_current_tasks(
                 connection,
                 target.project,
@@ -1232,14 +1229,34 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_USAGE,
         )
-    except sqlite3.Error:
+    except StorageError as exc:
         return CommandResult(
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
             data=task_current_empty_data(effective_statuses),
-            errors=[{"code": "internal_error", "message": "could not list current tasks"}],
+            errors=[{"code": exc.code, "message": exc.message}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error as exc:
+        code = "database_busy" if _is_transient_sqlite_lock(exc) else "internal_error"
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data=task_current_empty_data(effective_statuses),
+            errors=[
+                {
+                    "code": code,
+                    "message": (
+                        "task database is busy; run the command again later"
+                        if code == "database_busy"
+                        else "could not list current tasks"
+                    ),
+                }
+            ],
             exit_code=EXIT_TOOL_ERROR,
         )
     data = {
@@ -1317,28 +1334,16 @@ def task_effort_text(data: dict[str, Any]) -> str:
 def handle_task_effort(context: CommandContext) -> CommandResult:
     target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
     raw_task_id = getattr(context.args, "task_id", "")
-    status = inspect_database(target)
-    if status.error_code:
-        return CommandResult(
-            ok=False,
-            command=context.command,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            data=task_effort_empty_data(raw_task_id),
-            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
-            exit_code=EXIT_TOOL_ERROR,
-        )
-
     try:
         task_id = validate_task_id(raw_task_id)
         profile = load_effort_profile(skill_root_from_script(cli_script_path()))
-        with closing(connect_readonly(target.db_path)) as connection:
+        with closing(connect_initialized_readonly(target)) as connection:
             result = build_effort_advisory(
                 connection,
                 target.project,
                 task_id,
                 profile,
-                db_path=target.db_path,
+                database_target=target,
             )
     except TaskValidationError as exc:
         return validation_failure_result(
@@ -1357,14 +1362,34 @@ def handle_task_effort(context: CommandContext) -> CommandResult:
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_USAGE if exc.code == "not_found" else EXIT_TOOL_ERROR,
         )
-    except sqlite3.Error:
+    except StorageError as exc:
         return CommandResult(
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            data=task_effort_empty_data(task_id),
-            errors=[{"code": "internal_error", "message": "could not inspect task effort"}],
+            data=task_effort_empty_data(raw_task_id),
+            errors=[{"code": exc.code, "message": exc.message}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error as exc:
+        code = "database_busy" if _is_transient_sqlite_lock(exc) else "internal_error"
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data=task_effort_empty_data(raw_task_id),
+            errors=[
+                {
+                    "code": code,
+                    "message": (
+                        "task database is busy; run the command again later"
+                        if code == "database_busy"
+                        else "could not inspect task effort"
+                    ),
+                }
+            ],
             exit_code=EXIT_TOOL_ERROR,
         )
 
@@ -1441,27 +1466,8 @@ def task_show_text(
 
 def handle_task_show(context: CommandContext) -> CommandResult:
     target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
-    status = inspect_database(target)
-    if status.error_code:
-        return CommandResult(
-            ok=False,
-            command=context.command,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            data={
-                "task": None,
-                "events": [],
-                "suggested_next_action": "",
-                "review_evidence": None,
-                "handoff_summary": None,
-                "contract": None,
-            },
-            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
-            exit_code=EXIT_TOOL_ERROR,
-        )
-
     try:
-        with closing(connect_readonly(target.db_path)) as connection:
+        with closing(connect_initialized_readonly(target)) as connection:
             result = show_task(connection, target.project, getattr(context.args, "task_id", ""))
     except TaskValidationError as exc:
         return validation_failure_result(
@@ -1511,7 +1517,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             errors=[{"code": "internal_error", "message": "could not show task"}],
             exit_code=EXIT_TOOL_ERROR,
         )
-    except sqlite3.Error as exc:
+    except StorageError as exc:
         return CommandResult(
             ok=False,
             command=context.command,
@@ -1525,7 +1531,34 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                 "handoff_summary": None,
                 "contract": None,
             },
-            errors=[{"code": "internal_error", "message": "could not show task"}],
+            errors=[{"code": exc.code, "message": exc.message}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error as exc:
+        code = "database_busy" if _is_transient_sqlite_lock(exc) else "internal_error"
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data={
+                "task": None,
+                "events": [],
+                "suggested_next_action": "",
+                "review_evidence": None,
+                "handoff_summary": None,
+                "contract": None,
+            },
+            errors=[
+                {
+                    "code": code,
+                    "message": (
+                        "task database is busy; run the command again later"
+                        if code == "database_busy"
+                        else "could not show task"
+                    ),
+                }
+            ],
             exit_code=EXIT_TOOL_ERROR,
         )
 
@@ -1932,23 +1965,8 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
         )
 
     if context.command in {"handoff.list", "handoff.show"}:
-        status = inspect_database(target)
-        if status.error_code:
-            return handoff_failure_result(
-                context,
-                project_id=project_id,
-                db_path=db_path,
-                code=status.error_code,
-                message=status.error_message or status.error_code,
-                exit_code=EXIT_TOOL_ERROR,
-            )
         try:
-            connection_factory = (
-                connect_snapshot_readonly
-                if context.command == "handoff.list"
-                else connect_readonly
-            )
-            with closing(connection_factory(target.db_path)) as connection:
+            with closing(connect_initialized_readonly(target)) as connection:
                 if context.command == "handoff.list":
                     result = list_handoffs(
                         connection,
@@ -1991,13 +2009,18 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
                 message=exc.message,
                 exit_code=EXIT_TOOL_ERROR,
             )
-        except sqlite3.Error:
+        except sqlite3.Error as exc:
+            code = "database_busy" if _is_transient_sqlite_lock(exc) else "internal_error"
             return handoff_failure_result(
                 context,
                 project_id=project_id,
                 db_path=db_path,
-                code="internal_error",
-                message="could not read local handoffs",
+                code=code,
+                message=(
+                    "task database is busy; run the command again later"
+                    if code == "database_busy"
+                    else "could not read local handoffs"
+                ),
                 exit_code=EXIT_TOOL_ERROR,
             )
     else:

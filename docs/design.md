@@ -358,11 +358,14 @@ commands, must use this flow:
 Write commands must clearly say what they recorded in text mode and in JSON
 payloads.
 
-Inspection commands are `db status`, `task list`, `task next`, `task current`,
-and `task show`. They must not create, migrate, or write to the
-database by default. A missing database should produce `db_not_initialized`; a
-database requiring migration should produce `migration_required`; `db status`
-should report those states without changing the database.
+Database inspection commands are `db status`, `task list`, `task next`,
+`task current`, `task effort`, `task show`, `handoff list`, and
+`handoff show`. They must not create, migrate, or write to the database by
+default. A missing database should produce `db_not_initialized`; a database
+requiring migration should produce `migration_required`; `db status` should
+report those states without changing the database. TG-M13's operational
+journal preflight and response-coherent read boundary below apply to every one
+of these database-backed inspections.
 
 The post-MVP `web export` command is a hybrid export command: it reads the
 database through the inspection path but, only after explicit user intent,
@@ -923,7 +926,10 @@ them, so the advisory count may be stale by the time candidates are emitted.
 This is acceptable for a recall warning and must be documented rather than
 overstated as a linearizable snapshot. Reusing `connect_snapshot_readonly()`
 would import the Viewer-specific persistent-WAL rejection and transaction
-contract into `task next`; TG-M9 does not authorize that compatibility change.
+contract into `task next`; TG-M9 did not authorize that compatibility change.
+TG-M13.1 later standardizes the rollback-journal preflight and coherent
+transaction on all operational reads while preserving this two-transaction
+advisory boundary.
 
 ### Filtered Current-Task Read Model
 
@@ -1635,9 +1641,12 @@ evidence showing possible overlap after basis capture. Schema v9 adds
 the observation subtract the subject task's own active-state transitions while
 still detecting another task that starts and finishes before observation.
 `other_active_at_capture` covers an overlap already present at basis time.
-The command reads current activity generations from a fresh immutable
-connection after Git observation, rather than reusing the pre-observation
-snapshot; failure to refresh is `activity_generation_uncertain`.
+When a stored basis exists, the command reads current activity generations from
+a fresh coherent read transaction after Git observation, rather than reusing
+the pre-observation snapshot. Without a stored basis, there is no generation
+comparison and no second database read. Non-lock/non-journal refresh failure is
+`activity_generation_uncertain`; M13 read-side `database_busy` and
+`unsupported_journal_mode` remain command errors.
 These counters are maintained only after explicit enablement or while an
 existing basis needs continued attribution; strict-off databases do no
 advisory bookkeeping.
@@ -1764,6 +1773,224 @@ copying and handoff behavior only after their acceptance gates. Effort Advisory
 and package self-status are now documented only at their bounded optional
 surfaces; the Issue adapter remains unadvertised until its integration unit
 passes.
+
+## Approved TG-M13 Operational Release Hardening Design
+
+TG-M13 is a bounded correction layer over schema version 9 and Viewer snapshot
+version 3. It does not introduce another repository abstraction, lock manager,
+workflow engine, schema migration, or LLM decision point.
+
+### Operational Journal Preflight
+
+`storage.py` owns one shared, read-only operational journal preflight. For an
+existing SQLite file it:
+
+1. rejects an adjacent `<db>-wal` or `<db>-shm` entry before opening SQLite;
+2. reads only the fixed SQLite header needed to validate the normal file
+   signature and the read/write-version bytes;
+3. rejects persistent WAL when either header version byte is `2`;
+4. accepts rollback-journal header version `1`; and
+5. maps rejection to this exact error without including the path, header
+   bytes, sidecar metadata, or operating-system exception detail:
+
+```json
+{
+  "code": "unsupported_journal_mode",
+  "message": "task database uses unsupported WAL journal mode"
+}
+```
+
+The check is applied before all live operational SQLite reads and writes,
+including existing-database migration. An absent database with no adjacent
+WAL/SHM entry remains the normal `db_not_initialized` or `db init` create path;
+an orphan WAL/SHM entry is preserved and rejected as unsupported state. The
+helper never opens SQLite, changes `journal_mode`, checkpoints, deletes a
+sidecar, or treats a rollback-journal `-journal` file as unsupported. A race
+after preflight is handled by SQLite locking or by the response transaction;
+TG-M13 does not attempt adversarial TOCTOU prevention.
+
+Only a valid SQLite signature with either header journal-version byte equal to
+`2`, or an existing WAL/SHM sidecar, is classified as unsupported WAL. A short
+header, non-SQLite signature, or journal-version byte outside `{1, 2}` is not
+misreported as WAL; the later SQLite/schema validation returns its existing
+sanitized migration/internal error. Failure to read an existing header returns
+`internal_error` with `could not inspect database journal mode`. No header
+bytes or operating-system detail are emitted.
+
+### Coherent Read Connection Boundary
+
+The live read helper opens:
+
+```text
+file:<absolute-db-uri>?mode=ro
+```
+
+without `immutable=1`, applies the existing connection configuration, enables
+`PRAGMA query_only=ON`, and executes explicit `BEGIN`. Schema-history,
+required-object, and project-identity checks then run on that same connection
+before any command-specific query. The caller owns that transaction until the
+complete response projection has been assembled and closes it without a write.
+
+The repository boundary is response-oriented:
+
+- `db status` reads readiness, identity, all counts, and next-actionable count
+  in one transaction when the database is usable;
+- task list/current read their selected rows in the same transaction that
+  validated readiness;
+- task show reads its task, events, review evidence, handoff summary, and
+  Contract from one transaction;
+- handoff list reads `total_matching` and bounded rows together, and handoff
+  show reads and validates its row in the same transaction;
+- when a stored Effort basis exists, each pre-Git and post-Git database
+  observation is independently coherent; and
+- Viewer export reuses the same journal preflight and its existing dedicated
+  compatible-schema snapshot transaction.
+
+`task next` intentionally retains two committed transactions: its status/
+paused-warning inspection and its candidate query. A concurrent commit between
+them is advisory inter-read staleness already accepted by TG-M9. Neither
+transaction may contain internally mixed rows.
+
+When the enabled advisory has a stored basis, `task effort` has two explicit
+database phases around Git observation. The first transaction reads the task,
+stored basis, Contract revision count, and handoff count, then closes. The
+second validated transaction refreshes activity generations. Without a stored
+basis, there is no generation comparison and no second database read. A
+busy/locked refresh or newly detected WAL state is a command error, while other
+bounded refresh failures retain the existing `activity_generation_uncertain`
+result.
+
+The old pattern of `inspect_database()` on one connection followed by related
+rows on an immutable connection is removed. Storage may expose a context or
+repository helper that returns the already validated connection, but feature
+modules must not create raw SQLite connections. Missing, migration-required,
+and project-mismatch paths remain no-create/no-sidecar inspections.
+
+Rollback-journal contention may make a read wait for the normal Python SQLite
+timeout. A successful result is one committed snapshot. M13.1 maps read-side
+`SQLITE_BUSY` or `SQLITE_LOCKED` to the stable database contention error below;
+raw SQLite text is never emitted. M13.2 extends the identical mapping to
+writes.
+
+### Short Write And External Preflight Boundary
+
+M13.2 replaces the former command-wide immediate transaction with this flow:
+
+1. parse and validate caller input without opening a write transaction;
+2. resolve the database/repository target and run operational journal
+   preflight;
+3. perform required Git commit resolution, Git snapshot capture/comparison,
+   completion verification, or Effort observation read-only;
+4. retain the minimum canonical observations needed for persistence;
+5. open the existing database and acquire `BEGIN IMMEDIATE`;
+6. revalidate schema history and project identity in that transaction;
+7. reread the owning task and every relevant concurrency component;
+8. reject a stale component with its existing domain conflict;
+9. persist the state row and audit event atomically; and
+10. commit immediately before formatting the response.
+
+The reread set is operation-specific rather than a generic version token. It
+includes the relevant task status and ordering basis, review target kind/value/
+base/generation, current Task Contract revision, and completion-evidence basis.
+`updated_at` alone is not a concurrency token. A preflight result can be
+persisted only if those governance components still authorize the same write.
+
+Optional Effort basis capture additionally carries a bounded preflight record:
+starting project generation, starting subject generation, whether another task
+was active, and the captured Git endpoint. After the locked transition updates
+the subject activity generation, compare the locked project/subject values to
+the starting values. Generation regression, negative delta, or subject delta
+greater than project delta discards the best-effort basis. A project delta
+greater than the subject delta means another task changed activity during Git
+capture and forces `other_active_at_capture=1`; another task active in either
+the starting or locked observation does the same. Store the locked
+post-transition generations with the basis. This preserves conservative
+attribution without keeping the write lock across Git.
+
+Git snapshot capture continues to resolve HEAD before and after reading the
+stage-0 index and rejects instability during capture. The stored target is an
+observed HEAD/index snapshot, not an acquired Git index lock. An index change
+after capture is permitted and is detected later by completion binding or by a
+new target generation.
+
+Task, review, Contract, completion, handoff, and Effort writes reuse narrowly
+scoped repository functions or savepoints inside the short outer transaction.
+No external process, configured command, sleep, backoff, or model call occurs
+while `BEGIN IMMEDIATE` is held. The existing handoff-record behavior may retry
+the entire fresh transaction once after local busy/locked failure; no other
+write gets an automatic retry in TG-M13.
+
+### Contention Error Mapping
+
+After the normal SQLite driver wait, residual read-side `SQLITE_BUSY` or
+`SQLITE_LOCKED` becomes the following in M13.1; M13.2 applies the same mapping
+to write-side contention:
+
+```json
+{
+  "code": "database_busy",
+  "message": "task database is busy; run the command again later"
+}
+```
+
+The error uses exit code 2 and the command's existing empty `data` projection.
+Its message and error details never expose raw exception text, a path, lock
+owner, timeout, or journal details; the normal top-level sanitized `db_path`
+envelope field remains unchanged. The error adds no `retryable` or
+`suggested_action`. The failed transaction is rolled back and emits no event
+or success receipt. Busy timeout changes, sleep, backoff, generic retry policy,
+and a user/LLM retry question are excluded.
+
+### Distribution And CI Boundary
+
+The supported stateful layout is one physical project-scoped Skill copy:
+
+```text
+<target-project>/.agents/skills/task-governance-tool
+```
+
+The primary invocation starts in `<target-project>` and calls the script by
+that relative install path. A caller starting inside the Skill directory must
+supply `--repo <target-project>`; otherwise `"."` correctly identifies the
+Skill directory itself. Because a governed directory need not be a Git
+repository, runtime code neither requires `--repo` globally nor searches for a
+Git root. Existing canonical absolute-path project identity and its relocation
+limit remain explicit.
+
+Symlink and Windows junction/reparse-point installs are unsupported rather than
+given another state-root algorithm. Documentation and self-containment tests
+must reject or clearly diagnose them without deleting or rewriting state.
+User-wide Skill operating paths are removed from governed-project guidance.
+
+Target-project `.gitignore` guidance is only:
+
+```gitignore
+/.agents/skills/task-governance-tool/state/
+```
+
+Release archive guards separately exclude generated database/viewer/runtime
+artifacts and sidecars from distributable packages. They do not recommend
+repository-wide database-extension globs.
+
+The supported runtime baseline is Python 3.12+. Windows CI runs exact 3.12 and
+3.14 matrix entries and covers junction rejection. No Linux or macOS support
+claim is inferred. Viewer snapshot-v3 tests cover every source schema 5 through
+9, including schema 8. The packaged handoff privacy workflow permits at most
+one sanitized abstraction retry and never stores or forwards raw rejected
+content.
+
+### TG-M13 Staging And Review Boundary
+
+M13.1 synchronizes this approved design, the specification, implementation
+roadmap, and CLI contract before changing runtime reads. M13.2 then changes
+write-transaction ownership. M13.3 synchronizes active Skill/release/CI
+surfaces only after the corresponding compatibility checks pass. M13.4 performs
+integrated local acceptance and two independent Tier 2 reviews against one
+final revision. Push, PR, workflow dispatch, or publication remains a separate
+explicitly authorized external action.
+
+No M13 unit adds a command, schema version, Viewer snapshot version, Task gate,
+Issue behavior, normal diagnostic prerequisite, LLM judgment, or routine stop.
 
 ## Static Task Viewer Design
 
@@ -1932,13 +2159,13 @@ semantic table/detail markup where practical.
 
 ### Read-Only Snapshot Transaction
 
-Do not use the existing immutable inspection connection for the viewer data
-read. Add a dedicated `connect_snapshot_readonly` storage helper that opens the
-SQLite URI with `mode=ro` but without `immutable=1`, enables
+Use the dedicated `connect_snapshot_readonly` storage helper for the Viewer
+data read. It follows the shared M13 operational journal preflight, opens the
+SQLite URI with `mode=ro` and no immutable flag, enables
 `PRAGMA query_only=ON`, and starts an explicit read transaction. Revalidate
-schema version and project identity inside that transaction before querying
-tasks and events. This gives the export one SQLite-consistent point-in-time view
-when another session commits concurrently.
+the Viewer-compatible schema and project identity inside that transaction
+before querying tasks and events. This gives the export one SQLite-consistent
+point-in-time view when another session commits concurrently.
 
 Preserve the existing preflight rejection for active WAL sidecars. Also inspect
 the stable SQLite file-header journal bytes without opening a mutable SQLite

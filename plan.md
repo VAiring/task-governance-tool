@@ -672,9 +672,10 @@ Confirmed decisions:
   outside it as development and review surfaces.
 - Default SQLite storage is skill-local and per-project:
   `<installed-skill-root>/state/projects/<project-id>/taskgov.sqlite`.
-- The recommended MVP install target is project-scoped:
-  `<target-project>/.agents/skills/task-governance-tool`. User-wide installs
-  are discouraged for normal governed-project task tracking.
+- The stateful governed-project install target is one physical project-scoped
+  copy at `<target-project>/.agents/skills/task-governance-tool`. TG-M13
+  supersedes the earlier merely-discouraged user-wide guidance: user-wide,
+  symlink, and junction installs are not public task-state operating modes.
 - `taskgov db init` is the explicit create/migrate command; `taskgov db status`
   is read-only by default and reports missing or migration-needed state without
   changing the database.
@@ -749,7 +750,9 @@ Confirmed decisions:
   current-status filter and warning together so no verified release warns users
   to run a command that does not yet exist. The warning reuses the successful
   status-inspection count and is advisory under concurrent updates; TG-M9 does
-  not import the Viewer's snapshot/WAL policy into `task next`.
+  not import the Viewer's snapshot/WAL policy into `task next`. TG-M13.1 later
+  applies the approved shared rollback-journal/coherent-read policy while
+  preserving this committed two-read advisory boundary.
 - Result/history pagination is not part of TG-M9. This deliberately leaves the
   current/list resume view bounded; the exact paused count reveals when the
   returned subset may not cover the whole population.
@@ -890,6 +893,28 @@ Confirmed decisions:
   zero decisions, Effort Advisory adds zero decisions, and normal Tier 2
   remains two independent reviews. The design aims to reduce resume-time scope
   reinterpretation rather than introduce stricter routine stops.
+- TG-M13 is an approved four-unit release-hardening lane, not a feature
+  milestone. M13.1 removes `immutable=1` from live operational reads, uses one
+  `mode=ro`/`query_only` transaction per coherent response, and rejects
+  persistent WAL header or WAL/SHM sidecars without conversion. The operational
+  DB remains rollback-journal-only; `task next` retains only its documented
+  committed inter-read advisory staleness.
+- TG-M13.2 performs Git, snapshot, completion, and Effort preflight outside
+  `BEGIN IMMEDIATE`, then rereads the operation-specific governance basis under
+  a short lock. `database_busy` is a fixed sanitized exit-2 error with no new
+  retry field, retry question, timeout increase, or generic retry. A
+  `git_snapshot` is capture-time evidence, not a Git index lock.
+- TG-M13.3 documents only a physical project-scoped
+  `.agents/skills/task-governance-tool` copy, explicit `--repo` when launching
+  from inside that Skill directory, unsupported symlink/junction stateful
+  installs, canonical-path relocation limits, root-anchored state ignore
+  guidance, Python 3.12+, and exact Windows 3.12/3.14 CI. It does not require a
+  Git repository, make `--repo` globally mandatory, or add relocation/state
+  modes.
+- TG-M13.4 owns final integrated local acceptance and two same-revision Tier 2
+  reviews. Push, PR, workflow dispatch, and publication remain separate
+  external actions requiring explicit user authorization. No M13 unit adds a
+  normal-path LLM judgment, question, or stop.
 
 Open issues:
 
@@ -922,9 +947,11 @@ Open issues:
 ## Implementation Execution Status
 
 All implementation units through TG-M12.O2 are complete. TG-M9.1 through
-TG-M12.O2 were consumed after explicit user approval. TG-M12.3 remains blocked
-on an Issue intake contract, governing permission update, and separate
-integration approval.
+TG-M12.O2 were consumed after explicit user approval. TG-M13.1 through
+TG-M13.4 are approved for sequential consumption in lane `REVIEW-HARDENING`;
+their current state and Contract revisions are maintained in SQLite. TG-M12.3
+remains blocked on an Issue intake contract, governing permission update, and
+separate integration approval.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local
 SQLite database. Do not append another large per-task execution log here; use

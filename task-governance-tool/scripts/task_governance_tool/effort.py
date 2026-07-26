@@ -16,7 +16,14 @@ from task_governance_tool.completion import (
     safe_git_command,
     safe_git_environment,
 )
-from task_governance_tool.storage import ProjectIdentity, connect_readonly, utc_now
+from task_governance_tool.storage import (
+    DatabaseTarget,
+    ProjectIdentity,
+    StorageError,
+    connect_initialized_readonly,
+    operational_sqlite_error,
+    utc_now,
+)
 
 
 CONFIG_RELATIVE_PATH = Path("config") / "effort-advisory.json"
@@ -604,21 +611,20 @@ def _ordered_reasons(reasons: set[str]) -> list[str]:
 
 
 def _fresh_activity_generations(
-    db_path: Path,
+    target: DatabaseTarget,
     *,
-    project_id: str,
     task_id: str,
 ) -> tuple[int, int] | None:
-    """Read activity counters after Git observation from a new immutable view."""
+    """Read activity counters after Git observation from a validated snapshot."""
     try:
-        with closing(connect_readonly(db_path)) as connection:
+        with closing(connect_initialized_readonly(target)) as connection:
             project_row = connection.execute(
                 """
                 SELECT effort_activity_generation
                   FROM project_meta
                  WHERE project_id = ?
                 """,
-                (project_id,),
+                (target.project.project_id,),
             ).fetchone()
             subject_row = connection.execute(
                 """
@@ -627,9 +633,21 @@ def _fresh_activity_generations(
                  WHERE project_id = ?
                    AND task_id = ?
                 """,
-                (project_id, task_id),
+                (target.project.project_id, task_id),
             ).fetchone()
-    except (OSError, sqlite3.Error):
+    except StorageError as exc:
+        if exc.code in {"database_busy", "unsupported_journal_mode"}:
+            raise
+        return None
+    except sqlite3.Error as exc:
+        mapped = operational_sqlite_error(
+            exc,
+            fallback_message="could not refresh effort activity",
+        )
+        if mapped.code == "database_busy":
+            raise mapped from exc
+        return None
+    except OSError:
         return None
     if project_row is None:
         return None
@@ -649,6 +667,7 @@ def build_effort_advisory(
     profile: EffortProfile,
     *,
     db_path: Path | None = None,
+    database_target: DatabaseTarget | None = None,
 ) -> EffortAdvisoryResult:
     task = connection.execute(
         """
@@ -662,12 +681,14 @@ def build_effort_advisory(
     if task is None:
         raise EffortAdvisoryError("not_found", "task was not found")
     if not profile.enabled:
+        if connection.in_transaction:
+            connection.rollback()
         return EffortAdvisoryResult(
             data=_empty_advisory_data(task_id, profile=profile),
             warnings=[],
         )
 
-    basis = connection.execute(
+    basis_row = connection.execute(
         """
         SELECT *
           FROM task_effort_bases
@@ -676,6 +697,7 @@ def build_effort_advisory(
         """,
         (project.project_id, task_id),
     ).fetchone()
+    basis = dict(basis_row) if basis_row is not None else None
     contract_revisions = int(task["current_contract_revision"])
     handoffs = int(
         connection.execute(
@@ -688,6 +710,8 @@ def build_effort_advisory(
             (project.project_id, task_id),
         ).fetchone()[0]
     )
+    if connection.in_transaction:
+        connection.rollback()
     measurements: dict[str, int | None] = {
         "changed_files": None,
         "changed_lines": None,
@@ -726,13 +750,19 @@ def build_effort_advisory(
         coverage.update(git_measurements.coverage)
         reasons.update(git_measurements.reasons)
 
+        refresh_target = database_target
+        if refresh_target is None and db_path is not None:
+            refresh_target = DatabaseTarget(
+                project=project,
+                db_path=db_path,
+                explicit_db=True,
+            )
         generations = (
             _fresh_activity_generations(
-                db_path,
-                project_id=project.project_id,
+                refresh_target,
                 task_id=task_id,
             )
-            if db_path is not None
+            if refresh_target is not None
             else None
         )
         if generations is None:

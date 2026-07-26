@@ -27,7 +27,6 @@ from task_governance_tool.storage import (  # noqa: E402
     ensure_project_meta,
     initial_schema_sql,
     initialize_database,
-    inspect_database,
     resolve_database_target,
 )
 from task_governance_tool.tasks import STATUSES, VIEWER_TASK_FIELDS, add_task  # noqa: E402
@@ -368,9 +367,15 @@ class ViewerSnapshotTests(unittest.TestCase):
                 writer.execute(
                     "UPDATE project_meta SET display_name = display_name"
                 )
-                status = inspect_database(target)
-                self.assertEqual(status.error_code, "internal_error")
-                self.assertIn("WAL sidecar", status.error_message or "")
+                with self.assertRaises(StorageError) as failure:
+                    connect_snapshot_readonly(target.db_path)
+                self.assertEqual(
+                    (failure.exception.code, failure.exception.message),
+                    (
+                        "unsupported_journal_mode",
+                        "task database uses unsupported WAL journal mode",
+                    ),
+                )
                 writer.rollback()
 
     def test_open_snapshot_stays_consistent_when_writer_cannot_commit(self):

@@ -741,7 +741,13 @@ class WebExportTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 2, result.stderr)
             payload = json.loads(result.stdout)
-            self.assertEqual(payload["errors"][0]["code"], "internal_error")
+            self.assertEqual(
+                payload["errors"][0],
+                {
+                    "code": "unsupported_journal_mode",
+                    "message": "task database uses unsupported WAL journal mode",
+                },
+            )
             self.assertEqual(payload["data"], empty_export_data(str(output.resolve())))
             self.assertEqual(output.read_text(encoding="utf-8"), "previous viewer")
 
@@ -766,8 +772,13 @@ class WebExportTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 2, result.stderr)
             payload = json.loads(result.stdout)
-            self.assertEqual(payload["errors"][0]["code"], "internal_error")
-            self.assertIn("WAL journal mode", payload["errors"][0]["message"])
+            self.assertEqual(
+                payload["errors"][0],
+                {
+                    "code": "unsupported_journal_mode",
+                    "message": "task database uses unsupported WAL journal mode",
+                },
+            )
             self.assertEqual(payload["data"], empty_export_data(str(output.resolve())))
             self.assertEqual(output.read_text(encoding="utf-8"), "previous viewer")
             for suffix in ("-wal", "-shm", "-journal"):

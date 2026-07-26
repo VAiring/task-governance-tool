@@ -24,18 +24,30 @@ matter.
 
 ## Invocation
 
-Run from the project-scoped installed skill folder, normally
-`.agents/skills/task-governance-tool` inside the governed project:
+For normal governed-project use, install one physical project-scoped copy and
+run from the target-project root:
 
 ```powershell
-python scripts/taskgov.py <command> [options]
+python .agents/skills/task-governance-tool/scripts/taskgov.py <command> [options]
 ```
 
 For a new target project, start with `db status`. It reports missing or
 outdated databases without creating files. Use `db init` only when local task
-tracking should be created or migrated for that project-scoped install. If the
-skill is running from a user-wide or global install, confirm that non-standard
-setup before writing state.
+tracking should be created or migrated for that project-scoped install. A
+target project may be a non-Git directory.
+
+If a command is instead launched from inside the installed Skill directory,
+pass the target project explicitly:
+
+```powershell
+python scripts/taskgov.py <command> --repo <target-project> [options]
+```
+
+Omitting `--repo` always means the current directory; it does not search for a
+Git root. A physical copy at
+`<target-project>/.agents/skills/task-governance-tool` is the only documented
+stateful governed-project layout. Symlink, junction, and user-wide operating
+paths are unsupported.
 
 Common options:
 
@@ -71,6 +83,44 @@ already initialized database at the current schema version; they return
 files otherwise. `web export` never writes SQLite, but its normal mode writes
 one generated HTML file after explicit user intent. Use
 `web export --read-only` for a no-file-write preview.
+
+### Operational database consistency
+
+The live operational database supports rollback-journal mode only. Before an
+operational read or write, taskgov rejects a persistent WAL header or adjacent
+WAL/SHM sidecar with `unsupported_journal_mode` and the exact message
+`task database uses unsupported WAL journal mode`, without opening,
+converting, checkpointing, or deleting database state.
+
+Every operational read uses SQLite `mode=ro` without `immutable=1`, enables
+`query_only`, and begins an explicit read transaction before schema/project
+validation and all related response queries. A successful response is one
+committed-consistent snapshot. Rollback-journal contention may instead return
+`database_busy` with the exact message
+`task database is busy; run the command again later`; raw SQLite errors are
+never emitted. This read-side mapping is delivered by M13.1. `task next`
+retains its documented committed inter-read freshness boundary between
+status/advisory inspection and candidate selection.
+
+When the enabled advisory has a stored basis, `task effort` is intentionally
+phased: one coherent transaction reads the task, Contract/handoff counts, and
+stored basis, then closes before Git observation; a second validated
+transaction refreshes activity generations. The generation comparison bridges
+those committed observations. Without a stored basis there is no generation
+comparison and no second DB read. A busy/locked post-Git refresh returns
+`database_busy`, and newly detected WAL state returns
+`unsupported_journal_mode`, rather than a successful unknown advisory. Other
+bounded refresh failures may retain `activity_generation_uncertain`.
+
+TG-M13.2 shortens write transactions without changing commands or payloads:
+Git, completion, and Effort preflight occurs before `BEGIN IMMEDIATE`; the
+relevant task/review/Contract/completion basis is reread under the short lock
+before one atomic write. `git_snapshot` describes the observed HEAD and stage-0
+index at capture time, not a Git index lock. M13.2 extends the same
+`database_busy` code/message to residual write-side busy/locked failure, using
+exit code 2, the command's existing empty `data`, and no `retryable` or
+`suggested_action` field. Taskgov adds no generic automatic retry; handoff
+record's existing one fresh-transaction retry is unchanged.
 
 ## Commands
 
@@ -458,20 +508,24 @@ profile may best-effort capture a basis only inside an existing transition
 into `in_progress`. Capture failure never rejects the Task write and leaves no
 partial basis.
 
-The read itself opens SQLite immutable/read-only and uses bounded, no-shell,
-optional-lock-disabled Git reads with `core.fsmonitor` disabled and submodules
-ignored. A stored basis must be a full Git object ID before it is passed as an
-argument; invalid evidence is not emitted. The command emits no paths, stderr,
-diffs, or raw logs. Non-Git, dirty or unstable endpoints, missing or invalid
-basis/coverage, and possible activity overlap return `ok: true`,
-`attribution: "unknown"`, stable reason codes, and
-`suggested_action: "continue"`. Activity generation is refreshed from a new
-immutable DB view after Git observation; refresh failure remains unknown.
+Each database observation uses a fresh coherent `mode=ro`, `query_only`
+transaction. Git observation uses bounded, no-shell, optional-lock-disabled
+reads with `core.fsmonitor` disabled and submodules ignored. A stored basis
+must be a full Git object ID before it is passed as an argument; invalid
+evidence is not emitted. The command emits no paths, stderr, diffs, or raw
+logs. Non-Git, dirty or unstable endpoints, missing or invalid basis/coverage,
+and possible activity overlap return `ok: true`, `attribution: "unknown"`,
+stable reason codes, and `suggested_action: "continue"`. Activity generation
+is refreshed from a new coherent DB transaction after Git observation;
+non-lock/non-journal refresh failure remains
+`activity_generation_uncertain`, while M13 read-side `database_busy` and
+`unsupported_journal_mode` remain command errors.
 Threshold exceedance adds one stable
 `effort_advisory_threshold_exceeded` warning with the same action. The command
-never acknowledges, asks, hands off, pauses, blocks, fails, changes acceptance,
-or writes Task/DB/Git state. `--read-only` is accepted and has the same
-behavior.
+never acknowledges, asks, hands off, pauses, blocks, changes acceptance, or
+writes Task/DB/Git state. An advisory metric, threshold, or unknown result never
+fails the command; ordinary database readiness, journal, and contention errors
+still can. `--read-only` is accepted and has the same behavior.
 
 ### `task show`
 
@@ -991,6 +1045,8 @@ Known error codes include:
 - `db_not_initialized`
 - `migration_required`
 - `project_mismatch`
+- `unsupported_journal_mode`
+- `database_busy`
 - `output_path_invalid`
 - `output_parent_missing`
 - `output_write_failed`

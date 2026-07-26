@@ -21,6 +21,7 @@ try:
         apply_initial_schema_migration,
         apply_paused_state_migration,
         apply_review_evidence_migration,
+        begin_initialized_write,
         connect_initialized,
         ensure_project_meta,
         initial_schema_sql,
@@ -750,7 +751,7 @@ class DbInitTests(unittest.TestCase):
             self.assertEqual(versions, [1, 2])
             self.assertNotIn("pause_reason", task_columns)
 
-    def test_initialized_write_connection_holds_lock_after_readiness_validation(self):
+    def test_initialized_connection_locks_only_for_explicit_short_write(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
@@ -763,14 +764,56 @@ class DbInitTests(unittest.TestCase):
             )
 
             with closing(connect_initialized(target)) as connection:
+                self.assertFalse(connection.in_transaction)
+                with closing(sqlite3.connect(db, timeout=0)) as contender:
+                    contender.execute("BEGIN IMMEDIATE")
+                    contender.rollback()
+
+                begin_initialized_write(connection, target)
                 self.assertTrue(connection.in_transaction)
                 with closing(sqlite3.connect(db, timeout=0)) as contender:
                     with self.assertRaises(sqlite3.OperationalError):
                         contender.execute("BEGIN IMMEDIATE")
+                connection.rollback()
 
             with closing(sqlite3.connect(db, timeout=0)) as contender:
                 contender.execute("BEGIN IMMEDIATE")
                 contender.rollback()
+
+    def test_initialized_write_maps_real_contention_to_sanitized_database_busy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            initialized = run_taskgov(
+                "db",
+                "init",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--json",
+            )
+            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            target = resolve_database_target(
+                repo=repo,
+                db=db,
+                script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+            )
+
+            with closing(sqlite3.connect(db, timeout=0)) as owner:
+                owner.execute("BEGIN IMMEDIATE")
+                with closing(connect_initialized(target)) as connection:
+                    connection.execute("PRAGMA busy_timeout = 0")
+                    with self.assertRaises(StorageError) as raised:
+                        begin_initialized_write(connection, target)
+                    self.assertFalse(connection.in_transaction)
+                owner.rollback()
+
+            self.assertEqual(raised.exception.code, "database_busy")
+            self.assertEqual(
+                raised.exception.message,
+                "task database is busy; run the command again later",
+            )
 
     def test_schema_constraints_reject_invalid_task_rows(self):
         with tempfile.TemporaryDirectory() as tmp:

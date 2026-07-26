@@ -14,10 +14,16 @@ from task_governance_tool.completion import (
     resolve_git_commit,
 )
 from task_governance_tool.git_snapshot import GitSnapshotError, capture_git_snapshot
-from task_governance_tool.storage import ProjectIdentity, utc_now
+from task_governance_tool.storage import (
+    DatabaseTarget,
+    ProjectIdentity,
+    begin_initialized_write,
+    utc_now,
+)
 from task_governance_tool.tasks import (
     TaskRepositoryError,
     create_task_event,
+    ensure_git_preflight_outside_transaction,
     read_internal_task,
     reject_done_task_write,
     row_to_show_task,
@@ -104,14 +110,34 @@ def lock_and_reread_target_owner(
     connection: sqlite3.Connection,
     project: ProjectIdentity,
     task_id: str,
+    *,
+    database_target: DatabaseTarget | None = None,
 ) -> dict[str, Any]:
     if not connection.in_transaction:
-        connection.execute("BEGIN IMMEDIATE")
+        if database_target is not None:
+            begin_initialized_write(connection, database_target)
+        else:
+            connection.execute("BEGIN IMMEDIATE")
     task = read_internal_task(connection, project.project_id, task_id)
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(task)
     return task
+
+
+def reject_concurrent_review_basis_change(
+    observed: dict[str, Any],
+    locked: dict[str, Any],
+    *,
+    code: str = "invalid_argument",
+    message: str = "task changed concurrently before the review target was recorded",
+) -> None:
+    if any(
+        locked[field] != observed[field]
+        for field in observed
+        if field != "updated_at"
+    ):
+        raise review_error(code, message)
 
 
 def validate_stored_review_target(task: dict[str, Any]) -> None:
@@ -137,7 +163,12 @@ def validate_stored_review_target(task: dict[str, Any]) -> None:
         )
 
 
-def normalize_review_target(project: ProjectIdentity, kind: Any, revision: Any) -> tuple[str, str]:
+def normalize_review_target(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    kind: Any,
+    revision: Any,
+) -> tuple[str, str]:
     target_kind = validate_choice(
         "review_target_kind",
         kind,
@@ -151,6 +182,7 @@ def normalize_review_target(project: ProjectIdentity, kind: Any, revision: Any) 
         limit=500,
     )
     if target_kind == "git_commit":
+        ensure_git_preflight_outside_transaction(connection)
         try:
             target_value = resolve_git_commit(project.canonical_repo, target_value)
         except CompletionEvidenceError as exc:
@@ -171,18 +203,26 @@ def set_review_target(
     *,
     kind: Any,
     revision: Any,
+    database_target: DatabaseTarget | None = None,
 ) -> ReviewTargetResult:
     normalized_task_id = validate_task_id(task_id)
-    task = read_internal_task(connection, project.project_id, normalized_task_id)
-    if task is None:
+    observed_task = read_internal_task(connection, project.project_id, normalized_task_id)
+    if observed_task is None:
         raise TaskRepositoryError("not_found", "task was not found")
-    reject_done_task_write(task)
-    target_kind, target_value = normalize_review_target(project, kind, revision)
+    reject_done_task_write(observed_task)
+    target_kind, target_value = normalize_review_target(
+        connection,
+        project,
+        kind,
+        revision,
+    )
     task = lock_and_reread_target_owner(
         connection,
         project,
         normalized_task_id,
+        database_target=database_target,
     )
+    reject_concurrent_review_basis_change(observed_task, task)
 
     generation = next_review_target_generation(task)
     now = utc_now()
@@ -228,12 +268,15 @@ def set_git_snapshot_target(
     connection: sqlite3.Connection,
     project: ProjectIdentity,
     task_id: Any,
+    *,
+    database_target: DatabaseTarget | None = None,
 ) -> ReviewTargetResult:
     normalized_task_id = validate_task_id(task_id)
-    task = read_internal_task(connection, project.project_id, normalized_task_id)
-    if task is None:
+    observed_task = read_internal_task(connection, project.project_id, normalized_task_id)
+    if observed_task is None:
         raise TaskRepositoryError("not_found", "task was not found")
-    reject_done_task_write(task)
+    reject_done_task_write(observed_task)
+    ensure_git_preflight_outside_transaction(connection)
     try:
         snapshot = capture_git_snapshot(project.canonical_repo)
     except GitSnapshotError as exc:
@@ -242,7 +285,9 @@ def set_git_snapshot_target(
         connection,
         project,
         normalized_task_id,
+        database_target=database_target,
     )
+    reject_concurrent_review_basis_change(observed_task, task)
     generation = next_review_target_generation(task)
     now = utc_now()
     connection.execute(
@@ -300,6 +345,7 @@ def set_requested_review_target(
     *,
     kind: Any,
     revision: Any = None,
+    database_target: DatabaseTarget | None = None,
 ) -> ReviewTargetResult:
     """Dispatch the public target request without accepting a snapshot revision."""
     normalized_task_id = validate_task_id(task_id)
@@ -320,7 +366,12 @@ def set_requested_review_target(
                 "git_snapshot captures the current staged index and does not accept --revision",
                 "review_target_value",
             )
-        return set_git_snapshot_target(connection, project, normalized_task_id)
+        return set_git_snapshot_target(
+            connection,
+            project,
+            normalized_task_id,
+            database_target=database_target,
+        )
     if revision is None:
         raise review_error(
             "invalid_review_evidence",
@@ -333,6 +384,7 @@ def set_requested_review_target(
         normalized_task_id,
         kind=target_kind,
         revision=revision,
+        database_target=database_target,
     )
 
 
@@ -421,31 +473,45 @@ def add_review_receipt(
     verdict: Any,
     summary: Any = "",
     user_approved: bool = False,
+    database_target: DatabaseTarget | None = None,
 ) -> ReviewReceiptResult:
     normalized_task_id = validate_task_id(task_id)
-    task = read_internal_task(connection, project.project_id, normalized_task_id)
-    if task is None:
+    observed_task = read_internal_task(connection, project.project_id, normalized_task_id)
+    if observed_task is None:
         raise TaskRepositoryError("not_found", "task was not found")
-    reject_done_task_write(task)
+    reject_done_task_write(observed_task)
     if (
-        int(task["review_target_generation"]) <= 0
-        or not str(task["review_target_kind"])
-        or not str(task["review_target_value"])
+        int(observed_task["review_target_generation"]) <= 0
+        or not str(observed_task["review_target_kind"])
+        or not str(observed_task["review_target_value"])
     ):
         raise review_error(
             "review_target_required",
             "set a current review target before recording a receipt",
             "review_target_kind",
         )
-    validate_stored_review_target(task)
+    validate_stored_review_target(observed_task)
     normalized = normalize_receipt(
-        review_tier=int(task["review_tier"]),
+        review_tier=int(observed_task["review_tier"]),
         reviewer=reviewer,
         kind=kind,
         verdict=verdict,
         summary=summary,
         user_approved=user_approved,
     )
+    task = lock_and_reread_target_owner(
+        connection,
+        project,
+        normalized_task_id,
+        database_target=database_target,
+    )
+    reject_concurrent_review_basis_change(
+        observed_task,
+        task,
+        code="review_target_mismatch",
+        message="review target changed before the receipt could be recorded",
+    )
+    validate_stored_review_target(task)
     now = utc_now()
     receipt = {
         "review_receipt_id": generate_review_id("tg_review_receipt"),
@@ -514,18 +580,53 @@ def add_review_finding(
     receipt_id: Any,
     severity: Any,
     summary: Any,
+    database_target: DatabaseTarget | None = None,
 ) -> ReviewFindingResult:
     normalized_task_id = validate_task_id(task_id)
-    task = read_internal_task(connection, project.project_id, normalized_task_id)
-    if task is None:
+    observed_task = read_internal_task(connection, project.project_id, normalized_task_id)
+    if observed_task is None:
         raise TaskRepositoryError("not_found", "task was not found")
-    reject_done_task_write(task)
+    reject_done_task_write(observed_task)
     normalized_receipt_id = validate_text("review_receipt_id", receipt_id, required=True, limit=128)
     finding_severity = validate_choice(
         "severity", severity, FINDING_SEVERITIES, "invalid_review_evidence"
     )
     finding_summary = validate_text(
         "review_finding_summary", summary, required=True, limit=1000
+    )
+    observed_receipt = connection.execute(
+        """
+        SELECT * FROM review_receipts
+         WHERE project_id = ? AND task_id = ? AND review_receipt_id = ?
+        """,
+        (project.project_id, normalized_task_id, normalized_receipt_id),
+    ).fetchone()
+    if observed_receipt is None or (
+        int(observed_receipt["target_generation"])
+        != int(observed_task["review_target_generation"])
+        or str(observed_receipt["target_kind"])
+        != str(observed_task["review_target_kind"])
+        or str(observed_receipt["target_value"])
+        != str(observed_task["review_target_value"])
+        or str(observed_receipt["target_base_revision"])
+        != str(observed_task["review_target_base_revision"])
+    ):
+        raise review_error(
+            "review_receipt_mismatch",
+            "receipt must belong to this task, project, and current review target",
+            "review_receipt_id",
+        )
+    task = lock_and_reread_target_owner(
+        connection,
+        project,
+        normalized_task_id,
+        database_target=database_target,
+    )
+    reject_concurrent_review_basis_change(
+        observed_task,
+        task,
+        code="review_receipt_mismatch",
+        message="review target changed before the finding could be recorded",
     )
     receipt = connection.execute(
         """
@@ -534,16 +635,10 @@ def add_review_finding(
         """,
         (project.project_id, normalized_task_id, normalized_receipt_id),
     ).fetchone()
-    if receipt is None or (
-        int(receipt["target_generation"]) != int(task["review_target_generation"])
-        or str(receipt["target_kind"]) != str(task["review_target_kind"])
-        or str(receipt["target_value"]) != str(task["review_target_value"])
-        or str(receipt["target_base_revision"])
-        != str(task["review_target_base_revision"])
-    ):
+    if receipt is None or dict(receipt) != dict(observed_receipt):
         raise review_error(
             "review_receipt_mismatch",
-            "receipt must belong to this task, project, and current review target",
+            "receipt changed before the finding could be recorded",
             "review_receipt_id",
         )
     now = utc_now()
@@ -590,6 +685,7 @@ def resolve_review_finding(
     finding_id: Any,
     *,
     resolution: Any,
+    database_target: DatabaseTarget | None = None,
 ) -> ReviewFindingResult:
     normalized_finding_id = validate_text(
         "review_finding_id", finding_id, required=True, limit=128
@@ -606,13 +702,13 @@ def resolve_review_finding(
     ).fetchone()
     if row is None:
         raise TaskRepositoryError("not_found", "review finding was not found")
-    task = read_internal_task(connection, project.project_id, str(row["task_id"]))
-    if task is None:
+    observed_task = read_internal_task(connection, project.project_id, str(row["task_id"]))
+    if observed_task is None:
         raise TaskRepositoryError(
             "internal_error",
             "review finding owner was not readable",
         )
-    reject_done_task_write(task)
+    reject_done_task_write(observed_task)
     resolution_summary = validate_text(
         "review_finding_resolution", resolution, required=True, limit=1000
     )
@@ -622,6 +718,37 @@ def resolve_review_finding(
             "review finding is already resolved and its original resolution is preserved",
             "review_finding_id",
         )
+    task = lock_and_reread_target_owner(
+        connection,
+        project,
+        str(row["task_id"]),
+        database_target=database_target,
+    )
+    reject_concurrent_review_basis_change(
+        observed_task,
+        task,
+        code="invalid_review_evidence",
+        message="review task changed before the finding could be resolved",
+    )
+    locked_row = connection.execute(
+        """
+        SELECT finding.*, receipt.task_id, receipt.project_id
+          FROM review_findings AS finding
+          JOIN review_receipts AS receipt
+            ON receipt.review_receipt_id = finding.review_receipt_id
+         WHERE finding.review_finding_id = ? AND receipt.project_id = ?
+        """,
+        (normalized_finding_id, project.project_id),
+    ).fetchone()
+    if locked_row is None:
+        raise TaskRepositoryError("not_found", "review finding was not found")
+    if locked_row["status"] != "open":
+        raise review_error(
+            "invalid_review_evidence",
+            "review finding is already resolved and its original resolution is preserved",
+            "review_finding_id",
+        )
+    row = locked_row
     now = utc_now()
     connection.execute(
         """

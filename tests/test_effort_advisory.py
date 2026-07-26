@@ -4,7 +4,9 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 from unittest import mock
@@ -24,7 +26,10 @@ from task_governance_tool.effort import (  # noqa: E402
     load_effort_profile,
     observe_git_measurements,
 )
+from task_governance_tool import effort as effort_service  # noqa: E402
+from task_governance_tool import completion as completion_service  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
+    DATABASE_BUSY_MESSAGE,
     SCHEMA_VERSION,
     StorageError,
     apply_completion_commit_migration,
@@ -346,6 +351,282 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                 )
             self.assertEqual(initial.task["status"], "in_progress")
             self.assertEqual(started.task["status"], "in_progress")
+
+    def test_delayed_basis_capture_allows_unrelated_task_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skill = root / "skill"
+            skill.mkdir()
+            profile = write_profile(skill)
+            repo = root / "repo"
+            initialize_git_repo(repo)
+            db = root / "taskgov.sqlite"
+            target = initialize_db(db, repo)
+            with closing(connect_initialized(target)) as connection:
+                with connection:
+                    subject = add_task(
+                        connection,
+                        target.project,
+                        title="Subject",
+                        database_target=target,
+                    )
+                with connection:
+                    unrelated = add_task(
+                        connection,
+                        target.project,
+                        title="Unrelated",
+                        database_target=target,
+                    )
+
+            started = threading.Event()
+            release = threading.Event()
+            original_capture = effort_service.capture_git_basis
+
+            def delayed_capture(repo_path):
+                endpoint = original_capture(repo_path)
+                started.set()
+                if not release.wait(10):
+                    raise AssertionError("Effort preflight was not released")
+                return endpoint
+
+            def start_subject():
+                with closing(connect_initialized(target)) as connection:
+                    with connection:
+                        return edit_task(
+                            connection,
+                            target.project,
+                            subject.task["task_id"],
+                            status="in_progress",
+                            effort_profile=profile,
+                            database_target=target,
+                        )
+
+            with mock.patch.object(
+                effort_service,
+                "capture_git_basis",
+                side_effect=delayed_capture,
+            ):
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(start_subject)
+                    self.assertTrue(started.wait(10))
+                    with closing(connect_initialized(target)) as connection:
+                        with connection:
+                            unrelated_result = edit_task(
+                                connection,
+                                target.project,
+                                unrelated.task["task_id"],
+                                add_note="Progress while Effort observes Git",
+                                database_target=target,
+                            )
+                    release.set()
+                    subject_result = future.result(timeout=10)
+
+            self.assertEqual(subject_result.task["status"], "in_progress")
+            self.assertEqual(unrelated_result.task["status"], "ready")
+            with closing(sqlite3.connect(db)) as connection:
+                basis = connection.execute(
+                    """
+                    SELECT project_generation, subject_generation,
+                           other_active_at_capture
+                      FROM task_effort_bases
+                     WHERE task_id = ?
+                    """,
+                    (subject.task["task_id"],),
+                ).fetchone()
+                self.assertEqual(basis, (1, 1, 0))
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM task_events WHERE task_id = ?",
+                        (subject.task["task_id"],),
+                    ).fetchone()[0],
+                    2,
+                )
+                self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_activity_delta_during_basis_capture_marks_overlap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skill = root / "skill"
+            skill.mkdir()
+            profile = write_profile(skill)
+            repo = root / "repo"
+            initialize_git_repo(repo)
+            db = root / "taskgov.sqlite"
+            target = initialize_db(db, repo)
+            with closing(connect_initialized(target)) as connection:
+                with connection:
+                    subject = add_task(
+                        connection,
+                        target.project,
+                        title="Subject",
+                        database_target=target,
+                    )
+                with connection:
+                    other = add_task(
+                        connection,
+                        target.project,
+                        title="Other",
+                        database_target=target,
+                    )
+
+            original_capture = effort_service.capture_git_basis
+            injected = False
+
+            def capture_after_other_activity(repo_path):
+                nonlocal injected
+                if injected:
+                    return original_capture(repo_path)
+                injected = True
+                with closing(connect_initialized(target)) as writer:
+                    with writer:
+                        edit_task(
+                            writer,
+                            target.project,
+                            other.task["task_id"],
+                            status="in_progress",
+                            effort_profile=profile,
+                            database_target=target,
+                        )
+                    with writer:
+                        edit_task(
+                            writer,
+                            target.project,
+                            other.task["task_id"],
+                            status="blocked",
+                            blocked_reason="Activity completed during capture",
+                            effort_profile=profile,
+                            database_target=target,
+                        )
+                return original_capture(repo_path)
+
+            with mock.patch.object(
+                effort_service,
+                "capture_git_basis",
+                side_effect=capture_after_other_activity,
+            ):
+                with closing(connect_initialized(target)) as connection:
+                    with connection:
+                        result = edit_task(
+                            connection,
+                            target.project,
+                            subject.task["task_id"],
+                            status="in_progress",
+                            effort_profile=profile,
+                            database_target=target,
+                        )
+
+            self.assertEqual(result.task["status"], "in_progress")
+            with closing(sqlite3.connect(db)) as connection:
+                basis = connection.execute(
+                    """
+                    SELECT project_generation, subject_generation,
+                           other_active_at_capture
+                      FROM task_effort_bases
+                     WHERE task_id = ?
+                    """,
+                    (subject.task["task_id"],),
+                ).fetchone()
+                self.assertEqual(basis, (3, 1, 1))
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT effort_activity_generation
+                          FROM project_meta
+                         WHERE project_id = ?
+                        """,
+                        (target.project.project_id,),
+                    ).fetchone()[0],
+                    3,
+                )
+                self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_implicit_lane_order_uses_locked_post_preflight_maximum(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skill = root / "skill"
+            skill.mkdir()
+            profile = write_profile(skill)
+            repo = root / "repo"
+            initialize_git_repo(repo)
+            db = root / "taskgov.sqlite"
+            target = initialize_db(db, repo)
+            with closing(connect_initialized(target)) as connection:
+                with connection:
+                    add_task(
+                        connection,
+                        target.project,
+                        title="Existing lane task",
+                        kind="sequential",
+                        lane="serial",
+                        lane_order=10,
+                        database_target=target,
+                    )
+                with connection:
+                    subject = add_task(
+                        connection,
+                        target.project,
+                        title="Move after capture",
+                        database_target=target,
+                    )
+
+            original_resolve = completion_service.resolve_git_commit
+            injected = False
+
+            def resolve_after_lane_growth(repo_path, revision):
+                nonlocal injected
+                if not injected:
+                    injected = True
+                    with closing(connect_initialized(target)) as writer:
+                        with writer:
+                            add_task(
+                                writer,
+                                target.project,
+                                title="Concurrent lane task",
+                                kind="sequential",
+                                lane="serial",
+                                lane_order=20,
+                                database_target=target,
+                            )
+                return original_resolve(repo_path, revision)
+
+            with mock.patch.object(
+                completion_service,
+                "resolve_git_commit",
+                side_effect=resolve_after_lane_growth,
+            ):
+                with closing(connect_initialized(target)) as connection:
+                    with connection:
+                        result = edit_task(
+                            connection,
+                            target.project,
+                            subject.task["task_id"],
+                            kind="sequential",
+                            lane="serial",
+                            completion_evidence_kind="git_commit",
+                            completion_revision="HEAD",
+                            effort_profile=profile,
+                            database_target=target,
+                        )
+
+            self.assertEqual(result.task["lane_order"], 21)
+            with closing(sqlite3.connect(db)) as connection:
+                lane_orders = [
+                    row[0]
+                    for row in connection.execute(
+                        """
+                        SELECT lane_order
+                          FROM tasks
+                         WHERE kind = 'sequential'
+                           AND lane = 'serial'
+                         ORDER BY lane_order
+                        """
+                    )
+                ]
+                self.assertEqual(lane_orders, [10, 20, 21])
+                self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
 
     def test_clean_observation_is_deterministic_warns_without_writing_or_stopping(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -684,6 +965,143 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             self.assertIn("basis_dirty", dirty.data["unknown_reasons"])
             self.assertIn("observation_dirty", dirty.data["unknown_reasons"])
             self.assertEqual(dirty.data["suggested_action"], "continue")
+
+    def test_busy_effort_activity_update_rejects_and_rolls_back_task_transition(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skill = root / "skill"
+            skill.mkdir()
+            profile = write_profile(skill)
+            repo = root / "repo"
+            initialize_git_repo(repo)
+            db = root / "taskgov.sqlite"
+            target = initialize_db(db, repo)
+            with closing(connect_initialized(target)) as connection:
+                with connection:
+                    task = add_task(
+                        connection,
+                        target.project,
+                        title="Busy activity",
+                        status="ready",
+                        effort_profile=profile,
+                    )
+
+                busy = sqlite3.OperationalError("sensitive lock detail")
+                busy.sqlite_errorcode = sqlite3.SQLITE_BUSY
+                with mock.patch.object(
+                    effort_service,
+                    "_increment_activity",
+                    side_effect=busy,
+                ):
+                    with self.assertRaises(StorageError) as raised:
+                        with connection:
+                            edit_task(
+                                connection,
+                                target.project,
+                                task.task["task_id"],
+                                status="in_progress",
+                                effort_profile=profile,
+                                database_target=target,
+                            )
+
+            self.assertEqual(raised.exception.code, "database_busy")
+            self.assertEqual(raised.exception.message, DATABASE_BUSY_MESSAGE)
+            with closing(connect_readonly(db)) as connection:
+                stored = connection.execute(
+                    "SELECT status FROM tasks WHERE task_id = ?",
+                    (task.task["task_id"],),
+                ).fetchone()
+                generation = connection.execute(
+                    """
+                    SELECT effort_activity_generation
+                      FROM project_meta
+                     WHERE project_id = ?
+                    """,
+                    (target.project.project_id,),
+                ).fetchone()
+                event_count = connection.execute(
+                    "SELECT COUNT(*) FROM task_events WHERE task_id = ?",
+                    (task.task["task_id"],),
+                ).fetchone()
+            self.assertEqual(stored["status"], "ready")
+            self.assertEqual(generation["effort_activity_generation"], 0)
+            self.assertEqual(event_count[0], 1)
+
+    def test_busy_effort_basis_insert_rejects_and_rolls_back_task_transition(self):
+        class BusyBasisConnection:
+            def __init__(self, connection):
+                self._connection = connection
+
+            def __getattr__(self, name):
+                return getattr(self._connection, name)
+
+            def execute(self, statement, parameters=()):
+                if "INSERT INTO task_effort_bases" in statement:
+                    error = sqlite3.OperationalError("sensitive lock detail")
+                    error.sqlite_errorcode = sqlite3.SQLITE_LOCKED
+                    raise error
+                return self._connection.execute(statement, parameters)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skill = root / "skill"
+            skill.mkdir()
+            profile = write_profile(skill)
+            repo = root / "repo"
+            initialize_git_repo(repo)
+            db = root / "taskgov.sqlite"
+            target = initialize_db(db, repo)
+            with closing(connect_initialized(target)) as connection:
+                with connection:
+                    task = add_task(
+                        connection,
+                        target.project,
+                        title="Busy basis",
+                        status="ready",
+                        effort_profile=profile,
+                    )
+
+                wrapped = BusyBasisConnection(connection)
+                with self.assertRaises(StorageError) as raised:
+                    try:
+                        edit_task(
+                            wrapped,
+                            target.project,
+                            task.task["task_id"],
+                            status="in_progress",
+                            effort_profile=profile,
+                            database_target=target,
+                        )
+                    finally:
+                        connection.rollback()
+
+            self.assertEqual(raised.exception.code, "database_busy")
+            self.assertEqual(raised.exception.message, DATABASE_BUSY_MESSAGE)
+            with closing(connect_readonly(db)) as connection:
+                stored = connection.execute(
+                    "SELECT status FROM tasks WHERE task_id = ?",
+                    (task.task["task_id"],),
+                ).fetchone()
+                generation = connection.execute(
+                    """
+                    SELECT effort_activity_generation
+                      FROM project_meta
+                     WHERE project_id = ?
+                    """,
+                    (target.project.project_id,),
+                ).fetchone()
+                basis_count = connection.execute(
+                    "SELECT COUNT(*) FROM task_effort_bases WHERE task_id = ?",
+                    (task.task["task_id"],),
+                ).fetchone()
+                event_count = connection.execute(
+                    "SELECT COUNT(*) FROM task_events WHERE task_id = ?",
+                    (task.task["task_id"],),
+                ).fetchone()
+            self.assertEqual(stored["status"], "ready")
+            self.assertEqual(generation["effort_activity_generation"], 0)
+            self.assertEqual(basis_count[0], 0)
+            self.assertEqual(event_count[0], 1)
 
 
 class EffortAdvisoryCliTests(unittest.TestCase):

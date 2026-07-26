@@ -1547,7 +1547,7 @@ def validate_current_database(
 
 
 def connect_initialized(target: DatabaseTarget) -> sqlite3.Connection:
-    """Open a current, project-matching database without creation or migration."""
+    """Open a current, project-matching database without taking a write lock."""
     validate_operational_journal_state(target.db_path)
     if not target.db_path.exists():
         raise StorageError(
@@ -1562,15 +1562,46 @@ def connect_initialized(target: DatabaseTarget) -> sqlite3.Connection:
                 "db_not_initialized",
                 "database is not initialized; run db init first",
             ) from exc
-        raise StorageError("internal_error", "could not open database") from exc
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="could not open database",
+        ) from exc
     try:
-        connection.execute("BEGIN IMMEDIATE")
         validate_current_database(connection, target)
+    except sqlite3.Error as exc:
+        connection.close()
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="could not inspect database",
+        ) from exc
     except Exception:
-        connection.rollback()
         connection.close()
         raise
     return connection
+
+
+def begin_initialized_write(
+    connection: sqlite3.Connection,
+    target: DatabaseTarget,
+) -> None:
+    """Acquire the short writer transaction and revalidate its database owner."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "write transaction was acquired before preflight completed",
+        )
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        validate_current_database(connection, target)
+    except sqlite3.Error as exc:
+        connection.rollback()
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="could not start database write",
+        ) from exc
+    except Exception:
+        connection.rollback()
+        raise
 
 
 def connect_initialized_readonly(target: DatabaseTarget) -> sqlite3.Connection:
@@ -1899,7 +1930,10 @@ def initialize_database(target: DatabaseTarget) -> InitResult:
     except OSError as exc:
         raise StorageError("internal_error", "could not prepare database path") from exc
     except sqlite3.Error as exc:
-        raise StorageError("internal_error", "could not open or initialize database") from exc
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="could not open or initialize database",
+        ) from exc
     return InitResult(
         target=target,
         created=created,

@@ -21,6 +21,7 @@ from task_governance_tool.storage import (
     ProjectIdentity,
     StorageError,
     connect_initialized_readonly,
+    is_sqlite_busy_or_locked,
     operational_sqlite_error,
     utc_now,
 )
@@ -86,6 +87,15 @@ class GitMeasurements:
 class EffortAdvisoryResult:
     data: dict[str, Any]
     warnings: list[dict[str, str]]
+
+
+@dataclass(frozen=True)
+class EffortTransitionPreflight:
+    start_project_generation: int
+    start_subject_generation: int
+    other_active_at_start: bool
+    capture_basis: bool
+    endpoint: GitEndpoint | None
 
 
 class EffortAdvisoryError(Exception):
@@ -311,6 +321,99 @@ def _increment_activity(
     return project_generation, subject_generation
 
 
+def prepare_task_transition(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    *,
+    task_id: str,
+    previous_status: str | None,
+    current_status: str,
+    profile: EffortProfile | None,
+) -> EffortTransitionPreflight | None:
+    """Observe advisory generations and optional Git basis before the write lock."""
+    effective_profile = profile or disabled_profile()
+    owns_snapshot = not connection.in_transaction
+    if owns_snapshot:
+        connection.execute("BEGIN")
+    try:
+        has_existing_basis = _project_has_effort_basis(connection, project.project_id)
+        if not effective_profile.enabled and not has_existing_basis:
+            return None
+
+        project_row = connection.execute(
+            """
+            SELECT effort_activity_generation
+              FROM project_meta
+             WHERE project_id = ?
+            """,
+            (project.project_id,),
+        ).fetchone()
+        if project_row is None:
+            return None
+        subject_row = connection.execute(
+            """
+            SELECT generation
+              FROM task_effort_activity
+             WHERE project_id = ?
+               AND task_id = ?
+            """,
+            (project.project_id, task_id),
+        ).fetchone()
+        existing_task_basis = connection.execute(
+            """
+            SELECT 1
+              FROM task_effort_bases
+             WHERE project_id = ?
+               AND task_id = ?
+            """,
+            (project.project_id, task_id),
+        ).fetchone()
+        capture_basis = (
+            effective_profile.enabled
+            and current_status == "in_progress"
+            and previous_status != current_status
+            and existing_task_basis is None
+        )
+        other_active = False
+        if capture_basis:
+            other_active = bool(
+                int(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*)
+                          FROM tasks
+                         WHERE project_id = ?
+                           AND task_id != ?
+                           AND status IN ('in_progress', 'review_pending')
+                        """,
+                        (project.project_id, task_id),
+                    ).fetchone()[0]
+                )
+            )
+        start_project_generation = int(project_row["effort_activity_generation"])
+        start_subject_generation = (
+            int(subject_row["generation"]) if subject_row is not None else 0
+        )
+    finally:
+        if owns_snapshot:
+            connection.rollback()
+
+    # A caller that already holds a transaction cannot safely run Git here.
+    # Basis capture is best-effort, so omit it instead of extending that lock.
+    endpoint = (
+        capture_git_basis(project.canonical_repo)
+        if capture_basis and owns_snapshot
+        else None
+    )
+    return EffortTransitionPreflight(
+        start_project_generation=start_project_generation,
+        start_subject_generation=start_subject_generation,
+        other_active_at_start=other_active,
+        capture_basis=capture_basis,
+        endpoint=endpoint,
+    )
+
+
 def record_task_transition(
     connection: sqlite3.Connection,
     project: ProjectIdentity,
@@ -320,6 +423,7 @@ def record_task_transition(
     current_status: str,
     profile: EffortProfile | None,
     occurred_at: str,
+    preflight: EffortTransitionPreflight | None = None,
 ) -> None:
     """Maintain enabled advisory metadata inside the owning task transaction."""
     effective_profile = profile or disabled_profile()
@@ -360,18 +464,24 @@ def record_task_transition(
                 project_id=project.project_id,
                 task_id=task_id,
             )
-        except (OverflowError, sqlite3.Error):
+        except OverflowError:
             # Advisory bookkeeping must not reject the owning Task transition.
             connection.execute(f"ROLLBACK TO SAVEPOINT {activity_savepoint}")
             connection.execute(f"RELEASE SAVEPOINT {activity_savepoint}")
             return
+        except sqlite3.Error as exc:
+            connection.execute(f"ROLLBACK TO SAVEPOINT {activity_savepoint}")
+            connection.execute(f"RELEASE SAVEPOINT {activity_savepoint}")
+            if is_sqlite_busy_or_locked(exc):
+                raise operational_sqlite_error(
+                    exc,
+                    fallback_message="could not update Effort activity",
+                ) from exc
+            # Non-contention advisory failures remain best-effort.
+            return
         connection.execute(f"RELEASE SAVEPOINT {activity_savepoint}")
 
-    if (
-        not effective_profile.enabled
-        or current_status != "in_progress"
-        or previous_status == current_status
-    ):
+    if not effective_profile.enabled or current_status != "in_progress" or previous_status == current_status:
         return
     existing_basis = connection.execute(
         """
@@ -385,10 +495,12 @@ def record_task_transition(
     if existing_basis is not None:
         return
 
-    endpoint = capture_git_basis(project.canonical_repo)
+    if preflight is None or not preflight.capture_basis:
+        return
+    endpoint = preflight.endpoint
     if endpoint is None or endpoint.revision is None or endpoint.clean is None:
         return
-    other_active = int(
+    locked_other_active = int(
         connection.execute(
             """
             SELECT COUNT(*)
@@ -399,6 +511,19 @@ def record_task_transition(
             """,
             (project.project_id, task_id),
         ).fetchone()[0]
+    )
+    project_delta = project_generation - preflight.start_project_generation
+    subject_delta = subject_generation - preflight.start_subject_generation
+    if (
+        project_delta < 0
+        or subject_delta < 0
+        or subject_delta > project_delta
+    ):
+        return
+    other_active = (
+        preflight.other_active_at_start
+        or locked_other_active > 0
+        or project_delta > subject_delta
     )
     savepoint = "taskgov_effort_basis"
     connection.execute(f"SAVEPOINT {savepoint}")
@@ -424,10 +549,17 @@ def record_task_transition(
                 occurred_at,
                 project_generation,
                 subject_generation,
-                int(other_active > 0),
+                int(other_active),
             ),
         )
-    except (sqlite3.Error, OSError):
+    except sqlite3.Error as exc:
+        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        if is_sqlite_busy_or_locked(exc):
+            raise operational_sqlite_error(
+                exc,
+                fallback_message="could not store Effort basis",
+            ) from exc
+    except OSError:
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
     finally:
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")

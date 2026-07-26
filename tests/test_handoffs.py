@@ -964,8 +964,24 @@ class HandoffCommandTests(unittest.TestCase):
             ) as connect_mock:
                 failed = handle_command(context_for("Must never become durable"))
             self.assertFalse(failed.ok)
-            self.assertEqual(failed.errors[0]["code"], "handoff_not_persisted")
-            self.assertFalse(failed.data["local_record"]["durable"])
+            self.assertEqual(failed.exit_code, 2)
+            self.assertEqual(failed.errors[0]["code"], "database_busy")
+            self.assertEqual(
+                failed.errors[0]["message"],
+                "task database is busy; run the command again later",
+            )
+            self.assertEqual(
+                failed.data,
+                {
+                    "handoff": None,
+                    "local_record": {
+                        "durable": False,
+                        "created": False,
+                        "replayed": False,
+                        "handoff_id": None,
+                    },
+                },
+            )
             self.assertEqual(connect_mock.call_count, 2)
             with closing(sqlite3.connect(db)) as connection:
                 rows = connection.execute(
@@ -997,8 +1013,24 @@ class HandoffCommandTests(unittest.TestCase):
             result = handle_command(context)
 
         self.assertFalse(result.ok)
-        self.assertEqual(result.errors[0]["code"], "handoff_not_persisted")
-        self.assertEqual(result.data["local_record"]["durable"], False)
+        self.assertEqual(result.exit_code, 2)
+        self.assertEqual(result.errors[0]["code"], "database_busy")
+        self.assertEqual(
+            result.errors[0]["message"],
+            "task database is busy; run the command again later",
+        )
+        self.assertEqual(
+            result.data,
+            {
+                "handoff": None,
+                "local_record": {
+                    "durable": False,
+                    "created": False,
+                    "replayed": False,
+                    "handoff_id": None,
+                },
+            },
+        )
         self.assertEqual(connect_mock.call_count, 2)
 
 

@@ -29,7 +29,12 @@ from task_governance_tool.ordering import (
     canonical_lane_sql,
     first_out_of_order_advanced_task,
 )
-from task_governance_tool.storage import ProjectIdentity, utc_now
+from task_governance_tool.storage import (
+    DatabaseTarget,
+    ProjectIdentity,
+    begin_initialized_write,
+    utc_now,
+)
 
 
 KINDS = ("sequential", "optional")
@@ -679,11 +684,34 @@ def create_task_event(
     return event
 
 
+def begin_task_write(
+    connection: sqlite3.Connection,
+    database_target: DatabaseTarget | None,
+) -> None:
+    if connection.in_transaction:
+        return
+    if database_target is not None:
+        begin_initialized_write(connection, database_target)
+    else:
+        connection.execute("BEGIN IMMEDIATE")
+
+
+def ensure_git_preflight_outside_transaction(
+    connection: sqlite3.Connection,
+) -> None:
+    if connection.in_transaction:
+        raise TaskRepositoryError(
+            "internal_error",
+            "Git preflight cannot run inside an active database transaction",
+        )
+
+
 def add_task(
     connection: sqlite3.Connection,
     project: ProjectIdentity,
     *,
     effort_profile: Any | None = None,
+    database_target: DatabaseTarget | None = None,
     **task_input: Any,
 ) -> AddTaskResult:
     from task_governance_tool.contracts import (
@@ -706,6 +734,22 @@ def add_task(
             "status",
         )
     normalized = validate_task_input(**task_input)
+    task_id = generate_id("tg_task")
+    from task_governance_tool.effort import (
+        prepare_task_transition,
+        record_task_transition,
+    )
+
+    effort_preflight = prepare_task_transition(
+        connection,
+        project,
+        task_id=task_id,
+        previous_status=None,
+        current_status=str(normalized["status"]),
+        profile=effort_profile,
+    )
+    begin_task_write(connection, database_target)
+
     lane = normalized["lane"]
     lane_order = normalized["lane_order"]
     if normalized["kind"] == "sequential":
@@ -715,7 +759,6 @@ def add_task(
 
     now = utc_now()
     completed_at = now if normalized["status"] == "done" else None
-    task_id = generate_id("tg_task")
     row = {
         "task_id": task_id,
         "project_id": project.project_id,
@@ -821,8 +864,6 @@ def add_task(
             summary="Task registered",
             created_at=now,
         )
-        from task_governance_tool.effort import record_task_transition
-
         record_task_transition(
             connection,
             project,
@@ -831,6 +872,7 @@ def add_task(
             current_status=str(row["status"]),
             profile=effort_profile,
             occurred_at=now,
+            preflight=effort_preflight,
         )
         task = connection.execute(
             "SELECT * FROM tasks WHERE task_id = ?",
@@ -1436,9 +1478,10 @@ def lock_and_reread_edit_owner(
     connection: sqlite3.Connection,
     project: ProjectIdentity,
     task_id: str,
+    *,
+    database_target: DatabaseTarget | None = None,
 ) -> dict[str, Any]:
-    if not connection.in_transaction:
-        connection.execute("BEGIN IMMEDIATE")
+    begin_task_write(connection, database_target)
     task = read_internal_task(connection, project.project_id, task_id)
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
@@ -1449,19 +1492,24 @@ def reject_concurrent_edit_base_change(
     existing: dict[str, Any],
     locked: dict[str, Any],
     *,
-    allow_review_target_change: bool,
+    completing: bool = False,
 ) -> None:
     reject_done_task_write(locked)
-    ignored_fields = {"updated_at"}
-    if allow_review_target_change:
-        ignored_fields.update(
-            {
-                "review_target_kind",
-                "review_target_value",
-                "review_target_base_revision",
-                "review_target_generation",
-            }
+    if completing and any(
+        locked[field] != existing[field]
+        for field in (
+            "review_target_kind",
+            "review_target_value",
+            "review_target_base_revision",
+            "review_target_generation",
         )
+    ):
+        raise validation_error(
+            "review_target_mismatch",
+            "review target changed after completion preflight",
+            "review_target_value",
+        )
+    ignored_fields = {"updated_at"}
     if any(
         locked[field] != existing[field]
         for field in existing
@@ -1634,11 +1682,13 @@ def reopen_done_task(
     existing: dict[str, Any],
     *,
     reopen_reason: str,
+    database_target: DatabaseTarget | None = None,
 ) -> EditTaskResult:
     locked_existing = lock_and_reread_edit_owner(
         connection,
         project,
         str(existing["task_id"]),
+        database_target=database_target,
     )
     if locked_existing["status"] != "done":
         raise TaskRepositoryError(
@@ -1780,8 +1830,14 @@ def edit_task(
     task_id: Any,
     *,
     effort_profile: Any | None = None,
+    database_target: DatabaseTarget | None = None,
     **edit_input: Any,
 ) -> EditTaskResult:
+    from task_governance_tool.effort import (
+        prepare_task_transition,
+        record_task_transition,
+    )
+
     normalized_task_id = validate_task_id(task_id)
     existing = read_internal_task(connection, project.project_id, normalized_task_id)
     if existing is None:
@@ -1795,14 +1851,21 @@ def edit_task(
         )
         if exact_reopen_candidate:
             reopen_input = validate_task_edit_input(**edit_input)
+            effort_preflight = prepare_task_transition(
+                connection,
+                project,
+                task_id=normalized_task_id,
+                previous_status=str(existing["status"]),
+                current_status="in_progress",
+                profile=effort_profile,
+            )
             reopened = reopen_done_task(
                 connection,
                 project,
                 existing,
                 reopen_reason=str(reopen_input["reopen_reason"]),
+                database_target=database_target,
             )
-            from task_governance_tool.effort import record_task_transition
-
             record_task_transition(
                 connection,
                 project,
@@ -1811,6 +1874,7 @@ def edit_task(
                 current_status=str(reopened.task["status"]),
                 profile=effort_profile,
                 occurred_at=str(reopened.event["created_at"]),
+                preflight=effort_preflight,
             )
             return reopened
         reject_done_task_write(existing)
@@ -1819,24 +1883,47 @@ def edit_task(
 
     edit_input, contract_input = split_contract_input(edit_input)
     if contract_input:
+        potential_contract_status = str(existing["status"])
+        if (
+            int(existing["current_contract_revision"]) == 0
+            and existing["status"] in {"ready", "blocked"}
+            and str(edit_input.get("status", "")).strip() == "in_progress"
+        ) or (
+            int(existing["current_contract_revision"]) > 0
+            and existing["status"] == "review_pending"
+        ):
+            potential_contract_status = "in_progress"
+        effort_preflight = prepare_task_transition(
+            connection,
+            project,
+            task_id=normalized_task_id,
+            previous_status=str(existing["status"]),
+            current_status=potential_contract_status,
+            profile=effort_profile,
+        )
+        locked_existing = lock_and_reread_edit_owner(
+            connection,
+            project,
+            normalized_task_id,
+            database_target=database_target,
+        )
         result = edit_contract(
             connection,
             project,
-            existing,
+            locked_existing,
             caller_edit_input=edit_input,
             contract_input=contract_input,
         )
-        from task_governance_tool.effort import record_task_transition
-
         if result.event is not None:
             record_task_transition(
                 connection,
                 project,
                 task_id=normalized_task_id,
-                previous_status=str(existing["status"]),
+                previous_status=str(locked_existing["status"]),
                 current_status=str(result.task["status"]),
                 profile=effort_profile,
                 occurred_at=str(result.event["created_at"]),
+                preflight=effort_preflight,
             )
         return EditTaskResult(
             task=result.task,
@@ -1922,6 +2009,8 @@ def edit_task(
     elif commit_not_required:
         requested_evidence_kind = "commit_not_required"
     if requested_evidence_kind is not None:
+        if requested_evidence_kind == "git_commit":
+            ensure_git_preflight_outside_transaction(connection)
         try:
             evidence = completion_evidence_values(
                 repo=project.canonical_repo,
@@ -1935,15 +2024,20 @@ def edit_task(
         updated.update(evidence.values)
         evidence_marker = evidence.audit_marker
 
+    implicit_lane_order = False
     if updated["kind"] == "sequential":
         if lane_was_provided or existing["kind"] != "sequential":
             updated["lane"] = validate_lane(updated["lane"])
         if not updated["lane"]:
             updated["lane"] = "default"
         if updated["lane_order"] is None:
-            updated["lane_order"] = next_lane_order(connection, project.project_id, str(updated["lane"]))
-        elif lane_was_provided and not order_was_provided and updated["lane"] != existing["lane"]:
-            updated["lane_order"] = next_lane_order(connection, project.project_id, str(updated["lane"]))
+            implicit_lane_order = True
+        elif (
+            lane_was_provided
+            and not order_was_provided
+            and updated["lane"] != existing["lane"]
+        ):
+            implicit_lane_order = True
 
     if status_was_provided and updated["status"] == "blocked" and "blocked_reason" not in normalized:
         raise validation_error(
@@ -1997,6 +2091,52 @@ def edit_task(
     elif updated["status"] != "paused":
         updated["pause_reason"] = ""
 
+    validate_done_transition_inputs(
+        updated,
+        status_was_provided=status_was_provided,
+        verification_complete=verification_complete,
+        review_complete=review_complete,
+    )
+    if (
+        status_was_provided
+        and updated["status"] == "done"
+        and (
+            updated["completion_evidence_kind"] == "git_commit"
+            or updated["review_target_kind"] in {"git_commit", "git_snapshot"}
+        )
+    ):
+        ensure_git_preflight_outside_transaction(connection)
+    revalidate_done_git_evidence(
+        updated,
+        repo=project.canonical_repo,
+        status_was_provided=status_was_provided,
+    )
+    effort_preflight = prepare_task_transition(
+        connection,
+        project,
+        task_id=normalized_task_id,
+        previous_status=str(existing["status"]),
+        current_status=str(updated["status"]),
+        profile=effort_profile,
+    )
+    locked_existing = lock_and_reread_edit_owner(
+        connection,
+        project,
+        normalized_task_id,
+        database_target=database_target,
+    )
+    reject_concurrent_edit_base_change(
+        existing,
+        locked_existing,
+        completing=(status_was_provided and updated["status"] == "done"),
+    )
+    if implicit_lane_order:
+        updated["lane_order"] = next_lane_order(
+            connection,
+            project.project_id,
+            str(updated["lane"]),
+        )
+
     now = utc_now()
     if status_was_provided:
         if updated["status"] == "done":
@@ -2024,7 +2164,9 @@ def edit_task(
         "completion_evidence_reason",
         "external_revision_approved",
     )
-    changed_fields = [field for field in comparable_fields if updated[field] != existing[field]]
+    changed_fields = [
+        field for field in comparable_fields if updated[field] != existing[field]
+    ]
     recorded_markers = []
     if evidence_marker is not None:
         recorded_markers.append(evidence_marker)
@@ -2054,30 +2196,6 @@ def edit_task(
         status_was_provided
         and updated["status"] in ADVANCED_STATUSES
         and updated["status"] != existing["status"]
-    )
-
-    validate_done_transition_inputs(
-        updated,
-        status_was_provided=status_was_provided,
-        verification_complete=verification_complete,
-        review_complete=review_complete,
-    )
-    revalidate_done_git_evidence(
-        updated,
-        repo=project.canonical_repo,
-        status_was_provided=status_was_provided,
-    )
-    locked_existing = lock_and_reread_edit_owner(
-        connection,
-        project,
-        normalized_task_id,
-    )
-    reject_concurrent_edit_base_change(
-        existing,
-        locked_existing,
-        allow_review_target_change=(
-            status_was_provided and updated["status"] == "done"
-        ),
     )
 
     savepoint = f"taskgov_ordering_{secrets.token_hex(4)}"
@@ -2124,11 +2242,6 @@ def edit_task(
                 "internal_error",
                 "task was not readable during completion binding",
             )
-        revalidate_done_git_evidence(
-            locked_task,
-            repo=project.canonical_repo,
-            status_was_provided=status_was_provided,
-        )
         enforce_done_review_gate(
             connection,
             locked_task,
@@ -2204,8 +2317,6 @@ def edit_task(
     task = read_task(connection, project.project_id, normalized_task_id)
     if task is None:
         raise TaskRepositoryError("internal_error", "task was not readable after update")
-    from task_governance_tool.effort import record_task_transition
-
     record_task_transition(
         connection,
         project,
@@ -2214,5 +2325,6 @@ def edit_task(
         current_status=str(task["status"]),
         profile=effort_profile,
         occurred_at=now,
+        preflight=effort_preflight,
     )
     return EditTaskResult(task=task, changed_fields=changed_fields, event=event)

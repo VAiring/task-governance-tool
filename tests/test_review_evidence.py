@@ -22,6 +22,7 @@ FINGERPRINT_B = "sha256:" + "b" * 64
 sys.path.insert(0, str(SCRIPTS_ROOT))
 try:
     from task_governance_tool.reviews import (
+        ReviewEvidenceError,
         read_review_evidence,
         set_git_snapshot_target,
     )
@@ -32,6 +33,7 @@ try:
         validate_current_database,
     )
     from task_governance_tool import tasks as task_service
+    from task_governance_tool import reviews as review_service
     from task_governance_tool.tasks import (
         TaskValidationError,
         edit_task,
@@ -145,6 +147,7 @@ def internal_git_snapshot_target(db, repo, task_id):
                 connection,
                 target.project,
                 task_id,
+                database_target=target,
             )
 
 
@@ -218,6 +221,110 @@ def snapshot_target_and_two_passes(db, repo, task_id):
 
 
 class ReviewEvidenceTests(unittest.TestCase):
+    def test_review_git_preflight_rejects_an_existing_database_transaction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / "taskgov.sqlite"
+            repo = root / "repo"
+            init_git_repo(repo)
+            init_db(db, repo)
+            task = add_task(db, repo)
+            target = database_target(db, repo)
+
+            cases = (
+                ("git_commit", "HEAD", "resolve_git_commit"),
+                ("git_snapshot", None, "capture_git_snapshot"),
+            )
+            for kind, revision, patched_name in cases:
+                with self.subTest(kind=kind):
+                    with closing(connect_initialized(target)) as connection:
+                        connection.execute("BEGIN IMMEDIATE")
+                        with mock.patch.object(
+                            review_service,
+                            patched_name,
+                            side_effect=AssertionError(
+                                "Git must not run inside the database transaction"
+                            ),
+                        ) as git_mock:
+                            with self.assertRaises(
+                                task_service.TaskRepositoryError
+                            ) as raised:
+                                review_service.set_requested_review_target(
+                                    connection,
+                                    target.project,
+                                    task["task_id"],
+                                    kind=kind,
+                                    revision=revision,
+                                    database_target=target,
+                                )
+                        connection.rollback()
+                    self.assertEqual(raised.exception.code, "internal_error")
+                    self.assertEqual(git_mock.call_count, 0)
+
+            self.assertEqual(
+                review_target_state(db, task["task_id"]),
+                ("", "", "", 0),
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM task_events WHERE task_id = ?",
+                        (task["task_id"],),
+                    ).fetchone()[0],
+                    1,
+                )
+
+    def test_task_git_preflight_rejects_an_existing_database_transaction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / "taskgov.sqlite"
+            repo = root / "repo"
+            init_git_repo(repo)
+            init_db(db, repo)
+            task = add_task(db, repo)
+            target = database_target(db, repo)
+
+            with closing(connect_initialized(target)) as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                with mock.patch.object(
+                    task_service,
+                    "completion_evidence_values",
+                    side_effect=AssertionError(
+                        "Git must not run inside the database transaction"
+                    ),
+                ) as git_mock:
+                    with self.assertRaises(
+                        task_service.TaskRepositoryError
+                    ) as raised:
+                        edit_task(
+                            connection,
+                            target.project,
+                            task["task_id"],
+                            completion_evidence_kind="git_commit",
+                            completion_revision="HEAD",
+                            database_target=target,
+                        )
+                connection.rollback()
+
+            self.assertEqual(raised.exception.code, "internal_error")
+            self.assertEqual(git_mock.call_count, 0)
+            with closing(sqlite3.connect(db)) as connection:
+                stored = connection.execute(
+                    """
+                    SELECT status, completion_evidence_kind,
+                           completion_evidence_revision
+                      FROM tasks
+                     WHERE task_id = ?
+                    """,
+                    (task["task_id"],),
+                ).fetchone()
+                event_count = connection.execute(
+                    "SELECT COUNT(*) FROM task_events WHERE task_id = ?",
+                    (task["task_id"],),
+                ).fetchone()[0]
+            self.assertEqual(stored, ("ready", "none", ""))
+            self.assertEqual(event_count, 1)
+
     def test_git_review_target_is_validated_canonically_without_git_mutation(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -1012,7 +1119,74 @@ class ReviewEvidenceTests(unittest.TestCase):
                 "",
             )
 
-    def test_concurrent_internal_snapshot_targets_serialize_generation_updates(self):
+    def test_delayed_git_commit_target_resolution_allows_unrelated_handoff_write(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            revision = init_git_repo(repo)
+            init_db(db, repo)
+            task_id = add_task(db, repo)["task_id"]
+            target = database_target(db, repo)
+            started = threading.Event()
+            release = threading.Event()
+            original_resolve = review_service.resolve_git_commit
+
+            def delayed_resolve(repo_path, requested):
+                resolved = original_resolve(repo_path, requested)
+                started.set()
+                if not release.wait(10):
+                    raise AssertionError("Git commit preflight was not released")
+                return resolved
+
+            def set_target():
+                with closing(connect_initialized(target)) as connection:
+                    with connection:
+                        return review_service.set_requested_review_target(
+                            connection,
+                            target.project,
+                            task_id,
+                            kind="git_commit",
+                            revision=revision[:12],
+                            database_target=target,
+                        )
+
+            with mock.patch.object(
+                review_service,
+                "resolve_git_commit",
+                side_effect=delayed_resolve,
+            ):
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(set_target)
+                    self.assertTrue(started.wait(10))
+                    handoff = run_taskgov(
+                        "handoff",
+                        "record",
+                        "--repo",
+                        str(repo),
+                        "--db",
+                        str(db),
+                        task_id,
+                        "--summary",
+                        "Unrelated discovery during Git target preflight",
+                        "--json",
+                    )
+                    self.assertEqual(handoff.returncode, 0, handoff.stdout)
+                    release.set()
+                    result = future.result(timeout=10)
+
+            self.assertEqual(result.task["review_target_generation"], 1)
+            self.assertEqual(result.task["review_target_value"], revision)
+            with closing(sqlite3.connect(db)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM handoff_records"
+                    ).fetchone()[0],
+                    1,
+                )
+                self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_delayed_git_snapshot_capture_allows_unrelated_handoff_write(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
@@ -1020,22 +1194,186 @@ class ReviewEvidenceTests(unittest.TestCase):
             init_db(db, repo)
             task_id = add_task(db, repo)["task_id"]
             target = database_target(db, repo)
+            started = threading.Event()
+            release = threading.Event()
+            original_capture = review_service.capture_git_snapshot
+
+            def delayed_capture(repo_path):
+                snapshot = original_capture(repo_path)
+                started.set()
+                if not release.wait(10):
+                    raise AssertionError("Git snapshot preflight was not released")
+                return snapshot
+
+            def set_target():
+                with closing(connect_initialized(target)) as connection:
+                    with connection:
+                        return set_git_snapshot_target(
+                            connection,
+                            target.project,
+                            task_id,
+                            database_target=target,
+                        )
+
+            with mock.patch.object(
+                review_service,
+                "capture_git_snapshot",
+                side_effect=delayed_capture,
+            ):
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(set_target)
+                    self.assertTrue(started.wait(10))
+                    handoff = run_taskgov(
+                        "handoff",
+                        "record",
+                        "--repo",
+                        str(repo),
+                        "--db",
+                        str(db),
+                        task_id,
+                        "--summary",
+                        "Unrelated discovery during Git snapshot preflight",
+                        "--json",
+                    )
+                    self.assertEqual(handoff.returncode, 0, handoff.stdout)
+                    release.set()
+                    result = future.result(timeout=10)
+
+            self.assertEqual(result.task["review_target_generation"], 1)
+            self.assertEqual(result.task["review_target_kind"], "git_snapshot")
+            with closing(sqlite3.connect(db)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM handoff_records"
+                    ).fetchone()[0],
+                    1,
+                )
+                self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_delayed_completion_snapshot_comparison_allows_unrelated_task_write(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            init_git_repo(repo)
+            init_db(db, repo)
+            task_id = add_task(db, repo)["task_id"]
+            unrelated_task_id = add_task(
+                db,
+                repo,
+                title="Unrelated task",
+            )["task_id"]
+            (repo / "reviewed.txt").write_text("reviewed\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "--", "reviewed.txt"],
+                check=True,
+            )
+            snapshot_target_and_two_passes(db, repo, task_id)
+            completion_commit = commit_staged(repo)
+            target = database_target(db, repo)
+            started = threading.Event()
+            release = threading.Event()
+            original_verify = task_service.verify_git_snapshot_commit
+
+            def delayed_verify(*args, **kwargs):
+                verified = original_verify(*args, **kwargs)
+                started.set()
+                if not release.wait(10):
+                    raise AssertionError("completion preflight was not released")
+                return verified
+
+            def complete():
+                with closing(connect_initialized(target)) as connection:
+                    with connection:
+                        return edit_task(
+                            connection,
+                            target.project,
+                            task_id,
+                            status="done",
+                            verification_complete=True,
+                            review_complete=True,
+                            completion_commit_hash=completion_commit,
+                            database_target=target,
+                        )
+
+            with mock.patch.object(
+                task_service,
+                "verify_git_snapshot_commit",
+                side_effect=delayed_verify,
+            ):
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(complete)
+                    self.assertTrue(started.wait(10))
+                    unrelated = run_taskgov(
+                        "task",
+                        "edit",
+                        "--repo",
+                        str(repo),
+                        "--db",
+                        str(db),
+                        unrelated_task_id,
+                        "--add-note",
+                        "Independent progress during completion preflight",
+                        "--json",
+                    )
+                    self.assertEqual(unrelated.returncode, 0, unrelated.stdout)
+                    release.set()
+                    result = future.result(timeout=10)
+
+            self.assertEqual(result.task["status"], "done")
+            with closing(sqlite3.connect(db)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM task_events
+                         WHERE task_id = ? AND event_type = 'task_updated'
+                        """,
+                        (task_id,),
+                    ).fetchone()[0],
+                    1,
+                )
+                self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_concurrent_internal_snapshot_targets_reject_stale_preflight(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "tasks.sqlite"
+            init_git_repo(repo)
+            init_db(db, repo)
+            task_id = add_task(db, repo)["task_id"]
+            target = database_target(db, repo)
+            capture_barrier = threading.Barrier(2)
+            original_capture = review_service.capture_git_snapshot
+
+            def synchronized_capture(repo_path):
+                snapshot = original_capture(repo_path)
+                capture_barrier.wait()
+                return snapshot
 
             def set_target(_):
                 with closing(connect_existing(db)) as connection:
                     validate_current_database(connection, target)
                     self.assertFalse(connection.in_transaction)
-                    with connection:
-                        result = set_git_snapshot_target(
-                            connection, target.project, task_id
-                        )
-                    return result.task["review_target_generation"]
+                    try:
+                        with connection:
+                            result = set_git_snapshot_target(
+                                connection, target.project, task_id
+                            )
+                        return ("ok", result.task["review_target_generation"])
+                    except ReviewEvidenceError as exc:
+                        return ("error", exc.code)
 
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                generations = list(executor.map(set_target, range(2)))
+            with mock.patch.object(
+                review_service,
+                "capture_git_snapshot",
+                side_effect=synchronized_capture,
+            ):
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    outcomes = list(executor.map(set_target, range(2)))
 
-            self.assertCountEqual(generations, [1, 2])
-            self.assertEqual(review_target_state(db, task_id)[3], 2)
+            self.assertCountEqual(outcomes, [("ok", 1), ("error", "invalid_argument")])
+            self.assertEqual(review_target_state(db, task_id)[3], 1)
             with closing(sqlite3.connect(db)) as connection:
                 events = connection.execute(
                     "SELECT COUNT(*) FROM task_events "
@@ -1044,7 +1382,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                 ).fetchone()[0]
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
-            self.assertEqual(events, 2)
+            self.assertEqual(events, 1)
 
     def test_schema_six_reopen_clears_snapshot_base_and_advances_generation(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -1420,7 +1758,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                 connection.rollback()
 
             self.assertEqual(raised.exception.code, "review_target_mismatch")
-            self.assertEqual(binding_calls, 2)
+            self.assertEqual(binding_calls, 1)
             with closing(sqlite3.connect(db)) as connection:
                 row = connection.execute(
                     """

@@ -29,13 +29,17 @@ from task_governance_tool.handoffs import (
     withdraw_handoff,
 )
 from task_governance_tool.storage import (
+    DATABASE_BUSY_MESSAGE,
     StatusResult,
     StorageError,
+    begin_initialized_write,
     connect_initialized,
     connect_initialized_readonly,
     connect_snapshot_readonly,
     initialize_database,
     inspect_database,
+    is_sqlite_busy_or_locked,
+    operational_sqlite_error,
     resolve_database_target,
     skill_root_from_script,
 )
@@ -908,6 +912,7 @@ def handle_task_add(context: CommandContext) -> CommandResult:
                     connection,
                     target.project,
                     effort_profile=effort_profile,
+                    database_target=target,
                     **task_input,
                 )
     except TaskValidationError as exc:
@@ -934,12 +939,16 @@ def handle_task_add(context: CommandContext) -> CommandResult:
             exit_code=EXIT_TOOL_ERROR,
         )
     except sqlite3.Error as exc:
+        mapped = operational_sqlite_error(
+            exc,
+            fallback_message="could not add task",
+        )
         return CommandResult(
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            errors=[{"code": "internal_error", "message": "could not add task"}],
+            errors=[{"code": mapped.code, "message": mapped.message}],
             exit_code=EXIT_TOOL_ERROR,
         )
 
@@ -1008,7 +1017,7 @@ def handle_task_list(context: CommandContext) -> CommandResult:
     except sqlite3.Error as exc:
         code = "database_busy" if _is_transient_sqlite_lock(exc) else "internal_error"
         message = (
-            "task database is busy; run the command again later"
+            DATABASE_BUSY_MESSAGE
             if code == "database_busy"
             else "could not list tasks"
         )
@@ -1129,7 +1138,7 @@ def handle_task_next(context: CommandContext) -> CommandResult:
             db_path=str(target.db_path),
             code=code,
             message=(
-                "task database is busy; run the command again later"
+                DATABASE_BUSY_MESSAGE
                 if code == "database_busy"
                 else "could not select next tasks"
             ),
@@ -1251,7 +1260,7 @@ def handle_task_current(context: CommandContext) -> CommandResult:
                 {
                     "code": code,
                     "message": (
-                        "task database is busy; run the command again later"
+                        DATABASE_BUSY_MESSAGE
                         if code == "database_busy"
                         else "could not list current tasks"
                     ),
@@ -1384,7 +1393,7 @@ def handle_task_effort(context: CommandContext) -> CommandResult:
                 {
                     "code": code,
                     "message": (
-                        "task database is busy; run the command again later"
+                        DATABASE_BUSY_MESSAGE
                         if code == "database_busy"
                         else "could not inspect task effort"
                     ),
@@ -1553,7 +1562,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                 {
                     "code": code,
                     "message": (
-                        "task database is busy; run the command again later"
+                        DATABASE_BUSY_MESSAGE
                         if code == "database_busy"
                         else "could not show task"
                     ),
@@ -1694,6 +1703,7 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
                     target.project,
                     getattr(context.args, "task_id", ""),
                     effort_profile=effort_profile,
+                    database_target=target,
                     **edit_input,
                 )
     except TaskValidationError as exc:
@@ -1724,13 +1734,17 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
             message=exc.message,
             exit_code=EXIT_TOOL_ERROR,
         )
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        mapped = operational_sqlite_error(
+            exc,
+            fallback_message="could not edit task",
+        )
         return task_edit_failure_result(
             context,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            code="internal_error",
-            message="could not edit task",
+            code=mapped.code,
+            message=mapped.message,
             exit_code=EXIT_TOOL_ERROR,
         )
 
@@ -1843,13 +1857,7 @@ def handoff_text(command: str, data: dict[str, Any]) -> str:
 
 
 def _is_transient_sqlite_lock(exc: sqlite3.Error) -> bool:
-    error_code = getattr(exc, "sqlite_errorcode", None)
-    if isinstance(error_code, int):
-        primary_code = error_code & 0xFF
-        if primary_code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
-            return True
-    message = str(exc).lower()
-    return "locked" in message or "busy" in message
+    return is_sqlite_busy_or_locked(exc)
 
 
 def _handle_handoff_record(
@@ -1863,6 +1871,7 @@ def _handle_handoff_record(
     for attempt in range(2):
         try:
             with closing(connect_initialized(target)) as connection:
+                begin_initialized_write(connection, target)
                 result = record_handoff(
                     connection,
                     target.project,
@@ -1888,6 +1897,8 @@ def _handle_handoff_record(
                 exit_code=exit_code,
             )
         except StorageError as exc:
+            if attempt == 0 and exc.code == "database_busy":
+                continue
             return handoff_failure_result(
                 context,
                 project_id=project_id,
@@ -1899,12 +1910,24 @@ def _handle_handoff_record(
         except sqlite3.Error as exc:
             if attempt == 0 and _is_transient_sqlite_lock(exc):
                 continue
+            mapped = operational_sqlite_error(
+                exc,
+                fallback_message="local handoff could not be persisted",
+            )
             return handoff_failure_result(
                 context,
                 project_id=project_id,
                 db_path=db_path,
-                code="handoff_not_persisted",
-                message="local handoff could not be persisted",
+                code=(
+                    mapped.code
+                    if mapped.code == "database_busy"
+                    else "handoff_not_persisted"
+                ),
+                message=(
+                    mapped.message
+                    if mapped.code == "database_busy"
+                    else "local handoff could not be persisted"
+                ),
                 exit_code=EXIT_TOOL_ERROR,
             )
     if result is None:
@@ -2017,7 +2040,7 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
                 db_path=db_path,
                 code=code,
                 message=(
-                    "task database is busy; run the command again later"
+                    DATABASE_BUSY_MESSAGE
                     if code == "database_busy"
                     else "could not read local handoffs"
                 ),
@@ -2026,6 +2049,7 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
     else:
         try:
             with closing(connect_initialized(target)) as connection:
+                begin_initialized_write(connection, target)
                 result = withdraw_handoff(
                     connection,
                     target.project,
@@ -2057,13 +2081,17 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
                 message=exc.message,
                 exit_code=EXIT_TOOL_ERROR,
             )
-        except sqlite3.Error:
+        except sqlite3.Error as exc:
+            mapped = operational_sqlite_error(
+                exc,
+                fallback_message="could not withdraw local handoff",
+            )
             return handoff_failure_result(
                 context,
                 project_id=project_id,
                 db_path=db_path,
-                code="internal_error",
-                message="could not withdraw local handoff",
+                code=mapped.code,
+                message=mapped.message,
                 exit_code=EXIT_TOOL_ERROR,
             )
 
@@ -2161,6 +2189,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                         getattr(context.args, "task_id", ""),
                         kind=getattr(context.args, "kind", ""),
                         revision=getattr(context.args, "revision", None),
+                        database_target=target,
                     )
                     data = {
                         "task": result.task,
@@ -2177,6 +2206,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                         verdict=getattr(context.args, "verdict", ""),
                         summary=getattr(context.args, "summary", ""),
                         user_approved=bool(getattr(context.args, "user_approved", False)),
+                        database_target=target,
                     )
                     data = {"receipt": result.receipt, "event": result.event}
                 elif context.command == "review.finding.add":
@@ -2187,6 +2217,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                         receipt_id=getattr(context.args, "receipt_id", ""),
                         severity=getattr(context.args, "severity", ""),
                         summary=getattr(context.args, "summary", ""),
+                        database_target=target,
                     )
                     data = {"finding": result.finding, "event": result.event}
                 else:
@@ -2195,6 +2226,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                         target.project,
                         getattr(context.args, "finding_id", ""),
                         resolution=getattr(context.args, "resolution", ""),
+                        database_target=target,
                     )
                     data = {"finding": result.finding, "event": result.event}
     except (TaskValidationError, ReviewEvidenceError) as exc:
@@ -2224,13 +2256,17 @@ def handle_review_command(context: CommandContext) -> CommandResult:
             message=exc.message,
             exit_code=EXIT_TOOL_ERROR,
         )
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        mapped = operational_sqlite_error(
+            exc,
+            fallback_message="could not record structured review evidence",
+        )
         return review_failure_result(
             context,
             project_id=project_id,
             db_path=db_path,
-            code="internal_error",
-            message="could not record structured review evidence",
+            code=mapped.code,
+            message=mapped.message,
             exit_code=EXIT_TOOL_ERROR,
         )
 

@@ -89,6 +89,11 @@ browser launch.
   already exist in current authority. Otherwise keep revision zero without a
   question. Later semantic revisions require explicit later authority and a
   reason; canonically unchanged input is a write-free replay.
+- If `db status` reports an explicitly enabled Effort Advisory, run
+  `task effort <task-id> --read-only --json` once at the existing
+  verification/review boundary. Always follow its fixed `continue` action;
+  never turn its warning or unknown attribution into a question, handoff,
+  acceptance change, status change, or completion gate.
 - Classify a new finding once: keep safely authorized acceptance work in the
   current task, record an unmet condition that prevents acceptance as its
   blocker, and durably `handoff record` everything else before continuing.
@@ -148,4 +153,5 @@ This version does not record verification receipts, detect stale work, persist
 session handoff checkpoints, page event or handoff history, create
 child/checklist tasks, deliver records to an Issue Skill, or create
 commits, branches, PRs, issue comments, network services, browser edit controls,
-or unapproved target-project mutations.
+generic risk profiles, fixture/retry/test-metric scanners, or unapproved
+target-project mutations.

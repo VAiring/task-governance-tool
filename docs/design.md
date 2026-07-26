@@ -1,8 +1,8 @@
 # task-governance-tool MVP Design
 
-Status: formal implemented design baseline through TG-M12.2 Task Contract at
-release v0.5.0/schema v8. The approved optional follow-ups remain next after
-their documented dependencies; TG-M12.3 Issue adapter remains blocked.
+Status: formal implemented design baseline through TG-M12.O1 Effort Advisory
+at release v0.6.0/schema v9. TG-M12.O2 local self-status remains next;
+TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -51,6 +51,7 @@ task-governance-tool/
       git_snapshot.py
       handoffs.py
       contracts.py
+      effort.py
       viewer.py
   references/
     task_workflow.md
@@ -1587,31 +1588,61 @@ general authority or signature engine.
 
 ### Optional Effort Advisory Design
 
-Effort Advisory is implemented only under a separate default-off risk profile.
-The initial read command returns measurements, thresholds, basis, coverage,
+Effort Advisory is implemented only under the fixed default-off
+`config/effort-advisory.json` profile in the installed Skill. There is no
+generic profile repository, inheritance, environment override, configuration
+write CLI, or configured command runner. The strict version-1 JSON loader
+accepts only the `informational-v1` id, explicit `enabled`, and a threshold
+subset for five fixed metrics. Missing or valid disabled configuration is
+strictly off; invalid present configuration is disabled with a bounded
+continuation diagnostic.
+
+The public read command is `taskgov task effort <task-id>` with stable envelope
+command `task.effort`. It returns measurements, thresholds, basis, coverage,
 attribution, unknown reasons, one stable warning key, and fixed
-`suggested_action=continue`.
+`suggested_action=continue`. `db status` gains an enablement projection only
+for an enabled or invalid present profile; the absent/disabled shape stays
+unchanged.
 
 When enabled, first entry to `in_progress` may best-effort store a basis HEAD,
 endpoint cleanliness, capture timestamp, and activity generation in Task DB.
 This is an authorized side effect of that existing write, not a read-only
 inspection. Capture failure records no partial basis and never blocks start.
 Subsequent Git observation uses argument-vector, optional-lock-disabled,
-no-lazy-fetch reads only.
+no-lazy-fetch reads only. It disables `core.fsmonitor`, ignores submodules,
+and validates the stored basis as a full object ID before constructing any Git
+argument. Invalid stored evidence is neither passed to Git nor emitted.
 
 Attribution is conservative. It is `unknown` for non-Git repositories, dirty or
-uncertain basis/observation endpoints, missing coverage, or any activity-
-generation change showing possible overlap after basis capture. A false claim
-of exclusive Task ownership is worse than an unknown result. Initial metrics
-may include Git changed files/lines/modules, generated fixture bytes,
-structured Task retry counts, Contract revision count, handoff count, and
-explicitly configured test metrics.
+uncertain basis/observation endpoints, missing coverage, or activity-generation
+evidence showing possible overlap after basis capture. Schema v9 adds
+`project_meta.effort_activity_generation`,
+`task_effort_activity(task_id, project_id, generation)`, and one
+`task_effort_bases` row per task. A project counter and a subject counter let
+the observation subtract the subject task's own active-state transitions while
+still detecting another task that starts and finishes before observation.
+`other_active_at_capture` covers an overlap already present at basis time.
+The command reads current activity generations from a fresh immutable
+connection after Git observation, rather than reusing the pre-observation
+snapshot; failure to refresh is `activity_generation_uncertain`.
+These counters are maintained only after explicit enablement or while an
+existing basis needs continued attribution; strict-off databases do no
+advisory bookkeeping.
+
+Initial metrics are limited to Git changed files/lines/modules, current
+Contract revision count, and recorded source-task handoff count. The Git diff
+uses no rename, external-diff, or text-conversion helpers; untracked or binary
+content makes line coverage unavailable rather than guessed. Generated fixture
+bytes, structured retry counts, configured tests, and advanced risk analysis
+remain deferred.
 
 The command never writes an acknowledgement, asks a question, chooses a
 handoff, changes status, expands acceptance, or blocks completion. Repeated
 observations may repeat the same stable warning. More precise attribution,
 persistent dispositions, and automatic enforcement require a separate future
-contract.
+contract. The Skill invokes the command once at the existing
+verification/review boundary when `db status` reports it enabled; it does not
+invoke it after every command.
 
 ### Local Package Self-Status
 
@@ -1628,12 +1659,14 @@ work solely because of this advisory.
 
 ### Migration, Viewer, And Old-Binary Compatibility
 
-Migrations run only through explicit `db init` in strict v5-to-v6-to-v7-to-v8
-order. Each unit is idempotent and rollback-safe. The migration fixture retains
-the existing 12 tasks, 191 events, nine completion hashes, review evidence,
-project identity, and all new preceding-version records. Specific rollback
-tests cover claim/outbox preservation, v7 handoffs surviving v8, and atomic
-Contract pointer/revision writes.
+Migrations run only through explicit `db init` in strict
+v5-to-v6-to-v7-to-v8-to-v9 order. Each unit is idempotent and rollback-safe.
+The migration fixture retains the existing 12 tasks, 191 events, nine
+completion hashes, review evidence, project identity, and all new
+preceding-version records. Specific rollback tests cover claim/outbox
+preservation, v7 handoffs surviving v8, atomic Contract pointer/revision
+writes, and v8-to-v9 Effort Advisory metadata creation with an empty disabled
+baseline.
 
 An older binary compares the stored schema before a write and rejects any newer
 version. It does not apply a reverse migration or overwrite version metadata.
@@ -1644,7 +1677,7 @@ Viewer snapshot mapping becomes:
 
 - snapshot version 1: schema version 2;
 - snapshot version 2: schema versions 3-4; and
-- snapshot version 3: schema versions 5-8.
+- snapshot version 3: schema versions 5-9.
 
 Normal Task and handoff commands continue to require the runtime's exact
 current schema. Viewer export uses a separate query-only validator that accepts
@@ -1654,10 +1687,11 @@ and still enforces project identity. This prevents schema-v7 rollout from
 breaking schema-v5/v6 export without allowing writes through an old schema.
 
 Every snapshot carries its actual `source_schema_version`. The snapshot-v3
-allow-list remains unchanged from schema 5 through schema 8: it excludes
-`review_target_base_revision`, handoff rows, Contract pointers, and Contract
-revisions. Normal and `--read-only` export tests run against each intermediate
-schema and prove identical privacy, no-sidecar, and task-shape behavior.
+allow-list remains unchanged from schema 5 through schema 9: it excludes
+`review_target_base_revision`, handoff rows, Contract pointers, Contract
+revisions, and all Effort Advisory basis/activity metadata. Normal and
+`--read-only` export tests run against each intermediate schema and prove
+identical privacy, no-sidecar, and task-shape behavior.
 
 ### TG-M12 Guidance Boundary
 

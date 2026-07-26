@@ -113,17 +113,20 @@ python scripts/taskgov.py db init --repo <target-project> --json
 python scripts/taskgov.py db status --repo <target-project> --json
 ```
 
-Only `db init` creates or migrates the database. Version `0.5.0` uses schema v8
-and migrates supported schema-v2 through v7 databases through the explicit
+Only `db init` creates or migrates the database. Version `0.6.0` uses schema v9
+and migrates supported schema-v2 through v8 databases through the explicit
 ordered migration path while retaining task/event IDs, completion hashes, and
 structured review history. Schema v7 adds an empty local handoff outbox without
 rewriting existing tasks or evidence. Schema v8 adds revision-zero pointers and
 an empty immutable Contract table without rewriting existing task or handoff
-history. Skill installation or an ordinary task command does not migrate a
-database. Back up the project-local database before updating the skill, then
-run `db init` explicitly. Migrations are transactional, repeatable, and never
-downgrade a database; an older runtime rejects a newer schema. An incomplete
-migration history is not repaired by inference:
+history. Schema v9 adds empty Effort Advisory basis/activity metadata and a
+zero project activity generation; it does not rewrite existing tasks, events,
+completion evidence, reviews, handoffs, or Contracts. Skill installation or
+an ordinary task command does not migrate a database. Back up the project-local
+database before updating the skill, then run `db init` explicitly. Migrations
+are transactional, repeatable, and never downgrade a database; an older
+runtime rejects a newer schema. An incomplete migration history is not repaired
+by inference:
 `db init` returns `migration_required` without mutation so the operator can
 restore a valid backup or inspect the history.
 
@@ -206,6 +209,25 @@ New handoffs capture the current Contract revision in their identity; existing
 schema-v7 handoffs remain revision zero. There is no expected-revision,
 signature, Issue, or general workflow engine in this release.
 
+## Optional Effort Advisory
+
+Effort Advisory remains disabled unless the consuming project explicitly adds
+`config/effort-advisory.json` to its installed Skill copy with
+`schema_version: 1`, `profile: "informational-v1"`, and `enabled: true`.
+The optional `thresholds` object accepts only `changed_files`,
+`changed_lines`, `changed_modules`, `contract_revisions`, and `handoffs`.
+Thresholds are non-negative integers and are exceeded only when the observed
+value is greater than the configured value. Unknown fields or invalid values
+disable the profile and produce a bounded diagnostic; task work still
+continues.
+
+When enabled, an existing transition into `in_progress` may best-effort capture
+a clean or dirty Git basis in schema v9. Capture failure never rejects the
+Task transition. `task effort <task-id>` is offline and read-only; it reports
+unknown rather than guessing when Git coverage or exclusive-task attribution
+is unreliable. It never records an acknowledgement, changes Task or handoff
+state, asks a question, or creates a stop.
+
 ## Viewer Runtime State
 
 After installation, an explicitly requested `web export` writes the default
@@ -248,9 +270,9 @@ Before creating a release artifact:
    copied references, logs, and caches are ignored and absent from the artifact.
 7. Confirm `task-governance-tool/SKILL.md` frontmatter contains only `name` and
    `description`, and the `name` matches the folder.
-8. Confirm `taskgov --version` reports `0.5.0`, storage reports schema v8, and
+8. Confirm `taskgov --version` reports `0.6.0`, storage reports schema v9, and
    the Skill, workflow, CLI contracts, README, and this note describe the same
-   snapshot/reopen/local-handoff/Contract behavior.
+   snapshot/reopen/local-handoff/Contract/Effort-Advisory behavior.
 
 ## Publication Notes
 
@@ -264,8 +286,9 @@ guards, typed completion evidence with read-only Git validation, structured
 review gates, exact paused counts, the bounded current-status filter, the
 advisory paused-work warning, schema v6 migration, deterministic staged-snapshot
 completion binding, done/reopen safety, schema-v7 local handoff, schema-v8
-optional Task Contracts, and snapshot-v3 offline Viewer export. Version
-`0.5.0` adds schema v8 and the Contract surface beyond TG-M12.1 version
-`0.4.0`, which added schema v7 and local-only handoff behavior. Earlier
-history includes the TG-M11 version `0.3.0` completion-integrity release,
-historical `0.2.0` TG-M8 release candidate, and the `0.1.0` trial.
+optional Task Contracts, schema-v9 default-off Effort Advisory, and snapshot-v3
+offline Viewer export. Version `0.6.0` adds schema v9 and the read-only
+advisory beyond version `0.5.0`, which added schema v8 and Task Contracts.
+TG-M12.1 version `0.4.0` added schema v7 and local-only handoff behavior.
+Earlier history includes the TG-M11 version `0.3.0` completion-integrity
+release, historical `0.2.0` TG-M8 release candidate, and the `0.1.0` trial.

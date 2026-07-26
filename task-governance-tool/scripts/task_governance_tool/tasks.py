@@ -679,7 +679,13 @@ def create_task_event(
     return event
 
 
-def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_input: Any) -> AddTaskResult:
+def add_task(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    *,
+    effort_profile: Any | None = None,
+    **task_input: Any,
+) -> AddTaskResult:
     from task_governance_tool.contracts import (
         CONTRACT_ADD_STATUSES,
         add_initial_contract,
@@ -814,6 +820,17 @@ def add_task(connection: sqlite3.Connection, project: ProjectIdentity, **task_in
             event_type="task_added",
             summary="Task registered",
             created_at=now,
+        )
+        from task_governance_tool.effort import record_task_transition
+
+        record_task_transition(
+            connection,
+            project,
+            task_id=task_id,
+            previous_status=None,
+            current_status=str(row["status"]),
+            profile=effort_profile,
+            occurred_at=now,
         )
         task = connection.execute(
             "SELECT * FROM tasks WHERE task_id = ?",
@@ -1757,7 +1774,14 @@ def reopen_done_task(
     return EditTaskResult(task=task, changed_fields=changed_fields, event=event)
 
 
-def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id: Any, **edit_input: Any) -> EditTaskResult:
+def edit_task(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    task_id: Any,
+    *,
+    effort_profile: Any | None = None,
+    **edit_input: Any,
+) -> EditTaskResult:
     normalized_task_id = validate_task_id(task_id)
     existing = read_internal_task(connection, project.project_id, normalized_task_id)
     if existing is None:
@@ -1771,12 +1795,24 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
         )
         if exact_reopen_candidate:
             reopen_input = validate_task_edit_input(**edit_input)
-            return reopen_done_task(
+            reopened = reopen_done_task(
                 connection,
                 project,
                 existing,
                 reopen_reason=str(reopen_input["reopen_reason"]),
             )
+            from task_governance_tool.effort import record_task_transition
+
+            record_task_transition(
+                connection,
+                project,
+                task_id=normalized_task_id,
+                previous_status=str(existing["status"]),
+                current_status=str(reopened.task["status"]),
+                profile=effort_profile,
+                occurred_at=str(reopened.event["created_at"]),
+            )
+            return reopened
         reject_done_task_write(existing)
 
     from task_governance_tool.contracts import edit_contract, split_contract_input
@@ -1790,6 +1826,18 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
             caller_edit_input=edit_input,
             contract_input=contract_input,
         )
+        from task_governance_tool.effort import record_task_transition
+
+        if result.event is not None:
+            record_task_transition(
+                connection,
+                project,
+                task_id=normalized_task_id,
+                previous_status=str(existing["status"]),
+                current_status=str(result.task["status"]),
+                profile=effort_profile,
+                occurred_at=str(result.event["created_at"]),
+            )
         return EditTaskResult(
             task=result.task,
             changed_fields=result.changed_fields,
@@ -2156,4 +2204,15 @@ def edit_task(connection: sqlite3.Connection, project: ProjectIdentity, task_id:
     task = read_task(connection, project.project_id, normalized_task_id)
     if task is None:
         raise TaskRepositoryError("internal_error", "task was not readable after update")
+    from task_governance_tool.effort import record_task_transition
+
+    record_task_transition(
+        connection,
+        project,
+        task_id=normalized_task_id,
+        previous_status=str(existing["status"]),
+        current_status=str(task["status"]),
+        profile=effort_profile,
+        occurred_at=now,
+    )
     return EditTaskResult(task=task, changed_fields=changed_fields, event=event)

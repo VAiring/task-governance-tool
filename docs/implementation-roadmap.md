@@ -1,9 +1,8 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through TG-M12.2 Task Contract are complete at
-v0.5.0/schema v8. The approved optional follow-ups remain next after their
-documented dependencies; TG-M12.3 remains blocked on a future Issue Skill
-intake contract.
+Status: implementation units through TG-M12.O1 Effort Advisory are complete at
+v0.6.0/schema v9. TG-M12.O2 local self-status remains next; TG-M12.3 remains
+blocked on a future Issue Skill intake contract.
 The default-browser launch follow-up remains requirements-only pending design
 and roadmap approval.
 
@@ -2034,7 +2033,7 @@ Kind: optional
 Lane: `SCOPE-ADVISORY`
 Depends on: TG-M12.2, a separately approved default-off risk profile
 Review tier: Tier 2
-Initial status: blocked
+Status: complete at v0.6.0/schema v9
 
 Intended outcome:
 
@@ -2059,6 +2058,17 @@ Implementation notes:
   coverage, or possible active-task overlap.
 - Do not persist acknowledgement or an LLM choice; repeated stable warnings are
   acceptable.
+- The approved initial profile is the fixed installed-Skill
+  `config/effort-advisory.json`, absent/disabled by default. There is no generic
+  profile repository or configuration-write CLI.
+- The initial metric allow-list is Git changed files/lines/modules, current
+  Contract revision count, and source-task handoff count. Fixture sizing,
+  retry inference, configured test execution, and generic risk analysis remain
+  deferred.
+- Schema v9 stores only optional basis and project/subject activity-generation
+  metadata. Viewer snapshot v3 accepts source schemas 5-9 without exposing it.
+- The Skill calls the read-only advisory once at an existing
+  verification/review boundary only when `db status` reports it enabled.
 
 Verification gate:
 
@@ -2143,8 +2153,8 @@ parent/child task structure, default-browser launch, network access, or Git
 writes by task-governance-tool.
 
 TG-M12.0 records the scope-control/local-handoff contract and task baseline.
-The current task-consumption request has consumed TG-M12.1 and TG-M12.2 and
-continues to authorize TG-M12.O1 and TG-M12.O2 after their documented
+The current task-consumption request has consumed TG-M12.1, TG-M12.2, and
+TG-M12.O1 and continues to authorize TG-M12.O2 after its documented
 dependencies. TG-M12.3 remains blocked until an Issue Skill intake contract,
 governing permission update, and the integration boundary are separately
 approved. None of these approvals authorizes semantic Issue triage, paging,

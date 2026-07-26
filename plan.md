@@ -1,8 +1,8 @@
 # task-governance-tool Initial Plan
 
-Status: MVP through TG-M12.2 Task Contract is implemented at v0.5.0/schema v8.
-Effort Advisory and local self-status are authorized after their documented
-dependencies; the TG-M12.3 Issue adapter remains blocked.
+Status: MVP through TG-M12.O1 Effort Advisory is implemented at
+v0.6.0/schema v9. Local self-status is next; the TG-M12.3 Issue adapter remains
+blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -854,10 +854,12 @@ Confirmed decisions:
   Exact `user_instruction` references are checked mechanically; other sanitized
   authority identifiers retain the documented workflow provenance boundary
   instead of adding a signature engine.
-- TG-M12 uses schema v7 for the outbox and schema v8 for Contract revisions,
-  after TG-M11 schema v6. Static Viewer snapshot v3 remains the projection for
-  schemas 5-8, carries the actual source schema, and excludes new outbox and
-  Contract fields. Older binaries reject newer schemas rather than downgrading.
+- TG-M12 uses schema v7 for the outbox, schema v8 for Contract revisions, and
+  schema v9 for default-off Effort Advisory basis/activity metadata, after
+  TG-M11 schema v6. Static Viewer snapshot v3 remains the projection for
+  schemas 5-9, carries the actual source schema, and excludes new outbox,
+  Contract, and advisory fields. Older binaries reject newer schemas rather
+  than downgrading.
 - TG-M12.1 is version `0.4.0`: the new public local-handoff command family and
   schema-v7 migration warrant the next pre-1.0 minor version. Later TG-M12
   units choose and synchronize their own release version when their public
@@ -865,6 +867,11 @@ Confirmed decisions:
 - TG-M12.2 uses version `0.5.0`: schema v8 and the optional public Task
   Contract inputs/show projection are a new pre-1.0 feature, while ordinary
   revision-zero task flows remain shape-compatible.
+- TG-M12.O1 uses version `0.6.0`: schema v9 and the optional public
+  `task effort` inspection are a new pre-1.0 feature. The fixed installed-Skill
+  profile is absent/disabled by default, the initial metrics are limited to
+  Git file/line/module plus existing Contract/handoff counts, and normal task
+  behavior remains unchanged when it is off.
 - The initial optional Effort Advisory is default-off and informational:
   `suggested_action=continue`, unknown attribution when evidence is unreliable,
   and no automatic ask/handoff/pause/block/failure/acceptance mutation.
@@ -907,11 +914,11 @@ Open issues:
 
 ## Implementation Execution Status
 
-All implementation units through TG-M12.2 are complete. TG-M9.1 through
-TG-M12.2 were consumed after explicit user approval. The current
-task-consumption request continues with the separately requested TG-M12.O1/O2
-optional features after their documented dependencies. TG-M12.3 remains
-blocked on an Issue intake contract, governing permission update, and separate
+All implementation units through TG-M12.O1 are complete. TG-M9.1 through
+TG-M12.O1 were consumed after explicit user approval. The current
+task-consumption request continues with the separately requested TG-M12.O2
+optional feature after its documented dependencies. TG-M12.3 remains blocked
+on an Issue intake contract, governing permission update, and separate
 integration approval.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local

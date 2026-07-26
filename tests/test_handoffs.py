@@ -980,7 +980,13 @@ class HandoffMigrationTests(unittest.TestCase):
             identity = project_identity(repo)
             with closing(connect(db)) as connection:
                 applied, _ = apply_migrations(connection)
-                self.assertEqual(applied, [1, 2, 3, 4, 5, 6, 7, 8])
+                self.assertEqual(applied, [1, 2, 3, 4, 5, 6, 7, 8, 9])
+                connection.execute("DELETE FROM schema_migrations WHERE version = 9")
+                connection.execute("DROP TABLE task_effort_bases")
+                connection.execute("DROP TABLE task_effort_activity")
+                connection.execute(
+                    "ALTER TABLE project_meta DROP COLUMN effort_activity_generation"
+                )
                 connection.execute("DELETE FROM schema_migrations WHERE version = 8")
                 connection.execute("DROP TABLE task_contract_revisions")
                 connection.execute(
@@ -1073,6 +1079,12 @@ class HandoffMigrationTests(unittest.TestCase):
                 db = Path(tmp) / "taskgov.sqlite"
                 with closing(connect(db)) as connection:
                     apply_migrations(connection)
+                    connection.execute("DELETE FROM schema_migrations WHERE version = 9")
+                    connection.execute("DROP TABLE task_effort_bases")
+                    connection.execute("DROP TABLE task_effort_activity")
+                    connection.execute(
+                        "ALTER TABLE project_meta DROP COLUMN effort_activity_generation"
+                    )
                     connection.execute("DELETE FROM schema_migrations WHERE version = 8")
                     connection.execute("DROP TABLE task_contract_revisions")
                     connection.execute(

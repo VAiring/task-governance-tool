@@ -16,7 +16,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 class StorageError(Exception):
@@ -421,6 +421,8 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "review_findings",
         "handoff_records",
         "task_contract_revisions",
+        "task_effort_activity",
+        "task_effort_bases",
     }
     required_indexes = {
         "idx_tasks_project_status",
@@ -436,6 +438,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "idx_handoff_project_source",
         "idx_handoff_due_claim",
         "idx_contract_project_task_revision",
+        "idx_effort_bases_project",
     }
     table_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     index_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
@@ -494,6 +497,11 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
             f"column:task_events.{name}"
             for name in sorted(required_event_columns - event_columns)
         )
+    if "project_meta" in tables:
+        project_column_rows = connection.execute("PRAGMA table_info(project_meta)").fetchall()
+        project_columns = {str(row["name"]) for row in project_column_rows}
+        if "effort_activity_generation" not in project_columns:
+            missing.append("column:project_meta.effort_activity_generation")
     required_review_columns = {
         "review_receipts": {
             "review_receipt_id",
@@ -583,6 +591,32 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         missing.extend(
             f"column:task_contract_revisions.{name}"
             for name in sorted(required_contract_columns - contract_columns)
+        )
+    required_effort_columns = {
+        "task_effort_activity": {
+            "task_id",
+            "project_id",
+            "generation",
+        },
+        "task_effort_bases": {
+            "task_id",
+            "project_id",
+            "basis_head",
+            "basis_clean",
+            "captured_at",
+            "project_generation",
+            "subject_generation",
+            "other_active_at_capture",
+        },
+    }
+    for table_name, required_columns in required_effort_columns.items():
+        if table_name not in tables:
+            continue
+        column_rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        columns = {str(row["name"]) for row in column_rows}
+        missing.extend(
+            f"column:{table_name}.{name}"
+            for name in sorted(required_columns - columns)
         )
     return missing
 
@@ -1235,6 +1269,90 @@ def apply_task_contract_migration(
         raise
 
 
+def apply_effort_advisory_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Add the minimal basis and activity data required by Effort Advisory."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "effort-advisory migration requires no active transaction",
+        )
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        connection.execute(
+            """
+            ALTER TABLE project_meta
+              ADD COLUMN effort_activity_generation INTEGER NOT NULL DEFAULT 0
+              CHECK (effort_activity_generation >= 0)
+            """
+        )
+        if fail_stage == "after_project_column":
+            raise StorageError("internal_error", "injected effort-advisory migration failure")
+        connection.execute(
+            """
+            CREATE TABLE task_effort_activity (
+              task_id TEXT PRIMARY KEY,
+              project_id TEXT NOT NULL,
+              generation INTEGER NOT NULL DEFAULT 0 CHECK (generation >= 0),
+              FOREIGN KEY (task_id) REFERENCES tasks(task_id),
+              FOREIGN KEY (project_id) REFERENCES project_meta(project_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE task_effort_bases (
+              task_id TEXT PRIMARY KEY,
+              project_id TEXT NOT NULL,
+              basis_head TEXT NOT NULL,
+              basis_clean INTEGER NOT NULL CHECK (basis_clean IN (0, 1)),
+              captured_at TEXT NOT NULL,
+              project_generation INTEGER NOT NULL CHECK (project_generation >= 0),
+              subject_generation INTEGER NOT NULL CHECK (subject_generation >= 0),
+              other_active_at_capture INTEGER NOT NULL
+                CHECK (other_active_at_capture IN (0, 1)),
+              FOREIGN KEY (task_id) REFERENCES tasks(task_id),
+              FOREIGN KEY (project_id) REFERENCES project_meta(project_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX idx_effort_bases_project
+              ON task_effort_bases(project_id, captured_at, task_id)
+            """
+        )
+        if fail_stage == "after_schema":
+            raise StorageError("internal_error", "injected effort-advisory migration failure")
+        legacy_counts = (
+            int(connection.execute("SELECT COUNT(*) FROM task_effort_activity").fetchone()[0]),
+            int(connection.execute("SELECT COUNT(*) FROM task_effort_bases").fetchone()[0]),
+            int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM project_meta WHERE effort_activity_generation != 0"
+                ).fetchone()[0]
+            ),
+        )
+        if legacy_counts != (0, 0, 0):
+            raise StorageError(
+                "internal_error",
+                "effort-advisory migration did not preserve a strict disabled baseline",
+            )
+        connection.execute(
+            "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+            (9, "informational_effort_advisory", utc_now()),
+        )
+        if fail_stage == "before_commit":
+            raise StorageError("internal_error", "injected effort-advisory migration failure")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[dict[str, str]]]:
     version = current_schema_version(connection)
     if version > SCHEMA_VERSION:
@@ -1296,6 +1414,10 @@ def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[di
     if version < 8:
         apply_task_contract_migration(connection)
         applied.append(8)
+        version = 8
+    if version < 9:
+        apply_effort_advisory_migration(connection)
+        applied.append(9)
     return applied, warnings
 
 

@@ -10,6 +10,7 @@ tasks with `task-governance-tool`.
 - [Inspect Ready Work](#inspect-ready-work)
 - [Selection Semantics](#selection-semantics)
 - [Execution Unit Boundary](#execution-unit-boundary)
+- [Optional Effort Advisory](#optional-effort-advisory)
 - [Optional Task Contract](#optional-task-contract)
 - [Pause And Resume](#pause-and-resume)
 - [Blockers](#blockers)
@@ -112,6 +113,34 @@ tracking:
 ```powershell
 python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --json
 ```
+
+## Optional Effort Advisory
+
+`db status` exposes `data.effort_advisory.enabled=true` only when the consuming
+project has explicitly installed a valid enabled
+`config/effort-advisory.json`. Do not create this file, choose thresholds, or
+enable the feature without explicit project/user authority.
+
+When enabled, run one deterministic observation at the existing
+verification/review boundary:
+
+```powershell
+python scripts/taskgov.py task effort --repo <target-project> <task-id> --read-only --json
+```
+
+Record no LLM disposition. Whether thresholds are exceeded or attribution is
+unknown, the required action is the returned fixed
+`suggested_action=continue`. Do not ask the user, create a handoff, expand
+acceptance, pause, block, fail, or add a completion/review gate merely because
+of this advisory. A separate concrete safety problem still follows the
+project's existing safety rules; the advisory itself does not classify one.
+
+Call the advisory at that fixed boundary, not after every command or retry.
+Repeated calls may return the same warning and need no acknowledgement. The
+initial metric set is deliberately limited to changed Git files/lines/modules,
+the current Contract revision count, and recorded source-task handoff count.
+Fixture sizing, retry inference, test execution, and generic risk profiles are
+not part of this version.
 
 ## Optional Task Contract
 

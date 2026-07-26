@@ -13,6 +13,14 @@ from pathlib import Path
 from typing import Any
 
 from task_governance_tool import __version__
+from task_governance_tool.effort import (
+    EffortAdvisoryError,
+    EffortProfile,
+    METRIC_ORDER,
+    WARNING_KEY,
+    build_effort_advisory,
+    load_effort_profile,
+)
 from task_governance_tool.handoffs import (
     HandoffError,
     list_handoffs,
@@ -49,6 +57,7 @@ from task_governance_tool.tasks import (
     list_tasks,
     show_task,
     validate_current_status_filter,
+    validate_task_id,
 )
 from task_governance_tool.viewer import (
     SNAPSHOT_VERSION,
@@ -214,6 +223,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_options(task_current_parser)
     task_current_parser.add_argument("--status", default=None)
     task_current_parser.add_argument("--limit", default=None)
+    task_effort_parser = task_subparsers.add_parser(
+        "effort",
+        help="show an optional informational effort observation",
+    )
+    add_common_options(task_effort_parser)
+    task_effort_parser.add_argument("task_id")
     task_show_parser = task_subparsers.add_parser("show", help="show one task and recent events")
     add_common_options(task_show_parser)
     task_show_parser.add_argument("task_id")
@@ -395,6 +410,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_task_next(context)
     if context.command == "task.current":
         return handle_task_current(context)
+    if context.command == "task.effort":
+        return handle_task_effort(context)
     if context.command == "task.show":
         return handle_task_show(context)
     if context.command == "task.edit":
@@ -635,8 +652,11 @@ def handle_db_init(context: CommandContext) -> CommandResult:
     )
 
 
-def status_data(status: StatusResult) -> dict[str, Any]:
-    return {
+def status_data(
+    status: StatusResult,
+    effort_profile: EffortProfile | None = None,
+) -> dict[str, Any]:
+    data = {
         "exists": status.exists,
         "needs_init": status.needs_init,
         "needs_migration": status.needs_migration,
@@ -647,9 +667,28 @@ def status_data(status: StatusResult) -> dict[str, Any]:
             "sync_due": False,
         },
     }
+    if effort_profile is not None and effort_profile.enabled:
+        data["effort_advisory"] = {
+            "enabled": True,
+            "profile": effort_profile.profile_id,
+            "profile_hash": effort_profile.profile_hash,
+        }
+    elif (
+        effort_profile is not None
+        and effort_profile.present
+        and not effort_profile.valid
+    ):
+        data["effort_advisory"] = {
+            "enabled": False,
+            "configuration": "invalid",
+        }
+    return data
 
 
-def status_text(status: StatusResult) -> str:
+def status_text(
+    status: StatusResult,
+    effort_profile: EffortProfile | None = None,
+) -> str:
     schema_version = status.schema_version if status.schema_version is not None else "none"
     if status.needs_init:
         state = "needs init"
@@ -660,7 +699,7 @@ def status_text(status: StatusResult) -> str:
     else:
         state = "ready"
     counts = status.counts
-    return (
+    text = (
         f"DB: {status.target.db_path}\n"
         f"Project: {status.target.project.project_id}\n"
         f"Status: {state}\n"
@@ -672,20 +711,40 @@ def status_text(status: StatusResult) -> str:
         f"Pending handoffs: {counts['handoff_pending']}  "
         "Adapter enabled: false  Sync due: false"
     )
+    if effort_profile is not None and effort_profile.enabled:
+        text += f"\nEffort advisory: enabled ({effort_profile.profile_id})"
+    elif (
+        effort_profile is not None
+        and effort_profile.present
+        and not effort_profile.valid
+    ):
+        text += "\nEffort advisory: disabled (invalid configuration)"
+    return text
 
 
 def handle_db_status(context: CommandContext) -> CommandResult:
     target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
     status = inspect_database(target)
+    effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
+    effort_warnings = []
+    if effort_profile.present and not effort_profile.valid:
+        effort_warnings.append(
+            {
+                "code": "effort_advisory_profile_invalid",
+                "message": "Effort Advisory configuration is invalid; advisory remains disabled.",
+                "suggested_action": "continue",
+            }
+        )
     if status.error_code:
         return CommandResult(
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            data=status_data(status),
+            data=status_data(status, effort_profile),
+            warnings=effort_warnings,
             errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
-            text=status_text(status),
+            text=status_text(status, effort_profile),
             exit_code=EXIT_TOOL_ERROR,
         )
 
@@ -694,8 +753,9 @@ def handle_db_status(context: CommandContext) -> CommandResult:
         command=context.command,
         project_id=target.project.project_id,
         db_path=str(target.db_path),
-        data=status_data(status),
-        text=status_text(status),
+        data=status_data(status, effort_profile),
+        warnings=effort_warnings,
+        text=status_text(status, effort_profile),
         exit_code=EXIT_SUCCESS,
     )
 
@@ -785,10 +845,16 @@ def handle_task_add(context: CommandContext) -> CommandResult:
         )
 
     task_input = task_add_input(context.args)
+    effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
     try:
         with closing(connect_initialized(target)) as connection:
             with connection:
-                result = add_task(connection, target.project, **task_input)
+                result = add_task(
+                    connection,
+                    target.project,
+                    effort_profile=effort_profile,
+                    **task_input,
+                )
     except TaskValidationError as exc:
         return validation_failure_result(
             context,
@@ -1127,6 +1193,127 @@ def handle_task_current(context: CommandContext) -> CommandResult:
     )
 
 
+def task_effort_empty_data(task_id: str | None = None) -> dict[str, Any]:
+    return {
+        "task_id": task_id,
+        "enabled": False,
+        "profile": {"id": None, "version": None, "hash": None},
+        "measurements": {key: None for key in METRIC_ORDER},
+        "thresholds": {},
+        "exceeded": [],
+        "basis": {
+            "status": "not_captured",
+            "revision": None,
+            "clean": None,
+            "captured_at": None,
+            "activity_generation": None,
+        },
+        "observation": {
+            "revision": None,
+            "clean": None,
+            "observed_at": None,
+        },
+        "coverage": {key: "unavailable" for key in METRIC_ORDER},
+        "attribution": "unknown",
+        "unknown_reasons": [],
+        "warning_key": WARNING_KEY,
+        "suggested_action": "continue",
+    }
+
+
+def task_effort_text(data: dict[str, Any]) -> str:
+    enabled = "enabled" if data["enabled"] else "disabled"
+    exceeded = ", ".join(data["exceeded"]) or "none"
+    reasons = ", ".join(data["unknown_reasons"]) or "none"
+    measurements = " ".join(
+        f"{metric}={data['measurements'][metric] if data['measurements'][metric] is not None else 'unknown'}"
+        for metric in METRIC_ORDER
+    )
+    thresholds = " ".join(
+        f"{metric}={data['thresholds'][metric]}"
+        for metric in METRIC_ORDER
+        if metric in data["thresholds"]
+    ) or "none"
+    return "\n".join(
+        [
+            f"Effort advisory: {enabled}",
+            f"Task: {data['task_id']}",
+            f"Measurements: {measurements}",
+            f"Thresholds: {thresholds}",
+            f"Attribution: {data['attribution']}",
+            f"Exceeded: {exceeded}",
+            f"Unknown reasons: {reasons}",
+            f"Suggested action: {data['suggested_action']}",
+        ]
+    )
+
+
+def handle_task_effort(context: CommandContext) -> CommandResult:
+    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    raw_task_id = getattr(context.args, "task_id", "")
+    status = inspect_database(target)
+    if status.error_code:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data=task_effort_empty_data(raw_task_id),
+            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    try:
+        task_id = validate_task_id(raw_task_id)
+        profile = load_effort_profile(skill_root_from_script(cli_script_path()))
+        with closing(connect_readonly(target.db_path)) as connection:
+            result = build_effort_advisory(
+                connection,
+                target.project,
+                task_id,
+                profile,
+                db_path=target.db_path,
+            )
+    except TaskValidationError as exc:
+        return validation_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            exc=exc,
+        )
+    except EffortAdvisoryError as exc:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data=task_effort_empty_data(task_id),
+            errors=[{"code": exc.code, "message": exc.message}],
+            exit_code=EXIT_USAGE if exc.code == "not_found" else EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            data=task_effort_empty_data(task_id),
+            errors=[{"code": "internal_error", "message": "could not inspect task effort"}],
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=target.project.project_id,
+        db_path=str(target.db_path),
+        data=result.data,
+        warnings=result.warnings,
+        text=task_effort_text(result.data),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
 def task_show_text(
     task: dict[str, Any],
     events: list[dict[str, Any]],
@@ -1399,6 +1586,7 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
         )
 
     edit_input = task_edit_input(context.args)
+    effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
     try:
         with closing(connect_initialized(target)) as connection:
             with connection:
@@ -1406,6 +1594,7 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
                     connection,
                     target.project,
                     getattr(context.args, "task_id", ""),
+                    effort_profile=effort_profile,
                     **edit_input,
                 )
     except TaskValidationError as exc:

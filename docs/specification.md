@@ -1,9 +1,8 @@
 # task-governance-tool MVP Specification
 
-Status: formal implemented baseline through TG-M12.2 Task Contract at release
-v0.5.0/schema v8. The approved optional follow-ups remain next after their
-documented dependencies; TG-M12.3 Issue adapter remains blocked on a future
-intake contract.
+Status: formal implemented baseline through TG-M12.O1 Effort Advisory at
+release v0.6.0/schema v9. TG-M12.O2 local self-status remains next; TG-M12.3
+Issue adapter remains blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -1046,10 +1045,24 @@ Adapter source reference is only the tuple `project_id`, `source_task_id`, and
 
 ### Optional Informational Effort Advisory
 
-Effort Advisory is a later, default-off risk-profile feature. It may
-deterministically report changed file/line/module counts, generated fixture
-size, structured retry counts, Contract revision count, handoff count, and
-configured test metrics when coverage is available.
+Effort Advisory is a default-off, project-scoped profile feature. The only
+configuration source is the installed Skill's fixed
+`config/effort-advisory.json`; `taskgov` never creates or edits it. The
+version-1 profile requires `profile="informational-v1"` and an explicit
+boolean `enabled`. Its optional threshold allow-list is exactly
+`changed_files`, `changed_lines`, `changed_modules`, `contract_revisions`, and
+`handoffs`. Values are non-negative integers and exceed only on
+`measurement > threshold`. Unknown fields, duplicate keys, unsupported
+metrics, or invalid values disable the profile with a bounded diagnostic.
+
+The public inspection command is
+`taskgov task effort <task-id>`. It deterministically reports those five
+metrics when their coverage is available. Git file/line/module counts use the
+captured basis and current read-only endpoint; Contract revision and recorded
+source-task handoff counts come from existing structured Task DB fields.
+Generated fixture size, retry inference, configured test execution, and generic
+risk profiles are deferred rather than guessed or added to the initial
+implementation.
 
 Its initial contract is informational only:
 
@@ -1066,7 +1079,20 @@ task start. Git evaluation is read-only. Attribution is `unknown` whenever the
 repository is non-Git, either endpoint is dirty or uncertain, basis coverage is
 missing, or any active-task overlap occurred between basis and observation.
 The advisory must expose its basis, coverage, attribution, thresholds, unknown
-reasons, and stable warning key.
+reasons, and stable warning key. Schema v9 adds only empty basis/activity
+metadata and a zero project activity generation to support this conservative
+attribution; migration does not rewrite existing task history.
+
+An absent or valid disabled profile preserves all pre-advisory Task and
+`db status` output and performs no Git work. A project that has never captured
+an advisory basis also performs no advisory-state bookkeeping. If a basis was
+captured during an earlier enabled period, disabling the profile stops new
+basis capture but retains only project/subject activity counters; this avoids
+silently losing overlap evidence if the same profile is enabled later. An
+invalid present profile adds only a bounded continuation diagnostic. When
+enabled, `db status` exposes a deterministic enablement flag so the Skill can
+run one `task effort` observation at the existing verification/review boundary
+rather than after every command.
 
 ### Consuming-Project Modification Boundary
 
@@ -1088,16 +1114,19 @@ Migration order is fixed:
 2. TG-M11 adds schema version 6 for Git snapshot base revisions.
 3. TG-M12 adds schema version 7 for the handoff outbox.
 4. TG-M12 adds schema version 8 for Task Contract revisions.
+5. TG-M12.O1 adds schema version 9 for optional Effort Advisory basis/activity
+   metadata.
 
 Old binaries must reject newer schemas with `migration_required` or an
 equivalent explicit newer-schema error; they must never downgrade or write a
 newer database. Operators must update the installed Skill before `db init` and
 retain the normal local backup/rollback discipline.
 
-Static Viewer snapshot version 3 maps to source schema versions 5, 6, 7, and 8.
+Static Viewer snapshot version 3 maps to source schema versions 5 through 9.
 `source_schema_version` contains the actual database version. Contract and
-outbox fields are excluded from the Viewer task allow-list. Normal and
-`--read-only` exports must be tested at every intermediate schema.
+outbox fields and all Effort Advisory metadata are excluded from the Viewer
+task allow-list. Normal and `--read-only` exports must be tested at every
+intermediate schema.
 
 The decision budget is:
 
@@ -1134,11 +1163,16 @@ Acceptance requires automated proof that:
   exactly counted;
 - absence, disabled presence, or enabled presence of Issue Skill does not
   change the command the agent uses;
-- migrations v5-to-v6-to-v7-to-v8 and v7-to-v8 preserve tasks, 191-event
-  fixture history, nine completion hashes, review evidence, handoffs, Contract
-  pointers/revisions, and project identity with rollback, quick, and
+- migrations v5-to-v6-to-v7-to-v8-to-v9 and v8-to-v9 preserve tasks,
+  191-event fixture history, nine completion hashes, review evidence, handoffs,
+  Contract pointers/revisions, and project identity with rollback, quick, and
   foreign-key checks;
-- Viewer snapshot v3 remains safe and unchanged at schemas 5, 6, 7, and 8;
+- Viewer snapshot v3 remains safe and unchanged at schemas 5 through 9;
+- disabled Effort Advisory leaves Task output and Git reads unchanged; without
+  an existing basis it also leaves advisory state unchanged, while after a
+  prior basis it may advance only hidden activity counters; enabled threshold
+  or unknown results always continue and never mutate
+  Task/handoff/acceptance/review state;
 - privacy, compact envelopes, read-only behavior, project separation,
   concurrency, and no-target-project-mutation behavior do not regress; and
 - the implemented Skill remains concise and advertises each surface only after

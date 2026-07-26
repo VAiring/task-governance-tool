@@ -1034,6 +1034,12 @@ class TaskContractMigrationTests(unittest.TestCase):
             self.assertEqual(handoff_result.returncode, 0, handoff_result.stderr)
             handoff_id = handoff["data"]["handoff"]["handoff_id"]
             with closing(connect(db)) as connection:
+                connection.execute("DELETE FROM schema_migrations WHERE version = 9")
+                connection.execute("DROP TABLE task_effort_bases")
+                connection.execute("DROP TABLE task_effort_activity")
+                connection.execute(
+                    "ALTER TABLE project_meta DROP COLUMN effort_activity_generation"
+                )
                 connection.execute("DELETE FROM schema_migrations WHERE version = 8")
                 connection.execute("DROP TABLE task_contract_revisions")
                 connection.execute(

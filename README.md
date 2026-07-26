@@ -102,12 +102,21 @@ Pending rows do not change task selection or completion. Only final local
 persistence failure stops the current execution unit, because continuing would
 reintroduce context-compression forgetting risk.
 
-Version 0.5.0 adds optional immutable Task Contracts. Use the five
+Version 0.5.0 added optional immutable Task Contracts. Use the five
 `--contract-*` options only when scope and acceptance already exist in user or
 approved-roadmap authority; otherwise keep revision zero without asking
 another question. Canonically unchanged input is a write-free replay. A later
 semantic change requires explicit later authority and a reason, then
 deterministically invalidates stale completion/review eligibility.
+
+Version 0.6.0 adds a default-off informational Effort Advisory. A project may
+explicitly place the fixed `config/effort-advisory.json` profile in its
+installed Skill and then inspect one task with `task effort`. The read reports
+bounded Git file/line/module counts plus existing Contract-revision and handoff
+counts, conservative attribution, and configured threshold comparisons.
+Every result keeps `suggested_action=continue`: it never asks, stops, hands
+off, changes acceptance, or mutates Task/Git state. Without an enabled valid
+profile, normal Task output and behavior are unchanged.
 
 Tier 1 normally needs one independent PASS; a documented self-review fallback
 is allowed when independent tooling is unavailable. Tier 2 normally needs two

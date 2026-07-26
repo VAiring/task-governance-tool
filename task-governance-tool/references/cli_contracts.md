@@ -13,6 +13,7 @@ matter.
 - [`task list`](#task-list)
 - [`task next`](#task-next)
 - [`task current`](#task-current)
+- [`task effort`](#task-effort)
 - [`task show`](#task-show)
 - [`task edit`](#task-edit)
 - [Local handoff commands](#local-handoff-commands)
@@ -57,7 +58,8 @@ All JSON output uses this envelope:
 ```
 
 Inspection commands are read-only by default: `db status`, `task list`,
-`task next`, `task current`, `task show`, `handoff list`, and `handoff show`.
+`task next`, `task current`, `task effort`, `task show`, `handoff list`, and
+`handoff show`.
 
 Database write commands are `db init`, `task add`, `task edit`, and the four
 `review` evidence commands, plus `handoff record` and `handoff withdraw`. Only
@@ -83,8 +85,8 @@ python scripts/taskgov.py db init --repo <target-project> --json
 ```json
 {
   "created": true,
-  "migrations_applied": [1, 2, 3, 4, 5, 6, 7, 8],
-  "schema_version": 8
+  "migrations_applied": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+  "schema_version": 9
 }
 ```
 
@@ -108,7 +110,7 @@ python scripts/taskgov.py db status --repo <target-project> --json
   "exists": true,
   "needs_init": false,
   "needs_migration": false,
-  "schema_version": 8,
+  "schema_version": 9,
   "counts": {
     "active": 3,
     "paused": 1,
@@ -132,6 +134,24 @@ remove paused tasks from `counts.active`.
 `counts.handoff_pending` is the exact project-scoped pending-handoff
 population. Delivery is not implemented, so `adapter_enabled`
 and `sync_due` are always `false`; pending rows produce no warning.
+
+When a valid Effort Advisory profile is explicitly enabled, `data` also
+contains:
+
+```json
+{
+  "effort_advisory": {
+    "enabled": true,
+    "profile": "informational-v1",
+    "profile_hash": "sha256:..."
+  }
+}
+```
+
+Absent or valid disabled profiles preserve the pre-advisory `db status` shape.
+An invalid present profile adds
+`effort_advisory: {"enabled": false, "configuration": "invalid"}` and one
+`effort_advisory_profile_invalid` continuation warning.
 
 ### `task add`
 
@@ -297,6 +317,118 @@ Optional `--status` accepts only `in_progress`, `review_pending`, `paused`, or
 statuses fail with `invalid_status` without mutation. This is a bounded view,
 not paged history; use `db status.counts.paused` for the exact paused
 population.
+
+### `task effort`
+
+Read the optional informational scale observation for one task:
+
+```powershell
+python scripts/taskgov.py task effort --repo <target-project> <task-id> --json
+```
+
+The only supported profile location is
+`<installed-skill-root>/config/effort-advisory.json`. The file is never
+created or changed by `taskgov`. It is strict, versioned JSON:
+
+```json
+{
+  "schema_version": 1,
+  "profile": "informational-v1",
+  "enabled": true,
+  "thresholds": {
+    "changed_files": 20,
+    "changed_lines": 500,
+    "changed_modules": 4,
+    "contract_revisions": 2,
+    "handoffs": 5
+  }
+}
+```
+
+`thresholds` is optional and may contain any subset of those five metric keys.
+Values are non-negative integers; an observation exceeds a threshold only when
+`value > threshold`. Unknown fields, duplicate keys, unsupported metrics, and
+invalid values disable the profile. There is no profile creation command,
+environment-variable override, inherited profile, arbitrary command, network
+source, fixture scan, retry parser, or configured test runner.
+
+An enabled result has this fixed `data` shape:
+
+```json
+{
+  "task_id": "tg_task_example",
+  "enabled": true,
+  "profile": {
+    "id": "informational-v1",
+    "version": 1,
+    "hash": "sha256:..."
+  },
+  "measurements": {
+    "changed_files": 3,
+    "changed_lines": 42,
+    "changed_modules": 2,
+    "contract_revisions": 1,
+    "handoffs": 0
+  },
+  "thresholds": {
+    "changed_files": 2
+  },
+  "exceeded": ["changed_files"],
+  "basis": {
+    "status": "captured",
+    "revision": "0123456789abcdef0123456789abcdef01234567",
+    "clean": true,
+    "captured_at": "2026-07-26T00:00:00Z",
+    "activity_generation": 1
+  },
+  "observation": {
+    "revision": "89abcdef0123456789abcdef0123456789abcdef",
+    "clean": true,
+    "observed_at": "2026-07-26T00:10:00Z"
+  },
+  "coverage": {
+    "changed_files": "complete",
+    "changed_lines": "complete",
+    "changed_modules": "complete",
+    "contract_revisions": "complete",
+    "handoffs": "complete"
+  },
+  "attribution": "exclusive_task_window",
+  "unknown_reasons": [],
+  "warning_key": "effort_advisory.threshold_exceeded.v1",
+  "suggested_action": "continue"
+}
+```
+
+Text mode emits the five measurements in that fixed order and a separate
+fixed-order threshold line; unavailable values use `unknown` and no configured
+thresholds use `none`.
+
+Absent, disabled, or invalid profiles return `ok: true`, `enabled: false`, a
+fixed empty projection, and `profile_disabled` or `profile_invalid`; the
+inspection does not read Git and never writes advisory state. Ordinary Task
+writes do no advisory bookkeeping until an enabled profile has captured a
+basis. After such a basis exists, later disabled periods retain only hidden
+project/subject activity counters so re-enablement cannot erase overlap
+evidence; they do not capture a new basis or change any Task output. An enabled
+profile may best-effort capture a basis only inside an existing transition
+into `in_progress`. Capture failure never rejects the Task write and leaves no
+partial basis.
+
+The read itself opens SQLite immutable/read-only and uses bounded, no-shell,
+optional-lock-disabled Git reads with `core.fsmonitor` disabled and submodules
+ignored. A stored basis must be a full Git object ID before it is passed as an
+argument; invalid evidence is not emitted. The command emits no paths, stderr,
+diffs, or raw logs. Non-Git, dirty or unstable endpoints, missing or invalid
+basis/coverage, and possible activity overlap return `ok: true`,
+`attribution: "unknown"`, stable reason codes, and
+`suggested_action: "continue"`. Activity generation is refreshed from a new
+immutable DB view after Git observation; refresh failure remains unknown.
+Threshold exceedance adds one stable
+`effort_advisory_threshold_exceeded` warning with the same action. The command
+never acknowledges, asks, hands off, pauses, blocks, fails, changes acceptance,
+or writes Task/DB/Git state. `--read-only` is accepted and has the same
+behavior.
 
 ### `task show`
 
@@ -743,7 +875,7 @@ generated `state/` directory.
 }
 ```
 
-Snapshot version 3 reads source schemas 5 through 8 in this release, includes
+Snapshot version 3 reads source schemas 5 through 9 in this release, includes
 the task-show typed completion fields and the same bounded structured
 review-evidence projection, but excludes `review_target_base_revision`,
 `handoff_summary`, all handoff records, the Contract pointer, and all Contract

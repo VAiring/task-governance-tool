@@ -1038,10 +1038,10 @@ Open issues:
 
 ## Implementation Execution Status
 
-All implementation units through TG-M15.1 are complete. TG-M15.2 and
-TG-M15.3 are approved and tracked only in SQLite; M15.2 is in progress.
-TG-M9.1 through TG-M15.1 were consumed after explicit user approval; their
-exact verification, review, and completion evidence is maintained in SQLite.
+All approved implementation units through TG-M15.3 and the bounded M15
+correction tasks C1 through C3 are complete. They were consumed after explicit
+user approval; their exact verification, review, and completion evidence is
+maintained in SQLite.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

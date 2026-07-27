@@ -81,6 +81,9 @@ Stateful governed-project use supports only a physical project-scoped copy.
 User-wide, symlink, and junction installs are not public operating modes because
 they can blur state ownership across projects. Source-checkout development and
 tests remain separate from installing the Skill to govern another project.
+Planned M14.2 formalizes only the bounded self-host source-tree exception needed
+for this repository's own Task history; it does not broaden ordinary install
+guidance.
 
 Project-scoped setup is a distinct, explicit step after installation. The
 installer or agent must verify that generated `state/` is ignored, inspect with
@@ -1096,6 +1099,10 @@ enabled, `db status` exposes a deterministic enablement flag so the Skill can
 run one `task effort` observation at the existing verification/review boundary
 rather than after every command.
 
+That is the active contract through M14.0. Planned M14.1 adds the same
+deterministic boolean to mandatory JSON `task show`; M14.2 then removes public
+`db status`, and M14.7 publishes Skill routing from `task show`.
+
 ### Consuming-Project Modification Boundary
 
 Consuming-project behavior belongs in documented configuration or an approved
@@ -1377,7 +1384,773 @@ but the Skill does not ask the model to choose a recovery policy. External CI
 dispatch, push, PR creation, or publication remains outside local task
 authority and requires explicit user authorization.
 
+## Planned Post-MVP Extension: TG-M14 Daily UX And Local Continuity
+
+TG-M14 is an approved sequential extension whose active behavior is not
+available until the owning implementation units complete. TG-M14.0 fixes this
+planned contract only. It does not change the current parser, help, Skill,
+README usage, release files, manifest, runtime tests, package version, or
+schema.
+
+### Planned Public Surface And Removed Invocation Contract
+
+The completed M14 public surface contains exactly these 20 leaves:
+
+1. `taskgov setup`
+2. `taskgov doctor`
+3. `taskgov task add`
+4. `taskgov task list`
+5. `taskgov task next`
+6. `taskgov task current`
+7. `taskgov task effort`
+8. `taskgov task show`
+9. `taskgov task edit`
+10. `taskgov task complete`
+11. `taskgov task checkpoint`
+12. `taskgov handoff record`
+13. `taskgov handoff list`
+14. `taskgov handoff show`
+15. `taskgov handoff withdraw`
+16. `taskgov review prepare`
+17. `taskgov review target set`
+18. `taskgov review receipt add`
+19. `taskgov review finding add`
+20. `taskgov review finding resolve`
+
+`task complete --check` is a read-only mode of the same leaf. Applicable
+commands retain `--repo`, `--json`, `--read-only`, and root `--version`.
+`setup` alone also accepts `--backup-interval-minutes` in the inclusive range
+1-1,440 and `--backup-generations` in the inclusive range 1-20. The normal
+Skill setup supplies neither option. Completed M14 removes public `self`, `db`,
+`web`, `--db`, raw database/backup/Viewer path fields, custom Viewer output,
+compatibility aliases, and any replacement storage, database, Viewer, export,
+repair, maintenance, disable, or admin command.
+
+Removed root commands and any unknown root command fail before package, project,
+Git, or SQLite resolution. They use exit 2. With lexical `--json`, stdout is the
+compact envelope below and stderr is empty:
+
+```json
+{
+  "ok": false,
+  "command": "parse",
+  "project_id": null,
+  "data": {},
+  "warnings": [],
+  "errors": [
+    {"code": "invalid_command", "message": "command is not available"}
+  ]
+}
+```
+
+Any public `--db` occurrence fails at the same pre-resolution boundary with
+code `invalid_option` and exact message `option is not available`. Its following
+value is never echoed. Without lexical `--json`, stdout is empty and stderr is
+exactly `taskgov: command is not available` or
+`taskgov: option is not available`, followed by one newline. No compatibility
+handler, alias, state lookup, or write is permitted. Lexical `--db` takes
+precedence over an unknown or removed command; otherwise command validation
+precedes every command-specific option check.
+
+All completed-M14 command envelopes contain only `ok`, `command`, `project_id`,
+`data`, `warnings`, and `errors`. `project_id` remains the existing sanitized
+identity when safely resolved. Public output never contains `db_path`,
+`backup_path`, `viewer_path`, another raw storage path, or a rejected CLI value.
+
+### Planned Compact Selection And Completion
+
+Only `task current` and `task next` accept `--compact`. Default JSON and text
+payloads remain compatible. Compact JSON uses the normal envelope and these
+allow-lists:
+
+- current data: `tasks`, `total_matching`, `returned_count`, `limit`,
+  `statuses`, `truncated`;
+- current task: `task_id`, `title`, `status`, `kind`, `lane`, `lane_order`,
+  `priority`, `review_tier`, `blocked_reason`, `pause_reason`, `latest_event`,
+  `suggested_next_action`;
+- compact latest event: `event_type`, `summary`, `created_at`,
+  `summary_truncated`;
+- next data: `tasks`, `total_matching`, `returned_count`, `limit`,
+  `truncated`;
+- next task: `task_id`, `title`, `kind`, `lane`, `lane_order`, `priority`,
+  `review_tier`, `tags`, and `suggested_next_action`.
+
+Compact current is at most 24,576 UTF-8 bytes and compact next is at most
+16,384 UTF-8 bytes, including the envelope. Event summary is bounded to 256
+UTF-8 bytes at a valid code-point boundary. Rows are retained only in the
+existing deterministic order; if another complete row would exceed the cap it
+and all later rows are omitted and `truncated=true`. Compact mode never changes
+selection, state, the database query's coherent transaction, or default output.
+`--compact` requires `--json`; without it the command fails before state access
+with exit 2, code `invalid_option_combination`, and exact message
+`--compact requires --json`. No second compact text formatter exists.
+Compact selection intentionally omits Contract and checkpoint content; the
+fixed post-selection `task show` call below obtains both without inflating every
+candidate row.
+
+`task complete --check` accepts the same proposed evidence and confirmation
+inputs as thin `task complete`, invokes exactly the current completion
+validator, writes nothing, and emits at most 8,192 UTF-8 bytes. It captures one
+short coherent database basis, closes that transaction before any required Git
+observation, then uses a second short coherent read to revalidate task,
+Contract, target generation/fields, receipts/findings, and evidence basis
+before returning. No SQLite transaction is held during Git. A changed basis
+returns not-ready with first code `completion_check_stale`. Its data allow-list
+is `task_id`, `ready`, `status`,
+`blocking_codes`, `contract_revision`, `review_target_generation`,
+`completion_evidence_kind`, and `suggested_action`. Blocking codes preserve the
+validator's existing order: task/state and sequential ordering, evidence input
+and Git binding, verification confirmation, current review target/receipts/
+findings, then final snapshot binding. `blocking_codes` contains either no code
+or the one first stable code that the write path would return. Check and write
+call one shared fail-fast pure preflight; the check does not invent an
+all-findings collector or a second state machine. A check is never an
+authorization token; the write revalidates everything.
+
+Only these user-correctable completion/gate codes may appear in
+`blocking_codes`: `invalid_status_transition`,
+`sequential_predecessor_incomplete`, `verification_required`,
+`review_required`, `completion_evidence_conflict`,
+`external_revision_approval_required`, `commit_required`,
+`git_commit_not_found_or_ambiguous`, `invalid_review_evidence`,
+`review_target_required`, `review_target_mismatch`,
+`review_finding_unresolved`, `review_changes_requested`,
+`review_receipts_insufficient`, and `completion_check_stale`. Parse/privacy
+validation, `not_found`, project identity, schema/journal/busy/storage, and
+internal errors remain normal `ok=false` command errors and never appear as
+readiness data.
+
+The check text form is exactly three LF-terminated lines:
+`Task <task_id>: ready|not ready`, `Blocking: none|<comma-separated codes>`,
+and `Suggested action: <bounded suggested_action>`. It contains no evidence
+value, path, Contract text, or review content.
+
+Thin `task complete` shares the existing transition and accepts only the
+completion subset currently supported by `task edit`: task ID, verification
+and review confirmations, and one valid `git_commit`, `external_revision`, or
+`commit_not_required` evidence form. Legacy `task edit --status done` remains
+compatible. Neither check nor thin completion creates a second completion state
+machine.
+
+Thin completion emits `command=task.complete`. Its data keys are exactly the
+existing edit result keys `task`, `changed_fields`, and `event`; it adds no
+completion wrapper. Text uses the existing edit summary fields with the first
+line changed to `Task completed: <task_id>`.
+
+M14.1 moves the existing Effort Advisory routing signal off removed
+`db status` and onto the already mandatory default JSON `task show` response.
+Its data gains exactly one machine-routing field,
+`effort_advisory_enabled: true|false`. A valid enabled profile returns `true`;
+an absent or valid disabled profile returns `false`; and an invalid profile
+returns `false` plus the existing `effort_advisory_profile_invalid`
+continuation warning. The field performs no Git work and text `task show`
+remains unchanged. The Skill mechanically invokes one existing `task effort`
+call at the established verification/review boundary only when this boolean is
+true. It does not ask an LLM whether the advisory applies.
+
+The deterministic Skill call graph is:
+
+- one compact `task current` call to resume;
+- only when it returns no current work, one compact `task next` call;
+- one `task show` call for the resumed or selected task so its complete current
+  Contract, latest checkpoint, and Effort Advisory routing flag are always
+  read;
+- one task edit to start the selected task;
+- only for a deterministically enabled Effort Advisory profile, one existing
+  `task effort` observation at the verification/review boundary;
+- one review target set call after the exact material is ready;
+- one `review prepare` call instead of separate task, Contract, target, and Git
+  context reads;
+- one receipt write per actual receipt; and
+- one thin complete call.
+
+A default-off no-finding Tier 2 path therefore has at most nine governance
+subprocess calls; a profile-enabled path has at most ten. Both exclude real
+progress updates and the two independent review model decisions.
+`task complete --check`, `doctor`, and `task checkpoint` are absent from the
+default success path.
+
+### Planned Doctor Contract
+
+`doctor` is the sole diagnostic, is inherently read-only, emits
+`command=doctor`, and always includes `data.suggested_action="continue"`.
+It has no fix mode and never initializes, migrates, backs up, renders, locks a
+maintenance artifact, inspects Git, runs project tests, or changes target state.
+It is not a prerequisite for setup or normal Task work.
+
+The component ownership is exclusive:
+
+- `package`: package integrity only;
+- `project_state`: setup, format, identity, and readability readiness;
+- `task_summary`: active, blocked, done, next-actionable, paused, and
+  review-pending task counts;
+- `handoff_delivery`: pending handoffs, adapter enablement, and delivery/due
+  state;
+- `maintenance`: backup and Viewer opt-in, due state, and latest bounded
+  sanitized outcomes.
+
+Package inspection is an independent bounded filesystem observation. When
+project state is readable, every other component is assembled from one
+lock-respecting SQLite read transaction. No atomicity is claimed between the
+package observation and SQLite snapshot. Unavailable project-backed components
+contain only `{"code":"unavailable"}`.
+
+Doctor data contains only `suggested_action`, `setup_eligible`, and
+`components`. `setup_eligible` is the logical conjunction of every package,
+runtime, install, ignore, project, and state precondition; it is never a
+project-state-only claim. Component keys are exactly `package`,
+`project_state`, `task_summary`, `handoff_delivery`, and `maintenance`.
+`package` reuses the existing bounded package-integrity projection.
+`project_state` owns every non-package readiness/preflight code and contains
+only `code`, `schema_version`, and `required_schema_version`. A readable
+`task_summary` contains `code` plus
+counts for `active`, `blocked`, `done`,
+`next_actionable`, `paused`, and `review_pending`. A readable
+`handoff_delivery` contains `code`, `handoff_pending`, `adapter_enabled`, and
+`delivery_due`. A readable `maintenance` contains `code`, `opted_in`, one
+bounded `backup` object, and one bounded `viewer` object. The backup object
+has exactly `code`, `due`, `interval_minutes`, `generations`,
+`last_success_at`, and `last_outcome`. The Viewer object has exactly `code`,
+`due`, `source_generation`, `rendered_generation`, `last_success_at`, and
+`last_outcome`. Each `last_outcome` contains only `code` (`none`, `succeeded`,
+`deferred`, or `failed`) and `occurred_at`; it never contains a message or
+exception. A not-yet-owned value is `null`, not omitted. An unavailable
+project-backed component is only `{"code":"unavailable"}`.
+
+Doctor process results are fixed as follows:
+
+| Package/project row | Component code | Exit / `ok` | Warning or error | `setup_eligible` |
+|---|---|---|---|---|
+| clean + current readable state | `clean` / `ready` | 0 / true | none | true |
+| modified package | `modified` | 0 / true | `package_core_modified` warning | false |
+| unknown package inspection | `unknown` | 0 / true | `package_status_unknown` warning | false |
+| missing state | `setup_required` | 0 / true | `setup_required` warning | true |
+| supported older schema | `migration_required` | 0 / true | `migration_required` warning | true |
+| unreadable or invalid state | `unreadable` | 2 / false | `project_state_unreadable` error | false |
+| foreign project identity | `foreign` | 2 / false | `project_mismatch` error | false |
+| newer schema | `newer` | 2 / false | `schema_too_new` error | false |
+| SQLite busy/locked | `busy` | 2 / false | `database_busy` error | false |
+| WAL header/sidecar state | `unsupported_journal` | 2 / false | `unsupported_journal_mode` error | false |
+| linked/unsupported/colliding layout | project_state `invalid_layout` | 2 / false | `unsupported_install_layout` error | false |
+| invalid/missing project directory | `invalid_project` | 2 / false | `invalid_project_root` error | false |
+| omitted repo at either package root | `invalid_project` | 2 / false | `project_scope_required` error | false |
+| unsupported Python | `unsupported_runtime` | 2 / false | `unsupported_python` error | false |
+| missing state ignore protection | `ignore_required` | 2 / false | `state_ignore_required` error | false |
+| invalid canonical state ownership | `invalid_state_path` | 2 / false | `state_path_invalid` error | false |
+
+Fatal project errors take process precedence but do not suppress a bounded
+package warning. Layout validity never changes the independently observed
+package-integrity code: for example, a clean source package with a competing
+install is package `clean` plus project_state `invalid_layout`; an
+uninspectable linked package may independently be package `unknown` plus the
+same project-state error. No row exposes a path or OS/SQLite exception. M14.2
+implements
+the envelope, package/project/task/handoff rows, and base maintenance rows
+`not_opted_in` or `enabled`, including only whether a setup-owned backup copy
+and Viewer publish succeeded. M14.3 preserves that setup-copy baseline and adds
+backup due calculation, routine generations, and routine fixed outcomes. M14.6
+adds Viewer source/render generation, due, and latest fixed outcome while
+preserving backup fields. M14.7 accepts the combined table.
+
+Maintenance row staging is exact:
+
+| Stage/object | `code` values | Other fixed behavior |
+|---|---|---|
+| M14.2 maintenance | `not_opted_in`, `enabled` | interval/retention are exposed only when enabled |
+| M14.2 backup | `not_opted_in`, `setup_copy_succeeded`, `configured` | a partial migration row can expose setup-copy success before opt-in; enabled state exposes policy plus setup-copy `last_success_at`/`last_outcome=succeeded`; `due` remains null |
+| M14.2 Viewer | `not_opted_in`, `published`, `repair_required` | reflects setup publication only; no generation calculation |
+| M14.3 backup | `not_opted_in`, `current`, `due`, `deferred`, `failed` | exposes `due`, policy, last success, and one fixed sanitized latest outcome |
+| M14.6 Viewer | `not_opted_in`, `current`, `due`, `deferred`, `failed` | exposes `due`, source/render generations, last success, and one fixed sanitized latest outcome |
+
+For the same object, a later stage's code set replaces the earlier provisional
+labels while preserving the established keys and base facts; stage code sets
+are not cumulative aliases.
+
+`deferred` means zero-wait artifact-lock contention and remains due; `failed`
+means a bounded artifact operation failed and remains due. `current` means not
+due. Doctor never converts these historical maintenance codes into an envelope
+warning or error: every readable maintenance combination has exit 0,
+`ok=true`, and `suggested_action=continue`. Only an independently fatal
+project-state row makes maintenance `unavailable` and the command fail.
+
+Doctor and setup share this fixed first-applicable preflight precedence:
+`unsupported_python`, `unsupported_install_layout`, `project_scope_required`,
+`invalid_project_root`, `state_path_invalid`, package
+`package_core_modified|package_status_unknown`, `state_ignore_required`,
+`unsupported_journal_mode`, `database_busy`, `project_state_unreadable`,
+`project_mismatch`, `schema_too_new`, then
+`migration_required|setup_required|ready`. Package drift/unknown is an exit-0
+doctor warning but makes top-level `setup_eligible=false`; the same code is a
+fatal setup error. Ignore protection participates only for a Git-managed
+project, so a physical non-Git project remains eligible. A lower-precedence
+condition never replaces the process error, although the independent bounded
+package warning may still accompany a later project-state error.
+
+Preflight/doctor codes use these fixed sanitized messages:
+
+| Code | Message |
+|---|---|
+| `unsupported_python` | `Python 3.12 or newer is required` |
+| `unsupported_install_layout` | `stateful use requires one supported physical project-scoped package layout` |
+| `project_scope_required` | `explicit --repo is required from the package directory` |
+| `invalid_project_root` | `project root must be an existing directory` |
+| `state_path_invalid` | `project state path is not valid for this package layout` |
+| `package_core_modified` | `packaged core files differ from the release manifest` |
+| `package_status_unknown` | `package integrity could not be verified` |
+| `state_ignore_required` | `project-local state must be ignored before setup` |
+| `unsupported_journal_mode` | `task database uses unsupported WAL journal mode` |
+| `database_busy` | `task database is busy; run the command again later` |
+| `project_state_unreadable` | `project state could not be read safely` |
+| `project_mismatch` | `task database belongs to a different project` |
+| `schema_too_new` | `task database schema is newer than this taskgov version` |
+| `migration_required` | `task database requires setup migration` |
+| `setup_required` | `project state is not set up` |
+
+### Planned Setup Contract
+
+`setup` is explicit, noninteractive, idempotent, and limited to one supported
+physical project-scoped package layout. Ordinary governed projects use exactly
+`<repo>/.agents/skills/task-governance-tool`. The bounded development-only
+self-host layout uses exactly `<repo>/task-governance-tool` and is accepted only
+when:
+
+- the caller supplied `--repo` explicitly;
+- package and repository paths are physical, canonical, non-linked directories;
+- regular source files `AGENTS.md`, `docs/specification.md`, `docs/design.md`,
+  `docs/implementation-roadmap.md`, and `plan.md` exist under that same repo;
+- the package's `SKILL.md`, `release-manifest.json`, and `scripts/taskgov.py`
+  pass the normal package boundary and integrity checks; and
+- no competing `<repo>/.agents/skills/task-governance-tool` package exists.
+
+The exception reuses the canonical state already under the source package. It
+does not copy or relocate a database, create a second state mode, relax
+user-wide/link rejection, or become consuming-project install guidance.
+`setup` remains the sole public initializer, migrator, one-way
+local-maintenance opt-in, and canonical Viewer repair action. Non-Git ordinary
+project directories remain valid. Invocation from either package root without
+explicit `--repo` is rejected for setup and every other project-scoped command;
+root `--version` remains project-free.
+
+Preflight validates the project directory, physical install boundary, Python
+3.12+, canonical state ownership, package integrity, ignore protection, and
+project state before a write. The write order is: preflight; when migrating,
+one validated backup; initialization/migration; one-way opt-in/configuration;
+canonical Viewer publication. `setup --read-only` returns the same planned
+write set and performs none of those writes.
+
+Schema v10 stores `backup_interval_minutes` and `backup_generations` in the
+single project-maintenance row beside the one-way opt-in. Initialization or
+migration creates a partial row with nullable `enabled_at` and policy fields;
+successful migration may already store its setup-copy success metadata.
+Configuration atomically fills the policy and changes `enabled_at` from null to
+one immutable non-null timestamp. Doctor reports `setup_required` while it is
+null, and setup resumes at configuration without losing the setup-copy
+baseline. Fresh setup and migration use defaults 30 and 3 when options are
+omitted. On an already
+configured project, an omitted option preserves its stored value; an explicitly
+provided option changes only that field. Values outside 1-1,440 minutes or 1-20
+generations fail before any write with `invalid_backup_policy`. The standard
+Skill workflow never selects or supplies non-default values; they require
+explicit caller intent. A configuration-only setup does not itself render or
+attempt a routine backup. The next eligible business mutation uses the new
+values, and reduced retention is enforced only after the next successful
+backup publication.
+The same row has nullable internal `applied_backup_generations`, constrained to
+the same 1-20 range. Configuration does not change it. Each managed-backup
+stage resolves one immutable 1-20 `publication_retention` before copying:
+setup uses its validated explicit value or default 3 when the source policy is
+partial/unconfigured, setup uses the stored value observed before any later
+`maintenance_configure` when the source is configured, and routine work uses
+the stored value observed for that attempt. A successfully published
+generation records this value as applied in the same metadata transaction.
+Post-publication pruning and restart reconciliation use the applied value. This
+distinguishes an interrupted prune from a newly reduced policy without a second
+configuration store or a user-visible option.
+No second JSON/TOML configuration file is created; SQLite keeps policy and
+maintenance state atomic while the public CLI and Viewer continue to hide the
+storage path.
+
+Setup data contains only `status`, `planned_writes`, `completed_writes`,
+`schema_from`, `schema_to`, `maintenance_enabled`,
+`backup_interval_minutes`, `backup_generations`, and `viewer_status`.
+Write lists use only `database_initialize`, `migration_backup`,
+`database_migrate`, `maintenance_configure`, and `viewer_publish`, in execution
+order. `viewer_status` is one of `not_present`, `current`, `published`, or
+`repair_required`. Explicit values equal to stored policy are a no-write replay,
+including under `--read-only`.
+
+Those scalar fields have one meaning on every row:
+
+- `schema_from` is the safely observed schema before the command, or `null`
+  when no initialized database exists. `schema_to` is always the owning
+  runtime's required schema version.
+- `maintenance_enabled` and `viewer_status` describe durable state after the
+  command returns. Preview therefore reports current state, not planned state.
+  `published` means this invocation successfully published the canonical
+  Viewer; an already-current Viewer is `current`; a missing Viewer is
+  `not_present`; and a present invalid/stale Viewer is `repair_required`.
+- the two policy fields are the effective valid requested/stored values for the
+  plan. They do not assert persistence; `completed_writes` records whether
+  configuration became durable.
+- every `ok=false` row has `status=null`. On a shared-preflight failure or
+  `invalid_backup_policy`, `schema_from`, `maintenance_enabled`, both policy
+  fields, and `viewer_status` are `null`, `schema_to` remains the required
+  version, and both write arrays are empty. On a later stage failure,
+  `schema_from` and the effective policy remain populated while
+  `maintenance_enabled`, `viewer_status`, and `completed_writes` report the
+  durable ordered prefix left by that invocation.
+
+| Setup row | `planned_writes` | `completed_writes` | Exit / `ok` / `status` or error |
+|---|---|---|---|
+| fresh preview | `[database_initialize, maintenance_configure, viewer_publish]` | `[]` | 0 / true / `setup_preview` |
+| fresh success | `[database_initialize, maintenance_configure, viewer_publish]` | `[database_initialize, maintenance_configure, viewer_publish]` | 0 / true / `setup_complete` |
+| current healthy, options omitted or equal | `[]` | `[]` | 0 / true / `already_setup` |
+| policy-change preview | `[maintenance_configure]` | `[]` | 0 / true / `setup_preview` |
+| policy-change success | `[maintenance_configure]` | `[maintenance_configure]` | 0 / true / `setup_complete` |
+| invalid policy | `[]` | `[]` | 2 / false / `invalid_backup_policy` |
+| unconfigured or policy-change migration preview | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[]` | 0 / true / `setup_preview` |
+| unconfigured or policy-change migration success | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | 0 / true / `setup_complete` |
+| unconfigured or policy-change migration-backup failure | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[]` | 2 / false / `setup_backup_failed` |
+| configured unchanged migration preview | `[migration_backup, database_migrate, viewer_publish]` | `[]` | 0 / true / `setup_preview` |
+| configured unchanged migration success | `[migration_backup, database_migrate, viewer_publish]` | `[migration_backup, database_migrate, viewer_publish]` | 0 / true / `setup_complete` |
+| configured unchanged migration-backup failure | `[migration_backup, database_migrate, viewer_publish]` | `[]` | 2 / false / `setup_backup_failed` |
+| configured unchanged migration failure after backup | `[migration_backup, database_migrate, viewer_publish]` | `[migration_backup]` | 2 / false / `setup_migration_failed` |
+| configured unchanged migrated Viewer failure | `[migration_backup, database_migrate, viewer_publish]` | `[migration_backup, database_migrate]` | 2 / false / `setup_incomplete` |
+| initialization failure | `[database_initialize, maintenance_configure, viewer_publish]` | `[]` | 2 / false / `setup_initialization_failed` |
+| unconfigured or policy-change migration failure after backup | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[migration_backup]` | 2 / false / `setup_migration_failed` |
+| fresh configuration failure | `[database_initialize, maintenance_configure, viewer_publish]` | `[database_initialize]` | 2 / false / `setup_incomplete` |
+| migrated configuration failure | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[migration_backup, database_migrate]` | 2 / false / `setup_incomplete` |
+| fresh Viewer failure | `[database_initialize, maintenance_configure, viewer_publish]` | `[database_initialize, maintenance_configure]` | 2 / false / `setup_incomplete` |
+| migrated Viewer failure | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[migration_backup, database_migrate, maintenance_configure]` | 2 / false / `setup_incomplete` |
+| current Viewer repair success | `[viewer_publish]` | `[viewer_publish]` | 0 / true / `setup_complete` |
+| current Viewer repair failure | `[viewer_publish]` | `[]` | 2 / false / `setup_incomplete` |
+| missing configuration and Viewer recovery | `[maintenance_configure, viewer_publish]` | `[maintenance_configure, viewer_publish]` | 0 / true / `setup_complete` |
+| any preflight failure | `[]` | `[]` | 2 / false / first code from the shared precedence |
+
+If a policy change and Viewer repair are both due, their exact plan is
+`[maintenance_configure, viewer_publish]`; success or Viewer failure follows the
+corresponding ordered-prefix rule above. A pre-v10 source is unconfigured.
+For a configured v10+ source, omitted/equal policy uses the configured-unchanged
+rows and never reports `maintenance_configure`; an actual explicit change uses
+the policy-change rows. Every success has empty warnings and errors. Every
+failure has empty warnings and exactly one error. Fixed messages
+for setup-owned errors are: `backup policy is outside the supported range`,
+`setup backup could not be completed`, `project state could not be initialized`,
+`project state could not be migrated`, and
+`setup completed only partially; rerun setup`, corresponding in order to the
+five setup-owned error codes above. Rerun recomputes the plan and begins with
+the first incomplete durable stage; a prior migration backup is evidence, not a
+reusable result, so a later migration retry performs a new backup attempt.
+
+The validated backup primitive is implemented once in M14.2 and reused by
+M14.3. It uses the SQLite backup API, validates project identity, supported
+format, `quick_check`, and foreign keys, closes the temporary database, and
+atomically publishes one managed generation. Migration cannot begin if it
+fails. Preview never creates a backup.
+
+### Planned Maintenance Bounds
+
+Maintenance is enabled once by successful setup and has no disable surface in
+M14. Every successful backup-eligible business mutation commits and closes its
+SQLite connection before same-process maintenance; Viewer refresh is then
+gated to the Viewer-relevant subset. Read-only, failed, replayed, no-op, and
+maintenance-internal operations trigger nothing. No detached process, child
+process, thread, timer, watcher, service, queue, daemon, scheduler, or network
+operation is permitted.
+
+Viewer refresh runs first to honor the near-real-time observation goal; an
+independent due backup attempt runs second. Each artifact lock is fail-fast
+with a fixed maximum wait of 0 milliseconds. It is an OS-held advisory lock on
+one byte of a canonical regular lock file, not ownership inferred from file
+existence. Normal release occurs in `finally`; process termination releases the
+OS lock, so a leftover regular file is harmless and is never deleted through a
+stale-age heuristic. A linked, non-regular, or uninspectable lock path fails
+safely. Lock contention preserves the primary result and last good artifact,
+emits one sanitized continuing warning, and leaves work due.
+
+Post-commit maintenance warnings have fixed code/message pairs:
+
+| Code | Message |
+|---|---|
+| `viewer_refresh_deferred` | `Viewer refresh was deferred; task result is unchanged` |
+| `viewer_refresh_failed` | `Viewer refresh did not complete; task result is unchanged` |
+| `backup_deferred` | `managed backup was deferred; task result is unchanged` |
+| `backup_failed` | `managed backup did not complete; task result is unchanged` |
+
+They contain no retry, stop, or choice instruction and never change the
+primary command's success.
+
+Routine backups use the project-local policy stored by setup:
+
+- due immediately on the first eligible mutation when no managed backup
+  success exists;
+- thereafter due after the configured interval, whose default is 30 minutes;
+- retain the applied number of successfully published managed generations,
+  initially resolved from the configured/default value and normally 3;
+- attempt at most once per eligible successful mutation;
+- after failure remain due for the next eligible successful mutation; and
+- prune recognized older generations only after successful atomic publish.
+
+A setup pre-migration copy is produced by the same primitive and is a managed
+generation. Every published artifact carries an internal generation identity,
+publication timestamp, and 1-20 `publication_retention` in its canonical
+managed filename; the copied database's project identity and the bounded
+filename metadata are validated before the artifact is recognized.
+Schema v10 stores the latest setup-copy identity, time, and outcome when
+migration succeeds from v1-v9. When the source is already v10, the backup stage
+must, in order: validate and atomically publish the new copy; update the v10
+latest identity/time/outcome and the stage's `publication_retention` as
+`applied_backup_generations` in one short transaction; keep that new identity
+while pruning to the applied value; and only then begin schema migration. A
+fully published copy left newer than the v10 pointer by process termination is
+deterministically validated, including its filename retention, and reconciled
+to the pointer and applied retention before pruning on the next setup run.
+Metadata-update failure prevents migration and pruning.
+
+Before a v10 row can exist, repeated failed migration attempts still apply the
+effective explicit policy, or the default policy, to recognized same-project
+setup copies: each successful publish precedes pruning, and the number
+remaining does not exceed that stage's `publication_retention`. A successful
+v1-v9 migration creates the v10 row with the current copy's
+identity/time/outcome and applied retention in the migration transaction before
+any v11 seeding step.
+
+The v11 migration deterministically discovers every canonical, valid,
+same-project managed artifact retained by setup, orders it by publication time
+then generation identity, and seeds one generation row per artifact. This
+includes the current migration copy and any retained earlier failed-attempt
+copies; the v10 latest identity must match one seeded row when non-null.
+Unrecognized, linked, invalid, or foreign files are neither imported nor
+deleted. Because the current setup copy was successfully published first, the
+migration then prunes recognized seeded rows/files to that copy's now-applied
+`publication_retention` using the same validated file-before-row order as
+routine pruning. Routine publication uses the same ordering and applied
+retention set, so setup G0 cannot survive outside the applied generation count.
+Backup errors never change the primary command result.
+
+Every v11+ managed backup stage, whether setup migration or routine, holds the
+same backup artifact lock and runs the same reconciler before deciding whether
+to publish:
+
+1. discover canonical regular artifacts and generation rows;
+2. validate and import a fully published same-project artifact that lacks a
+   row, updating the v10 latest identity/time/outcome and
+   `applied_backup_generations` from that artifact's immutable
+   `publication_retention` in the same short transaction;
+3. remove a row whose file is missing, linked, invalid, or foreign without
+   deleting an untrusted path, recompute the v10 pointer, and keep the outcome
+   failed/due when artifact loss occurred; and
+4. finish an interrupted prune against `applied_backup_generations` oldest
+   first by deleting the validated file before deleting its row, then normalize
+   the v10 pointer to the newest retained row. A lower configured policy is not
+   used here until a successful publication records it as applied.
+
+If reconciliation or pruning cannot finish, a routine command emits
+`backup_failed` and remains due; setup returns `setup_backup_failed`. Neither
+path publishes another generation, and setup performs no migration. Otherwise
+a due routine backup or setup migration backup atomically publishes one file,
+then one short transaction inserts its v11 row and updates the v10 latest
+identity/time/outcome plus the artifact's immutable `publication_retention` as
+`applied_backup_generations` before pruning with the same file-before-row
+order. Process termination after file publish, after the row transaction, or
+between file and row pruning is recovered by the next routine or setup
+reconciliation. A later policy-only change never alters the retention imported
+from an earlier file-only artifact. No new publication occurs while an earlier
+inconsistency is unreconciled, so crash residue cannot accumulate beyond the
+previously valid retained set plus one in-flight generation. Unrecognized
+artifacts remain untouched.
+
+Viewer maintenance reuses snapshot v3, the existing renderer, canonical output,
+path protection, and atomic publication. A per-Viewer generation check prevents
+older-over-newer publication. One initial render plus at most one follow-up is
+allowed per mutation. Remaining churn stays due until the next eligible
+mutation. Setup rerun is the only explicit force/repair action; browser reload
+remains manual.
+
+The hard performance fixture is fixed:
+
+- small: 12 tasks and 191 events using the existing migration-acceptance data;
+- large: 500 tasks and 5,000 events;
+- generated title, description, and event summary payloads are respectively
+  80, 512, and 256 UTF-8 bytes;
+- eight successful writes at injected minute offsets
+  `[0, 1, 5, 29, 30, 31, 59, 60]`;
+- backup attempts are therefore due at offsets 0, 30, and 60 when all succeed;
+  Viewer remains eligible on all eight relevant writes;
+- each enabled eight-write run must finish within 10 seconds more than the
+  matching disabled run, and each individual foreground command within
+  5 seconds on the Windows CI fixture.
+
+The eight writes are fixed `task edit <fixture-task-id> --add-note <payload-N>`
+mutations against one seeded `in_progress` task, with `N` from `00` through
+`07`. Each ASCII payload is deterministically padded so the stored event summary
+is exactly 256 UTF-8 bytes. Every scenario starts from an identical copied
+fixture and uses the injected clock above. M14.3 compares an internal
+coordinator-disabled baseline with backup-only; Viewer is absent. M14.6 compares
+the same disabled baseline with Viewer-only by keeping backup not due, then with
+Viewer plus due backup. M14.7 repeats the disabled and final combined cases.
+These are test seams, never public configuration.
+
+Attempt, render, call, byte, and zero-wait bounds are hard assertions. Wall-clock
+limits are deliberately broad; timing cannot waive a deterministic bound.
+M14.3 measures backup-disabled versus backup-only. M14.6 measures
+Viewer-disabled versus Viewer-only and the due-backup combination. M14.7
+repeats final combined integration. A budget failure is a blocking design
+finding, not authority to add background architecture.
+
+### Planned Typed Checkpoint
+
+`task checkpoint <task-id>` requires `--summary` and `--next-action`, and
+accepts `--unresolved-risk` at most eight times. UTF-8 limits are 1,024 bytes
+for summary, 1,024 for next action, 512 per risk, 4,096 for all risks, and
+6,144 for the complete caller payload.
+
+One append-only row stores only those fields, task/project identity, source
+Contract revision, and timestamp. The same transaction adds one event with
+fixed type `checkpoint_recorded` and fixed summary `Checkpoint recorded`; it
+never stores checkpoint content in the event or changes `tasks.updated_at`.
+Exact replay against the latest checkpoint for the same Contract revision
+returns that row with `replayed=true` and writes nothing. Done tasks remain
+immutable.
+
+Checkpoint use is optional, never automatic or required at pause, resume,
+review, or completion, and adds one bounded content judgment only when the
+caller chooses a genuine continuation boundary. It changes no status, scope,
+acceptance, priority, selection, review, evidence, or completion gate.
+`task current` and `task show` expose only the latest structured checkpoint.
+Viewer compatibility does not require publishing its content.
+
+The command emits `command=task.checkpoint`. Data keys are exactly
+`checkpoint`, `created`, `replayed`, and `event`. The checkpoint object contains
+only `checkpoint_id`, `task_id`, `contract_revision`, `summary`, `next_action`,
+`unresolved_risks`, and `created_at`. A new append returns
+`created=true`, `replayed=false`, and an event object containing only
+`task_event_id`, `event_type="checkpoint_recorded"`, and `created_at`; exact
+replay returns
+`created=false`, `replayed=true`, and `event=null`. The same checkpoint object
+appears under key `latest_checkpoint` in default `task current` rows and
+`task show` data. Text is exactly
+`Checkpoint <checkpoint_id>: recorded|replayed for task <task_id>` plus one LF.
+
+### Planned Review Packet
+
+`review prepare <task-id>` is read-only stdout generation for every existing
+review target kind: `git_snapshot`, `git_commit`, `diff_fingerprint`, and
+`external_revision`. A missing target returns `review_target_missing` with
+exact message `review target is required before preparing a review packet`.
+`git_snapshot` recaptures and validates the stored snapshot. `git_commit`
+resolves the canonical commit and lists first-parent changes; a root commit is
+compared with the empty tree. The two non-Git target kinds emit an empty path
+list with `changed_paths_available=false` and run no Git subprocess. This
+target-specific behavior is internal and does not create a Skill/LLM branch.
+Revision-zero tasks are supported with Contract revision 0 and empty Contract
+fields.
+
+Packet data keys are exactly `task`, `contract`, `review_target`,
+`changed_paths_available`, `changed_paths`, `changed_paths_total`,
+`changed_paths_truncated`, `review_focus`, `required_output`, and
+`receipt_command`. `task` contains only ID, title, status, verification, and
+review tier. `contract` contains only revision, scope, acceptance, and
+constraints. `review_target` contains only kind, value, base revision, and
+generation. It contains no raw diff, review result, receipt import,
+stdout/stderr, prompt, conversation, secret, absolute path, or caller-authored
+focus.
+
+At most 100 changed paths are emitted, each at most 240 UTF-8 bytes and at most
+16,384 aggregate path bytes. Safe rows are retained in bytewise order and
+`changed_paths_truncated=true` records count/byte omission. An unsafe path
+fails rather than being hidden with code `review_packet_path_unsafe` and exact
+message `review packet contains an unsafe project path`. The complete text
+stdout or complete compact JSON stdout including its envelope is at most 32,768
+UTF-8 bytes; otherwise `review_packet_too_large` is returned with exact message
+`review packet exceeds the supported size` and no partial packet. Git
+observation uses at most 10 subprocesses. The command
+does not launch a reviewer or import a result and replaces separate task,
+Contract, target, and Git-context reads without adding an LLM branch.
+
+The fixed focus list is, in order: Contract compliance; state-transition and
+completion-gate integrity; privacy and target-project safety; verification
+sufficiency and regression risk. The fixed required-output list is: verdict
+`PASS` or `CHANGES_REQUESTED`; severity-ordered findings with exact file/line;
+remaining risks; recommended changes. The receipt shape is the existing
+`taskgov review receipt add <task_id> --reviewer <reviewer-key> --kind
+independent --verdict <pass|changes_requested> --summary <sanitized-summary>
+--json` argv; it is guidance text, never an executable import.
+
+Text serialization uses LF, a final newline, and the fixed section order
+`Task`, `Status`, `Verification`, `Contract revision`, `Scope`, `Acceptance`,
+`Constraints`, `Review target`, `Changed paths`, `Review focus`,
+`Required output`, `Receipt command`. JSON uses the normal envelope and the
+same ordered data fields. After Git observation, a second short coherent
+read-only transaction revalidates project identity, task identity, Contract
+revision, and every review-target field/generation read initially. Any change
+returns `review_packet_stale` with exact message
+`review context changed while preparing the packet` and no packet. No SQLite
+transaction is held during Git work.
+
+### Planned Schema And Ownership Sequence
+
+M14 uses narrow sequential migrations rather than pre-creating later feature
+state:
+
+- M14.1: schema v9 unchanged;
+- M14.2: schema v10 adds one-way project maintenance opt-in, bounded mutable
+  backup-policy values, and the shared bounded backup last-success/outcome
+  fields plus latest managed-generation identity and internal applied-retention
+  value used first by the setup copy and later by routine backup;
+- M14.3: schema v11 adds managed backup generation rows, deterministically
+  seeds all retained valid setup copies, and makes those rows the sole
+  retention set; routine backup updates the v10 shared success/outcome/latest
+  identity fields rather than duplicating state;
+- M14.4: schema v12 adds append-only task checkpoints;
+- M14.5: schema v12 unchanged;
+- M14.6: schema v13 adds Viewer business/render generation and bounded outcome
+  state; and
+- M14.7: schema v13 unchanged.
+
+Only setup invokes the internal migration service. Each migration is
+transactional, idempotent, rollback-tested, and preserves the realistic 12-task,
+191-event, completion/review trace. Older binaries reject newer schemas. Viewer
+snapshot version remains v3 and expands source-schema compatibility from 5
+through the current staged schema; it excludes maintenance and checkpoint fields
+unless a later explicit snapshot contract adds them. M14.0 does not choose a
+release number.
+
+Each M14.1-M14.6 unit that changes a release-manifest-covered core file must
+refresh that manifest's file inventory/hash in the same reviewed revision.
+M14.1 verifies the still-public `self status` result is `clean`. M14.2-M14.6,
+after public `self` removal, verify the same shared package inspector through
+`doctor.data.components.package.status="clean"` and separately require
+`taskgov self status` to fail with the fixed `invalid_command` contract.
+Intermediate refreshes do not change release version/origin or publish an
+active Skill. M14.7 owns the final release metadata/version decision and
+publication synchronization, with the same doctor/package and removed-command
+checks.
+
+### Judgment, Privacy, And Deferred Scope
+
+Setup adds one explicit first-use call. Doctor, compact output, backup, and
+Viewer maintenance add zero normal-loop calls or judgments. Completion check is
+optional and adds one call only when explicitly requested. Checkpoint adds one
+bounded content judgment only when used. Review Packet removes context
+acquisition calls. The existing Effort Advisory adds one mechanically routed
+call only for a valid enabled profile and no LLM judgment; the default-off flow
+remains at nine calls. No M14 feature adds a mandatory question, user-return
+stop, Issue action, Git write, target mutation, network use, or project test
+strategy.
+
+Overview, action aliases, result or receipt-file import, verification receipts,
+manual backup, restore, general export, relocation, browser launch/auto-refresh,
+live server, search, pagination, Issue lifecycle, generic diagnostics, and
+workflow automation remain deferred.
+
 ## Approved Post-MVP Extension: Static Task Viewer
+
+This section remains the active Viewer contract through M14.5. M14.6 owns its
+replacement with the planned synchronous canonical-Viewer maintenance contract
+above and removes public `web`/custom output; M14.7 only synchronizes published
+Skill and release surfaces. Until M14.6 completes, the explicit-export behavior
+and the non-goal of automatic regeneration below remain active.
 
 The tool must provide a user-facing, non-server task viewer after the core task
 and completion flows are stable. The application name is `Task Viewer` and the

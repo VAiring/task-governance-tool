@@ -2406,7 +2406,7 @@ Completion criteria:
 - The external release gate is recorded when authorized; its absence does not
   authorize an external action or invalidate completed local verification.
 
-## Roadmap Completion Criteria
+## Roadmap Completion History Through TG-M13
 
 The MVP implementation roadmap is complete when:
 
@@ -2451,3 +2451,332 @@ short-transaction, project-scoped distribution, compatibility, and acceptance
 corrections. It does not authorize a new schema, command, workflow engine,
 Git write, external CI dispatch, PR, push, or publication. External release
 actions still require explicit user authorization.
+
+## Approved Post-MVP Extension: TG-M14 Daily UX And Local Continuity
+
+TG-M14 is sequential in lane `REVIEW-HARDENING`. All units are Tier 2. The
+complete behavioral contract, constants, result tables, schema sequence, and
+excluded scope are in the planned TG-M14 specification and design sections.
+M14.1-M14.6 refresh integrity-only release-manifest inventory/hashes whenever
+they change covered core files, in the same reviewed revision. M14.7 owns final
+release metadata/version and active publication synchronization.
+M14.2 also implements the approved development-only source-tree self-host
+layout. From that point onward, this repository invokes every project-scoped
+command with explicit `--repo`; before a unit raises the required schema, its
+current package integrity is refreshed and `setup` migrates the existing
+package-local Task DB in place. No install copy or DB transfer is part of this
+lane.
+
+### TG-M14.0 Daily UX And Local Maintenance Contract Baseline
+
+Depends on: TG-M13.4
+
+Intended outcome:
+
+- Promote the approved 20-leaf surface, setup/doctor behavior, daily-flow
+  bounds, and foreground maintenance design into formal planned authority.
+- Resolve every implementation-facing value and ownership boundary before
+  changing runtime behavior.
+
+Write scope:
+
+- `AGENTS.md`
+- `docs/specification.md`
+- `docs/design.md`
+- `docs/implementation-roadmap.md`
+- `plan.md`
+- M14 Task DB Contracts/evidence only
+
+Implementation notes:
+
+- Keep every new surface explicitly planned.
+- Do not change parser/help, active Skill, README usage, release files,
+  manifest, runtime tests/code, schema, or target state.
+- Record the user-approved 30-minute/3-generation defaults and the explicit
+  setup-only bounded project-local configuration contract.
+- Fix removed-command errors, doctor and setup result tables, compact/
+  checkpoint/packet fields and bytes, call graph, lock/attempt/render bounds,
+  fixture/write sequence, benchmark, schema sequence, and task ownership.
+- Withdraw only pending handoffs already promoted into authority; retain manual
+  backup and reopen-history candidates.
+
+Verification gate:
+
+- Cross-document tests or bounded scripts prove all constants, rows, ownership,
+  staging, judgment budgets, and deferred items agree.
+- The active 19-leaf parser/help, Skill, README, release, manifest, runtime
+  tests, version 0.7.0, and schema v9 remain byte-for-byte outside this task's
+  formal write scope.
+- `git diff --check` passes.
+
+Completion:
+
+- Two independent reviews of one exact revision find no High/Medium issue.
+
+### TG-M14.1 Completion Readiness And Compact Task Projection
+
+Depends on: TG-M14.0
+
+Write scope:
+
+- compact current/next formatter and CLI option;
+- shared completion request/validator, `task complete --check`, and thin
+  completion command;
+- deterministic `task show` Effort Advisory enablement routing field;
+- directly coupled executable help, implementation contracts, and tests;
+- final Skill routing contract tests, but no active publication surfaces.
+
+Verification:
+
+- exact field allow-lists and 24,576/16,384/8,192-byte caps;
+- default output compatibility, short-read/Git/short-revalidation no-write
+  check with no SQLite lock during Git, and stale check non-authority;
+- all current completion gates and legacy task-edit completion;
+- JSON-only compact mode, mandatory post-selection `task show`, and fixed
+  maximum nine-call default-off/ten-call Effort-enabled governance graph;
+- invalid/disabled/enabled Effort profile routing with no Git work or LLM
+  choice in `task show`;
+- integrity manifest refresh and `self status=clean`;
+- full suite and two Tier 2 reviews.
+
+Schema remains v9.
+
+### TG-M14.2 Unified Setup And Read-Only Doctor
+
+Depends on: TG-M14.1
+
+Write scope:
+
+- direct setup orchestration and preview;
+- bounded explicit-repo source-tree self-host layout for this repository,
+  without relocation or a competing install;
+- doctor envelope/base rows and one coherent project read;
+- removal of public self/db/`--db` parsing and raw path envelopes;
+- schema-v10 one-way maintenance opt-in;
+- schema-v10 bounded interval/retention with setup-only configuration;
+- one validated SQLite-backup primitive;
+- setup initialization/migration and canonical Viewer repair;
+- directly coupled help/docs/tests, not active Skill/release publication.
+
+Verification:
+
+- every setup and doctor base row from the specification;
+- physical project scope, non-Git success, Skill-root omitted-repo rejection,
+  source-package omitted-repo/collision rejection, package/ignore/Python/link
+  boundaries, and no target mutation;
+- layout failures are project_state `invalid_layout` while package integrity
+  remains an independent clean/modified/unknown observation;
+- preview no-write; migration backup precedes mutation; partial configuration
+  and Viewer recovery are idempotent; every success, preview, preflight error,
+  and partial failure obeys the exact setup scalar/null semantics;
+- setup copies carry managed generation identity, and repeated failed
+  migrations remain bounded by the effective explicit/default retention even
+  before a v11 generation table exists;
+- v10 `applied_backup_generations` is null when no managed publication exists,
+  while v1-v9 migration records the setup plan's explicit/default
+  `publication_retention` beside the copy identity;
+- doctor does no setup, migration, backup, render, lock, Git, or repair;
+- v1-v9 to v10 migrations preserve the realistic fixture, and Viewer snapshot
+  v3 reads source schemas 5-10;
+- the current source-tree Task DB migrates in place to v10 with explicit
+  `--repo` and retains every M14 task/Contract/event;
+- integrity manifest refresh keeps setup preflight and doctor package status
+  `clean`, while public `self` returns `invalid_command`;
+- full suite and two Tier 2 reviews.
+
+### TG-M14.3 Rate-Limited Rotating SQLite Backups
+
+Depends on: TG-M14.2
+
+Write scope:
+
+- schema-v11 managed-backup generation table reusing v10 policy/outcome state;
+- reuse of the M14.2 primitive and opt-in;
+- stored-policy due calculation with 1,800-second/three-generation defaults,
+  zero-wait crash-releasing OS locks, and bounded warnings;
+- doctor backup rows and backup-only performance fixtures.
+
+Verification:
+
+- first due, offsets `[0,1,5,29,30,31,59,60]`, failure-stays-due, publish-then-
+  prune, crash artifacts, concurrency, lock contention, and no SQLite write
+  lock during copying;
+- v11 deterministically seeds every retained canonical valid same-project setup
+  generation (including G0 and failed-migration retry copies), rejects a
+  missing v10 latest-identity match, and keeps total recognized artifacts
+  within applied retention after migration and routine rotation; a lower
+  configured value remains pending until a later successful publication
+  freezes and applies it;
+- routine v11 reconciliation tests termination after file publish, after
+  row/pointer commit, and between file-before-row pruning; orphan import,
+  missing/invalid target handling, no-new-publish on incomplete repair, and the
+  prior-valid-set-plus-one bound are exact;
+- the shared v11+ reconciler runs before both routine and setup migration
+  publication; setup failure returns `setup_backup_failed`, performs no
+  migration, and a lower configured retention remains unapplied until a
+  successful managed publication records it;
+- existing-v10 migration publishes, commits latest identity/time/outcome, then
+  prunes while retaining that identity before v11 seed; restart reconciliation
+  and v1-v9 row creation follow the exact specification order;
+- partial/unconfigured v10 resolves migration `publication_retention` from the
+  validated explicit setup value or default 3, while configured v10 freezes
+  its stored pre-configuration value; canonical file metadata restores that
+  value on file-only import;
+- policy/configuration interleaving proves that a publication keeps its frozen
+  value and a later policy transaction remains pending until the next
+  successful managed publication;
+- repeated setup migration failure followed by success is tested with
+  retention lower than the retry count;
+- explicit non-default policy/range/preservation cases and the exact eight
+  task-edit note sequence;
+- configured v10 migration with omitted/equal policy performs no
+  `maintenance_configure`; actual policy change and every ordered-prefix
+  failure use the exact alternate setup rows;
+- no trigger for read-only/failure/replay/no-op/internal maintenance;
+- handoff record/withdraw and every other backup-eligible write commit and
+  close SQLite before copying even when not Viewer-relevant;
+- one attempt per eligible mutation and no Viewer work in this unit's
+  benchmark;
+- small/large disabled versus backup-only `+10s` budget;
+- migration backup regression, Viewer snapshot v3 source schemas 5-11,
+  source self-host DB migration to v11, privacy, integrity manifest/doctor
+  package clean plus public-self rejection, full suite, and two reviews.
+
+### TG-M14.4 Optional Typed Continuation Checkpoints
+
+Depends on: TG-M14.3
+
+Write scope:
+
+- schema-v12 append-only checkpoint table/repository;
+- `task checkpoint` with 1,024/1,024/512/4,096/6,144-byte bounds;
+- exact replay, content-free event, latest current/show projection;
+- setup-owned migration and Viewer source-schema compatibility.
+
+Verification:
+
+- privacy, done lock, replay, atomic row/event, Contract revision, no task
+  `updated_at`, fixed `checkpoint_recorded` event type/summary, no selection/
+  gate change, no automatic checkpoint;
+- configured v11 migration preserves omitted/equal backup policy with no
+  configuration write and exact alternate setup rows;
+- v11-to-v12 setup retries reconcile termination after migration-backup file
+  publish, row/applied-retention commit, and file-before-row pruning without
+  publishing another generation until repair completes;
+- 12-task/191-event/completion trace preservation;
+- source self-host DB migration from v11 to v12 with all M14 evidence retained;
+- Viewer v3 reads source schemas 5-12 without checkpoint publication;
+- integrity manifest refresh, doctor package `clean`, and public-self rejection;
+- full suite and two reviews.
+
+### TG-M14.5 Bounded Read-Only Review Packet
+
+Depends on: TG-M14.4
+
+Write scope:
+
+- `review prepare` for all four existing review-target kinds;
+- one coherent governance read, bounded shell-free Git observation where
+  applicable, and one short basis revalidation read;
+- fixed text/JSON packet, focus, and receipt shape;
+- executable help/docs/tests and final Skill workflow contract only.
+
+Verification:
+
+- 100 paths, 240 bytes/path, 16,384 aggregate path bytes, 32,768 packet bytes,
+  and at most ten Git subprocesses;
+- safe truncation, unsafe-path error, revision-zero Contract,
+  stale/foreign/missing target, non-Git path-unavailable output, privacy, and
+  zero writes, including exact fixed missing/stale/path/size error messages;
+- no reviewer launch or result/receipt import;
+- integrity manifest refresh, doctor package `clean`, and public-self rejection;
+- full suite and two reviews.
+
+Schema remains v12.
+
+### TG-M14.6 Synchronous Default Viewer Maintenance
+
+Depends on: TG-M14.5
+
+Write scope:
+
+- schema-v13 Viewer business/render generations and bounded outcome state;
+- reuse of setup opt-in, existing Viewer snapshot/renderer/path/atomic writer;
+- zero-wait per-Viewer lock, initial render plus one follow-up;
+- doctor Viewer rows while preserving backup rows;
+- removal of public web/custom-output parsing/help;
+- replacement of the pre-M14 explicit-export-only formal Viewer design;
+- Viewer-only and Viewer-then-due-backup performance tests.
+
+Verification:
+
+- no pre-opt-in render or disable path;
+- exact backup-eligible versus Viewer-relevant mutation lists; setup uses its
+  direct render stage; commit/close before maintenance;
+- configured v12 migration preserves omitted/equal backup policy with no
+  configuration write and exact alternate setup rows;
+- v12-to-v13 setup retries reconcile termination after migration-backup file
+  publish, row/applied-retention commit, and file-before-row pruning without
+  publishing another generation until repair completes;
+- older-over-newer prevention, remaining churn due, last-good preservation,
+  independent backup/Viewer failures, and fixed warnings;
+- no trigger on read/failure/replay/no-op/internal writes;
+- at most two renders and zero lock wait;
+- Viewer-only and combined small/large `+10s` budget;
+- exact eight task-edit note sequence in every comparison;
+- snapshot v3 source schemas 5-13, privacy, integrity manifest/doctor package
+  clean plus public-self rejection, source self-host DB migration to v13, full
+  suite, two reviews.
+
+### TG-M14.7 Integrated Usability And Continuity Acceptance
+
+Depends on: TG-M14.6
+
+Write scope:
+
+- final active Skill, display metadata, README, release, manifest, workflow, and
+  root/group help synchronization, including final release metadata/version
+  over already current integrity hashes;
+- integrated setup-to-completion fixtures and only narrow acceptance fixes.
+
+Verification:
+
+- exact 20 leaves; removed self/db/web/`--db` and replacement commands use the
+  fixed no-write parse failure; public envelopes have no storage path;
+- all doctor/setup staged rows combine exactly;
+- configured v10-v13 migrations preserve omitted/equal policy without a
+  configuration write and keep setup G0 inside managed retention;
+- partial v10 null-policy migration, explicit/default publication retention,
+  file-only recovery, and later policy-change non-retroactivity are exact;
+- realistic setup, compact selection, task work, checkpoint, Review Packet,
+  review evidence, completion, backup, Viewer, migration, concurrency, privacy,
+  and no-target-mutation flow;
+- standard nine-call default-off and ten-call Effort-enabled graphs, every hard
+  byte/attempt/render/lock/configuration value, and repeated final combined
+  benchmark;
+- setup and routine share v11+ backup reconciliation across publish,
+  row/applied-retention commit, and file-before-row prune boundaries; policy
+  shrink waits for a successful managed publication;
+- current default compatibility except explicitly removed surfaces/envelope
+  path;
+- final manifest/package metadata, doctor package `clean`, and public `self`
+  `invalid_command`;
+- explicit-repo source self-host tasks remain usable at v13 while ordinary
+  install guidance remains `.agents/skills` only;
+- full suite and two PASS reviews with no High/Medium issue.
+
+No unit adds background execution, network, generic workflow/diagnostic
+architecture, external Issue/Git write, browser launch, restore/export,
+relocation, search/pagination, or a mandatory LLM decision or stop.
+
+## Roadmap Completion Criteria
+
+The currently approved roadmap is complete when:
+
+- all approved sequential units through TG-M14.7 are complete;
+- every unit's documented verification and review gate has passed for its exact
+  final revision;
+- no valid High or Medium review finding remains unresolved;
+- deferred items remain outside the active product contract; and
+- publication, push, PR, or external CI actions occur only after separate
+  explicit user authorization.

@@ -915,23 +915,85 @@ Confirmed decisions:
   reviews. Push, PR, workflow dispatch, and publication remain separate
   external actions requiring explicit user authorization. No M13 unit adds a
   normal-path LLM judgment, question, or stop.
+- TG-M14 is an approved eight-unit daily-UX/local-continuity lane. M14.0 is
+  formal planned-contract work only; active surfaces change only in their
+  owning implementation units and final publication is M14.7-owned.
+- The completed M14 public surface is exactly 20 leaves: setup; doctor; task
+  add/list/next/current/effort/show/edit/complete/checkpoint; handoff
+  record/list/show/withdraw; and review prepare/target set/receipt add/finding
+  add/finding resolve. Public self/db/web, `--db`, raw storage paths,
+  compatibility aliases, and replacement storage/Viewer/maintenance/admin
+  commands are removed without shims.
+- Doctor is the sole read-only diagnostic and is not a normal-loop or setup
+  prerequisite. Setup is the sole public initializer, migrator, one-way
+  maintenance opt-in, and canonical Viewer repair action.
+- The user-approved default backup policy is 30 minutes from the last
+  successful managed backup and three retained managed generations. M14.2
+  stores interval and retention in project-local maintenance state; only
+  explicit setup options may set 1-1,440 minutes and 1-20 generations. A normal
+  Skill setup supplies no choice, and an existing value is preserved when its
+  option is omitted. Failure remains due for the next eligible successful
+  mutation. Maintenance is bounded same-process post-commit work; Viewer runs
+  before due backup, locks are fail-fast, backup attempts are at most one and
+  Viewer renders at most two per mutation.
+- M14 hard bounds are: compact current 24,576 bytes; compact next 16,384;
+  completion check 8,192; checkpoint caller payload 6,144; Review Packet
+  32,768 with 100 paths, 240 bytes/path, 16,384 aggregate path bytes, and ten
+  Git subprocesses. The standard default-off no-finding Tier 2 flow has at most
+  nine governance subprocess calls; an existing valid enabled Effort Advisory
+  profile is routed mechanically from mandatory `task show` and has at most
+  ten, without an LLM choice.
+- The maintenance benchmark uses 12-task/191-event and 500-task/5,000-event
+  fixtures, eight writes at minute offsets `[0,1,5,29,30,31,59,60]`, an
+  enabled-minus-disabled ceiling of ten seconds, and a five-second individual
+  foreground-command ceiling. Deterministic count/byte/lock bounds remain the
+  hard gate.
+- M14 schema ownership is staged: v10 setup opt-in, policy, and shared backup
+  outcome/latest managed identity; v11 deterministically seeds and owns every
+  retained valid setup/routine backup generation; v12 checkpoints; and v13
+  Viewer generations. Pre-v11 failed-migration setup copies are bounded by each
+  successful stage's applied publication retention. Viewer snapshot stays v3
+  and grows source compatibility through the current schema without projecting
+  internal maintenance/checkpoint fields.
+- Configured v10+ migrations preserve omitted/equal backup policy without a
+  configuration write; the backup stage updates the v10 latest identity before
+  pruning and v11 seed. Every M14.1-M14.6 core-changing unit refreshes manifest
+  integrity hashes in its exact reviewed revision, while M14.7 owns final
+  release metadata/version and active publication.
+- Every v11+ managed backup stage, including setup migration and routine work,
+  reconciles files, generation rows, the v10 pointer, and applied retention
+  under the zero-wait artifact lock before publishing. File-only generations
+  are validated/imported, missing or unsafe row targets are removed without
+  deleting untrusted paths, interrupted pruning is file-before-row, and an
+  incomplete repair prevents another publish. A policy reduction remains
+  unapplied until a successful managed publication. Each artifact carries the
+  immutable explicit/default-or-stored retention resolved for its publication,
+  so partial-v10 recovery and later policy changes are deterministic. Crash
+  residue is bounded to the prior valid set plus one in-flight generation.
+- The user approved one development-only source-tree self-host path so this
+  repository can preserve and migrate its current Task DB after public `--db`
+  removal. It requires explicit `--repo`, the physical
+  `<repo>/task-governance-tool` package, the fixed governing source files and
+  package manifest/entry files, and no competing `.agents` install. It reuses
+  current package-local state and adds no DB transfer, relocation command,
+  environment switch, or ordinary consuming-project install mode.
 
 Open issues:
 
 - Decide later whether to add profile detection, verification recording,
-  review-template generation, dependency graphs, or Git integration beyond
-  TG-M11's read-only snapshot and completion validation.
+  dependency graphs, or Git integration beyond TG-M11's read-only snapshot,
+  completion validation, and TG-M14's bounded Review Packet.
 - TG-M7.0 through TG-M7.4 are complete, with task and commit evidence recorded
   in the project-local SQLite database. No additional product decision is
   currently required for the static Viewer baseline.
 - Before implementing default-browser launch, define its command or option,
   regeneration behavior, error contract, verification gates, and execution
-  unit. The current requirement does not authorize changing `web export` or
-  Skill guidance yet.
+  unit. TG-M14 removes `web export` and keeps browser reload manual; it does not
+  authorize default-browser launch.
 - Decide after further operational use whether long-running tasks need stale
-  warnings, checkpoints, event-history or current/list pagination, or
-  checklist/child execution units. Their feedback items remain valid
-  observations but are not adopted by TG-M9.
+  warnings, event-history or current/list pagination, or checklist/child
+  execution units. TG-M14 adopts only the bounded optional checkpoint; the
+  other TG-M9 observations remain deferred.
 - Revisit a once-daily GitHub update check only as a separately approved
   local-cache/network feature; using the Skill must not contact GitHub under
   the current contract.
@@ -946,12 +1008,12 @@ Open issues:
 
 ## Implementation Execution Status
 
-All implementation units through TG-M12.O2 are complete. TG-M9.1 through
-TG-M12.O2 were consumed after explicit user approval. TG-M13.1 through
-TG-M13.4 are approved for sequential consumption in lane `REVIEW-HARDENING`;
-their current state and Contract revisions are maintained in SQLite. TG-M12.3
-remains blocked on an Issue intake contract, governing permission update, and
-separate integration approval.
+All implementation units through TG-M13.4 are complete. TG-M9.1 through
+TG-M13.4 were consumed after explicit user approval. TG-M14.0 through M14.7 are
+approved for sequential consumption in lane `REVIEW-HARDENING`; their current
+state and Contract revisions are maintained in SQLite. TG-M12.3 remains
+blocked on an Issue intake contract, governing permission update, and separate
+integration approval.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local
 SQLite database. Do not append another large per-task execution log here; use

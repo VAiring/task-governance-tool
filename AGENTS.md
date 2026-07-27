@@ -96,7 +96,7 @@ The expected product direction is:
 - a Codex skill named something like `task-governance-tool` or
   `task-governance`
 - a small deterministic CLI/script layer for detection, status, task planning,
-  verification recording, and review-template generation
+  verification recording, and bounded review-packet generation
 - a local SQLite database for cache, indexes, project profiles, execution
   history, and verification summaries
 - project-specific profiles that point to governing docs and verification
@@ -155,10 +155,16 @@ The product must not become:
   links.
 - Do not install or overwrite a user or project skill directory without
   explicit user approval and a shown destination path.
-- Governed-project stateful use supports only one physical project-scoped copy
-  under the target project's `.agents/skills/task-governance-tool` directory.
-  User-wide, symbolic-link, and Windows junction installs are unsupported
-  stateful layouts.
+- Ordinary governed-project stateful use supports only one physical
+  project-scoped copy under the target project's
+  `.agents/skills/task-governance-tool` directory. The task-governance-tool
+  repository itself has one bounded development-only self-host exception: an
+  explicit `--repo` may use a physical package exactly at
+  `<repo>/task-governance-tool` when the governing source documents and package
+  manifest identify that source-tree layout and no competing project-scoped
+  install exists. It reuses the source package's existing canonical state; it
+  is not install guidance, relocation, or a second state mode. User-wide,
+  symbolic-link, and Windows junction layouts remain unsupported.
 
 ## Architecture Rules
 
@@ -170,10 +176,12 @@ The product must not become:
 - Any command that writes to the task-governance-tool database must say what it
   will record. Any command that writes to a target project must require explicit
   user intent and should offer a dry-run first.
-- A generated static viewer under the installed skill's ignored `state/`
-  directory is permitted only when the user explicitly asks to create or
-  regenerate it. Merely inspecting task state does not authorize that file
-  write. The command must offer a no-write preview.
+- Until TG-M14.6 completes, a generated static viewer under the installed
+  skill's ignored `state/` directory is permitted only when the user explicitly
+  asks to create or regenerate it, and the command must offer a no-write
+  preview. Completed TG-M14 setup opt-in additionally authorizes only the
+  canonical bounded post-commit Viewer maintenance defined below. Inspection
+  commands, including `doctor`, never authorize a Viewer write.
 - Profile detection must emit evidence, confidence, matched governing docs,
   reference-only exclusions, and an `unknown` or `needs_user_confirmation`
   state when confidence is low.
@@ -188,16 +196,54 @@ The product must not become:
 - Avoid broad abstractions until the first project profile and CLI flow are
   implemented and tested.
 
+## Approved M14 Planned Boundary
+
+- M14 is approved but remains planned until its owning execution units pass.
+  M14.0 changes formal contracts only; it must not change the active parser,
+  help, Skill, README usage, release package, manifest, runtime tests, or schema.
+- The completed M14 public surface is exactly 20 command leaves: `setup`,
+  `doctor`, task `add/list/next/current/effort/show/edit/complete/checkpoint`,
+  handoff `record/list/show/withdraw`, and review `prepare`, `target set`,
+  `receipt add`, `finding add`, and `finding resolve`.
+- The completed M14 surface removes public `self`, `db`, `web`, `--db`, raw
+  storage paths, compatibility aliases, and replacement storage, Viewer,
+  export, repair, maintenance, disable, or admin commands. Internal path
+  injection remains an implementation and test boundary, not an LLM choice.
+- `doctor` is the sole planned diagnostic. It is inherently read-only, never
+  fixes or prepares state, is not a normal Task-loop prerequisite, and keeps
+  recognized advisory results at `suggested_action=continue`.
+- `setup` is the sole planned public initializer, migrator, one-way local
+  maintenance opt-in, and canonical Viewer repair action. It is explicit,
+  noninteractive, idempotent, and limited to a physical project-scoped Skill.
+- Planned backup and Viewer maintenance is bounded same-process post-commit
+  work, never a daemon, thread, timer, detached process, queue, scheduler, or
+  service. Setup stores the project-local backup policy with defaults of 30
+  minutes after the last successful managed backup and 3 retained generations.
+  Only explicit setup options may change those values; the normal Skill
+  workflow supplies no policy choice. A failed attempt remains due for the
+  next eligible successful mutation.
+- M14 adds no mandatory doctor call, LLM judgment, question, or routine stop.
+  Checkpoints are optional at genuine continuation boundaries; Review Packet
+  generation replaces separate review-context reads. The already mandatory
+  `task show` mechanically exposes whether the existing Effort Advisory is
+  enabled; the default-off flow is bounded to 9 governance calls and an enabled
+  profile to 10, with no LLM choice.
+- Every M14.1-M14.6 unit that changes manifest-covered core files must refresh
+  integrity inventory/hashes in the same reviewed revision. M14.7 alone owns
+  final release metadata/version and active publication synchronization.
+
 ## SQLite And State Rules
 
-- The default task-governance-tool database path must be configurable.
-- Because the MVP skill is intended to be installed per governed project, a
-  reasonable default may be generated local state under the installed
-  project-scoped skill folder, such as
-  `.agents/skills/task-governance-tool/state/`, or an explicit user-approved
-  `--db` path.
+- Through TG-M14.1, the current public `--db` option may configure the database
+  path. Completed TG-M14 removes that public choice: the runtime uses only the
+  canonical state path under the supported physical package, while
+  storage/repository constructors and tests retain explicit path injection.
+- Because the MVP skill is installed per governed project, generated local
+  state belongs under the physical project-scoped package's `state/`
+  directory. The completed M14 CLI does not expose an alternate state path.
 - Generated state under a project-scoped install must be ignored or otherwise
-  kept out of source commits before `db init` or other write commands are used.
+  kept out of source commits before the current `db init`, the completed-M14
+  `setup`, or other write commands are used.
 - User-requested generated runtime artifacts, such as a static task viewer,
   may live under the same ignored project-specific `state/` directory. They are
   local projections of SQLite state, not an additional source of truth, and
@@ -226,12 +272,12 @@ The product must not become:
   it.
 - Installing the skill into a target project's `.agents/skills` directory is a
   target-project mutation and requires explicit user approval for that
-  destination. After installation, ordinary `taskgov` write commands may write
-  only the generated task-governance-tool database under the installed skill
-  folder or an explicit `--db` path. A documented export command may also write
-  a user-requested generated artifact under the installed skill's ignored
-  `state/` directory. Writing an export elsewhere requires explicit user
-  approval of that destination; an inspection request alone is not approval.
+  destination. Through TG-M14.1, current commands may also use an explicitly
+  approved `--db` path and the current Viewer export contract. Completed TG-M14
+  removes those public choices: ordinary writes use only the canonical
+  generated database, and setup or bounded post-commit maintenance may publish
+  only the canonical Viewer under the supported package's ignored `state/`
+  directory. Inspection alone never authorizes either write.
 - Do not create commits, branches, tags, issue comments, PRs, or file edits in a
   target project unless the user explicitly approves that concrete mutation in
   the current task. Target-project governance rules may tell

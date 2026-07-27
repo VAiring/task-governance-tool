@@ -1992,7 +1992,386 @@ explicitly authorized external action.
 No M13 unit adds a command, schema version, Viewer snapshot version, Task gate,
 Issue behavior, normal diagnostic prerequisite, LLM judgment, or routine stop.
 
+## Planned TG-M14 Daily UX And Local Continuity Design
+
+This section is implementation-facing planned design. M14.0 changes no active
+runtime or publication surface.
+
+### CLI And Envelope Boundary
+
+The final parser contains only the 20 leaves enumerated in the specification.
+Root preprocessing recognizes lexical `--json`, removed/unknown root commands,
+and removed `--db` before dispatching a command handler or invoking package,
+project, Git, or state resolution. It emits the fixed `invalid_command` or
+`invalid_option` failure and never echoes a rejected token or option value.
+Argparse does not retain compatibility subparsers.
+
+The final formatter removes `db_path` from `CommandResult` and public
+serialization rather than populating it with `null`. Internal
+`DatabaseTarget`, repository constructors, tests, and setup services still take
+explicit paths. Public commands derive the one canonical project-scoped path
+from the lexical physical Skill and `--repo`.
+
+Compact task projections are separate allow-list formatters over the existing
+coherent query results. They do not add repository queries. The formatter
+applies UTF-8 code-point-safe event-summary truncation, adds rows in existing
+order until the command cap, and then marks the projection truncated. Default
+current/next formatters remain unchanged through M14.1; default JSON
+`task show` adds only the routing field below. M14.2 owns the one global
+envelope/path removal. Compact mode is JSON-only and therefore adds no
+parallel compact text formatter.
+
+M14.1 reuses the existing Effort Advisory profile loader in default JSON
+`task show` and adds only `data.effort_advisory_enabled`. It performs no Git
+observation. Enabled maps to `true`; absent/disabled/invalid maps to `false`,
+with the existing invalid-profile continuation warning retained. The active
+Skill reads this already mandatory response and mechanically routes one
+existing `task effort` call only when true; text `task show` is unchanged.
+
+Completion check and thin completion share one `CompletionRequest` and the
+existing ordered validator. Check captures a short validated basis, closes it
+before Git observation, and performs a second short read to reject a changed
+basis before returning the validator projection. Write preflight likewise
+observes Git outside the write transaction and locked execution revalidates the
+same request. No SQLite transaction is held during Git, and no check receipt or
+readiness token is stored.
+
+### Doctor Read Model
+
+Doctor orchestration has two observations:
+
+1. the existing bounded package inspector, which never opens SQLite; and
+2. at most one operational journal preflight and one coherent project read
+   transaction for project state, task counts, handoff delivery, and
+   maintenance state.
+
+The formatter combines them without claiming cross-source atomicity. A project
+readiness result owns exactly one `project_state` code. When it cannot supply a
+coherent current-schema snapshot, the three dependent components are fixed
+`unavailable` objects. Package modified/unknown remains a warning even when a
+project error determines exit 2. All doctor paths are no-write, fixed
+`continue`, and storage-path-free.
+
+Layout validation belongs only to `project_state`. A clean package can
+therefore coexist with `project_state.code="invalid_layout"` for a competing
+install or missing self-host structure; a linked/uninspectable package may
+independently be package `unknown`. The formatter never rewrites package
+integrity to encode layout.
+
+M14.2 implements the base decision rows and only setup-derived maintenance
+facts. M14.3 extends the backup object in place; M14.6 extends the Viewer object
+in place. Neither task adds a second component or duplicates opt-in state.
+Top-level setup eligibility is computed only after applying the specification's
+shared ordered preflight; it is not copied from the SQLite readiness row.
+Maintenance objects always use the exact nullable key/code shape in the
+specification, so staged implementations do not invent alternate component
+schemas.
+
+### Setup Service And Shared Backup Primitive
+
+Setup is an orchestration service, not a shell composition of removed CLI
+commands. It calls package/install/ignore/project preflight, the internal
+storage initializer or migration service, the shared backup primitive, the
+one-way opt-in repository, and the existing Viewer renderer directly.
+
+The layout validator accepts the ordinary physical
+`<repo>/.agents/skills/task-governance-tool` package and one development-only
+self-host shape. The latter requires explicit `--repo`, a physical package
+exactly at `<repo>/task-governance-tool`, the five fixed regular governing
+source documents and three fixed package entry/manifest files listed in the
+specification, and absence of a competing project-scoped install. It uses
+bounded canonical filesystem checks only, so doctor does not invoke Git.
+Failure uses the fixed `project_scope_required` or
+`unsupported_install_layout` boundary. The source shape derives the same
+existing package-local canonical state path; no copy, relocation lookup,
+alternate state repository, environment switch, or public mode flag exists.
+
+`--read-only` builds a `SetupPlan` with booleans for initialize, migrate,
+backup, configure, and Viewer publish plus the effective interval/retention. It
+does not create directories, locks, temporary files, SQLite connections that
+can recover/write, or Viewer output.
+The write path revalidates preflight immediately before each irreversible
+stage. A valid completed stage is never rolled back merely because a later
+opt-in or Viewer stage fails; the fixed partial-result row makes rerun resume
+from the first missing stage.
+
+`SetupPlan.configure` is true for an unconfigured source or an actual explicit
+policy change, never merely because migration is due. A configured v10+ source
+with omitted/equal policy plans `migration_backup`, `database_migrate`, and
+`viewer_publish`; an actual policy change inserts `maintenance_configure`
+between migration and Viewer publication. Result arrays and partial failures
+use the corresponding exact ordered prefix from the specification.
+
+The sole backup primitive:
+
+1. opens the source through the operational rollback-journal boundary;
+2. copies through `sqlite3.Connection.backup` to a fresh temporary file under
+   the canonical managed backup directory;
+3. validates schema support, project identity, `quick_check`, and
+   `foreign_key_check`;
+4. closes the temporary connection and file;
+5. atomically publishes the generation under a canonical filename containing
+   its internal generation identity, publication timestamp, and the validated
+   1-20 `publication_retention` fixed by the caller before copying; and
+6. returns that bounded identity/time metadata, never a public path.
+
+Setup migration calls it before beginning migration. M14.3 calls the same
+primitive after a business transaction closes. Rotation is a caller policy
+around this primitive, not another copy implementation. Before schema v11
+exists, setup recognizes only canonical regular artifacts whose copied
+database validates as the same project, orders them by publication time then
+generation identity, and applies the effective explicit/default retention
+after each successful publish. Repeated failed migrations therefore remain
+bounded without treating an arbitrary file as managed.
+
+For an existing v10 source, `migration_backup` is not complete until the
+published identity/time/outcome and `applied_backup_generations` are written to
+`project_maintenance` in one short transaction. Pruning must retain that
+identity and occurs only after the metadata commit. On restart, a newer fully
+published canonical generation is validated and reconciled to the v10 pointer
+and applied retention before pruning. A v1-v9 source has no pointer; its
+successful migration transaction creates v10 with the current copy metadata
+and applied retention before v11 seed/import. Thus v11 never validates a stale
+pointer against a set from which its target was already pruned.
+
+The schema-v10 maintenance row stores the one-way `enabled_at` plus bounded
+`backup_interval_minutes` and `backup_generations`, shared last-success/outcome,
+latest managed-generation identity, and nullable internal
+`applied_backup_generations`. Setup parses the only public configuration
+options, applies defaults 30/3 only for an unconfigured project, preserves
+omitted existing values, and atomically writes a changed policy. Equal explicit
+values are a replay. A policy-only update changes no applied value, invokes
+neither coordinator nor pruning, and is enforced only after the next successful
+managed publication records the configured value as applied. `SetupResult`
+uses the exact scalar-state semantics and null rules in the specification;
+previews never report planned state as durable state.
+
+`SetupPlan` resolves immutable `publication_retention` before the backup
+primitive runs. A partial/unconfigured source uses the validated explicit
+setup value or default 3; a configured source uses the stored value observed
+before the plan's later configuration stage. Routine work freezes the stored
+value observed for that attempt. The primitive places the value in canonical
+filename metadata, and metadata insertion copies that value into
+`applied_backup_generations`. File-only import therefore recovers the value
+from the artifact rather than consulting a policy that may have changed after
+publication.
+
+### Post-Commit Maintenance Coordinator
+
+Successful business services return a small internal `MutationOutcome`
+containing whether state changed and whether the change is Viewer-relevant.
+The CLI commits and closes the business connection before passing that outcome
+to a bounded coordinator. Read-only, failed, replay, no-op, and coordinator
+metadata writes never call it.
+
+When setup opt-in exists, the coordinator runs in fixed order:
+
+1. Viewer refresh if relevant;
+2. routine backup if due.
+
+The two attempts are independent. Each opens its own validated canonical
+regular lock file and takes a one-byte OS advisory lock with a zero-millisecond
+wait. File existence is not ownership; the OS releases ownership on process
+termination, and a leftover regular file needs no stale cleanup. Lock failure
+emits one fixed continuing warning and leaves the work due. No common job
+abstraction, background execution, sleep, retry loop, or durable queue is
+introduced.
+
+Backup due is a latest outcome of `deferred|failed`,
+`last_success_at IS NULL`, or at least the configured interval since that
+timestamp. Failed attempts do not advance success time. Every v11+ managed
+backup stage, including setup migration and routine work, takes the same
+artifact lock and first reconciles canonical files, generation rows, the v10
+pointer, and applied retention using the exact specification order. A
+published file without a row is validated/imported; an unusable or missing row
+target is removed without touching an untrusted path; and an interrupted prune
+deletes file before row against `applied_backup_generations`. A newly reduced
+configured value is not applied by reconciliation alone. Incomplete
+reconciliation prevents another publication; routine emits `backup_failed`,
+while setup returns `setup_backup_failed` and performs no migration.
+
+A successful publication writes one atomic file, then inserts its row and
+updates the v10 pointer/outcome plus the artifact's immutable publication
+retention in one short transaction, then prunes file-before-row. Restart
+reconciliation by either routine work or setup recovers that same value from a
+file-only artifact, covers termination at every boundary, and prohibits
+crash-residue accumulation beyond the previously valid set plus one in-flight
+generation. Defaults are 1,800 seconds and three. Injected clock and artifact
+services are test seams, not public options.
+
+Backup-eligible mutations are task add/edit/complete/checkpoint, handoff
+record/withdraw, and review target/receipt/finding add/resolve. Viewer-relevant
+mutations are the same set except handoff record/withdraw, because snapshot v3
+does not project the handoff outbox. Setup initialization/migration/repair uses
+its direct Viewer stage and never re-enters the post-commit coordinator. Effort
+inspection, doctor, setup preview or configuration-only setup,
+task/handoff/review reads, exact replay, and internal maintenance metadata
+trigger neither path. Viewer generation increments atomically with each
+Viewer-relevant business write. Refresh acquires the Viewer lock, compares
+source and last-rendered generation, renders when behind, rechecks once, and
+performs at most one follow-up. It never overwrites a newer published
+generation.
+
+Maintenance warnings use only these fixed pairs:
+
+- `viewer_refresh_deferred`:
+  `Viewer refresh was deferred; task result is unchanged`
+- `viewer_refresh_failed`:
+  `Viewer refresh did not complete; task result is unchanged`
+- `backup_deferred`:
+  `managed backup was deferred; task result is unchanged`
+- `backup_failed`:
+  `managed backup did not complete; task result is unchanged`
+
+Messages contain no path, exception, expected/actual hash, raw output, retry,
+stop, or model choice. The primary command stays successful. Doctor reads the
+latest fixed outcome without starting work.
+
+### Planned Schema Sequence
+
+Schema changes are feature-owned:
+
+- v10 `project_maintenance`: one project row whose nullable `enabled_at` and
+  policy fields represent an initialized/migrated partial setup; configuration
+  fills policy and makes `enabled_at` immutable once non-null. Shared backup
+  last-success/outcome/latest-generation and applied-retention fields are
+  written by the pre-migration setup copy as part of the backup stage whenever
+  v10 exists, or by the v1-v9 migration transaction that creates v10, and later
+  by routine backup, alongside setup Viewer base facts. A policy-only change
+  leaves applied retention unchanged until the next successful managed
+  publication;
+- v11 `managed_backup_generations`: published generation identities only. Its
+  migration discovers every canonical regular same-project artifact retained
+  by setup, validates it, orders by publication time and generation identity,
+  inserts one row per artifact, requires the non-null v10 latest identity to
+  match one row, and prunes the recognized seeded set to the current setup
+  publication's applied retention. Unrecognized, linked, invalid, and foreign
+  files are untouched. Due is derived from v10 policy and last success rather
+  than stored twice;
+- v12 `task_checkpoints`: append-only checkpoint fields, source Contract
+  revision, timestamps, and a task/project foreign key;
+- v13 `viewer_maintenance_state`: business generation, rendered generation,
+  last success, and fixed latest outcome.
+
+The tables use bounded text checks and project ownership. No generic
+maintenance jobs table exists. Migrations are invoked only by setup, preserve
+all prior rows and completion/review evidence, and use the existing migration
+history discipline. Viewer snapshot v3 accepts schemas 5 through the current
+stage but intentionally projects none of these internal fields or checkpoint
+content.
+
+### Checkpoint Repository
+
+Checkpoint input is validated by the common privacy guard plus the exact byte
+limits before opening a write transaction. Under the short write transaction,
+the repository rereads the task, rejects done/foreign state, obtains the
+current Contract revision, and compares the latest checkpoint for exact
+replay. A new row and content-free `Checkpoint recorded` event are atomic.
+`tasks.updated_at` is not modified; activity/event generation still records the
+real state mutation for maintenance and history.
+
+Current/show attach at most one latest checkpoint using deterministic
+`created_at DESC, rowid DESC`. There is no checkpoint list repository, search,
+semantic summary, or completion integration.
+
+### Review Packet Builder
+
+The builder reads task, Contract, target, and review counts from one validated
+SQLite transaction, closes it, then performs bounded target observation. It
+supports `git_snapshot` by recapturing/validating the stored snapshot and
+`git_commit` by resolving the commit and listing changes against its first
+parent (or the empty tree for a root commit). Merge commits use their first
+parent. `diff_fingerprint` and `external_revision` use no Git observation and
+emit `changed_paths_available=false`. The builder performs at most ten
+shell-free Git subprocesses with the existing environment and timeout
+restrictions.
+
+Paths are decoded and validated as relative project paths, sorted bytewise, and
+bounded by count, individual bytes, and aggregate bytes. Unsafe paths fail.
+Safe overflow is explicit truncation. A final size check precedes text/JSON
+serialization. The focus and receipt command shape are constants in code, not
+free-form caller input. The builder neither launches a reviewer nor persists a
+packet. After observation it opens one second short read-only transaction and
+compares project/task identity, Contract revision, and all target fields and
+generation with the first read. A mismatch returns `review_packet_stale`; no
+SQLite transaction remains open during Git work.
+
+The missing-target and stale-basis errors use the specification's exact
+sanitized messages. Path and size failures likewise use their fixed messages;
+the builder never exposes the rejected path, observed size, revision value, or
+Git/OS exception.
+
+### Fixed Test And Call Budgets
+
+Constants are:
+
+```text
+compact current bytes     24576
+compact next bytes        16384
+completion check bytes     8192
+checkpoint caller bytes    6144
+review packet bytes       32768
+review paths                 100
+review path bytes             240
+review aggregate path bytes 16384
+review Git subprocesses        10
+backup interval default sec  1800
+backup interval minutes min      1
+backup interval minutes max   1440
+backup generations default       3
+backup generations min           1
+backup generations max          20
+artifact lock wait ms            0
+backup attempts/mutation          1
+Viewer renders/mutation           2
+write-sequence length              8
+```
+
+The default-off no-finding Tier 2 governance flow uses at most nine subprocess
+calls and the existing Effort-Advisory-enabled flow at most ten, as defined in
+the specification. The branch is a deterministic boolean route, not an LLM
+judgment. Test fixtures and time offsets are also exactly those in the
+specification. Tests hard-fail count, byte, and attempt violations. The broad
+`enabled <= disabled + 10 seconds` and per-command five-second ceilings are
+performance regressions, not permission to loosen a hard bound or introduce
+async architecture.
+
+### Staging And Publication
+
+Every M14.1-M14.6 unit that changes a manifest-covered core file refreshes the
+existing release-manifest file inventory/hash in the same exact reviewed
+revision. M14.1 asserts the still-public `self status=clean`. From M14.2
+onward, the same inspector is asserted through doctor package status `clean`
+while public `self` is separately asserted to return `invalid_command`. This is
+an integrity prerequisite for the next unit's setup; it does not change release
+version/origin or publish an active Skill. M14.7 owns final release metadata,
+version decision, package inventory, and publication synchronization.
+
+- M14.0: formal planned contracts and Task DB authority only.
+- M14.1: compact and completion runtime/help/tests plus final routing contract.
+- M14.2: setup, doctor base, public self/db/`--db` removal, opt-in, shared
+  backup primitive, setup Viewer repair, and snapshot-v3 source support through
+  schema v10.
+- M14.3: backup due/rotation, doctor backup rows, backup-only benchmark, and
+  snapshot-v3 source support through schema v11.
+- M14.4: typed checkpoint, schema v12, and snapshot-v3 source support through
+  schema v12.
+- M14.5: Review Packet.
+- M14.6: Viewer generation/maintenance, public web/custom-output removal,
+  doctor Viewer rows, and Viewer/combined benchmarks.
+- M14.7: active Skill, metadata, README, release/final manifest metadata, final
+  help, combined tables, and integrated acceptance.
+
+No earlier task advertises an unimplemented active surface. No task introduces
+overview, aliases, imports, restore/export, relocation, browser automation,
+search/paging, Issue lifecycle, generic health checks, or workflow automation.
+
 ## Static Task Viewer Design
+
+This section describes active behavior through M14.5. M14.6 owns replacing its
+explicit-export-only refresh contract with the planned canonical automatic
+maintenance contract above and removing public `web`; M14.7 only synchronizes
+the final Skill/release publication surfaces.
 
 The Task Viewer is a projection of current SQLite state, never an independent
 authority. The implementation flow is:
@@ -2404,7 +2783,7 @@ The design leaves room for:
 
 - Project profile detection.
 - Verification recording and acceptance-progress receipts.
-- Review-template generation.
+- Review generation beyond TG-M14's bounded read-only Review Packet.
 - Dependency graphs.
 - Additional Git advisory integration beyond read-only completion validation.
 - Task import and richer exchange formats beyond the approved static viewer.

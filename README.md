@@ -149,6 +149,13 @@ tree. Meaningful target changes require a new target and fresh receipts. The
 Skill validates Git evidence read-only; it never stages, commits, branches,
 pushes, opens a PR, or creates an Issue.
 
+The packet tells each reviewer how to inspect the exact target rather than
+ambient `HEAD` or worktree content. The independent reviewer returns the
+verdict and findings; the trusted parent/orchestrator records their sanitized
+result with the shown receipt command and existing finding commands. Reviewer
+keys enforce distinct strings only and are not authentication or identity
+proof.
+
 Tier 1 normally requires one independent PASS. Tier 2 normally requires two
 distinct independent PASS receipts for the same target generation and blocks
 completion while a high or medium finding remains unresolved. Use

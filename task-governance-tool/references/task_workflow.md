@@ -313,8 +313,26 @@ Use that one bounded packet for the reviewers. Do not reconstruct separate
 task, Contract, target, and changed-path prompts. The command launches no
 reviewer and imports or stores no result.
 
-Record actual sanitized outcomes. Tier 2 normally requires two distinct
-independent PASS receipts for one target generation:
+Follow the packet's target-kind instruction exactly:
+
+- for `git_snapshot`, inspect only the matching stage-0 index against the
+  stored base using the cached diff and index blobs; never count unstaged or
+  untracked worktree content;
+- for `git_commit`, inspect the target commit's tree and blobs against its first
+  parent, or the empty tree for a root, rather than ambient `HEAD` or worktree;
+- for `diff_fingerprint`, return no PASS until exact review material and its
+  binding to the fingerprint are available; and
+- for `external_revision`, return no PASS until exact externally supplied
+  material is bound to that revision.
+
+The independent reviewer returns the actual verdict and findings. The trusted
+parent/orchestrator that requested the review records concise sanitized
+receipts and findings as attestations of those results. taskgov checks only
+target binding and distinct reviewer-key strings; it does not authenticate
+reviewers or prove independence.
+
+Tier 2 normally requires two distinct independent PASS receipts for one target
+generation:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json

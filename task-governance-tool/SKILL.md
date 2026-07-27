@@ -132,7 +132,10 @@ Set a review target only after the exact material is ready. For review before a
 Git completion commit, stage exactly the intended files and set
 `--kind git_snapshot` without a revision. Unstaged and untracked files are
 excluded. Use the single bounded `review prepare` packet for the independent
-reviewers.
+reviewers; follow its exact-target instruction rather than ambient Git or
+worktree state. Have reviewers return verdicts and findings. Record those
+sanitized results from the trusted parent or orchestrator. Treat reviewer keys
+as distinctness checks, not identity proof.
 
 Tier 2 normally requires two distinct independent PASS receipts for the same
 target generation. A changed target requires fresh receipts. A

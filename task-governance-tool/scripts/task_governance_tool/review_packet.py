@@ -60,6 +60,29 @@ REVIEW_FOCUS = (
     "privacy and target-project safety",
     "verification sufficiency and regression risk",
 )
+TARGET_INSPECTION_FOCUS = {
+    "git_snapshot": (
+        "Exact target: inspect only the matching stage-0 index against "
+        "review_target.base_revision, using the cached diff and index blobs; "
+        "exclude unstaged and untracked worktree content"
+    ),
+    "git_commit": (
+        "Exact target: inspect review_target.value as the canonical commit "
+        "against its first parent, or the empty tree for a root commit, and "
+        "read that commit's tree and blobs rather than ambient HEAD or "
+        "worktree content"
+    ),
+    "diff_fingerprint": (
+        "Exact target: do not return PASS unless the orchestrator provides "
+        "the exact review material plus evidence binding it to "
+        "review_target.value; the fingerprint alone cannot retrieve content"
+    ),
+    "external_revision": (
+        "Exact target: do not return PASS unless exact external material is "
+        "bound to review_target.value; taskgov does not retrieve external "
+        "artifacts"
+    ),
+}
 REQUIRED_OUTPUT = (
     "verdict PASS or CHANGES_REQUESTED",
     "severity-ordered findings with exact file/line",
@@ -482,7 +505,10 @@ def prepare_review_packet(
         "changed_paths": changed_paths,
         "changed_paths_total": changed_paths_total,
         "changed_paths_truncated": changed_paths_truncated,
-        "review_focus": list(REVIEW_FOCUS),
+        "review_focus": [
+            *REVIEW_FOCUS,
+            TARGET_INSPECTION_FOCUS[basis.review_target["kind"]],
+        ],
         "required_output": list(REQUIRED_OUTPUT),
         "receipt_command": receipt_command,
     }

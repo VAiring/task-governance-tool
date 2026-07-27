@@ -436,8 +436,13 @@ Completion rules are:
 
 Reviewer keys provide mechanically checkable distinctness, not identity
 proof. The agent remains responsible for using genuinely independent review
-passes. `--review-complete` remains a command-time compatibility confirmation,
-but cannot substitute for missing structured evidence.
+passes. An independent reviewer returns the actual verdict and findings; the
+trusted caller that requested the review, normally the parent Codex or
+orchestrator, records a concise sanitized receipt and any findings as an
+attestation of that returned result. taskgov authenticates neither the caller
+nor the reviewer and does not prove reviewer identity or independence.
+`--review-complete` remains a command-time compatibility confirmation, but
+cannot substitute for missing structured evidence.
 
 The normal successful Tier 2 path therefore uses two LLM review decisions.
 Recording or validating receipts, reviewer distinctness, target equality,
@@ -2164,14 +2169,32 @@ observation uses at most 10 subprocesses. The command
 does not launch a reviewer or import a result and replaces separate task,
 Contract, target, and Git-context reads without adding an LLM branch.
 
-The fixed focus list is, in order: Contract compliance; state-transition and
-completion-gate integrity; privacy and target-project safety; verification
-sufficiency and regression risk. The fixed required-output list is: verdict
-`PASS` or `CHANGES_REQUESTED`; severity-ordered findings with exact file/line;
-remaining risks; recommended changes. The receipt shape is the existing
+The focus list contains the four fixed common rows, in order: Contract
+compliance; state-transition and completion-gate integrity; privacy and
+target-project safety; verification sufficiency and regression risk. Exactly
+one fifth fixed row is selected mechanically from the target kind:
+
+- `git_snapshot`: inspect only the matching stage-0 index against the stored
+  base revision, using the cached diff and index blobs; exclude unstaged and
+  untracked worktree content;
+- `git_commit`: inspect the canonical target commit against its first parent,
+  or the empty tree for a root commit, and read that commit's tree and blobs
+  rather than ambient `HEAD` or worktree content;
+- `diff_fingerprint`: do not return `PASS` unless the orchestrator supplies
+  exact review material plus evidence binding it to the target value, because
+  the fingerprint alone cannot retrieve content; and
+- `external_revision`: do not return `PASS` unless exact external material is
+  bound to the target value; taskgov does not retrieve external artifacts.
+
+This selection adds no Git subprocess, caller-authored focus, or LLM branch.
+The fixed required-output list is: verdict `PASS` or `CHANGES_REQUESTED`;
+severity-ordered findings with exact file/line; remaining risks; recommended
+changes. The receipt shape is the existing
 `taskgov review receipt add <task_id> --reviewer <reviewer-key> --kind
 independent --verdict <pass|changes_requested> --summary <sanitized-summary>
---json` argv; it is guidance text, never an executable import.
+--json` argv. It tells the trusted orchestrator how to attest the reviewer's
+actual returned result; it is never executed or imported by `review prepare`
+and proves no identity.
 
 Text serialization uses LF, a final newline, and the fixed section order
 `Task`, `Status`, `Verification`, `Contract revision`, `Scope`, `Acceptance`,

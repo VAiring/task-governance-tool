@@ -659,6 +659,14 @@ bounded to 100 rows, 240 UTF-8 bytes per row, and 16,384 aggregate path bytes.
 The complete text or JSON stdout is capped at 32,768 bytes. Git observation is
 capped at ten subprocesses.
 
+`review_focus` contains the four common fixed rows plus exactly one fixed
+target-kind inspection row. `git_snapshot` binds inspection to the stage-0
+index and stored base while excluding unstaged/untracked content. `git_commit`
+binds it to the canonical commit and first-parent/empty-tree comparison.
+`diff_fingerprint` and `external_revision` prohibit PASS unless exact material
+is supplied with evidence binding it to the stored value. Selecting the row
+adds no Git subprocess or caller/model choice.
+
 Missing, changed, unsafe-path, and oversized cases return no partial packet:
 
 - `review_target_missing`: `review target is required before preparing a review packet`
@@ -699,6 +707,12 @@ distinct independent PASS receipts. Any current-generation
 `changes_requested` receipt blocks completion. `--user-approved` is accepted
 only where the governing review-tier fallback contract requires explicit user
 approval; the normal independent path omits it.
+
+The independent reviewer returns the verdict and findings. The trusted
+parent/orchestrator records their concise sanitized receipt/finding rows as an
+attestation. taskgov validates target binding and reviewer-key distinctness,
+but does not authenticate the recorder or reviewer and proves neither identity
+nor independence.
 
 Record and resolve structured findings:
 

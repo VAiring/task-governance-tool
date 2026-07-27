@@ -785,9 +785,9 @@ CREATE TABLE review_findings (
 
 Indexes cover `(task_id, target_generation, target_kind, target_value,
 verdict)`, reviewer distinctness queries, and open findings by task and
-severity. Receipts are append-only and each reviewer may record only one
-receipt per task target generation. A correction or re-review requires setting
-the review target again to create a new generation; same-generation
+severity. Receipts are append-only and each reviewer key may appear on at most
+one receipt per task target generation. A correction or re-review requires
+setting the review target again to create a new generation; same-generation
 PASS-to-changes-requested or changes-requested-to-PASS replacement fails with
 `review_receipt_already_recorded`. Finding resolution updates only status,
 sanitized resolution summary, and timestamp while preserving the original
@@ -839,6 +839,12 @@ the counted PASS receipts must belong to the newer current generation. Thus
 resolve-without-target-reset remains blocked; target reset plus fresh passes can
 succeed. Reviewer-key distinctness is a deterministic minimum check, not
 cryptographic identity proof.
+
+The independent reviewer produces the verdict and findings. The trusted caller
+that requested the review, normally the parent Codex or orchestrator, writes
+the sanitized receipt/finding rows as an attestation of that result. No
+reviewer authentication, signature, process/session binding, or identity proof
+is inferred from that write or from the reviewer key.
 
 `task show` reuses the gate query and returns an additive `review_evidence`
 object after schema version 5:
@@ -2404,11 +2410,16 @@ Paths are decoded and validated as relative project paths, sorted bytewise, and
 bounded by count, individual bytes, and aggregate bytes. Unsafe paths fail.
 Safe overflow is explicit truncation. A final size check precedes text/JSON
 serialization. The focus and receipt command shape are constants in code, not
-free-form caller input. The builder neither launches a reviewer nor persists a
-packet. After observation it opens one second short read-only transaction and
-compares project/task identity, Contract revision, and all target fields and
-generation with the first read. A mismatch returns `review_packet_stale`; no
-SQLite transaction remains open during Git work.
+free-form caller input. Four common focus rows are followed by exactly one
+target-kind constant. Snapshot guidance binds review to the stored base and
+stage-0 index; commit guidance binds it to the canonical commit and
+first-parent/empty-tree comparison; the two non-Git rows prohibit PASS without
+exact caller-supplied material bound to the target value. Selecting that row
+runs no Git or model call. The builder neither launches a reviewer nor
+persists a packet. After observation it opens one second short read-only
+transaction and compares project/task identity, Contract revision, and all
+target fields and generation with the first read. A mismatch returns
+`review_packet_stale`; no SQLite transaction remains open during Git work.
 
 The missing-target and stale-basis errors use the specification's exact
 sanitized messages. Path and size failures likewise use their fixed messages;

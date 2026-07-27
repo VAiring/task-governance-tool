@@ -27,6 +27,7 @@ from task_governance_tool.review_packet import (  # noqa: E402
     REVIEW_FOCUS,
     REQUIRED_OUTPUT,
     REVIEW_PACKET_MAX_GIT_SUBPROCESSES,
+    TARGET_INSPECTION_FOCUS,
     ReviewPacketError,
     project_changed_paths,
 )
@@ -224,7 +225,13 @@ class ReviewPacketTests(unittest.TestCase):
             ))
             self.assertFalse(diff_data["changed_paths_available"])
             self.assertEqual(diff_data["changed_paths"], [])
-            self.assertEqual(diff_data["review_focus"], list(REVIEW_FOCUS))
+            self.assertEqual(
+                diff_data["review_focus"],
+                [
+                    *REVIEW_FOCUS,
+                    TARGET_INSPECTION_FOCUS["diff_fingerprint"],
+                ],
+            )
             self.assertEqual(diff_data["required_output"], list(REQUIRED_OUTPUT))
             self.assertEqual(
                 diff_data["receipt_command"],
@@ -258,6 +265,10 @@ class ReviewPacketTests(unittest.TestCase):
                 "- state-transition and completion-gate integrity\n"
                 "- privacy and target-project safety\n"
                 "- verification sufficiency and regression risk\n"
+                "- Exact target: do not return PASS unless the orchestrator "
+                "provides the exact review material plus evidence binding it "
+                "to review_target.value; the fingerprint alone cannot "
+                "retrieve content\n"
                 "Required output:\n"
                 "- verdict PASS or CHANGES_REQUESTED\n"
                 "- severity-ordered findings with exact file/line\n"
@@ -286,6 +297,10 @@ class ReviewPacketTests(unittest.TestCase):
             external = json_payload(prepare(db, repo, task_id))["data"]
             self.assertFalse(external["changed_paths_available"])
             self.assertEqual(external["review_target"]["kind"], "external_revision")
+            self.assertEqual(
+                external["review_focus"][-1],
+                TARGET_INSPECTION_FOCUS["external_revision"],
+            )
 
             set_target(
                 db,
@@ -294,6 +309,12 @@ class ReviewPacketTests(unittest.TestCase):
                 kind="git_commit",
                 revision=commit,
             )
+            (repo / "ambient-head.txt").write_text(
+                "not part of the target commit\n",
+                encoding="utf-8",
+            )
+            git(repo, "add", "ambient-head.txt")
+            git(repo, "commit", "--quiet", "-m", "ambient head")
             real_run = subprocess.run
             with mock.patch(
                 "subprocess.run",
@@ -302,6 +323,11 @@ class ReviewPacketTests(unittest.TestCase):
                 commit_result = prepare(db, repo, task_id)
             commit_data = json_payload(commit_result)["data"]
             self.assertEqual(commit_data["changed_paths"], ["root.txt"])
+            self.assertNotIn("ambient-head.txt", commit_data["changed_paths"])
+            self.assertEqual(
+                commit_data["review_focus"][-1],
+                TARGET_INSPECTION_FOCUS["git_commit"],
+            )
             self.assertLessEqual(
                 spawned.call_count,
                 REVIEW_PACKET_MAX_GIT_SUBPROCESSES,
@@ -313,6 +339,14 @@ class ReviewPacketTests(unittest.TestCase):
             (repo / "staged.txt").write_text("staged\n", encoding="utf-8")
             git(repo, "add", "staged.txt")
             set_target(db, repo, task_id, kind="git_snapshot")
+            (repo / "staged.txt").write_text(
+                "unstaged replacement is outside the target\n",
+                encoding="utf-8",
+            )
+            (repo / "untracked.txt").write_text(
+                "untracked content is outside the target\n",
+                encoding="utf-8",
+            )
             real_run = subprocess.run
             with mock.patch(
                 "subprocess.run",
@@ -322,6 +356,13 @@ class ReviewPacketTests(unittest.TestCase):
             snapshot_data = json_payload(snapshot_result)["data"]
             self.assertEqual(snapshot_data["changed_paths"], ["staged.txt"])
             self.assertNotIn("root.txt", snapshot_data["changed_paths"])
+            self.assertNotIn("untracked.txt", snapshot_data["changed_paths"])
+            self.assertEqual(
+                snapshot_data["review_focus"][-1],
+                TARGET_INSPECTION_FOCUS["git_snapshot"],
+            )
+            self.assertNotIn("unstaged replacement", snapshot_result.stdout)
+            self.assertNotIn("untracked content", snapshot_result.stdout)
             self.assertLessEqual(
                 spawned.call_count,
                 REVIEW_PACKET_MAX_GIT_SUBPROCESSES,

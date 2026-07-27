@@ -1,10 +1,10 @@
 {
   "core_files": {
-    "SKILL.md": "sha256:dfdd39f84092531804ebb477fd6fda1eff186fff5527f04200e2579cc2e8be8d",
+    "SKILL.md": "sha256:21d26130f28ef464080945cb905b8df0734d720831bd4903f76503ac55c4c006",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
     "assets/task-viewer.template.html": "sha256:a627fa361e52234e1f8f9ee1b893537e2120c7ad346aaa2d989249055a96132a",
-    "references/cli_contracts.md": "sha256:5a6bb2232a1f955cb930c51a9ba5576f144751dc189b26522a3921df12293487",
-    "references/task_workflow.md": "sha256:f569a4cc70c297f11bad80be4099ea626122fc38e744957e6ea05f90402bef68",
+    "references/cli_contracts.md": "sha256:d2126286995dac0d667d90080fb2d544fe327198e12f098a62c4bdc17f62fbf1",
+    "references/task_workflow.md": "sha256:797b92bf366582f7edc889d49d37ab8f3041d70c18d6394b6d4d68a0c15b44f7",
     "scripts/task_governance_tool/__init__.py": "sha256:249ddb351868380f27dd180f67d1c0fa3f2c8b02e662c07bfab58ffc29e275a5",
     "scripts/task_governance_tool/artifact_lock.py": "sha256:a24c22313e4b1cf74d6338a7ba24211c6546c6996e9ad9474f09eb6b0c097246",
     "scripts/task_governance_tool/backup.py": "sha256:cbdfc2217974d269594133c8008e40029ae2e536a7a72f425680934184281003",
@@ -21,7 +21,7 @@
     "scripts/task_governance_tool/maintenance.py": "sha256:57c74eb8ccf577add8e1f7510d5d25fc1ec63bd9c64c98b4b380823d436cf884",
     "scripts/task_governance_tool/ordering.py": "sha256:3dbc5ca110a4cfa4c9092f404629a53779577c40e7b667e9ad989a7feb193740",
     "scripts/task_governance_tool/project_scope.py": "sha256:9659a699c8077cc92e9c079d0f0c31b6825dd830f4723d7a13ca9a795297855f",
-    "scripts/task_governance_tool/review_packet.py": "sha256:6068810f99bbad7c3337bd5b8c11baad56030e619bb0369025fff9e73a4b1257",
+    "scripts/task_governance_tool/review_packet.py": "sha256:8b7d5073f2d90313de35c0ecd48a2a3f705eba14c94c89970d950e4b0add1f3b",
     "scripts/task_governance_tool/reviews.py": "sha256:c8fe7d5982abb215c463e8d644adfdec0bfae71d8fb7ee3ed10fd73d4b115cac",
     "scripts/task_governance_tool/selection.py": "sha256:2e51a711aaf0725662908cb115b22a4bb8f039a7201a1b8174e8e0bd6519c426",
     "scripts/task_governance_tool/self_status.py": "sha256:55b9f59c0842ff0e230c374edbf471aa465aac1d88fc6dd6cc6ecfffe40292c9",

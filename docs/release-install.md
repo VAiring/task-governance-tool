@@ -206,7 +206,12 @@ check are optional and absent from the standard success path.
 For review before the completion commit, stage exactly the intended files,
 set the target with `review target set <task-id> --kind git_snapshot`, and use
 the single bounded packet from `review prepare`. Unstaged and untracked files
-remain outside that target.
+remain outside that target. The packet adds one deterministic target-kind
+instruction so reviewers inspect the exact stored index, commit, fingerprint-
+bound material, or external revision rather than ambient content. The
+independent reviewer returns the result; the trusted parent/orchestrator
+records its sanitized receipt/findings. Reviewer keys prove distinct strings,
+not identity.
 
 ## Safety And Privacy
 

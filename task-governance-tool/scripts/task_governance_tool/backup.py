@@ -9,7 +9,7 @@ import sqlite3
 import stat
 import tempfile
 from contextlib import closing, contextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Iterator
@@ -52,6 +52,7 @@ _FILENAME = re.compile(
     r"(?P<token>[0-9a-f]{32})_r(?P<retention>[1-9]|1[0-9]|20)\.sqlite$"
 )
 _FAILURE_MESSAGE = "setup backup could not be completed"
+_RESTORE_FAILURE_MESSAGE = "managed backup could not be restored"
 _LOCK_FILENAME = "taskgov-backup.lock"
 
 
@@ -72,8 +73,35 @@ class RoutineBackupResult:
     attempted: bool
 
 
+@dataclass(frozen=True)
+class ManagedBackupRecoveryCandidate:
+    """One validated same-project generation eligible for setup recovery."""
+
+    path: Path = field(repr=False)
+    metadata: MigrationBackupMetadata
+    schema_version: int
+    identity: tuple[int, int, int, int] = field(repr=False)
+
+
 def _failure() -> StorageError:
     return StorageError("setup_backup_failed", _FAILURE_MESSAGE)
+
+
+def _restore_failure() -> StorageError:
+    return StorageError("setup_restore_failed", _RESTORE_FAILURE_MESSAGE)
+
+
+def _canonical_rollback_journal_present(target: DatabaseTarget) -> bool:
+    """Treat any lexical rollback-journal entry as unsafe recovery residue."""
+
+    path = Path(str(target.db_path) + "-journal")
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise _restore_failure() from exc
+    return True
 
 
 def _retention(value: int) -> int:
@@ -222,7 +250,7 @@ def _directory(target: DatabaseTarget, *, create: bool) -> Path:
     path = target.db_path.parent / "backups"
     try:
         if create:
-            path.mkdir(exist_ok=True)
+            path.mkdir(parents=True, exist_ok=True)
         elif not path.exists():
             return path
     except OSError as exc:
@@ -299,12 +327,20 @@ def _valid_artifact(
     target: DatabaseTarget,
     identity: tuple[int, int, int, int],
 ) -> bool:
+    return _artifact_schema_version(path, target, identity) is not None
+
+
+def _artifact_schema_version(
+    path: Path,
+    target: DatabaseTarget,
+    identity: tuple[int, int, int, int],
+) -> int | None:
     try:
         with closing(connect_readonly(path)) as connection:
-            _validate_database(connection, target)
-        return _file_identity(path) == identity
+            version = _validate_database(connection, target)
+        return version if _file_identity(path) == identity else None
     except (OSError, sqlite3.Error, StorageError):
-        return False
+        return None
 
 
 def _discover(target: DatabaseTarget) -> list[_Artifact]:
@@ -337,6 +373,217 @@ def discover_managed_backup_metadata(
 ) -> tuple[MigrationBackupMetadata, ...]:
     """Return validated canonical artifacts without exposing their paths."""
     return tuple(artifact.metadata for artifact in _discover(target))
+
+
+def select_managed_backup_for_recovery(
+    target: DatabaseTarget,
+) -> ManagedBackupRecoveryCandidate | None:
+    """Select the newest valid managed generation, or fail closed if none is safe."""
+
+    try:
+        if _canonical_rollback_journal_present(target):
+            raise _restore_failure()
+        artifacts = _discover(target)
+        if artifacts:
+            artifact = artifacts[-1]
+            schema_version = _artifact_schema_version(
+                artifact.path,
+                target,
+                artifact.identity,
+            )
+            if schema_version is None:
+                raise _restore_failure()
+            return ManagedBackupRecoveryCandidate(
+                path=artifact.path,
+                metadata=artifact.metadata,
+                schema_version=schema_version,
+                identity=artifact.identity,
+            )
+
+        directory = _directory(target, create=False)
+        if not directory.exists():
+            return None
+        names = sorted(path.name for path in directory.iterdir())
+        if any(_parse_filename(name) is not None for name in names):
+            raise _restore_failure()
+        return None
+    except StorageError as exc:
+        if exc.code == "setup_restore_failed":
+            raise
+        raise _restore_failure() from exc
+    except OSError as exc:
+        raise _restore_failure() from exc
+
+
+def _prepare_recovered_repository(
+    target: DatabaseTarget,
+    candidate: ManagedBackupRecoveryCandidate,
+) -> None:
+    version = candidate.schema_version
+    if version == 10:
+        record_setup_backup(target, candidate.metadata)
+        return
+    if version < 11:
+        return
+
+    migration_source = version < SCHEMA_VERSION
+    artifacts = _discover(target)
+    artifact_by_id = {
+        artifact.metadata.generation_id: artifact for artifact in artifacts
+    }
+    repository = read_managed_backup_repository(
+        target,
+        migration_source=migration_source,
+    )
+    invalid_rows = tuple(
+        metadata
+        for metadata in repository.generations
+        if (
+            metadata.generation_id not in artifact_by_id
+            or artifact_by_id[metadata.generation_id].metadata != metadata
+        )
+    )
+    observed_at = utc_now()
+    for metadata in invalid_rows:
+        delete_managed_backup_generation(
+            target,
+            metadata.generation_id,
+            failure_at=observed_at,
+            migration_source=migration_source,
+        )
+
+    repository = read_managed_backup_repository(
+        target,
+        migration_source=migration_source,
+    )
+    row_ids = {
+        metadata.generation_id for metadata in repository.generations
+    }
+    file_only = tuple(
+        artifact.metadata
+        for artifact in artifacts
+        if artifact.metadata.generation_id not in row_ids
+    )
+    if file_only:
+        import_managed_backup_generations(
+            target,
+            file_only,
+            migration_source=migration_source,
+        )
+    normalize_managed_backup_pointer(
+        target,
+        migration_source=migration_source,
+    )
+    repository = read_managed_backup_repository(
+        target,
+        migration_source=migration_source,
+    )
+    if (
+        not repository.generations
+        or repository.generations[-1] != candidate.metadata
+        or repository.maintenance.latest_backup_generation_id
+        != candidate.metadata.generation_id
+        or repository.maintenance.backup_last_success_at
+        != candidate.metadata.published_at
+        or repository.maintenance.applied_backup_generations
+        != candidate.metadata.publication_retention
+    ):
+        raise _restore_failure()
+
+
+def restore_managed_backup(
+    target: DatabaseTarget,
+    candidate: ManagedBackupRecoveryCandidate,
+) -> int:
+    """Atomically recreate a missing canonical DB from one validated generation."""
+
+    temporary: Path | None = None
+    descriptor: int | None = None
+    try:
+        if (
+            target.db_path.exists()
+            or target.db_path.is_symlink()
+            or _canonical_rollback_journal_present(target)
+        ):
+            raise _restore_failure()
+        if (
+            _file_identity(candidate.path) != candidate.identity
+            or _parse_filename(candidate.path.name) != candidate.metadata
+        ):
+            raise _restore_failure()
+
+        parent = target.db_path.parent
+        parent_identity = _directory_identity(parent)
+        descriptor, name = tempfile.mkstemp(
+            prefix=".taskgov-restore-",
+            suffix=".tmp",
+            dir=parent,
+        )
+        temporary = Path(name)
+        os.close(descriptor)
+        descriptor = None
+
+        with closing(connect_readonly(candidate.path)) as source:
+            source_version = _validate_database(
+                source,
+                target,
+                candidate.schema_version,
+            )
+            with closing(
+                configure_connection(sqlite3.connect(temporary))
+            ) as destination:
+                source.backup(destination)
+                _validate_database(
+                    destination,
+                    target,
+                    source_version,
+                )
+
+        temporary_target = DatabaseTarget(
+            project=target.project,
+            db_path=temporary,
+            explicit_db=target.explicit_db,
+        )
+        _prepare_recovered_repository(
+            temporary_target,
+            candidate,
+        )
+        with closing(connect_readonly(temporary)) as restored:
+            _validate_database(
+                restored,
+                target,
+                source_version,
+            )
+
+        with temporary.open("r+b") as stream:
+            os.fsync(stream.fileno())
+        if (
+            _directory_identity(parent) != parent_identity
+            or _file_identity(candidate.path) != candidate.identity
+            or _file_identity(temporary) is None
+            or target.db_path.exists()
+            or target.db_path.is_symlink()
+            or _canonical_rollback_journal_present(target)
+        ):
+            raise _restore_failure()
+        os.link(temporary, target.db_path)
+        return source_version
+    except StorageError as exc:
+        if exc.code == "setup_restore_failed":
+            raise
+        raise _restore_failure() from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise _restore_failure() from exc
+    finally:
+        if descriptor is not None:
+            with suppress(OSError):
+                os.close(descriptor)
+        if temporary is not None:
+            with suppress(OSError):
+                temporary.unlink()
+            for suffix in ("-journal", "-wal", "-shm"):
+                with suppress(OSError):
+                    Path(str(temporary) + suffix).unlink()
 
 
 def _new_publication_metadata(

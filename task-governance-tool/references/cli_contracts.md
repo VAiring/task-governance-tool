@@ -144,6 +144,17 @@ to 30 minutes after the last successful managed copy and three retained
 generations. Once configured, omitted options preserve stored values; values
 equal to stored policy are a write-free replay.
 
+When the canonical database is absent, setup checks only canonical managed
+generations for the same project. It mechanically restores the newest valid
+generation, then performs any required normal migration/configuration and
+Viewer publication. It never overwrites an existing database or accepts a
+caller path. Invalid, foreign, linked, and unrecognized artifacts are
+unchanged. Canonical managed names with no valid same-project generation fail
+with `setup_restore_failed` and message
+`managed backup could not be restored`; setup does not initialize empty state.
+The same fixed failure applies when a rollback-journal entry remains for the
+missing canonical DB; setup neither applies nor changes that journal.
+
 `data` always has exactly:
 
 ```json
@@ -169,7 +180,8 @@ equal to stored policy are a write-free replay.
 ```
 
 Successful `status` is `setup_preview`, `setup_complete`, or
-`already_setup`. Write-list values are limited to `database_initialize`,
+`already_setup`. Write-list values are limited to `database_restore`,
+`database_initialize`,
 `migration_backup`, `database_migrate`, `maintenance_configure`, and
 `viewer_publish` in execution order. `viewer_status` is `not_present`,
 `current`, `published`, or `repair_required`.
@@ -742,6 +754,7 @@ Important setup/diagnostic errors include:
 - `state_path_invalid`
 - `state_ignore_required`
 - `invalid_backup_policy`
+- `setup_restore_failed`
 - `setup_initialization_failed`
 - `setup_backup_failed`
 - `setup_migration_failed`

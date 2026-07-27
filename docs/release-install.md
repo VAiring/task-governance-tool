@@ -85,6 +85,16 @@ one-way opt-in to bounded local maintenance and directly publishes or repairs
 the canonical Viewer. It is explicit, noninteractive, idempotent, and limited
 to the supported physical project-scoped package.
 
+If the canonical DB is missing but canonical managed generations remain,
+setup validates only same-project artifacts, selects the newest valid
+generation deterministically, restores it without overwriting any existing
+canonical DB, and continues normal migration/configuration/Viewer repair.
+Invalid, foreign, linked, and unrecognized artifacts are unchanged. If no
+valid same-project managed candidate exists, setup fails instead of creating
+empty task state. An orphan rollback journal for the missing canonical DB also
+fails closed and remains untouched. There is no public recovery command or
+recovery path option.
+
 Fresh setup and migration default to:
 
 - backup interval: 30 minutes after the last successful managed backup;

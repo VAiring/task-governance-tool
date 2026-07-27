@@ -1767,10 +1767,14 @@ root `--version` remains project-free.
 
 Preflight validates the project directory, physical install boundary, Python
 3.12+, canonical state ownership, package integrity, ignore protection, and
-project state before a write. The write order is: preflight; when migrating,
-one validated backup; initialization/migration; one-way opt-in/configuration;
-canonical Viewer publication. `setup --read-only` returns the same planned
-write set and performs none of those writes.
+project state before a write. When the canonical database is missing, setup
+first inspects only this project's canonical managed-backup directory. If a
+valid same-project generation exists, setup selects the newest valid generation
+by publication time then generation ID and plans recovery instead of empty
+initialization. The write order is: preflight; recovery or fresh
+initialization; when migrating, one validated backup; migration; one-way
+opt-in/configuration; canonical Viewer publication. `setup --read-only`
+returns the same planned write set and performs none of those writes.
 
 Schema v10 stores `backup_interval_minutes` and `backup_generations` in the
 single project-maintenance row beside the one-way opt-in. Initialization or
@@ -1810,7 +1814,7 @@ storage path.
 Setup data contains only `status`, `planned_writes`, `completed_writes`,
 `schema_from`, `schema_to`, `maintenance_enabled`,
 `backup_interval_minutes`, `backup_generations`, and `viewer_status`.
-Write lists use only `database_initialize`, `migration_backup`,
+Write lists use only `database_restore`, `database_initialize`, `migration_backup`,
 `database_migrate`, `maintenance_configure`, and `viewer_publish`, in execution
 order. `viewer_status` is one of `not_present`, `current`, `published`, or
 `repair_required`. Explicit values equal to stored policy are a no-write replay,
@@ -1818,9 +1822,10 @@ including under `--read-only`.
 
 Those scalar fields have one meaning on every row:
 
-- `schema_from` is the safely observed schema before the command, or `null`
-  when no initialized database exists. `schema_to` is always the owning
-  runtime's required schema version.
+- `schema_from` is the safely observed canonical schema before the command,
+  the selected managed-backup schema when recovery is planned, or `null` when
+  neither initialized state nor a recovery candidate exists. `schema_to` is
+  always the owning runtime's required schema version.
 - `maintenance_enabled` and `viewer_status` describe durable state after the
   command returns. Preview therefore reports current state, not planned state.
   `published` means this invocation successfully published the canonical
@@ -1841,6 +1846,12 @@ Those scalar fields have one meaning on every row:
 |---|---|---|---|
 | fresh preview | `[database_initialize, maintenance_configure, viewer_publish]` | `[]` | 0 / true / `setup_preview` |
 | fresh success | `[database_initialize, maintenance_configure, viewer_publish]` | `[database_initialize, maintenance_configure, viewer_publish]` | 0 / true / `setup_complete` |
+| current-schema recovery preview | `[database_restore, viewer_publish]` | `[]` | 0 / true / `setup_preview` |
+| current-schema recovery success | `[database_restore, viewer_publish]` | `[database_restore, viewer_publish]` | 0 / true / `setup_complete` |
+| older-schema recovery preview | `[database_restore, migration_backup, database_migrate, maintenance_configure?, viewer_publish]` | `[]` | 0 / true / `setup_preview` |
+| older-schema recovery success | `[database_restore, migration_backup, database_migrate, maintenance_configure?, viewer_publish]` | same ordered list | 0 / true / `setup_complete` |
+| managed recovery material but no valid same-project candidate | `[]` | `[]` | 2 / false / `setup_restore_failed` |
+| recovery publication failure | recovery plan | `[]` | 2 / false / `setup_restore_failed` |
 | current healthy, options omitted or equal | `[]` | `[]` | 0 / true / `already_setup` |
 | policy-change preview | `[maintenance_configure]` | `[]` | 0 / true / `setup_preview` |
 | policy-change success | `[maintenance_configure]` | `[maintenance_configure]` | 0 / true / `setup_complete` |
@@ -1872,10 +1883,12 @@ rows and never reports `maintenance_configure`; an actual explicit change uses
 the policy-change rows. Every success has empty warnings and errors. Every
 failure has empty warnings and exactly one error. Fixed messages
 for setup-owned errors are: `backup policy is outside the supported range`,
-`setup backup could not be completed`, `project state could not be initialized`,
-`project state could not be migrated`, and
-`setup completed only partially; rerun setup`, corresponding in order to the
-five setup-owned error codes above. Rerun recomputes the plan and begins with
+`managed backup could not be restored`, `setup backup could not be completed`,
+`project state could not be initialized`, `project state could not be migrated`,
+and `setup completed only partially; rerun setup`, corresponding to
+`invalid_backup_policy`, `setup_restore_failed`, `setup_backup_failed`,
+`setup_initialization_failed`, `setup_migration_failed`, and
+`setup_incomplete`. Rerun recomputes the plan and begins with
 the first incomplete durable stage; a prior migration backup is evidence, not a
 reusable result, so a later migration retry performs a new backup attempt.
 
@@ -1889,6 +1902,44 @@ transaction commits; it never holds a SQLite writer lock while copying.
 Contention fails the setup backup stage without migrating. M14.3 reuses the
 same lock primitive for routine backup work. Preview never creates a lock or
 backup.
+
+Setup-owned recovery adds no public command, path option, prompt, or automatic
+action outside explicit setup. It never overwrites an existing canonical
+database, including an unreadable one. It reuses the managed filename,
+same-project, schema-history, `quick_check`, foreign-key, regular-file,
+non-link, and identity checks. Invalid, foreign, linked, and unrecognized
+artifacts are never changed or deleted. A newer invalid artifact does not hide
+an older valid generation; selection is the newest valid generation. If
+canonical managed names exist but no valid same-project candidate remains,
+setup fails closed rather than creating empty state.
+
+Recovery copies the selected artifact through the SQLite backup API into a
+fresh sibling temporary database. For schema v11 and newer, it normalizes the
+temporary database's generation rows to the currently validated managed
+artifacts and points maintenance state at the selected generation, because a
+managed copy necessarily predates recording its own generation row. Schema v10
+updates its setup-copy pointer; earlier schemas carry no managed-generation
+metadata. The temporary database is revalidated, flushed, and published with
+an atomic no-clobber operation only while the canonical database remains
+absent. A lexical rollback-journal entry for the missing canonical database is
+unsafe residue: missing-database preflight rejects it before either fresh
+initialization or candidate selection, and recovery start plus final
+publication revalidate it. Every case fails closed without reading, deleting,
+or changing that journal. The shared zero-wait backup lock covers selection
+revalidation, recovery, and any
+immediately required migration backup/migration. A changed candidate, orphan
+canonical rollback journal, or lock contention returns
+`setup_restore_failed` without creating or replacing canonical state.
+Supported older recovered schemas then follow the existing migration-backup
+and migration contract. Successful and partial results report durable
+recovered maintenance state, while preview reports that canonical maintenance
+is not yet enabled.
+
+Fresh initialization uses that same artifact lock and immediately rechecks
+that the canonical database is still absent, no rollback journal exists, and
+no valid managed recovery candidate has appeared since preflight. A newly
+available candidate returns `setup_restore_failed`; rerunning setup then plans
+recovery instead of making empty state.
 
 ### Maintenance Bounds
 
@@ -2185,7 +2236,7 @@ stop, Issue action, Git write, target mutation, network use, or project test
 strategy.
 
 Overview, action aliases, result or receipt-file import, verification receipts,
-manual backup, restore, general export, relocation, browser launch/auto-refresh,
+manual backup, standalone/manual restore, general export, relocation, browser launch/auto-refresh,
 live server, search, pagination, Issue lifecycle, generic diagnostics, and
 workflow automation remain deferred.
 

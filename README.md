@@ -43,7 +43,10 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
 
 `setup` is the only initializer and migrator. It also performs the one-way
 opt-in to project-local maintenance and publishes or repairs the canonical
-offline Viewer. It is noninteractive and idempotent.
+offline Viewer. It is noninteractive and idempotent. If the canonical DB is
+missing while a valid managed generation remains, setup recovers the newest
+valid same-project generation before normal migration and Viewer repair. It
+does not add a recovery command or accept a recovery path.
 
 If invoking the CLI from inside the installed Skill directory, pass the target
 directory explicitly:

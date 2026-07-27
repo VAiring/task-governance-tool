@@ -2775,8 +2775,102 @@ Verification:
 - full suite and two PASS reviews with no High/Medium issue.
 
 No unit adds background execution, network, generic workflow/diagnostic
-architecture, external Issue/Git write, browser launch, restore/export,
+architecture, external Issue/Git write, browser launch, standalone restore/export,
 relocation, search/pagination, or a mandatory LLM decision or stop.
+
+## Approved Pre-Publication Review Corrections: TG-M15
+
+TG-M15 is a three-unit sequential lane approved from the independent v0.8.0
+review follow-up. It keeps version 0.8.0, schema v13, Viewer snapshot v3, and
+the 20-leaf public surface. The first two units are Tier 2 contract changes;
+the final exact-SHA CI gate is Tier 0 because it is a deterministic external
+observation with no source, workflow, schema, state-contract, or target-project
+mutation. No unit authorizes a PR, merge, tag, release, or publication.
+
+### TG-M15.1 Setup-Owned Managed-Backup Recovery
+
+Depends on: TG-M14.7
+
+Intended outcome:
+
+- Prevent explicit setup from silently creating empty task state when the
+  canonical database is missing but a valid managed backup remains.
+- Recover without adding a public backup, restore, storage, or admin command.
+
+Write scope:
+
+- setup/backup orchestration and directly coupled tests;
+- current setup, release, Skill, and CLI-contract documentation;
+- formal setup and backup contracts plus manifest digest synchronization.
+
+Verification:
+
+- read-only preview performs no write and exposes only the existing setup data
+  keys plus the new `database_restore` write token;
+- newest-valid same-project selection, invalid-newer fallback, zero-valid
+  fail-closed behavior, orphan rollback-journal preservation, no-clobber
+  publication, candidate/lock races, and temp cleanup;
+- current schema and supported v9-v12 recovery through the normal migration
+  path, including configured policy preservation;
+- task/event/Contract/completion/review evidence and v11+ generation-pointer
+  preservation using the realistic migration fixture;
+- foreign, invalid, linked, and unrecognized artifacts remain unchanged;
+- no command, schema, Viewer snapshot, network, target-Git, judgment, or normal
+  stop expansion;
+- focused and full offline tests, package doctor clean, diff check, and two
+  exact-revision Tier 2 PASS reviews.
+
+### TG-M15.2 Exact Review-Target Inspection Guidance
+
+Depends on: TG-M15.1
+
+Intended outcome:
+
+- Make the existing Review Packet tell an independent reviewer how to inspect
+  the exact stored target instead of ambient worktree content.
+- Clarify that a trusted orchestrator records the reviewer's actual result as
+  an attestation and that reviewer keys prove distinct strings, not identity.
+
+Write scope:
+
+- target-kind-specific fixed Review Packet focus guidance;
+- formal review contract, active Skill/references, README/release guidance,
+  tests, and manifest digests.
+
+Verification:
+
+- `git_snapshot` points only to the stage-0 index against its stored base;
+  `git_commit` points only to the canonical commit and first-parent/root diff;
+  non-Git kinds prohibit PASS without exact externally bound material;
+- no raw diff, reviewer launch, result import, signature, authentication,
+  receipt-file, new command, extra Git subprocess, or routine LLM branch;
+- existing packet keys, 32,768-byte cap, no-write/stale/privacy behavior,
+  20 leaves, and nine/ten-call graphs remain;
+- focused and full offline tests, Skill/package validation, diff check, and two
+  exact-revision Tier 2 PASS reviews.
+
+### TG-M15.3 Exact-SHA GitHub Actions Release Gate
+
+Depends on: TG-M15.2
+
+Intended outcome:
+
+- Dispatch the existing CI workflow after the final feature tip is committed
+  and pushed, then mechanically bind the run to that exact full commit SHA.
+
+Write scope:
+
+- bounded Task DB evidence only; no repository or workflow edit is planned.
+
+Verification:
+
+- local `HEAD` equals the pushed upstream feature tip before dispatch;
+- the run event is `workflow_dispatch`, `headSha` equals that exact commit, and
+  the Windows Python 3.12/3.14 matrix jobs both succeed;
+- the Task note stores only the full SHA, run ID/URL, event, branch, and fixed
+  conclusions, never raw logs;
+- authentication or CI failure leaves the task incomplete and does not
+  authorize a bypass or unrelated correction.
 
 ## Roadmap Completion Criteria
 

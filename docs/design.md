@@ -2130,10 +2130,10 @@ Failure uses the fixed `project_scope_required` or
 existing package-local canonical state path; no copy, relocation lookup,
 alternate state repository, environment switch, or public mode flag exists.
 
-`--read-only` builds a `SetupPlan` with booleans for initialize, migrate,
-backup, configure, and Viewer publish plus the effective interval/retention. It
-does not create directories, locks, temporary files, SQLite connections that
-can recover/write, or Viewer output.
+`--read-only` builds a `SetupPlan` with booleans for restore, initialize,
+migrate, backup, configure, and Viewer publish plus the effective
+interval/retention. It does not create directories, locks, temporary files,
+SQLite connections that can recover/write, or Viewer output.
 The write path revalidates preflight immediately before each irreversible
 stage. A valid completed stage is never rolled back merely because a later
 opt-in or Viewer stage fails; the fixed partial-result row makes rerun resume
@@ -2145,6 +2145,48 @@ with omitted/equal policy plans `migration_backup`, `database_migrate`, and
 `viewer_publish`; an actual policy change inserts `maintenance_configure`
 between migration and Viewer publication. Result arrays and partial failures
 use the corresponding exact ordered prefix from the specification.
+
+When the canonical database is absent, setup scans only its canonical
+`backups` directory through the existing exact filename parser and artifact
+validator. It distinguishes no managed names, at least one valid same-project
+generation, and managed names with no valid same-project generation. The first
+case retains fresh initialization. The second chooses the newest valid
+`(published_at, generation_id)` pair mechanically. The third fails closed with
+`setup_restore_failed`; invalid, foreign, linked, and unrecognized files are
+not changed. A newer invalid file does not hide an older valid generation.
+
+The recovery write revalidates the selected candidate under the existing
+zero-wait backup artifact lock. It copies through `sqlite3.Connection.backup`
+into a new sibling temporary database and applies no mutation to the source
+artifact. For schema v11+, a recovery-only normalization removes generation
+rows without a currently valid artifact, imports valid file-only generations,
+and points the temporary maintenance row at the selected newest generation
+without pruning artifact files. Schema v10 records the selected setup-copy
+metadata; earlier schemas need no metadata repair. The temporary database then
+passes the normal schema history, project identity, `quick_check`, foreign-key,
+regular-file, and identity checks.
+
+Publication uses a same-directory atomic no-clobber hard-link operation rather
+than `os.replace`, so a canonical database that appears concurrently is never
+overwritten. Missing-database preflight uses `lstat` to reject any lexical
+`<canonical-db>-journal` entry before both fresh initialization and candidate
+selection; recovery repeats the check before copying and immediately before
+publication. It never opens, deletes, or changes that rollback journal,
+preventing orphan residue from being applied to either a fresh or recovered
+database. Temporary cleanup removes the extra link after successful
+publication. The lock remains held through any required normal
+migration-backup and migration. A current-schema recovery continues directly
+to Viewer publication; a supported older recovery uses the existing
+migration sequence. Setup rereads the recovered state before formatting any
+success or later-stage failure so `maintenance_enabled` reflects durable state.
+Preview may expose the selected source schema as `schema_from`, but it exposes
+no path, generation identity, timestamp, hash, or exception.
+
+Fresh initialization also takes the artifact lock, rechecks the canonical
+database and rollback-journal absence, and reruns candidate selection
+immediately before `initialize_database`. If a valid candidate appeared after
+preflight, setup fails the stale plan with `setup_restore_failed`; the next
+invocation selects that candidate normally.
 
 The sole backup primitive:
 

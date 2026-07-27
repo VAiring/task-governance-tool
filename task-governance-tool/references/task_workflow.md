@@ -55,6 +55,12 @@ local-continuity opt-in and repairs the canonical offline projection. It is
 noninteractive and idempotent. The normal Skill workflow supplies no
 maintenance-policy choice.
 
+When the canonical DB is missing, that same explicit setup call checks only
+the project's canonical managed generations. It restores the newest valid
+same-project generation before migration and Viewer repair. If managed
+recovery material exists but none is valid, setup fails without creating empty
+state. Do not ask the model to select a generation, path, or recovery command.
+
 Use `doctor` only when the user asks for diagnosis or install/release
 validation, or when a command returns a setup, migration, package, layout, or
 state-readiness error:

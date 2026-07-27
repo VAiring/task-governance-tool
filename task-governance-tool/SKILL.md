@@ -50,8 +50,11 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
 
 `setup` is explicit, noninteractive, and idempotent. It is the only command
 that initializes or migrates project-local state, opts into local continuity
-maintenance, and repairs the canonical offline projection. The normal Skill
-flow supplies no maintenance-policy options.
+maintenance, and repairs the canonical offline projection. If the canonical
+DB is missing but a valid managed generation remains, the same explicit call
+recovers the newest valid generation before continuing normal migration and
+repair. Do not invent a separate recovery command or path choice. The normal
+Skill flow supplies no maintenance-policy options.
 
 Run `doctor` only for an explicit diagnosis or install/release validation:
 

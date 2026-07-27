@@ -31,6 +31,9 @@ from task_governance_tool.storage import (  # noqa: E402
     ensure_project_meta,
     project_identity,
 )
+from task_governance_tool.backup import (  # noqa: E402
+    select_managed_backup_for_recovery,
+)
 try:  # noqa: E402
     from m14_test_support import json_payload, make_physical_install
 except ModuleNotFoundError:  # noqa: E402
@@ -614,6 +617,198 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                         [],
                     )
                     self.assert_single_seeded_managed_backup(connection, db_path)
+
+    def test_setup_recovers_realistic_v12_backup_with_completion_and_review_trace(self):
+        fixture = load_fixture()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install = make_physical_install(root)
+            db_path = install.db_path
+            db_path.parent.mkdir(parents=True)
+            project = create_realistic_review_database(
+                db_path,
+                install.project_root,
+                fixture,
+                schema_version=12,
+            )
+            with closing(sqlite3.connect(db_path)) as connection:
+                task_id = fixture["tasks"][0]["task_id"]
+                connection.execute(
+                    """
+                    INSERT INTO task_contract_revisions(
+                      contract_revision_id, task_id, project_id, revision,
+                      scope, acceptance, constraints_text, authority_ref,
+                      change_reason, created_at
+                    ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "tg_contract_migration_recovery_001",
+                        task_id,
+                        project.project_id,
+                        "Preserve realistic recovery scope.",
+                        "Preserve realistic recovery acceptance.",
+                        "Preserve realistic recovery constraints.",
+                        "docs/specification.md",
+                        "Seed recovery acceptance evidence.",
+                        "2026-07-20T14:03:00Z",
+                    ),
+                )
+                connection.execute(
+                    """
+                    UPDATE tasks
+                       SET current_contract_revision = 1
+                     WHERE task_id = ?
+                    """,
+                    (task_id,),
+                )
+                connection.commit()
+                expected = post_v5_durable_projection(connection)
+                expected_contract = tuple(
+                    connection.execute(
+                        """
+                        SELECT contract_revision_id, task_id, project_id,
+                               revision, scope, acceptance, constraints_text,
+                               authority_ref, change_reason, created_at
+                          FROM task_contract_revisions
+                         WHERE task_id = ?
+                        """,
+                        (task_id,),
+                    ).fetchone()
+                )
+
+            migrated = install.run("setup", "--json")
+
+            self.assertEqual(migrated.returncode, 0, migrated.stderr)
+            backup_paths = sorted(
+                (db_path.parent / "backups").glob(
+                    "taskgov-backup-v1_*.sqlite"
+                )
+            )
+            self.assertEqual(len(backup_paths), 1)
+            backup_bytes = backup_paths[0].read_bytes()
+            selected = select_managed_backup_for_recovery(install.target)
+            self.assertIsNotNone(selected)
+            db_path.unlink()
+
+            recovered = install.run("setup", "--json")
+
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            payload = json_payload(recovered)
+            self.assertEqual(payload["project_id"], project.project_id)
+            self.assertEqual(payload["data"]["schema_from"], 12)
+            self.assertEqual(payload["data"]["schema_to"], 13)
+            self.assertEqual(
+                payload["data"]["completed_writes"],
+                [
+                    "database_restore",
+                    "migration_backup",
+                    "database_migrate",
+                    "maintenance_configure",
+                    "viewer_publish",
+                ],
+            )
+            self.assertEqual(backup_paths[0].read_bytes(), backup_bytes)
+            with closing(sqlite3.connect(db_path)) as connection:
+                self.assertEqual(post_v5_durable_projection(connection), expected)
+                self.assertEqual(
+                    connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0],
+                    12,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM task_events"
+                    ).fetchone()[0],
+                    191,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM tasks
+                         WHERE completion_commit_hash != ''
+                        """
+                    ).fetchone()[0],
+                    9,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM review_receipts"
+                    ).fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM review_findings"
+                    ).fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    tuple(
+                        connection.execute(
+                            """
+                            SELECT contract_revision_id, task_id, project_id,
+                                   revision, scope, acceptance,
+                                   constraints_text, authority_ref,
+                                   change_reason, created_at
+                              FROM task_contract_revisions
+                             WHERE task_id = ?
+                            """,
+                            (task_id,),
+                        ).fetchone()
+                    ),
+                    expected_contract,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT current_contract_revision
+                          FROM tasks
+                         WHERE task_id = ?
+                        """,
+                        (task_id,),
+                    ).fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    connection.execute("PRAGMA quick_check").fetchone()[0],
+                    "ok",
+                )
+                self.assertEqual(
+                    connection.execute("PRAGMA foreign_key_check").fetchall(),
+                    [],
+                )
+            final_candidate = select_managed_backup_for_recovery(install.target)
+            self.assertIsNotNone(final_candidate)
+            self.assertGreaterEqual(
+                (final_candidate.metadata.published_at,
+                 final_candidate.metadata.generation_id),
+                (selected.metadata.published_at,
+                 selected.metadata.generation_id),
+            )
+            with closing(sqlite3.connect(db_path)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT latest_backup_generation_id,
+                               backup_last_success_at,
+                               applied_backup_generations
+                          FROM project_maintenance
+                        """
+                    ).fetchone(),
+                    (
+                        final_candidate.metadata.generation_id,
+                        final_candidate.metadata.published_at,
+                        final_candidate.metadata.publication_retention,
+                    ),
+                )
+                self.assertIsNotNone(
+                    connection.execute(
+                        """
+                        SELECT 1 FROM managed_backup_generations
+                         WHERE generation_id = ?
+                        """,
+                        (selected.metadata.generation_id,),
+                    ).fetchone()
+                )
 
     def test_v7_migration_rollback_preserves_realistic_v6_fixture(self):
         fixture = load_fixture()

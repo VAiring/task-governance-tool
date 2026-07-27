@@ -9,9 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from task_governance_tool.backup import (
+    ManagedBackupRecoveryCandidate,
     discover_managed_backup_metadata,
     managed_backup_lock,
     publish_setup_backup,
+    restore_managed_backup,
+    select_managed_backup_for_recovery,
 )
 from task_governance_tool.project_scope import (
     PREFLIGHT_MESSAGES,
@@ -23,6 +26,7 @@ from task_governance_tool.project_scope import (
 from task_governance_tool.storage import (
     DEFAULT_BACKUP_GENERATIONS,
     DEFAULT_BACKUP_INTERVAL_MINUTES,
+    DatabaseTarget,
     MigrationBackupMetadata,
     SCHEMA_VERSION,
     SetupStorageState,
@@ -47,6 +51,7 @@ from task_governance_tool.viewer_maintenance import (
 
 
 SETUP_WRITE_ORDER = (
+    "database_restore",
     "database_initialize",
     "migration_backup",
     "database_migrate",
@@ -56,6 +61,7 @@ SETUP_WRITE_ORDER = (
 
 SETUP_ERROR_MESSAGES = {
     "invalid_backup_policy": "backup policy is outside the supported range",
+    "setup_restore_failed": "managed backup could not be restored",
     "setup_backup_failed": "setup backup could not be completed",
     "setup_initialization_failed": "project state could not be initialized",
     "setup_migration_failed": "project state could not be migrated",
@@ -64,6 +70,7 @@ SETUP_ERROR_MESSAGES = {
 
 @dataclass(frozen=True)
 class SetupPlan:
+    restore: bool
     initialize: bool
     backup: bool
     migrate: bool
@@ -76,6 +83,7 @@ class SetupPlan:
     @property
     def planned_writes(self) -> list[str]:
         selected = {
+            "database_restore": self.restore,
             "database_initialize": self.initialize,
             "migration_backup": self.backup,
             "database_migrate": self.migrate,
@@ -231,6 +239,8 @@ def _revalidate_scope(
 
 def _storage_preflight_code(exc: Exception) -> tuple[str, str]:
     if isinstance(exc, StorageError):
+        if exc.code in SETUP_ERROR_MESSAGES:
+            return exc.code, SETUP_ERROR_MESSAGES[exc.code]
         if exc.code in PROJECT_STATE_MESSAGES:
             return exc.code, PROJECT_STATE_MESSAGES[exc.code]
         if exc.code == "db_not_initialized":
@@ -246,6 +256,7 @@ def _storage_preflight_code(exc: Exception) -> tuple[str, str]:
 def _build_plan(
     state: SetupStorageState,
     *,
+    restore: bool,
     requested_interval: int | None,
     requested_generations: int | None,
     viewer_status: str,
@@ -289,11 +300,14 @@ def _build_plan(
     initialize = bool(state.needs_initialize)
     migrate = bool(state.needs_migration)
     return SetupPlan(
+        restore=restore,
         initialize=initialize,
         backup=migrate,
         migrate=migrate,
         configure=configure,
-        publish_viewer=initialize or migrate or viewer_status != "current",
+        publish_viewer=(
+            restore or initialize or migrate or viewer_status != "current"
+        ),
         interval_minutes=interval,
         generations=generations,
         publication_retention=(
@@ -363,6 +377,29 @@ def run_setup(
             message=message,
         )
 
+    recovery_candidate: ManagedBackupRecoveryCandidate | None = None
+    planning_state = state
+    if state.needs_initialize:
+        try:
+            recovery_candidate = select_managed_backup_for_recovery(
+                scope.target
+            )
+            if recovery_candidate is not None:
+                planning_state = inspect_setup_state(
+                    DatabaseTarget(
+                        project=scope.target.project,
+                        db_path=recovery_candidate.path,
+                        explicit_db=scope.target.explicit_db,
+                    )
+                )
+        except Exception as exc:
+            code, message = _storage_preflight_code(exc)
+            return _preflight_failure(
+                inspection,
+                code=code,
+                message=message,
+            )
+
     try:
         observed_viewer_status = _viewer_status(
             scope,
@@ -377,7 +414,8 @@ def run_setup(
         )
     try:
         plan = _build_plan(
-            state,
+            planning_state,
+            restore=recovery_candidate is not None,
             requested_interval=backup_interval_minutes,
             requested_generations=backup_generations,
             viewer_status=observed_viewer_status,
@@ -390,7 +428,11 @@ def run_setup(
         )
 
     planned_writes = plan.planned_writes
-    schema_from = state.schema_version
+    schema_from = (
+        recovery_candidate.schema_version
+        if recovery_candidate is not None
+        else state.schema_version
+    )
     current_maintenance = bool(state.maintenance_enabled)
     data = _setup_data(
         status=(
@@ -440,6 +482,78 @@ def run_setup(
             error_message=SETUP_ERROR_MESSAGES[code],
         )
 
+    if plan.restore:
+        stage = "restore"
+        try:
+            scope = _revalidate_scope(
+                repo=repo,
+                repo_explicit=repo_explicit,
+                script_path=script_path,
+            )
+            with managed_backup_lock(scope.target):
+                if not inspect_setup_state(scope.target).needs_initialize:
+                    raise StorageError(
+                        "setup_restore_failed",
+                        SETUP_ERROR_MESSAGES["setup_restore_failed"],
+                    )
+                current_candidate = select_managed_backup_for_recovery(
+                    scope.target
+                )
+                if (
+                    current_candidate is None
+                    or recovery_candidate is None
+                    or current_candidate != recovery_candidate
+                ):
+                    raise StorageError(
+                        "setup_restore_failed",
+                        SETUP_ERROR_MESSAGES["setup_restore_failed"],
+                    )
+                restored_version = restore_managed_backup(
+                    scope.target,
+                    current_candidate,
+                )
+                if restored_version != schema_from:
+                    raise StorageError(
+                        "setup_restore_failed",
+                        SETUP_ERROR_MESSAGES["setup_restore_failed"],
+                    )
+                restored_state = inspect_setup_state(scope.target)
+                current_maintenance = bool(
+                    restored_state.maintenance_enabled
+                )
+                completed.append("database_restore")
+                if plan.backup:
+                    stage = "backup"
+                    backup_metadata = publish_setup_backup(
+                        scope.target,
+                        plan.publication_retention,
+                    )
+                    completed.append("migration_backup")
+                    stage = "migrate"
+                    scope = _revalidate_scope(
+                        repo=repo,
+                        repo_explicit=repo_explicit,
+                        script_path=script_path,
+                    )
+                    initialize_database(
+                        scope.target,
+                        setup_backup=(
+                            backup_metadata
+                            if schema_from is not None and schema_from < 10
+                            else None
+                        ),
+                        managed_backups=discover_managed_backup_metadata(
+                            scope.target
+                        ),
+                    )
+                    completed.append("database_migrate")
+        except Exception:
+            if stage == "restore":
+                return failure_after_write("setup_restore_failed")
+            if stage == "backup":
+                return failure_after_write("setup_backup_failed")
+            return failure_after_write("setup_migration_failed")
+
     if plan.initialize:
         try:
             scope = _revalidate_scope(
@@ -447,12 +561,27 @@ def run_setup(
                 repo_explicit=repo_explicit,
                 script_path=script_path,
             )
-            initialize_database(scope.target)
+            with managed_backup_lock(scope.target):
+                if not inspect_setup_state(scope.target).needs_initialize:
+                    raise StorageError(
+                        "setup_initialization_failed",
+                        SETUP_ERROR_MESSAGES["setup_initialization_failed"],
+                    )
+                if select_managed_backup_for_recovery(scope.target) is not None:
+                    raise StorageError(
+                        "setup_restore_failed",
+                        SETUP_ERROR_MESSAGES["setup_restore_failed"],
+                    )
+                initialize_database(scope.target)
             completed.append("database_initialize")
+        except StorageError as exc:
+            if exc.code == "setup_restore_failed":
+                return failure_after_write("setup_restore_failed")
+            return failure_after_write("setup_initialization_failed")
         except Exception:
             return failure_after_write("setup_initialization_failed")
 
-    if plan.backup:
+    if plan.backup and not plan.restore:
         stage_error: str | None = None
         try:
             scope = _revalidate_scope(

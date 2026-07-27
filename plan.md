@@ -989,6 +989,24 @@ Confirmed decisions:
   package manifest/entry files, and no competing `.agents` install. It reuses
   current package-local state and adds no DB transfer, relocation command,
   environment switch, or ordinary consuming-project install mode.
+- TG-M15 is the approved three-task pre-publication review-correction lane.
+  M15.1 adds setup-owned recovery from the newest valid canonical same-project
+  managed backup only when the primary DB is missing. It adds
+  `database_restore` to setup's deterministic write plan but no command, path
+  option, prompt, schema, Viewer format, normal-loop call, or LLM decision.
+  Invalid/foreign/linked/unrecognized artifacts remain untouched; zero valid
+  managed candidates fails closed; no-clobber publication cannot replace an
+  existing primary.
+- M15.2 adds target-kind-specific exact-inspection instructions inside the
+  existing bounded Review Packet and documents that a trusted orchestrator
+  records actual reviewer results as attestations. Distinct reviewer keys are
+  not authentication. No signature, identity service, raw diff, result import,
+  reviewer launch, command, call, or workflow engine is added.
+- M15.3 is the final exact-SHA GitHub Actions gate. After M15.1/M15.2 are
+  committed and pushed, the existing workflow is manually dispatched and
+  accepted only when its `headSha` equals that full tip and both Windows
+  Python matrix jobs pass. It is Tier 0 mechanical evidence and authorizes no
+  workflow edit, PR, merge, tag, release, or publication.
 
 Open issues:
 
@@ -1020,11 +1038,12 @@ Open issues:
 
 ## Implementation Execution Status
 
-All implementation units through TG-M14.7 are complete. TG-M9.1 through
-TG-M14.7 were consumed after explicit user approval; their exact verification,
-review, and completion evidence is maintained in SQLite. TG-M12.3 remains
-blocked on an Issue intake contract, governing permission update, and separate
-integration approval.
+All implementation units through TG-M14.7 are complete. TG-M15.1 through
+TG-M15.3 are approved and tracked only in SQLite; M15.1 is in progress.
+TG-M9.1 through TG-M14.7 were consumed after explicit user approval; their
+exact verification, review, and completion evidence is maintained in SQLite.
+TG-M12.3 remains blocked on an Issue intake contract, governing permission
+update, and separate integration approval.
 
 New execution-unit state from TG-M6 onward is maintained in the project-local
 SQLite database. Do not append another large per-task execution log here; use

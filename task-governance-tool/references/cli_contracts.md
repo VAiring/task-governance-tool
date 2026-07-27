@@ -44,8 +44,8 @@ project explicitly:
 python scripts/taskgov.py <command> --repo <target-project> [options]
 ```
 
-Omitting `--repo` means the current directory and never searches for a Git
-root. A non-Git directory is valid. Stateful use supports one physical
+Omitting `--repo` means the current directory and never re-roots it to an
+enclosing Git worktree. A non-Git directory is valid. Stateful use supports one physical
 project-scoped package only; user-wide, symbolic-link, and Windows junction
 layouts are unsupported. The verified runtime is Windows with Python 3.12 or
 later.
@@ -206,7 +206,8 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py doctor --json
 ```
 
 It never initializes, migrates, repairs, backs up, renders, locks an artifact,
-inspects Git, runs project tests, or changes target state. It is not a
+runs project tests, or changes target state. For a Git-candidate target, only
+its single bounded effective-ignore preflight may inspect Git. It is not a
 prerequisite for setup or normal task work.
 
 `data` has exactly `suggested_action`, `setup_eligible`, and `components`.

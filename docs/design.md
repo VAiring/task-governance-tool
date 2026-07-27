@@ -1,6 +1,6 @@
 # task-governance-tool MVP Design
 
-Status: implemented through TG-M14.7 at release v0.8.0/schema v13 and Viewer
+Status: implemented through TG-M15.4 at release v0.8.0/schema v13 and Viewer
 snapshot v3. TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
@@ -1987,21 +1987,23 @@ The primary invocation starts in `<target-project>` and calls the script by
 that relative install path. A caller starting inside the Skill directory must
 supply `--repo <target-project>`; otherwise `"."` correctly identifies the
 Skill directory itself. Because a governed directory need not be a Git
-repository, runtime code neither requires `--repo` globally nor searches for a
-Git root. Existing canonical absolute-path project identity and its relocation
-limit remain explicit.
+repository, runtime code does not require `--repo` globally and never re-roots
+the governed target to a Git root. Only setup/doctor ignore preflight scans the
+canonical target's ancestor chain for a `.git` marker. Existing canonical
+absolute-path project identity and its relocation limit remain explicit.
 
 Symlink and Windows junction/reparse-point installs are unsupported rather than
 given another state-root algorithm. Documentation and self-containment tests
 must reject or clearly diagnose them without deleting or rewriting state.
 User-wide Skill operating paths are removed from governed-project guidance.
 
-Target-project `.gitignore` guidance is only:
+The recommended target-local `.gitignore` guidance is:
 
 ```gitignore
 /.agents/skills/task-governance-tool/state/
 ```
 
+An effective parent rule for that same canonical directory is also accepted.
 Release archive guards separately exclude generated database/viewer/runtime
 artifacts and sidecars from distributable packages. They do not recommend
 repository-wide database-extension globs.
@@ -2088,10 +2090,13 @@ readiness token is stored.
 
 ### Doctor Read Model
 
-Doctor orchestration has two observations:
+Doctor orchestration has two required observations and one conditional
+preflight observation:
 
-1. the existing bounded package inspector, which never opens SQLite; and
-2. at most one operational journal preflight and one coherent project read
+1. the existing bounded package inspector, which never opens SQLite;
+2. only for a Git-candidate target, the single bounded effective-ignore process
+   described above, completed before SQLite; and
+3. at most one operational journal preflight and one coherent project read
    transaction for project state, task counts, handoff delivery, and
    maintenance state.
 
@@ -2130,11 +2135,81 @@ self-host shape. The latter requires explicit `--repo`, a physical package
 exactly at `<repo>/task-governance-tool`, the five fixed regular governing
 source documents and three fixed package entry/manifest files listed in the
 specification, and absence of a competing project-scoped install. It uses
-bounded canonical filesystem checks only, so doctor does not invoke Git.
-Failure uses the fixed `project_scope_required` or
-`unsupported_install_layout` boundary. The source shape derives the same
-existing package-local canonical state path; no copy, relocation lookup,
-alternate state repository, environment switch, or public mode flag exists.
+bounded canonical filesystem checks only. Failure uses the fixed
+`project_scope_required` or `unsupported_install_layout` boundary. The source
+shape derives the same existing package-local canonical state path; no copy,
+relocation lookup, alternate state repository, environment switch, or public
+mode flag exists. The separate ignore inspector below may invoke Git only
+after layout, target, and canonical state ownership are known.
+
+### Enclosing Git Ignore Inspection
+
+`project_scope.py` owns the TG-M15.4 ignore boundary. It does not introduce a
+Git service or change `DatabaseTarget`. The existing preflight calls one
+private helper with the canonical governed target, accepted layout, and
+canonical skill root.
+
+The helper first performs a bounded inclusive upward filesystem scan for an
+existing or link-like `.git` marker, starting at the canonical target and
+stopping at the nearest marker or filesystem root. A marker-inspection or
+ancestor-traversal error fails closed without a subprocess. No marker means
+non-Git success and no subprocess. A marker means Git-candidate, including an
+ordinary nested worktree, linked-worktree `.git` file, or submodule `.git`
+file.
+
+For a Git-candidate the helper selects exactly one governed-target-relative
+operand: `.agents/skills/task-governance-tool/state/` for ordinary layout or
+`task-governance-tool/state/` for self-host. It uses forward slashes, retains
+the trailing slash for directory semantics, and passes the complete operand as
+one argument after `--`. It invokes one fixed process through the existing
+`safe_git_command()` and `safe_git_environment()` helpers:
+
+```python
+[
+    *safe_git_command(governed_target),
+    "-c",
+    "core.fsmonitor=false",
+    "check-ignore",
+    "--quiet",
+    "--no-index",
+    "--",
+    target_relative_state_directory,
+]
+```
+
+The implementation uses an argument array, `stdin=DEVNULL`,
+`stdout=DEVNULL`, `stderr=DEVNULL`, `check=false`, and a two-second timeout.
+Return code 0 is `True`; every other result and every `OSError` or
+`SubprocessError` is `False`. Callers continue mapping `False` only to the
+existing `state_ignore_required` issue, so no new error or output field exists.
+The subprocess completes before any setup plan or SQLite write begins, and
+doctor remains read-only.
+
+The first `run_setup` scope inspection and the one doctor scope inspection use
+`include_ignore=True`. Setup's later stage-by-stage `_revalidate_scope()`
+checks use `include_ignore=False`: they retain layout, package, project, and
+state-ownership validation without repeating the process. Thus setup,
+`setup --read-only`, and doctor each launch at most one ignore process per
+invocation, while normal Task, handoff, and review commands launch none.
+Perfect ignore-rule TOCTOU detection is outside the non-adversarial local
+threat model.
+
+Git itself evaluates parent and target-local rules, negations, gitfile/linked
+worktrees, submodule boundaries, `.git/info/exclude`, and configured global
+excludes. The tool neither parses a `.gitignore` file nor reports which rule
+matched. It does not re-root the governed target to `--show-toplevel`, and it
+does not use an enclosing root for project identity, state paths, setup,
+Viewer, or completion.
+
+Focused tests use physical temporary repositories for effective-rule behavior
+and mocks only for launch/timeout/environment assertions. They snapshot the
+governed target and Git administrative directory before doctor and rejected
+setup paths. Tests must cover a nested target with target-local and parent
+rules, effective negation, linked worktree or gitfile, submodule-local versus
+superproject-only rules, no-marker non-Git, nonzero/timeout/launch failures,
+and the unchanged no-Git behavior of normal Task commands. No sentinel,
+tracked-artifact detector, authentication, retry, cache, or generic Git
+abstraction is added.
 
 `--read-only` builds a `SetupPlan` with booleans for restore, initialize,
 migrate, backup, configure, and Viewer publish plus the effective

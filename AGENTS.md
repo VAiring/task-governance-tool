@@ -18,7 +18,7 @@ workspace.
 ## Current Project Shape
 
 - The intended repository root is `C:\WorkSpace\task-governance-tool`.
-- The project is implemented through TG-M14.7 at v0.8.0/schema v13 with Viewer
+- The project is implemented through TG-M15.4 at v0.8.0/schema v13 with Viewer
   snapshot v3. The installable package, CLI, migrations, tests, and formal
   documents already exist; inspect them before changing an established
   contract.
@@ -274,6 +274,15 @@ The product must not become:
   setup or bounded post-commit maintenance may publish only the canonical
   Viewer under the supported package's ignored `state/` directory. Inspection
   alone never authorizes either write.
+- A governed target remains the project-identity and state-ownership root when
+  it is nested inside an enclosing Git worktree. When the target or an ancestor
+  has a Git administrative marker, setup and doctor must use one bounded,
+  shell-free effective-ignore check for the canonical package `state/`
+  directory. Only an ignored result is accepted; an unignored, timed-out, or
+  uninspectable result fails closed with the existing sanitized
+  `state_ignore_required` contract and no target-project write. A physical
+  target with no Git marker in its ancestor chain remains a valid non-Git
+  project without invoking the ignore subprocess.
 - Do not create commits, branches, tags, issue comments, PRs, or file edits in a
   target project unless the user explicitly approves that concrete mutation in
   the current task. Target-project governance rules may tell

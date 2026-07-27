@@ -34,8 +34,8 @@ User-wide, symbolic-link, and Windows junction layouts are unsupported for
 stateful use. From the target-project root, invoke the bundled script through
 the `.agents` path. When running from inside the Skill directory, pass
 `--repo <target-project>` explicitly to every command. Otherwise taskgov uses
-the current directory and never searches for a Git root. A non-Git governed
-directory is valid.
+the current directory and never re-roots it to an enclosing Git worktree. A
+non-Git governed directory is valid.
 
 Project identity follows the canonical governed-directory location. Do not
 infer relocation, copy state, or invent another operating mode when a project
@@ -70,8 +70,9 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py doctor --json
 ```
 
 Doctor is inherently read-only. It never initializes, migrates, repairs,
-backs up, renders, inspects Git, runs project tests, or changes the target
-project. It is not a prerequisite for setup or normal task work. Recognized
+backs up, renders, runs project tests, or changes the target project. For a
+Git-candidate target, only its single bounded effective-ignore preflight may
+inspect Git. It is not a prerequisite for setup or normal task work. Recognized
 package advisories and readable maintenance outcomes retain
 `suggested_action=continue`; do not convert them into a question, handoff,
 pause, blocker, or routine stop.

@@ -240,6 +240,7 @@ def _revalidate_scope(
         repo=repo,
         repo_explicit=repo_explicit,
         script_path=script_path,
+        include_ignore=False,
     )
     issue = inspection.first_issue()
     if issue is not None or inspection.scope is None:

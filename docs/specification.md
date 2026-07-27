@@ -1,6 +1,6 @@
 # task-governance-tool MVP Specification
 
-Status: implemented through TG-M14.7 at release v0.8.0/schema v13 and Viewer
+Status: implemented through TG-M15.4 at release v0.8.0/schema v13 and Viewer
 snapshot v3. TG-M12.3 Issue adapter remains blocked on a future intake
 contract.
 
@@ -95,8 +95,9 @@ for this repository's own Task history; it does not broaden ordinary install
 guidance.
 
 Project-scoped setup is a distinct, explicit step after installation. The
-installer or agent must apply the narrow project-root `state/` ignore rule for
-a Git-managed target, may preview with `taskgov setup --read-only`, and runs
+installer or agent must ensure that the canonical package `state/` directory
+is effectively ignored for a Git-managed target, may preview with
+`taskgov setup --read-only`, and runs
 `taskgov setup --repo <target-project>` only with explicit intent to initialize
 or migrate that project's local state. `setup` is the sole initializer and
 migrator. Building the source skill package must not create a database,
@@ -1364,10 +1365,12 @@ moving the project changes its default identity and can require explicit state
 recovery. TG-M13 does not add a relocation command, project UUID, runtime
 `--repo` requirement, or Git-repository existence requirement.
 
-Target-project ignore guidance must name only the root-anchored Skill state
-directory; broad repository-wide `*.sqlite`, `*.sqlite3`, or `*.db` guidance
-is not acceptable. Release-archive artifact exclusions remain a separate
-packaging concern.
+Target-project ignore guidance must name only the canonical Skill state
+directory; the recommended target-local rule is
+`/.agents/skills/task-governance-tool/state/`, while an effective enclosing
+rule is also valid. Broad repository-wide `*.sqlite`, `*.sqlite3`, or `*.db`
+guidance is not acceptable. Release-archive artifact exclusions remain a
+separate packaging concern.
 
 The documented minimum runtime is Python 3.12. Windows CI must exercise exact
 Python 3.12 and 3.14 entries, including unsupported-junction detection. Windows
@@ -1614,8 +1617,11 @@ default success path.
 `doctor` is the sole diagnostic, is inherently read-only, emits
 `command=doctor`, and always includes `data.suggested_action="continue"`.
 It has no fix mode and never initializes, migrates, backs up, renders, locks a
-maintenance artifact, inspects Git, runs project tests, or changes target state.
-It is not a prerequisite for setup or normal Task work.
+maintenance artifact, runs project tests, or changes target state. Only when a
+Git administrative marker exists at the governed target or an ancestor may
+doctor run the one TG-M15.4 effective-ignore inspection; it performs no Task,
+review, or completion Git observation. Doctor is not a prerequisite for setup
+or normal Task work.
 
 The component ownership is exclusive:
 
@@ -1744,6 +1750,62 @@ Preflight/doctor codes use these fixed sanitized messages:
 | `schema_too_new` | `task database schema is newer than this taskgov version` |
 | `migration_required` | `task database requires setup migration` |
 | `setup_required` | `project state is not set up` |
+
+### Enclosing Git Ignore Preflight
+
+TG-M15.4 changes only how the existing `state_ignore_required` preflight
+recognizes Git management and effective ignore rules. It does not change the
+governed project root, project identity, package layout, canonical state path,
+preflight precedence, public error, or setup/doctor envelope.
+
+The canonical explicit target remains the governed root even when it is a
+subdirectory of a larger Git worktree. `--repo`, omitted-repo behavior,
+project-ID derivation, state ownership, setup writes, Viewer publication, and
+completion Git validation continue to use that target rather than an enclosing
+worktree root.
+
+Ignore inspection is deterministic:
+
+1. Inspect the canonical target and each parent through the filesystem root,
+   stopping at the nearest existing or link-like `.git` administrative marker.
+   An error while inspecting a marker or advancing the parent chain fails
+   closed as `state_ignore_required` without a subprocess or write.
+2. If no marker exists, classify the physical target as non-Git for this
+   preflight, accept it without launching an ignore subprocess, and preserve
+   existing non-Git setup/doctor behavior.
+3. If a marker exists, invoke exactly one shell-free Git process from the
+   governed target with the fixed equivalent of
+   `git check-ignore --quiet --no-index -- <canonical-state-directory/>`.
+   The single target-relative operand is
+   `.agents/skills/task-governance-tool/state/` for the ordinary layout or
+   `task-governance-tool/state/` for self-host, uses forward slashes and the
+   trailing slash for directory semantics, and follows `--` as one argument.
+4. Exit 0 alone proves the effective ignore result. Exit 1, any other exit,
+   the two-second timeout, launch failure, or other subprocess failure maps to
+   the existing `state_ignore_required` result and performs no write.
+
+The process uses the existing sanitized Git environment, disables optional
+locks, lazy fetch, replacement objects, terminal prompts, and filesystem
+monitor integration, supplies no stdin, and retains or emits no stdout,
+stderr, path, pattern source, or OS exception. Parent-worktree rules,
+target-local rules, negation, linked-worktree/gitfile layouts, and submodule
+boundaries are therefore decided by Git's effective ignore semantics rather
+than by parsing one `.gitignore` file. A superproject rule does not stand in
+for a submodule-local effective rule.
+
+Each `setup`, `setup --read-only`, or `doctor` invocation runs at most this one
+ignore process. Setup's later stage revalidations repeat structural,
+package-integrity, project, and state-ownership checks without repeating
+ignore inspection. Ordinary Task, handoff, and review commands run no added
+marker scan or ignore process.
+
+This preflight does not inspect whether an artifact is already tracked, prove
+that an ignore rule is committed or portable, add a sentinel filename, edit
+`.gitignore`, authenticate Git, retry, cache, or create a reusable Git command
+framework. Perfect ignore-rule TOCTOU detection across later setup stages is
+also outside the local non-adversarial threat model. It adds no Task-loop call,
+LLM judgment, question, or normal stop; only setup/doctor for a Git-candidate
+target may return the already defined deterministic error.
 
 ### Setup Contract
 

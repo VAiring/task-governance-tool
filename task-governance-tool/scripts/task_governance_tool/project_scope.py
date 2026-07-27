@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import os
 import stat
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 from task_governance_tool import __version__
+from task_governance_tool.completion import safe_git_command, safe_git_environment
 from task_governance_tool.self_status import PackageSelfStatus, inspect_local_package
 from task_governance_tool.storage import (
     DATABASE_BUSY_MESSAGE,
@@ -77,7 +79,10 @@ PACKAGE_REQUIRED_FILES = (
     Path("release-manifest.json"),
     Path("scripts/taskgov.py"),
 )
-MAX_GITIGNORE_BYTES = 1024 * 1024
+STATE_IGNORE_OPERANDS = {
+    "ordinary": ".agents/skills/task-governance-tool/state/",
+    "source": "task-governance-tool/state/",
+}
 
 
 @dataclass(frozen=True)
@@ -241,31 +246,56 @@ def _state_path_is_valid(skill_root: Path, target: DatabaseTarget) -> bool:
     return True
 
 
+def _has_enclosing_git_marker(repo: Path) -> bool | None:
+    candidate = repo
+    while True:
+        try:
+            os.lstat(candidate / ".git")
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return None
+        else:
+            return True
+        parent = candidate.parent
+        if parent == candidate:
+            return False
+        candidate = parent
+
+
 def _state_is_ignored(repo: Path, layout: str) -> bool:
-    git_marker = repo / ".git"
-    try:
-        git_managed = git_marker.exists() or _is_linklike(git_marker)
-    except OSError:
-        git_managed = True
-    if not git_managed:
+    git_candidate = _has_enclosing_git_marker(repo)
+    if git_candidate is None:
+        return False
+    if not git_candidate:
         return True
 
-    expected = (
-        "/task-governance-tool/state/"
-        if layout == "source"
-        else "/.agents/skills/task-governance-tool/state/"
-    )
-    ignore_path = repo / ".gitignore"
-    if not _regular_file(ignore_path):
+    operand = STATE_IGNORE_OPERANDS.get(layout)
+    if operand is None:
         return False
     try:
-        if ignore_path.stat().st_size > MAX_GITIGNORE_BYTES:
-            return False
-        lines = ignore_path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError):
+        result = subprocess.run(
+            [
+                *safe_git_command(repo),
+                "-c",
+                "core.fsmonitor=false",
+                "check-ignore",
+                "--quiet",
+                "--no-index",
+                "--",
+                operand,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=2,
+            env=safe_git_environment(),
+            shell=False,
+        )
+    except (OSError, subprocess.SubprocessError):
         return False
-    normalized = {line.strip().replace("\\", "/") for line in lines}
-    return expected in normalized
+    return result.returncode == 0
 
 
 def inspect_project_scope(

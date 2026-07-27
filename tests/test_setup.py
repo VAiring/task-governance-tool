@@ -568,7 +568,7 @@ class SetupCommandTests(unittest.TestCase):
                 self.assertEqual(file_snapshot(install.project_root), before)
                 self.assertFalse((install.skill_root / "state").exists())
 
-    def test_git_project_requires_only_the_canonical_state_ignore(self):
+    def test_git_project_requires_effective_canonical_state_ignore(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp), git_managed=True)
             ignore = install.project_root / ".gitignore"

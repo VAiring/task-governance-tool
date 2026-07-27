@@ -260,7 +260,7 @@ def run_doctor(
     repo_explicit: bool,
     script_path: Path,
 ) -> DoctorServiceResult:
-    """Inspect package and project state without mutation or external commands."""
+    """Inspect package and project state without mutation."""
 
     inspection = inspect_project_scope(
         repo=repo,

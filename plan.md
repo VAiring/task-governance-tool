@@ -1,6 +1,6 @@
 # task-governance-tool Initial Plan
 
-Status: implemented through TG-M14.7 at v0.8.0/schema v13 with Viewer snapshot
+Status: implemented through TG-M15.4 at v0.8.0/schema v13 with Viewer snapshot
 v3. The TG-M12.3 Issue adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
@@ -989,8 +989,9 @@ Confirmed decisions:
   package manifest/entry files, and no competing `.agents` install. It reuses
   current package-local state and adds no DB transfer, relocation command,
   environment switch, or ordinary consuming-project install mode.
-- TG-M15 is the approved three-task pre-publication review-correction lane.
-  M15.1 adds setup-owned recovery from the newest valid canonical same-project
+- TG-M15.1 through M15.3 are the completed three-task pre-publication
+  review-correction lane. M15.1 adds setup-owned recovery from the newest valid
+  canonical same-project
   managed backup only when the primary DB is missing. It adds
   `database_restore` to setup's deterministic write plan but no command, path
   option, prompt, schema, Viewer format, normal-loop call, or LLM decision.
@@ -1007,6 +1008,13 @@ Confirmed decisions:
   accepted only when its `headSha` equals that full tip and both Windows
   Python matrix jobs pass. It is Tier 0 mechanical evidence and authorizes no
   workflow edit, PR, merge, tag, release, or publication.
+- M15.4 is the implemented independent enclosing-Git ignore correction. It
+  keeps the explicit governed target as the project/state root, treats an
+  ancestor `.git` marker as a Git candidate, and accepts only one effective
+  directory ignore check returning exit 0. A marker-free target remains
+  non-Git without an ignore subprocess. Failure retains the existing sanitized
+  `state_ignore_required` boundary and adds no schema, command, JSON, Viewer,
+  Task-loop call, LLM judgment, or target-project write.
 
 Open issues:
 
@@ -1038,10 +1046,9 @@ Open issues:
 
 ## Implementation Execution Status
 
-All approved implementation units through TG-M15.3 and the bounded M15
-correction tasks C1 through C3 are complete. They were consumed after explicit
-user approval; their exact verification, review, and completion evidence is
-maintained in SQLite.
+All approved implementation units through TG-M15.4 and the bounded M15
+correction tasks C1 through C3 are complete. Exact verification, review, and
+completion evidence is maintained in SQLite.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

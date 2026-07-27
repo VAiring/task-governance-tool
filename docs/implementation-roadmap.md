@@ -1,6 +1,6 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through TG-M14.7 are complete at v0.8.0/schema
+Status: implementation units through TG-M15.4 are complete at v0.8.0/schema
 v13 with Viewer snapshot v3. TG-M12.3 remains blocked on a future Issue Skill
 intake contract.
 The default-browser launch follow-up remains requirements-only pending design
@@ -2329,9 +2329,11 @@ Implementation notes:
 - Mark symlink and Windows junction installs unsupported. Do not implement
   lexical state-root recovery or another install mode.
 - Retain optional `--repo` because non-Git governed directories are valid; do
-  not search for a Git root or add a Git-repository existence guard.
-- Narrow target-project ignore guidance to the root-anchored Skill `state/`
-  path. Keep release-archive database exclusions separate.
+  not re-root to a Git root or add a Git-repository existence guard. TG-M15.4
+  later permits only its ancestor-marker scan for ignore preflight.
+- Recommend the narrow target-local Skill `state/` rule without requiring that
+  exact pattern when effective Git ignore semantics protect the same path.
+  Keep release-archive database exclusions separate.
 - Explain canonical-path identity relocation limits without adding project
   UUID, relocation command, or automatic recovery.
 - Document Python 3.12+ and run exact Windows 3.12/3.14 CI matrix entries.
@@ -2584,7 +2586,9 @@ Verification:
 - v10 `applied_backup_generations` is null when no managed publication exists,
   while v1-v9 migration records the setup plan's explicit/default
   `publication_retention` beside the copy identity;
-- doctor does no setup, migration, backup, render, lock, Git, or repair;
+- doctor does no setup, migration, backup, render, lock, or repair; TG-M15.4
+  later permits only one bounded effective-ignore Git process during scope
+  preflight for a Git-candidate target;
 - v1-v9 to v10 migrations preserve the realistic fixture, and Viewer snapshot
   v3 reads source schemas 5-10;
 - the current source-tree Task DB migrates in place to v10 with explicit
@@ -2780,12 +2784,15 @@ relocation, search/pagination, or a mandatory LLM decision or stop.
 
 ## Approved Pre-Publication Review Corrections: TG-M15
 
-TG-M15 is a three-unit sequential lane approved from the independent v0.8.0
-review follow-up. It keeps version 0.8.0, schema v13, Viewer snapshot v3, and
-the 20-leaf public surface. The first two units are Tier 2 contract changes;
-the final exact-SHA CI gate is Tier 0 because it is a deterministic external
-observation with no source, workflow, schema, state-contract, or target-project
-mutation. No unit authorizes a PR, merge, tag, release, or publication.
+TG-M15.1 through TG-M15.3 are the completed three-unit sequential lane approved
+from the independent v0.8.0 review follow-up. TG-M15.4 is the completed,
+separately approved optional correction for enclosing-Git ignore verification.
+These units keep
+version 0.8.0, schema v13, Viewer snapshot v3, and the 20-leaf public surface.
+TG-M15.1, TG-M15.2, and TG-M15.4 are Tier 2 contract changes; the exact-SHA
+TG-M15.3 gate is Tier 0 because it is a deterministic external observation
+with no source, workflow, schema, state-contract, or target-project mutation.
+No unit authorizes a PR, merge, tag, release, or publication.
 
 ### TG-M15.1 Setup-Owned Managed-Backup Recovery
 
@@ -2872,11 +2879,68 @@ Verification:
 - authentication or CI failure leaves the task incomplete and does not
   authorize a bypass or unrelated correction.
 
+### TG-M15.4 Enclosing Git Ignore Verification
+
+Kind: optional
+Lane: `TG-M15-GIT-SAFETY`
+Review tier: Tier 2
+Depends on: completed TG-M15.1 through TG-M15.3 source baseline
+Status: implemented
+
+Intended outcome:
+
+- Treat a governed target nested inside an enclosing Git worktree as
+  Git-managed for the existing ignore preflight.
+- Verify the canonical package state directory through Git's effective ignore
+  semantics without re-rooting the governed project or changing non-Git
+  support.
+
+Write scope:
+
+- `AGENTS.md`, specification, design, roadmap, and plan contract updates first;
+- `project_scope.py` ignore inspection, `setup.py` repeat-check suppression,
+  and directly coupled setup/doctor tests;
+- user-facing setup/doctor guidance that describes ignore preparation,
+  governed-root selection, or Git observation;
+- required package manifest digests.
+
+Ordering:
+
+- Phase A synchronizes all five formal sources and directly coupled guidance
+  before runtime edits begin.
+- Phase B starts only after the Phase-A contract has no unresolved behavioral
+  choice. This is an implementation ordering gate, not an additional review
+  stop; the required Tier 2 gate remains two PASS reviews of the exact final
+  revision.
+
+Verification:
+
+- no-marker physical targets remain valid without an ignore subprocess;
+- nested target-local and parent rules, negation, linked worktree/gitfile, and
+  submodule-local versus superproject-only rules follow effective Git results;
+- only `check-ignore --quiet --no-index` exit 0 accepts the target; not ignored,
+  timeout, launch failure, and other errors return the existing sanitized
+  `state_ignore_required` result before writes;
+- the explicit target still determines `--repo`, project identity, database,
+  backup, and Viewer locations;
+- subprocess execution is shell-free, two-second bounded, sanitized,
+  stdin/output-free, and complete before SQLite work;
+- setup, setup preview, and doctor each launch at most one ignore subprocess;
+  their later setup revalidations and all ordinary Task/handoff/review commands
+  launch none;
+- no tracked-artifact detector, sentinel, `.gitignore` edit, new code/message,
+  Git retry/cache/authentication, perfect ignore-rule TOCTOU defense, schema,
+  Viewer, command, JSON, Task-loop call, LLM decision, or user-return stop;
+- focused tests, full offline suite, package doctor and manifest checks,
+  `git diff --check`, exact-SHA Windows Python 3.12/3.14 Actions, and two
+  exact-final-revision Tier 2 PASS reviews.
+
 ## Roadmap Completion Criteria
 
 The currently approved roadmap is complete when:
 
-- all approved sequential units through TG-M14.7 are complete;
+- all approved sequential units through TG-M14.7 and approved TG-M15
+  corrections are complete;
 - every unit's documented verification and review gate has passed for its exact
   final revision;
 - no valid High or Medium review finding remains unresolved;

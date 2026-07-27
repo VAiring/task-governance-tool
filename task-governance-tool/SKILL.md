@@ -24,8 +24,8 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py <command> --json
 
 When launching from inside the Skill directory, add
 `--repo <target-project>` explicitly to every command. Otherwise the current
-directory is the governed project; taskgov does not search for a Git root, and
-a non-Git directory is valid.
+directory is the governed project; taskgov never re-roots it to an enclosing
+Git worktree, and a non-Git directory is valid.
 
 Use only these 20 public command leaves:
 

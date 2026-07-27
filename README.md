@@ -24,15 +24,16 @@ the exact destination and obtain approval before installing or replacing it.
 The release artifact and package creation process never initialize project
 state.
 
-For a Git-managed target, add this narrow, root-anchored ignore rule before
-setup:
+For a Git-managed target, ensure the canonical Skill state directory is
+effectively ignored before setup. This narrow target-local rule is recommended:
 
 ```gitignore
 /.agents/skills/task-governance-tool/state/
 ```
 
-The rule covers only generated state owned by this Skill. A non-Git directory
-is also a valid governed project and needs no Git ignore check.
+The rule covers only generated state owned by this Skill. An enclosing
+worktree rule for the same directory is also accepted. A non-Git directory is
+also a valid governed project and needs no Git ignore check.
 
 From the target-project root, preview and then perform setup:
 
@@ -55,9 +56,10 @@ directory explicitly:
 python scripts/taskgov.py --repo <target-project> setup --json
 ```
 
-Omitting `--repo` means the current directory; the CLI does not search for a
-Git root. An explicit repository argument is therefore required from the Skill
-directory. The governed directory itself does not need to be a Git repository.
+Omitting `--repo` means the current directory; the CLI never re-roots it to an
+enclosing Git worktree. An explicit repository argument is therefore required
+from the Skill directory. The governed directory itself does not need to be a
+Git repository.
 
 `doctor` is the sole diagnostic and is always read-only:
 
@@ -67,8 +69,9 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py doctor --json
 
 It reports package integrity, setup readiness, compact task and handoff counts,
 and bounded maintenance status. It never initializes, migrates, repairs,
-renders, backs up, runs project tests, or inspects Git. It is optional and is
-not a prerequisite for setup or normal task work.
+renders, backs up, or runs project tests. For a Git-candidate target, only its
+single bounded effective-ignore preflight may inspect Git. Doctor is optional
+and is not a prerequisite for setup or normal task work.
 
 ## Minimal Task Workflow
 

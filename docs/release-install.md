@@ -50,16 +50,18 @@ overwrite an existing package without a separate update decision, and do not
 delete its generated project-local `state/` while replacing packaged core
 files.
 
-For a Git-managed target project, add only this root-anchored ignore rule:
+For a Git-managed target project, ensure the canonical Skill state directory
+is effectively ignored. This narrow target-local rule is recommended:
 
 ```gitignore
 /.agents/skills/task-governance-tool/state/
 ```
 
-Do not recommend repository-wide extension globs. The one directory rule
-contains this Skill's database, sidecars, backups, locks, and generated Viewer
-without hiding unrelated project fixtures or assets. Non-Git governed
-directories are valid and do not require an ignore file.
+An enclosing worktree rule for the same directory is also accepted. Do not
+recommend repository-wide extension globs. The one directory rule contains
+this Skill's database, sidecars, backups, locks, and generated Viewer without
+hiding unrelated project fixtures or assets. Non-Git governed directories are
+valid and do not require an ignore file.
 
 From the target-project root, preview setup before the explicit write:
 
@@ -75,8 +77,9 @@ project explicitly:
 python scripts/taskgov.py --repo <target-project> setup --json
 ```
 
-Omitting `--repo` selects the current directory and never searches for a Git
-root. The target directory must exist, but it need not be a Git repository.
+Omitting `--repo` selects the current directory and never re-roots it to an
+enclosing Git worktree. The target directory must exist, but it need not be a
+Git repository.
 
 ## Setup And Upgrade Contract
 
@@ -139,8 +142,10 @@ lock-respecting SQLite read transaction for project, task, handoff, backup, and
 Viewer status.
 
 Doctor never initializes, migrates, backs up, renders, repairs, acquires a
-maintenance lock, inspects Git, runs project verification, or changes the
-target project. It is optional and is not a setup or normal-loop prerequisite.
+maintenance lock, runs project verification, or changes the target project.
+For a Git-candidate target, only its single bounded effective-ignore preflight
+may inspect Git. Doctor is optional and is not a setup or normal-loop
+prerequisite.
 
 ## Runtime Maintenance
 

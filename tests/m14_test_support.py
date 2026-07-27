@@ -118,6 +118,13 @@ def file_snapshot(root: Path, *, exclude_state: bool = False) -> dict[str, str]:
     return result
 
 
+def canonical_test_path(path: Path) -> Path:
+    """Normalize one test path to its canonical filesystem spelling."""
+
+    resolved = path.resolve(strict=False)
+    return Path(os.path.normcase(os.path.normpath(str(resolved))))
+
+
 @dataclass(frozen=True)
 class PhysicalInstall:
     project_root: Path

@@ -19,9 +19,12 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool.cli import build_parser  # noqa: E402
 try:  # noqa: E402
-    from m14_test_support import make_physical_install
+    from m14_test_support import canonical_test_path, make_physical_install
 except ModuleNotFoundError:  # noqa: E402
-    from tests.m14_test_support import make_physical_install
+    from tests.m14_test_support import (
+        canonical_test_path,
+        make_physical_install,
+    )
 
 
 def copy_skill_to(destination: Path, *, source: Path = SKILL_ROOT) -> Path:
@@ -497,7 +500,11 @@ class SkillSelfContainmentTests(unittest.TestCase):
             payload = json.loads(initialized.stdout)
             self.assertNotIn("db_path", payload)
             self.assertTrue(install.db_path.is_file())
-            self.assertTrue(install.db_path.is_relative_to(install.skill_root / "state"))
+            self.assertTrue(
+                canonical_test_path(install.db_path).is_relative_to(
+                    canonical_test_path(install.skill_root / "state")
+                )
+            )
             self.assertEqual(payload["data"]["schema_to"], 13)
 
             from_skill_root = install.run(

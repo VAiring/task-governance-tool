@@ -6,7 +6,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import SOURCE_SKILL_ROOT
+from tests.m14_test_support import SOURCE_SKILL_ROOT, canonical_test_path
 
 from task_governance_tool import viewer as viewer_module
 from task_governance_tool import viewer_maintenance as viewer_service
@@ -116,11 +116,13 @@ class ViewerMaintenanceTests(unittest.TestCase):
             self.assertEqual((current.code, current.renders), ("current", 0))
             self.assertEqual((forced.code, forced.renders), ("succeeded", 1))
             self.assertEqual(
-                output.path,
-                root
-                / "isolated-state"
-                / "viewer"
-                / "task-viewer.html",
+                canonical_test_path(output.path),
+                canonical_test_path(
+                    root
+                    / "isolated-state"
+                    / "viewer"
+                    / "task-viewer.html"
+                ),
             )
             self.assertTrue(output.path.is_file())
             self.assertNotIn(SOURCE_SKILL_ROOT, output.path.parents)

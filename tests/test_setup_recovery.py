@@ -11,6 +11,7 @@ from unittest import mock
 try:
     from m14_test_support import (
         canonical_managed_sqlite_files,
+        canonical_test_path,
         create_v10_database,
         create_v11_database,
         create_v12_database,
@@ -21,6 +22,7 @@ try:
 except ModuleNotFoundError:
     from tests.m14_test_support import (
         canonical_managed_sqlite_files,
+        canonical_test_path,
         create_v10_database,
         create_v11_database,
         create_v12_database,
@@ -79,7 +81,10 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 install.target
             )
             self.assertIsNotNone(selected)
-            self.assertEqual(selected.path, backup_path)
+            self.assertEqual(
+                canonical_test_path(selected.path),
+                canonical_test_path(backup_path),
+            )
             before_backup = backup_path.read_bytes()
             install.db_path.unlink()
 
@@ -658,7 +663,9 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             real_identity = backup_service._file_identity
 
             def reject_linklike_candidate(path):
-                if Path(path) == backup_path:
+                if canonical_test_path(Path(path)) == canonical_test_path(
+                    backup_path
+                ):
                     return None
                 return real_identity(path)
 

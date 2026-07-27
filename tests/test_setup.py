@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 try:  # noqa: E402
     from m14_test_support import (
         canonical_managed_sqlite_files,
+        canonical_test_path,
         create_v10_database,
         create_v12_database,
         create_v9_database,
@@ -22,6 +23,7 @@ try:  # noqa: E402
 except ModuleNotFoundError:  # noqa: E402
     from tests.m14_test_support import (
         canonical_managed_sqlite_files,
+        canonical_test_path,
         create_v10_database,
         create_v12_database,
         create_v9_database,
@@ -543,7 +545,10 @@ class SetupCommandTests(unittest.TestCase):
                 with mock.patch.object(
                     project_scope_service,
                     "_is_linklike",
-                    side_effect=lambda path, expected=candidate: path == expected,
+                    side_effect=lambda path, expected=candidate: (
+                        canonical_test_path(path)
+                        == canonical_test_path(expected)
+                    ),
                 ):
                     result = setup_service.run_setup(
                         repo=str(install.project_root),

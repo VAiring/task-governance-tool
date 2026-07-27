@@ -2,6 +2,9 @@
 
 Date: 2026-07-07 JST
 
+Historical execution record: commands reflect the tested release on this date
+and are superseded by the current v0.8.0 active guidance.
+
 Scope: representative local dry run for TG-M6.4 using only a temporary SQLite
 database and a non-created synthetic target project path.
 

@@ -346,7 +346,7 @@ def add_common_options(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = TaskgovArgumentParser(
         prog="taskgov",
-        description="Local SQLite-backed task state helper for Codex.",
+        description="Local project task-state helper for Codex.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     add_common_options(parser)

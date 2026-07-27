@@ -38,8 +38,26 @@ jobs:
       - name: Check CLI help
         shell: pwsh
         run: |
-          python task-governance-tool/scripts/taskgov.py --help
-          python task-governance-tool/scripts/taskgov.py --version
+          $successfulCommands = @(
+            ,@('--help')
+            ,@('--version')
+            ,@('setup', '--help')
+            ,@('doctor', '--help')
+            ,@('task', 'next', '--help')
+            ,@('task', 'complete', '--help')
+            ,@('task', 'checkpoint', '--help')
+            ,@('handoff', '--help')
+            ,@('review', 'prepare', '--help')
+            ,@('review', 'target', 'set', '--help')
+            ,@('review', 'finding', 'resolve', '--help')
+          )
+          foreach ($parts in $successfulCommands) {
+            python task-governance-tool/scripts/taskgov.py @parts
+            if ($LASTEXITCODE -ne 0) {
+              throw "Public CLI command failed: $($parts -join ' ')"
+            }
+          }
+
           $doctorJson = python task-governance-tool/scripts/taskgov.py doctor --repo . --read-only --json
           if ($LASTEXITCODE -ne 0) {
             throw 'Local package doctor command failed'
@@ -48,18 +66,31 @@ jobs:
           if (-not $doctor.ok -or $doctor.data.components.package.status -ne 'clean') {
             throw "Checked-in package is not clean: $($doctor.data.components.package.status)"
           }
-          $selfStatusJson = python task-governance-tool/scripts/taskgov.py self status --read-only --json
+
+          $removedCommands = @(
+            ,@('self', 'status')
+            ,@('db', 'status')
+            ,@('web', 'export')
+          )
+          foreach ($parts in $removedCommands) {
+            $removedJson = python task-governance-tool/scripts/taskgov.py @parts --read-only --json
+            if ($LASTEXITCODE -ne 2) {
+              throw "Removed public command did not fail with exit 2: $($parts -join ' ')"
+            }
+            $removed = $removedJson | ConvertFrom-Json
+            if ($removed.ok -or $removed.errors[0].code -ne 'invalid_command') {
+              throw "Removed public command did not return invalid_command: $($parts -join ' ')"
+            }
+          }
+
+          $removedDbJson = python task-governance-tool/scripts/taskgov.py doctor --db ignored --json
           if ($LASTEXITCODE -ne 2) {
-            throw 'Removed public self command did not fail with exit 2'
+            throw 'Removed public --db option did not fail with exit 2'
           }
-          $selfStatus = $selfStatusJson | ConvertFrom-Json
-          if ($selfStatus.ok -or $selfStatus.errors[0].code -ne 'invalid_command') {
-            throw 'Removed public self command did not return invalid_command'
+          $removedDb = $removedDbJson | ConvertFrom-Json
+          if ($removedDb.ok -or $removedDb.errors[0].code -ne 'invalid_option') {
+            throw 'Removed public --db option did not return invalid_option'
           }
-          python task-governance-tool/scripts/taskgov.py task next --help
-          python task-governance-tool/scripts/taskgov.py handoff --help
-          python task-governance-tool/scripts/taskgov.py review target set --help
-          python task-governance-tool/scripts/taskgov.py web export --help
 
       - name: Skill package self-check
         shell: pwsh
@@ -96,6 +127,9 @@ jobs:
           if (-not $description -or $description -notmatch 'task') {
             throw 'Skill description is missing task trigger context'
           }
+          if (($skillMd -split "\r?\n").Count -gt 500) {
+            throw 'SKILL.md exceeds the 500-line progressive-disclosure bound'
+          }
 
           $requiredFiles = @(
             "$skillRoot/release-manifest.json",
@@ -103,23 +137,30 @@ jobs:
             "$skillRoot/agents/openai.yaml",
             "$skillRoot/scripts/taskgov.py",
             "$skillRoot/scripts/task_governance_tool/__init__.py",
+            "$skillRoot/scripts/task_governance_tool/artifact_lock.py",
             "$skillRoot/scripts/task_governance_tool/backup.py",
+            "$skillRoot/scripts/task_governance_tool/checkpoints.py",
             "$skillRoot/scripts/task_governance_tool/cli.py",
+            "$skillRoot/scripts/task_governance_tool/compact.py",
+            "$skillRoot/scripts/task_governance_tool/completion.py",
+            "$skillRoot/scripts/task_governance_tool/completion_workflow.py",
+            "$skillRoot/scripts/task_governance_tool/contracts.py",
             "$skillRoot/scripts/task_governance_tool/doctor.py",
+            "$skillRoot/scripts/task_governance_tool/effort.py",
+            "$skillRoot/scripts/task_governance_tool/git_snapshot.py",
+            "$skillRoot/scripts/task_governance_tool/handoffs.py",
+            "$skillRoot/scripts/task_governance_tool/maintenance.py",
+            "$skillRoot/scripts/task_governance_tool/ordering.py",
             "$skillRoot/scripts/task_governance_tool/project_scope.py",
+            "$skillRoot/scripts/task_governance_tool/review_packet.py",
+            "$skillRoot/scripts/task_governance_tool/reviews.py",
+            "$skillRoot/scripts/task_governance_tool/selection.py",
+            "$skillRoot/scripts/task_governance_tool/self_status.py",
             "$skillRoot/scripts/task_governance_tool/setup.py",
             "$skillRoot/scripts/task_governance_tool/storage.py",
             "$skillRoot/scripts/task_governance_tool/tasks.py",
-            "$skillRoot/scripts/task_governance_tool/ordering.py",
-            "$skillRoot/scripts/task_governance_tool/selection.py",
-            "$skillRoot/scripts/task_governance_tool/completion.py",
-            "$skillRoot/scripts/task_governance_tool/reviews.py",
-            "$skillRoot/scripts/task_governance_tool/git_snapshot.py",
-            "$skillRoot/scripts/task_governance_tool/handoffs.py",
-            "$skillRoot/scripts/task_governance_tool/contracts.py",
-            "$skillRoot/scripts/task_governance_tool/effort.py",
-            "$skillRoot/scripts/task_governance_tool/self_status.py",
             "$skillRoot/scripts/task_governance_tool/viewer.py",
+            "$skillRoot/scripts/task_governance_tool/viewer_maintenance.py",
             "$skillRoot/assets/task-viewer.template.html",
             "$skillRoot/references/task_workflow.md",
             "$skillRoot/references/cli_contracts.md"
@@ -137,37 +178,52 @@ jobs:
           $contracts = Get-Content -Raw "$skillRoot/references/cli_contracts.md"
           $readme = Get-Content -Raw 'README.md'
           $release = Get-Content -Raw 'docs/release-install.md'
-          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.7\.0"') {
-            throw 'Runtime package version is not 0.7.0'
+          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.8\.0"') {
+            throw 'Runtime package version is not 0.8.0'
           }
-          if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*10') {
-            throw 'Runtime schema version is not 10'
+          if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*13') {
+            throw 'Runtime schema version is not 13'
           }
           if ($viewer -notmatch 'SNAPSHOT_VERSION\s*=\s*3') {
             throw 'Viewer snapshot version is not 3'
           }
+          $publicTokens = @(
+            'git_snapshot',
+            'handoff record',
+            'setup',
+            'doctor',
+            'task checkpoint',
+            'review prepare'
+          )
           foreach ($document in @($skillMd, $workflow, $contracts, $readme, $release)) {
-            if ($document -notmatch 'git_snapshot') {
-              throw 'Public guidance is missing git_snapshot'
-            }
-            if ($document -notmatch 'reopen') {
-              throw 'Public guidance is missing done/reopen behavior'
-            }
-            if ($document -notmatch 'handoff record') {
-              throw 'Public guidance is missing local handoff behavior'
-            }
-            if ($document -notmatch 'Task Contract') {
-              throw 'Public guidance is missing Task Contract behavior'
-            }
-            if ($document -notmatch 'Effort Advisory') {
-              throw 'Public guidance is missing Effort Advisory behavior'
-            }
-            if ($document -notmatch 'self status') {
-              throw 'Public guidance is missing local package self-status'
+            foreach ($token in $publicTokens) {
+              if ($document -notmatch [regex]::Escape($token)) {
+                throw "Public guidance is missing $token"
+              }
             }
           }
-          if ($release -notmatch 'schema v9' -or $release -notmatch '0\.7\.0') {
-            throw 'Release guidance is inconsistent with version 0.7.0/schema v9'
+          foreach ($document in @($workflow, $contracts)) {
+            foreach ($token in @('reopen', 'Task Contract', 'Effort Advisory')) {
+              if ($document -notmatch [regex]::Escape($token)) {
+                throw "Detailed guidance is missing $token"
+              }
+            }
+          }
+          if ($skillMd -notmatch 'effort_advisory_enabled' -or
+              $skillMd -notmatch 'Task Contract' -or
+              $skillMd -notmatch 'reopen') {
+            throw 'Skill guidance is missing deterministic effort, Contract, or reopen routing'
+          }
+          if ($release -notmatch 'schema v13' -or $release -notmatch '0\.8\.0') {
+            throw 'Release guidance is inconsistent with version 0.8.0/schema v13'
+          }
+          foreach ($document in @($skillMd, $readme, $release)) {
+            if ($document -notmatch '\.agents/skills/task-governance-tool') {
+              throw 'Active install guidance is missing the project-scoped Skill path'
+            }
+          }
+          if ($skillMd -match '\$CODEX_HOME/skills' -or $readme -match '\$CODEX_HOME/skills') {
+            throw 'Active guidance must not advertise CODEX_HOME stateful use'
           }
 
       - name: Guard generated artifacts

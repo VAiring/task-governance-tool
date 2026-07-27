@@ -15,7 +15,7 @@ SKILL_ROOT = ROOT / "task-governance-tool"
 SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from task_governance_tool import self_status as self_status_module
+from task_governance_tool import __version__, self_status as self_status_module
 from task_governance_tool.self_status import inspect_local_package
 try:
     from m14_test_support import make_physical_install
@@ -103,7 +103,7 @@ def create_windows_junction(link: Path, target: Path) -> None:
 
 class SelfStatusTests(unittest.TestCase):
     def test_doctor_reuses_clean_package_inspection_without_writing(self):
-        source_result = inspect_local_package(SKILL_ROOT, installed_version="0.7.0")
+        source_result = inspect_local_package(SKILL_ROOT, installed_version=__version__)
         self.assertEqual(source_result.status, "clean")
         self.assertEqual(source_result.changed_core_count, 0)
 

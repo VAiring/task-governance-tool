@@ -1,11 +1,18 @@
 # task-governance-tool MVP Design
 
-Status: formal implemented design baseline through TG-M12.O2 Local Package
-Self-Status at release v0.7.0/schema v9. TG-M12.3 Issue adapter remains
-blocked.
+Status: implemented through TG-M14.7 at release v0.8.0/schema v13 and Viewer
+snapshot v3. TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
+
+All release- or milestone-specific sections before TG-M14 are historical
+implementation lineage, including headings labeled `Implemented` or
+`Approved`. Their durable state-transition, review, and privacy design remains
+applicable only where TG-M14 does not supersede it. Sections labeled
+`Historical` preserve additional pre-M14 implementation detail. The
+implemented TG-M14 section and later component designs are the current v0.8.0
+authority when those older boundaries differ.
 
 ## Design Summary
 
@@ -42,7 +49,17 @@ task-governance-tool/
     taskgov.py
     task_governance_tool/
       __init__.py
+      artifact_lock.py
+      backup.py
+      checkpoints.py
       cli.py
+      compact.py
+      completion_workflow.py
+      doctor.py
+      maintenance.py
+      project_scope.py
+      review_packet.py
+      setup.py
       storage.py
       tasks.py
       ordering.py
@@ -55,6 +72,7 @@ task-governance-tool/
       effort.py
       self_status.py
       viewer.py
+      viewer_maintenance.py
   references/
     task_workflow.md
     cli_contracts.md
@@ -78,23 +96,23 @@ project's repo-scoped skill directory:
 <target-project>/.agents/skills/task-governance-tool/
 ```
 
-User-wide installation is discouraged for the MVP because this tool is meant to
-replace one project's task-status file with one project-local task database.
+User-wide, symbolic-link, and junction installation is unsupported for
+stateful use. Each governed project uses one physical project-scoped copy.
 
 ## Skill Package Design
 
 `SKILL.md` should stay concise. It should:
 
-- Trigger on task planning, task status inspection, next-task selection,
-  blocker handling, and MVP task-state updates.
+- Trigger on task planning and state, current/next selection, blockers and
+  pauses, local handoff, bounded review preparation, evidence-gated
+  completion, optional checkpoints, setup, and read-only diagnosis.
 - Instruct Codex to read target project governing docs separately.
 - Instruct Codex to use `taskgov task next` and `taskgov task show` instead of
   loading large task-status files.
 - Point to one-level references only when details are needed.
 - Avoid advertising deferred behavior, including verification-run recording,
-  review request generation, persistent profile authoring, dependency graphs,
-  Git integration, or target-project mutation, until those features are
-  implemented and documented.
+  external Issue delivery, persistent profile authoring, dependency graphs,
+  Git mutation, browser automation, or target-project mutation.
 
 `references/task_workflow.md` should describe the workflow for selecting,
 starting, blocking, and completing tasks.
@@ -113,7 +131,8 @@ behavior is self-contained. Tests may add `task-governance-tool/scripts/` to
 `task-governance-tool/scripts/task_governance_tool/cli.py`
 
 - Parse command-line arguments.
-- Resolve `--repo`, `--db`, and output mode.
+- Resolve `--repo` and output mode while rejecting removed public `--db`
+  lexically.
 - Call task and storage services.
 - Format JSON/text output.
 
@@ -123,8 +142,8 @@ behavior is self-contained. Tests may add `task-governance-tool/scripts/` to
 - Open SQLite connections.
 - Apply schema migrations.
 - Provide repository helpers.
-- Enforce project metadata checks so an explicit `--db` path is not silently
-  reused for a different target project.
+- Enforce project metadata checks for the canonical public path and internal
+  test/service path injection.
 - Avoid leaking raw `sqlite3` calls into feature modules.
 
 `task-governance-tool/scripts/task_governance_tool/tasks.py`
@@ -172,6 +191,8 @@ behavior is self-contained. Tests may add `task-governance-tool/scripts/` to
 
 `task-governance-tool/scripts/task_governance_tool/self_status.py`
 
+- Provide the internal package-integrity inspector used by `doctor`; it has no
+  public `self` command.
 - Strictly parse the co-located versioned release manifest.
 - Enumerate only the installed Skill package and compare regular core files by
   streaming SHA-256.
@@ -191,7 +212,11 @@ behavior is self-contained. Tests may add `task-governance-tool/scripts/` to
 - Exercise CLI contracts, storage migrations, repository behavior, and next-task
   selection.
 
-## Database Path Resolution
+## Historical Public Database Path Resolution Through v0.7.0
+
+This section records the former public `--db` override. The implemented TG-M14
+CLI and envelope boundary below removes that option and derives the only public
+database location from the supported physical package and governed project.
 
 Inputs:
 
@@ -326,7 +351,11 @@ CREATE INDEX idx_task_events_task_created ON task_events(task_id, created_at);
 The MVP should store tags as a comma-separated string. A normalized tag table is
 deferred.
 
-## Command Flow
+## Historical Command Flow Through v0.7.0
+
+This section preserves the former `db init`/`db status` command flow. Current
+creation and migration is owned only by `setup`; current inspection is owned by
+the read-only `doctor` and task/handoff reads described in TG-M14.
 
 `db init` is the only create/migrate command. It should follow this flow:
 
@@ -372,7 +401,10 @@ post-commit coordinator reads one compatible SQLite snapshot and writes only
 the canonical generated Viewer; setup owns the direct initial/repair path.
 Neither path writes task state while rendering.
 
-## JSON Envelope
+## Historical JSON Envelope Through v0.7.0
+
+The old envelope below included `db_path`. Current v0.8.0 public serialization
+uses the implemented TG-M14 envelope and omits every raw storage path.
 
 Required JSON shape:
 
@@ -1988,10 +2020,11 @@ explicitly authorized external action.
 No M13 unit adds a command, schema version, Viewer snapshot version, Task gate,
 Issue behavior, normal diagnostic prerequisite, LLM judgment, or routine stop.
 
-## Planned TG-M14 Daily UX And Local Continuity Design
+## Implemented TG-M14 Daily UX And Local Continuity Design
 
-This section is implementation-facing planned design. M14.0 changes no active
-runtime or publication surface.
+This section is the current v0.8.0 implementation design. M14.0 originally
+fixed it before the bounded runtime units and final publication synchronization
+were consumed.
 
 ### CLI And Envelope Boundary
 
@@ -2266,7 +2299,7 @@ Messages contain no path, exception, expected/actual hash, raw output, retry,
 stop, or model choice. The primary command stays successful. Doctor reads the
 latest fixed outcome without starting work.
 
-### Planned Schema Sequence
+### Schema Sequence
 
 Schema changes are feature-owned:
 
@@ -2630,7 +2663,8 @@ Sequential task behavior:
 
 Repository and schema tests must cover duplicate sequential lane orders, null
 sequential orders, blocked tasks without blocked reasons, completed timestamp
-transitions, and `project_mismatch` behavior for explicit `--db` reuse.
+transitions, and `project_mismatch` behavior for internally injected database
+targets. Public `--db` remains unavailable.
 
 ## Free-Form Privacy Checks
 
@@ -2653,14 +2687,15 @@ patterns include:
 Text output should be brief and operational. Examples:
 
 ```text
-DB: C:\...\taskgov.sqlite
-Project: kurakoma-a1b2c3d4e5f6
-Ready: 4  Blocked: 1  Review pending: 0  Done: 12
-Next actionable: 3
+Doctor: ready
+Task <task-id>: ready
+Blocking: none
+Suggested action: run task complete with the same evidence and confirmations
 ```
 
-Avoid long explanations in CLI text output. Detailed guidance belongs in skill
-references.
+Text output never exposes a database, backup, Viewer, or other internal state
+path. Avoid long explanations in CLI text output. Detailed guidance belongs in
+skill references.
 
 ## Testing Strategy
 
@@ -2669,8 +2704,9 @@ Use Python standard-library tests where possible.
 Required test areas:
 
 - CLI help exits successfully.
-- `db status` reports a missing temp database without initializing it.
-- `db init` initializes a temp database and is idempotent.
+- `doctor` reports missing project state without initializing it.
+- `setup --read-only` is no-write; `setup` initializes or migrates isolated
+  project state and is idempotent.
 - Default DB path creates separate paths for separate repo roots.
 - Migrations are idempotent.
 - `task add` validates required and enum fields.
@@ -2710,8 +2746,8 @@ TG-M8 focused tests must additionally cover:
 
 TG-M9 focused tests must additionally cover:
 
-- additive exact `paused` counts on ready and error-shaped `db status`
-  responses while preserving the meaning of `active`;
+- exact paused counts in current doctor task-summary rows while preserving the
+  meaning of `active`;
 - zero/positive paused warning behavior and identical next-task candidate data
   with and without a paused population;
 - warning reuse of the successful status-inspection count, its documented
@@ -2760,7 +2796,6 @@ task-governance-tool/
   scripts/
     taskgov.py
     task_governance_tool/
-      self_status.py
   references/
 ```
 

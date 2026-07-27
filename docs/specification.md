@@ -1,13 +1,21 @@
 # task-governance-tool MVP Specification
 
-Status: formal implemented baseline through TG-M12.O2 Local Package
-Self-Status at release v0.7.0/schema v9. TG-M12.3 Issue adapter remains
-blocked on a future intake contract.
+Status: implemented through TG-M14.7 at release v0.8.0/schema v13 and Viewer
+snapshot v3. TG-M12.3 Issue adapter remains blocked on a future intake
+contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
 governs implementation order and execution-unit boundaries. `plan.md` remains
 the decision log and open-issue holding area.
+
+All release- or milestone-specific sections before TG-M14 are historical
+lineage for those releases, including headings labeled `Implemented` or
+`Approved`. Their durable state-transition, review, and privacy rules continue
+only where TG-M14 does not supersede them. Sections labeled `Historical`
+preserve additional pre-M14 contract detail for migration and compatibility
+review. The implemented TG-M14 section is the current public command, setup,
+diagnostic, maintenance, and output contract.
 
 ## Product Goal
 
@@ -21,9 +29,10 @@ The tool must stay local-first, project-doc-respecting, and non-authoritative.
 Target project governing documents remain the source of truth for project
 decisions.
 
-## MVP Scope
+## Historical MVP Scope Through v0.7.0
 
-The MVP includes:
+The original MVP included the following surfaces. TG-M14 supersedes this
+inventory with the implemented 20-leaf public surface below.
 
 - A Codex skill named `task-governance-tool`.
 - A Python stdlib-first CLI named `taskgov`.
@@ -47,7 +56,7 @@ The MVP includes:
   folder.
 - Offline operation by default.
 
-## Non-Goals For MVP
+## Historical Non-Goals For MVP
 
 The MVP does not include:
 
@@ -81,14 +90,16 @@ Stateful governed-project use supports only a physical project-scoped copy.
 User-wide, symlink, and junction installs are not public operating modes because
 they can blur state ownership across projects. Source-checkout development and
 tests remain separate from installing the Skill to govern another project.
-Planned M14.2 formalizes only the bounded self-host source-tree exception needed
+M14.2 formalizes only the bounded self-host source-tree exception needed
 for this repository's own Task history; it does not broaden ordinary install
 guidance.
 
 Project-scoped setup is a distinct, explicit step after installation. The
-installer or agent must verify that generated `state/` is ignored, inspect with
-`taskgov db status`, and then run `taskgov db init --repo <target-project>` with
-user approval. Building the source skill package must not create a database,
+installer or agent must apply the narrow project-root `state/` ignore rule for
+a Git-managed target, may preview with `taskgov setup --read-only`, and runs
+`taskgov setup --repo <target-project>` only with explicit intent to initialize
+or migrate that project's local state. `setup` is the sole initializer and
+migrator. Building the source skill package must not create a database,
 because the target project identity is not known at package-build time.
 
 The skill package should contain only files needed by Codex to use the skill:
@@ -159,7 +170,9 @@ SHA-256 hash of the canonical path, for example:
 kurakoma-a1b2c3d4e5f6
 ```
 
-The CLI must support `--db` to override the default path.
+The public CLI derives this canonical path and rejects `--db`. Explicit
+database-path injection remains internal to storage/service constructors and
+tests only.
 
 ## Task Model
 
@@ -1088,20 +1101,20 @@ reasons, and stable warning key. Schema v9 adds only empty basis/activity
 metadata and a zero project activity generation to support this conservative
 attribution; migration does not rewrite existing task history.
 
-An absent or valid disabled profile preserves all pre-advisory Task and
-`db status` output and performs no Git work. A project that has never captured
+An absent or valid disabled profile preserves all pre-advisory Task output and
+performs no Git work. A project that has never captured
 an advisory basis also performs no advisory-state bookkeeping. If a basis was
 captured during an earlier enabled period, disabling the profile stops new
 basis capture but retains only project/subject activity counters; this avoids
 silently losing overlap evidence if the same profile is enabled later. An
-invalid present profile adds only a bounded continuation diagnostic. When
-enabled, `db status` exposes a deterministic enablement flag so the Skill can
-run one `task effort` observation at the existing verification/review boundary
-rather than after every command.
+invalid present profile adds only a bounded continuation diagnostic. The
+mandatory default JSON `task show` response exposes the deterministic
+enablement flag so the Skill can run one `task effort` observation at the
+existing verification/review boundary rather than after every command.
 
-That is the active contract through M14.0. Planned M14.1 adds the same
-deterministic boolean to mandatory JSON `task show`; M14.2 then removes public
-`db status`, and M14.7 publishes Skill routing from `task show`.
+For implementation lineage, M14.1 added that boolean to `task show`, M14.2
+removed public `db status`, and M14.7 published the mechanically routed Skill
+flow from `task show`.
 
 ### Consuming-Project Modification Boundary
 
@@ -1385,15 +1398,15 @@ but the Skill does not ask the model to choose a recovery policy. External CI
 dispatch, push, PR creation, or publication remains outside local task
 authority and requires explicit user authorization.
 
-## Planned Post-MVP Extension: TG-M14 Daily UX And Local Continuity
+## Implemented Post-MVP Extension: TG-M14 Daily UX And Local Continuity
 
-TG-M14 is an approved sequential extension whose active behavior is not
-available until the owning implementation units complete. TG-M14.0 fixes this
-planned contract only. It does not change the current parser, help, Skill,
-README usage, release files, manifest, runtime tests, package version, or
-schema.
+TG-M14 is implemented as the current v0.8.0/schema-v13 public contract. TG-M14.0
+fixed the contract before implementation; TG-M14.1 through TG-M14.6 introduced
+the bounded runtime slices, and TG-M14.7 synchronized the active Skill,
+metadata, help, release guidance, manifest, workflow, and integrated
+acceptance.
 
-### Planned Public Surface And Removed Invocation Contract
+### Public Surface And Removed Invocation Contract
 
 The completed M14 public surface contains exactly these 20 leaves:
 
@@ -1458,7 +1471,7 @@ All completed-M14 command envelopes contain only `ok`, `command`, `project_id`,
 identity when safely resolved. Public output never contains `db_path`,
 `backup_path`, `viewer_path`, another raw storage path, or a rejected CLI value.
 
-### Planned Compact Selection And Completion
+### Compact Selection And Completion
 
 Only `task current` and `task next` accept `--compact`. Default JSON and text
 payloads remain compatible. Compact JSON uses the normal envelope and these
@@ -1568,8 +1581,11 @@ true. It does not ask an LLM whether the advisory applies.
 
 The deterministic Skill call graph is:
 
-- one compact `task current` call to resume;
-- only when it returns no current work, one compact `task next` call;
+- one compact `task current` call to rediscover work;
+- when it returns an `in_progress` or `review_pending` row, resume the first
+  such row in returned order; otherwise make one compact `task next` call.
+  Returned `paused` and `blocked` rows remain rediscovered but do not suppress
+  unrelated ready selection;
 - one `task show` call for the resumed or selected task so its complete current
   Contract, latest checkpoint, and Effort Advisory routing flag are always
   read;
@@ -1588,7 +1604,7 @@ progress updates and the two independent review model decisions.
 `task complete --check`, `doctor`, and `task checkpoint` are absent from the
 default success path.
 
-### Planned Doctor Contract
+### Doctor Contract
 
 `doctor` is the sole diagnostic, is inherently read-only, emits
 `command=doctor`, and always includes `data.suggested_action="continue"`.
@@ -1724,7 +1740,7 @@ Preflight/doctor codes use these fixed sanitized messages:
 | `migration_required` | `task database requires setup migration` |
 | `setup_required` | `project state is not set up` |
 
-### Planned Setup Contract
+### Setup Contract
 
 `setup` is explicit, noninteractive, idempotent, and limited to one supported
 physical project-scoped package layout. Ordinary governed projects use exactly
@@ -1874,7 +1890,7 @@ Contention fails the setup backup stage without migrating. M14.3 reuses the
 same lock primitive for routine backup work. Preview never creates a lock or
 backup.
 
-### Planned Maintenance Bounds
+### Maintenance Bounds
 
 Maintenance is enabled once by successful setup and has no disable surface in
 M14. Every successful backup-eligible business mutation commits and closes its
@@ -2027,7 +2043,7 @@ Viewer-disabled versus Viewer-only and the due-backup combination. M14.7
 repeats final combined integration. A budget failure is a blocking design
 finding, not authority to add background architecture.
 
-### Planned Typed Checkpoint
+### Typed Checkpoint
 
 `task checkpoint <task-id>` requires `--summary` and `--next-action`, and
 accepts `--unresolved-risk` at most eight times. UTF-8 limits are 1,024 bytes
@@ -2061,7 +2077,7 @@ appears under key `latest_checkpoint` in default `task current` rows and
 `task show` data. Text is exactly
 `Checkpoint <checkpoint_id>: recorded|replayed for task <task_id>` plus one LF.
 
-### Planned Review Packet
+### Review Packet
 
 `review prepare <task-id>` is read-only stdout generation for every existing
 review target kind: `git_snapshot`, `git_commit`, `diff_fingerprint`, and
@@ -2117,7 +2133,7 @@ returns `review_packet_stale` with exact message
 `review context changed while preparing the packet` and no packet. No SQLite
 transaction is held during Git work.
 
-### Planned Schema And Ownership Sequence
+### Schema And Ownership Sequence
 
 M14 uses narrow sequential migrations rather than pre-creating later feature
 state:
@@ -2270,7 +2286,13 @@ Task selection must support both sequence-sensitive and free-order work.
 
 The MVP uses `lane` plus `lane_order` instead of a general dependency graph.
 
-## CLI Requirements
+## Historical CLI Requirements Through v0.7.0
+
+This section preserves the pre-M14 command-by-command baseline. It is not the
+current invocation contract. The implemented TG-M14 public-surface, setup,
+doctor, completion, checkpoint, and Review Packet sections above control
+v0.8.0; removed commands and `--db` fail through the fixed no-write parser
+contract.
 
 All MVP commands must support:
 
@@ -2506,7 +2528,11 @@ loaded receipt rather than trusted from caller-provided values.
 preserves the original finding. These commands never launch reviewers or make
 LLM calls; they record and validate evidence produced by the approved workflow.
 
-## JSON Output
+## Historical JSON Output Through v0.7.0
+
+This section preserves the old envelope and command inventory for compatibility
+review. Current v0.8.0 envelopes follow the implemented TG-M14 contract and
+never expose `db_path`.
 
 JSON output must be stable enough for Codex to consume. Each command should emit
 a top-level object with:
@@ -2670,7 +2696,7 @@ The CLI must reject obvious secrets and raw dump patterns, including bearer
 tokens, authorization headers, private key blocks, `password=`, `token=`,
 `api_key=`, raw stack traces, raw stdout/stderr dumps, and large raw diffs.
 
-## Acceptance Criteria
+## Historical MVP Acceptance Criteria
 
 The MVP is acceptable when:
 

@@ -95,7 +95,7 @@ def parser_leaf_commands(
 
 
 class SkillSelfContainmentTests(unittest.TestCase):
-    def test_tg_m8_and_m11_guidance_and_metadata_are_synchronized(self):
+    def test_core_task_and_review_guidance_is_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
             encoding="utf-8"
@@ -119,12 +119,15 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("review receipt add", text)
         self.assertIn("review target", skill_md)
         self.assertIn("task add --status done", skill_md)
-        self.assertIn("Only `db init`", skill_md)
-        self.assertIn("snapshot_version\": 3", contracts)
-        self.assertIn("schema v6", release_note)
-        self.assertIn("version `0.3.0`", release_note)
-        self.assertIn("verification receipts", skill_md.lower())
-        self.assertIn("current work", openai_yaml.lower())
+        self.assertIn(
+            "only command that initializes or migrates",
+            " ".join(skill_md.lower().split()),
+        )
+        self.assertIn("snapshot v3", contracts.lower())
+        self.assertIn("schema v13", release_note.lower())
+        self.assertIn("0.8.0", release_note)
+        self.assertIn("verification and review gates", skill_md.lower())
+        self.assertIn("current governed task", openai_yaml.lower())
 
     def test_tg_m11_snapshot_reopen_and_release_metadata_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -156,8 +159,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
         for text in (skill_md, workflow, contracts, readme, release_note):
             self.assertIn("git_snapshot", text)
+        for text in (skill_md, workflow, contracts, readme):
             self.assertIn("reopen", text.lower())
-        for text in (workflow, readme, release_note):
+        for text in (workflow, contracts, readme):
             normalized = " ".join(text.lower().split())
             self.assertIn("--kind git_snapshot", text)
             self.assertIn("--reopen-reason", text)
@@ -168,10 +172,13 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 or "exactly one parent" in normalized
             )
             self.assertIn("fresh", normalized)
-        self.assertIn('__version__ = "0.7.0"', runtime_init)
+        release_normalized = " ".join(release_note.lower().split())
+        self.assertIn("--kind git_snapshot", release_note)
+        self.assertIn("unstaged", release_normalized)
+        self.assertIn("untracked", release_normalized)
+        self.assertIn('__version__ = "0.8.0"', runtime_init)
         self.assertIn("SCHEMA_VERSION = 13", storage)
         self.assertIn("SNAPSHOT_VERSION = 3", viewer)
-        self.assertIn("review_target_base_revision", release_note)
         self.assertIn("omits", release_note)
         self.assertIn("## Result\n\nPASS", forward_note)
         self.assertIn("review_target_mismatch", forward_note)
@@ -186,7 +193,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertIn("0.7.0", version.stdout)
+        self.assertIn("0.8.0", version.stdout)
 
     def test_tg_m12_local_handoff_guidance_and_isolated_flow_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -205,21 +212,21 @@ class SkillSelfContainmentTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         for text in (skill_md, workflow, contracts, readme, release_note):
             self.assertIn("handoff record", text)
+        for text in (skill_md, workflow, contracts, readme):
             self.assertIn("pending_handoff", text)
+        for text in (skill_md, workflow, contracts):
             self.assertIn("Task Contract", text)
             self.assertIn("at most one", text.lower())
             self.assertIn("rejected raw", text.lower())
-        for text in (skill_md, workflow, contracts, release_note):
+        for text in (workflow, contracts):
             self.assertIn("handoff_not_persisted", text)
-        self.assertIn("schema v7", release_note)
-        self.assertIn("version `0.4.0`", release_note.lower())
-        self.assertIn("schema v8", release_note)
-        self.assertIn("version `0.5.0`", release_note.lower())
-        self.assertIn("schema v9", release_note)
-        self.assertIn("version `0.6.0`", release_note.lower())
-        for text in (skill_md, workflow, contracts, readme, release_note):
+        self.assertIn("schema v13", release_note.lower())
+        self.assertIn("0.8.0", release_note)
+        for text in (workflow, contracts, readme, release_note):
             self.assertIn("Effort Advisory", text)
-            self.assertIn("self status", text)
+        self.assertIn("effort_advisory_enabled", skill_md)
+        for text in (skill_md, workflow, contracts, readme, release_note):
+            self.assertNotIn("taskgov.py self status", text)
         self.assertIn("task effort", skill_md)
         self.assertIn("task effort", workflow)
         self.assertIn("task effort", contracts)
@@ -318,22 +325,16 @@ class SkillSelfContainmentTests(unittest.TestCase):
             encoding="utf-8"
         )
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        release_note = (ROOT / "docs" / "release-install.md").read_text(
-            encoding="utf-8"
-        )
-
-        for text in (skill_md, workflow, contracts, readme):
-            self.assertIn("task current --status paused", text)
+        for text in (skill_md, workflow, contracts):
+            self.assertIn("task current", text)
+            self.assertIn("--status paused", text)
             self.assertIn("paused_tasks_present", text)
             self.assertIn("bounded", text.lower())
-        for text in (skill_md, workflow, contracts):
-            self.assertIn("counts.paused", text)
+        self.assertIn("task current", readme)
+        self.assertIn("paused", readme.lower())
         self.assertIn("advisory", skill_md.lower())
         self.assertIn("advisory", workflow.lower())
         self.assertIn("advisory", contracts.lower())
-        self.assertIn("exact paused counts", release_note)
-        self.assertIn("bounded current-status filter", release_note)
-        self.assertIn("advisory paused-work warning", release_note)
 
     def test_skill_guidance_mentions_completion_commit_gate(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -344,23 +345,32 @@ class SkillSelfContainmentTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("completing tasks with structured review and completion evidence", skill_md)
+        self.assertIn("deterministic review and evidence gates", skill_md)
         self.assertIn("task current", skill_md)
         self.assertIn("two distinct", skill_md)
-        for text in (workflow, contracts, readme):
+        for text in (workflow, contracts):
             self.assertIn("--verification-complete", text)
             self.assertIn("--review-complete", text)
-            self.assertIn("--completion-commit-hash", text)
+            self.assertIn("--completion-evidence-kind", text)
+            self.assertIn("--completion-revision", text)
             self.assertIn("--commit-not-required", text)
-            self.assertIn("does not create commits", " ".join(text.split()))
-        self.assertIn("first create the project commit through the", workflow)
+        self.assertIn("--verification-complete", readme)
+        self.assertIn("--review-complete", readme)
+        self.assertIn("--completion-evidence-kind git_commit", readme)
+        self.assertIn("--completion-revision", readme)
+        for text in (skill_md, workflow, contracts, readme):
+            normalized = " ".join(text.split())
+            self.assertRegex(
+                normalized,
+                r"(?i)(?:does not|never)[^.]{0,80}(?:stage|create commits|commits)",
+            )
+        self.assertIn("create the completion commit through the", workflow)
         self.assertIn("--completion-evidence-kind external_revision", workflow)
         self.assertIn("--external-revision-approved", workflow)
-        self.assertIn("git show --name-only <completion_commit_hash>", workflow)
         self.assertIn("done transition without commit evidence failed with `commit_required`", forward_note)
         self.assertIn("the synthetic target project path was not created", forward_note)
 
-    def test_skill_guidance_exposes_static_viewer_with_explicit_write_gate(self):
+    def test_skill_guidance_exposes_only_bounded_automatic_viewer_maintenance(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
             encoding="utf-8"
@@ -375,33 +385,25 @@ class SkillSelfContainmentTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("creating or regenerating a user-requested offline static Task Viewer", skill_md)
-        self.assertIn(
-            "python .agents/skills/task-governance-tool/scripts/taskgov.py web export",
-            skill_md,
-        )
-        self.assertIn("no `viewer` command group", skill_md)
-        self.assertIn("`--project-root` option", skill_md)
+        self.assertIn("canonical offline projection", skill_md)
+        self.assertIn("bounded same-process", skill_md)
+        self.assertIn("no LLM command choice or background", skill_md)
         for text in (skill_md, workflow, contracts, readme):
-            self.assertIn("web export", text)
-            self.assertIn("--read-only", text)
-            self.assertIn("explicit", text.lower())
-            self.assertIn("snapshot", text.lower())
+            self.assertNotIn("taskgov.py web export", text)
+            self.assertNotIn("taskgov web export", text)
+            self.assertNotIn("explicit `--output`", text)
 
-        for text in (skill_md, workflow, readme):
+        for text in (workflow, readme):
             lowered = text.lower()
+            self.assertIn("same-process", lowered)
             self.assertTrue(
-                "no server" in lowered
-                or "start a server" in lowered
-                or "without a server" in lowered
+                "background" in lowered or "schedule" in lowered,
             )
-            self.assertIn("browser", lowered)
 
-        self.assertIn("task-viewer.template.html", release_note)
-        self.assertIn("generated `task-viewer.html`", release_note)
-        self.assertIn("Snapshot v3", release_note)
-        self.assertIn("explicit `--output`", release_note)
-        self.assertIn("offline task viewer", openai_yaml.lower())
+        self.assertIn("bundled Viewer template", release_note)
+        self.assertIn("Viewer snapshot v3", release_note)
+        self.assertNotIn("explicit `--output`", release_note)
+        self.assertNotIn("export", openai_yaml.lower())
         self.assertIn("## Final Result\n\nPASS", forward_note)
         self.assertIn("python scripts/taskgov.py web export --repo", forward_note)
         self.assertIn("created no artifacts", forward_note)
@@ -433,11 +435,15 @@ class SkillSelfContainmentTests(unittest.TestCase):
         active_guidance = (skill_md, workflow, contracts, readme, release_note)
         for text in active_guidance:
             lowered = text.lower()
-            self.assertIn("user-wide", lowered)
-            self.assertIn("unsupported", lowered)
             self.assertNotIn("codex_home", lowered)
             self.assertNotIn(".codex\\skills", lowered)
             self.assertNotIn(".codex/skills", lowered)
+        for text in (skill_md, workflow, contracts):
+            lowered = text.lower()
+            self.assertIn("user-wide", lowered)
+            self.assertIn("unsupported", lowered)
+        for text in (readme, release_note):
+            self.assertRegex(text.lower(), r"\b(?:only|no other)\b")
 
     def test_target_ignore_guidance_is_only_the_root_anchored_skill_state(self):
         expected = "/.agents/skills/task-governance-tool/state/"
@@ -510,10 +516,19 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "ready",
             )
 
-    def test_m14_6_parser_stage_is_exact_before_m14_7_readme_publication(self):
+    def test_m14_7_parser_and_readme_publish_the_same_twenty_leaves(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        command_section = readme.split("## Commands", 1)[1].split("## Non-Goals", 1)[0]
-        documented = set(re.findall(r"^- `taskgov ([^`]+)`$", command_section, re.MULTILINE))
+        command_section = readme.split("## Public Commands", 1)[1].split(
+            "## Privacy And Scope",
+            1,
+        )[0]
+        documented = set(
+            re.findall(
+                r"^\d+\. `taskgov ([^`]+)`$",
+                command_section,
+                re.MULTILINE,
+            )
+        )
 
         self.assertEqual(
             parser_leaf_commands(build_parser()),
@@ -540,23 +555,18 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "review finding resolve",
             },
         )
-        self.assertNotEqual(
-            documented,
-            parser_leaf_commands(build_parser()),
-        )
-        self.assertEqual(len(documented), 19)
+        self.assertEqual(documented, parser_leaf_commands(build_parser()))
+        self.assertEqual(len(documented), 20)
 
     def test_m14_spec_routing_contract_has_fixed_nine_or_ten_calls(self):
         specification = (ROOT / "docs" / "specification.md").read_text(
             encoding="utf-8"
         )
-        graph = specification.split(
-            "The deterministic Skill call graph is:",
-            1,
-        )[1].split(
-            "### Planned Doctor Contract",
-            1,
-        )[0]
+        graph_start = "The deterministic Skill call graph is:"
+        graph_end = "### Doctor Contract"
+        self.assertIn(graph_start, specification)
+        self.assertIn(graph_end, specification)
+        graph = specification.split(graph_start, 1)[1].split(graph_end, 1)[0]
         route_counts = (
             ("one compact `task current` call", 1, 1),
             ("one compact `task next` call", 1, 1),
@@ -613,7 +623,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("Local SQLite-backed task state helper for Codex.", result.stdout)
+            self.assertIn("Local project task-state helper for Codex.", result.stdout)
             self.assertIn("--repo", result.stdout)
             self.assertIn("--read-only", result.stdout)
             self.assertFalse((copied / "state").exists())
@@ -713,10 +723,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("$skillRoot/release-manifest.json", workflow)
         self.assertIn("$doctorJson | ConvertFrom-Json", workflow)
         self.assertIn("$doctor.data.components.package.status -ne 'clean'", workflow)
-        self.assertIn("self status", workflow)
+        self.assertIn("@('self', 'status')", workflow)
         self.assertIn("invalid_command", workflow)
         self.assertIn("SCHEMA_VERSION", workflow)
-        self.assertIn("0\\.7\\.0", workflow)
+        self.assertIn("0\\.8\\.0", workflow)
         self.assertIn("task-viewer\\.html$", workflow)
         self.assertIn('Windows skill checks (Python ${{ matrix.python-version }})', workflow)
         matrix_block = workflow.split("matrix:", 1)[1].split("\n\n    steps:", 1)[0]

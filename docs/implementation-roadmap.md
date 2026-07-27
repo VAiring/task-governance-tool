@@ -1,10 +1,15 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through TG-M12.O2 Local Package Self-Status are
-complete at v0.7.0/schema v9. TG-M12.3 remains blocked on a future Issue Skill
+Status: implementation units through TG-M14.7 are complete at v0.8.0/schema
+v13 with Viewer snapshot v3. TG-M12.3 remains blocked on a future Issue Skill
 intake contract.
 The default-browser launch follow-up remains requirements-only pending design
 and roadmap approval.
+
+Completed unit descriptions before TG-M14 are explicitly historical execution
+lineage. Their legacy commands, options, and intermediate release surfaces do
+not instruct current use; the implemented TG-M14 section and current
+specification/design supersede them where they differ.
 
 This document turns `docs/specification.md` and `docs/design.md` into
 implementation-sized execution units. It is the preferred roadmap for building
@@ -2452,7 +2457,7 @@ corrections. It does not authorize a new schema, command, workflow engine,
 Git write, external CI dispatch, PR, push, or publication. External release
 actions still require explicit user authorization.
 
-## Approved Post-MVP Extension: TG-M14 Daily UX And Local Continuity
+## Implemented Post-MVP Extension: TG-M14 Daily UX And Local Continuity
 
 TG-M14 is sequential in lane `REVIEW-HARDENING`. All units are Tier 2. The
 complete behavioral contract, constants, result tables, schema sequence, and

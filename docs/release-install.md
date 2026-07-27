@@ -1,334 +1,251 @@
 # Release And Install Decision
 
-This note records how `task-governance-tool` should be published after MVP
-completion. It is a release decision note only; it does not authorize installing
-or overwriting a project or user skill directory.
+This note defines the release artifact and supported installation boundary for
+`task-governance-tool` 0.8.0. It does not authorize installing or overwriting a
+Skill in any project.
 
-## Decision
+## Release Identity
 
-Publish the project from this Git repository, and treat the
-`task-governance-tool/` directory as the installable skill package.
+- Package version: `0.8.0`
+- SQLite schema: v13
+- Viewer snapshot: v3, with source-schema compatibility from v5 through v13
+- Supported runtime: Python 3.12 or newer on Windows
+- Verified platform: Windows
 
-The first public publication should distinguish source review material from the
-installable skill artifact:
+Linux and macOS are not claimed as supported in this release.
 
-- Source publication: a Git tag that contains the reviewed source repository.
-- Installable release artifact: an archive containing only the installable
-  `task-governance-tool/` skill folder.
+## Publication Decision
 
-Do not publish generated runtime state, copied root reference material, test
-outputs, caches, logs, or local databases.
+Publish the reviewed source repository as a Git tag and publish a separate
+installable archive whose root is the repository's
+`task-governance-tool/` directory.
 
-The skill must be installed as one physical copy per governed project, not as a
-user-wide shared skill, symbolic link, or Windows junction. A separate
-project-scoped copy keeps task state attached to the project whose tasks it
-manages.
+The installable package contains the co-located release manifest, `SKILL.md`,
+display metadata, bundled Viewer template, CLI entry point and runtime modules,
+and the two one-level Skill references. The manifest is the exact inventory and
+digest authority for packaged core files.
 
-The supported runtime baseline is Python 3.12 or later on Windows. Windows is
-the CI-verified platform. Linux and macOS are unverified and have no support
-claim in this release.
+The archive must exclude:
 
-## Release Artifact Contents
+- generated `state/`, Viewer HTML, managed backups, SQLite databases, and
+  SQLite sidecars;
+- root `references/`, tests, fixtures, development-only documents, and local
+  scratch output;
+- caches, logs, temporary files, environment files, secrets, and editor files.
 
-The installable artifact should contain:
+Creating an archive is side-effect free. It does not initialize, migrate, copy,
+or inspect a target project's local state.
 
-```text
-task-governance-tool/
-  release-manifest.json
-  SKILL.md
-  agents/
-    openai.yaml
-  assets/
-    task-viewer.template.html
-  scripts/
-    taskgov.py
-    task_governance_tool/
-      __init__.py
-      cli.py
-      storage.py
-      tasks.py
-      ordering.py
-      selection.py
-      completion.py
-      reviews.py
-      git_snapshot.py
-      handoffs.py
-      contracts.py
-      effort.py
-      self_status.py
-      viewer.py
-  references/
-    task_workflow.md
-    cli_contracts.md
-```
+## Supported Installation
 
-The artifact must exclude:
-
-- `state/`
-- `*.sqlite`, `*.sqlite3`, `*.db`
-- SQLite sidecars such as `*-wal`, `*-shm`, and `*-journal`
-- generated `task-viewer.html` snapshots
-- root `references/`
-- `tests/`, `fixtures/`, and development-only docs
-- caches, logs, temporary files, and local editor files
-
-## Install Path
-
-For normal stateful use, install a physical artifact copy into the governed
-target project:
+Install one physical package copy per governed project at exactly:
 
 ```text
 <target-project>\.agents\skills\task-governance-tool
 ```
 
-This project-scoped location is the Codex skill discovery path for a project.
-It also keeps the default database path project-local:
+No other ordinary stateful layout is supported. Before installation or update,
+show the complete destination and obtain explicit user approval. Do not
+overwrite an existing package without a separate update decision, and do not
+delete its generated project-local `state/` while replacing packaged core
+files.
 
-```text
-<target-project>\.agents\skills\task-governance-tool\state\projects\<project-id>\taskgov.sqlite
-```
+For a Git-managed target project, add only this root-anchored ignore rule:
 
-Before installing or updating, show the exact destination path and obtain
-explicit user approval. Installing into a target project's `.agents/skills`
-directory is a target-project file mutation. If the destination already exists,
-do not overwrite it without a separate explicit update decision.
-
-Project-scoped setup happens after installation, not while the artifact is
-built. Before running `db init` or any task-state write command, make sure
-generated state is kept out of commits. The target project should ignore at
-least:
-
-```text
+```gitignore
 /.agents/skills/task-governance-tool/state/
 ```
 
-From the target-project root, inspect and initialize explicitly:
+Do not recommend repository-wide extension globs. The one directory rule
+contains this Skill's database, sidecars, backups, locks, and generated Viewer
+without hiding unrelated project fixtures or assets. Non-Git governed
+directories are valid and do not require an ignore file.
+
+From the target-project root, preview setup before the explicit write:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py self status --read-only --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py db status --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py db init --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py db status --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py setup --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
 ```
 
-If a command is launched from inside the installed Skill directory, pass
-`--repo <target-project>` explicitly. Omitting it always selects the current
-directory and never searches for a Git root; non-Git governed directories are
-valid. Stateful commands reject a linked Skill install path before creating
-state.
-`self status` diagnoses that unsupported layout as `unknown` while retaining
-its fixed `suggested_action=continue`.
-
-`self status` checks only the installed package and does not touch SQLite,
-Git, or the network. Only `db init` creates or migrates the database. Version
-`0.7.0` uses schema v9
-and migrates supported schema-v2 through v8 databases through the explicit
-ordered migration path while retaining task/event IDs, completion hashes, and
-structured review history. Schema v7 adds an empty local handoff outbox without
-rewriting existing tasks or evidence. Schema v8 adds revision-zero pointers and
-an empty immutable Contract table without rewriting existing task or handoff
-history. Schema v9 adds empty Effort Advisory basis/activity metadata and a
-zero project activity generation; it does not rewrite existing tasks, events,
-completion evidence, reviews, handoffs, or Contracts. Skill installation or
-an ordinary task command does not migrate a database. Back up the project-local
-database before updating the skill, then run `db init` explicitly. Migrations
-are transactional, repeatable, and never downgrade a database; an older
-runtime rejects a newer schema. An incomplete migration history is not repaired
-by inference:
-`db init` returns `migration_required` without mutation so the operator can
-restore a valid backup or inspect the history.
-
-Project identity remains derived from the canonical absolute target path.
-Moving or renaming the governed directory therefore changes its default
-identity and can make existing state appear uninitialized. This release does
-not provide automatic relocation, a relocation command, or a project UUID.
-
-## Git Snapshot Completion Workflow
-
-Version `0.3.0` supports review before the project creates its completion
-commit. Stage only the intended project changes through the project's own Git
-workflow, capture a snapshot target without a caller revision, collect the
-required reviews, create the project commit, and then complete the task:
+When running from inside the installed Skill directory, supply the target
+project explicitly:
 
 ```powershell
-git add <intended-project-paths>
-python .agents/skills/task-governance-tool/scripts/taskgov.py review target set <task-id> --kind git_snapshot --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --json
-git commit -m "<project-approved message>"
-python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
+python scripts/taskgov.py --repo <target-project> setup --json
 ```
 
-`review target set --kind git_snapshot` accepts no `--revision`. It reads the
-canonical current `HEAD` and stage-0 index entries without changing Git.
-Unstaged and untracked content is excluded. At completion, the commit must have
-exactly one parent equal to the stored base and a tree fingerprint identical to
-the reviewed snapshot. Root and merge commits are unsupported for this path.
-If the reviewed content changes, set a new snapshot target and obtain fresh
-reviews. A matching commit needs only the original two Tier 2 judgments; the
-base/tree binding is deterministic.
+Omitting `--repo` selects the current directory and never searches for a Git
+root. The target directory must exist, but it need not be a Git repository.
 
-After a task is `done`, all task and review writes are rejected except this
-exact reason-required reopen:
+## Setup And Upgrade Contract
+
+`setup` is the only public initializer and migrator. It also performs the
+one-way opt-in to bounded local maintenance and directly publishes or repairs
+the canonical Viewer. It is explicit, noninteractive, idempotent, and limited
+to the supported physical project-scoped package.
+
+Fresh setup and migration default to:
+
+- backup interval: 30 minutes after the last successful managed backup;
+- retained managed generations: 3.
+
+The policy is stored with project state in SQLite; no JSON, TOML, or other
+second configuration file is created. Explicit setup options may select
+1-1,440 minutes and 1-20 generations:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --reopen-reason "<sanitized reason>" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py setup --backup-interval-minutes 60 --backup-generations 5 --json
 ```
 
-Reopen preserves historical evidence but requires fresh verification, review,
-and completion evidence before the task can be completed again.
+Omitted options preserve already configured values. A policy-only replay with
+omitted or equal values performs no write. Once enabled, maintenance has no
+public disable surface.
 
-## Local Handoff Workflow
+Before migration, setup creates one validated managed backup while holding the
+shared fail-fast artifact lock. Migration from supported older schemas is
+transactional, ordered, idempotent, and never a downgrade. It preserves task
+and event identity, completion/review history, handoffs, Contracts, effort
+metadata, and checkpoints through schema v13. An older runtime rejects a newer
+schema.
 
-Version `0.4.0` adds a Task-DB-local outbox for out-of-scope discoveries.
-After classifying a finding once as current Task, blocker, or handoff, record
-the last category before continuing:
+Installation alone and ordinary task commands never migrate. After replacing
+packaged core files while preserving local state, run `setup`; it performs any
+required migration and Viewer repair. A failed migration backup prevents the
+migration.
+
+## Doctor Contract
+
+`doctor` is the sole diagnostic:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py handoff record <task-id> --summary "Concise discovery" --rationale "Outside current acceptance" --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py handoff list --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py handoff show <handoff-id> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py doctor --json
 ```
 
-This release has no Issue adapter, receiver detection, delivery, or
-`handoff sync`; every successful record remains locally rediscoverable as
-`pending_handoff`. Exact replay is idempotent. A distinct occurrence requires
-an explicit stable `--occurrence-id`. Pending rows do not change task
-selection, task events, timestamps, review, or completion.
+It is inherently read-only and always reports
+`suggested_action="continue"` for recognized advisory conditions. It observes
+package integrity separately, then—when state is readable—uses one
+lock-respecting SQLite read transaction for project, task, handoff, backup, and
+Viewer status.
 
-Only explicit user direction may withdraw a never-attempted pending record:
+Doctor never initializes, migrates, backs up, renders, repairs, acquires a
+maintenance lock, inspects Git, runs project verification, or changes the
+target project. It is optional and is not a setup or normal-loop prerequisite.
 
-```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py handoff withdraw <handoff-id> --reason "Handled outside Task Skill" --json
-```
+## Runtime Maintenance
 
-The release artifact stores no Issue priority/lifecycle/resulting-task field,
-claim token output, raw logs, secrets, private prompts, stack traces, or large
-diffs. A failed local record is never reported durable and returns
-`handoff_not_persisted` after its bounded local persistence retry is exhausted.
-If input is rejected by the privacy guard, never repeat, quote, log, store, or
-forward the rejected raw content. The packaged workflow permits at most one
-new `handoff record` attempt using a concise sanitized abstraction; a second
-privacy rejection ends that recovery attempt with only the fixed error.
+After setup opt-in, every eligible successful state mutation closes its SQLite
+write before the fixed same-process maintenance coordinator runs:
 
-## Optional Task Contract Workflow
+1. refresh the canonical Viewer when its source generation is ahead;
+2. attempt at most one backup when the stored interval is due.
 
-Version `0.5.0` adds an optional immutable Contract copied from already
-explicit scope and acceptance. It does not ask the user for missing fields or
-infer activation from task size. Use the documented `--contract-*` group on
-`task add`, or on an exact revision-zero `ready|blocked -> in_progress`
-transition. Later semantic revisions are Contract-only and require explicit
-later authority plus a concise reason. Exact replay is write-free.
+Viewer publication permits one initial render and at most one follow-up render.
+Backup rotation keeps only the applied configured generation count. Both use
+zero-wait OS advisory locks and bounded sanitized outcomes. Contention or
+failure preserves the primary command result and leaves the maintenance stage
+due for the next eligible mutation.
 
-Contract revisions remain SQLite helper state subordinate to governing docs and
-user decisions. They are excluded from list/current/next and Viewer snapshots.
-New handoffs capture the current Contract revision in their identity; existing
-schema-v7 handoffs remain revision zero. There is no expected-revision,
-signature, Issue, or general workflow engine in this release.
+There is no daemon, thread, timer, detached process, scheduler, queue, service,
+browser launch, custom destination, public maintenance command, or separate
+model decision. Handoff-only writes may make backup due but do not change the
+Viewer generation. Setup publishes the Viewer directly.
 
-## Optional Effort Advisory
+The Viewer is a self-contained, read-only `file://` projection under the
+ignored package state. Snapshot v3 accepts source schemas v5-v13 and omits
+storage paths, maintenance internals, checkpoint content, handoffs, raw
+evidence, environment data, and secrets. It performs no network request and
+provides no database or task write control. A browser reload is the only
+refresh action outside taskgov.
 
-Effort Advisory remains disabled unless the consuming project explicitly adds
-`config/effort-advisory.json` to its installed Skill copy with
-`schema_version: 1`, `profile: "informational-v1"`, and `enabled: true`.
-The optional `thresholds` object accepts only `changed_files`,
-`changed_lines`, `changed_modules`, `contract_revisions`, and `handoffs`.
-Thresholds are non-negative integers and are exceeded only when the observed
-value is greater than the configured value. Unknown fields or invalid values
-disable the profile and produce a bounded diagnostic; task work still
-continues.
+## Public CLI Surface
 
-When enabled, an existing transition into `in_progress` may best-effort capture
-a clean or dirty Git basis in schema v9. Capture failure never rejects the
-Task transition. `task effort <task-id>` is offline and read-only; it reports
-unknown rather than guessing when Git coverage or exclusive-task attribution
-is unreliable. It never records an acknowledgement, changes Task or handoff
-state, asks a question, or creates a stop.
+The release exposes exactly these 20 leaves:
 
-## Local Package Self-Status
+1. `taskgov setup`
+2. `taskgov doctor`
+3. `taskgov task add`
+4. `taskgov task list`
+5. `taskgov task next`
+6. `taskgov task current`
+7. `taskgov task effort`
+8. `taskgov task show`
+9. `taskgov task edit`
+10. `taskgov task complete`
+11. `taskgov task checkpoint`
+12. `taskgov handoff record`
+13. `taskgov handoff list`
+14. `taskgov handoff show`
+15. `taskgov handoff withdraw`
+16. `taskgov review prepare`
+17. `taskgov review target set`
+18. `taskgov review receipt add`
+19. `taskgov review finding add`
+20. `taskgov review finding resolve`
 
-Version `0.7.0` adds the offline package-local command:
+Applicable leaves retain `--repo`, `--json`, and `--read-only`; the root retains
+`--version`. Storage and generated-artifact paths are internal implementation
+details, not public CLI choices. Unknown or removed commands/options fail at
+the parser boundary before package, project, Git, or SQLite resolution.
 
-```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py self status --read-only --json
-```
+The normal no-finding Tier 2 Task flow uses at most nine governance subprocess
+calls with the default-off Effort Advisory, or ten when an enabled valid
+profile mechanically adds `task effort`. Doctor, checkpoint, and completion
+check are optional and absent from the standard success path.
 
-It compares every packaged core file with `release-manifest.json` and reports
-`clean`, `modified`, or `unknown`, installed version, manifest-declared release
-origin, and at most 20 relative changed paths. Root `config/`, `adapters/`,
-generated `state/`, and Python caches are explicitly outside core. Added files
-elsewhere are local core modifications. `--repo` and `--db` are accepted for
-CLI compatibility but are not read or resolved.
+For review before the completion commit, stage exactly the intended files,
+set the target with `review target set <task-id> --kind git_snapshot`, and use
+the single bounded packet from `review prepare`. Unstaged and untracked files
+remain outside that target.
 
-Every result is successful advisory output with
-`suggested_action=continue`. Missing or invalid manifests, version mismatch, or
-an incomplete bounded inspection are `unknown`; they do not stop task work.
-The command does not restore, update, download, install, contact GitHub,
-inspect Git, write a cache/database, or create an Issue, PR, or handoff.
-The declared origin and co-located hashes are useful for accidental local
-drift, but are not a signature: coordinated replacement of core and manifest
-can evade the check.
+## Safety And Privacy
 
-## Viewer Runtime State
+`taskgov` may write only canonical generated Skill state after setup and the
+explicit task-state operation requested by the caller. It does not edit target
+project source, stage or write Git, open a browser, create an Issue or PR, or
+use the network.
 
-After installation, an explicitly requested `web export` writes the default
-viewer to:
+Default retention excludes raw stdout/stderr, stack traces, environment dumps,
+full prompts or conversations, authorization material, raw provider bodies,
+large diffs, raw review transcripts, and secrets. The Viewer and diagnostic
+envelopes expose bounded allow-listed projections only.
 
-```text
-<installed-skill-root>\state\projects\<project-id>\viewer\task-viewer.html
-```
-
-Use an explicit `--output` only after the user approves that complete path; its
-parent must already exist. Snapshot v3 continues to serve schemas v5-v9,
-includes typed completion and bounded structured review evidence, carries the
-actual source schema, and omits the internal
-`review_target_base_revision`, handoff rows, handoff summaries, and all
-Contract fields/revisions. The HTML is stale until the user requests
-regeneration. It has no server, live database refresh, browser editing, or
-automatic browser launch. Generated viewers remain runtime state and must not
-be added to the release artifact.
-
-User-wide and linked Skill locations are not public stateful operating modes.
-Use only the physical project-scoped layout documented above.
+SQLite is helper state, not authority over project decisions. The target
+project's governing documents and current user decisions remain authoritative.
 
 ## Pre-Release Checks
 
-Before creating a release artifact:
+Before creating the 0.8.0 artifact:
 
-1. Confirm the worktree is clean.
-2. Run the full offline test suite.
-3. Run the fallback skill self-check or official skill validation helper when
-   available.
-4. Run the installed skill self-containment smoke test.
-5. Confirm an isolated installed copy reports `self status=clean`, can run
-   `web export`, and that the artifact includes `release-manifest.json`,
-   `assets/task-viewer.template.html`, `viewer.py`, `git_snapshot.py`,
-   `handoffs.py`, `contracts.py`, `effort.py`, and `self_status.py`.
-6. Confirm generated `state/`, SQLite files, generated `task-viewer.html`, root
-   copied references, logs, and caches are ignored and absent from the artifact.
-7. Confirm `task-governance-tool/SKILL.md` frontmatter contains only `name` and
-   `description`, and the `name` matches the folder.
-8. Confirm `taskgov --version` reports `0.7.0`, storage reports schema v9, and
-   the Skill, workflow, CLI contracts, README, and this note describe the same
-   snapshot/reopen/local-handoff/Contract/Effort-Advisory/self-status behavior.
+1. Confirm all M14.1-M14.7 acceptance and required Tier 2 reviews passed on
+   their exact revisions.
+2. Run the complete offline test suite and `git diff --check`.
+3. Verify root and group help expose exactly the 20 leaves above.
+4. Verify unknown removed surfaces and raw path options fail before any
+   project, Git, or SQLite observation.
+5. Confirm `taskgov --version` reports `0.8.0`, runtime schema is v13, and
+   Viewer snapshot v3 accepts source schemas v5-v13.
+6. Validate an isolated physical project-scoped install: package status is
+   clean in `doctor`, setup preview is no-write, setup succeeds, and a repeated
+   setup is idempotent.
+7. Run the installed-Skill self-containment and realistic
+   setup-to-completion smoke tests.
+8. Confirm the archive manifest includes every packaged core file with current
+   digests and package version `0.8.0`.
+9. Confirm generated state, SQLite files and sidecars, backups, locks, Viewer
+   HTML, root references, logs, caches, and scratch output are absent from the
+   artifact.
+10. Confirm `SKILL.md`, display metadata, workflow, CLI contracts, README, this
+    note, executable help, and release manifest describe one synchronized
+    revision.
 
-## Publication Notes
+Publishing, pushing, creating a PR, or dispatching external CI requires
+separate explicit authorization.
 
-Initial publication should avoid network services and cloud dependencies. The
-skill is local-first and should remain usable offline.
+## Release Summary
 
-Versioning follows the runtime package version in
-`task-governance-tool/scripts/task_governance_tool/__init__.py`. Release notes
-should name current/next task inspection, pause/resume, sequential transition
-guards, typed completion evidence with read-only Git validation, structured
-review gates, exact paused counts, the bounded current-status filter, the
-advisory paused-work warning, schema v6 migration, deterministic staged-snapshot
-completion binding, done/reopen safety, schema-v7 local handoff, schema-v8
-optional Task Contracts, schema-v9 default-off Effort Advisory, and snapshot-v3
-offline Viewer export. Version `0.7.0` adds offline local package self-status
-without changing schema v9 or Viewer snapshot v3. Version `0.6.0` added schema
-v9 and the read-only advisory beyond version `0.5.0`, which added schema v8 and
-Task Contracts.
-TG-M12.1 version `0.4.0` added schema v7 and local-only handoff behavior.
-Earlier history includes the TG-M11 version `0.3.0` completion-integrity
-release, historical `0.2.0` TG-M8 release candidate, and the `0.1.0` trial.
+Version 0.8.0 consolidates setup and diagnostics, adds typed checkpoints and a
+bounded Review Packet, moves backup and Viewer upkeep behind deterministic
+post-commit maintenance, removes storage and Viewer administration from the
+public CLI, and migrates local state through schema v13. Viewer snapshot v3 is
+unchanged while its accepted source schemas expand through v13.

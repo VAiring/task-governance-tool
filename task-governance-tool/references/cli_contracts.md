@@ -1,651 +1,425 @@
 # CLI Contracts
 
-Use this reference when exact command arguments, JSON shapes, or error behavior
-matter.
+Use this reference when exact public commands, arguments, JSON fields, bounds,
+or error behavior matter.
+
+Release `0.8.0` uses task schema v13 and offline snapshot v3.
 
 ## Contents
 
-- [Invocation](#invocation)
-- [Commands](#commands)
-- [`self status`](#self-status)
-- [`db init`](#db-init)
-- [`db status`](#db-status)
-- [`task add`](#task-add)
-- [`task list`](#task-list)
-- [`task next`](#task-next)
-- [`task current`](#task-current)
-- [`task effort`](#task-effort)
-- [`task show`](#task-show)
-- [`task edit`](#task-edit)
-- [`task complete`](#task-complete)
-- [Local handoff commands](#local-handoff-commands)
-- [`review prepare`](#review-prepare)
-- [Review evidence commands](#review-evidence-commands)
-- [`web export`](#web-export)
-- [Error Codes](#error-codes)
+- [Invocation And Public Inventory](#invocation-and-public-inventory)
+- [Envelope And Read/Write Boundary](#envelope-and-readwrite-boundary)
+- [`setup`](#setup)
+- [`doctor`](#doctor)
+- [Task Commands](#task-commands)
+  - [`task add`](#task-add)
+  - [`task list`](#task-list)
+  - [`task next`](#task-next)
+  - [`task current`](#task-current)
+  - [`task effort`](#task-effort)
+  - [`task show`](#task-show)
+  - [`task checkpoint`](#task-checkpoint)
+  - [`task edit`](#task-edit)
+  - [`task complete`](#task-complete)
+- [Local Handoff Commands](#local-handoff-commands)
+- [Review Commands](#review-commands)
+  - [`review prepare`](#review-prepare)
+  - [Review Evidence](#review-evidence)
+- [Internal Continuity Boundary](#internal-continuity-boundary)
+- [Errors And Privacy](#errors-and-privacy)
 
-## Invocation
+## Invocation And Public Inventory
 
 For normal governed-project use, install one physical project-scoped copy and
-run from the target-project root:
+run from the project root:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py <command> [options]
 ```
 
-The verified runtime is Windows with Python 3.12 or later. Linux and macOS are
-unverified and have no support claim in this release.
-
-For a new target project, start with `db status`. It reports missing or
-outdated databases without creating files. Use `db init` only when local task
-tracking should be created or migrated for that project-scoped install. A
-target project may be a non-Git directory.
-
-If a command is instead launched from inside the installed Skill directory,
-pass the target project explicitly:
+When launching from inside the installed Skill directory, pass the target
+project explicitly:
 
 ```powershell
 python scripts/taskgov.py <command> --repo <target-project> [options]
 ```
 
-Omitting `--repo` always means the current directory; it does not search for a
-Git root. A physical copy at
-`<target-project>/.agents/skills/task-governance-tool` is the only documented
-stateful governed-project layout. Symlink, junction, and user-wide operating
-paths are unsupported. Except for package-local `self status`, a linked Skill
-install path returns exit code 2, `unsupported_install_layout`, and exact message
-`stateful commands require a physical project-scoped skill copy` before
-resolving a database or creating state.
+Omitting `--repo` means the current directory and never searches for a Git
+root. A non-Git directory is valid. Stateful use supports one physical
+project-scoped package only; user-wide, symbolic-link, and Windows junction
+layouts are unsupported. The verified runtime is Windows with Python 3.12 or
+later.
 
-Project identity is derived from the canonical absolute governed-directory
-path. Moving or renaming that directory changes its default identity and may
-make prior state appear uninitialized. This release performs no automatic
-relocation and provides no relocation command or project UUID.
+The complete public command inventory is exactly these 20 leaves:
 
-Common options:
+1. `setup`
+2. `doctor`
+3. `task add`
+4. `task list`
+5. `task next`
+6. `task current`
+7. `task effort`
+8. `task show`
+9. `task edit`
+10. `task complete`
+11. `task checkpoint`
+12. `handoff record`
+13. `handoff list`
+14. `handoff show`
+15. `handoff withdraw`
+16. `review prepare`
+17. `review target set`
+18. `review receipt add`
+19. `review finding add`
+20. `review finding resolve`
 
-- `--repo <path>`: target project root; defaults to the current directory.
-- `--db <path>`: explicit SQLite database path override.
-- `--json`: emit a stable JSON envelope.
-- `--read-only`: reject write commands before creating, migrating, or writing.
+There are no public aliases, alternate state locations, storage-management
+commands, projection-management commands, repair commands, or admin commands.
+Unknown commands fail before package, project, Git, or local-state resolution.
 
-All JSON output uses this envelope:
+Common options are:
+
+- `--repo <path>`: governed project root; default current directory.
+- `--json`: emit the stable JSON envelope.
+- `--read-only`: prohibit creation, migration, or writes.
+- root `--version`: print the package version.
+
+Applicable common options may appear before or after command groups as shown by
+`--help`.
+
+## Envelope And Read/Write Boundary
+
+Every JSON result has exactly these top-level keys:
 
 ```json
 {
   "ok": true,
   "command": "task.next",
   "project_id": "project-a1b2c3d4e5f6",
-  "db_path": "C:\\path\\to\\taskgov.sqlite",
   "data": {},
   "warnings": [],
   "errors": []
 }
 ```
 
-Inspection commands are read-only by default: `self status`, `db status`,
-`task list`, `task next`, `task current`, `task effort`, `task show`, `task
-complete --check`, `handoff list`, `handoff show`, and `review prepare`.
-`self status` is package-local: it accepts the common `--repo` and `--db`
-spellings but does not read or resolve either.
+Public output contains no local storage, backup, projection, or rejected-input
+path. Error rows contain only `code` and a sanitized `message`.
 
-Database write commands are `db init`, `task add`, `task edit`, `task
-complete` without `--check`, and the four `review` evidence commands, plus
-`handoff record` and `handoff withdraw`. Only `db init` may create or migrate a
-database. Other write commands require an already initialized database at the
-current schema version; they return `db_not_initialized` or
-`migration_required` without creating or migrating files otherwise. `web
-export` never writes SQLite, but its normal mode writes one generated HTML file
-after explicit user intent. Use `web export --read-only` for a no-file-write
-preview.
+Inherently read-only commands are `doctor`, task `list`, `next`, `current`,
+`effort`, and `show`, `task complete --check`, handoff `list` and `show`, and
+`review prepare`. `setup --read-only` is a no-write preview.
 
-### Operational database consistency
+Write commands other than `setup` require current initialized state. They
+never initialize or migrate implicitly. `setup` is the only initializer and
+migrator. `--read-only` rejects a write form before a business write.
 
-The live operational database supports rollback-journal mode only. Before an
-operational read or write, taskgov rejects a persistent WAL header or adjacent
-WAL/SHM sidecar with `unsupported_journal_mode` and the exact message
-`task database uses unsupported WAL journal mode`, without opening,
-converting, checkpointing, or deleting database state.
+Each related read response uses one lock-respecting coherent transaction.
+Rollback-journal contention maps to `database_busy`; unsupported WAL state
+maps to `unsupported_journal_mode`. Raw SQLite or operating-system details are
+never emitted. Git observation occurs outside SQLite transactions. Write
+commands revalidate their task/Contract/review basis under a short write
+transaction before one atomic business update.
 
-Every operational read uses SQLite `mode=ro` without `immutable=1`, enables
-`query_only`, and begins an explicit read transaction before schema/project
-validation and all related response queries. A successful response is one
-committed-consistent snapshot. Rollback-journal contention may instead return
-`database_busy` with the exact message
-`task database is busy; run the command again later`; raw SQLite errors are
-never emitted. This read-side mapping is delivered by M13.1. `task next`
-retains its documented committed inter-read freshness boundary between
-status/advisory inspection and candidate selection.
+The normal no-finding Tier 2 Skill graph is bounded to nine governance
+subprocess calls when the Effort Advisory is off and ten when the mandatory
+`task show` boolean enables it. No command asks an LLM to choose that branch.
 
-When the enabled advisory has a stored basis, `task effort` is intentionally
-phased: one coherent transaction reads the task, Contract/handoff counts, and
-stored basis, then closes before Git observation; a second validated
-transaction refreshes activity generations. The generation comparison bridges
-those committed observations. Without a stored basis there is no generation
-comparison and no second DB read. A busy/locked post-Git refresh returns
-`database_busy`, and newly detected WAL state returns
-`unsupported_journal_mode`, rather than a successful unknown advisory. Other
-bounded refresh failures may retain `activity_generation_uncertain`.
+## `setup`
 
-TG-M13.2 shortens write transactions without changing commands or payloads:
-Git, completion, and Effort preflight occurs before `BEGIN IMMEDIATE`; the
-relevant task/review/Contract/completion basis is reread under the short lock
-before one atomic write. `git_snapshot` describes the observed HEAD and stage-0
-index at capture time, not a Git index lock. M13.2 extends the same
-`database_busy` code/message to residual write-side busy/locked failure, using
-exit code 2, the command's existing empty `data`, and no `retryable` or
-`suggested_action` field. Taskgov adds no generic automatic retry; handoff
-record's existing one fresh-transaction retry is unchanged.
-
-TG-M14.1 adds a shared completion preflight. `task complete --check` captures
-one short coherent task/Contract/lane/review basis, closes SQLite before Git,
-then captures a second short coherent basis. Thin `task complete` performs the
-same outside-lock observation and delegates its locked write to the existing
-`task edit` transition. Neither path holds a SQLite transaction during Git.
-
-## Commands
-
-### `self status`
-
-Inspect the installed Skill package against its co-located release manifest:
+`setup` is the sole explicit initializer, migrator, one-way continuity opt-in,
+and canonical offline-projection repair action:
 
 ```powershell
-python scripts/taskgov.py self status --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
 ```
 
-This command needs no initialized database or Git repository. The envelope has
-`project_id=null` and `db_path=null`. `--read-only` is accepted but redundant.
+Options:
 
-`data`:
+- `--backup-interval-minutes <1..1440>`
+- `--backup-generations <1..20>`
+- `--read-only` for a no-write preview
+
+The normal Skill flow supplies neither policy option. A first setup defaults
+to 30 minutes after the last successful managed copy and three retained
+generations. Once configured, omitted options preserve stored values; values
+equal to stored policy are a write-free replay.
+
+`data` always has exactly:
 
 ```json
 {
-  "package_name": "task-governance-tool",
-  "package_version": "0.7.0",
-  "release_origin": "github:VAiring/task-governance-tool",
-  "manifest_version": 1,
-  "status": "clean",
-  "changed_core_count": 0,
-  "changed_core_paths": [],
-  "changed_core_paths_truncated": false,
-  "unknown_reasons": [],
-  "suggested_action": "continue"
+  "status": "setup_complete",
+  "planned_writes": [
+    "database_initialize",
+    "maintenance_configure",
+    "viewer_publish"
+  ],
+  "completed_writes": [
+    "database_initialize",
+    "maintenance_configure",
+    "viewer_publish"
+  ],
+  "schema_from": null,
+  "schema_to": 13,
+  "maintenance_enabled": true,
+  "backup_interval_minutes": 30,
+  "backup_generations": 3,
+  "viewer_status": "published"
 }
 ```
 
-`clean`, `modified`, and `unknown` all return `ok=true` and exit code 0.
-Modified core adds warning `package_core_modified`; unknown adds
-`package_status_unknown`. The changed-path list is sorted and limited to 20,
-while `changed_core_count` is exact after a complete comparison. Missing or
-invalid manifests and package-version mismatches return `unknown` with a stable
-reason and no changed-path claim.
+Successful `status` is `setup_preview`, `setup_complete`, or
+`already_setup`. Write-list values are limited to `database_initialize`,
+`migration_backup`, `database_migrate`, `maintenance_configure`, and
+`viewer_publish` in execution order. `viewer_status` is `not_present`,
+`current`, `published`, or `repair_required`.
 
-A symbolic-link or junction Skill install path returns `unknown` reason
-`unsupported_install_layout`, warning `package_status_unknown`, and the same
-fixed `suggested_action=continue`. This package-only diagnosis creates no state.
+Preview reports current durable state, not planned state:
+`completed_writes=[]`, and a fresh preview keeps
+`maintenance_enabled=false`. A healthy replay has empty write lists. Every
+error has `status=null`; preflight/policy failures use empty write lists and
+null observed values except `schema_to=13`. A later-stage failure reports only
+the durable ordered prefix.
 
-Root `config/`, `adapters/`, generated `state/`, `__pycache__/`, and `*.pyc`
-are outside core. Output never contains package-absolute paths, file content,
-digests, symlink targets, or operating-system exception text. The declared
-origin is not a signature. The command performs no SQLite, Git, network,
-GitHub, update, repair, download, install, Issue/PR, handoff, or Task action.
+Setup is noninteractive and idempotent. It does not create a second
+configuration file, disable continuity after opt-in, contact a network, inspect
+or mutate Git, or modify target source.
 
-### `db init`
+## `doctor`
 
-Create or migrate the local task database.
+Doctor is the sole diagnostic and is inherently read-only:
 
 ```powershell
-python scripts/taskgov.py db init --repo <target-project> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py doctor --json
 ```
 
-`data`:
+It never initializes, migrates, repairs, backs up, renders, locks an artifact,
+inspects Git, runs project tests, or changes target state. It is not a
+prerequisite for setup or normal task work.
+
+`data` has exactly `suggested_action`, `setup_eligible`, and `components`.
+`suggested_action` is always `continue`. Component keys are exactly
+`package`, `project_state`, `task_summary`, `handoff_delivery`, and
+`maintenance`.
+
+A ready result has this structure:
 
 ```json
 {
-  "created": true,
-  "migrations_applied": [1, 2, 3, 4, 5, 6, 7, 8, 9],
-  "schema_version": 9
-}
-```
-
-`db init` validates contiguous migration history before and after applying an
-ordered migration. A gap is not inferred or stamped as repaired: the command
-returns `migration_required` without mutation and directs the operator to
-restore a valid database backup or inspect the migration history.
-
-### `db status`
-
-Inspect database readiness without creating or migrating files.
-
-```powershell
-python scripts/taskgov.py db status --repo <target-project> --json
-```
-
-`data`:
-
-```json
-{
-  "exists": true,
-  "needs_init": false,
-  "needs_migration": false,
-  "schema_version": 9,
-  "counts": {
-    "active": 3,
-    "paused": 1,
-    "blocked": 1,
-    "review_pending": 0,
-    "done": 2,
-    "next_actionable": 2,
-    "handoff_pending": 3
-  },
-  "handoff_delivery": {
-    "adapter_enabled": false,
-    "sync_due": false
+  "suggested_action": "continue",
+  "setup_eligible": true,
+  "components": {
+    "package": {
+      "package_name": "task-governance-tool",
+      "package_version": "0.8.0",
+      "release_origin": "github:VAiring/task-governance-tool",
+      "manifest_version": 1,
+      "status": "clean",
+      "changed_core_count": 0,
+      "changed_core_paths": [],
+      "changed_core_paths_truncated": false,
+      "unknown_reasons": [],
+      "suggested_action": "continue"
+    },
+    "project_state": {
+      "code": "ready",
+      "schema_version": 13,
+      "required_schema_version": 13
+    },
+    "task_summary": {
+      "code": "ready",
+      "active": 0,
+      "blocked": 0,
+      "done": 0,
+      "next_actionable": 0,
+      "paused": 0,
+      "review_pending": 0
+    },
+    "handoff_delivery": {
+      "code": "ready",
+      "handoff_pending": 0,
+      "adapter_enabled": false,
+      "delivery_due": false
+    },
+    "maintenance": {
+      "code": "enabled",
+      "opted_in": true,
+      "backup": {
+        "code": "current",
+        "due": false,
+        "interval_minutes": 30,
+        "generations": 3,
+        "last_success_at": "2026-07-27T00:00:00Z",
+        "last_outcome": {
+          "code": "succeeded",
+          "occurred_at": "2026-07-27T00:00:00Z"
+        }
+      },
+      "viewer": {
+        "code": "current",
+        "due": false,
+        "source_generation": 1,
+        "rendered_generation": 1,
+        "last_success_at": "2026-07-27T00:00:00Z",
+        "last_outcome": {
+          "code": "succeeded",
+          "occurred_at": "2026-07-27T00:00:00Z"
+        }
+      }
+    }
   }
 }
 ```
 
-`counts.active` includes `ready`, `in_progress`, `paused`, `blocked`, and
-`review_pending`; it excludes terminal `done` and `cancelled` tasks.
-`counts.paused` is the exact project-scoped paused population and does not
-remove paused tasks from `counts.active`.
-`counts.handoff_pending` is the exact project-scoped pending-handoff
-population. Delivery is not implemented, so `adapter_enabled`
-and `sync_due` are always `false`; pending rows produce no warning.
+Unavailable project-backed components are exactly `{"code":"unavailable"}`.
+Not-yet-known maintenance values are `null`, not omitted. Maintenance outcome
+codes are `none`, `succeeded`, `deferred`, or `failed`; readable maintenance
+states remain successful advisory data and never create a stop.
 
-When a valid Effort Advisory profile is explicitly enabled, `data` also
-contains:
+Package `modified` or `unknown` is an exit-0 warning and makes
+`setup_eligible=false`. Missing or migratable state is an exit-0
+`setup_required` or `migration_required` warning. Invalid layout/project,
+unsupported runtime/journal, busy or unreadable state, project mismatch, and a
+newer schema are exit-2 errors. No row exposes a local path, digest, file
+content, exception, or raw state.
 
-```json
-{
-  "effort_advisory": {
-    "enabled": true,
-    "profile": "informational-v1",
-    "profile_hash": "sha256:..."
-  }
-}
-```
-
-Absent or valid disabled profiles preserve the pre-advisory `db status` shape.
-An invalid present profile adds
-`effort_advisory: {"enabled": false, "configuration": "invalid"}` and one
-`effort_advisory_profile_invalid` continuation warning.
+## Task Commands
 
 ### `task add`
 
-Register one explicit task in a database previously prepared with `db init`.
+Register one explicit task:
 
 ```powershell
 python scripts/taskgov.py task add --repo <target-project> --title "Update docs" --kind optional --priority normal --json
 ```
 
-Useful options:
+Options are `--title`, `--description`, `--kind`, `--lane`, `--order`,
+`--priority`, `--status`, `--blocked-reason`, `--review-tier`,
+`--verification`, `--tags`, and the Contract group
+`--contract-scope`, `--contract-acceptance`, `--contract-constraints`,
+`--contract-authority-ref`, and `--contract-change-reason`.
 
-- `--description`
-- `--kind sequential|optional`
-- `--lane`
-- `--order`
-- `--priority low|normal|high|urgent`
-- `--status ready|in_progress|blocked|review_pending|cancelled`
-- `--blocked-reason`
-- `--review-tier 0|1|2`
-- `--verification`
-- `--tags`
-- optional Contract group:
-  - `--contract-scope`
-  - `--contract-acceptance`
-  - `--contract-constraints`
-  - `--contract-authority-ref`
-  - `--contract-change-reason`
+Kinds are `sequential|optional`; priorities are
+`low|normal|high|urgent`; review tiers are `0|1|2`. An initial Contract
+requires both scope and acceptance and never gets inferred from missing input.
+Success data contains `task` and `event`, plus
+`contract_write={"recorded":true,"revision":1}` when a Contract was recorded.
 
-`data`: `task`, `event`.
-
-The optional Task Contract group is per-task and never inferred. When any
-Contract option is supplied, both scope and acceptance are required.
-An initial Contract accepts optional constraints and authority reference but
-rejects a change reason. It is allowed only when the resulting status is
-`ready`, `in_progress`, `blocked`, or `review_pending`. Successful Contract
-input adds:
-
-```json
-{
-  "contract_write": {
-    "recorded": true,
-    "revision": 1
-  }
-}
-```
-
-Without Contract input, the existing `task`/`event` shape is unchanged and the
-task remains at Contract revision zero. Missing Contract fields are not
-prompted for or inferred.
-
-An initial status of `done` is prohibited. Add the task in another supported
-initial state, then complete it with `task edit --status done` so the normal
-verification, review, and completion-evidence gates are enforced. Attempting
-`task add --status done` returns `initial_done_forbidden` before any task or
-event is stored.
-
-An initial status of `paused` is also prohibited and returns
-`initial_paused_forbidden`. `paused` is an intentional hold for work that has
-already entered `in_progress` or `review_pending`.
-
-For sequential tasks, initial `in_progress` or `review_pending` and any
-insertion into an existing lane must preserve the shared predecessor rule.
-Every earlier same-lane task must be `done` or `cancelled` before later work may
-be active or under review.
+Initial `done` returns `initial_done_forbidden`; specifically,
+`task add --status done` never stores a task or event. Initial `paused` returns
+`initial_paused_forbidden`. Initial `blocked` requires `--blocked-reason`.
+Sequential adds preserve the same predecessor rule used for selection and
+transitions.
 
 ### `task list`
 
-Return compact filtered task rows.
+Return compact filtered rows:
 
 ```powershell
 python scripts/taskgov.py task list --repo <target-project> --status ready --limit 20 --json
 ```
 
-Filters:
-
-- `--status`
-- `--kind`
-- `--lane`
-- `--priority`
-- `--tag`
-- `--limit`
-- `--include-done`
-
-`data`: `tasks`, `count`, `limit`.
+Filters are `--status`, `--kind`, `--lane`, `--priority`, `--tag`,
+`--limit`, and `--include-done`. Data keys are `tasks`, `count`, and `limit`.
 
 ### `task next`
 
-Return ready work candidates without loading all history.
+Return ready candidates:
 
 ```powershell
-python scripts/taskgov.py task next --repo <target-project> --limit 5 --json
+python scripts/taskgov.py task next --repo <target-project> --limit 5 --compact --json
 ```
 
-Filters:
+Filters are `--kind`, `--lane`, `--priority`, and `--limit` (default 5).
+Only ready optional tasks and ready sequential tasks whose earlier same-lane
+predecessors are done/cancelled are actionable.
 
-- `--kind`
-- `--lane`
-- `--priority`
-- `--limit`, default `5`
+Default data keys are `tasks`, `count`, `limit`, and `selection_rules`.
+Compact data keys are exactly `tasks`, `total_matching`, `returned_count`,
+`limit`, and `truncated`. A compact task has only `task_id`, `title`, `kind`,
+`lane`, `lane_order`, `priority`, `review_tier`, `tags`, and
+`suggested_next_action`.
 
-Selection rules:
+Complete compact JSON stdout is capped at 16,384 UTF-8 bytes. Truncation keeps
+only a complete-row prefix in existing order. `--compact` requires `--json`;
+otherwise the command returns `invalid_option_combination`.
 
-- Include only `status=ready`.
-- Include ready optional tasks directly.
-- Include ready sequential tasks only when earlier same-lane tasks are `done` or
-  `cancelled`.
-- Exclude `in_progress`, `paused`, `blocked`, `review_pending`, `done`, and
-  `cancelled`.
-
-`data`: `tasks`, `count`, `limit`, `selection_rules`.
-
-With `--compact --json`, the data keys are exactly `tasks`,
-`total_matching`, `returned_count`, `limit`, and `truncated`. Each task contains
-only `task_id`, `title`, `kind`, `lane`, `lane_order`, `priority`,
-`review_tier`, `tags`, and `suggested_next_action`. `total_matching` is the
-exact filter/readiness count before the query limit; `returned_count` is the
-number retained after the byte cap. The complete JSON stdout, including the
-normal envelope and warnings, is at most 16,384 UTF-8 bytes. Byte truncation
-retains an existing-order complete-row prefix and sets `truncated=true`; a
-query limit alone does not.
-
-When paused work exists, a successful response adds exactly one top-level
-warning without changing `data` or the success exit code:
-
-```json
-{
-  "code": "paused_tasks_present",
-  "message": "3 paused tasks exist; run taskgov task current --status paused"
-}
-```
-
-The count comes from the immediately preceding successful status inspection
-and is advisory under concurrent updates. The warning contains no task title,
-pause reason, or event text. Failed commands and projects with zero paused
-tasks return no such warning.
+Existing paused work adds warning `paused_tasks_present` without changing
+candidates, exit status, or data. It is an advisory recall hint only.
 
 ### `task current`
 
-Rediscover work that has already started, is under review, is intentionally
-paused, or is blocked. This inspection command is read-only and does not infer
-working-tree freshness or staleness.
+Rediscover started or held work:
 
 ```powershell
-python scripts/taskgov.py task current --repo <target-project> --limit 20 --json
-python scripts/taskgov.py task current --repo <target-project> --status paused --limit 20 --json
+python scripts/taskgov.py task current --repo <target-project> --compact --json
+python scripts/taskgov.py task current --repo <target-project> --status paused --json
 ```
 
-`data`:
+Default statuses are `in_progress`, `review_pending`, `paused`, and `blocked`.
+`--status` accepts one of those values. `--limit` defaults to 20 and caps at
+100.
 
-```json
-{
-  "tasks": [
-    {
-      "task_id": "tg_task_example",
-      "status": "in_progress",
-      "latest_event": {},
-      "suggested_next_action": "continue the task and inspect its latest event"
-    }
-  ],
-  "count": 1,
-  "limit": 20,
-  "statuses": ["in_progress", "review_pending", "paused", "blocked"]
-}
+Default data keys are `tasks`, `count`, `limit`, and `statuses`; each row
+contains the normal task projection, latest event, latest checkpoint, and
+deterministic suggested action. Compact data keys are exactly `tasks`,
+`total_matching`, `returned_count`, `limit`, `statuses`, and `truncated`.
+Compact rows contain only:
+
+```text
+task_id, title, status, kind, lane, lane_order, priority, review_tier,
+blocked_reason, pause_reason, latest_event, suggested_next_action
 ```
 
-Each task contains the normal public task fields plus its latest event and a
-deterministic status-based suggested action. Ordering is status
-(`in_progress`, `review_pending`, `paused`, `blocked`), priority, newest
-`updated_at`, then `task_id`. Same-second latest events use event row order as a
-private tie-breaker. `--limit` defaults to `20` and is capped at `100`.
-Optional `--status` accepts only `in_progress`, `review_pending`, `paused`, or
-`blocked`. A filter returns that one value in `data.statuses`; unsupported
-statuses fail with `invalid_status` without mutation. This is a bounded view,
-not paged history; use `db status.counts.paused` for the exact paused
-population.
-
-With `--compact --json`, the data keys are exactly `tasks`,
-`total_matching`, `returned_count`, `limit`, `statuses`, and `truncated`. Each
-task contains only `task_id`, `title`, `status`, `kind`, `lane`, `lane_order`,
-`priority`, `review_tier`, `blocked_reason`, `pause_reason`, `latest_event`,
-and `suggested_next_action`. A non-empty latest event contains only
-`event_type`, `summary`, `created_at`, and `summary_truncated`; its summary is
-truncated at a valid UTF-8 boundary to at most 256 bytes. The complete JSON
-stdout is at most 24,576 UTF-8 bytes and retains only complete rows in existing
-order.
-
-Both compact caps account for every formatter newline as the portable CRLF
-worst case. Raw stdout therefore remains within the fixed cap whether the
-platform emits LF or CRLF.
-
-The normal envelope keys remain in M14.1. Every bounded JSON handler exit
-passes through the final cap. Every argparse rejection with lexical `--json`
-before `--`, including an argparse-supported abbreviation, instead uses the
-smallest 8,192-byte cap unconditionally; no second command parser is involved.
-When diagnostic identity values would exceed the applicable cap, the formatter
-sets `db_path` to `null`, then sets `project_id` to `null` only if still
-required. Values are never partially truncated. If an error diagnostic still
-exceeds the cap because it embeds an unbounded rejected value, the command,
-data, exit code, and first safe error code remain unchanged while its message
-becomes exactly `diagnostic details omitted to satisfy the bounded output
-limit`. M14.2 owns global removal of the `db_path` key.
-
-Only `task current` and `task next` accept `--compact`. It requires `--json`;
-otherwise parsing fails before project/database resolution with exit 2, code
-`invalid_option_combination`, and exact message `--compact requires --json`.
-Default JSON and text outputs are unchanged. Compact selection omits Contract
-and checkpoint content; inspect the selected task with `task show`.
+A compact latest event contains only `event_type`, `summary`, `created_at`,
+and `summary_truncated`, with summary capped at 256 UTF-8 bytes. Complete
+compact JSON stdout is capped at 24,576 bytes and omits Contract/checkpoint
+content. `--compact` requires `--json`. Follow selection with `task show`.
 
 ### `task effort`
 
-Read the optional informational scale observation for one task:
+Read one optional informational observation:
 
 ```powershell
-python scripts/taskgov.py task effort --repo <target-project> <task-id> --json
+python scripts/taskgov.py task effort --repo <target-project> <task-id> --read-only --json
 ```
 
-The only supported profile location is
-`<installed-skill-root>/config/effort-advisory.json`. The file is never
-created or changed by `taskgov`. It is strict, versioned JSON:
+The package-local versioned profile is never created or changed by taskgov.
+Its only metrics are changed Git files, lines, modules, current Contract
+revision count, and recorded source-task handoff count. An absent, disabled, or
+invalid profile returns an enabled-false bounded projection and performs no
+Git work.
 
-```json
-{
-  "schema_version": 1,
-  "profile": "informational-v1",
-  "enabled": true,
-  "thresholds": {
-    "changed_files": 20,
-    "changed_lines": 500,
-    "changed_modules": 4,
-    "contract_revisions": 2,
-    "handoffs": 5
-  }
-}
-```
-
-`thresholds` is optional and may contain any subset of those five metric keys.
-Values are non-negative integers; an observation exceeds a threshold only when
-`value > threshold`. Unknown fields, duplicate keys, unsupported metrics, and
-invalid values disable the profile. There is no profile creation command,
-environment-variable override, inherited profile, arbitrary command, network
-source, fixture scan, retry parser, or configured test runner.
-
-An enabled result has this fixed `data` shape:
-
-```json
-{
-  "task_id": "tg_task_example",
-  "enabled": true,
-  "profile": {
-    "id": "informational-v1",
-    "version": 1,
-    "hash": "sha256:..."
-  },
-  "measurements": {
-    "changed_files": 3,
-    "changed_lines": 42,
-    "changed_modules": 2,
-    "contract_revisions": 1,
-    "handoffs": 0
-  },
-  "thresholds": {
-    "changed_files": 2
-  },
-  "exceeded": ["changed_files"],
-  "basis": {
-    "status": "captured",
-    "revision": "0123456789abcdef0123456789abcdef01234567",
-    "clean": true,
-    "captured_at": "2026-07-26T00:00:00Z",
-    "activity_generation": 1
-  },
-  "observation": {
-    "revision": "89abcdef0123456789abcdef0123456789abcdef",
-    "clean": true,
-    "observed_at": "2026-07-26T00:10:00Z"
-  },
-  "coverage": {
-    "changed_files": "complete",
-    "changed_lines": "complete",
-    "changed_modules": "complete",
-    "contract_revisions": "complete",
-    "handoffs": "complete"
-  },
-  "attribution": "exclusive_task_window",
-  "unknown_reasons": [],
-  "warning_key": "effort_advisory.threshold_exceeded.v1",
-  "suggested_action": "continue"
-}
-```
-
-Text mode emits the five measurements in that fixed order and a separate
-fixed-order threshold line; unavailable values use `unknown` and no configured
-thresholds use `none`.
-
-Absent, disabled, or invalid profiles return `ok: true`, `enabled: false`, a
-fixed empty projection, and `profile_disabled` or `profile_invalid`; the
-inspection does not read Git and never writes advisory state. Ordinary Task
-writes do no advisory bookkeeping until an enabled profile has captured a
-basis. After such a basis exists, later disabled periods retain only hidden
-project/subject activity counters so re-enablement cannot erase overlap
-evidence; they do not capture a new basis or change any Task output. An enabled
-profile may best-effort capture a basis only inside an existing transition
-into `in_progress`. Capture failure never rejects the Task write and leaves no
-partial basis.
-
-Each database observation uses a fresh coherent `mode=ro`, `query_only`
-transaction. Git observation uses bounded, no-shell, optional-lock-disabled
-reads with `core.fsmonitor` disabled and submodules ignored. A stored basis
-must be a full Git object ID before it is passed as an argument; invalid
-evidence is not emitted. The command emits no paths, stderr, diffs, or raw
-logs. Non-Git, dirty or unstable endpoints, missing or invalid basis/coverage,
-and possible activity overlap return `ok: true`, `attribution: "unknown"`,
-stable reason codes, and `suggested_action: "continue"`. Activity generation
-is refreshed from a new coherent DB transaction after Git observation;
-non-lock/non-journal refresh failure remains
-`activity_generation_uncertain`, while M13 read-side `database_busy` and
-`unsupported_journal_mode` remain command errors.
-Threshold exceedance adds one stable
-`effort_advisory_threshold_exceeded` warning with the same action. The command
-never acknowledges, asks, hands off, pauses, blocks, changes acceptance, or
-writes Task/DB/Git state. An advisory metric, threshold, or unknown result never
-fails the command; ordinary database readiness, journal, and contention errors
-still can. `--read-only` is accepted and has the same behavior.
+Enabled data contains `task_id`, `enabled`, `profile`, `measurements`,
+`thresholds`, `exceeded`, `basis`, `observation`, `coverage`, `attribution`,
+`unknown_reasons`, `warning_key`, and `suggested_action`.
+`suggested_action` is always `continue`. Threshold or attribution results
+never change status, acceptance, review, completion, or target state. The
+command emits no paths, stderr, diffs, raw logs, or Git writes.
 
 ### `task show`
 
-Show one task plus recent event history and suggested next action.
+Read one task and its bounded current context:
 
 ```powershell
 python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 ```
 
-`data`: `task`, `events`, `suggested_next_action`, `review_evidence`,
-`handoff_summary`, `contract`, `effort_advisory_enabled`.
+Data keys are exactly `task`, `events`, `suggested_next_action`,
+`review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`, and
+`effort_advisory_enabled`.
 
-`effort_advisory_enabled` is `true` only for a valid enabled package-local
-Effort Advisory profile. An absent or valid disabled profile returns `false`
-without a warning. An invalid present profile returns `false` plus the existing
-`effort_advisory_profile_invalid` continuation warning. Reading this routing
-field performs no Git observation, and text `task show` output is unchanged.
+`effort_advisory_enabled` is a deterministic boolean routing field. Invalid
+profile content returns `false` plus
+`effort_advisory_profile_invalid`; the field performs no Git work.
 
-`task` includes typed completion evidence and the legacy commit projection:
+The task contains typed completion evidence and current review-target fields.
+`review_evidence` is bounded to the current target/generation, tier gate,
+counts, blocking findings, and recent structured receipts/findings; it omits
+raw reviews and private reasoning. `handoff_summary` contains exact
+`pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user` counts.
 
-- `completion_commit_required`
-- `completion_commit_hash`
-- `completion_evidence_kind`
-- `completion_evidence_revision`
-- `completion_evidence_reason`
-- `external_revision_approved`
-
-It also includes the current review target fields
-`review_target_kind`, `review_target_value`,
-`review_target_base_revision`, and `review_target_generation`. The base
-revision is non-empty only for `git_snapshot`.
-
-`review_evidence` is a bounded structured projection containing the current
-target and generation, tier gate/pass/fallback state, receipt and open-finding
-counts, blocking findings, and at most ten recent receipts and findings. It
-never contains the snapshot base revision, raw review transcripts, or private
-reasoning.
-
-`handoff_summary` is a compact sibling, not a task field:
-
-```json
-{
-  "pending_handoff": 2,
-  "handed_off": 0,
-  "handoff_withdrawn_by_user": 1
-}
-```
-
-It contains exact per-state counts for this source task and is excluded from
-task list/current/next rows and Viewer snapshots. On readiness or not-found
-errors, its fixed value is `null`.
-
-`contract` is a sibling, not a task field. Revision zero has this fixed shape:
+Revision-zero Contract data is:
 
 ```json
 {
@@ -659,361 +433,204 @@ errors, its fixed value is `null`.
 }
 ```
 
-A current immutable revision fills the same keys. The Contract pointer and
-fields remain absent from list/current/next and Viewer task objects. On
-readiness or not-found errors, `contract` is `null`.
+`latest_checkpoint` is `null` or the public checkpoint object below.
+
+### `task checkpoint`
+
+Record one optional typed continuation boundary:
+
+```powershell
+python scripts/taskgov.py task checkpoint --repo <target-project> <task-id> --summary "Completed slice" --next-action "Run verification" --unresolved-risk "Review remains" --json
+```
+
+`--summary` and `--next-action` are required. `--unresolved-risk` may repeat at
+most eight times. UTF-8 limits are 1,024 bytes for summary, 1,024 for next
+action, 512 per risk, 4,096 for all risks, and 6,144 for the complete caller
+payload.
+
+Data keys are exactly `checkpoint`, `created`, `replayed`, and `event`.
+Checkpoint keys are exactly:
+
+```text
+checkpoint_id, task_id, contract_revision, summary, next_action,
+unresolved_risks, created_at
+```
+
+A new append returns `created=true`, `replayed=false`, and an event containing
+only `task_event_id`, `event_type="checkpoint_recorded"`, and `created_at`.
+Exact replay of the latest checkpoint for the same Contract revision returns
+`created=false`, `replayed=true`, `event=null`, and writes nothing.
+
+Checkpoint use is never automatic or required. It does not change task status,
+selection, gates, or `tasks.updated_at`. Done tasks remain immutable.
 
 ### `task edit`
 
-Update task state or metadata.
+Update task state or metadata:
 
 ```powershell
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status blocked --blocked-reason "Waiting for ..." --json
+python scripts/taskgov.py task edit --repo <target-project> <task-id> --status blocked --blocked-reason "Waiting for user decision" --json
 ```
 
-Editable options:
+Editable arguments are:
 
-- `--title`
-- `--description`
-- `--kind`
-- `--lane`
-- `--order`
-- `--priority`
-- `--status`
-- `--blocked-reason`
-- `--pause-reason`
-- `--review-tier`
-- `--verification`
-- `--tags`
-- `--add-note`
-- `--reopen-reason <summary>`: concise sanitized reason for the only permitted
-  write to a `done` task, an isolated reopen to `in_progress`.
-- `--review-tier-change-reason <summary>`: concise sanitized reason required
-  when lowering a review tier before review begins.
-- `--completion-commit-hash <revision>`: Git-only compatibility alias. Verify
-  an existing commit read-only and store its canonical full object ID.
-- `--completion-evidence-kind <kind>`: explicitly select `git_commit`,
-  `external_revision`, or `commit_not_required`.
-- `--completion-revision <revision>`: revision for explicit Git or external
-  evidence.
-- `--completion-evidence-reason <summary>`: concise sanitized reason required
-  for external evidence.
-- `--external-revision-approved`: explicitly acknowledge that the external
-  durable source is approved instead of target Git history when available.
-- `--commit-not-required`: explicitly mark that no managed materials changed;
-  compatibility alias for `commit_not_required` evidence.
-- `--verification-complete`: record a concise command-time confirmation that
-  required verification passed or has an approved exception.
-- `--review-complete`: record a concise command-time confirmation that the
-  required review gate passed or has a valid fallback.
-- the optional Contract group:
-  `--contract-scope`, `--contract-acceptance`, `--contract-constraints`,
-  `--contract-authority-ref`, and `--contract-change-reason`.
-
-`data`: `task`, `changed_fields`, `event`.
-
-For a revision-zero task, Contract input is accepted only with an exact
-`ready|blocked -> in_progress` transition, empty completion/review evidence,
-and no other caller edit. It records revision 1 and returns
-`event.event_type=contract_recorded`.
-
-For a task with a Contract, later input is Contract-only and allowed in
-`ready`, `in_progress`, `paused`, `blocked`, or `review_pending`. Scope and
-acceptance remain required. Line endings and outer whitespace are normalized;
-omitted later constraints preserve the current value and explicit empty
-constraints remove it. Canonically equal content is a write-free replay:
-
-```json
-{
-  "task": {},
-  "changed_fields": [],
-  "event": null,
-  "contract_write": {
-    "recorded": false,
-    "revision": 2
-  }
-}
+```text
+--title --description --kind --lane --order --priority --status
+--blocked-reason --pause-reason --review-tier --verification --tags
+--add-note --reopen-reason --review-tier-change-reason
+--completion-commit-hash --completion-evidence-kind --completion-revision
+--completion-evidence-reason --external-revision-approved
+--commit-not-required --verification-complete --review-complete
+--contract-scope --contract-acceptance --contract-constraints
+--contract-authority-ref --contract-change-reason
 ```
 
-The shown `task` object is the normal public projection, abbreviated above.
-Authority and change reason may be omitted for replay. A semantic change
-requires both and returns `contract_revised`; it clears current completion
-evidence, invalidates a started review target/generation, and returns
-`review_pending` to `in_progress`. The exact
-`user_instruction:<task-id>:<revision>` form is checked mechanically. An exact
-replay accepts an older positive revision placeholder for the same task;
-semantic change requires the current-or-next placeholder.
-Different valid concurrent semantic inputs serialize as successive revisions;
-the first version has no expected-revision option. A current-or-next
-`user_instruction` placeholder formed before the write lock is rebound
-deterministically to the revision allocated by that locked write. Retrying its
-lost response with the original placeholder is therefore a write-free replay.
+Success data contains `task`, `changed_fields`, and `event`, plus
+`contract_write` for Contract operations.
 
-After a task reaches `done`, every otherwise-valid task and structured-review
-write returns `done_task_requires_reopen`. The only exception is an isolated
-`--status in_progress --reopen-reason <summary>` edit with no other field,
-note, evidence, or gate option. Reopening preserves history, clears current
-completion/review eligibility, and requires fresh gates before another
+Task Contract activation is allowed only on an exact revision-zero
+`ready|blocked -> in_progress` transition. Later semantic revisions are
+Contract-only, require explicit later authority and a reason, invalidate
+current completion/review eligibility, and use immutable successive revisions.
+Canonically unchanged input is a write-free replay.
+
+Only `in_progress|review_pending -> paused` is valid and requires
+`--pause-reason`. Resume explicitly to `in_progress`. Sequential transitions
+to active, review-pending, or done use the same predecessor rule as
+`task next`.
+
+Lower a review tier only before any target has been set and provide
+`--review-tier-change-reason`. A done task rejects every write except an
+isolated `--status in_progress --reopen-reason <summary>` transition. Reopen
+clears current completion/review eligibility and requires fresh gates.
+
+The existing done transition remains accepted through `task edit` and enforces
+the same validator as thin `task complete`. Prefer the thin command for normal
 completion.
-
-Raising a review tier follows the normal edit path. Lowering it requires
-`--review-tier-change-reason`, target generation zero, no stored target, a safe
-current/resulting status, and no review or completion companion options. Once a
-target has been set, lowering the tier returns
-`review_tier_downgrade_forbidden`.
-
-Only `in_progress` or `review_pending` tasks may move to `paused`, and the
-transition requires a concise sanitized `--pause-reason`. A paused task resumes
-to `in_progress`, which clears the current `pause_reason`; the transition event
-retains the bounded historical reason. Unsupported pause/resume paths return
-`invalid_status_transition`.
-
-Sequential transitions to `in_progress`, `review_pending`, or `done` require
-all earlier same-lane tasks to be `done` or `cancelled`. The same predicate is
-used by `task next`. Adds and edits that change kind, lane, order, or status
-also validate both affected lanes and return
-`sequential_predecessor_incomplete` without storing a success event when the
-result would place incomplete work before an already advanced task.
-
-Completion evidence spellings are mutually exclusive. Git evidence is resolved
-with a shell-free, read-only `git rev-parse --verify --end-of-options
-<revision>^{commit}` call. Missing, ambiguous, option-shaped, and non-commit
-revisions fail; unique short hashes and annotated tags are stored as the
-canonical full commit ID. External evidence always requires its explicit kind,
-revision, reason, and approval. Changing evidence kind clears fields not valid
-for the new kind.
-
-`task edit --status done` requires both `--verification-complete` and
-`--review-complete`. It also requires either a stored or newly supplied
-valid typed evidence record. `legacy_unverified` evidence is preserved for
-historical completed tasks but cannot satisfy a new done transition after a
-task is reopened. A current-generation `changes_requested` receipt blocks
-completion even when the required PASS receipts are present.
-
-Complete with a Git commit:
-
-```powershell
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-commit-hash <hash> --json
-```
-
-Complete with an explicitly approved external revision:
-
-```powershell
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --completion-evidence-kind external_revision --completion-revision <revision> --completion-evidence-reason "Approved external release" --external-revision-approved --json
-```
-
-Complete when no managed materials changed:
-
-```powershell
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status done --verification-complete --review-complete --commit-not-required --json
-```
-
-`taskgov` records and validates evidence only. It does not create commits or
-mutate the target project. For Git projects, inspect changed materials from the
-stored hash:
-
-```powershell
-git show --name-only <completion_commit_hash>
-```
-
-At every done transition, stored Git completion evidence and any Git review
-target/base are resolved again read-only. Completion evidence must match the
-current target: `git_commit` requires the identical `git_commit` target or a
-valid `git_snapshot` binding; `external_revision` requires the identical
-external target; and `commit_not_required` requires a `diff_fingerprint`
-target. A mismatch returns `review_target_mismatch` without a success write.
 
 ### `task complete`
 
-Check the current completion request without writing:
+Optionally check the proposed completion without writing:
 
 ```powershell
-python scripts/taskgov.py task complete --repo <target-project> <task-id> --verification-complete --review-complete --commit-not-required --check --read-only --json
+python scripts/taskgov.py task complete --repo <target-project> <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision <hash> --check --read-only --json
 ```
 
-Perform the same request through the existing task-edit transition:
+Perform completion:
 
 ```powershell
-python scripts/taskgov.py task complete --repo <target-project> <task-id> --verification-complete --review-complete --commit-not-required --json
+python scripts/taskgov.py task complete --repo <target-project> <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision <hash> --json
 ```
 
-The thin command accepts only the task ID, `--verification-complete`,
-`--review-complete`, and one typed evidence form using
+The thin command accepts only task ID, `--verification-complete`,
+`--review-complete`, and one evidence form using
 `--completion-evidence-kind`, `--completion-revision`,
-`--completion-evidence-reason`, `--external-revision-approved`, or the
-`--commit-not-required` spelling. Legacy `task edit --status done` remains
-supported. `--read-only` is valid with `--check`; it rejects the write form.
+`--completion-evidence-reason`, `--external-revision-approved`, or
+`--commit-not-required`. Supported evidence kinds are `git_commit`,
+`external_revision`, and `commit_not_required`.
 
-Check data keys are exactly `task_id`, `ready`, `status`, `blocking_codes`,
-`contract_revision`, `review_target_generation`, `completion_evidence_kind`,
-and `suggested_action`. The complete JSON stdout is at most 8,192 UTF-8 bytes.
-JSON check success, errors, and recognizable parser rejections use the same
-final bounded-output rule as compact output.
-`blocking_codes` contains either no code or the first current write-path code.
-A basis change during Git observation returns
-`blocking_codes=["completion_check_stale"]`. The check stores no receipt,
-readiness token, event, or evidence and never authorizes a later write.
+Check data keys are exactly:
 
-The only readiness codes are `invalid_status_transition`,
-`sequential_predecessor_incomplete`, `verification_required`,
-`review_required`, `completion_evidence_conflict`,
-`external_revision_approval_required`, `commit_required`,
-`git_commit_not_found_or_ambiguous`, `invalid_review_evidence`,
-`review_target_required`, `review_target_mismatch`,
-`review_finding_unresolved`, `review_changes_requested`,
-`review_receipts_insufficient`, and `completion_check_stale`. Parse/privacy,
-not-found, project/schema/journal/busy/storage, and internal failures remain
-normal `ok=false` command errors.
+```text
+task_id, ready, status, blocking_codes, contract_revision,
+review_target_generation, completion_evidence_kind, suggested_action
+```
 
-Text check output is exactly three lines: task readiness, the one blocking code
-or `none`, and the bounded suggested action. Thin completion emits
-`command=task.complete` and exactly the existing edit result data keys `task`,
-`changed_fields`, and `event`. Its text uses the existing edit summary with
-first line `Task completed: <task-id>`.
+Complete check JSON is capped at 8,192 UTF-8 bytes. `blocking_codes` is empty
+or contains the first write-path blocking code. A changed basis during Git
+observation returns `completion_check_stale`. A successful check stores no
+token and never authorizes the later write.
 
-### Local handoff commands
+Write success emits `command=task.complete` and data keys `task`,
+`changed_fields`, and `event`. Both check and write require verification,
+current matching review target, qualifying receipts, no current
+changes-requested receipt, no unresolved high/medium finding, valid typed
+completion evidence, sequential readiness, and exact Git/snapshot binding when
+applicable.
 
-Record one sanitized out-of-scope discovery after a single
-task/blocker/handoff classification:
+Git evidence resolves to a canonical full commit ID. External evidence requires
+an explicit reason and approval. `commit_not_required` requires a matching
+`diff_fingerprint` target. taskgov does not create commits or mutate Git.
+
+## Local Handoff Commands
+
+### `handoff record`
+
+Record one sanitized out-of-scope discovery:
 
 ```powershell
-python scripts/taskgov.py handoff record --repo <target-project> <source-task-id> --summary "Concise discovery" --rationale "Outside current acceptance" --json
+python scripts/taskgov.py handoff record --repo <target-project> <source-task-id> --summary "Concise discovery" --rationale "Outside acceptance" --json
 ```
 
-Options are `--summary` (required, at most 1000 characters), `--rationale`
-(at most 1000), and optional `--occurrence-id` (at most 200). Omitting the
-occurrence ID means an exact canonical replay returns the existing row.
-Supplying it explicitly requires a non-empty stable identity already provided
-by user instruction or a deterministic source; invalid explicit values return
-`handoff_occurrence_invalid`. The canonical identity includes project, source
-task, the source task's current Contract revision, normalized summary
-and rationale, and occurrence ID.
+`--summary` is required and capped at 1,000 characters. `--rationale` is
+optional and capped at 1,000. Optional `--occurrence-id` is capped at 200 and
+must already come from a stable user/deterministic source.
 
-Successful `data`:
+Data keys are `handoff` and `local_record`. `local_record` contains exactly
+`durable`, `created`, `replayed`, and `handoff_id`. Exact canonical replay
+returns the same row with `created=false`, `replayed=true`, and no update.
 
-```json
-{
-  "handoff": {
-    "handoff_id": "tg_handoff_...",
-    "project_id": "project-a1b2c3d4e5f6",
-    "source_task_id": "tg_task_...",
-    "source_contract_revision": 0,
-    "idempotency_key": "<sha256>",
-    "occurrence_id": "",
-    "summary": "Concise discovery",
-    "rationale": "Outside current acceptance",
-    "state": "pending_handoff",
-    "adapter_key": "",
-    "adapter_version": "",
-    "delivery_attempts": 0,
-    "last_delivery_code": "",
-    "next_attempt_at": null,
-    "claim_expires_at": null,
-    "receiver_receipt": "",
-    "withdraw_reason": "",
-    "created_at": "2026-07-26T00:00:00Z",
-    "updated_at": "2026-07-26T00:00:00Z",
-    "handed_off_at": null,
-    "withdrawn_at": null
-  },
-  "local_record": {
-    "durable": true,
-    "created": true,
-    "replayed": false,
-    "handoff_id": "tg_handoff_..."
-  }
-}
-```
+The row is local `pending_handoff` only. It captures the source task and
+current Contract revision but does not change task state, acceptance,
+selection, events, timestamps, or completion. The command performs no Issue
+adapter detection, delivery, semantic triage, or priority assignment.
 
-`claim_token` is always private. `durable=true` is assembled only after the
-local commit succeeds. Exact replay returns `created=false`,
-`replayed=true`, and the same row/ID without updating it. Local SQLite
-busy/locked persistence receives at most one retry of the complete
-transaction. Final local failure returns `handoff_not_persisted` and this
-fixed non-durable data:
+Local busy persistence receives at most one fresh-transaction retry. Final
+failure returns `handoff_not_persisted` with `handoff=null` and a
+non-durable `local_record`.
 
-```json
-{
-  "handoff": null,
-  "local_record": {
-    "durable": false,
-    "created": false,
-    "replayed": false,
-    "handoff_id": null
-  }
-}
-```
+### `handoff list`
 
-Privacy rejection is not the SQLite persistence retry above. The packaged
-workflow must not repeat, quote, log, store, or forward rejected raw input. It
-may make at most one new `handoff record` attempt using a newly written concise
-sanitized abstraction. A second `privacy_rejected` ends that recovery attempt
-and emits only the fixed sanitized error.
-
-List pending records oldest-first by `created_at, handoff_id`:
+List bounded records:
 
 ```powershell
-python scripts/taskgov.py handoff list --repo <target-project> --limit 20 --json
+python scripts/taskgov.py handoff list --repo <target-project> --json
 python scripts/taskgov.py handoff list --repo <target-project> --state handed_off --state handoff_withdrawn_by_user --json
 ```
 
-The default limit is 20 and maximum is 100. Optional `--source-task-id`
-filters one source. Terminal rows appear only through explicit repeatable
-`--state`. `data` contains `handoffs`, returned `count`, exact
-`total_matching`, effective `limit`, and selected `states`. Each compact list
-row contains only `handoff_id`, `source_task_id`,
-`source_contract_revision`, `summary`, `state`, `created_at`, and
-`updated_at`. Count and rows come from one read snapshot. Paging is not
-implemented.
+Options are repeatable `--state`, `--source-task-id`, and `--limit` (default
+20, maximum 100). Default state is `pending_handoff`; rows sort oldest first.
+Data keys are `handoffs`, `count`, exact `total_matching`, `limit`, and
+`states`. Paging is not implemented.
 
-Show one full sanitized record:
+### `handoff show`
+
+Show one sanitized full record:
 
 ```powershell
 python scripts/taskgov.py handoff show --repo <target-project> <handoff-id> --json
 ```
 
-`data` is `handoff`. Both list and show revalidate stored privacy limits and
-the state-field matrix before emission. Corrupt/private stored content returns
-`internal_error` without exposing it.
+Data contains only `handoff`. Stored content is privacy-revalidated before
+emission.
 
-Withdraw an undelivered pending record only on explicit user direction:
+### `handoff withdraw`
+
+Withdraw an undelivered pending row only on explicit user direction:
 
 ```powershell
 python scripts/taskgov.py handoff withdraw --repo <target-project> <handoff-id> --reason "Handled outside Task Skill" --json
 ```
 
-The sanitized reason is required and limited to 1000 characters. Success
-returns `handoff` and
-`changed_fields=["state","withdraw_reason","withdrawn_at"]`. The conditional
-write accepts only `pending_handoff` with no claim or delivery attempt;
-terminal, claimed, or attempted rows return `handoff_not_withdrawable`.
-Withdrawal does not append a task event or update the source task.
+Reason is required and capped at 1,000 characters. A terminal, claimed, or
+attempted row returns `handoff_not_withdrawable`. Withdrawal changes no source
+task or task event.
 
-Error `data` is fixed by command: list returns empty `handoffs`, zero
-`count`/`total_matching`/`limit`, and empty `states`; show returns
-`{"handoff": null}`; withdraw returns a null `handoff` and empty
-`changed_fields`. Missing, old-schema, and wrong-project databases retain
-`db_not_initialized`, `migration_required`, and `project_mismatch`
-respectively. `handoff_not_persisted` is reserved for failure of the local
-record transaction after readiness validation.
-
-Schema v7 implements no Issue adapter, receiver detection, claim acquisition,
-delivery, or `handoff sync` command. The agent always uses `handoff record`
-regardless of Issue Skill presence. A pending record never changes task
-selection or completion and emits no warning.
+## Review Commands
 
 ### `review prepare`
 
-Prepare one bounded, read-only reviewer packet for the current target:
+Prepare one bounded read-only reviewer packet for the current target:
 
 ```powershell
 python scripts/taskgov.py review prepare --repo <target-project> <task-id> --read-only --json
 ```
 
-The command supports `git_snapshot`, `git_commit`, `diff_fingerprint`, and
-`external_revision`. It takes no caller focus, reviewer, import, receipt file,
-or output path. It launches no reviewer, imports no result, writes no packet,
-and changes neither SQLite nor target-project Git.
+Supported target kinds are `git_snapshot`, `git_commit`, `diff_fingerprint`,
+and `external_revision`. The command takes no caller focus, reviewer, import,
+receipt-file, or output-destination argument. It launches no reviewer, imports
+no result, writes no packet, and changes neither local task state nor target
+Git.
 
 Success data keys are exactly:
 
@@ -1023,250 +640,140 @@ changed_paths_total, changed_paths_truncated, review_focus, required_output,
 receipt_command
 ```
 
-`task` contains only `task_id`, `title`, `status`, `verification`, and
-`review_tier`. `contract` contains only `revision`, `scope`, `acceptance`, and
-`constraints`, including the revision-zero empty projection. `review_target`
-contains only `kind`, `value`, `base_revision`, and `generation`. Focus,
-required output, and the receipt-command shape are fixed by the CLI rather than
-caller input.
+The packet reads one coherent governance basis, closes SQLite for bounded
+shell-free Git observation, then performs one short basis revalidation.
+Changed paths are strict relative UTF-8 project paths, sorted bytewise, and
+bounded to 100 rows, 240 UTF-8 bytes per row, and 16,384 aggregate path bytes.
+The complete text or JSON stdout is capped at 32,768 bytes. Git observation is
+capped at ten subprocesses.
 
-`git_snapshot` recaptures the existing eight-call staged snapshot and emits its
-staged delta paths only when its base and fingerprint still match.
-`git_commit` re-resolves the canonical commit and lists paths against its first
-parent; a root commit is compared with the empty tree. The two non-Git kinds
-return `changed_paths_available=false`, an empty path list, zero total, no
-truncation, and perform zero Git subprocesses.
-
-Every path must be strict UTF-8 and an unambiguous relative project path.
-Backslash, drive-prefixed, absolute, empty/dot/traversal components, and
-control, format, or line-separator characters are unsafe. All paths are checked
-before truncation,
-sorted bytewise, and then bounded to 100 rows, 240 UTF-8 bytes per row, and
-16,384 aggregate path bytes. Omission sets
-`changed_paths_truncated=true`; `changed_paths_total` remains exact.
-
-Text uses this exact line grammar and section order. Dynamic scalar values are
-JSON-quoted so embedded newlines cannot create headings:
-
-```text
-Task: <task-id> | "<title>" | review_tier=<review-tier>
-Status: <status>
-Verification: "<verification>"
-Contract revision: <revision>
-Scope: "<scope>"
-Acceptance: "<acceptance>"
-Constraints: "<constraints>"
-Review target: kind=<kind> value="<value>" base_revision="<base>" generation=<generation>
-Changed paths: unavailable | <returned>/<total> [(truncated)]
-[- <relative-path> ...]
-Review focus:
-[- <fixed-focus> ...]
-Required output:
-[- <fixed-output> ...]
-Receipt command: taskgov review receipt add <task-id> --reviewer <reviewer-key> --kind independent --verdict <pass|changes_requested> --summary <sanitized-summary> --json
-```
-
-Text output uses LF plus one final newline. Complete text or JSON stdout, including
-the JSON envelope, is at most 32,768 UTF-8 bytes. Git observation uses at most
-ten shell-free subprocesses. SQLite is closed during Git work; a second
-read-only transaction revalidates project/task identity, Contract revision,
-and every target field and generation.
-
-Missing, concurrently changed, unsafe-path, and oversized cases return no
-partial packet and these fixed errors:
+Missing, changed, unsafe-path, and oversized cases return no partial packet:
 
 - `review_target_missing`: `review target is required before preparing a review packet`
 - `review_packet_stale`: `review context changed while preparing the packet`
 - `review_packet_path_unsafe`: `review packet contains an unsafe project path`
 - `review_packet_too_large`: `review packet exceeds the supported size`
 
-### Review evidence commands
+### Review Evidence
 
-Set or replace the current review target:
+Set or replace the current target:
 
 ```powershell
 python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_commit --revision <revision> --json
 python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_snapshot --json
 ```
 
-Allowed target kinds are `git_commit`, `diff_fingerprint`, and
-`external_revision`, which require `--revision`, plus `git_snapshot`, which
-rejects `--revision`. Git commit targets are verified read-only and stored
-canonically. A diff fingerprint must be `sha256:` followed by 64 lowercase
-hexadecimal characters. Every set advances the monotonic target generation,
-including A-to-B-to-A changes.
+`git_commit`, `diff_fingerprint`, and `external_revision` require
+`--revision`; `git_snapshot` rejects it. Every set advances the target
+generation. Git commits are resolved read-only and stored canonically. A diff
+fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
 
-For `git_snapshot`, first stage exactly the intended files through the
-project's Git workflow. The command captures canonical `HEAD` as the base and
-fingerprints only the stage-0 index; unstaged and untracked files are excluded.
-It rejects an unborn `HEAD`, unmerged/unsupported index entries, and performs
-no Git mutation. The later completion commit must have exactly one parent equal
-to that base and a tree matching the fingerprint. Root and merge commits are
-unsupported. If candidate content or parent changes, set a new target and
-obtain fresh receipts.
+For `git_snapshot`, stage exactly intended files first. Capture observes
+canonical HEAD and only the stage-0 index; unstaged and untracked files are
+excluded. Completion requires a single-parent commit whose parent equals the
+captured base and whose tree matches the fingerprint. A changed candidate
+needs a new target and fresh receipts.
 
-`data` is `task`, `changed_fields`, and `event`. For a snapshot target, the
-returned task and a later `task show.task` expose the canonical
-`review_target_base_revision`. Receipt rows, the `task show.review_evidence`
-projection, and Task Viewer snapshots intentionally omit that base revision.
-
-Add a sanitized receipt for the current target generation:
+Add one sanitized current-generation receipt:
 
 ```powershell
 python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <stable-reviewer-key> --kind independent --verdict pass --summary "No blocking findings" --json
 ```
 
-Receipt kinds are `independent`, `self_review_fallback`, and `not_required`;
-verdicts are `pass`, `changes_requested`, and `not_required`. One reviewer key
-may record only one receipt per target generation. Tier 1 requires one distinct
-independent PASS, or a documented self-review PASS when independent tooling is
-unavailable. Tier 2 requires two independent PASS receipts, unless a Tier 2
-self-review PASS is explicitly user-approved because independent tooling is
-unavailable. Tier 0 uses a `not_required` receipt with a rationale. The normal
-Tier 2 path therefore uses two LLM review judgments; each meaningful fix/new
-target requires two fresh judgments. Deterministic gate checks add none.
+Kinds are `independent`, `self_review_fallback`, and `not_required`; verdicts
+are `pass`, `changes_requested`, and `not_required`. One reviewer key may
+record one receipt per target generation. Tier 2 normally requires two
+distinct independent PASS receipts. Any current-generation
+`changes_requested` receipt blocks completion. `--user-approved` is accepted
+only where the governing review-tier fallback contract requires explicit user
+approval; the normal independent path omits it.
 
-Record and resolve findings:
+Record and resolve structured findings:
 
 ```powershell
 python scripts/taskgov.py review finding add --repo <target-project> <task-id> --receipt-id <receipt-id> --severity high --summary "Concise finding" --json
 python scripts/taskgov.py review finding resolve --repo <target-project> <finding-id> --resolution "Concise resolution" --json
 ```
 
-Severity is `high`, `medium`, or `low`. Open high/medium findings block `done`.
-After resolving a high/medium finding, completion still requires a newer target
-generation and fresh qualifying receipts. Any `changes_requested` receipt for
-the exact current generation also blocks completion with
-`review_changes_requested`; a newer target plus fresh qualifying receipts is
-required. Review write commands require an initialized current-schema database
-and reject `--read-only` before writing.
+Severity is `high`, `medium`, or `low`. Open high/medium findings block
+completion. After resolving a blocking finding and changing material, set a
+new target and obtain fresh qualifying receipts.
 
-### `web export`
+## Internal Continuity Boundary
 
-Render one self-contained, offline Task Viewer snapshot from the initialized
-SQLite database:
+Successful `setup` enables bounded local continuity once. There is no disable
+surface. After eligible successful business writes, the business transaction
+commits and closes before same-process projection refresh and any due managed
+copy. Projection refresh precedes the due-copy attempt. Work is fail-fast,
+bounded to at most two renders and one copy attempt, and never uses a daemon,
+thread, timer, detached process, queue, scheduler, service, or network.
 
-```powershell
-python scripts/taskgov.py web export --repo <target-project> --json
-```
+These operations add no Skill command or LLM judgment. Their artifacts and
+paths are absent from public command output. Snapshot v3 reads source schemas
+5 through 13 without exposing internal maintenance or checkpoint fields.
 
-The default output is generated skill-local state:
+If post-commit maintenance cannot complete, the primary business mutation
+remains successful and only a bounded warning is appended:
 
-```text
-<installed-skill-root>/state/projects/<project-id>/viewer/task-viewer.html
-```
+- `viewer_refresh_deferred`: `Viewer refresh was deferred; task result is unchanged`
+- `viewer_refresh_failed`: `Viewer refresh did not complete; task result is unchanged`
+- `backup_deferred`: `managed backup was deferred; task result is unchanged`
+- `backup_failed`: `managed backup did not complete; task result is unchanged`
 
-Use `--read-only` to validate the database, snapshot, template, and resolved
-output path without creating a directory or file. Use `--output <path>` only
-after the user explicitly approves that complete destination. Explicit parents
-must already exist and the filename must end in `.html` or `.htm`. An explicit
-path inside the governed project is accepted only under the installed skill's
-generated `state/` directory.
+The operation remains due for a later eligible successful mutation. The Skill
+does not ask the LLM to retry, schedule, or stop for these warnings.
 
-`data`:
+## Errors And Privacy
 
-```json
-{
-  "output_path": "C:\\path\\to\\task-viewer.html",
-  "written": true,
-  "replaced": false,
-  "task_count": 3,
-  "event_count": 7,
-  "generated_at": "2026-07-17T00:00:00Z",
-  "snapshot_version": 3
-}
-```
+Removed or unknown root commands return exit 2 and `invalid_command` with
+message `command is not available`. Any public `--db` occurrence returns exit 2
+and `invalid_option` with message `option is not available`. Other unknown
+nested commands and unsupported or malformed options return exit 1 and
+`invalid_argument` with message `arguments are invalid`. With lexical `--json`,
+these parser failures use the normal bounded envelope, resolve no project, and
+perform no read or write.
 
-Snapshot version 3 reads source schemas 5 through 9 in this release, includes
-the task-show typed completion fields and the same bounded structured
-review-evidence projection, but excludes `review_target_base_revision`,
-`handoff_summary`, all handoff records, the Contract pointer, and all Contract
-fields/revisions. The generated file is stale until
-`web export` is explicitly run again. The command does not start a server,
-open a browser, edit tasks, or write database events. Databases using WAL mode
-are rejected before the snapshot connection so even a preview does not create
-SQLite sidecar files.
+Important setup/diagnostic errors include:
 
-After command and output resolution, every `web.export` error preserves this
-fixed `data` shape. `output_path` is `null` only when output resolution itself
-failed:
-
-```json
-{
-  "output_path": null,
-  "written": false,
-  "replaced": false,
-  "task_count": 0,
-  "event_count": 0,
-  "generated_at": null,
-  "snapshot_version": 3
-}
-```
-
-`output_path_invalid` and `output_parent_missing` use exit code 1.
-`output_write_failed`, database readiness failures, WAL-state rejection, and
-unexpected snapshot/template failures use exit code 2.
-
-## Error Codes
-
-Known error codes include:
-
-- `invalid_argument`
-- `invalid_status`
-- `invalid_kind`
-- `invalid_priority`
-- `invalid_review_tier`
-- `blocked_reason_required`
-- `pause_reason_required`
-- `verification_required`
-- `review_required`
-- `commit_required`
-- `completion_commit_conflict`
-- `completion_evidence_conflict`
-- `git_commit_not_found_or_ambiguous`
-- `external_revision_approval_required`
-- `review_target_required`
-- `review_receipts_insufficient`
-- `review_finding_unresolved`
-- `review_receipt_mismatch`
-- `review_receipt_already_recorded`
-- `invalid_review_evidence`
-- `initial_done_forbidden`
-- `initial_paused_forbidden`
-- `invalid_status_transition`
-- `sequential_predecessor_incomplete`
-- `done_task_requires_reopen`
-- `review_tier_downgrade_forbidden`
-- `review_changes_requested`
-- `review_target_mismatch`
-- `review_target_missing`
-- `review_packet_stale`
-- `review_packet_path_unsafe`
-- `review_packet_too_large`
-- `handoff_not_persisted`
-- `handoff_not_withdrawable`
-- `handoff_occurrence_invalid`
-- `contract_activation_forbidden`
-- `contract_authority_required`
-- `contract_write_conflict`
-- `privacy_rejected`
-- `not_found`
-- `db_not_initialized`
-- `migration_required`
-- `project_mismatch`
-- `unsupported_journal_mode`
+- `unsupported_python`
 - `unsupported_install_layout`
+- `project_scope_required`
+- `invalid_project_root`
+- `state_path_invalid`
+- `state_ignore_required`
+- `invalid_backup_policy`
+- `setup_initialization_failed`
+- `setup_backup_failed`
+- `setup_migration_failed`
+- `setup_incomplete`
+- `project_state_unreadable`
+- `project_mismatch`
+- `schema_too_new`
+- `unsupported_journal_mode`
 - `database_busy`
-- `output_path_invalid`
-- `output_parent_missing`
-- `output_write_failed`
-- `internal_error`
 
-Advisory warning codes include `package_core_modified`,
-`package_status_unknown`, `paused_tasks_present`,
-`effort_advisory_profile_invalid`, and `effort_advisory_threshold_exceeded`.
+Important task/review/handoff errors include:
 
-Some commands define an explicit empty `data` shape for specific error paths.
-For example, `task.next` errors return empty `tasks`, `count`, `limit`, and
-`selection_rules`. Other validation errors may use the generic empty object
-shape unless the command contract or tests say otherwise.
+- `invalid_argument`, `invalid_status`, `invalid_status_transition`
+- `initial_done_forbidden`, `initial_paused_forbidden`
+- `blocked_reason_required`, `pause_reason_required`
+- `sequential_predecessor_incomplete`, `done_task_requires_reopen`
+- `contract_activation_forbidden`, `contract_authority_required`,
+  `contract_write_conflict`
+- `verification_required`, `review_required`, `commit_required`
+- `completion_evidence_conflict`,
+  `external_revision_approval_required`,
+  `git_commit_not_found_or_ambiguous`
+- `review_target_required`, `review_target_mismatch`,
+  `review_receipts_insufficient`, `review_changes_requested`,
+  `review_finding_unresolved`
+- `handoff_not_persisted`, `handoff_not_withdrawable`,
+  `handoff_occurrence_invalid`
+- `privacy_rejected`, `not_found`, `internal_error`
+
+Privacy validation is deny-by-default for stored free-form input. Never submit
+secrets, tokens, authorization headers, raw stdout/stderr, stack traces,
+environment dumps, private prompts/reasoning, full chats/reviews, or large raw
+diffs. If handoff input is rejected, never repeat, quote, log, store, or
+forward the rejected raw content. Make at most one new attempt using a newly
+written concise sanitized abstraction.

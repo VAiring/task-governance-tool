@@ -18,8 +18,10 @@ workspace.
 ## Current Project Shape
 
 - The intended repository root is `C:\WorkSpace\task-governance-tool`.
-- The project is at requirements/planning bootstrap. Do not assume a package
-  layout, CLI, tests, or skill directory already exists.
+- The project is implemented through TG-M14.7 at v0.8.0/schema v13 with Viewer
+  snapshot v3. The installable package, CLI, migrations, tests, and formal
+  documents already exist; inspect them before changing an established
+  contract.
 - The workspace is Git-managed, initialized on the `main` branch. Continue to
   verify Git state before workflow steps because clones or copied workspaces may
   differ.
@@ -30,7 +32,7 @@ workspace.
 - The copied KuraKoma task status file, if present, is a reference example for
   quality bar, roadmap granularity, and review discipline. It is not this
   project's current task status.
-- Future installable skill package references, such as
+- Installable skill package references, such as
   `task-governance-tool/references/` inside a skill folder, are distinct from
   root copied references. Skill package references are governed by `SKILL.md`;
   root copied references are examples only.
@@ -118,13 +120,13 @@ The product must not become:
   into one-level skill package reference files and load them only when needed.
 - The skill metadata description must clearly state when the skill should
   trigger.
-- For the MVP, advertise only supported task-status replacement triggers: task
-  planning, task status inspection, next-task selection, blocker handling, and
-  local task-state updates.
-- Do not advertise deferred trigger behavior, such as verification recording,
-  review request generation, or cross-project governance profile use, until that
-  behavior is implemented and documented. Later versions should add those
-  triggers when the corresponding features are supported.
+- Advertise only implemented triggers: task planning and state, current/next
+  selection, blocker and pause handling, local handoff, bounded Review Packet
+  preparation, evidence-gated completion, optional checkpoints, setup, and
+  read-only diagnosis.
+- Do not advertise deferred behavior such as verification-run recording,
+  external Issue delivery, cross-project profiles, browser automation, or
+  network synchronization.
 - Prefer deterministic scripts for repeated or fragile operations:
   - detect a project profile
   - summarize current task state
@@ -176,11 +178,9 @@ The product must not become:
 - Any command that writes to the task-governance-tool database must say what it
   will record. Any command that writes to a target project must require explicit
   user intent and should offer a dry-run first.
-- Until TG-M14.6 completes, a generated static viewer under the installed
-  skill's ignored `state/` directory is permitted only when the user explicitly
-  asks to create or regenerate it, and the command must offer a no-write
-  preview. Completed TG-M14 setup opt-in additionally authorizes only the
-  canonical bounded post-commit Viewer maintenance defined below. Inspection
+- Completed TG-M14 setup opt-in authorizes only the canonical bounded
+  post-commit Viewer maintenance and idempotent setup repair defined below.
+  There is no public Viewer/export command or custom output. Inspection
   commands, including `doctor`, never authorize a Viewer write.
 - Profile detection must emit evidence, confidence, matched governing docs,
   reference-only exclusions, and an `unknown` or `needs_user_confirmation`
@@ -196,11 +196,11 @@ The product must not become:
 - Avoid broad abstractions until the first project profile and CLI flow are
   implemented and tested.
 
-## Approved M14 Planned Boundary
+## Implemented M14 Boundary
 
-- M14 is approved but remains planned until its owning execution units pass.
-  M14.0 changes formal contracts only; it must not change the active parser,
-  help, Skill, README usage, release package, manifest, runtime tests, or schema.
+- M14 is implemented at v0.8.0/schema v13. M14.0 fixed the formal contracts;
+  M14.1-M14.6 implemented bounded slices, and M14.7 synchronized the active
+  parser, help, Skill, README, release package, manifest, workflow, and tests.
 - The completed M14 public surface is exactly 20 command leaves: `setup`,
   `doctor`, task `add/list/next/current/effort/show/edit/complete/checkpoint`,
   handoff `record/list/show/withdraw`, and review `prepare`, `target set`,
@@ -209,13 +209,13 @@ The product must not become:
   storage paths, compatibility aliases, and replacement storage, Viewer,
   export, repair, maintenance, disable, or admin commands. Internal path
   injection remains an implementation and test boundary, not an LLM choice.
-- `doctor` is the sole planned diagnostic. It is inherently read-only, never
+- `doctor` is the sole diagnostic. It is inherently read-only, never
   fixes or prepares state, is not a normal Task-loop prerequisite, and keeps
   recognized advisory results at `suggested_action=continue`.
-- `setup` is the sole planned public initializer, migrator, one-way local
+- `setup` is the sole public initializer, migrator, one-way local
   maintenance opt-in, and canonical Viewer repair action. It is explicit,
   noninteractive, idempotent, and limited to a physical project-scoped Skill.
-- Planned backup and Viewer maintenance is bounded same-process post-commit
+- Backup and Viewer maintenance is bounded same-process post-commit
   work, never a daemon, thread, timer, detached process, queue, scheduler, or
   service. Setup stores the project-local backup policy with defaults of 30
   minutes after the last successful managed backup and 3 retained generations.
@@ -234,20 +234,18 @@ The product must not become:
 
 ## SQLite And State Rules
 
-- Through TG-M14.1, the current public `--db` option may configure the database
-  path. Completed TG-M14 removes that public choice: the runtime uses only the
-  canonical state path under the supported physical package, while
-  storage/repository constructors and tests retain explicit path injection.
+- The runtime uses only the canonical state path under the supported physical
+  package. Public `--db` is removed; storage/repository constructors and tests
+  retain explicit path injection.
 - Because the MVP skill is installed per governed project, generated local
   state belongs under the physical project-scoped package's `state/`
   directory. The completed M14 CLI does not expose an alternate state path.
 - Generated state under a project-scoped install must be ignored or otherwise
-  kept out of source commits before the current `db init`, the completed-M14
-  `setup`, or other write commands are used.
-- User-requested generated runtime artifacts, such as a static task viewer,
-  may live under the same ignored project-specific `state/` directory. They are
-  local projections of SQLite state, not an additional source of truth, and
-  must remain out of source commits and release artifacts.
+  kept out of source commits before `setup` or other write commands are used.
+- The canonical static Viewer produced by explicit setup and opted-in bounded
+  post-commit maintenance lives under that ignored project-specific `state/`
+  directory. It is a local projection of SQLite state, not an additional
+  source of truth, and must remain out of source commits and release artifacts.
 - The SQLite database is a helper state store, not the source of truth for a
   target project's decisions.
 - Store references to governing files, command names, hashes, timestamps,
@@ -272,12 +270,10 @@ The product must not become:
   it.
 - Installing the skill into a target project's `.agents/skills` directory is a
   target-project mutation and requires explicit user approval for that
-  destination. Through TG-M14.1, current commands may also use an explicitly
-  approved `--db` path and the current Viewer export contract. Completed TG-M14
-  removes those public choices: ordinary writes use only the canonical
-  generated database, and setup or bounded post-commit maintenance may publish
-  only the canonical Viewer under the supported package's ignored `state/`
-  directory. Inspection alone never authorizes either write.
+  destination. Ordinary writes use only the canonical generated database, and
+  setup or bounded post-commit maintenance may publish only the canonical
+  Viewer under the supported package's ignored `state/` directory. Inspection
+  alone never authorizes either write.
 - Do not create commits, branches, tags, issue comments, PRs, or file edits in a
   target project unless the user explicitly approves that concrete mutation in
   the current task. Target-project governance rules may tell

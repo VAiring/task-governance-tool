@@ -1,7 +1,7 @@
 # task-governance-tool Initial Plan
 
-Status: MVP through TG-M12.O2 Local Package Self-Status is implemented at
-v0.7.0/schema v9. The TG-M12.3 Issue adapter remains blocked.
+Status: implemented through TG-M14.7 at v0.8.0/schema v13 with Viewer snapshot
+v3. The TG-M12.3 Issue adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -12,6 +12,13 @@ skill/tooling project. Product behavior is now governed by
 `docs/implementation-roadmap.md`. This file remains the decision log and
 open-issue holding area. The previous working name `task-governance` is
 superseded by `task-governance-tool`.
+
+All bootstrap sketches before `Decisions And Open Issues`, including their
+legacy commands and options, are explicitly historical. Execution-unit
+descriptions after `Implementation Execution Status` are historical
+implementation records. Current behavior comes from the formal documents and
+the current confirmed decisions below, with TG-M14 superseding earlier public
+surface descriptions.
 
 ## Goal
 
@@ -676,9 +683,9 @@ Confirmed decisions:
   copy at `<target-project>/.agents/skills/task-governance-tool`. TG-M13
   supersedes the earlier merely-discouraged user-wide guidance: user-wide,
   symlink, and junction installs are not public task-state operating modes.
-- `taskgov db init` is the explicit create/migrate command; `taskgov db status`
-  is read-only by default and reports missing or migration-needed state without
-  changing the database.
+- `taskgov setup` is the sole explicit initializer/migrator and one-way
+  maintenance opt-in. `taskgov doctor` is the sole read-only diagnostic and
+  reports missing or migration-needed state without changing it.
 - Project IDs should use a sanitized project directory basename plus a short
   stable hash of the canonical project path.
 - Tags stay as a simple comma-separated field in the MVP.
@@ -706,9 +713,9 @@ Confirmed decisions:
   editing.
 - TG-M8 prohibits `task add --status done`; historical import, if ever needed,
   must use a separately approved explicit operation.
-- `db init` remains the sole create/migrate command. Project-scoped setup runs
-  it explicitly after installation and ignore verification; package creation
-  itself must not initialize a target database.
+- `setup` remains the sole create/migrate command and runs only after
+  project-scoped installation, ignore verification, and explicit setup intent;
+  package creation itself must not initialize target state.
 - TG-M8 adds `paused` as an intentional hold distinct from `blocked`.
   `paused` requires a concise reason, appears in `task current`, remains
   incomplete for sequential ordering, and resumes explicitly to
@@ -719,8 +726,8 @@ Confirmed decisions:
   as `task next`. No administrative override is approved for TG-M8.
 - `task current` is the only approved TG-M8 resume addition. It returns
   in-progress, review-pending, paused, and blocked tasks with latest event and
-  deterministic suggested action; stale detection and persistent checkpoints
-  remain deferred.
+  deterministic suggested action. Stale detection remains deferred; M14 later
+  adds the optional bounded typed checkpoint without making it a resume gate.
 - New completion transitions use explicit `git_commit`, `external_revision`,
   or `commit_not_required` evidence. Git commits are checked read-only and
   stored as canonical full IDs; schema-v2 hashes remain preserved as
@@ -736,12 +743,12 @@ Confirmed decisions:
   checkpoints, event-history pagination, and parent/child or acceptance
   checklist structures. Reconsider task granularity only after operational
   evidence from `paused` and `task current`.
-- TG-M9 adds a design-level recall path for paused work without changing its
-  readiness semantics: `db status.counts.paused` exposes the exact population,
-  successful `task next` emits an advisory `paused_tasks_present` warning, and
-  `task current --status paused` returns the existing bounded resume-rich
-  projection. `task next` remains ready-only and never blocks unrelated work
-  because paused tasks exist.
+- TG-M9 added a design-level recall path for paused work without changing its
+  readiness semantics. In the current M14 surface, doctor task summary exposes
+  the exact population, successful `task next` emits an advisory
+  `paused_tasks_present` warning, and `task current --status paused` returns
+  the existing bounded resume-rich projection. `task next` remains ready-only
+  and never blocks unrelated work because paused tasks exist.
 - `counts.active` continues to include paused tasks. The new paused count is
   additive, warnings contain only count/fixed command text, and the current
   filter accepts only the four existing current-work statuses. These operations
@@ -825,13 +832,11 @@ Confirmed decisions:
   races without exposing more states. Once any claim is acquired, the record
   can no longer be withdrawn locally, even after expiry; a future receiver-side
   cancellation contract is a separate feature.
-- `db status` will expose the exact pending count plus adapter-enabled and
-  sync-due flags. At a session or execution-unit boundary, an enabled due sink
-  receives one bounded deterministic sync attempt; there is no LLM retry
-  decision, question, retry loop, or current/next warning. Delivery attempts
-  are observability only; the fixed retry stage advances solely on stable
-  retryable-negative result codes so expired claims do not consume the
-  negative-result budget.
+- Doctor handoff delivery status exposes the exact pending count and the
+  current disabled-adapter/delivery-not-due facts. A future enabled adapter
+  remains blocked on its own intake contract; if approved later, its bounded
+  deterministic sync must add no LLM retry decision, question, retry loop, or
+  current/next warning.
 - Task Contract is core but per-task optional. Revision 1 is copied only when
   explicit scope and acceptance already exist in user instruction, approved
   roadmap, or task input. Otherwise revision 0 preserves the current simple
@@ -876,20 +881,22 @@ Confirmed decisions:
   profile is absent/disabled by default, the initial metrics are limited to
   Git file/line/module plus existing Contract/handoff counts, and normal task
   behavior remains unchanged when it is off.
-- TG-M12.O2 uses version `0.7.0` without a schema or Viewer snapshot change.
-  The optional offline `self status` command compares packaged core against a
-  co-located versioned manifest, exposes installed version, manifest-declared
-  origin, and bounded local differences, and always returns
-  `suggested_action=continue`. Root `config/`, `adapters/`, generated `state/`,
-  and Python caches stay outside core. This is local drift visibility, not
-  signature, update, repair, GitHub, Issue/PR, persistence, or task-loop
-  automation.
+- TG-M12.O2 used version `0.7.0` without a schema or Viewer snapshot change and
+  introduced the package-integrity inspector. M14.2 retains that inspector only
+  as the package component of `doctor` and removes public `self`. It exposes
+  installed version, manifest-declared origin, and bounded local differences
+  with `suggested_action=continue`. Root `config/`, `adapters`, generated
+  `state/`, and Python caches stay outside core.
+- TG-M14.7 uses version `0.8.0`: the pre-1.0 minor bump reflects the deliberate
+  20-leaf public-surface change, `setup`/`doctor` consolidation, checkpoint and
+  Review Packet additions, and schema progression from v9 through v13. Viewer
+  snapshot remains v3.
 - The initial optional Effort Advisory is default-off and informational:
   `suggested_action=continue`, unknown attribution when evidence is unreliable,
   and no automatic ask/handoff/pause/block/failure/acceptance mutation.
-  Consumer-core modification visibility is a separate offline read-only
-  self-status unit; configuration/adapters are the supported local extension
-  boundary.
+  Consumer-core modification visibility is the separate offline read-only
+  doctor package component; configuration/adapters are the supported local
+  extension boundary.
 - The judgment budget is explicit: revision-0 tasks add zero decisions,
   Contract activation is a deterministic copy, Issue presence and delivery add
   zero decisions, Effort Advisory adds zero decisions, and normal Tier 2
@@ -917,9 +924,9 @@ Confirmed decisions:
   reviews. Push, PR, workflow dispatch, and publication remain separate
   external actions requiring explicit user authorization. No M13 unit adds a
   normal-path LLM judgment, question, or stop.
-- TG-M14 is an approved eight-unit daily-UX/local-continuity lane. M14.0 is
-  formal planned-contract work only; active surfaces change only in their
-  owning implementation units and final publication is M14.7-owned.
+- TG-M14 is the completed eight-unit daily-UX/local-continuity lane. M14.0
+  fixed the formal contract, M14.1-M14.6 owned bounded implementation slices,
+  and M14.7 owns the synchronized v0.8.0 publication surface.
 - The completed M14 public surface is exactly 20 leaves: setup; doctor; task
   add/list/next/current/effort/show/edit/complete/checkpoint; handoff
   record/list/show/withdraw; and review prepare/target set/receipt add/finding
@@ -1013,10 +1020,9 @@ Open issues:
 
 ## Implementation Execution Status
 
-All implementation units through TG-M13.4 are complete. TG-M9.1 through
-TG-M13.4 were consumed after explicit user approval. TG-M14.0 through M14.7 are
-approved for sequential consumption in lane `REVIEW-HARDENING`; their current
-state and Contract revisions are maintained in SQLite. TG-M12.3 remains
+All implementation units through TG-M14.7 are complete. TG-M9.1 through
+TG-M14.7 were consumed after explicit user approval; their exact verification,
+review, and completion evidence is maintained in SQLite. TG-M12.3 remains
 blocked on an Issue intake contract, governing permission update, and separate
 integration approval.
 

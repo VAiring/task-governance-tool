@@ -2,6 +2,9 @@
 
 Date: 2026-07-22 JST
 
+Historical execution record: commands reflect the tested release on this date
+and are superseded by the current v0.8.0 active guidance.
+
 ## Scope
 
 Validate from a project-scoped temporary Skill copy that a new usage session

@@ -2,6 +2,9 @@
 
 Date: 2026-07-17
 
+Historical execution record: commands reflect the tested release on this date
+and are superseded by the current v0.8.0 active guidance.
+
 ## Scope
 
 Validate that a fresh agent can use the project skill to answer a realistic

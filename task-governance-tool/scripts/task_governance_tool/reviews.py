@@ -931,11 +931,12 @@ def read_review_evidence(
              (finding.status = 'resolved' AND receipt.target_generation >= ?)
            )
          ORDER BY finding.created_at DESC, finding.rowid DESC
+         LIMIT ?
         """,
-        (project_id, task_id, generation),
+        (project_id, task_id, generation, recent_limit),
     ).fetchall()
     blocking_findings = []
-    for row in blocking_rows[:recent_limit]:
+    for row in blocking_rows:
         item = dict(row)
         item["blocking_reason"] = (
             "unresolved" if row["status"] == "open" else "fresh_review_required"
@@ -1014,29 +1015,39 @@ def enforce_review_gate(
         task_id,
         review_tier=review_tier,
     )
+    error = first_review_gate_error(evidence)
+    if error is not None:
+        raise error
+    return evidence
+
+
+def first_review_gate_error(
+    evidence: dict[str, Any],
+) -> ReviewEvidenceError | None:
+    """Return the existing review gate's first deterministic failure."""
     target = evidence["target"]
     if target["generation"] <= 0 or not target["kind"] or not target["value"]:
-        raise review_error(
+        return review_error(
             "review_target_required",
             "task completion requires a current structured review target",
             "review_target_kind",
         )
     if evidence["blocking_findings"]:
-        raise review_error(
+        return review_error(
             "review_finding_unresolved",
             "a high or medium finding is unresolved or still requires a newer target and fresh review",
             "review_finding",
         )
     if evidence["counts"]["changes_requested_current_generation"]:
-        raise review_error(
+        return review_error(
             "review_changes_requested",
             "a current-generation changes_requested receipt requires a newer target and fresh review",
             "review_receipt",
         )
     if not evidence["gate"]["satisfied"]:
-        raise review_error(
+        return review_error(
             "review_receipts_insufficient",
             "structured review receipts do not satisfy this task's review tier",
             "review_receipt",
         )
-    return evidence
+    return None

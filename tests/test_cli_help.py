@@ -72,6 +72,58 @@ class CliHelpTests(unittest.TestCase):
                 for option in expected_options:
                     self.assertIn(option, result.stdout)
 
+    def test_compact_and_thin_completion_help_are_available(self):
+        for command in (("task", "current"), ("task", "next")):
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "scripts/taskgov.py",
+                        *command,
+                        "--help",
+                    ],
+                    cwd=SKILL_ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("--compact", result.stdout)
+
+        complete = subprocess.run(
+            [
+                sys.executable,
+                "scripts/taskgov.py",
+                "task",
+                "complete",
+                "--help",
+            ],
+            cwd=SKILL_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(complete.returncode, 0, complete.stderr)
+        for option in (
+            "--check",
+            "--completion-evidence-kind",
+            "--completion-revision",
+            "--completion-evidence-reason",
+            "--external-revision-approved",
+            "--commit-not-required",
+            "--verification-complete",
+            "--review-complete",
+            "--repo",
+            "--json",
+            "--read-only",
+        ):
+            self.assertIn(option, complete.stdout)
+        self.assertNotIn("--status", complete.stdout)
+        self.assertNotIn("--title", complete.stdout)
+        self.assertNotIn("--contract-scope", complete.stdout)
+
     def test_structured_review_command_help_is_available(self):
         commands = (
             ("review", "target", "set", "--help"),

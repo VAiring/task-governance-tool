@@ -17,6 +17,7 @@ matter.
 - [`task effort`](#task-effort)
 - [`task show`](#task-show)
 - [`task edit`](#task-edit)
+- [`task complete`](#task-complete)
 - [Local handoff commands](#local-handoff-commands)
 - [Review evidence commands](#review-evidence-commands)
 - [`web export`](#web-export)
@@ -82,18 +83,20 @@ All JSON output uses this envelope:
 ```
 
 Inspection commands are read-only by default: `self status`, `db status`,
-`task list`, `task next`, `task current`, `task effort`, `task show`,
-`handoff list`, and `handoff show`. `self status` is package-local: it accepts
-the common `--repo` and `--db` spellings but does not read or resolve either.
+`task list`, `task next`, `task current`, `task effort`, `task show`, `task
+complete --check`, `handoff list`, and `handoff show`. `self status` is
+package-local: it accepts the common `--repo` and `--db` spellings but does not
+read or resolve either.
 
-Database write commands are `db init`, `task add`, `task edit`, and the four
-`review` evidence commands, plus `handoff record` and `handoff withdraw`. Only
-`db init` may create or migrate a database. Other write commands require an
-already initialized database at the current schema version; they return
-`db_not_initialized` or `migration_required` without creating or migrating
-files otherwise. `web export` never writes SQLite, but its normal mode writes
-one generated HTML file after explicit user intent. Use
-`web export --read-only` for a no-file-write preview.
+Database write commands are `db init`, `task add`, `task edit`, `task
+complete` without `--check`, and the four `review` evidence commands, plus
+`handoff record` and `handoff withdraw`. Only `db init` may create or migrate a
+database. Other write commands require an already initialized database at the
+current schema version; they return `db_not_initialized` or
+`migration_required` without creating or migrating files otherwise. `web
+export` never writes SQLite, but its normal mode writes one generated HTML file
+after explicit user intent. Use `web export --read-only` for a no-file-write
+preview.
 
 ### Operational database consistency
 
@@ -132,6 +135,12 @@ index at capture time, not a Git index lock. M13.2 extends the same
 exit code 2, the command's existing empty `data`, and no `retryable` or
 `suggested_action` field. Taskgov adds no generic automatic retry; handoff
 record's existing one fresh-transaction retry is unchanged.
+
+TG-M14.1 adds a shared completion preflight. `task complete --check` captures
+one short coherent task/Contract/lane/review basis, closes SQLite before Git,
+then captures a second short coherent basis. Thin `task complete` performs the
+same outside-lock observation and delegates its locked write to the existing
+`task edit` transition. Neither path holds a SQLite transaction during Git.
 
 ## Commands
 
@@ -371,6 +380,16 @@ Selection rules:
 
 `data`: `tasks`, `count`, `limit`, `selection_rules`.
 
+With `--compact --json`, the data keys are exactly `tasks`,
+`total_matching`, `returned_count`, `limit`, and `truncated`. Each task contains
+only `task_id`, `title`, `kind`, `lane`, `lane_order`, `priority`,
+`review_tier`, `tags`, and `suggested_next_action`. `total_matching` is the
+exact filter/readiness count before the query limit; `returned_count` is the
+number retained after the byte cap. The complete JSON stdout, including the
+normal envelope and warnings, is at most 16,384 UTF-8 bytes. Byte truncation
+retains an existing-order complete-row prefix and sets `truncated=true`; a
+query limit alone does not.
+
 When paused work exists, a successful response adds exactly one top-level
 warning without changing `data` or the success exit code:
 
@@ -425,6 +444,38 @@ Optional `--status` accepts only `in_progress`, `review_pending`, `paused`, or
 statuses fail with `invalid_status` without mutation. This is a bounded view,
 not paged history; use `db status.counts.paused` for the exact paused
 population.
+
+With `--compact --json`, the data keys are exactly `tasks`,
+`total_matching`, `returned_count`, `limit`, `statuses`, and `truncated`. Each
+task contains only `task_id`, `title`, `status`, `kind`, `lane`, `lane_order`,
+`priority`, `review_tier`, `blocked_reason`, `pause_reason`, `latest_event`,
+and `suggested_next_action`. A non-empty latest event contains only
+`event_type`, `summary`, `created_at`, and `summary_truncated`; its summary is
+truncated at a valid UTF-8 boundary to at most 256 bytes. The complete JSON
+stdout is at most 24,576 UTF-8 bytes and retains only complete rows in existing
+order.
+
+Both compact caps account for every formatter newline as the portable CRLF
+worst case. Raw stdout therefore remains within the fixed cap whether the
+platform emits LF or CRLF.
+
+The normal envelope keys remain in M14.1. Every bounded JSON handler exit
+passes through the final cap. Every argparse rejection with lexical `--json`
+before `--`, including an argparse-supported abbreviation, instead uses the
+smallest 8,192-byte cap unconditionally; no second command parser is involved.
+When diagnostic identity values would exceed the applicable cap, the formatter
+sets `db_path` to `null`, then sets `project_id` to `null` only if still
+required. Values are never partially truncated. If an error diagnostic still
+exceeds the cap because it embeds an unbounded rejected value, the command,
+data, exit code, and first safe error code remain unchanged while its message
+becomes exactly `diagnostic details omitted to satisfy the bounded output
+limit`. M14.2 owns global removal of the `db_path` key.
+
+Only `task current` and `task next` accept `--compact`. It requires `--json`;
+otherwise parsing fails before project/database resolution with exit 2, code
+`invalid_option_combination`, and exact message `--compact requires --json`.
+Default JSON and text outputs are unchanged. Compact selection omits Contract
+and checkpoint content; inspect the selected task with `task show`.
 
 ### `task effort`
 
@@ -551,7 +602,13 @@ python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 ```
 
 `data`: `task`, `events`, `suggested_next_action`, `review_evidence`,
-`handoff_summary`, `contract`.
+`handoff_summary`, `contract`, `effort_advisory_enabled`.
+
+`effort_advisory_enabled` is `true` only for a valid enabled package-local
+Effort Advisory profile. An absent or valid disabled profile returns `false`
+without a warning. An invalid present profile returns `false` plus the existing
+`effort_advisory_profile_invalid` continuation warning. Reading this routing
+field performs no Git observation, and text `task show` output is unchanged.
 
 `task` includes typed completion evidence and the legacy commit projection:
 
@@ -764,6 +821,54 @@ current target: `git_commit` requires the identical `git_commit` target or a
 valid `git_snapshot` binding; `external_revision` requires the identical
 external target; and `commit_not_required` requires a `diff_fingerprint`
 target. A mismatch returns `review_target_mismatch` without a success write.
+
+### `task complete`
+
+Check the current completion request without writing:
+
+```powershell
+python scripts/taskgov.py task complete --repo <target-project> <task-id> --verification-complete --review-complete --commit-not-required --check --read-only --json
+```
+
+Perform the same request through the existing task-edit transition:
+
+```powershell
+python scripts/taskgov.py task complete --repo <target-project> <task-id> --verification-complete --review-complete --commit-not-required --json
+```
+
+The thin command accepts only the task ID, `--verification-complete`,
+`--review-complete`, and one typed evidence form using
+`--completion-evidence-kind`, `--completion-revision`,
+`--completion-evidence-reason`, `--external-revision-approved`, or the
+`--commit-not-required` spelling. Legacy `task edit --status done` remains
+supported. `--read-only` is valid with `--check`; it rejects the write form.
+
+Check data keys are exactly `task_id`, `ready`, `status`, `blocking_codes`,
+`contract_revision`, `review_target_generation`, `completion_evidence_kind`,
+and `suggested_action`. The complete JSON stdout is at most 8,192 UTF-8 bytes.
+JSON check success, errors, and recognizable parser rejections use the same
+final bounded-output rule as compact output.
+`blocking_codes` contains either no code or the first current write-path code.
+A basis change during Git observation returns
+`blocking_codes=["completion_check_stale"]`. The check stores no receipt,
+readiness token, event, or evidence and never authorizes a later write.
+
+The only readiness codes are `invalid_status_transition`,
+`sequential_predecessor_incomplete`, `verification_required`,
+`review_required`, `completion_evidence_conflict`,
+`external_revision_approval_required`, `commit_required`,
+`git_commit_not_found_or_ambiguous`, `invalid_review_evidence`,
+`review_target_required`, `review_target_mismatch`,
+`review_finding_unresolved`, `review_changes_requested`,
+`review_receipts_insufficient`, and `completion_check_stale`. Parse/privacy,
+not-found, project/schema/journal/busy/storage, and internal failures remain
+normal `ok=false` command errors.
+
+Text check output is exactly three lines: task readiness, the one blocking code
+or `none`, and the bounded suggested action. Thin completion emits
+`command=task.complete` and exactly the existing edit result data keys `task`,
+`changed_fields`, and `event`. Its text uses the existing edit summary with
+first line `Task completed: <task-id>`.
 
 ### Local handoff commands
 

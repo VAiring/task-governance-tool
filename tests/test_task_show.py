@@ -116,6 +116,7 @@ class TaskShowTests(unittest.TestCase):
             self.assertEqual(data["task"]["completion_evidence_revision"], "")
             self.assertEqual(data["task"]["completion_evidence_reason"], "")
             self.assertEqual(data["task"]["external_revision_approved"], 0)
+            self.assertFalse(data["effort_advisory_enabled"])
             self.assertIn("created_at", data["task"])
             self.assertIn("updated_at", data["task"])
             self.assertEqual(len(data["events"]), 1)

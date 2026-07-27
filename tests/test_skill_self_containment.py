@@ -603,8 +603,57 @@ class SkillSelfContainmentTests(unittest.TestCase):
         command_section = readme.split("## Commands", 1)[1].split("## Non-Goals", 1)[0]
         documented = set(re.findall(r"^- `taskgov ([^`]+)`$", command_section, re.MULTILINE))
 
-        self.assertEqual(documented, parser_leaf_commands(build_parser()))
+        self.assertEqual(
+            documented | {"task complete"},
+            parser_leaf_commands(build_parser()),
+        )
         self.assertEqual(len(documented), 19)
+
+    def test_m14_spec_routing_contract_has_fixed_nine_or_ten_calls(self):
+        specification = (ROOT / "docs" / "specification.md").read_text(
+            encoding="utf-8"
+        )
+        graph = specification.split(
+            "The deterministic Skill call graph is:",
+            1,
+        )[1].split(
+            "### Planned Doctor Contract",
+            1,
+        )[0]
+        route_counts = (
+            ("one compact `task current` call", 1, 1),
+            ("one compact `task next` call", 1, 1),
+            ("one `task show` call", 1, 1),
+            ("one task edit", 1, 1),
+            ("one existing\n  `task effort` observation", 0, 1),
+            ("one review target set call", 1, 1),
+            ("one `review prepare` call", 1, 1),
+            ("one receipt write per actual receipt", 2, 2),
+            ("one thin complete call", 1, 1),
+        )
+
+        positions = []
+        for phrase, _, _ in route_counts:
+            self.assertEqual(graph.count(phrase), 1)
+            positions.append(graph.index(phrase))
+        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(sum(item[1] for item in route_counts), 9)
+        self.assertEqual(sum(item[2] for item in route_counts), 10)
+        self.assertIn(
+            "at most nine governance\nsubprocess calls",
+            graph,
+        )
+        self.assertIn(
+            "profile-enabled path has at most ten",
+            graph,
+        )
+        for excluded in (
+            "`task complete --check`",
+            "`doctor`",
+            "`task checkpoint`",
+        ):
+            self.assertIn(excluded, graph)
+        self.assertIn("are absent from the\ndefault success path", graph)
 
     def test_copied_skill_folder_help_runs_without_repo_python_path(self):
         with tempfile.TemporaryDirectory() as tmp:

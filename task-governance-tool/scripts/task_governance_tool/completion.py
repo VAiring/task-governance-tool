@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +15,7 @@ WRITABLE_EVIDENCE_KINDS = (
     "external_revision",
     "commit_not_required",
 )
+COMPLETION_CHECK_MAX_BYTES = 8_192
 FULL_GIT_OBJECT_ID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 
 
@@ -32,6 +33,42 @@ class CompletionEvidenceError(Exception):
 class CompletionEvidenceUpdate:
     values: dict[str, Any]
     audit_marker: str
+
+
+@dataclass(frozen=True)
+class CompletionRequest:
+    """Canonical completion-only caller intent shared by check and write paths."""
+
+    task_id: str
+    verification_complete: bool
+    review_complete: bool
+    completion_evidence_kind: str | None = None
+    completion_revision: str = field(default="", repr=False)
+    completion_evidence_reason: str = field(default="", repr=False)
+    external_revision_approved: bool = False
+
+
+@dataclass(frozen=True)
+class CompletionResolution:
+    """Validated completion evidence without retaining caller-supplied raw values."""
+
+    completion_evidence_kind: str
+    completion_evidence_revision: str = field(repr=False)
+    completion_evidence_reason: str = field(repr=False)
+    external_revision_approved: int
+    completion_commit_required: int
+    completion_commit_hash: str = field(repr=False)
+    audit_marker: str | None
+
+    def to_task_values(self) -> dict[str, Any]:
+        return {
+            "completion_evidence_kind": self.completion_evidence_kind,
+            "completion_evidence_revision": self.completion_evidence_revision,
+            "completion_evidence_reason": self.completion_evidence_reason,
+            "external_revision_approved": self.external_revision_approved,
+            "completion_commit_required": self.completion_commit_required,
+            "completion_commit_hash": self.completion_commit_hash,
+        }
 
 
 def evidence_error(code: str, message: str, field: str) -> CompletionEvidenceError:
@@ -237,3 +274,48 @@ def validate_evidence_matrix(task: dict[str, Any], *, allow_legacy: bool) -> Non
             "completion evidence fields do not form a valid evidence record",
             "completion_evidence_kind",
         )
+
+
+def resolve_completion_request(
+    *,
+    repo: Path,
+    request: CompletionRequest,
+    existing_task: dict[str, Any],
+) -> CompletionResolution:
+    """Resolve typed evidence or validate and reuse the task's existing evidence."""
+    kind = request.completion_evidence_kind
+    if kind is None:
+        if (
+            request.completion_revision
+            or request.completion_evidence_reason
+            or request.external_revision_approved
+        ):
+            raise evidence_error(
+                "completion_evidence_conflict",
+                "completion evidence details require an explicit evidence kind",
+                "completion_evidence_kind",
+            )
+        validate_evidence_matrix(existing_task, allow_legacy=False)
+        values = existing_task
+        audit_marker = None
+    else:
+        update = completion_evidence_values(
+            repo=repo,
+            kind=kind,
+            revision=request.completion_revision,
+            reason=request.completion_evidence_reason,
+            external_revision_approved=request.external_revision_approved,
+        )
+        values = {**existing_task, **update.values}
+        validate_evidence_matrix(values, allow_legacy=False)
+        audit_marker = update.audit_marker
+
+    return CompletionResolution(
+        completion_evidence_kind=str(values["completion_evidence_kind"]),
+        completion_evidence_revision=str(values["completion_evidence_revision"]),
+        completion_evidence_reason=str(values["completion_evidence_reason"]),
+        external_revision_approved=int(values["external_revision_approved"]),
+        completion_commit_required=int(values["completion_commit_required"]),
+        completion_commit_hash=str(values["completion_commit_hash"]),
+        audit_marker=audit_marker,
+    )

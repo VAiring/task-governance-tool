@@ -6,16 +6,20 @@ import re
 import base64
 import binascii
 import hashlib
+import json
 import secrets
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from task_governance_tool.completion import (
     CompletionEvidenceError,
+    CompletionRequest,
+    CompletionResolution,
     WRITABLE_EVIDENCE_KINDS,
     completion_evidence_values,
+    resolve_completion_request,
     resolve_git_commit,
     validate_evidence_matrix,
 )
@@ -27,7 +31,9 @@ from task_governance_tool.ordering import (
     ADVANCED_STATUSES,
     canonical_lane,
     canonical_lane_sql,
+    duplicate_lane_order_sql,
     first_out_of_order_advanced_task,
+    incomplete_predecessor_sql,
 )
 from task_governance_tool.storage import (
     DatabaseTarget,
@@ -309,6 +315,7 @@ class ViewerTaskListResult:
 class CurrentTaskResult:
     tasks: list[dict[str, Any]]
     count: int
+    total_matching: int
     limit: int
     statuses: tuple[str, ...]
 
@@ -319,6 +326,23 @@ class EditTaskResult:
     changed_fields: list[str]
     event: dict[str, Any] | None
     contract_write: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class CompletionBasis:
+    task: dict[str, Any] = field(repr=False)
+    review_evidence: dict[str, Any] | None = field(repr=False)
+    review_error: tuple[str, str, str | None] | None
+    predecessor_incomplete: bool
+    lane_order_conflict: bool
+    semantic_token: str
+
+
+@dataclass(frozen=True)
+class CompletionPlan:
+    request: CompletionRequest
+    basis: CompletionBasis = field(repr=False)
+    resolution: CompletionResolution
 
 
 def validation_error(code: str, message: str, field: str | None = None) -> TaskValidationError:
@@ -1166,6 +1190,51 @@ def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
     return normalized
 
 
+def build_completion_request(
+    task_id: Any,
+    **completion_input: Any,
+) -> CompletionRequest:
+    """Validate the completion-only caller surface through existing edit rules."""
+    normalized_task_id = validate_task_id(task_id)
+    normalized = validate_task_edit_input(status="done", **completion_input)
+    normalized.pop("status")
+
+    evidence_kind = normalized.pop("completion_evidence_kind", None)
+    completion_revision = str(normalized.pop("completion_revision", ""))
+    completion_reason = str(
+        normalized.pop("completion_evidence_reason", "")
+    )
+    external_approved = bool(
+        normalized.pop("external_revision_approved", False)
+    )
+    if bool(normalized.pop("commit_not_required", False)):
+        evidence_kind = "commit_not_required"
+    completion_commit_hash = normalized.pop("completion_commit_hash", None)
+    if completion_commit_hash is not None:
+        evidence_kind = "git_commit"
+        completion_revision = str(completion_commit_hash)
+
+    request = CompletionRequest(
+        task_id=normalized_task_id,
+        verification_complete=bool(
+            normalized.pop("verification_complete", False)
+        ),
+        review_complete=bool(normalized.pop("review_complete", False)),
+        completion_evidence_kind=(
+            str(evidence_kind) if evidence_kind is not None else None
+        ),
+        completion_revision=completion_revision,
+        completion_evidence_reason=completion_reason,
+        external_revision_approved=external_approved,
+    )
+    if normalized:
+        raise validation_error(
+            "invalid_argument",
+            "task complete accepts only completion evidence and confirmations",
+        )
+    return request
+
+
 def suggested_next_action(task: dict[str, Any]) -> str:
     status = task["status"]
     if status == "ready":
@@ -1355,6 +1424,7 @@ def list_current_tasks(
         f"""
         SELECT
           task.*,
+          COUNT(*) OVER() AS total_matching,
           latest.task_event_id AS latest_event_id,
           latest.event_type AS latest_event_type,
           latest.summary AS latest_event_summary,
@@ -1409,6 +1479,7 @@ def list_current_tasks(
     return CurrentTaskResult(
         tasks=tasks,
         count=len(tasks),
+        total_matching=(int(rows[0]["total_matching"]) if rows else 0),
         limit=row_limit,
         statuses=result_statuses,
     )
@@ -1442,6 +1513,246 @@ def read_internal_task(connection: sqlite3.Connection, project_id: str, task_id:
     if row is None:
         return None
     return row_to_internal_task(row)
+
+
+def _completion_semantic_token(payload: dict[str, Any]) -> str:
+    serialized = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(serialized).hexdigest()
+
+
+def capture_completion_basis(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    task_id: Any,
+) -> CompletionBasis:
+    """Capture only task-local facts that can change completion readiness."""
+    normalized_task_id = validate_task_id(task_id)
+    task = read_internal_task(
+        connection,
+        project.project_id,
+        normalized_task_id,
+    )
+    if task is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+
+    predecessor_incomplete = False
+    lane_order_conflict = False
+    if task["kind"] == "sequential":
+        predicate_row = connection.execute(
+            f"""
+            SELECT
+              {incomplete_predecessor_sql("task")} AS predecessor_incomplete,
+              {duplicate_lane_order_sql("task")} AS lane_order_conflict
+              FROM tasks AS task
+             WHERE task.project_id = ?
+               AND task.task_id = ?
+            """,
+            (project.project_id, normalized_task_id),
+        ).fetchone()
+        predecessor_incomplete = bool(
+            predicate_row is not None
+            and int(predicate_row["predecessor_incomplete"])
+        )
+        lane_order_conflict = bool(
+            predicate_row is not None
+            and int(predicate_row["lane_order_conflict"])
+        )
+    contract_row = connection.execute(
+        """
+        SELECT *
+          FROM task_contract_revisions
+         WHERE project_id = ?
+           AND task_id = ?
+           AND revision = ?
+        """,
+        (
+            project.project_id,
+            normalized_task_id,
+            int(task["current_contract_revision"]),
+        ),
+    ).fetchone()
+    contract = dict(contract_row) if contract_row is not None else None
+
+    from task_governance_tool.reviews import (
+        ReviewEvidenceError,
+        read_review_evidence,
+    )
+
+    review_evidence: dict[str, Any] | None
+    review_error: tuple[str, str, str | None] | None = None
+    try:
+        review_evidence = read_review_evidence(
+            connection,
+            project.project_id,
+            normalized_task_id,
+            review_tier=int(task["review_tier"]),
+        )
+    except ReviewEvidenceError as exc:
+        review_evidence = None
+        review_error = (exc.code, exc.message, exc.field)
+
+    semantic_token = _completion_semantic_token(
+        {
+            "task": task,
+            "predecessor_incomplete": predecessor_incomplete,
+            "lane_order_conflict": lane_order_conflict,
+            "contract": contract,
+            "review_evidence": review_evidence,
+            "review_error": review_error,
+        }
+    )
+    return CompletionBasis(
+        task=task,
+        review_evidence=review_evidence,
+        review_error=review_error,
+        predecessor_incomplete=predecessor_incomplete,
+        lane_order_conflict=lane_order_conflict,
+        semantic_token=semantic_token,
+    )
+
+
+def validate_completion_state_basis(basis: CompletionBasis) -> None:
+    """Reject task-state and sequential-lane blockers before Git observation."""
+    reject_done_task_write(basis.task)
+    if basis.task["status"] == "paused":
+        raise validation_error(
+            "invalid_status_transition",
+            "paused tasks may resume only to in_progress",
+            "status",
+        )
+    if basis.lane_order_conflict:
+        raise TaskRepositoryError(
+            "invalid_argument",
+            "task conflicts with an existing canonical sequential lane order",
+        )
+    if basis.predecessor_incomplete:
+        raise TaskRepositoryError(
+            "sequential_predecessor_incomplete",
+            "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
+        )
+
+
+def validate_completion_database_basis(
+    basis: CompletionBasis,
+    proposed_task: dict[str, Any],
+    *,
+    verification_complete: bool,
+    review_complete: bool,
+) -> None:
+    """Run the shared fail-fast database-only completion preflight."""
+    validate_completion_state_basis(basis)
+    validate_done_transition_inputs(
+        proposed_task,
+        status_was_provided=True,
+        verification_complete=verification_complete,
+        review_complete=review_complete,
+    )
+    if basis.review_error is not None:
+        code, message, field = basis.review_error
+        raise validation_error(code, message, field)
+    if basis.review_evidence is None:
+        raise TaskRepositoryError(
+            "internal_error",
+            "completion review evidence was not available",
+        )
+
+    from task_governance_tool.reviews import first_review_gate_error
+
+    gate_error = first_review_gate_error(basis.review_evidence)
+    if gate_error is not None:
+        raise validation_error(
+            gate_error.code,
+            gate_error.message,
+            gate_error.field,
+        )
+
+
+def proposed_completion_task(
+    task: dict[str, Any],
+    resolution: CompletionResolution,
+) -> dict[str, Any]:
+    proposed = dict(task)
+    proposed.update(resolution.to_task_values())
+    proposed.update(
+        {
+            "status": "done",
+            "blocked_reason": "",
+            "pause_reason": "",
+        }
+    )
+    return proposed
+
+
+def prepare_completion_plan(
+    basis: CompletionBasis,
+    project: ProjectIdentity,
+    request: CompletionRequest,
+) -> CompletionPlan:
+    """Resolve and validate one completion request with no open DB transaction."""
+    if request.task_id != str(basis.task["task_id"]):
+        raise TaskRepositoryError(
+            "not_found",
+            "task was not found",
+        )
+    validate_completion_state_basis(basis)
+    try:
+        resolution = resolve_completion_request(
+            repo=project.canonical_repo,
+            request=request,
+            existing_task=basis.task,
+        )
+    except CompletionEvidenceError as exc:
+        raise validation_error(exc.code, exc.message, exc.field) from exc
+    proposed = proposed_completion_task(basis.task, resolution)
+    validate_completion_database_basis(
+        basis,
+        proposed,
+        verification_complete=request.verification_complete,
+        review_complete=request.review_complete,
+    )
+    revalidate_done_git_evidence(
+        proposed,
+        repo=project.canonical_repo,
+        status_was_provided=True,
+    )
+    return CompletionPlan(
+        request=request,
+        basis=basis,
+        resolution=resolution,
+    )
+
+
+def validate_completion_plan_basis(
+    plan: CompletionPlan,
+    basis: CompletionBasis,
+    *,
+    stale_code: str | None = None,
+) -> dict[str, Any]:
+    """Revalidate a cached outside-Git observation against current DB facts."""
+    if basis.semantic_token != plan.basis.semantic_token:
+        if stale_code is not None:
+            raise validation_error(
+                stale_code,
+                "completion readiness changed during validation; retry the check",
+            )
+        reject_concurrent_edit_base_change(
+            plan.basis.task,
+            basis.task,
+            completing=True,
+        )
+    proposed = proposed_completion_task(basis.task, plan.resolution)
+    validate_completion_database_basis(
+        basis,
+        proposed,
+        verification_complete=plan.request.verification_complete,
+        review_complete=plan.request.review_complete,
+    )
+    return proposed
 
 
 def reject_done_task_write(task: dict[str, Any]) -> None:
@@ -1831,6 +2142,7 @@ def edit_task(
     *,
     effort_profile: Any | None = None,
     database_target: DatabaseTarget | None = None,
+    completion_plan: CompletionPlan | None = None,
     **edit_input: Any,
 ) -> EditTaskResult:
     from task_governance_tool.effort import (
@@ -1882,6 +2194,28 @@ def edit_task(
     from task_governance_tool.contracts import edit_contract, split_contract_input
 
     edit_input, contract_input = split_contract_input(edit_input)
+    if completion_plan is not None:
+        if contract_input or str(edit_input.get("status", "")).strip() != "done":
+            raise TaskRepositoryError(
+                "internal_error",
+                "completion plan was supplied for a non-completion edit",
+            )
+        request_input = dict(edit_input)
+        request_input.pop("status", None)
+        supplied_request = build_completion_request(
+            normalized_task_id,
+            **request_input,
+        )
+        if supplied_request != completion_plan.request:
+            raise TaskRepositoryError(
+                "internal_error",
+                "completion plan did not match the completion request",
+            )
+        reject_concurrent_edit_base_change(
+            completion_plan.basis.task,
+            existing,
+            completing=True,
+        )
     if contract_input:
         potential_contract_status = str(existing["status"])
         if (
@@ -2008,7 +2342,10 @@ def edit_task(
         requested_revision = completion_commit_hash
     elif commit_not_required:
         requested_evidence_kind = "commit_not_required"
-    if requested_evidence_kind is not None:
+    if completion_plan is not None and status_was_provided and updated["status"] == "done":
+        updated.update(completion_plan.resolution.to_task_values())
+        evidence_marker = completion_plan.resolution.audit_marker
+    elif requested_evidence_kind is not None:
         if requested_evidence_kind == "git_commit":
             ensure_git_preflight_outside_transaction(connection)
         try:
@@ -2106,11 +2443,12 @@ def edit_task(
         )
     ):
         ensure_git_preflight_outside_transaction(connection)
-    revalidate_done_git_evidence(
-        updated,
-        repo=project.canonical_repo,
-        status_was_provided=status_was_provided,
-    )
+    if completion_plan is None:
+        revalidate_done_git_evidence(
+            updated,
+            repo=project.canonical_repo,
+            status_was_provided=status_was_provided,
+        )
     effort_preflight = prepare_task_transition(
         connection,
         project,
@@ -2125,6 +2463,16 @@ def edit_task(
         normalized_task_id,
         database_target=database_target,
     )
+    if completion_plan is not None:
+        locked_basis = capture_completion_basis(
+            connection,
+            project,
+            normalized_task_id,
+        )
+        validate_completion_plan_basis(
+            completion_plan,
+            locked_basis,
+        )
     reject_concurrent_edit_base_change(
         existing,
         locked_existing,
@@ -2328,3 +2676,39 @@ def edit_task(
         preflight=effort_preflight,
     )
     return EditTaskResult(task=task, changed_fields=changed_fields, event=event)
+
+
+def complete_task(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    plan: CompletionPlan,
+    *,
+    effort_profile: Any | None = None,
+    database_target: DatabaseTarget | None = None,
+) -> EditTaskResult:
+    """Delegate thin completion to the existing task-edit transition."""
+    request = plan.request
+    edit_input: dict[str, Any] = {"status": "done"}
+    if request.verification_complete:
+        edit_input["verification_complete"] = True
+    if request.review_complete:
+        edit_input["review_complete"] = True
+    if request.completion_evidence_kind is not None:
+        edit_input["completion_evidence_kind"] = request.completion_evidence_kind
+    if request.completion_revision:
+        edit_input["completion_revision"] = request.completion_revision
+    if request.completion_evidence_reason:
+        edit_input["completion_evidence_reason"] = (
+            request.completion_evidence_reason
+        )
+    if request.external_revision_approved:
+        edit_input["external_revision_approved"] = True
+    return edit_task(
+        connection,
+        project,
+        request.task_id,
+        effort_profile=effort_profile,
+        database_target=database_target,
+        completion_plan=plan,
+        **edit_input,
+    )

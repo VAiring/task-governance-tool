@@ -8,11 +8,29 @@ import sqlite3
 import sys
 from collections.abc import Sequence
 from contextlib import closing
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from task_governance_tool import __version__
+from task_governance_tool.compact import (
+    COMPACT_CURRENT_MAX_BYTES,
+    COMPACT_NEXT_MAX_BYTES,
+    CompactProjectionError,
+    build_compact_current_data,
+    build_compact_next_data,
+    compact_current_empty_data,
+    compact_next_empty_data,
+)
+from task_governance_tool.completion import (
+    COMPLETION_CHECK_MAX_BYTES,
+    CompletionRequest,
+)
+from task_governance_tool.completion_workflow import (
+    COMPLETION_BLOCKING_CODES,
+    check_completion_request,
+    execute_completion_request,
+)
 from task_governance_tool.effort import (
     EffortAdvisoryError,
     EffortProfile,
@@ -59,6 +77,7 @@ from task_governance_tool.tasks import (
     TaskRepositoryError,
     TaskValidationError,
     add_task,
+    build_completion_request,
     edit_task,
     list_current_tasks,
     list_tasks,
@@ -78,6 +97,9 @@ from task_governance_tool.viewer import (
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
 EXIT_TOOL_ERROR = 2
+BOUNDED_DIAGNOSTIC_OMISSION_MESSAGE = (
+    "diagnostic details omitted to satisfy the bounded output limit"
+)
 
 
 @dataclass(frozen=True)
@@ -120,20 +142,125 @@ class TaskgovArgumentParser(argparse.ArgumentParser):
 
 
 class CommandLineError(Exception):
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        exit_code: int = EXIT_USAGE,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.exit_code = exit_code
 
 
-def emit_result(result: CommandResult, *, json_output: bool) -> int:
+def emit_result(
+    result: CommandResult,
+    *,
+    json_output: bool,
+    max_json_bytes: int | None = None,
+) -> int:
     if json_output:
+        if max_json_bytes is not None:
+            result = fit_bounded_json_result(
+                result,
+                max_bytes=max_json_bytes,
+            )
         print(json.dumps(result.to_json_object(), indent=2, sort_keys=True))
     elif result.text:
         print(result.text)
     elif result.errors:
         print(result.errors[0]["message"], file=sys.stderr)
     return result.exit_code
+
+
+def serialized_json_size(result: CommandResult, data: dict[str, Any]) -> int:
+    """Measure pretty JSON using the portable CRLF worst-case stdout size."""
+    payload = replace(result, data=data).to_json_object()
+    rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    return len(rendered.replace("\n", "\r\n").encode("utf-8"))
+
+
+def diagnostic_identity_candidates(
+    result: CommandResult,
+) -> tuple[CommandResult, CommandResult, CommandResult]:
+    return (
+        result,
+        replace(result, db_path=None),
+        replace(result, project_id=None, db_path=None),
+    )
+
+
+def fit_bounded_json_identity(
+    result: CommandResult,
+    data: dict[str, Any],
+    *,
+    max_bytes: int,
+) -> CommandResult:
+    """Drop only diagnostic identity values that would break a hard cap."""
+    for candidate in diagnostic_identity_candidates(result):
+        if serialized_json_size(candidate, data) <= max_bytes:
+            return candidate
+    raise CompactProjectionError(
+        "bounded envelope cannot fit after diagnostic identity removal"
+    )
+
+
+def bounded_error_code(result: CommandResult) -> str:
+    if not result.errors:
+        return "internal_error"
+    code = str(result.errors[0].get("code", "internal_error"))
+    if (
+        1 <= len(code) <= 64
+        and all(
+            character.islower() or character.isdigit() or character == "_"
+            for character in code
+        )
+    ):
+        return code
+    return "internal_error"
+
+
+def fit_bounded_json_result(
+    result: CommandResult,
+    *,
+    max_bytes: int,
+) -> CommandResult:
+    """Enforce one final JSON cap, sanitizing only oversized diagnostics."""
+    for candidate in diagnostic_identity_candidates(result):
+        if serialized_json_size(candidate, candidate.data) <= max_bytes:
+            return candidate
+
+    if result.errors:
+        sanitized = replace(
+            result,
+            errors=[
+                {
+                    "code": bounded_error_code(result),
+                    "message": BOUNDED_DIAGNOSTIC_OMISSION_MESSAGE,
+                }
+            ],
+        )
+        for candidate in diagnostic_identity_candidates(sanitized):
+            if serialized_json_size(candidate, candidate.data) <= max_bytes:
+                return candidate
+
+    emergency = CommandResult(
+        ok=False,
+        command=result.command,
+        project_id=None,
+        db_path=None,
+        data={},
+        errors=[
+            {
+                "code": "internal_error",
+                "message": "bounded output could not be rendered",
+            }
+        ],
+        exit_code=EXIT_TOOL_ERROR,
+    )
+    return emergency
 
 
 def error_result(command: str, code: str, message: str, exit_code: int) -> CommandResult:
@@ -234,10 +361,22 @@ def build_parser() -> argparse.ArgumentParser:
     task_next_parser.add_argument("--lane", default=None)
     task_next_parser.add_argument("--priority", default=None)
     task_next_parser.add_argument("--limit", default=None)
+    task_next_parser.add_argument(
+        "--compact",
+        action="store_true",
+        default=False,
+        help="emit the bounded compact JSON projection",
+    )
     task_current_parser = task_subparsers.add_parser("current", help="rediscover active or held work")
     add_common_options(task_current_parser)
     task_current_parser.add_argument("--status", default=None)
     task_current_parser.add_argument("--limit", default=None)
+    task_current_parser.add_argument(
+        "--compact",
+        action="store_true",
+        default=False,
+        help="emit the bounded compact JSON projection",
+    )
     task_effort_parser = task_subparsers.add_parser(
         "effort",
         help="show an optional informational effort observation",
@@ -285,6 +424,50 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--contract-constraints", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--contract-authority-ref", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--contract-change-reason", default=argparse.SUPPRESS)
+    task_complete_parser = task_subparsers.add_parser(
+        "complete",
+        help="check or complete one task through the existing completion gate",
+    )
+    add_common_options(task_complete_parser)
+    task_complete_parser.add_argument("task_id")
+    task_complete_parser.add_argument(
+        "--check",
+        action="store_true",
+        default=False,
+        help="check completion readiness without writing",
+    )
+    task_complete_parser.add_argument(
+        "--completion-evidence-kind",
+        default=argparse.SUPPRESS,
+    )
+    task_complete_parser.add_argument(
+        "--completion-revision",
+        default=argparse.SUPPRESS,
+    )
+    task_complete_parser.add_argument(
+        "--completion-evidence-reason",
+        default=argparse.SUPPRESS,
+    )
+    task_complete_parser.add_argument(
+        "--external-revision-approved",
+        action="store_true",
+        default=argparse.SUPPRESS,
+    )
+    task_complete_parser.add_argument(
+        "--commit-not-required",
+        action="store_true",
+        default=argparse.SUPPRESS,
+    )
+    task_complete_parser.add_argument(
+        "--verification-complete",
+        action="store_true",
+        default=argparse.SUPPRESS,
+    )
+    task_complete_parser.add_argument(
+        "--review-complete",
+        action="store_true",
+        default=argparse.SUPPRESS,
+    )
 
     handoff_parser = subparsers.add_parser("handoff", help="local handoff outbox commands")
     handoff_subparsers = handoff_parser.add_subparsers(dest="handoff_command")
@@ -445,6 +628,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_task_show(context)
     if context.command == "task.edit":
         return handle_task_edit(context)
+    if context.command == "task.complete":
+        return handle_task_complete(context)
     if context.command.startswith("handoff."):
         return handle_handoff_command(context)
     if context.command.startswith("review."):
@@ -1090,12 +1275,17 @@ def task_next_failure_result(
     message: str,
     exit_code: int,
 ) -> CommandResult:
+    data = (
+        compact_next_empty_data()
+        if bool(getattr(context.args, "compact", False))
+        else task_next_empty_data()
+    )
     return CommandResult(
         ok=False,
         command=context.command,
         project_id=project_id,
         db_path=db_path,
-        data=task_next_empty_data(),
+        data=data,
         errors=[{"code": code, "message": message}],
         exit_code=exit_code,
     )
@@ -1193,7 +1383,7 @@ def handle_task_next(context: CommandContext) -> CommandResult:
                 ),
             }
         )
-    return CommandResult(
+    command_result = CommandResult(
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
@@ -1203,6 +1393,37 @@ def handle_task_next(context: CommandContext) -> CommandResult:
         text=task_next_text(result.tasks, result.count, result.limit, warnings),
         exit_code=EXIT_SUCCESS,
     )
+    if bool(getattr(context.args, "compact", False)):
+        command_result = fit_bounded_json_identity(
+            command_result,
+            compact_next_empty_data(
+                limit=result.limit,
+                total_matching=result.total_matching,
+                truncated=bool(result.tasks),
+            ),
+            max_bytes=COMPACT_NEXT_MAX_BYTES,
+        )
+        try:
+            compact_data = build_compact_next_data(
+                result.tasks,
+                total_matching=result.total_matching,
+                limit=result.limit,
+                serialized_size=lambda candidate: serialized_json_size(
+                    command_result,
+                    candidate,
+                ),
+            )
+        except CompactProjectionError:
+            return task_next_failure_result(
+                context,
+                project_id=target.project.project_id,
+                db_path=str(target.db_path),
+                code="internal_error",
+                message="could not build compact next-task output",
+                exit_code=EXIT_TOOL_ERROR,
+            )
+        command_result = replace(command_result, data=compact_data)
+    return command_result
 
 
 def task_current_empty_data(
@@ -1214,6 +1435,15 @@ def task_current_empty_data(
         "limit": 0,
         "statuses": list(statuses),
     }
+
+
+def task_current_result_data(
+    context: CommandContext,
+    statuses: Sequence[str] = CURRENT_STATUSES,
+) -> dict[str, Any]:
+    if bool(getattr(context.args, "compact", False)):
+        return compact_current_empty_data(statuses)
+    return task_current_empty_data(statuses)
 
 
 def task_current_text(tasks: list[dict[str, Any]], count: int, limit: int) -> str:
@@ -1238,7 +1468,7 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            data=task_current_empty_data(),
+            data=task_current_result_data(context),
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_USAGE,
         )
@@ -1259,7 +1489,7 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            data=task_current_empty_data(effective_statuses),
+            data=task_current_result_data(context, effective_statuses),
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_USAGE,
         )
@@ -1269,7 +1499,7 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            data=task_current_empty_data(effective_statuses),
+            data=task_current_result_data(context, effective_statuses),
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_TOOL_ERROR,
         )
@@ -1280,7 +1510,7 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             command=context.command,
             project_id=target.project.project_id,
             db_path=str(target.db_path),
-            data=task_current_empty_data(effective_statuses),
+            data=task_current_result_data(context, effective_statuses),
             errors=[
                 {
                     "code": code,
@@ -1299,7 +1529,7 @@ def handle_task_current(context: CommandContext) -> CommandResult:
         "limit": result.limit,
         "statuses": list(result.statuses),
     }
-    return CommandResult(
+    command_result = CommandResult(
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
@@ -1308,6 +1538,45 @@ def handle_task_current(context: CommandContext) -> CommandResult:
         text=task_current_text(result.tasks, result.count, result.limit),
         exit_code=EXIT_SUCCESS,
     )
+    if bool(getattr(context.args, "compact", False)):
+        command_result = fit_bounded_json_identity(
+            command_result,
+            compact_current_empty_data(
+                result.statuses,
+                limit=result.limit,
+                total_matching=result.total_matching,
+                truncated=bool(result.tasks),
+            ),
+            max_bytes=COMPACT_CURRENT_MAX_BYTES,
+        )
+        try:
+            compact_data = build_compact_current_data(
+                result.tasks,
+                total_matching=result.total_matching,
+                limit=result.limit,
+                statuses=result.statuses,
+                serialized_size=lambda candidate: serialized_json_size(
+                    command_result,
+                    candidate,
+                ),
+            )
+        except CompactProjectionError:
+            return CommandResult(
+                ok=False,
+                command=context.command,
+                project_id=target.project.project_id,
+                db_path=str(target.db_path),
+                data=compact_current_empty_data(effective_statuses),
+                errors=[
+                    {
+                        "code": "internal_error",
+                        "message": "could not build compact current-task output",
+                    }
+                ],
+                exit_code=EXIT_TOOL_ERROR,
+            )
+        command_result = replace(command_result, data=compact_data)
+    return command_result
 
 
 def task_effort_empty_data(task_id: str | None = None) -> dict[str, Any]:
@@ -1604,12 +1873,26 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         "handoff_summary": result.handoff_summary,
         "contract": result.contract,
     }
+    effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
+    data["effort_advisory_enabled"] = bool(
+        effort_profile.valid and effort_profile.enabled
+    )
+    warnings = []
+    if effort_profile.present and not effort_profile.valid:
+        warnings.append(
+            {
+                "code": "effort_advisory_profile_invalid",
+                "message": "Effort Advisory configuration is invalid; advisory remains disabled.",
+                "suggested_action": "continue",
+            }
+        )
     return CommandResult(
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
         db_path=str(target.db_path),
         data=data,
+        warnings=warnings,
         text=task_show_text(
             result.task,
             result.events,
@@ -1687,10 +1970,16 @@ def task_edit_text(
     changed_fields: list[str],
     event: dict[str, Any] | None,
     contract_write: dict[str, Any] | None = None,
+    *,
+    completed: bool = False,
 ) -> str:
     changed = ", ".join(changed_fields) if changed_fields else "none"
     lines = [
-        f"Task updated: {task['task_id']}",
+        (
+            f"Task completed: {task['task_id']}"
+            if completed
+            else f"Task updated: {task['task_id']}"
+        ),
         f"Title: {task['title']}",
         f"Status: {task['status']}  Priority: {task['priority']}  Kind: {task['kind']}",
         f"Changed: {changed}",
@@ -1787,6 +2076,288 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
             result.changed_fields,
             result.event,
             result.contract_write,
+        ),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
+COMPLETE_ARGUMENT_FIELDS = (
+    "completion_evidence_kind",
+    "completion_revision",
+    "completion_evidence_reason",
+    "external_revision_approved",
+    "commit_not_required",
+    "verification_complete",
+    "review_complete",
+)
+
+
+def task_complete_input(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        field: getattr(args, field)
+        for field in COMPLETE_ARGUMENT_FIELDS
+        if hasattr(args, field)
+    }
+
+
+def task_completion_check_empty_data(
+    task_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "task_id": task_id,
+        "ready": False,
+        "status": "",
+        "blocking_codes": [],
+        "contract_revision": 0,
+        "review_target_generation": 0,
+        "completion_evidence_kind": "none",
+        "suggested_action": "inspect the command error before retrying",
+    }
+
+
+def task_completion_check_data(
+    *,
+    request: Any,
+    basis: Any,
+    plan: Any | None,
+    blocking_code: str | None,
+) -> dict[str, Any]:
+    ready = blocking_code is None
+    if ready:
+        suggested_action = (
+            "run task complete with the same evidence and confirmations"
+        )
+    elif blocking_code == "completion_check_stale":
+        suggested_action = "run task complete --check again"
+    else:
+        suggested_action = f"resolve {blocking_code} before completing the task"
+    evidence_kind = (
+        plan.resolution.completion_evidence_kind
+        if plan is not None
+        else request.completion_evidence_kind
+        or str(basis.task["completion_evidence_kind"])
+    )
+    return {
+        "task_id": request.task_id,
+        "ready": ready,
+        "status": str(basis.task["status"]),
+        "blocking_codes": [] if ready else [str(blocking_code)],
+        "contract_revision": int(basis.task["current_contract_revision"]),
+        "review_target_generation": int(
+            basis.task["review_target_generation"]
+        ),
+        "completion_evidence_kind": evidence_kind,
+        "suggested_action": suggested_action,
+    }
+
+
+def task_completion_check_text(data: dict[str, Any]) -> str:
+    blocking = ",".join(data["blocking_codes"]) or "none"
+    readiness = "ready" if data["ready"] else "not ready"
+    return "\n".join(
+        [
+            f"Task {data['task_id']}: {readiness}",
+            f"Blocking: {blocking}",
+            f"Suggested action: {data['suggested_action']}",
+        ]
+    )
+
+
+def task_complete_failure_result(
+    context: CommandContext,
+    *,
+    project_id: str | None,
+    db_path: str | None,
+    task_id: str | None,
+    code: str,
+    message: str,
+    exit_code: int,
+) -> CommandResult:
+    data = (
+        task_completion_check_empty_data(task_id)
+        if bool(getattr(context.args, "check", False))
+        else task_edit_empty_data()
+    )
+    return CommandResult(
+        ok=False,
+        command=context.command,
+        project_id=project_id,
+        db_path=db_path,
+        data=data,
+        errors=[{"code": code, "message": message}],
+        exit_code=exit_code,
+    )
+
+
+def completion_domain_error_result(
+    context: CommandContext,
+    *,
+    project_id: str | None,
+    db_path: str | None,
+    task_id: str | None,
+    exc: TaskValidationError | TaskRepositoryError,
+) -> CommandResult:
+    exit_code = (
+        EXIT_TOOL_ERROR
+        if isinstance(exc, TaskRepositoryError) and exc.code == "internal_error"
+        else EXIT_USAGE
+    )
+    return task_complete_failure_result(
+        context,
+        project_id=project_id,
+        db_path=db_path,
+        task_id=task_id,
+        code=exc.code,
+        message=exc.message,
+        exit_code=exit_code,
+    )
+
+
+def handle_task_complete(context: CommandContext) -> CommandResult:
+    raw_task_id = getattr(context.args, "task_id", "")
+    check_only = bool(getattr(context.args, "check", False))
+    input_preflight_error: TaskValidationError | TaskRepositoryError | None = None
+    try:
+        request = build_completion_request(
+            raw_task_id,
+            **task_complete_input(context.args),
+        )
+    except (TaskValidationError, TaskRepositoryError) as exc:
+        if exc.code in COMPLETION_BLOCKING_CODES:
+            try:
+                task_id = validate_task_id(raw_task_id)
+            except TaskValidationError as task_id_error:
+                return completion_domain_error_result(
+                    context,
+                    project_id=None,
+                    db_path=None,
+                    task_id=None,
+                    exc=task_id_error,
+                )
+            request = CompletionRequest(
+                task_id=task_id,
+                verification_complete=bool(
+                    getattr(context.args, "verification_complete", False)
+                ),
+                review_complete=bool(
+                    getattr(context.args, "review_complete", False)
+                ),
+            )
+            input_preflight_error = exc
+        else:
+            return completion_domain_error_result(
+                context,
+                project_id=None,
+                db_path=None,
+                task_id=None,
+                exc=exc,
+            )
+
+    target = resolve_database_target(
+        repo=context.repo,
+        db=context.db,
+        script_path=cli_script_path(),
+    )
+    if context.read_only and not check_only:
+        return task_complete_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            task_id=request.task_id,
+            code="invalid_argument",
+            message=(
+                "task complete cannot run with --read-only unless --check "
+                "is supplied"
+            ),
+            exit_code=EXIT_USAGE,
+        )
+
+    try:
+        if check_only:
+            outcome = check_completion_request(
+                target,
+                request,
+                input_error=input_preflight_error,
+            )
+            data = task_completion_check_data(
+                request=request,
+                basis=outcome.basis,
+                plan=outcome.plan,
+                blocking_code=outcome.blocking_code,
+            )
+            command_result = CommandResult(
+                ok=True,
+                command=context.command,
+                project_id=target.project.project_id,
+                db_path=str(target.db_path),
+                data=data,
+                text=task_completion_check_text(data),
+                exit_code=EXIT_SUCCESS,
+            )
+            return command_result
+
+        effort_profile = load_effort_profile(
+            skill_root_from_script(cli_script_path())
+        )
+        result = execute_completion_request(
+            target,
+            request,
+            effort_profile=effort_profile,
+            input_error=input_preflight_error,
+        )
+    except (TaskValidationError, TaskRepositoryError) as exc:
+        return completion_domain_error_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            task_id=request.task_id,
+            exc=exc,
+        )
+    except StorageError as exc:
+        return task_complete_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            task_id=request.task_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error as exc:
+        mapped = operational_sqlite_error(
+            exc,
+            fallback_message=(
+                "could not inspect completion readiness"
+                if check_only
+                else "could not complete task"
+            ),
+        )
+        return task_complete_failure_result(
+            context,
+            project_id=target.project.project_id,
+            db_path=str(target.db_path),
+            task_id=request.task_id,
+            code=mapped.code,
+            message=mapped.message,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    data = {
+        "task": result.task,
+        "changed_fields": result.changed_fields,
+        "event": result.event,
+    }
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=target.project.project_id,
+        db_path=str(target.db_path),
+        data=data,
+        text=task_edit_text(
+            result.task,
+            result.changed_fields,
+            result.event,
+            completed=True,
         ),
         exit_code=EXIT_SUCCESS,
     )
@@ -2306,7 +2877,35 @@ def handle_review_command(context: CommandContext) -> CommandResult:
     )
 
 
+def bounded_json_limit_from_args(args: argparse.Namespace) -> int | None:
+    if not bool(getattr(args, "json", False)):
+        return None
+    leaf = getattr(args, "task_command", None)
+    if getattr(args, "command", None) != "task":
+        return None
+    if leaf == "current" and bool(getattr(args, "compact", False)):
+        return COMPACT_CURRENT_MAX_BYTES
+    if leaf == "next" and bool(getattr(args, "compact", False)):
+        return COMPACT_NEXT_MAX_BYTES
+    if leaf == "complete" and bool(getattr(args, "check", False)):
+        return COMPLETION_CHECK_MAX_BYTES
+    return None
+
+
+def lexical_json_requested(argv: Sequence[str]) -> bool:
+    for token in argv:
+        if token == "--":
+            return False
+        if (
+            len("--j") <= len(token) <= len("--json")
+            and "--json".startswith(token)
+        ):
+            return True
+    return False
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = tuple(argv if argv is not None else sys.argv[1:])
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
@@ -2320,7 +2919,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "task" and args.task_command is None:
             raise CommandLineError(
                 "invalid_argument",
-                "task requires a subcommand: add, list, next, show, or edit",
+                "task requires a subcommand: add, list, next, current, effort, show, edit, or complete",
+            )
+        if (
+            args.command == "task"
+            and getattr(args, "task_command", None) in {"current", "next"}
+            and bool(getattr(args, "compact", False))
+            and not bool(getattr(args, "json", False))
+        ):
+            raise CommandLineError(
+                "invalid_option_combination",
+                "--compact requires --json",
+                exit_code=EXIT_TOOL_ERROR,
             )
         if args.command == "handoff" and args.handoff_command is None:
             raise CommandLineError(
@@ -2350,8 +2960,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise CommandLineError("invalid_argument", "web requires a subcommand: export")
         context = make_context(args)
         result = handle_command(context)
-        return emit_result(result, json_output=context.json_output)
+        return emit_result(
+            result,
+            json_output=context.json_output,
+            max_json_bytes=bounded_json_limit_from_args(args),
+        )
     except CommandLineError as exc:
-        json_output = "--json" in (argv or sys.argv[1:])
-        result = error_result("parse", exc.code, exc.message, EXIT_USAGE)
-        return emit_result(result, json_output=json_output)
+        json_output = lexical_json_requested(raw_argv)
+        result = error_result("parse", exc.code, exc.message, exc.exit_code)
+        return emit_result(
+            result,
+            json_output=json_output,
+            max_json_bytes=(
+                COMPLETION_CHECK_MAX_BYTES if json_output else None
+            ),
+        )

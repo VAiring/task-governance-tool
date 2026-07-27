@@ -1488,6 +1488,23 @@ Compact selection intentionally omits Contract and checkpoint content; the
 fixed post-selection `task show` call below obtains both without inflating every
 candidate row.
 
+M14.1 retains the normal envelope keys while M14.2 owns their global removal.
+Every compact JSON and JSON completion-check handler exit passes through one
+final bounded formatter. Independently, every argparse rejection that requests
+JSON lexically before `--`, including an argparse-supported `--json`
+abbreviation, passes through the same formatter at the smallest 8,192-byte
+cap. It therefore needs no second task-leaf or root-option parser and remains
+within all three bounded-command caps. The formatter keeps diagnostic identity
+values when the exact rowless envelope fits. If those values would break the
+applicable hard cap, it sets `db_path` to `null` and then, only if still
+necessary, `project_id` to `null`; identity values are never partially
+truncated. If an error envelope still cannot fit because its diagnostic
+message contains a rejected path, option, or other unbounded value, the
+formatter preserves the command, data, exit code, and first safe error code but
+replaces that message with
+`diagnostic details omitted to satisfy the bounded output limit`. Success data
+and error codes otherwise retain their command semantics.
+
 `task complete --check` accepts the same proposed evidence and confirmation
 inputs as thin `task complete`, invokes exactly the current completion
 validator, writes nothing, and emits at most 8,192 UTF-8 bytes. It captures one

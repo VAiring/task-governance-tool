@@ -1146,6 +1146,24 @@ class EffortAdvisoryCliTests(unittest.TestCase):
             )
             self.assertEqual(added.returncode, 0, added.stderr)
             task_id = json.loads(added.stdout)["data"]["task"]["task_id"]
+            enabled_show = json.loads(
+                command("task", "show", task_id, "--read-only").stdout
+            )
+            self.assertTrue(enabled_show["data"]["effort_advisory_enabled"])
+            self.assertEqual(enabled_show["warnings"], [])
+            enabled_show_text = run(
+                sys.executable,
+                "scripts/taskgov.py",
+                "task",
+                "show",
+                task_id,
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--read-only",
+                cwd=copied_skill,
+            ).stdout
             observed = command("task", "effort", task_id, "--read-only")
             self.assertEqual(observed.returncode, 0, observed.stderr)
             payload = json.loads(observed.stdout)
@@ -1188,10 +1206,50 @@ class EffortAdvisoryCliTests(unittest.TestCase):
                 invalid_status["warnings"][0]["code"],
                 "effort_advisory_profile_invalid",
             )
+            invalid_show = json.loads(
+                command("task", "show", task_id, "--read-only").stdout
+            )
+            self.assertFalse(invalid_show["data"]["effort_advisory_enabled"])
+            self.assertEqual(
+                invalid_show["warnings"],
+                [
+                    {
+                        "code": "effort_advisory_profile_invalid",
+                        "message": "Effort Advisory configuration is invalid; advisory remains disabled.",
+                        "suggested_action": "continue",
+                    }
+                ],
+            )
 
             write_profile(copied_skill, enabled=False)
             disabled_status = json.loads(command("db", "status").stdout)
             self.assertNotIn("effort_advisory", disabled_status["data"])
+            disabled_show = json.loads(
+                command("task", "show", task_id, "--read-only").stdout
+            )
+            self.assertFalse(disabled_show["data"]["effort_advisory_enabled"])
+            self.assertEqual(disabled_show["warnings"], [])
+            disabled_show_text = run(
+                sys.executable,
+                "scripts/taskgov.py",
+                "task",
+                "show",
+                task_id,
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--read-only",
+                cwd=copied_skill,
+            ).stdout
+            self.assertEqual(disabled_show_text, enabled_show_text)
+
+            config.unlink()
+            absent_show = json.loads(
+                command("task", "show", task_id, "--read-only").stdout
+            )
+            self.assertFalse(absent_show["data"]["effort_advisory_enabled"])
+            self.assertEqual(absent_show["warnings"], [])
 
 
 if __name__ == "__main__":

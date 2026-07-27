@@ -29,6 +29,7 @@ PRIORITY_ORDER = ("urgent", "high", "normal", "low")
 class TaskNextResult:
     tasks: list[dict[str, Any]]
     count: int
+    total_matching: int
     limit: int
     selection_rules: dict[str, Any]
 
@@ -104,7 +105,7 @@ def select_next_tasks(
     values.append(row_limit)
     rows = connection.execute(
         f"""
-        SELECT task.*
+        SELECT task.*, COUNT(*) OVER() AS total_matching
           FROM tasks AS task
          WHERE {" AND ".join(filters)}
            AND {next_task_readiness_sql("task")}
@@ -128,6 +129,7 @@ def select_next_tasks(
     return TaskNextResult(
         tasks=tasks,
         count=len(tasks),
+        total_matching=(int(rows[0]["total_matching"]) if rows else 0),
         limit=row_limit,
         selection_rules=selection_rules(),
     )

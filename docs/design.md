@@ -2021,6 +2021,21 @@ current/next formatters remain unchanged through M14.1; default JSON
 envelope/path removal. Compact mode is JSON-only and therefore adds no
 parallel compact text formatter.
 
+M14.1 bounded modes keep the envelope shape. Compact success projection first
+fits identity against the exact rowless metadata for that query result, rather
+than placeholder counts, so the later complete-row prefix remains within the
+cap. A final emit-boundary formatter covers compact success/errors, JSON
+completion-check success/errors, and every lexical-JSON argparse rejection.
+Parsed handlers select their own cap from the parsed mode. Parse failures need
+no shadow argv parser: the formatter applies the smallest 8,192-byte cap to all
+JSON parse errors, which is also within the larger compact caps. It preserves
+`db_path` and `project_id` when the envelope fits, otherwise replaces `db_path`
+and then `project_id` with null. If an error still cannot fit because its
+diagnostic message embeds an unbounded rejected value, the formatter keeps the
+first safe error code and replaces only the message with the fixed bounded
+diagnostic-omission text. This final boundary also accounts for portable CRLF
+newlines. M14.2 still owns removal of the `db_path` key from every command.
+
 M14.1 reuses the existing Effort Advisory profile loader in default JSON
 `task show` and adds only `data.effort_advisory_enabled`. It performs no Git
 observation. Enabled maps to `true`; absent/disabled/invalid maps to `false`,

@@ -325,7 +325,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             connection.execute(
                 "SELECT MAX(version) FROM schema_migrations"
             ).fetchone()[0],
-            11,
+            12,
         )
         generations = connection.execute(
             """
@@ -364,7 +364,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             artifacts[0].name,
         )
 
-    def test_v2_fixture_setup_migrates_to_v11_without_losing_observed_state(self):
+    def test_v2_fixture_setup_migrates_to_v12_without_losing_observed_state(self):
         fixture = load_fixture()
         self.assertEqual(fixture["schema_version"], 2)
         self.assertEqual(len(fixture["tasks"]), 12)
@@ -394,7 +394,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(migrated)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 2)
-            self.assertEqual(payload["data"]["schema_to"], 11)
+            self.assertEqual(payload["data"]["schema_to"], 12)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 [
@@ -476,6 +476,12 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                     connection.execute("SELECT COUNT(*) FROM handoff_records").fetchone()[0],
                     0,
                 )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM task_checkpoints"
+                    ).fetchone()[0],
+                    0,
+                )
                 self.assert_single_seeded_managed_backup(connection, db_path)
                 before_second_init = durable_projection(connection)
 
@@ -489,7 +495,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 self.assertEqual(durable_projection(connection), before_second_init)
                 self.assert_single_seeded_managed_backup(connection, db_path)
 
-    def test_v5_and_v6_fixture_setup_migrates_to_v11_with_review_evidence_intact(self):
+    def test_v5_and_v6_fixture_setup_migrates_to_v12_with_review_evidence_intact(self):
         fixture = load_fixture()
         for source_version in (5, 6):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
@@ -512,7 +518,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 payload = json_payload(migrated)
                 self.assertEqual(payload["data"]["schema_from"], source_version)
-                self.assertEqual(payload["data"]["schema_to"], 11)
+                self.assertEqual(payload["data"]["schema_to"], 12)
                 self.assertEqual(
                     payload["data"]["completed_writes"],
                     [
@@ -553,6 +559,12 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                             "SELECT COUNT(*) FROM review_findings"
                         ).fetchone()[0],
                         1,
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT COUNT(*) FROM task_checkpoints"
+                        ).fetchone()[0],
+                        0,
                     )
                     self.assertEqual(
                         connection.execute(

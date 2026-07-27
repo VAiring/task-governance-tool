@@ -109,6 +109,9 @@ class TaskCurrentTests(unittest.TestCase):
                 data["statuses"],
                 ["in_progress", "review_pending", "paused", "blocked"],
             )
+            self.assertTrue(
+                all(task["latest_checkpoint"] is None for task in data["tasks"])
+            )
             self.assertIn("Waiting for a safe window", data["tasks"][2]["suggested_next_action"])
             self.assertIn("User decision needed", data["tasks"][3]["suggested_next_action"])
 

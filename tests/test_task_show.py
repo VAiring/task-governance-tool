@@ -112,6 +112,7 @@ class TaskShowTests(unittest.TestCase):
             self.assertEqual(data["task"]["completion_evidence_reason"], "")
             self.assertEqual(data["task"]["external_revision_approved"], 0)
             self.assertFalse(data["effort_advisory_enabled"])
+            self.assertIsNone(data["latest_checkpoint"])
             self.assertIn("created_at", data["task"])
             self.assertIn("updated_at", data["task"])
             self.assertEqual(len(data["events"]), 1)
@@ -225,6 +226,7 @@ class TaskShowTests(unittest.TestCase):
                 "review_evidence": None,
                 "handoff_summary": None,
                 "contract": None,
+                "latest_checkpoint": None,
             })
 
     def test_task_show_missing_db_does_not_create_files(self):
@@ -254,6 +256,7 @@ class TaskShowTests(unittest.TestCase):
                 "review_evidence": None,
                 "handoff_summary": None,
                 "contract": None,
+                "latest_checkpoint": None,
             })
             self.assertFalse(db.exists())
             self.assertFalse(db.parent.exists())

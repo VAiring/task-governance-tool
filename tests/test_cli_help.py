@@ -20,7 +20,7 @@ except ModuleNotFoundError:
     from tests.m14_test_support import make_physical_install
 
 
-M14_2_STAGE_LEAVES = {
+M14_4_STAGE_LEAVES = {
     "setup",
     "doctor",
     "task add",
@@ -29,6 +29,7 @@ M14_2_STAGE_LEAVES = {
     "task current",
     "task effort",
     "task show",
+    "task checkpoint",
     "task edit",
     "task complete",
     "handoff record",
@@ -62,8 +63,8 @@ def parser_leaf_commands(
 
 
 class CliHelpTests(unittest.TestCase):
-    def test_m14_2_staged_parser_has_only_its_nineteen_leaves(self):
-        self.assertEqual(parser_leaf_commands(build_parser()), M14_2_STAGE_LEAVES)
+    def test_m14_4_staged_parser_has_only_its_twenty_leaves(self):
+        self.assertEqual(parser_leaf_commands(build_parser()), M14_4_STAGE_LEAVES)
 
     def test_root_help_is_read_only_and_hides_removed_storage_surface(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -114,7 +115,7 @@ class CliHelpTests(unittest.TestCase):
             for removed in ("--db", "--fix", "--repair", "--output", "--backup"):
                 self.assertNotIn(removed, result.stdout)
 
-    def test_task_contract_compact_and_thin_completion_help_remain_available(self):
+    def test_task_contract_compact_completion_and_checkpoint_help_remain_available(self):
         for command in (("task", "add"), ("task", "edit")):
             with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
                 result = make_physical_install(Path(tmp)).run(*command, "--help")
@@ -149,6 +150,26 @@ class CliHelpTests(unittest.TestCase):
             self.assertIn(option, complete.stdout)
         self.assertNotIn("--status", complete.stdout)
         self.assertNotIn("--db", complete.stdout)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = make_physical_install(Path(tmp)).run(
+                "task",
+                "checkpoint",
+                "--help",
+            )
+        self.assertEqual(checkpoint.returncode, 0, checkpoint.stderr)
+        for option in (
+            "task_id",
+            "--summary",
+            "--next-action",
+            "--unresolved-risk",
+            "--repo",
+            "--json",
+            "--read-only",
+        ):
+            self.assertIn(option, checkpoint.stdout)
+        for unsupported in ("--compact", "--check", "--db"):
+            self.assertNotIn(unsupported, checkpoint.stdout)
 
     def test_review_and_handoff_help_keep_only_implemented_stage_commands(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -169,7 +169,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             )
             self.assertIn("fresh", normalized)
         self.assertIn('__version__ = "0.7.0"', runtime_init)
-        self.assertIn("SCHEMA_VERSION = 11", storage)
+        self.assertIn("SCHEMA_VERSION = 12", storage)
         self.assertIn("SNAPSHOT_VERSION = 3", viewer)
         self.assertIn("review_target_base_revision", release_note)
         self.assertIn("omits", release_note)
@@ -235,7 +235,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
             initialized = run("setup")
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
-            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 11)
+            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 12)
             added = run(
                 "task",
                 "add",
@@ -492,7 +492,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertNotIn("db_path", payload)
             self.assertTrue(install.db_path.is_file())
             self.assertTrue(install.db_path.is_relative_to(install.skill_root / "state"))
-            self.assertEqual(payload["data"]["schema_to"], 11)
+            self.assertEqual(payload["data"]["schema_to"], 12)
 
             from_skill_root = install.run(
                 "doctor",
@@ -510,7 +510,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "ready",
             )
 
-    def test_m14_2_parser_stage_is_exact_before_m14_7_readme_publication(self):
+    def test_m14_4_parser_stage_is_exact_before_m14_7_readme_publication(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         command_section = readme.split("## Commands", 1)[1].split("## Non-Goals", 1)[0]
         documented = set(re.findall(r"^- `taskgov ([^`]+)`$", command_section, re.MULTILINE))
@@ -526,6 +526,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "task current",
                 "task effort",
                 "task show",
+                "task checkpoint",
                 "task edit",
                 "task complete",
                 "handoff record",

@@ -25,6 +25,7 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_project_maintenance_migration,
     apply_review_evidence_migration,
     apply_task_contract_migration,
+    apply_task_checkpoints_migration,
     apply_effort_advisory_migration,
     connect,
     connect_snapshot_readonly,
@@ -59,8 +60,8 @@ def table_count(db: Path, table: str) -> int:
 
 
 class ViewerSnapshotTests(unittest.TestCase):
-    def test_snapshot_v3_reads_schema_v5_through_v11_without_new_fields(self):
-        for source_version in (5, 6, 7, 8, 9, 10, 11):
+    def test_snapshot_v3_reads_schema_v5_through_v12_without_new_fields(self):
+        for source_version in (5, 6, 7, 8, 9, 10, 11, 12):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 db = Path(tmp) / "taskgov.sqlite"
                 repo = Path(tmp) / "repo"
@@ -88,9 +89,11 @@ class ViewerSnapshotTests(unittest.TestCase):
                         apply_project_maintenance_migration(connection)
                     if source_version >= 11:
                         apply_managed_backup_generations_migration(connection)
+                    if source_version >= 12:
+                        apply_task_checkpoints_migration(connection)
                     with connection:
                         ensure_project_meta(connection, target.project)
-                        add_task(
+                        added = add_task(
                             connection,
                             target.project,
                             title=f"Schema {source_version} viewer task",
@@ -103,6 +106,26 @@ class ViewerSnapshotTests(unittest.TestCase):
                                 else {}
                             ),
                         )
+                        if source_version == 12:
+                            connection.execute(
+                                """
+                                INSERT INTO task_checkpoints(
+                                  checkpoint_id, task_id, project_id,
+                                  contract_revision, summary, next_action,
+                                  unresolved_risks_json, created_at
+                                ) VALUES (
+                                  'tg_checkpoint_viewer_private', ?, ?, 0,
+                                  'VIEWER_CHECKPOINT_PRIVATE',
+                                  'VIEWER_CHECKPOINT_NEXT_PRIVATE',
+                                  '["VIEWER_CHECKPOINT_RISK_PRIVATE"]',
+                                  '2026-07-26T00:00:00Z'
+                                )
+                                """,
+                                (
+                                    added.task["task_id"],
+                                    target.project.project_id,
+                                ),
+                            )
 
                 with closing(connect_snapshot_readonly(db)) as connection:
                     result = build_viewer_snapshot(
@@ -129,6 +152,9 @@ class ViewerSnapshotTests(unittest.TestCase):
                 self.assertNotIn("project_maintenance", serialized)
                 self.assertNotIn("managed_backup_generations", serialized)
                 self.assertNotIn("backup_interval", serialized)
+                self.assertNotIn("task_checkpoints", serialized)
+                self.assertNotIn("latest_checkpoint", serialized)
+                self.assertNotIn("VIEWER_CHECKPOINT", serialized)
 
     def test_snapshot_projects_all_statuses_show_fields_and_bounded_events(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -251,7 +277,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
             snapshot = result.snapshot
             self.assertEqual(snapshot["snapshot_version"], 3)
-            self.assertEqual(snapshot["source_schema_version"], 11)
+            self.assertEqual(snapshot["source_schema_version"], 12)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {

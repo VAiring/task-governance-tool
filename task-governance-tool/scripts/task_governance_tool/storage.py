@@ -16,7 +16,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 MIN_BACKUP_INTERVAL_MINUTES = 1
 MAX_BACKUP_INTERVAL_MINUTES = 1_440
 MIN_BACKUP_GENERATIONS = 1
@@ -607,6 +607,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "task_effort_bases",
         "project_maintenance",
         "managed_backup_generations",
+        "task_checkpoints",
     }
     required_indexes = {
         "idx_tasks_project_status",
@@ -624,6 +625,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "idx_contract_project_task_revision",
         "idx_effort_bases_project",
         "idx_managed_backup_project_published",
+        "idx_checkpoints_project_task_created",
     }
     required_triggers = {
         "trg_project_maintenance_enabled_at_immutable",
@@ -852,6 +854,27 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         missing.extend(
             f"column:managed_backup_generations.{name}"
             for name in sorted(required_generation_columns - generation_columns)
+        )
+    if "task_checkpoints" in tables:
+        checkpoint_columns = {
+            str(row["name"])
+            for row in connection.execute(
+                "PRAGMA table_info(task_checkpoints)"
+            ).fetchall()
+        }
+        required_checkpoint_columns = {
+            "checkpoint_id",
+            "task_id",
+            "project_id",
+            "contract_revision",
+            "summary",
+            "next_action",
+            "unresolved_risks_json",
+            "created_at",
+        }
+        missing.extend(
+            f"column:task_checkpoints.{name}"
+            for name in sorted(required_checkpoint_columns - checkpoint_columns)
         )
     return missing
 
@@ -1933,6 +1956,101 @@ def apply_managed_backup_generations_migration(
         raise
 
 
+def apply_task_checkpoints_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Add the append-only typed continuation checkpoint store."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "task-checkpoint migration requires no active transaction",
+        )
+    existing_version = current_schema_version(connection)
+    if existing_version >= 12:
+        checkpoint_missing = {
+            item
+            for item in required_schema_objects_missing(connection)
+            if item == "table:task_checkpoints"
+            or item == "index:idx_checkpoints_project_task_created"
+            or item.startswith("column:task_checkpoints.")
+        }
+        if (
+            missing_migration_versions(connection, existing_version)
+            or checkpoint_missing
+        ):
+            raise StorageError(
+                "migration_required",
+                "task-checkpoint migration is incomplete",
+            )
+        return
+
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        connection.execute(
+            """
+            CREATE TABLE task_checkpoints (
+              checkpoint_id TEXT PRIMARY KEY
+                CHECK (
+                  length(CAST(checkpoint_id AS BLOB)) BETWEEN 1 AND 128
+                ),
+              task_id TEXT NOT NULL,
+              project_id TEXT NOT NULL,
+              contract_revision INTEGER NOT NULL
+                CHECK (contract_revision >= 0),
+              summary TEXT NOT NULL
+                CHECK (
+                  length(CAST(summary AS BLOB)) BETWEEN 1 AND 1024
+                ),
+              next_action TEXT NOT NULL
+                CHECK (
+                  length(CAST(next_action AS BLOB)) BETWEEN 1 AND 1024
+                ),
+              unresolved_risks_json TEXT NOT NULL DEFAULT '[]'
+                CHECK (
+                  length(CAST(unresolved_risks_json AS BLOB))
+                    BETWEEN 2 AND 24601
+                ),
+              created_at TEXT NOT NULL
+                CHECK (
+                  length(created_at) = 20
+                  AND created_at GLOB
+                    '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                ),
+              FOREIGN KEY (task_id) REFERENCES tasks(task_id),
+              FOREIGN KEY (project_id) REFERENCES project_meta(project_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX idx_checkpoints_project_task_created
+              ON task_checkpoints(
+                project_id, task_id, created_at, checkpoint_id
+              )
+            """
+        )
+        if fail_stage == "after_schema":
+            raise StorageError(
+                "internal_error",
+                "injected task-checkpoint migration failure",
+            )
+        connection.execute(
+            "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+            (12, "task_checkpoints", utc_now()),
+        )
+        if fail_stage == "before_commit":
+            raise StorageError(
+                "internal_error",
+                "injected task-checkpoint migration failure",
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def apply_migrations(
     connection: sqlite3.Connection,
     *,
@@ -2017,6 +2135,10 @@ def apply_migrations(
             managed_backups=managed_backups,
         )
         applied.append(11)
+        version = 11
+    if version < 12:
+        apply_task_checkpoints_migration(connection)
+        applied.append(12)
     return applied, warnings
 
 

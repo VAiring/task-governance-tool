@@ -24,6 +24,7 @@ try:
         apply_paused_state_migration,
         apply_project_maintenance_migration,
         apply_review_evidence_migration,
+        apply_task_checkpoints_migration,
         begin_initialized_write,
         connect_initialized,
         ensure_project_meta,
@@ -263,7 +264,7 @@ class StorageInitializationTests(unittest.TestCase):
                         "SELECT version FROM schema_migrations ORDER BY version"
                     )
                 ]
-            self.assertEqual(versions, [1, 2, 3, 5, 6, 7, 8, 9, 10, 11])
+            self.assertEqual(versions, [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12])
 
     def test_initialize_migrates_schema_v1_database_through_current_schema(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -308,9 +309,9 @@ class StorageInitializationTests(unittest.TestCase):
             self.assertFalse(result.created)
             self.assertEqual(
                 result.migrations_applied,
-                [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
             )
-            self.assertEqual(result.schema_version, 11)
+            self.assertEqual(result.schema_version, 12)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute(
@@ -329,7 +330,7 @@ class StorageInitializationTests(unittest.TestCase):
                 ]
                 self.assertEqual(
                     versions,
-                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
                 )
             self.assertEqual(task["completion_commit_required"], 1)
             self.assertEqual(task["completion_commit_hash"], "")
@@ -349,9 +350,9 @@ class StorageInitializationTests(unittest.TestCase):
             result = initialize_database(target)
             self.assertEqual(
                 result.migrations_applied,
-                [3, 4, 5, 6, 7, 8, 9, 10, 11],
+                [3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
             )
-            self.assertEqual(result.schema_version, 11)
+            self.assertEqual(result.schema_version, 12)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute("SELECT * FROM tasks WHERE task_id = ?", ("tg_task_test",)).fetchone()
@@ -368,7 +369,7 @@ class StorageInitializationTests(unittest.TestCase):
                 foreign_key_rows = connection.execute("PRAGMA foreign_key_check").fetchall()
                 self.assertEqual(
                     versions,
-                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
                 )
             self.assertEqual(task["pause_reason"], "")
             self.assertEqual(event["task_id"], "tg_task_test")
@@ -586,7 +587,7 @@ class StorageInitializationTests(unittest.TestCase):
             result = initialize_database(target)
             self.assertEqual(
                 result.migrations_applied,
-                [4, 5, 6, 7, 8, 9, 10, 11],
+                [4, 5, 6, 7, 8, 9, 10, 11, 12],
             )
             self.assertEqual(
                 result.warnings[0]["code"],
@@ -633,6 +634,7 @@ class StorageInitializationTests(unittest.TestCase):
                     "task_events",
                     "tool_events",
                     "managed_backup_generations",
+                    "task_checkpoints",
                 }.issubset(tables)
             )
             self.assertTrue(
@@ -644,6 +646,7 @@ class StorageInitializationTests(unittest.TestCase):
                     "idx_task_events_task_created",
                     "idx_tasks_project_completion_commit",
                     "idx_managed_backup_project_published",
+                    "idx_checkpoints_project_task_created",
                 }.issubset(indexes)
             )
             self.assertIn("CREATE UNIQUE INDEX", unique_index_sql.upper())
@@ -903,9 +906,9 @@ class StorageInitializationTests(unittest.TestCase):
             migrated = initialize_database(target)
             self.assertEqual(
                 migrated.migrations_applied,
-                [6, 7, 8, 9, 10, 11],
+                [6, 7, 8, 9, 10, 11, 12],
             )
-            self.assertEqual(migrated.schema_version, 11)
+            self.assertEqual(migrated.schema_version, 12)
 
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
@@ -1143,7 +1146,7 @@ class ProjectMaintenanceMigrationTests(unittest.TestCase):
                         connection.execute("PRAGMA foreign_key_check").fetchall(),
                         [],
                     )
-        self.assertEqual(SCHEMA_VERSION, 11)
+        self.assertEqual(SCHEMA_VERSION, 12)
 
 
 class ManagedBackupGenerationMigrationTests(unittest.TestCase):
@@ -1346,6 +1349,131 @@ class ManagedBackupGenerationMigrationTests(unittest.TestCase):
                                AND name = 'managed_backup_generations'
                             """
                         ).fetchone()
+                    )
+
+
+class TaskCheckpointMigrationTests(unittest.TestCase):
+    def test_v11_to_v12_adds_bounded_append_store_with_project_task_fks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            create_v10_database(install)
+            with closing(sqlite3.connect(install.db_path)) as connection:
+                connection.row_factory = sqlite3.Row
+                connection.execute("PRAGMA foreign_keys = ON")
+                apply_managed_backup_generations_migration(connection)
+                apply_task_checkpoints_migration(connection)
+
+                project_id = install.project_id
+                insert_task(
+                    connection,
+                    task_id="tg_task_checkpoint_schema",
+                    project_id=project_id,
+                )
+                valid = (
+                    "tg_checkpoint_schema",
+                    "tg_task_checkpoint_schema",
+                    project_id,
+                    0,
+                    "Summary",
+                    "Next action",
+                    "[]",
+                    "2026-07-27T00:00:01Z",
+                )
+                connection.execute(
+                    """
+                    INSERT INTO task_checkpoints(
+                      checkpoint_id, task_id, project_id, contract_revision,
+                      summary, next_action, unresolved_risks_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    valid,
+                )
+                for replacement in (
+                    valid[:4] + ("x" * 1025,) + valid[5:],
+                    valid[:5] + ("x" * 1025,) + valid[6:],
+                    valid[:6] + ("x" * 24602,) + valid[7:],
+                ):
+                    with self.subTest(replacement=replacement[4:7]), self.assertRaises(
+                        sqlite3.IntegrityError
+                    ):
+                        connection.execute(
+                            """
+                            INSERT INTO task_checkpoints(
+                              checkpoint_id, task_id, project_id,
+                              contract_revision, summary, next_action,
+                              unresolved_risks_json, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                f"{replacement[0]}_{len(replacement[4])}_"
+                                f"{len(replacement[5])}_{len(replacement[6])}",
+                                *replacement[1:],
+                            ),
+                        )
+                with self.assertRaises(sqlite3.IntegrityError):
+                    connection.execute(
+                        """
+                        INSERT INTO task_checkpoints(
+                          checkpoint_id, task_id, project_id,
+                          contract_revision, summary, next_action,
+                          unresolved_risks_json, created_at
+                        ) VALUES (
+                          'tg_checkpoint_foreign', 'missing-task', ?, 0,
+                          'Summary', 'Next', '[]', '2026-07-27T00:00:02Z'
+                        )
+                        """,
+                        (project_id,),
+                    )
+                self.assertEqual(
+                    connection.execute("PRAGMA quick_check").fetchone()[0],
+                    "ok",
+                )
+                self.assertEqual(
+                    connection.execute("PRAGMA foreign_key_check").fetchall(),
+                    [],
+                )
+
+    def test_v12_migration_rolls_back_each_stage_then_is_idempotent(self):
+        for fail_stage in ("after_schema", "before_commit"):
+            with self.subTest(fail_stage=fail_stage), tempfile.TemporaryDirectory() as tmp:
+                install = make_physical_install(Path(tmp))
+                create_v10_database(install)
+                with closing(sqlite3.connect(install.db_path)) as connection:
+                    connection.row_factory = sqlite3.Row
+                    connection.execute("PRAGMA foreign_keys = ON")
+                    apply_managed_backup_generations_migration(connection)
+                    with self.assertRaises(StorageError):
+                        apply_task_checkpoints_migration(
+                            connection,
+                            fail_stage=fail_stage,
+                        )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT MAX(version) FROM schema_migrations"
+                        ).fetchone()[0],
+                        11,
+                    )
+                    self.assertIsNone(
+                        connection.execute(
+                            """
+                            SELECT name FROM sqlite_master
+                             WHERE type = 'table' AND name = 'task_checkpoints'
+                            """
+                        ).fetchone()
+                    )
+                    apply_task_checkpoints_migration(connection)
+                    apply_task_checkpoints_migration(connection)
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT COUNT(*) FROM schema_migrations WHERE version = 12"
+                        ).fetchone()[0],
+                        1,
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT COUNT(*) FROM task_checkpoints"
+                        ).fetchone()[0],
+                        0,
                     )
 
 

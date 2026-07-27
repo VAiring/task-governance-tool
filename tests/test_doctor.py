@@ -113,7 +113,7 @@ class DoctorCommandTests(unittest.TestCase):
                 {
                     "code": "setup_required",
                     "schema_version": None,
-                    "required_schema_version": 11,
+                    "required_schema_version": 12,
                 },
             )
             for component in ("task_summary", "handoff_delivery", "maintenance"):
@@ -190,8 +190,8 @@ class DoctorCommandTests(unittest.TestCase):
                 components["project_state"],
                 {
                     "code": "ready",
-                    "schema_version": 11,
-                    "required_schema_version": 11,
+                    "schema_version": 12,
+                    "required_schema_version": 12,
                 },
             )
             self.assertEqual(set(components["task_summary"]), TASK_SUMMARY_KEYS)
@@ -271,7 +271,7 @@ class DoctorCommandTests(unittest.TestCase):
                 {
                     "code": "migration_required",
                     "schema_version": 10,
-                    "required_schema_version": 11,
+                    "required_schema_version": 12,
                 },
             )
             for component in ("task_summary", "handoff_delivery", "maintenance"):
@@ -344,7 +344,7 @@ class DoctorCommandTests(unittest.TestCase):
                 {
                     "code": "invalid_layout",
                     "schema_version": None,
-                    "required_schema_version": 11,
+                    "required_schema_version": 12,
                 },
             )
             for component in ("task_summary", "handoff_delivery", "maintenance"):
@@ -440,7 +440,7 @@ class DoctorCommandTests(unittest.TestCase):
                     {
                         "code": projected_code,
                         "schema_version": schema_version,
-                        "required_schema_version": 11,
+                        "required_schema_version": 12,
                     },
                 )
                 for component in ("task_summary", "handoff_delivery", "maintenance"):

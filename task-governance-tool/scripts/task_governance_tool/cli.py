@@ -31,6 +31,7 @@ from task_governance_tool.completion_workflow import (
     check_completion_request,
     execute_completion_request,
 )
+from task_governance_tool.checkpoints import record_checkpoint
 from task_governance_tool.effort import (
     EffortAdvisoryError,
     EffortProfile,
@@ -435,6 +436,19 @@ def build_parser() -> argparse.ArgumentParser:
     task_show_parser = task_subparsers.add_parser("show", help="show one task and recent events")
     add_common_options(task_show_parser)
     task_show_parser.add_argument("task_id")
+    task_checkpoint_parser = task_subparsers.add_parser(
+        "checkpoint",
+        help="record an optional typed continuation checkpoint",
+    )
+    add_common_options(task_checkpoint_parser)
+    task_checkpoint_parser.add_argument("task_id")
+    task_checkpoint_parser.add_argument("--summary", required=True)
+    task_checkpoint_parser.add_argument("--next-action", required=True)
+    task_checkpoint_parser.add_argument(
+        "--unresolved-risk",
+        action="append",
+        default=None,
+    )
     task_edit_parser = task_subparsers.add_parser("edit", help="update task state or metadata")
     add_common_options(task_edit_parser)
     task_edit_parser.add_argument("task_id")
@@ -697,6 +711,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_task_effort(context)
     if context.command == "task.show":
         return handle_task_show(context)
+    if context.command == "task.checkpoint":
+        return handle_task_checkpoint(context)
     if context.command == "task.edit":
         return handle_task_edit(context)
     if context.command == "task.complete":
@@ -1375,6 +1391,17 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_USAGE,
         )
+    except TaskRepositoryError as exc:
+        return CommandResult(
+            ok=False,
+            command=context.command,
+            project_id=target.project.project_id,
+            data=task_current_result_data(context, effective_statuses),
+            errors=[{"code": exc.code, "message": exc.message}],
+            exit_code=(
+                EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE
+            ),
+        )
     except StorageError as exc:
         return CommandResult(
             ok=False,
@@ -1640,6 +1667,36 @@ def task_show_text(
     return "\n".join(lines)
 
 
+def task_show_empty_data() -> dict[str, Any]:
+    return {
+        "task": None,
+        "events": [],
+        "suggested_next_action": "",
+        "review_evidence": None,
+        "handoff_summary": None,
+        "contract": None,
+        "latest_checkpoint": None,
+    }
+
+
+def task_show_failure_result(
+    context: CommandContext,
+    *,
+    project_id: str,
+    code: str,
+    message: str,
+    exit_code: int,
+) -> CommandResult:
+    return CommandResult(
+        ok=False,
+        command=context.command,
+        project_id=project_id,
+        data=task_show_empty_data(),
+        errors=[{"code": code, "message": message}],
+        exit_code=exit_code,
+    )
+
+
 def handle_task_show(context: CommandContext) -> CommandResult:
     target = resolve_context_target(context)
     try:
@@ -1652,83 +1709,46 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             exc=exc,
         )
     except TaskRepositoryError as exc:
-        if exc.code == "not_found":
-            return CommandResult(
-                ok=False,
-                command=context.command,
+        if exc.code != "not_found":
+            return validation_failure_result(
+                context,
                 project_id=target.project.project_id,
-                data={
-                    "task": None,
-                    "events": [],
-                    "suggested_next_action": "",
-                    "review_evidence": None,
-                    "handoff_summary": None,
-                    "contract": None,
-                },
-                errors=[{"code": exc.code, "message": exc.message}],
-                exit_code=EXIT_USAGE,
+                exc=exc,
             )
-        return validation_failure_result(
+        return task_show_failure_result(
             context,
             project_id=target.project.project_id,
-            exc=exc,
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_USAGE,
         )
     except HandoffError:
-        return CommandResult(
-            ok=False,
-            command=context.command,
+        return task_show_failure_result(
+            context,
             project_id=target.project.project_id,
-            data={
-                "task": None,
-                "events": [],
-                "suggested_next_action": "",
-                "review_evidence": None,
-                "handoff_summary": None,
-                "contract": None,
-            },
-            errors=[{"code": "internal_error", "message": "could not show task"}],
+            code="internal_error",
+            message="could not show task",
             exit_code=EXIT_TOOL_ERROR,
         )
     except StorageError as exc:
-        return CommandResult(
-            ok=False,
-            command=context.command,
+        return task_show_failure_result(
+            context,
             project_id=target.project.project_id,
-            data={
-                "task": None,
-                "events": [],
-                "suggested_next_action": "",
-                "review_evidence": None,
-                "handoff_summary": None,
-                "contract": None,
-            },
-            errors=[{"code": exc.code, "message": exc.message}],
+            code=exc.code,
+            message=exc.message,
             exit_code=EXIT_TOOL_ERROR,
         )
     except sqlite3.Error as exc:
         code = "database_busy" if _is_transient_sqlite_lock(exc) else "internal_error"
-        return CommandResult(
-            ok=False,
-            command=context.command,
+        return task_show_failure_result(
+            context,
             project_id=target.project.project_id,
-            data={
-                "task": None,
-                "events": [],
-                "suggested_next_action": "",
-                "review_evidence": None,
-                "handoff_summary": None,
-                "contract": None,
-            },
-            errors=[
-                {
-                    "code": code,
-                    "message": (
-                        DATABASE_BUSY_MESSAGE
-                        if code == "database_busy"
-                        else "could not show task"
-                    ),
-                }
-            ],
+            code=code,
+            message=(
+                DATABASE_BUSY_MESSAGE
+                if code == "database_busy"
+                else "could not show task"
+            ),
             exit_code=EXIT_TOOL_ERROR,
         )
 
@@ -1739,6 +1759,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         "review_evidence": result.review_evidence,
         "handoff_summary": result.handoff_summary,
         "contract": result.contract,
+        "latest_checkpoint": result.latest_checkpoint,
     }
     effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
     data["effort_advisory_enabled"] = bool(
@@ -1768,6 +1789,119 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             result.contract,
         ),
         exit_code=EXIT_SUCCESS,
+    )
+
+
+def task_checkpoint_empty_data() -> dict[str, Any]:
+    return {
+        "checkpoint": None,
+        "created": False,
+        "replayed": False,
+        "event": None,
+    }
+
+
+def task_checkpoint_failure_result(
+    context: CommandContext,
+    *,
+    project_id: str,
+    code: str,
+    message: str,
+    exit_code: int,
+) -> CommandResult:
+    return CommandResult(
+        ok=False,
+        command=context.command,
+        project_id=project_id,
+        data=task_checkpoint_empty_data(),
+        errors=[{"code": code, "message": message}],
+        exit_code=exit_code,
+    )
+
+
+def handle_task_checkpoint(context: CommandContext) -> CommandResult:
+    target = resolve_context_target(context)
+    project_id = target.project.project_id
+    if context.read_only:
+        return task_checkpoint_failure_result(
+            context,
+            project_id=project_id,
+            code="invalid_argument",
+            message=(
+                "task checkpoint cannot run with --read-only because it writes "
+                "the database"
+            ),
+            exit_code=EXIT_USAGE,
+        )
+
+    try:
+        with closing(connect_initialized(target)) as connection:
+            with connection:
+                result = record_checkpoint(
+                    connection,
+                    target.project,
+                    getattr(context.args, "task_id", ""),
+                    summary=getattr(context.args, "summary", ""),
+                    next_action=getattr(context.args, "next_action", ""),
+                    unresolved_risks=getattr(
+                        context.args,
+                        "unresolved_risk",
+                        None,
+                    ),
+                    database_target=target,
+                )
+    except (TaskValidationError, TaskRepositoryError) as exc:
+        return task_checkpoint_failure_result(
+            context,
+            project_id=project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=(
+                EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE
+            ),
+        )
+    except StorageError as exc:
+        return task_checkpoint_failure_result(
+            context,
+            project_id=project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error as exc:
+        mapped = operational_sqlite_error(
+            exc,
+            fallback_message="could not record checkpoint",
+        )
+        return task_checkpoint_failure_result(
+            context,
+            project_id=project_id,
+            code=mapped.code,
+            message=mapped.message,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    data = {
+        "checkpoint": result.checkpoint,
+        "created": result.created,
+        "replayed": result.replayed,
+        "event": result.event,
+    }
+    action = "recorded" if result.created else "replayed"
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=project_id,
+        data=data,
+        text=(
+            f"Checkpoint {result.checkpoint['checkpoint_id']}: {action} "
+            f"for task {result.checkpoint['task_id']}"
+        ),
+        exit_code=EXIT_SUCCESS,
+        mutation_outcome=MutationOutcome(
+            state_changed=result.created,
+            viewer_relevant=True,
+        ),
     )
 
 
@@ -2798,7 +2932,7 @@ def main(
         if args.command == "task" and args.task_command is None:
             raise CommandLineError(
                 "invalid_argument",
-                "task requires a subcommand: add, list, next, current, effort, show, edit, or complete",
+                "task requires a subcommand: add, list, next, current, effort, show, checkpoint, edit, or complete",
             )
         if (
             args.command == "task"

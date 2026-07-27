@@ -241,6 +241,9 @@ STRICT_RAW_OUTPUT_FIELDS = {
     "contract_constraints",
     "contract_authority_ref",
     "contract_change_reason",
+    "summary",
+    "next_action",
+    "unresolved_risk",
 }
 BENIGN_TITLE_RAW_OUTPUT_PREFIXES = (
     "add ",
@@ -303,6 +306,7 @@ class TaskShowResult:
     review_evidence: dict[str, Any]
     handoff_summary: dict[str, int]
     contract: dict[str, Any]
+    latest_checkpoint: dict[str, Any] | None
 
 
 @dataclass(frozen=True)
@@ -1287,6 +1291,7 @@ def show_task(
         (project.project_id, normalized_task_id, event_limit),
     ).fetchall()
     from task_governance_tool.contracts import read_current_contract
+    from task_governance_tool.checkpoints import read_latest_checkpoint
     from task_governance_tool.handoffs import handoff_summary_for_task
     from task_governance_tool.reviews import read_review_evidence
 
@@ -1309,6 +1314,11 @@ def show_task(
             project_id=project.project_id,
             task_id=normalized_task_id,
             current_revision=task_row["current_contract_revision"],
+        ),
+        latest_checkpoint=read_latest_checkpoint(
+            connection,
+            project_id=project.project_id,
+            task_id=normalized_task_id,
         ),
     )
 
@@ -1461,6 +1471,8 @@ def list_current_tasks(
         parameters,
     ).fetchall()
     tasks = []
+    from task_governance_tool.checkpoints import read_latest_checkpoint
+
     for row in rows:
         task = row_to_task(row)
         if row["latest_event_id"] is None:
@@ -1474,6 +1486,11 @@ def list_current_tasks(
                 "summary": row["latest_event_summary"],
                 "created_at": row["latest_event_created_at"],
             }
+        task["latest_checkpoint"] = read_latest_checkpoint(
+            connection,
+            project_id=project.project_id,
+            task_id=task["task_id"],
+        )
         task["suggested_next_action"] = current_suggested_next_action(task)
         tasks.append(task)
     return CurrentTaskResult(

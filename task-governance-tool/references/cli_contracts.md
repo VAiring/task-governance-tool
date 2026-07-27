@@ -194,8 +194,9 @@ null observed values except `schema_to=13`. A later-stage failure reports only
 the durable ordered prefix.
 
 Setup is noninteractive and idempotent. It does not create a second
-configuration file, disable continuity after opt-in, contact a network, inspect
-or mutate Git, or modify target source.
+configuration file, disable continuity after opt-in, contact a network, mutate
+Git, or modify target source. For a Git-candidate target, only its single
+bounded effective-ignore preflight may inspect Git.
 
 ## `doctor`
 

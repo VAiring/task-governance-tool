@@ -2146,8 +2146,8 @@ after layout, target, and canonical state ownership are known.
 
 `project_scope.py` owns the TG-M15.4 ignore boundary. It does not introduce a
 Git service or change `DatabaseTarget`. The existing preflight calls one
-private helper with the canonical governed target, accepted layout, and
-canonical skill root.
+private helper with the canonical governed target and accepted layout after
+canonical skill-root and state-ownership validation.
 
 The helper first performs a bounded inclusive upward filesystem scan for an
 existing or link-like `.git` marker, starting at the canonical target and

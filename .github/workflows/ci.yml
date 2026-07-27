@@ -91,6 +91,8 @@ jobs:
           if ($removedDb.ok -or $removedDb.errors[0].code -ne 'invalid_option') {
             throw 'Removed public --db option did not return invalid_option'
           }
+          # Consume the deliberately validated native failure before the Actions epilogue.
+          $LASTEXITCODE = 0
 
       - name: Skill package self-check
         shell: pwsh

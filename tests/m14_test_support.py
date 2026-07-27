@@ -34,6 +34,7 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_paused_state_migration,
     apply_project_maintenance_migration,
     apply_review_evidence_migration,
+    apply_task_checkpoints_migration,
     apply_task_contract_migration,
     connect,
     default_db_path,
@@ -374,7 +375,9 @@ def initialize_taskgov_internal(
 def remove_v10_maintenance_for_test(connection) -> None:
     """Downgrade a current test database before exercising an older migration."""
 
-    connection.execute("DELETE FROM schema_migrations WHERE version IN (10, 11, 12)")
+    connection.execute("DELETE FROM schema_migrations WHERE version IN (10, 11, 12, 13)")
+    connection.execute("DROP TRIGGER trg_task_events_viewer_generation")
+    connection.execute("DROP TABLE viewer_maintenance_state")
     connection.execute("DROP TABLE task_checkpoints")
     connection.execute("DROP TABLE managed_backup_generations")
     connection.execute("DROP TABLE project_maintenance")
@@ -513,6 +516,48 @@ def create_v11_database(
     generations: int = 3,
 ) -> None:
     create_v11_target(
+        install.target,
+        enabled=enabled,
+        setup_backup=setup_backup,
+        managed_backups=managed_backups,
+        interval_minutes=interval_minutes,
+        generations=generations,
+    )
+
+
+def create_v12_target(
+    target: DatabaseTarget,
+    *,
+    enabled: bool = False,
+    setup_backup: MigrationBackupMetadata | None = None,
+    managed_backups: tuple[MigrationBackupMetadata, ...] = (),
+    interval_minutes: int = 30,
+    generations: int = 3,
+) -> None:
+    """Create a staged schema-v12 fixture without invoking current migration."""
+
+    create_v11_target(
+        target,
+        enabled=enabled,
+        setup_backup=setup_backup,
+        managed_backups=managed_backups,
+        interval_minutes=interval_minutes,
+        generations=generations,
+    )
+    with closing(connect(target.db_path)) as connection:
+        apply_task_checkpoints_migration(connection)
+
+
+def create_v12_database(
+    install: PhysicalInstall,
+    *,
+    enabled: bool = False,
+    setup_backup: MigrationBackupMetadata | None = None,
+    managed_backups: tuple[MigrationBackupMetadata, ...] = (),
+    interval_minutes: int = 30,
+    generations: int = 3,
+) -> None:
+    create_v12_target(
         install.target,
         enabled=enabled,
         setup_backup=setup_backup,

@@ -8,13 +8,16 @@ import secrets
 import sqlite3
 import stat
 import tempfile
-from errno import EACCES, EAGAIN, EDEADLK
 from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Iterator
 
+from task_governance_tool.artifact_lock import (
+    ArtifactLockError,
+    zero_wait_artifact_lock,
+)
 from task_governance_tool.storage import (
     MAX_BACKUP_INTERVAL_MINUTES,
     MAX_BACKUP_GENERATIONS,
@@ -228,114 +231,26 @@ def _directory(target: DatabaseTarget, *, create: bool) -> Path:
     return path
 
 
-def _same_open_file(path: Path, details: os.stat_result) -> bool:
-    try:
-        observed = path.lstat()
-    except OSError:
-        return False
-    return (
-        not _reparse(observed)
-        and stat.S_ISREG(observed.st_mode)
-        and int(observed.st_dev) == int(details.st_dev)
-        and int(observed.st_ino) == int(details.st_ino)
-    )
-
-
-def _acquire_os_lock(descriptor: int) -> None:
-    os.lseek(descriptor, 0, os.SEEK_SET)
-    if os.name == "nt":
-        import msvcrt
-
-        msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
-        return
-
-    import fcntl
-
-    fcntl.lockf(
-        descriptor,
-        fcntl.LOCK_EX | fcntl.LOCK_NB,
-        1,
-        0,
-        os.SEEK_SET,
-    )
-
-
-def _lock_contended(exc: OSError) -> bool:
-    return exc.errno in {EACCES, EAGAIN, EDEADLK}
-
-
-def _release_os_lock(descriptor: int) -> None:
-    os.lseek(descriptor, 0, os.SEEK_SET)
-    if os.name == "nt":
-        import msvcrt
-
-        msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
-        return
-
-    import fcntl
-
-    fcntl.lockf(
-        descriptor,
-        fcntl.LOCK_UN,
-        1,
-        0,
-        os.SEEK_SET,
-    )
-
-
 @contextmanager
 def managed_backup_lock(target: DatabaseTarget) -> Iterator[None]:
     """Take the shared zero-wait OS lock without holding a SQLite lock."""
-
-    descriptor: int | None = None
-    locked = False
     try:
         directory = _directory(target, create=True)
-        directory_identity = _directory_identity(directory)
         path = directory / _LOCK_FILENAME
-        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(path, flags, 0o600)
-        details = os.fstat(descriptor)
-        if (
-            _directory_identity(directory) != directory_identity
-            or not stat.S_ISREG(details.st_mode)
-            or int(details.st_size) not in {0, 1}
-            or not _same_open_file(path, details)
-        ):
-            raise _failure()
-        if details.st_size == 0:
-            os.write(descriptor, b"\0")
-            os.fsync(descriptor)
         try:
-            _acquire_os_lock(descriptor)
-        except OSError as exc:
-            if _lock_contended(exc):
+            with zero_wait_artifact_lock(path):
+                yield
+        except ArtifactLockError as exc:
+            if exc.contended:
                 raise StorageError(
                     "backup_lock_contended",
                     _FAILURE_MESSAGE,
                 ) from exc
-            raise
-        locked = True
+            raise _failure() from exc
     except StorageError:
-        if descriptor is not None:
-            with suppress(OSError):
-                os.close(descriptor)
         raise
-    except (OSError, ImportError) as exc:
-        if descriptor is not None:
-            with suppress(OSError):
-                os.close(descriptor)
+    except OSError as exc:
         raise _failure() from exc
-
-    try:
-        yield
-    finally:
-        if descriptor is not None:
-            if locked:
-                with suppress(OSError):
-                    _release_os_lock(descriptor)
-            with suppress(OSError):
-                os.close(descriptor)
 
 
 def _validate_database(

@@ -26,10 +26,12 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_review_evidence_migration,
     apply_task_contract_migration,
     apply_task_checkpoints_migration,
+    apply_viewer_maintenance_migration,
     apply_effort_advisory_migration,
     connect,
     connect_snapshot_readonly,
     ensure_project_meta,
+    ensure_viewer_maintenance_row,
     initial_schema_sql,
     initialize_database,
     resolve_database_target,
@@ -60,8 +62,8 @@ def table_count(db: Path, table: str) -> int:
 
 
 class ViewerSnapshotTests(unittest.TestCase):
-    def test_snapshot_v3_reads_schema_v5_through_v12_without_new_fields(self):
-        for source_version in (5, 6, 7, 8, 9, 10, 11, 12):
+    def test_snapshot_v3_reads_schema_v5_through_v13_without_internal_fields(self):
+        for source_version in (5, 6, 7, 8, 9, 10, 11, 12, 13):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 db = Path(tmp) / "taskgov.sqlite"
                 repo = Path(tmp) / "repo"
@@ -91,8 +93,15 @@ class ViewerSnapshotTests(unittest.TestCase):
                         apply_managed_backup_generations_migration(connection)
                     if source_version >= 12:
                         apply_task_checkpoints_migration(connection)
+                    if source_version >= 13:
+                        apply_viewer_maintenance_migration(connection)
                     with connection:
                         ensure_project_meta(connection, target.project)
+                        if source_version >= 13:
+                            ensure_viewer_maintenance_row(
+                                connection,
+                                target.project.project_id,
+                            )
                         added = add_task(
                             connection,
                             target.project,
@@ -106,7 +115,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                                 else {}
                             ),
                         )
-                        if source_version == 12:
+                        if source_version >= 12:
                             connection.execute(
                                 """
                                 INSERT INTO task_checkpoints(
@@ -155,6 +164,9 @@ class ViewerSnapshotTests(unittest.TestCase):
                 self.assertNotIn("task_checkpoints", serialized)
                 self.assertNotIn("latest_checkpoint", serialized)
                 self.assertNotIn("VIEWER_CHECKPOINT", serialized)
+                self.assertNotIn("viewer_maintenance_state", serialized)
+                self.assertNotIn("source_generation", serialized)
+                self.assertNotIn("rendered_generation", serialized)
 
     def test_snapshot_projects_all_statuses_show_fields_and_bounded_events(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -277,7 +289,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
             snapshot = result.snapshot
             self.assertEqual(snapshot["snapshot_version"], 3)
-            self.assertEqual(snapshot["source_schema_version"], 12)
+            self.assertEqual(snapshot["source_schema_version"], 13)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {

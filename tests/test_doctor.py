@@ -28,7 +28,12 @@ except ModuleNotFoundError:
 from task_governance_tool import doctor as doctor_service
 from task_governance_tool import project_scope as project_scope_service
 from task_governance_tool.project_scope import ProjectScopeIssue
-from task_governance_tool.storage import StorageError
+from task_governance_tool.storage import (
+    SCHEMA_VERSION,
+    ProjectMaintenanceState,
+    StorageError,
+    ViewerMaintenanceState,
+)
 
 
 DOCTOR_DATA_KEYS = {"suggested_action", "setup_eligible", "components"}
@@ -73,6 +78,39 @@ VIEWER_KEYS = {
     "last_outcome",
 }
 OUTCOME_KEYS = {"code", "occurred_at"}
+FIXED_TIME = "2026-01-01T00:00:00Z"
+
+
+def maintenance_state(*, enabled: bool) -> ProjectMaintenanceState:
+    return ProjectMaintenanceState(
+        project_id="proj_doctor",
+        enabled_at=FIXED_TIME if enabled else None,
+        backup_interval_minutes=30 if enabled else None,
+        backup_generations=3 if enabled else None,
+        applied_backup_generations=3 if enabled else None,
+        backup_last_success_at=None,
+        backup_last_outcome_code=None,
+        backup_last_outcome_at=None,
+        latest_backup_generation_id=None,
+        viewer_last_success_at=FIXED_TIME,
+        viewer_last_outcome_code="succeeded",
+        viewer_last_outcome_at=FIXED_TIME,
+    )
+
+
+def viewer_state(
+    source: int,
+    rendered: int | None,
+    outcome: str | None,
+) -> ViewerMaintenanceState:
+    return ViewerMaintenanceState(
+        project_id="proj_doctor",
+        source_generation=source,
+        rendered_generation=rendered,
+        last_success_at=FIXED_TIME if rendered is not None else None,
+        last_outcome_code=outcome,
+        last_outcome_at=FIXED_TIME if outcome is not None else None,
+    )
 
 
 class DoctorCommandTests(unittest.TestCase):
@@ -95,6 +133,77 @@ class DoctorCommandTests(unittest.TestCase):
             self.assertNotIn(forbidden, serialized)
         return payload["data"]
 
+    def test_viewer_projection_uses_only_bounded_storage_state(self):
+        self.assertFalse(
+            hasattr(doctor_service, "inspect_canonical_viewer_status")
+        )
+        viewer = doctor_service._maintenance_component(
+            maintenance_state(enabled=False),
+            viewer_state(9, 8, "failed"),
+            observed_at="2026-01-01T00:01:00Z",
+        )["viewer"]
+
+        self.assertEqual(
+            viewer,
+            {
+                "code": "not_opted_in",
+                "due": None,
+                "source_generation": None,
+                "rendered_generation": None,
+                "last_success_at": None,
+                "last_outcome": {
+                    "code": "none",
+                    "occurred_at": None,
+                },
+            },
+        )
+
+    def test_viewer_projection_prioritizes_outcome_then_due_then_current(self):
+        cases = (
+            ("current", 2, 2, "succeeded", False, "current"),
+            ("never-rendered", 0, None, None, True, "due"),
+            ("behind", 3, 2, "succeeded", True, "due"),
+            ("deferred", 3, 3, "deferred", True, "deferred"),
+            ("failed", 3, 3, "failed", True, "failed"),
+        )
+        maintenance = maintenance_state(enabled=True)
+
+        for (
+            label,
+            source,
+            rendered,
+            outcome,
+            expected_due,
+            expected_code,
+        ) in cases:
+            with self.subTest(case=label):
+                stored_viewer = viewer_state(source, rendered, outcome)
+                viewer = doctor_service._maintenance_component(
+                    maintenance,
+                    stored_viewer,
+                    observed_at="2026-01-01T00:01:00Z",
+                )["viewer"]
+
+                self.assertEqual(set(viewer), VIEWER_KEYS)
+                self.assertEqual(viewer["code"], expected_code)
+                self.assertIs(viewer["due"], expected_due)
+                self.assertEqual(
+                    viewer["source_generation"],
+                    stored_viewer.source_generation,
+                )
+                self.assertEqual(
+                    viewer["rendered_generation"],
+                    stored_viewer.rendered_generation,
+                )
+                self.assertEqual(
+                    set(viewer["last_outcome"]),
+                    OUTCOME_KEYS,
+                )
+                self.assertEqual(
+                    viewer["last_outcome"]["code"],
+                    outcome or "none",
+                )
+
     def test_missing_state_is_setup_required_and_doctor_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
@@ -113,7 +222,7 @@ class DoctorCommandTests(unittest.TestCase):
                 {
                     "code": "setup_required",
                     "schema_version": None,
-                    "required_schema_version": 12,
+                    "required_schema_version": SCHEMA_VERSION,
                 },
             )
             for component in ("task_summary", "handoff_delivery", "maintenance"):
@@ -190,8 +299,8 @@ class DoctorCommandTests(unittest.TestCase):
                 components["project_state"],
                 {
                     "code": "ready",
-                    "schema_version": 12,
-                    "required_schema_version": 12,
+                    "schema_version": SCHEMA_VERSION,
+                    "required_schema_version": SCHEMA_VERSION,
                 },
             )
             self.assertEqual(set(components["task_summary"]), TASK_SUMMARY_KEYS)
@@ -235,10 +344,12 @@ class DoctorCommandTests(unittest.TestCase):
                 maintenance["backup"]["last_outcome"]["occurred_at"]
             )
             self.assertEqual(set(maintenance["viewer"]), VIEWER_KEYS)
-            self.assertEqual(maintenance["viewer"]["code"], "published")
-            self.assertIsNone(maintenance["viewer"]["due"])
-            self.assertIsNone(maintenance["viewer"]["source_generation"])
-            self.assertIsNone(maintenance["viewer"]["rendered_generation"])
+            self.assertEqual(maintenance["viewer"]["code"], "current")
+            self.assertFalse(maintenance["viewer"]["due"])
+            self.assertEqual(
+                maintenance["viewer"]["source_generation"],
+                maintenance["viewer"]["rendered_generation"],
+            )
             self.assertEqual(
                 set(maintenance["viewer"]["last_outcome"]),
                 OUTCOME_KEYS,
@@ -271,7 +382,7 @@ class DoctorCommandTests(unittest.TestCase):
                 {
                     "code": "migration_required",
                     "schema_version": 10,
-                    "required_schema_version": 12,
+                    "required_schema_version": SCHEMA_VERSION,
                 },
             )
             for component in ("task_summary", "handoff_delivery", "maintenance"):
@@ -344,7 +455,7 @@ class DoctorCommandTests(unittest.TestCase):
                 {
                     "code": "invalid_layout",
                     "schema_version": None,
-                    "required_schema_version": 12,
+                    "required_schema_version": SCHEMA_VERSION,
                 },
             )
             for component in ("task_summary", "handoff_delivery", "maintenance"):
@@ -366,7 +477,7 @@ class DoctorCommandTests(unittest.TestCase):
             ("database_busy", "busy", None, "connect"),
             ("project_state_unreadable", "unreadable", None, "connect"),
             ("project_mismatch", "foreign", 11, "state"),
-            ("schema_too_new", "newer", 12, "state"),
+            ("schema_too_new", "newer", SCHEMA_VERSION + 1, "state"),
         )
         for source_code, projected_code, schema_version, phase in cases:
             with self.subTest(code=source_code), tempfile.TemporaryDirectory() as tmp:
@@ -440,7 +551,7 @@ class DoctorCommandTests(unittest.TestCase):
                     {
                         "code": projected_code,
                         "schema_version": schema_version,
-                        "required_schema_version": 12,
+                        "required_schema_version": SCHEMA_VERSION,
                     },
                 )
                 for component in ("task_summary", "handoff_delivery", "maintenance"):

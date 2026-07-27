@@ -209,17 +209,9 @@ class LiveReadConsistencyTests(unittest.TestCase):
                         ),
                     )
 
-                    output = root / f"viewer{suffix[1:]}.html"
                     for command in (
                         ("task", "list"),
                         ("task", "add", "--title", "must not write"),
-                        (
-                            "web",
-                            "export",
-                            "--read-only",
-                            "--output",
-                            str(output),
-                        ),
                     ):
                         with self.subTest(suffix=suffix, command=command):
                             result = run_taskgov(
@@ -247,7 +239,6 @@ class LiveReadConsistencyTests(unittest.TestCase):
                             )
 
                     self.assertFalse(db.exists())
-                    self.assertFalse(output.exists())
                     self.assertEqual(
                         sidecar.read_bytes(),
                         b"preserve orphan sidecar",

@@ -12,7 +12,7 @@ try:  # noqa: E402
     from m14_test_support import (
         canonical_managed_sqlite_files,
         create_v10_database,
-        create_v11_database,
+        create_v12_database,
         create_v9_database,
         file_snapshot,
         json_payload,
@@ -23,7 +23,7 @@ except ModuleNotFoundError:  # noqa: E402
     from tests.m14_test_support import (
         canonical_managed_sqlite_files,
         create_v10_database,
-        create_v11_database,
+        create_v12_database,
         create_v9_database,
         file_snapshot,
         json_payload,
@@ -85,7 +85,7 @@ class SetupCommandTests(unittest.TestCase):
                     "planned_writes": FRESH_WRITES,
                     "completed_writes": [],
                     "schema_from": None,
-                    "schema_to": 12,
+                    "schema_to": 13,
                     "maintenance_enabled": False,
                     "backup_interval_minutes": 30,
                     "backup_generations": 3,
@@ -103,7 +103,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(completed_data["planned_writes"], FRESH_WRITES)
             self.assertEqual(completed_data["completed_writes"], FRESH_WRITES)
             self.assertEqual(completed_data["schema_from"], None)
-            self.assertEqual(completed_data["schema_to"], 12)
+            self.assertEqual(completed_data["schema_to"], 13)
             self.assertTrue(completed_data["maintenance_enabled"])
             self.assertEqual(completed_data["backup_interval_minutes"], 30)
             self.assertEqual(completed_data["backup_generations"], 3)
@@ -155,7 +155,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": [],
                         "completed_writes": [],
                         "schema_from": None,
-                        "schema_to": 12,
+                        "schema_to": 13,
                         "maintenance_enabled": None,
                         "backup_interval_minutes": None,
                         "backup_generations": None,
@@ -440,7 +440,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": planned,
                         "completed_writes": completed,
                         "schema_from": schema_from,
-                        "schema_to": 12,
+                        "schema_to": 13,
                         "maintenance_enabled": maintenance_enabled,
                         "backup_interval_minutes": 30,
                         "backup_generations": 3,
@@ -488,7 +488,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": [],
                         "completed_writes": [],
                         "schema_from": None,
-                        "schema_to": 12,
+                        "schema_to": 13,
                         "maintenance_enabled": None,
                         "backup_interval_minutes": None,
                         "backup_generations": None,
@@ -610,7 +610,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             data = self.assert_setup_shape(json_payload(migrated))
             self.assertEqual(data["schema_from"], 9)
-            self.assertEqual(data["schema_to"], 12)
+            self.assertEqual(data["schema_to"], 13)
             self.assertEqual(data["planned_writes"], MIGRATION_WRITES)
             self.assertEqual(data["completed_writes"], MIGRATION_WRITES)
             self.assertEqual(data["backup_generations"], 2)
@@ -629,7 +629,7 @@ class SetupCommandTests(unittest.TestCase):
             with closing(sqlite3.connect(install.db_path)) as connection:
                 self.assertEqual(
                     connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0],
-                    12,
+                    13,
                 )
                 row = connection.execute(
                     """
@@ -665,7 +665,7 @@ class SetupCommandTests(unittest.TestCase):
                 "viewer_publish",
             ]
             self.assertEqual(data["schema_from"], 10)
-            self.assertEqual(data["schema_to"], 12)
+            self.assertEqual(data["schema_to"], 13)
             self.assertEqual(data["planned_writes"], expected_writes)
             self.assertEqual(data["completed_writes"], expected_writes)
             self.assertEqual(data["backup_interval_minutes"], 45)
@@ -708,7 +708,7 @@ class SetupCommandTests(unittest.TestCase):
                     ),
                 )
 
-    def test_configured_v11_setup_preserves_omitted_or_equal_policy(self):
+    def test_configured_v12_setup_preserves_omitted_or_equal_policy(self):
         cases = {
             "omitted": (),
             "equal": (
@@ -721,7 +721,7 @@ class SetupCommandTests(unittest.TestCase):
         for name, options in cases.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 install = make_physical_install(Path(tmp))
-                create_v11_database(
+                create_v12_database(
                     install,
                     enabled=True,
                     interval_minutes=45,
@@ -732,15 +732,17 @@ class SetupCommandTests(unittest.TestCase):
 
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 data = self.assert_setup_shape(json_payload(migrated))
-                self.assertEqual(data["schema_from"], 11)
-                self.assertEqual(data["schema_to"], 12)
+                self.assertEqual(data["schema_from"], 12)
+                self.assertEqual(data["schema_to"], 13)
                 self.assertEqual(
                     data["planned_writes"],
                     ["migration_backup", "database_migrate", "viewer_publish"],
                 )
                 self.assertEqual(data["completed_writes"], data["planned_writes"])
+                self.assertNotIn("maintenance_configure", data["completed_writes"])
                 self.assertEqual(data["backup_interval_minutes"], 45)
                 self.assertEqual(data["backup_generations"], 2)
+                self.assertTrue(install.viewer_path.is_file())
                 with closing(sqlite3.connect(install.db_path)) as connection:
                     self.assertEqual(
                         connection.execute(
@@ -755,7 +757,7 @@ class SetupCommandTests(unittest.TestCase):
                         connection.execute(
                             "SELECT MAX(version) FROM schema_migrations"
                         ).fetchone()[0],
-                        12,
+                        13,
                     )
                     self.assertIsNotNone(
                         connection.execute(
@@ -765,8 +767,18 @@ class SetupCommandTests(unittest.TestCase):
                             """
                         ).fetchone()
                     )
+                    self.assertEqual(
+                        connection.execute(
+                            """
+                            SELECT source_generation, rendered_generation,
+                                   last_outcome_code
+                              FROM viewer_maintenance_state
+                            """
+                        ).fetchone(),
+                        (0, 0, "succeeded"),
+                    )
 
-    def test_v11_setup_retry_repairs_each_backup_crash_boundary_before_copy(self):
+    def test_v12_setup_retry_repairs_each_backup_crash_boundary_before_copy(self):
         def run(install):
             return setup_service.run_setup(
                 repo=str(install.project_root),
@@ -785,7 +797,7 @@ class SetupCommandTests(unittest.TestCase):
 
         with self.subTest(boundary="file_published"), tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            create_v11_database(install, enabled=True)
+            create_v12_database(install, enabled=True)
             with mock.patch.object(
                 backup_service,
                 "record_managed_backup",
@@ -819,7 +831,7 @@ class SetupCommandTests(unittest.TestCase):
 
         with self.subTest(boundary="row_committed"), tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            create_v11_database(
+            create_v12_database(
                 install,
                 enabled=True,
                 generations=1,
@@ -865,7 +877,7 @@ class SetupCommandTests(unittest.TestCase):
 
         with self.subTest(boundary="file_before_row_prune"), tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            create_v11_database(
+            create_v12_database(
                 install,
                 enabled=True,
                 generations=1,

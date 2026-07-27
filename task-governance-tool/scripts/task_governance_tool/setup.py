@@ -29,21 +29,20 @@ from task_governance_tool.storage import (
     StorageError,
     connect_snapshot_readonly,
     configure_project_maintenance,
-    default_viewer_output_path,
     initialize_database,
     inspect_setup_state,
     is_sqlite_busy_or_locked,
-    read_project_maintenance,
-    record_setup_viewer,
+    read_viewer_maintenance,
     validate_backup_policy,
 )
 from task_governance_tool.viewer import (
     ViewerError,
     build_viewer_snapshot,
     inspect_canonical_viewer_status,
-    render_viewer_html,
-    resolve_viewer_output_target,
-    write_viewer_html,
+    resolve_canonical_viewer_output_target,
+)
+from task_governance_tool.viewer_maintenance import (
+    publish_setup_viewer,
 )
 
 
@@ -153,13 +152,14 @@ def _viewer_status(
                 scope.target,
             ).snapshot
             if current_snapshot.get("source_schema_version") == SCHEMA_VERSION:
-                maintenance = read_project_maintenance(
+                viewer = read_viewer_maintenance(
                     connection,
                     scope.target.project.project_id,
                 )
                 maintenance_viewer_succeeded = bool(
-                    maintenance is not None
-                    and maintenance.viewer_last_outcome_code == "succeeded"
+                    viewer is not None
+                    and viewer.last_outcome_code == "succeeded"
+                    and viewer.rendered_generation == viewer.source_generation
                 )
     except StorageError as exc:
         expected_incompatibility = (
@@ -177,10 +177,7 @@ def _viewer_status(
             raise
         current_snapshot = None
     artifact_status = inspect_canonical_viewer_status(
-        path=default_viewer_output_path(
-            scope.skill_root,
-            scope.target.project.project_id,
-        ),
+        path=resolve_canonical_viewer_output_target(scope.target).path,
         target=scope.target,
         current_snapshot=current_snapshot,
         compare_snapshot=True,
@@ -202,19 +199,12 @@ def _failure_viewer_status(
 
 
 def _publish_viewer(scope: ProjectScope) -> None:
-    output_target = resolve_viewer_output_target(
-        output=None,
-        skill_root=scope.skill_root,
-        database_target=scope.target,
-    )
-    with closing(connect_snapshot_readonly(scope.target.db_path)) as connection:
-        snapshot = build_viewer_snapshot(connection, scope.target).snapshot
-        rendered = render_viewer_html(snapshot)
-    write_viewer_html(output_target, rendered)
-    record_setup_viewer(
-        scope.target,
-        published_at=str(snapshot["generated_at"]),
-    )
+    result = publish_setup_viewer(scope.target)
+    if result.code != "succeeded":
+        raise ViewerError(
+            "internal_error",
+            "canonical Viewer could not be published",
+        )
 
 
 def _revalidate_scope(

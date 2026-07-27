@@ -17,11 +17,16 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from task_governance_tool.storage import (  # noqa: E402
     apply_completion_commit_migration,
     apply_completion_evidence_migration,
+    apply_effort_advisory_migration,
     apply_git_snapshot_schema_migration,
     apply_handoff_outbox_migration,
     apply_initial_schema_migration,
+    apply_managed_backup_generations_migration,
     apply_paused_state_migration,
+    apply_project_maintenance_migration,
     apply_review_evidence_migration,
+    apply_task_checkpoints_migration,
+    apply_task_contract_migration,
     connect,
     ensure_project_meta,
     project_identity,
@@ -114,8 +119,8 @@ def create_realistic_review_database(
     *,
     schema_version: int,
 ):
-    if schema_version not in {5, 6}:
-        raise ValueError("schema_version must be 5 or 6")
+    if schema_version not in {5, 6, 12}:
+        raise ValueError("schema_version must be 5, 6, or 12")
     project = create_realistic_v2_database(db_path, repo, fixture)
     with closing(connect(db_path)) as connection:
         apply_paused_state_migration(connection)
@@ -175,8 +180,15 @@ def create_realistic_review_database(
             ),
         )
         connection.commit()
-        if schema_version == 6:
+        if schema_version >= 6:
             apply_git_snapshot_schema_migration(connection)
+        if schema_version == 12:
+            apply_handoff_outbox_migration(connection)
+            apply_task_contract_migration(connection)
+            apply_effort_advisory_migration(connection)
+            apply_project_maintenance_migration(connection)
+            apply_managed_backup_generations_migration(connection)
+            apply_task_checkpoints_migration(connection)
     return project
 
 
@@ -325,7 +337,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             connection.execute(
                 "SELECT MAX(version) FROM schema_migrations"
             ).fetchone()[0],
-            12,
+            13,
         )
         generations = connection.execute(
             """
@@ -350,6 +362,18 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             maintenance,
             (*generation, "succeeded", generation[1]),
         )
+        self.assertEqual(
+            tuple(
+                connection.execute(
+                    """
+                    SELECT source_generation, rendered_generation,
+                           last_outcome_code
+                      FROM viewer_maintenance_state
+                    """
+                ).fetchone()
+            ),
+            (0, 0, "succeeded"),
+        )
         artifacts = sorted(
             (db_path.parent / "backups").glob(
                 "taskgov-backup-v1_*.sqlite"
@@ -364,7 +388,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             artifacts[0].name,
         )
 
-    def test_v2_fixture_setup_migrates_to_v12_without_losing_observed_state(self):
+    def test_v2_fixture_setup_migrates_to_v13_without_losing_observed_state(self):
         fixture = load_fixture()
         self.assertEqual(fixture["schema_version"], 2)
         self.assertEqual(len(fixture["tasks"]), 12)
@@ -394,7 +418,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(migrated)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 2)
-            self.assertEqual(payload["data"]["schema_to"], 12)
+            self.assertEqual(payload["data"]["schema_to"], 13)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 [
@@ -495,9 +519,9 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 self.assertEqual(durable_projection(connection), before_second_init)
                 self.assert_single_seeded_managed_backup(connection, db_path)
 
-    def test_v5_and_v6_fixture_setup_migrates_to_v12_with_review_evidence_intact(self):
+    def test_v5_v6_and_v12_setup_migrate_to_v13_with_review_evidence_intact(self):
         fixture = load_fixture()
-        for source_version in (5, 6):
+        for source_version in (5, 6, 12):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 install = make_physical_install(root)
@@ -518,7 +542,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 payload = json_payload(migrated)
                 self.assertEqual(payload["data"]["schema_from"], source_version)
-                self.assertEqual(payload["data"]["schema_to"], 12)
+                self.assertEqual(payload["data"]["schema_to"], 13)
                 self.assertEqual(
                     payload["data"]["completed_writes"],
                     [

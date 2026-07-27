@@ -17,16 +17,18 @@ from tests.m14_test_support import (
 )
 
 from task_governance_tool import backup as backup_service
-from task_governance_tool import cli as cli_service
 from task_governance_tool import maintenance as maintenance_service
+from task_governance_tool import viewer_maintenance as viewer_maintenance_service
 from task_governance_tool.backup import discover_managed_backup_metadata
 from task_governance_tool.storage import (
     configure_project_maintenance,
     connect,
     initialize_database,
     read_managed_backup_repository,
+    read_viewer_maintenance,
     resolve_database_target,
 )
+from task_governance_tool.viewer_maintenance import ViewerRefreshResult
 
 
 SCRIPT_PATH = SOURCE_SKILL_ROOT / "scripts" / "taskgov.py"
@@ -198,6 +200,15 @@ def copied_target(repo: Path, source_db: Path, destination: Path):
     )
 
 
+def mark_backup_not_due(target) -> None:
+    result = backup_service.run_routine_backup(
+        target,
+        observed_at=timestamp(60),
+    )
+    if result.code != "succeeded":
+        raise AssertionError("viewer-only fixture backup could not be seeded")
+
+
 def assert_fixed_fixture_bytes(
     testcase: unittest.TestCase,
     db_path: Path,
@@ -342,6 +353,14 @@ class BackupPerformanceTests(unittest.TestCase):
                 with (
                     mock.patch.object(
                         maintenance_service,
+                        "run_routine_viewer_refresh",
+                        return_value=ViewerRefreshResult(
+                            code="current",
+                            renders=0,
+                        ),
+                    ) as viewer_refresh,
+                    mock.patch.object(
+                        maintenance_service,
                         "run_routine_backup",
                         side_effect=counted_routine,
                     ),
@@ -350,20 +369,6 @@ class BackupPerformanceTests(unittest.TestCase):
                         "_copy",
                         side_effect=counted_copy,
                     ),
-                    mock.patch.object(
-                        cli_service,
-                        "build_viewer_snapshot",
-                        side_effect=AssertionError(
-                            "M14.3 backup-only benchmark performed Viewer work"
-                        ),
-                    ) as viewer_snapshot,
-                    mock.patch.object(
-                        cli_service,
-                        "write_viewer_html",
-                        side_effect=AssertionError(
-                            "M14.3 backup-only benchmark published a Viewer"
-                        ),
-                    ) as viewer_write,
                 ):
                     enabled_timings = run_write_sequence(
                         self,
@@ -393,11 +398,14 @@ class BackupPerformanceTests(unittest.TestCase):
                     len(read_managed_backup_repository(enabled).generations),
                     3,
                 )
-                viewer_snapshot.assert_not_called()
-                viewer_write.assert_not_called()
+                self.assertEqual(
+                    viewer_refresh.call_count,
+                    len(WRITE_OFFSETS),
+                )
                 self.assertFalse(
                     (
                         enabled.db_path.parent
+                        / "viewer"
                         / "task-viewer.html"
                     ).exists()
                 )
@@ -418,6 +426,162 @@ class BackupPerformanceTests(unittest.TestCase):
                     f"delta={enabled_total - disabled_total:.3f}s "
                     f"max-command={max(*disabled_timings, *enabled_timings):.3f}s "
                     f"publications={len(published_at)}"
+                )
+
+    def test_small_and_large_viewer_and_combined_performance_contract(self):
+        scenarios = (
+            ("small-migration", small_task_specs(), 12, 191),
+            ("large", large_task_specs(), 500, 5000),
+        )
+        for name, specs, task_count, event_count in scenarios:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo, seed_db, task_id, seeded_event_count = seed_fixture(
+                    root,
+                    task_specs=specs[0],
+                    tool_event_specs=specs[1],
+                )
+                self.assertEqual(seeded_event_count, event_count)
+                disabled = copied_target(
+                    repo,
+                    seed_db,
+                    root / "disabled-viewer" / "taskgov.sqlite",
+                )
+                viewer_only = copied_target(
+                    repo,
+                    seed_db,
+                    root / "viewer-only" / "taskgov.sqlite",
+                )
+                combined = copied_target(
+                    repo,
+                    seed_db,
+                    root / "combined" / "taskgov.sqlite",
+                )
+                mark_backup_not_due(viewer_only)
+
+                disabled_timings = run_write_sequence(
+                    self,
+                    disabled,
+                    task_id,
+                    maintenance_enabled=False,
+                )
+
+                real_viewer_write = viewer_maintenance_service.write_viewer_html
+                viewer_writes = []
+                viewer_backup_results = []
+
+                def counted_viewer_write(*args, **kwargs):
+                    viewer_writes.append(args[0].path)
+                    return real_viewer_write(*args, **kwargs)
+
+                real_backup = maintenance_service.run_routine_backup
+
+                def counted_viewer_backup(*args, **kwargs):
+                    result = real_backup(*args, **kwargs)
+                    viewer_backup_results.append(result)
+                    return result
+
+                with (
+                    mock.patch.object(
+                        viewer_maintenance_service,
+                        "write_viewer_html",
+                        side_effect=counted_viewer_write,
+                    ),
+                    mock.patch.object(
+                        maintenance_service,
+                        "run_routine_backup",
+                        side_effect=counted_viewer_backup,
+                    ),
+                ):
+                    viewer_timings = run_write_sequence(
+                        self,
+                        viewer_only,
+                        task_id,
+                        maintenance_enabled=True,
+                    )
+
+                combined_writes = []
+                combined_backup_results = []
+
+                def counted_combined_write(*args, **kwargs):
+                    combined_writes.append(args[0].path)
+                    return real_viewer_write(*args, **kwargs)
+
+                def counted_combined_backup(*args, **kwargs):
+                    result = real_backup(*args, **kwargs)
+                    combined_backup_results.append(result)
+                    return result
+
+                with (
+                    mock.patch.object(
+                        viewer_maintenance_service,
+                        "write_viewer_html",
+                        side_effect=counted_combined_write,
+                    ),
+                    mock.patch.object(
+                        maintenance_service,
+                        "run_routine_backup",
+                        side_effect=counted_combined_backup,
+                    ),
+                ):
+                    combined_timings = run_write_sequence(
+                        self,
+                        combined,
+                        task_id,
+                        maintenance_enabled=True,
+                    )
+
+                self.assertEqual(len(viewer_writes), len(WRITE_OFFSETS))
+                self.assertEqual(len(combined_writes), len(WRITE_OFFSETS))
+                self.assertTrue(
+                    all(not result.attempted for result in viewer_backup_results)
+                )
+                self.assertEqual(
+                    [
+                        WRITE_OFFSETS[index]
+                        for index, result in enumerate(combined_backup_results)
+                        if result.attempted
+                    ],
+                    list(EXPECTED_BACKUP_OFFSETS),
+                )
+                for target in (viewer_only, combined):
+                    with closing(connect(target.db_path)) as connection:
+                        viewer = read_viewer_maintenance(
+                            connection,
+                            target.project.project_id,
+                        )
+                    self.assertIsNotNone(viewer)
+                    self.assertEqual(
+                        viewer.source_generation,
+                        viewer.rendered_generation,
+                    )
+                    self.assertTrue(
+                        (
+                            target.db_path.parent
+                            / "viewer"
+                            / "task-viewer.html"
+                        ).is_file()
+                    )
+                    assert_fixed_fixture_bytes(
+                        self,
+                        target.db_path,
+                        task_count=task_count,
+                        event_count=event_count + len(WRITE_OFFSETS),
+                    )
+
+                disabled_total = sum(disabled_timings)
+                viewer_total = sum(viewer_timings)
+                combined_total = sum(combined_timings)
+                self.assertLess(viewer_total - disabled_total, 10.0)
+                self.assertLess(combined_total - disabled_total, 10.0)
+                print(
+                    "viewer-performance "
+                    f"{name}: disabled={disabled_total:.3f}s "
+                    f"viewer-only={viewer_total:.3f}s "
+                    f"combined={combined_total:.3f}s "
+                    f"viewer-delta={viewer_total - disabled_total:.3f}s "
+                    f"combined-delta={combined_total - disabled_total:.3f}s "
+                    f"max-command={max(*disabled_timings, *viewer_timings, *combined_timings):.3f}s"
                 )
 
 

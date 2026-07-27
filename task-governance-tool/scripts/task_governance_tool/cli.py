@@ -50,6 +50,7 @@ from task_governance_tool.handoffs import (
 from task_governance_tool.maintenance import (
     BACKUP_WARNING_MESSAGES,
     MutationOutcome,
+    VIEWER_WARNING_MESSAGES,
     run_post_commit_maintenance,
 )
 from task_governance_tool.storage import (
@@ -59,7 +60,6 @@ from task_governance_tool.storage import (
     begin_initialized_write,
     connect_initialized,
     connect_initialized_readonly,
-    connect_snapshot_readonly,
     count_tasks,
     is_sqlite_busy_or_locked,
     operational_sqlite_error,
@@ -100,15 +100,6 @@ from task_governance_tool.tasks import (
     validate_current_status_filter,
     validate_task_id,
 )
-from task_governance_tool.viewer import (
-    SNAPSHOT_VERSION,
-    ViewerError,
-    build_viewer_snapshot,
-    render_viewer_html,
-    resolve_viewer_output_target,
-    write_viewer_html,
-)
-
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
 EXIT_TOOL_ERROR = 2
@@ -644,16 +635,6 @@ def build_parser() -> argparse.ArgumentParser:
     review_finding_resolve_parser.add_argument("finding_id")
     review_finding_resolve_parser.add_argument("--resolution", required=True)
 
-    web_parser = subparsers.add_parser("web", help="static viewer commands")
-    web_subparsers = web_parser.add_subparsers(dest="web_command")
-    web_export_parser = web_subparsers.add_parser(
-        "export",
-        help="render a self-contained offline task viewer",
-        description="Render a self-contained offline task viewer.",
-    )
-    add_common_options(web_export_parser)
-    web_export_parser.add_argument("--output", default=None, help="explicit .html or .htm output path")
-
     return parser
 
 
@@ -667,8 +648,6 @@ def command_name(args: argparse.Namespace) -> str:
             return "review.prepare"
         if args.review_action:
             return f"review.{args.review_entity}.{args.review_action}"
-    if args.command == "web" and args.web_command:
-        return f"web.{args.web_command}"
     if args.command:
         return args.command
     return "help"
@@ -752,8 +731,6 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_review_prepare(context)
     if context.command.startswith("review."):
         return handle_review_command(context)
-    if context.command == "web.export":
-        return handle_web_export(context)
     return error_result(
         context.command,
         "internal_error",
@@ -834,151 +811,6 @@ def handle_doctor(context: CommandContext) -> CommandResult:
         exit_code=(
             EXIT_SUCCESS if service_result.ok else EXIT_TOOL_ERROR
         ),
-    )
-
-
-def web_export_empty_data(output_path: str | None) -> dict[str, Any]:
-    return {
-        "output_path": output_path,
-        "written": False,
-        "replaced": False,
-        "task_count": 0,
-        "event_count": 0,
-        "generated_at": None,
-        "snapshot_version": SNAPSHOT_VERSION,
-    }
-
-
-def web_export_failure_result(
-    context: CommandContext,
-    *,
-    project_id: str,
-    output_path: str | None,
-    code: str,
-    message: str,
-    exit_code: int,
-) -> CommandResult:
-    return CommandResult(
-        ok=False,
-        command=context.command,
-        project_id=project_id,
-        data=web_export_empty_data(output_path),
-        errors=[{"code": code, "message": message}],
-        exit_code=exit_code,
-    )
-
-
-def web_export_text(data: dict[str, Any]) -> str:
-    action = "written" if data["written"] else "previewed"
-    return "\n".join(
-        [
-            f"Viewer {action}: {data['output_path']}",
-            f"Tasks: {data['task_count']}  Events: {data['event_count']}",
-            f"Generated: {data['generated_at']}",
-        ]
-    )
-
-
-def viewer_error_exit_code(code: str) -> int:
-    if code in {"output_path_invalid", "output_parent_missing"}:
-        return EXIT_USAGE
-    return EXIT_TOOL_ERROR
-
-
-def handle_web_export(context: CommandContext) -> CommandResult:
-    script_path = cli_script_path()
-    target = resolve_context_target(context)
-    project_id = target.project.project_id
-    try:
-        output_target = resolve_viewer_output_target(
-            output=getattr(context.args, "output", None),
-            skill_root=skill_root_from_script(script_path),
-            database_target=target,
-        )
-    except ViewerError as exc:
-        return web_export_failure_result(
-            context,
-            project_id=project_id,
-            output_path=None,
-            code=exc.code,
-            message=exc.message,
-            exit_code=viewer_error_exit_code(exc.code),
-        )
-
-    output_path = str(output_target.path)
-    try:
-        with closing(connect_snapshot_readonly(target.db_path)) as connection:
-            snapshot_result = build_viewer_snapshot(connection, target)
-            rendered = render_viewer_html(snapshot_result.snapshot)
-    except StorageError as exc:
-        return web_export_failure_result(
-            context,
-            project_id=project_id,
-            output_path=output_path,
-            code=exc.code,
-            message=exc.message,
-            exit_code=EXIT_TOOL_ERROR,
-        )
-    except ViewerError as exc:
-        return web_export_failure_result(
-            context,
-            project_id=project_id,
-            output_path=output_path,
-            code=exc.code,
-            message=exc.message,
-            exit_code=EXIT_TOOL_ERROR,
-        )
-    except sqlite3.Error:
-        return web_export_failure_result(
-            context,
-            project_id=project_id,
-            output_path=output_path,
-            code="internal_error",
-            message="could not read viewer snapshot",
-            exit_code=EXIT_TOOL_ERROR,
-        )
-    except Exception:
-        return web_export_failure_result(
-            context,
-            project_id=project_id,
-            output_path=output_path,
-            code="internal_error",
-            message="viewer snapshot could not be rendered",
-            exit_code=EXIT_TOOL_ERROR,
-        )
-
-    replaced = False
-    written = False
-    if not context.read_only:
-        try:
-            replaced = write_viewer_html(output_target, rendered)
-            written = True
-        except ViewerError as exc:
-            return web_export_failure_result(
-                context,
-                project_id=project_id,
-                output_path=output_path,
-                code=exc.code,
-                message=exc.message,
-                exit_code=viewer_error_exit_code(exc.code),
-            )
-
-    data = {
-        "output_path": output_path,
-        "written": written,
-        "replaced": replaced,
-        "task_count": snapshot_result.task_count,
-        "event_count": snapshot_result.event_count,
-        "generated_at": snapshot_result.snapshot["generated_at"],
-        "snapshot_version": SNAPSHOT_VERSION,
-    }
-    return CommandResult(
-        ok=True,
-        command=context.command,
-        project_id=project_id,
-        data=data,
-        text=web_export_text(data),
-        exit_code=EXIT_SUCCESS,
     )
 
 
@@ -2994,12 +2826,20 @@ def apply_post_commit_maintenance(
             outcome,
         )
     except Exception:
-        warnings = [
+        warnings = []
+        if outcome.viewer_relevant:
+            warnings.append(
+                {
+                    "code": "viewer_refresh_failed",
+                    "message": VIEWER_WARNING_MESSAGES["failed"],
+                }
+            )
+        warnings.append(
             {
                 "code": "backup_failed",
                 "message": BACKUP_WARNING_MESSAGES["failed"],
             }
-        ]
+        )
     if not warnings:
         return result
     warning_text = "\n".join(warning["message"] for warning in warnings)
@@ -3076,8 +2916,6 @@ def main(
                 "invalid_argument",
                 "review target set requires --revision unless --kind is git_snapshot",
             )
-        if args.command == "web" and args.web_command is None:
-            raise CommandLineError("invalid_argument", "web requires a subcommand: export")
         context = make_context(args, target_override=_target_override)
         result = handle_command(context)
         if _maintenance_enabled:

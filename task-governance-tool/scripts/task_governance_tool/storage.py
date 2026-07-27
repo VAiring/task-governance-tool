@@ -16,7 +16,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 MIN_BACKUP_INTERVAL_MINUTES = 1
 MAX_BACKUP_INTERVAL_MINUTES = 1_440
 MIN_BACKUP_GENERATIONS = 1
@@ -105,11 +105,30 @@ class ProjectMaintenanceState:
 
 
 @dataclass(frozen=True)
+class ViewerMaintenanceState:
+    project_id: str
+    source_generation: int
+    rendered_generation: int | None
+    last_success_at: str | None
+    last_outcome_code: str | None
+    last_outcome_at: str | None
+
+    @property
+    def due(self) -> bool:
+        return (
+            self.rendered_generation is None
+            or self.rendered_generation < self.source_generation
+            or self.last_outcome_code in {"deferred", "failed"}
+        )
+
+
+@dataclass(frozen=True)
 class DoctorStorageState:
     schema_version: int
     project_code: str
     task_counts: dict[str, int]
     maintenance: ProjectMaintenanceState
+    viewer: ViewerMaintenanceState
 
 
 def skill_root_from_script(script_path: str | os.PathLike[str]) -> Path:
@@ -608,6 +627,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "project_maintenance",
         "managed_backup_generations",
         "task_checkpoints",
+        "viewer_maintenance_state",
     }
     required_indexes = {
         "idx_tasks_project_status",
@@ -629,6 +649,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
     }
     required_triggers = {
         "trg_project_maintenance_enabled_at_immutable",
+        "trg_task_events_viewer_generation",
     }
     table_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     index_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
@@ -875,6 +896,25 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         missing.extend(
             f"column:task_checkpoints.{name}"
             for name in sorted(required_checkpoint_columns - checkpoint_columns)
+        )
+    if "viewer_maintenance_state" in tables:
+        viewer_columns = {
+            str(row["name"])
+            for row in connection.execute(
+                "PRAGMA table_info(viewer_maintenance_state)"
+            ).fetchall()
+        }
+        required_viewer_columns = {
+            "project_id",
+            "source_generation",
+            "rendered_generation",
+            "last_success_at",
+            "last_outcome_code",
+            "last_outcome_at",
+        }
+        missing.extend(
+            f"column:viewer_maintenance_state.{name}"
+            for name in sorted(required_viewer_columns - viewer_columns)
         )
     return missing
 
@@ -2051,6 +2091,210 @@ def apply_task_checkpoints_migration(
         raise
 
 
+def apply_viewer_maintenance_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Add bounded source/render generations for the canonical Viewer."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "Viewer-maintenance migration requires no active transaction",
+        )
+    existing_version = current_schema_version(connection)
+    if existing_version >= 13:
+        viewer_missing = {
+            item
+            for item in required_schema_objects_missing(connection)
+            if item == "table:viewer_maintenance_state"
+            or item == "trigger:trg_task_events_viewer_generation"
+            or item.startswith("column:viewer_maintenance_state.")
+        }
+        if (
+            missing_migration_versions(connection, existing_version)
+            or viewer_missing
+        ):
+            raise StorageError(
+                "migration_required",
+                "Viewer-maintenance migration is incomplete",
+            )
+        return
+    if existing_version != 12:
+        raise StorageError(
+            "migration_required",
+            "Viewer-maintenance migration requires schema version 12",
+        )
+    if missing_migration_versions(connection, existing_version):
+        raise StorageError(
+            "migration_required",
+            "Viewer-maintenance migration requires complete schema version 12 history",
+        )
+
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        connection.execute(
+            """
+            CREATE TABLE viewer_maintenance_state (
+              project_id TEXT PRIMARY KEY,
+              source_generation INTEGER NOT NULL
+                CHECK (source_generation >= 0),
+              rendered_generation INTEGER
+                CHECK (
+                  rendered_generation IS NULL
+                  OR (
+                    rendered_generation >= 0
+                    AND rendered_generation <= source_generation
+                  )
+                ),
+              last_success_at TEXT,
+              last_outcome_code TEXT
+                CHECK (
+                  last_outcome_code IS NULL
+                  OR last_outcome_code IN ('succeeded', 'deferred', 'failed')
+                ),
+              last_outcome_at TEXT,
+              FOREIGN KEY (project_id) REFERENCES project_meta(project_id),
+              CHECK (
+                last_success_at IS NULL
+                OR (
+                  length(last_success_at) = 20
+                  AND last_success_at GLOB
+                    '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                )
+              ),
+              CHECK (
+                last_outcome_at IS NULL
+                OR (
+                  length(last_outcome_at) = 20
+                  AND last_outcome_at GLOB
+                    '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                )
+              ),
+              CHECK (
+                (last_outcome_code IS NULL AND last_outcome_at IS NULL)
+                OR
+                (last_outcome_code IS NOT NULL AND last_outcome_at IS NOT NULL)
+              )
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TRIGGER trg_task_events_viewer_generation
+            AFTER INSERT ON task_events
+            BEGIN
+              UPDATE viewer_maintenance_state
+                 SET source_generation = source_generation + 1
+               WHERE project_id = NEW.project_id
+                 AND source_generation < 9223372036854775807;
+              SELECT CASE
+                WHEN changes() != 1
+                THEN RAISE(ABORT, 'Viewer generation state is unavailable')
+              END;
+            END
+            """
+        )
+        if fail_stage == "after_schema":
+            raise StorageError(
+                "internal_error",
+                "injected Viewer-maintenance migration failure",
+            )
+
+        project_rows = connection.execute(
+            "SELECT project_id FROM project_meta ORDER BY project_id"
+        ).fetchall()
+        if len(project_rows) > 1:
+            raise StorageError(
+                "internal_error",
+                "Viewer-maintenance migration found multiple project identities",
+            )
+        if project_rows:
+            project_id = str(project_rows[0]["project_id"])
+            legacy = connection.execute(
+                """
+                SELECT viewer_last_success_at, viewer_last_outcome_code,
+                       viewer_last_outcome_at
+                  FROM project_maintenance
+                 WHERE project_id = ?
+                """,
+                (project_id,),
+            ).fetchone()
+            if legacy is None:
+                raise StorageError(
+                    "migration_required",
+                    "Viewer-maintenance migration requires maintenance state",
+                )
+            last_success_at = (
+                validate_utc_timestamp(
+                    str(legacy["viewer_last_success_at"]),
+                    field="Viewer success time",
+                )
+                if legacy["viewer_last_success_at"] is not None
+                else None
+            )
+            last_outcome_code = (
+                str(legacy["viewer_last_outcome_code"])
+                if legacy["viewer_last_outcome_code"] is not None
+                else None
+            )
+            if last_outcome_code not in {
+                None,
+                "succeeded",
+                "deferred",
+                "failed",
+            }:
+                raise StorageError(
+                    "migration_required",
+                    "Viewer-maintenance outcome is invalid",
+                )
+            last_outcome_at = (
+                validate_utc_timestamp(
+                    str(legacy["viewer_last_outcome_at"]),
+                    field="Viewer outcome time",
+                )
+                if legacy["viewer_last_outcome_at"] is not None
+                else None
+            )
+            if (last_outcome_code is None) != (last_outcome_at is None):
+                raise StorageError(
+                    "migration_required",
+                    "Viewer-maintenance outcome is incomplete",
+                )
+            connection.execute(
+                """
+                INSERT INTO viewer_maintenance_state(
+                  project_id, source_generation, rendered_generation,
+                  last_success_at, last_outcome_code, last_outcome_at
+                ) VALUES (?, 0, NULL, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    last_success_at,
+                    last_outcome_code,
+                    last_outcome_at,
+                ),
+            )
+        if fail_stage == "after_row":
+            raise StorageError(
+                "internal_error",
+                "injected Viewer-maintenance migration failure",
+            )
+        connection.execute(
+            "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+            (13, "viewer_maintenance_state", utc_now()),
+        )
+        if fail_stage == "before_commit":
+            raise StorageError(
+                "internal_error",
+                "injected Viewer-maintenance migration failure",
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def apply_migrations(
     connection: sqlite3.Connection,
     *,
@@ -2139,6 +2383,10 @@ def apply_migrations(
     if version < 12:
         apply_task_checkpoints_migration(connection)
         applied.append(12)
+        version = 12
+    if version < 13:
+        apply_viewer_maintenance_migration(connection)
+        applied.append(13)
     return applied, warnings
 
 
@@ -2265,6 +2513,95 @@ def ensure_project_maintenance_row(
     )
 
 
+def read_viewer_maintenance(
+    connection: sqlite3.Connection,
+    project_id: str,
+) -> ViewerMaintenanceState | None:
+    row = connection.execute(
+        """
+        SELECT project_id, source_generation, rendered_generation,
+               last_success_at, last_outcome_code, last_outcome_at
+          FROM viewer_maintenance_state
+         WHERE project_id = ?
+        """,
+        (project_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    source_generation = int(row["source_generation"])
+    rendered_generation = (
+        int(row["rendered_generation"])
+        if row["rendered_generation"] is not None
+        else None
+    )
+    if (
+        source_generation < 0
+        or (
+            rendered_generation is not None
+            and (
+                rendered_generation < 0
+                or rendered_generation > source_generation
+            )
+        )
+    ):
+        raise StorageError(
+            "internal_error",
+            "Viewer generation state is invalid",
+        )
+    last_success_at = (
+        validate_utc_timestamp(
+            str(row["last_success_at"]),
+            field="Viewer success time",
+        )
+        if row["last_success_at"] is not None
+        else None
+    )
+    last_outcome_code = (
+        str(row["last_outcome_code"])
+        if row["last_outcome_code"] is not None
+        else None
+    )
+    if last_outcome_code not in {
+        None,
+        "succeeded",
+        "deferred",
+        "failed",
+    }:
+        raise StorageError("internal_error", "Viewer outcome is invalid")
+    last_outcome_at = (
+        validate_utc_timestamp(
+            str(row["last_outcome_at"]),
+            field="Viewer outcome time",
+        )
+        if row["last_outcome_at"] is not None
+        else None
+    )
+    if (last_outcome_code is None) != (last_outcome_at is None):
+        raise StorageError("internal_error", "Viewer outcome is incomplete")
+    return ViewerMaintenanceState(
+        project_id=str(row["project_id"]),
+        source_generation=source_generation,
+        rendered_generation=rendered_generation,
+        last_success_at=last_success_at,
+        last_outcome_code=last_outcome_code,
+        last_outcome_at=last_outcome_at,
+    )
+
+
+def ensure_viewer_maintenance_row(
+    connection: sqlite3.Connection,
+    project_id: str,
+) -> None:
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO viewer_maintenance_state(
+          project_id, source_generation, rendered_generation
+        ) VALUES (?, 0, NULL)
+        """,
+        (project_id,),
+    )
+
+
 def validate_current_database(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
@@ -2313,6 +2650,11 @@ def validate_current_database(
         raise StorageError(
             "migration_required",
             "database project maintenance state is missing; run setup to repair",
+        )
+    if read_viewer_maintenance(connection, existing_project_id) is None:
+        raise StorageError(
+            "migration_required",
+            "database Viewer maintenance state is missing; run setup to repair",
         )
     return version
 
@@ -3042,11 +3384,21 @@ def record_backup_attempt_outcome(
             raise
 
 
-def record_setup_viewer(
+def record_viewer_publication(
     target: DatabaseTarget,
     *,
+    source_generation: int,
     published_at: str,
 ) -> None:
+    if (
+        isinstance(source_generation, bool)
+        or not isinstance(source_generation, int)
+        or source_generation < 0
+    ):
+        raise StorageError(
+            "internal_error",
+            "Viewer publication generation is invalid",
+        )
     timestamp = validate_utc_timestamp(
         published_at,
         field="Viewer publication time",
@@ -3054,16 +3406,98 @@ def record_setup_viewer(
     with closing(connect_initialized(target)) as connection:
         try:
             begin_initialized_write(connection, target)
-            connection.execute(
+            cursor = connection.execute(
                 """
-                UPDATE project_maintenance
-                   SET viewer_last_success_at = ?,
-                       viewer_last_outcome_code = 'succeeded',
-                       viewer_last_outcome_at = ?
+                UPDATE viewer_maintenance_state
+                   SET rendered_generation = ?,
+                       last_success_at = CASE
+                         WHEN last_success_at IS NULL OR last_success_at <= ?
+                         THEN ?
+                         ELSE last_success_at
+                       END,
+                       last_outcome_code = CASE
+                         WHEN last_outcome_at IS NULL OR last_outcome_at <= ?
+                         THEN 'succeeded'
+                         ELSE last_outcome_code
+                       END,
+                       last_outcome_at = CASE
+                         WHEN last_outcome_at IS NULL OR last_outcome_at <= ?
+                         THEN ?
+                         ELSE last_outcome_at
+                       END
+                 WHERE project_id = ?
+                   AND (
+                     rendered_generation IS NULL
+                     OR rendered_generation <= ?
+                   )
+                   AND source_generation >= ?
+                """,
+                (
+                    source_generation,
+                    timestamp,
+                    timestamp,
+                    timestamp,
+                    timestamp,
+                    timestamp,
+                    target.project.project_id,
+                    source_generation,
+                    source_generation,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise StorageError(
+                    "internal_error",
+                    "Viewer publication generation changed unexpectedly",
+                )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+
+def record_viewer_attempt_outcome(
+    target: DatabaseTarget,
+    *,
+    code: str,
+    occurred_at: str,
+) -> None:
+    if code not in {"deferred", "failed"}:
+        raise StorageError("internal_error", "Viewer outcome is invalid")
+    timestamp = validate_utc_timestamp(
+        occurred_at,
+        field="Viewer outcome time",
+    )
+    with closing(connect_initialized(target)) as connection:
+        try:
+            begin_initialized_write(connection, target)
+            cursor = connection.execute(
+                """
+                UPDATE viewer_maintenance_state
+                   SET last_outcome_code = CASE
+                         WHEN last_outcome_at IS NULL OR last_outcome_at < ?
+                         THEN ?
+                         ELSE last_outcome_code
+                       END,
+                       last_outcome_at = CASE
+                         WHEN last_outcome_at IS NULL OR last_outcome_at < ?
+                         THEN ?
+                         ELSE last_outcome_at
+                       END
                  WHERE project_id = ?
                 """,
-                (timestamp, timestamp, target.project.project_id),
+                (
+                    timestamp,
+                    code,
+                    timestamp,
+                    timestamp,
+                    target.project.project_id,
+                ),
             )
+            if cursor.rowcount != 1:
+                raise StorageError(
+                    "internal_error",
+                    "Viewer maintenance state is missing",
+                )
             connection.commit()
         except Exception:
             connection.rollback()
@@ -3305,6 +3739,17 @@ def read_setup_state(
                 "project_state_unreadable",
                 "project state could not be read safely",
             )
+        if (
+            read_viewer_maintenance(
+                connection,
+                target.project.project_id,
+            )
+            is None
+        ):
+            raise StorageError(
+                "project_state_unreadable",
+                "project state could not be read safely",
+            )
         return SetupStorageState(
             schema_version=version,
             needs_initialize=False,
@@ -3362,11 +3807,21 @@ def read_doctor_state(
             "project_state_unreadable",
             "project state could not be read safely",
         )
+    viewer = read_viewer_maintenance(
+        connection,
+        target.project.project_id,
+    )
+    if viewer is None:
+        raise StorageError(
+            "project_state_unreadable",
+            "project state could not be read safely",
+        )
     return DoctorStorageState(
         schema_version=SCHEMA_VERSION,
         project_code="ready" if maintenance.enabled else "setup_required",
         task_counts=count_tasks(connection, target.project.project_id),
         maintenance=maintenance,
+        viewer=viewer,
     )
 
 
@@ -3377,6 +3832,7 @@ def initialize_database(
     managed_backups: tuple[MigrationBackupMetadata, ...] = (),
 ) -> InitResult:
     created = not target.db_path.exists()
+    project_identity_preexisting = False
     try:
         validate_operational_journal_state(target.db_path)
         target.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3384,6 +3840,7 @@ def initialize_database(
             with connection:
                 if table_exists(connection, "project_meta"):
                     existing_project_id = read_project_meta_id(connection)
+                    project_identity_preexisting = existing_project_id is not None
                     if (
                         existing_project_id is not None
                         and existing_project_id != target.project.project_id
@@ -3402,6 +3859,11 @@ def initialize_database(
                     connection,
                     target.project.project_id,
                 )
+                if not project_identity_preexisting:
+                    ensure_viewer_maintenance_row(
+                        connection,
+                        target.project.project_id,
+                    )
                 version = validate_current_database(connection, target)
     except StorageError:
         raise

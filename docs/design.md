@@ -367,11 +367,10 @@ report those states without changing the database. TG-M13's operational
 journal preflight and response-coherent read boundary below apply to every one
 of these database-backed inspections.
 
-The post-MVP `web export` command is a hybrid export command: it reads the
-database through the inspection path but, only after explicit user intent,
-writes one generated HTML snapshot. Its `--read-only` mode is the no-write
-inspection/preview path. It follows the dedicated output rules in the Static
-Task Viewer Design section and never writes the database.
+M14.6 removes the public `web`/custom-output surface. After setup opt-in, the
+post-commit coordinator reads one compatible SQLite snapshot and writes only
+the canonical generated Viewer; setup owns the direct initial/repair path.
+Neither path writes task state while rendering.
 
 ## JSON Envelope
 
@@ -1740,25 +1739,22 @@ version. It does not apply a reverse migration or overwrite version metadata.
 Release guidance must require updating the installed package before migrating
 and retaining a recoverable local database copy when crossing schema versions.
 
-Viewer snapshot mapping becomes:
+Current Viewer snapshot mapping is version 3 for source schemas 5-13.
+Historical version 1 covered schema 2 and version 2 covered schemas 3-4.
 
-- snapshot version 1: schema version 2;
-- snapshot version 2: schema versions 3-4; and
-- snapshot version 3: schema versions 5-9.
-
-Normal Task and handoff commands continue to require the runtime's exact
-current schema. Viewer export uses a separate query-only validator that accepts
+Normal Task, handoff, and routine Viewer-maintenance commands continue to
+require the runtime's exact current schema. Setup inspection and
+snapshot-compatibility reads use a separate query-only validator that accepts
 snapshot-v3-compatible schemas 5 through the runtime's current schema,
 requires contiguous migration history and only the tables/columns it reads,
-and still enforces project identity. This prevents schema-v7 rollout from
-breaking schema-v5/v6 export without allowing writes through an old schema.
+and still enforces project identity. This preserves old-snapshot reads during
+setup migration without allowing writes through an old schema.
 
 Every snapshot carries its actual `source_schema_version`. The snapshot-v3
-allow-list remains unchanged from schema 5 through schema 9: it excludes
-`review_target_base_revision`, handoff rows, Contract pointers, Contract
-revisions, and all Effort Advisory basis/activity metadata. Normal and
-`--read-only` export tests run against each intermediate schema and prove
-identical privacy, no-sidecar, and task-shape behavior.
+allow-list remains stable from schema 5 through 13 and excludes handoff,
+Contract, Effort, checkpoint, and maintenance-internal rows. Compatibility
+tests cover each source schema and prove identical privacy, no-sidecar, and
+task-shape behavior.
 
 ### TG-M12 Guidance Boundary
 
@@ -1843,7 +1839,7 @@ The repository boundary is response-oriented:
   show reads and validates its row in the same transaction;
 - when a stored Effort basis exists, each pre-Git and post-Git database
   observation is independently coherent; and
-- Viewer export reuses the same journal preflight and its existing dedicated
+- Viewer maintenance reuses the same journal preflight and its dedicated
   compatible-schema snapshot transaction.
 
 `task next` intentionally retains two committed transactions: its status/
@@ -2411,103 +2407,60 @@ search/paging, Issue lifecycle, generic health checks, or workflow automation.
 
 ## Static Task Viewer Design
 
-This section describes active behavior through M14.5. M14.6 owns replacing its
-explicit-export-only refresh contract with the planned canonical automatic
-maintenance contract above and removing public `web`; M14.7 only synchronizes
-the final Skill/release publication surfaces.
-
 The Task Viewer is a projection of current SQLite state, never an independent
 authority. The implementation flow is:
 
 ```text
-SQLite (read-only)
+Viewer-relevant business commit
+  -> task_events generation trigger
+  -> post-commit coordinator
+  -> zero-wait canonical Viewer lock
+  -> one SQLite read transaction
   -> task/event repository query
-  -> versioned snapshot object
+  -> snapshot-v3 object + captured source generation
   -> base64-encoded UTF-8 JSON
   -> bundled HTML template
   -> atomic task-viewer.html replacement
+  -> short rendered-generation update
   -> browser file:// view
 ```
 
-No browser-to-database connection exists. Regenerating the HTML with
-`taskgov web export` is the only refresh mechanism.
-
-### Command And Module Flow
-
-`cli.py` adds a `web` command group with an `export` subcommand. The stable
-command name is `web.export`. It accepts the existing common options plus
-`--output`:
-
-```powershell
-python scripts/taskgov.py web export --repo <target-project> --json
-python scripts/taskgov.py web export --repo <target-project> --output <html-path> --json
-python scripts/taskgov.py web export --repo <target-project> --read-only --json
-```
-
-The handler must:
-
-1. Resolve project identity, database path, and output path.
-2. Inspect database readiness without migration or mutation.
-3. Load all viewer task rows and bounded events through repository helpers in a
-   dedicated read-only SQLite snapshot transaction.
-4. Assemble and validate the snapshot version required by the current schema.
-5. Render the bundled template in memory.
-6. For `--read-only`, report the planned result without creating directories or
-   files.
-7. Otherwise, create only the default generated viewer directory when needed
-   and atomically replace the selected regular HTML file.
-8. Emit the normal JSON envelope or concise text output.
-
-The handler must not append `task_events` or `tool_events`. Exporting is a file
-write but not a task-state mutation. Skill guidance must invoke the writing mode
-only after the current user request explicitly asks to create or regenerate the
-viewer. A task-state inspection request alone permits only inspection commands
-or the `--read-only` preview.
+No browser-to-database connection exists. There is no public `web` parser,
+custom-output resolver, Viewer maintenance command, or Viewer choice in the
+normal Skill loop. Setup invokes the same canonical publisher directly for
+initial publication and explicit repair; it never re-enters the coordinator.
 
 ### Repository Read Model
 
-`tasks.py` remains the task/event repository boundary. Add a dedicated viewer
-read helper rather than changing `list_tasks` or `show_task` behavior. The
-helper must:
+`tasks.py` remains the task/event repository boundary. Its dedicated Viewer
+helper:
 
 - select every task for the current `project_id`
-- serialize an explicit allow-list for the schema-appropriate snapshot version;
-  version 2 adds pause fields but intentionally does not expose schema-v4
-  completion evidence until version 3
+- serialize the snapshot-v3 explicit task/evidence allow-list
 - order tasks with the existing `task list` priority/lane/order/time/ID rules
 - fetch at most 10 events per task, ordered by `created_at DESC, rowid DESC` to
   match `task show` tie behavior
 - return plain dictionaries to `viewer.py`
 
-This extension requires no SQLite schema migration. It must not broaden the
-existing `task.list` JSON task shape, whose compatibility is independent from
-the viewer snapshot.
+This does not broaden the public `task.list` JSON task shape.
 
 ### Snapshot Assembly
 
-The implemented schema-v2 baseline uses snapshot version 1. TG-M8 updates the
-version mapping explicitly, and the approved TG-M11/TG-M12 compatibility rule
-extends snapshot version 3 without adding new viewer fields:
-
-- snapshot version 1: schema version 2 and the original six statuses;
-- snapshot version 2: schema versions 3-4, adding `paused`, `pause_reason`, and
-  seven-status counts; and
-- snapshot version 3: schema versions 5-9, adding the final completion/review
-  evidence projection while excluding schema-v6 target bases, schema-v7
-  handoffs, and schema-v8 Contracts.
+Snapshot version 3 accepts source schemas 5 through 13 without adding internal
+maintenance or checkpoint fields. Historical snapshot versions remain
+self-contained artifacts but are not produced by the current runtime.
 
 `viewer.py` owns this mapping and constructs:
 
 - `snapshot_version`
-- one UTC `generated_at` value shared by CLI output and embedded data
+- one injected/current UTC `generated_at`
 - project ID and display name only
 - current database schema version
 - total and per-status counts
 - ordered tasks with bounded `events`
 
 Do not embed the canonical repository path, database path, environment data, or
-tool events. The CLI envelope may display the local database and output paths,
-but the portable HTML snapshot must not include them.
+tool events. Also exclude v13 generation/outcome state and checkpoint content.
 
 Serialize with deterministic JSON settings, UTF-8 encode the bytes, and base64
 encode those bytes before template insertion. The template must contain exactly
@@ -2519,40 +2472,58 @@ must be assigned with `textContent` or equivalent text-node APIs. Do not pass
 stored values to `innerHTML`, `insertAdjacentHTML`, `eval`, `Function`, URL
 attributes, inline event attributes, or CSS declarations.
 
-### Output Path And Atomic Write
+### Canonical Path, Lock, And Atomic Write
 
-Default output path resolution mirrors the database's project state directory:
+The only output is:
 
 ```text
 <installed-skill-root>/state/projects/<project-id>/viewer/task-viewer.html
 ```
 
-Add a storage helper that derives this path from the installed skill root and
-project ID. Do not derive it by string replacement on the database filename,
-because an explicit `--db` override must not move the default viewer away from
-skill-local generated state.
+Production derives this from the canonical database state directory; an
+internally injected target therefore stays inside its own isolated state.
+Before opt-in, no Viewer or lock directory is created. The resolver rejects
+reparse parents, a linked or non-regular destination, a database alias, and
+containment changes.
 
-For an explicit `--output`:
+The Viewer lock is a separate canonical regular file beside the HTML. It uses
+the shared narrow one-byte OS advisory-lock primitive with zero wait. File
+existence is not ownership and the lock file is not deleted as stale.
 
-- resolve the path to an absolute path without requiring it to exist
-- require an `.html` or `.htm` suffix
-- require the parent directory to exist
-- reject a destination that is a directory, symbolic link, or existing
-  non-regular file
-- reject a destination inside the canonical target project unless it is under
-  the installed skill's generated `state/` directory
-- treat the user-approved path as the complete file-write scope
+Write rendered bytes to a unique temporary file in the Viewer directory, flush
+and close it, then use `os.replace`. Clean the temporary file after failure.
+The prior HTML remains intact until replacement succeeds.
 
-Apply the same existing-destination type rejection to the default output path.
+### Generation And Publication Algorithm
 
-For the default output, create only its `viewer` parent directory. For both
-default and explicit output, write the rendered bytes to a unique temporary
-file in the destination directory, flush and close it, then use `os.replace`
-for atomic replacement. Clean up the temporary file after failures. Report
-whether an existing regular output was replaced.
+Schema v13 adds one `viewer_maintenance_state` row per project:
 
-`--read-only` performs path, database, snapshot, and template validation in
-memory but creates no output parent, temporary file, or final HTML.
+- nonnegative `source_generation`;
+- nullable nonnegative `rendered_generation` no greater than source;
+- nullable last success;
+- latest `succeeded|deferred|failed` outcome and time.
+
+Fresh/migrated rows start at source zero and rendered null, forcing setup
+publication without inventing a historical generation. An `AFTER INSERT`
+trigger on `task_events` increments source in the same business transaction.
+Generation is a monotonic change token rather than a public command count;
+combined task/Contract work may insert more than one event. Handoff and
+internal maintenance writes create no Viewer event.
+
+`viewer_maintenance.py` first performs a cheap DB-only opt-in/due read. Under
+the artifact lock it rereads state, then opens one query-only snapshot
+transaction that captures source generation and task rows together. The
+transaction closes before render or file I/O. After atomic replacement, a
+short conditional write records the captured generation without lowering an
+existing rendered generation. The success outcome uses publication-completion
+time rather than capture time, so a completed catch-up supersedes contention
+recorded while it held the lock. The service rereads once and performs at most
+one follow-up render. Any later churn remains due.
+
+Lock contention maps to `deferred`; another bounded failure maps to `failed`.
+Recording outcome metadata is best-effort so maintenance failure cannot replace
+the primary command result. The post-commit coordinator runs Viewer first and
+backup second with independent fixed warnings.
 
 ### Browser Application
 
@@ -2581,13 +2552,12 @@ semantic table/detail markup where practical.
 
 ### Read-Only Snapshot Transaction
 
-Use the dedicated `connect_snapshot_readonly` storage helper for the Viewer
-data read. It follows the shared M13 operational journal preflight, opens the
-SQLite URI with `mode=ro` and no immutable flag, enables
+The dedicated read helper follows the shared M13 operational journal
+preflight, opens the SQLite URI with `mode=ro` and no immutable flag, enables
 `PRAGMA query_only=ON`, and starts an explicit read transaction. Revalidate
 the Viewer-compatible schema and project identity inside that transaction
-before querying tasks and events. This gives the export one SQLite-consistent
-point-in-time view when another session commits concurrently.
+before querying generation, tasks, and events. This gives each render one
+SQLite-consistent point-in-time view when another session commits concurrently.
 
 Preserve the existing preflight rejection for active WAL sidecars. Also inspect
 the stable SQLite file-header journal bytes without opening a mutable SQLite
@@ -2595,9 +2565,8 @@ connection and reject persistent WAL mode before the snapshot connection. Tests
 must prove a normal snapshot read creates no WAL/SHM/journal files, active or
 cleanly closed WAL state fails without stale output or new sidecars, and a
 concurrent writer either yields a consistent snapshot or a structured tool
-error. This does not add cross-session ownership or live synchronization; the
-generated timestamp still describes export time, not an exclusive database
-revision.
+error. The generated timestamp describes render time, not an exclusive
+database revision.
 
 ### Browser Security Boundary
 
@@ -2616,21 +2585,9 @@ Static tests must assert the exact policy and prohibited sinks, and a browser
 negative test must render script/event-handler-shaped task text without setting
 an execution sentinel or making a network request.
 
-The implementation must contain no network API, external URL, telemetry,
+The browser implementation contains no network API, external URL, telemetry,
 automatic browser launch, or database-write code. Browser refresh reloads the
-same snapshot and must not be presented as a database refresh.
-
-### Viewer Error Mapping
-
-- malformed/user-unsafe destination: `output_path_invalid`, exit code 1
-- missing explicit parent: `output_parent_missing`, exit code 1
-- output I/O or atomic replacement failure: `output_write_failed`, exit code 2
-- missing/malformed template or unexpected snapshot/render failure:
-  `internal_error`, exit code 2
-
-Database readiness errors retain their existing codes and command-specific
-empty data must still include the resolved output path when resolution itself
-succeeded.
+same snapshot and is not presented as a database refresh.
 
 ## Validation Rules
 
@@ -2749,7 +2706,7 @@ TG-M8 focused tests must additionally cover:
 - sequential v2-to-v3-to-v4-to-v5 migration, idempotent rerun, rollback on
   failure, and the 12-task/191-event preservation fixture; and
 - regression coverage for project identity, read-only behavior, task next,
-  compact envelopes, and static viewer export.
+  compact envelopes, and canonical Viewer maintenance.
 
 TG-M9 focused tests must additionally cover:
 
@@ -2768,21 +2725,22 @@ TG-M9 focused tests must additionally cover:
 - installed-Skill self-containment, CLI help, compact JSON envelopes, and the
   full offline regression suite after guidance synchronization.
 
-Task Viewer extension tests must additionally cover:
+Task Viewer tests must additionally cover:
 
 - all-status snapshot projection with completion commit fields and no private
   source paths
 - the 10-event-per-task bound and deterministic event ordering
 - base64 payload round-trip and HTML-shaped task text rendered as text
-- default output path, explicit output safety, atomic replacement, and
-  `--read-only` no-write behavior
+- canonical output containment, pre-opt-in no-write behavior, atomic
+  replacement, and last-good preservation
 - missing DB, migration-required, and project-mismatch propagation
-- no database, task-event, or tool-event mutation during export
+- exact generation triggers, zero-wait contention, at-most-two renders, and
+  no generation from read/replay/no-op/handoff/internal writes
 - no external resource URLs or network APIs in the bundled template
 - exact CSP directive assertions and prohibited DOM sink assertions for
   `innerHTML`, `insertAdjacentHTML`, `eval`, `Function`, inline event
   attributes, and task-derived URL attributes
-- isolated installed-skill export from a copied skill folder
+- isolated canonical publication from an injected/copied skill state
 - representative desktop and mobile `file://` browser checks
 
 ## Packaging And Release Design

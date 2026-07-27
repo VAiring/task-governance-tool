@@ -20,7 +20,7 @@ except ModuleNotFoundError:
     from tests.m14_test_support import make_physical_install
 
 
-M14_5_STAGE_LEAVES = {
+M14_6_STAGE_LEAVES = {
     "setup",
     "doctor",
     "task add",
@@ -41,7 +41,6 @@ M14_5_STAGE_LEAVES = {
     "review receipt add",
     "review finding add",
     "review finding resolve",
-    "web export",
 }
 
 
@@ -64,8 +63,8 @@ def parser_leaf_commands(
 
 
 class CliHelpTests(unittest.TestCase):
-    def test_m14_5_staged_parser_has_only_its_twenty_one_leaves(self):
-        self.assertEqual(parser_leaf_commands(build_parser()), M14_5_STAGE_LEAVES)
+    def test_m14_6_staged_parser_has_only_its_twenty_leaves(self):
+        self.assertEqual(parser_leaf_commands(build_parser()), M14_6_STAGE_LEAVES)
 
     def test_root_help_is_read_only_and_hides_removed_storage_surface(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -83,6 +82,7 @@ class CliHelpTests(unittest.TestCase):
             self.assertNotIn("--db", result.stdout)
             self.assertNotIn("{db,", result.stdout)
             self.assertNotIn("{self,", result.stdout)
+            self.assertNotIn("web", result.stdout)
             after = sorted(path.relative_to(install.project_root) for path in install.project_root.rglob("*"))
             self.assertEqual(after, before)
 
@@ -203,7 +203,7 @@ class CliHelpTests(unittest.TestCase):
     def test_removed_groups_are_not_compatibility_help_handlers(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            for command in ("self", "db"):
+            for command in ("self", "db", "web"):
                 with self.subTest(command=command):
                     result = install.run(command, "--help", "--json")
                     self.assertEqual(result.returncode, 2)

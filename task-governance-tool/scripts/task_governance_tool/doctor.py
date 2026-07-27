@@ -20,14 +20,13 @@ from task_governance_tool.storage import (
     SCHEMA_VERSION,
     ProjectMaintenanceState,
     StorageError,
+    ViewerMaintenanceState,
     connect_readonly,
     current_schema_version,
-    default_viewer_output_path,
     is_sqlite_busy_or_locked,
     read_doctor_state,
     utc_now,
 )
-from task_governance_tool.viewer import inspect_canonical_viewer_status
 
 
 DOCTOR_MESSAGES = {
@@ -81,8 +80,8 @@ def _last_outcome(
 
 def _maintenance_component(
     maintenance: ProjectMaintenanceState,
+    viewer: ViewerMaintenanceState,
     *,
-    viewer_current: bool,
     observed_at: str,
 ) -> dict[str, Any]:
     enabled = maintenance.enabled
@@ -105,6 +104,9 @@ def _maintenance_component(
         if enabled or backup_succeeded
         else None
     )
+    viewer_due = viewer.due if enabled else None
+    viewer_outcome_code = viewer.last_outcome_code if enabled else None
+    viewer_outcome_at = viewer.last_outcome_at if enabled else None
     return {
         "code": "enabled" if enabled else "not_opted_in",
         "opted_in": enabled,
@@ -136,23 +138,23 @@ def _maintenance_component(
         },
         "viewer": {
             "code": (
-                "published"
-                if (
-                    enabled
-                    and maintenance.viewer_last_outcome_code == "succeeded"
-                    and viewer_current
+                (
+                    viewer.last_outcome_code
+                    if viewer.last_outcome_code in {"deferred", "failed"}
+                    else ("due" if viewer_due else "current")
                 )
-                else ("repair_required" if enabled else "not_opted_in")
+                if enabled
+                else "not_opted_in"
             ),
-            "due": None,
-            "source_generation": None,
-            "rendered_generation": None,
-            "last_success_at": (
-                maintenance.viewer_last_success_at if enabled else None
+            "due": viewer_due,
+            "source_generation": viewer.source_generation if enabled else None,
+            "rendered_generation": (
+                viewer.rendered_generation if enabled else None
             ),
+            "last_success_at": viewer.last_success_at if enabled else None,
             "last_outcome": _last_outcome(
-                maintenance.viewer_last_outcome_code if enabled else None,
-                maintenance.viewer_last_outcome_at if enabled else None,
+                viewer_outcome_code,
+                viewer_outcome_at,
             ),
         },
     }
@@ -306,16 +308,6 @@ def run_doctor(
             advisory=False,
         )
 
-    viewer_status = inspect_canonical_viewer_status(
-        path=default_viewer_output_path(
-            scope.skill_root,
-            scope.target.project.project_id,
-        ),
-        target=scope.target,
-        current_snapshot=None,
-        compare_snapshot=False,
-        verify_template=False,
-    )
     counts = storage_state.task_counts
     task_summary = {
         "code": "ready",
@@ -334,7 +326,7 @@ def run_doctor(
     }
     maintenance = _maintenance_component(
         storage_state.maintenance,
-        viewer_current=viewer_status == "current",
+        storage_state.viewer,
         observed_at=utc_now(),
     )
     project_code = storage_state.project_code

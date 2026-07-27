@@ -254,7 +254,7 @@ class EffortMigrationTests(unittest.TestCase):
                 )
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
-            self.assertEqual(SCHEMA_VERSION, 12)
+            self.assertEqual(SCHEMA_VERSION, 13)
 
 
 class EffortAdvisoryServiceTests(unittest.TestCase):

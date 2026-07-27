@@ -17,7 +17,6 @@ from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget,
     StorageError,
-    default_viewer_output_path,
     operational_sqlite_error,
     utc_now,
     validate_snapshot_database,
@@ -57,10 +56,8 @@ class ViewerSnapshotResult:
 @dataclass(frozen=True)
 class ViewerOutputTarget:
     path: Path
-    explicit: bool
-    database_path: Path | None = None
-    state_root: Path | None = None
-    parent_identity: tuple[int, int] | None = None
+    database_path: Path
+    state_root: Path
 
 
 def build_viewer_snapshot(
@@ -223,14 +220,6 @@ def render_viewer_html(
     return template.replace(TEMPLATE_PLACEHOLDER, encode_snapshot(snapshot))
 
 
-def path_is_within(path: Path, parent: Path) -> bool:
-    try:
-        path.relative_to(parent)
-    except ValueError:
-        return False
-    return True
-
-
 def path_key(path: Path) -> str:
     try:
         resolved = path.resolve(strict=False)
@@ -264,67 +253,6 @@ def existing_parent_is_within(parent: Path, root: Path) -> bool:
         current = next_parent
 
 
-def directory_identity(path: Path) -> tuple[int, int]:
-    try:
-        details = path.stat()
-    except OSError as exc:
-        raise ViewerError(
-            "output_path_invalid",
-            "viewer output parent could not be inspected",
-        ) from exc
-    if not stat.S_ISDIR(details.st_mode):
-        raise ViewerError(
-            "output_path_invalid",
-            "viewer output parent must be a directory",
-        )
-    return (details.st_dev, details.st_ino)
-
-
-def validate_explicit_output_parent(target: ViewerOutputTarget) -> None:
-    if target.parent_identity is None:
-        raise ViewerError("internal_error", "explicit viewer parent identity is missing")
-    if directory_identity(target.path.parent) != target.parent_identity:
-        raise ViewerError(
-            "output_path_invalid",
-            "explicit viewer output parent changed after approval",
-        )
-
-
-def is_windows_device_path(value: str | os.PathLike[str]) -> bool:
-    if os.name != "nt":
-        return False
-    raw = os.fspath(value).replace("/", "\\")
-    return raw.startswith(("\\\\?\\", "\\\\.\\", "\\??\\"))
-
-
-def is_windows_reserved_path(value: str | os.PathLike[str]) -> bool:
-    if os.name != "nt":
-        return False
-    reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
-    reserved.update(
-        f"{prefix}{number}"
-        for prefix in ("COM", "LPT")
-        for number in "123456789"
-    )
-    reserved.update(
-        f"{prefix}{number}"
-        for prefix in ("COM", "LPT")
-        for number in "\u00b9\u00b2\u00b3"
-    )
-    for component in os.fspath(value).replace("/", "\\").split("\\"):
-        basename = component.rstrip(" .").split(".", 1)[0].rstrip(" .").upper()
-        if basename in reserved:
-            return True
-    return False
-
-
-def has_windows_invalid_filename(value: str | os.PathLike[str]) -> bool:
-    if os.name != "nt":
-        return False
-    filename = os.fspath(value).replace("/", "\\").rsplit("\\", 1)[-1]
-    return any(character in '<>:"/\\|?*' or ord(character) < 32 for character in filename)
-
-
 def path_is_reparse_point(path: Path) -> bool:
     try:
         details = os.lstat(path)
@@ -332,7 +260,7 @@ def path_is_reparse_point(path: Path) -> bool:
         return False
     attributes = getattr(details, "st_file_attributes", 0)
     return stat.S_ISLNK(details.st_mode) or bool(
-        attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT
+        attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
     )
 
 
@@ -391,85 +319,20 @@ def validate_existing_output(path: Path) -> None:
         raise ViewerError("output_path_invalid", "viewer output must be a regular file")
 
 
-def resolve_viewer_output_target(
-    *,
-    output: str | os.PathLike[str] | None,
-    skill_root: Path,
+def resolve_canonical_viewer_output_target(
     database_target: DatabaseTarget,
 ) -> ViewerOutputTarget:
-    skill_root = skill_root.resolve()
-    state_root = skill_root / "state"
-    if output is None:
-        path = default_viewer_output_path(
-            skill_root,
-            database_target.project.project_id,
-        )
-        validate_existing_output(path)
-        validate_default_output_parent(path, state_root)
-        validate_output_database_separation(path, database_target.db_path)
-        return ViewerOutputTarget(
-            path=path,
-            explicit=False,
-            database_path=database_target.db_path,
-            state_root=state_root,
-        )
+    """Resolve the one DB-owned Viewer artifact; no custom output exists."""
 
-    if (
-        is_windows_device_path(output)
-        or is_windows_reserved_path(output)
-        or has_windows_invalid_filename(output)
-    ):
-        raise ViewerError(
-            "output_path_invalid",
-            "Windows device paths, reserved names, and invalid characters are not valid outputs",
-        )
-    lexical_path = Path(os.path.abspath(Path(output).expanduser()))
-    if lexical_path.suffix.lower() not in {".html", ".htm"}:
-        raise ViewerError(
-            "output_path_invalid",
-            "explicit viewer output must end in .html or .htm",
-        )
-    validate_existing_output(lexical_path)
-    if not lexical_path.parent.exists():
-        raise ViewerError(
-            "output_parent_missing",
-            "explicit viewer output parent does not exist",
-        )
-    if not lexical_path.parent.is_dir():
-        raise ViewerError(
-            "output_path_invalid",
-            "explicit viewer output parent must be a directory",
-        )
-
-    try:
-        resolved_path = lexical_path.parent.resolve(strict=True) / lexical_path.name
-        canonical_repo = database_target.project.canonical_repo.resolve(strict=False)
-        resolved_state_root = state_root.resolve(strict=False)
-    except (OSError, RuntimeError) as exc:
-        raise ViewerError("output_path_invalid", "viewer output path could not be resolved") from exc
-
-    inside_repo = (
-        path_is_within(lexical_path, canonical_repo)
-        or path_is_within(resolved_path, canonical_repo)
-        or existing_parent_is_within(resolved_path.parent, canonical_repo)
-    )
-    inside_state = (
-        path_is_within(lexical_path, state_root)
-        and path_is_within(resolved_path, resolved_state_root)
-        and existing_parent_is_within(resolved_path.parent, resolved_state_root)
-    )
-    if inside_repo and not inside_state:
-        raise ViewerError(
-            "output_path_invalid",
-            "viewer output inside the target project must stay under skill state",
-        )
-    validate_output_database_separation(resolved_path, database_target.db_path)
+    state_root = database_target.db_path.parent
+    path = state_root / "viewer" / "task-viewer.html"
+    validate_existing_output(path)
+    validate_default_output_parent(path, state_root)
+    validate_output_database_separation(path, database_target.db_path)
     return ViewerOutputTarget(
-        path=resolved_path,
-        explicit=True,
+        path=path,
         database_path=database_target.db_path,
         state_root=state_root,
-        parent_identity=directory_identity(resolved_path.parent),
     )
 
 
@@ -480,16 +343,10 @@ def write_viewer_html(
     temporary_path: Path | None = None
     descriptor: int | None = None
     try:
-        if target.explicit:
-            validate_explicit_output_parent(target)
-        else:
-            target.path.parent.mkdir(parents=True, exist_ok=True)
-            if target.state_root is None:
-                raise ViewerError("internal_error", "default viewer state root is missing")
-            validate_default_output_parent(target.path, target.state_root)
+        target.path.parent.mkdir(parents=True, exist_ok=True)
+        validate_default_output_parent(target.path, target.state_root)
         validate_existing_output(target.path)
-        if target.database_path is not None:
-            validate_output_database_separation(target.path, target.database_path)
+        validate_output_database_separation(target.path, target.database_path)
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=".task-viewer-",
             suffix=".tmp",
@@ -501,13 +358,9 @@ def write_viewer_html(
             stream.write(html)
             stream.flush()
             os.fsync(stream.fileno())
-        if not target.explicit and target.state_root is not None:
-            validate_default_output_parent(target.path, target.state_root)
-        if target.explicit:
-            validate_explicit_output_parent(target)
+        validate_default_output_parent(target.path, target.state_root)
         validate_existing_output(target.path)
-        if target.database_path is not None:
-            validate_output_database_separation(target.path, target.database_path)
+        validate_output_database_separation(target.path, target.database_path)
         replaced = target.path.exists()
         os.replace(temporary_path, target.path)
         temporary_path = None

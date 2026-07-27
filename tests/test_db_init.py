@@ -25,6 +25,7 @@ try:
         apply_project_maintenance_migration,
         apply_review_evidence_migration,
         apply_task_checkpoints_migration,
+        apply_viewer_maintenance_migration,
         begin_initialized_write,
         connect_initialized,
         ensure_project_meta,
@@ -39,6 +40,7 @@ finally:
 try:
     from m14_test_support import (
         create_v10_database,
+        create_v12_database,
         create_v9_database,
         initialize_taskgov_internal,
         make_physical_install,
@@ -46,6 +48,7 @@ try:
 except ModuleNotFoundError:
     from tests.m14_test_support import (
         create_v10_database,
+        create_v12_database,
         create_v9_database,
         initialize_taskgov_internal,
         make_physical_install,
@@ -264,7 +267,10 @@ class StorageInitializationTests(unittest.TestCase):
                         "SELECT version FROM schema_migrations ORDER BY version"
                     )
                 ]
-            self.assertEqual(versions, [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12])
+            self.assertEqual(
+                versions,
+                [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+            )
 
     def test_initialize_migrates_schema_v1_database_through_current_schema(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -309,9 +315,9 @@ class StorageInitializationTests(unittest.TestCase):
             self.assertFalse(result.created)
             self.assertEqual(
                 result.migrations_applied,
-                [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
             )
-            self.assertEqual(result.schema_version, 12)
+            self.assertEqual(result.schema_version, 13)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute(
@@ -330,7 +336,7 @@ class StorageInitializationTests(unittest.TestCase):
                 ]
                 self.assertEqual(
                     versions,
-                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                 )
             self.assertEqual(task["completion_commit_required"], 1)
             self.assertEqual(task["completion_commit_hash"], "")
@@ -350,9 +356,9 @@ class StorageInitializationTests(unittest.TestCase):
             result = initialize_database(target)
             self.assertEqual(
                 result.migrations_applied,
-                [3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
             )
-            self.assertEqual(result.schema_version, 12)
+            self.assertEqual(result.schema_version, 13)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute("SELECT * FROM tasks WHERE task_id = ?", ("tg_task_test",)).fetchone()
@@ -369,7 +375,7 @@ class StorageInitializationTests(unittest.TestCase):
                 foreign_key_rows = connection.execute("PRAGMA foreign_key_check").fetchall()
                 self.assertEqual(
                     versions,
-                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                 )
             self.assertEqual(task["pause_reason"], "")
             self.assertEqual(event["task_id"], "tg_task_test")
@@ -587,7 +593,7 @@ class StorageInitializationTests(unittest.TestCase):
             result = initialize_database(target)
             self.assertEqual(
                 result.migrations_applied,
-                [4, 5, 6, 7, 8, 9, 10, 11, 12],
+                [4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
             )
             self.assertEqual(
                 result.warnings[0]["code"],
@@ -616,6 +622,9 @@ class StorageInitializationTests(unittest.TestCase):
                 index_rows = connection.execute(
                     "SELECT name FROM sqlite_master WHERE type = 'index'"
                 ).fetchall()
+                trigger_rows = connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'trigger'"
+                ).fetchall()
                 unique_index_sql = connection.execute(
                     """
                     SELECT sql FROM sqlite_master
@@ -626,6 +635,7 @@ class StorageInitializationTests(unittest.TestCase):
 
             tables = {row[0] for row in table_rows}
             indexes = {row[0] for row in index_rows}
+            triggers = {row[0] for row in trigger_rows}
             self.assertTrue(
                 {
                     "schema_migrations",
@@ -635,6 +645,7 @@ class StorageInitializationTests(unittest.TestCase):
                     "tool_events",
                     "managed_backup_generations",
                     "task_checkpoints",
+                    "viewer_maintenance_state",
                 }.issubset(tables)
             )
             self.assertTrue(
@@ -651,6 +662,7 @@ class StorageInitializationTests(unittest.TestCase):
             )
             self.assertIn("CREATE UNIQUE INDEX", unique_index_sql.upper())
             self.assertIn("WHERE kind = 'sequential'", unique_index_sql)
+            self.assertIn("trg_task_events_viewer_generation", triggers)
             with closing(sqlite3.connect(db)) as connection:
                 column_rows = connection.execute("PRAGMA table_info(tasks)").fetchall()
             task_columns = {row[1] for row in column_rows}
@@ -906,9 +918,9 @@ class StorageInitializationTests(unittest.TestCase):
             migrated = initialize_database(target)
             self.assertEqual(
                 migrated.migrations_applied,
-                [6, 7, 8, 9, 10, 11, 12],
+                [6, 7, 8, 9, 10, 11, 12, 13],
             )
-            self.assertEqual(migrated.schema_version, 12)
+            self.assertEqual(migrated.schema_version, 13)
 
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
@@ -1146,7 +1158,7 @@ class ProjectMaintenanceMigrationTests(unittest.TestCase):
                         connection.execute("PRAGMA foreign_key_check").fetchall(),
                         [],
                     )
-        self.assertEqual(SCHEMA_VERSION, 12)
+        self.assertEqual(SCHEMA_VERSION, 13)
 
 
 class ManagedBackupGenerationMigrationTests(unittest.TestCase):
@@ -1474,6 +1486,210 @@ class TaskCheckpointMigrationTests(unittest.TestCase):
                             "SELECT COUNT(*) FROM task_checkpoints"
                         ).fetchone()[0],
                         0,
+                    )
+
+
+class ViewerMaintenanceMigrationTests(unittest.TestCase):
+    def test_v12_to_v13_seeds_bounded_state_and_tracks_task_events(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            create_v12_database(install, enabled=True)
+            with closing(sqlite3.connect(install.db_path)) as connection:
+                connection.row_factory = sqlite3.Row
+                connection.execute("PRAGMA foreign_keys = ON")
+                connection.execute(
+                    """
+                    UPDATE project_maintenance
+                       SET viewer_last_success_at = '2026-07-27T00:00:01Z',
+                           viewer_last_outcome_code = 'succeeded',
+                           viewer_last_outcome_at = '2026-07-27T00:00:01Z'
+                     WHERE project_id = ?
+                    """,
+                    (install.project_id,),
+                )
+                connection.commit()
+
+                apply_viewer_maintenance_migration(connection)
+                state = connection.execute(
+                    """
+                    SELECT project_id, source_generation, rendered_generation,
+                           last_success_at, last_outcome_code, last_outcome_at
+                      FROM viewer_maintenance_state
+                    """
+                ).fetchone()
+                self.assertEqual(
+                    tuple(state),
+                    (
+                        install.project_id,
+                        0,
+                        None,
+                        "2026-07-27T00:00:01Z",
+                        "succeeded",
+                        "2026-07-27T00:00:01Z",
+                    ),
+                )
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT name FROM schema_migrations
+                         WHERE version = 13
+                        """
+                    ).fetchone()["name"],
+                    "viewer_maintenance_state",
+                )
+
+                insert_task(
+                    connection,
+                    task_id="tg_task_viewer_generation",
+                    project_id=install.project_id,
+                )
+                connection.execute(
+                    """
+                    INSERT INTO task_events(
+                      task_event_id, task_id, project_id,
+                      event_type, summary, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "tg_event_viewer_generation",
+                        "tg_task_viewer_generation",
+                        install.project_id,
+                        "task_created",
+                        "Task created",
+                        "2026-07-27T00:00:02Z",
+                    ),
+                )
+                connection.commit()
+                state = connection.execute(
+                    """
+                    SELECT source_generation, rendered_generation
+                      FROM viewer_maintenance_state
+                    """
+                ).fetchone()
+                self.assertEqual(tuple(state), (1, None))
+
+                invalid_updates = (
+                    "source_generation = -1",
+                    "rendered_generation = 2",
+                    (
+                        "last_outcome_code = 'invalid', "
+                        "last_outcome_at = '2026-07-27T00:00:03Z'"
+                    ),
+                    "last_outcome_at = NULL",
+                    "last_success_at = 'not-a-timestamp'",
+                )
+                for assignment in invalid_updates:
+                    with self.subTest(assignment=assignment), self.assertRaises(
+                        sqlite3.IntegrityError
+                    ):
+                        connection.execute(
+                            f"UPDATE viewer_maintenance_state SET {assignment}"
+                        )
+                    connection.rollback()
+                with self.assertRaises(sqlite3.IntegrityError):
+                    connection.execute(
+                        """
+                        INSERT INTO viewer_maintenance_state(
+                          project_id, source_generation, rendered_generation,
+                          last_success_at, last_outcome_code, last_outcome_at
+                        ) VALUES ('missing-project', 0, NULL, NULL, NULL, NULL)
+                        """
+                    )
+                connection.rollback()
+
+                apply_viewer_maintenance_migration(connection)
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM schema_migrations WHERE version = 13"
+                    ).fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM sqlite_master
+                         WHERE type = 'trigger'
+                           AND name = 'trg_task_events_viewer_generation'
+                        """
+                    ).fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM viewer_maintenance_state"
+                    ).fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    connection.execute("PRAGMA quick_check").fetchone()[0],
+                    "ok",
+                )
+                self.assertEqual(
+                    connection.execute("PRAGMA foreign_key_check").fetchall(),
+                    [],
+                )
+
+    def test_v13_migration_rolls_back_each_stage_then_is_idempotent(self):
+        for fail_stage in ("after_schema", "after_row", "before_commit"):
+            with self.subTest(fail_stage=fail_stage), tempfile.TemporaryDirectory() as tmp:
+                install = make_physical_install(Path(tmp))
+                create_v12_database(install)
+                with closing(sqlite3.connect(install.db_path)) as connection:
+                    connection.row_factory = sqlite3.Row
+                    connection.execute("PRAGMA foreign_keys = ON")
+                    with self.assertRaises(StorageError):
+                        apply_viewer_maintenance_migration(
+                            connection,
+                            fail_stage=fail_stage,
+                        )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT MAX(version) FROM schema_migrations"
+                        ).fetchone()[0],
+                        12,
+                    )
+                    self.assertIsNone(
+                        connection.execute(
+                            """
+                            SELECT name FROM sqlite_master
+                             WHERE type = 'table'
+                               AND name = 'viewer_maintenance_state'
+                            """
+                        ).fetchone()
+                    )
+                    self.assertIsNone(
+                        connection.execute(
+                            """
+                            SELECT name FROM sqlite_master
+                             WHERE type = 'trigger'
+                               AND name = 'trg_task_events_viewer_generation'
+                            """
+                        ).fetchone()
+                    )
+
+                    apply_viewer_maintenance_migration(connection)
+                    apply_viewer_maintenance_migration(connection)
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT COUNT(*) FROM schema_migrations WHERE version = 13"
+                        ).fetchone()[0],
+                        1,
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT COUNT(*) FROM viewer_maintenance_state"
+                        ).fetchone()[0],
+                        1,
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            """
+                            SELECT COUNT(*) FROM sqlite_master
+                             WHERE type = 'trigger'
+                               AND name = 'trg_task_events_viewer_generation'
+                            """
+                        ).fetchone()[0],
+                        1,
                     )
 
 

@@ -171,6 +171,79 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             )
             self.assertEqual(self._temporary_restore_paths(install), [])
 
+    def test_existing_schema_zero_primary_never_triggers_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install, backup_path = self._initialize_with_backed_up_task(
+                Path(tmp)
+            )
+            before_backup = backup_path.read_bytes()
+            before_viewer = install.viewer_path.read_bytes()
+            install.db_path.unlink()
+            with closing(sqlite3.connect(install.db_path)):
+                pass
+            before_primary = install.db_path.read_bytes()
+
+            with mock.patch.object(
+                setup_service,
+                "select_managed_backup_for_recovery",
+                side_effect=AssertionError(
+                    "existing primary must not trigger recovery discovery"
+                ),
+            ) as selector:
+                preview = setup_service.run_setup(
+                    repo=str(install.project_root),
+                    repo_explicit=True,
+                    script_path=install.entrypoint,
+                    read_only=True,
+                    backup_interval_minutes=None,
+                    backup_generations=None,
+                )
+
+            self.assertFalse(preview.ok)
+            self.assertEqual(preview.error_code, "migration_required")
+            self.assertEqual(
+                preview.data,
+                {
+                    "status": None,
+                    "planned_writes": [],
+                    "completed_writes": [],
+                    "schema_from": None,
+                    "schema_to": 13,
+                    "maintenance_enabled": None,
+                    "backup_interval_minutes": None,
+                    "backup_generations": None,
+                    "viewer_status": None,
+                },
+            )
+            self.assertEqual(install.db_path.read_bytes(), before_primary)
+            self.assertEqual(backup_path.read_bytes(), before_backup)
+            self.assertEqual(install.viewer_path.read_bytes(), before_viewer)
+            selector.assert_not_called()
+
+            with mock.patch.object(
+                setup_service,
+                "select_managed_backup_for_recovery",
+                side_effect=AssertionError(
+                    "existing primary must not trigger recovery discovery"
+                ),
+            ) as selector:
+                initialized = setup_service.run_setup(
+                    repo=str(install.project_root),
+                    repo_explicit=True,
+                    script_path=install.entrypoint,
+                    read_only=False,
+                    backup_interval_minutes=None,
+                    backup_generations=None,
+                )
+
+            self.assertFalse(initialized.ok)
+            self.assertEqual(initialized.error_code, "migration_required")
+            self.assertEqual(initialized.data, preview.data)
+            self.assertEqual(install.db_path.read_bytes(), before_primary)
+            self.assertEqual(backup_path.read_bytes(), before_backup)
+            self.assertEqual(install.viewer_path.read_bytes(), before_viewer)
+            selector.assert_not_called()
+
     def test_setup_restores_supported_old_schema_then_uses_normal_migration(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))

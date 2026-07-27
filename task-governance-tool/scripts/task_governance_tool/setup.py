@@ -146,6 +146,21 @@ def _preflight_failure(
     )
 
 
+def _canonical_database_is_lexically_absent(target: DatabaseTarget) -> bool:
+    """Return true only when no filesystem entry occupies the canonical path."""
+
+    try:
+        target.db_path.lstat()
+    except FileNotFoundError:
+        return True
+    except OSError as exc:
+        raise StorageError(
+            "project_state_unreadable",
+            PROJECT_STATE_MESSAGES["project_state_unreadable"],
+        ) from exc
+    return False
+
+
 def _viewer_status(
     scope: ProjectScope,
     *,
@@ -379,7 +394,18 @@ def run_setup(
 
     recovery_candidate: ManagedBackupRecoveryCandidate | None = None
     planning_state = state
-    if state.needs_initialize:
+    try:
+        canonical_database_missing = (
+            _canonical_database_is_lexically_absent(scope.target)
+        )
+    except Exception as exc:
+        code, message = _storage_preflight_code(exc)
+        return _preflight_failure(
+            inspection,
+            code=code,
+            message=message,
+        )
+    if state.needs_initialize and canonical_database_missing:
         try:
             recovery_candidate = select_managed_backup_for_recovery(
                 scope.target
@@ -491,7 +517,10 @@ def run_setup(
                 script_path=script_path,
             )
             with managed_backup_lock(scope.target):
-                if not inspect_setup_state(scope.target).needs_initialize:
+                if (
+                    not _canonical_database_is_lexically_absent(scope.target)
+                    or not inspect_setup_state(scope.target).needs_initialize
+                ):
                     raise StorageError(
                         "setup_restore_failed",
                         SETUP_ERROR_MESSAGES["setup_restore_failed"],
@@ -562,7 +591,14 @@ def run_setup(
                 script_path=script_path,
             )
             with managed_backup_lock(scope.target):
-                if not inspect_setup_state(scope.target).needs_initialize:
+                current_database_missing = (
+                    _canonical_database_is_lexically_absent(scope.target)
+                )
+                if (
+                    not canonical_database_missing
+                    or not current_database_missing
+                    or not inspect_setup_state(scope.target).needs_initialize
+                ):
                     raise StorageError(
                         "setup_initialization_failed",
                         SETUP_ERROR_MESSAGES["setup_initialization_failed"],

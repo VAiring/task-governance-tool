@@ -932,10 +932,13 @@ Confirmed decisions:
   stores interval and retention in project-local maintenance state; only
   explicit setup options may set 1-1,440 minutes and 1-20 generations. A normal
   Skill setup supplies no choice, and an existing value is preserved when its
-  option is omitted. Failure remains due for the next eligible successful
-  mutation. Maintenance is bounded same-process post-commit work; Viewer runs
-  before due backup, locks are fail-fast, backup attempts are at most one and
-  Viewer renders at most two per mutation.
+  option is omitted, including a concurrent explicit update completed after
+  setup preflight. Setup migration holds the shared fail-fast artifact lock
+  from backup through migration without holding a SQLite writer lock during
+  copy. Failure remains due for the next eligible successful mutation.
+  Maintenance is bounded same-process post-commit work; Viewer runs before due
+  backup, locks are fail-fast, backup attempts are at most one and Viewer
+  renders at most two per mutation.
 - M14 hard bounds are: compact current 24,576 bytes; compact next 16,384;
   completion check 8,192; checkpoint caller payload 6,144; Review Packet
   32,768 with 100 paths, 240 bytes/path, 16,384 aggregate path bytes, and ten

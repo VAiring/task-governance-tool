@@ -8,6 +8,12 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
+from tests.m14_test_support import (
+    initialize_taskgov_internal,
+    internal_command_context,
+    run_taskgov_internal,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -27,14 +33,7 @@ BUSY_ERROR = [{"code": "database_busy", "message": DATABASE_BUSY_MESSAGE}]
 
 
 def run_taskgov(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal(*args)
 
 
 def successful_json(*args):
@@ -46,7 +45,7 @@ def successful_json(*args):
 
 def init_db(db, repo):
     repo.mkdir(parents=True, exist_ok=True)
-    successful_json("db", "init", "--repo", str(repo), "--db", str(db))
+    initialize_taskgov_internal(repo=repo, db=db)
 
 
 def add_task(db, repo, title="Contention task"):
@@ -132,8 +131,7 @@ def record_handoff(db, repo, task_id):
 
 
 def command_result(*args):
-    parsed = cli_service.build_parser().parse_args([*args, "--json"])
-    return cli_service.handle_command(cli_service.make_context(parsed))
+    return cli_service.handle_command(internal_command_context(*args, "--json"))
 
 
 def database_rows(db):

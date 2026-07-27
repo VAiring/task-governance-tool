@@ -7,27 +7,22 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
+from tests.m14_test_support import (
+    initialize_taskgov_internal,
+    run_taskgov_internal,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
 
 
 def run_taskgov(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal(*args)
 
 
 def init_db(db, repo):
-    result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-    if result.returncode != 0:
-        raise AssertionError(result.stderr or result.stdout)
-    return json.loads(result.stdout)
+    return initialize_taskgov_internal(repo=repo, db=db)
 
 
 def add_task(db, repo, title, *extra):

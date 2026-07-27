@@ -1768,10 +1768,13 @@ configured project, an omitted option preserves its stored value; an explicitly
 provided option changes only that field. Values outside 1-1,440 minutes or 1-20
 generations fail before any write with `invalid_backup_policy`. The standard
 Skill workflow never selects or supplies non-default values; they require
-explicit caller intent. A configuration-only setup does not itself render or
-attempt a routine backup. The next eligible business mutation uses the new
-values, and reduced retention is enforced only after the next successful
-backup publication.
+explicit caller intent. The configuration transaction rereads the current row
+under its short SQLite writer lock and resolves each omitted field from that
+locked row, so a stale preflight plan cannot revert a concurrently completed
+explicit setting. A configuration-only setup does not itself render or attempt
+a routine backup. The next eligible business mutation uses the new values, and
+reduced retention is enforced only after the next successful backup
+publication.
 The same row has nullable internal `applied_backup_generations`, constrained to
 the same 1-20 range. Configuration does not change it. Each managed-backup
 stage resolves one immutable 1-20 `publication_retention` before copying:
@@ -1863,7 +1866,12 @@ The validated backup primitive is implemented once in M14.2 and reused by
 M14.3. It uses the SQLite backup API, validates project identity, supported
 format, `quick_check`, and foreign keys, closes the temporary database, and
 atomically publishes one managed generation. Migration cannot begin if it
-fails. Preview never creates a backup.
+fails. Write-mode setup holds the shared zero-wait backup artifact lock from
+before reconciliation/publication until the corresponding migration
+transaction commits; it never holds a SQLite writer lock while copying.
+Contention fails the setup backup stage without migrating. M14.3 reuses the
+same lock primitive for routine backup work. Preview never creates a lock or
+backup.
 
 ### Planned Maintenance Bounds
 
@@ -1930,7 +1938,10 @@ setup copies: each successful publish precedes pruning, and the number
 remaining does not exceed that stage's `publication_retention`. A successful
 v1-v9 migration creates the v10 row with the current copy's
 identity/time/outcome and applied retention in the migration transaction before
-any v11 seeding step.
+any v11 seeding step. A pre-v10 retry may finish pruning left incomplete by a
+prior successful publication only with the newest recognized artifact's own
+immutable filename retention. It never applies the new attempt's lower
+retention before that attempt publishes successfully.
 
 The v11 migration deterministically discovers every canonical, valid,
 same-project managed artifact retained by setup, orders it by publication time

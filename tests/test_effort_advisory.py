@@ -11,6 +11,8 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
+from tests.m14_test_support import make_physical_install
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -39,6 +41,7 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_handoff_outbox_migration,
     apply_initial_schema_migration,
     apply_paused_state_migration,
+    apply_project_maintenance_migration,
     apply_review_evidence_migration,
     apply_task_contract_migration,
     connect,
@@ -226,9 +229,32 @@ class EffortMigrationTests(unittest.TestCase):
                     int(connection.execute("SELECT COUNT(*) FROM task_effort_bases").fetchone()[0]),
                     0,
                 )
+                apply_project_maintenance_migration(connection)
+                self.assertEqual(
+                    int(
+                        connection.execute(
+                            "SELECT MAX(version) FROM schema_migrations"
+                        ).fetchone()[0]
+                    ),
+                    10,
+                )
+                self.assertEqual(
+                    tuple(
+                        connection.execute(
+                            """
+                            SELECT enabled_at, backup_interval_minutes,
+                                   backup_generations, applied_backup_generations
+                              FROM project_maintenance
+                             WHERE project_id = ?
+                            """,
+                            (project.project_id,),
+                        ).fetchone()
+                    ),
+                    (None, None, None, None),
+                )
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
-            self.assertEqual(SCHEMA_VERSION, 9)
+            self.assertEqual(SCHEMA_VERSION, 10)
 
 
 class EffortAdvisoryServiceTests(unittest.TestCase):
@@ -1108,34 +1134,20 @@ class EffortAdvisoryCliTests(unittest.TestCase):
     def test_installed_copy_exposes_compact_task_effort_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            copied_skill = root / "task-governance-tool"
-            shutil.copytree(
-                SKILL_ROOT,
-                copied_skill,
-                ignore=shutil.ignore_patterns("state", "__pycache__", "*.pyc"),
-            )
+            install = make_physical_install(root, git_managed=True)
+            copied_skill = install.skill_root
+            repo = install.project_root
+            git(repo, "config", "user.email", "taskgov@example.invalid")
+            git(repo, "config", "user.name", "Taskgov Test")
             write_profile(copied_skill, thresholds={"changed_files": 0})
-            repo = root / "repo"
-            initialize_git_repo(repo)
-            db = root / "taskgov.sqlite"
+            git(repo, "add", ".")
+            git(repo, "commit", "-q", "-m", "baseline")
 
             def command(*args):
-                return run(
-                    sys.executable,
-                    "scripts/taskgov.py",
-                    *args,
-                    "--repo",
-                    str(repo),
-                    "--db",
-                    str(db),
-                    "--json",
-                    cwd=copied_skill,
-                )
+                return install.run(*args, "--json")
 
-            initialized = command("db", "init")
+            initialized = command("setup")
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
-            enabled_status = json.loads(command("db", "status").stdout)
-            self.assertTrue(enabled_status["data"]["effort_advisory"]["enabled"])
             added = command(
                 "task",
                 "add",
@@ -1151,18 +1163,11 @@ class EffortAdvisoryCliTests(unittest.TestCase):
             )
             self.assertTrue(enabled_show["data"]["effort_advisory_enabled"])
             self.assertEqual(enabled_show["warnings"], [])
-            enabled_show_text = run(
-                sys.executable,
-                "scripts/taskgov.py",
+            enabled_show_text = install.run(
                 "task",
                 "show",
                 task_id,
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
                 "--read-only",
-                cwd=copied_skill,
             ).stdout
             observed = command("task", "effort", task_id, "--read-only")
             self.assertEqual(observed.returncode, 0, observed.stderr)
@@ -1174,22 +1179,17 @@ class EffortAdvisoryCliTests(unittest.TestCase):
             self.assertEqual(payload["data"]["warning_key"], WARNING_KEY)
 
             write_profile(copied_skill)
-            text_observed = run(
-                sys.executable,
-                "scripts/taskgov.py",
+            git(repo, "add", ".agents/skills/task-governance-tool/config")
+            git(repo, "commit", "-q", "-m", "change effort thresholds")
+            text_observed = install.run(
                 "task",
                 "effort",
                 task_id,
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
                 "--read-only",
-                cwd=copied_skill,
             )
             self.assertEqual(text_observed.returncode, 0, text_observed.stderr)
             self.assertIn(
-                "Measurements: changed_files=0 changed_lines=0 changed_modules=0 "
+                "Measurements: changed_files=1 changed_lines=2 changed_modules=1 "
                 "contract_revisions=0 handoffs=0",
                 text_observed.stdout,
             )
@@ -1197,15 +1197,6 @@ class EffortAdvisoryCliTests(unittest.TestCase):
 
             config = copied_skill / "config" / "effort-advisory.json"
             config.write_text("{invalid", encoding="utf-8")
-            invalid_status = json.loads(command("db", "status").stdout)
-            self.assertEqual(
-                invalid_status["data"]["effort_advisory"],
-                {"enabled": False, "configuration": "invalid"},
-            )
-            self.assertEqual(
-                invalid_status["warnings"][0]["code"],
-                "effort_advisory_profile_invalid",
-            )
             invalid_show = json.loads(
                 command("task", "show", task_id, "--read-only").stdout
             )
@@ -1222,25 +1213,16 @@ class EffortAdvisoryCliTests(unittest.TestCase):
             )
 
             write_profile(copied_skill, enabled=False)
-            disabled_status = json.loads(command("db", "status").stdout)
-            self.assertNotIn("effort_advisory", disabled_status["data"])
             disabled_show = json.loads(
                 command("task", "show", task_id, "--read-only").stdout
             )
             self.assertFalse(disabled_show["data"]["effort_advisory_enabled"])
             self.assertEqual(disabled_show["warnings"], [])
-            disabled_show_text = run(
-                sys.executable,
-                "scripts/taskgov.py",
+            disabled_show_text = install.run(
                 "task",
                 "show",
                 task_id,
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
                 "--read-only",
-                cwd=copied_skill,
             ).stdout
             self.assertEqual(disabled_show_text, enabled_show_text)
 

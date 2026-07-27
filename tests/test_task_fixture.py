@@ -6,6 +6,10 @@ import unittest
 from pathlib import Path
 
 from tests.review_test_helpers import seed_review_evidence
+from tests.m14_test_support import (
+    initialize_taskgov_internal,
+    run_taskgov_internal,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,14 +18,7 @@ FIXTURE_PATH = ROOT / "fixtures" / "task-status-mvp" / "tasks.json"
 
 
 def run_taskgov(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal(*args)
 
 
 def load_fixture():
@@ -67,16 +64,13 @@ def add_fixture_task(db, repo, task):
 
 
 class TaskStatusFixtureTests(unittest.TestCase):
-    def test_fixture_can_seed_temp_database_through_public_cli(self):
+    def test_fixture_can_seed_temp_database_through_task_cli(self):
         fixture = load_fixture()
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "synthetic-repo"
 
-            init_result = run_taskgov(
-                "db", "init", "--repo", str(repo), "--db", str(db), "--json"
-            )
-            self.assertEqual(init_result.returncode, 0, init_result.stderr)
+            initialize_taskgov_internal(repo=repo, db=db)
 
             seeded = []
             for task in fixture["tasks"]:

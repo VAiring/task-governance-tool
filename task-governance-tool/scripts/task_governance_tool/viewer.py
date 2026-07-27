@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from task_governance_tool.storage import (
+    SCHEMA_VERSION,
     DatabaseTarget,
     StorageError,
     default_viewer_output_path,
@@ -28,6 +29,13 @@ SNAPSHOT_VERSION = 3
 VIEWER_EVENT_LIMIT = 10
 TEMPLATE_PLACEHOLDER = "__TASKGOV_SNAPSHOT_BASE64__"
 TEMPLATE_RELATIVE_PATH = Path("assets") / "task-viewer.template.html"
+SNAPSHOT_ELEMENT_PREFIX = (
+    '<script id="taskgov-snapshot" type="application/octet-stream">'
+)
+SNAPSHOT_ELEMENT_SUFFIX = "</script>"
+# The accepted 500-task/5,000-event fixture can contain UTF-8 text near the
+# persisted field limits before base64 expansion. This remains a bounded read.
+MAX_VIEWER_ARTIFACT_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -104,6 +112,81 @@ def build_viewer_snapshot(
 
 def viewer_template_path() -> Path:
     return Path(__file__).resolve().parents[2] / TEMPLATE_RELATIVE_PATH
+
+
+def inspect_canonical_viewer_status(
+    *,
+    path: Path,
+    target: DatabaseTarget,
+    current_snapshot: dict[str, Any] | None,
+    compare_snapshot: bool,
+    verify_template: bool,
+) -> str:
+    """Inspect one canonical artifact at the requested maintenance boundary."""
+
+    try:
+        if path_is_reparse_point(path):
+            return "repair_required"
+        if not path.exists():
+            return "not_present"
+        if not path.is_file():
+            return "repair_required"
+        if path.stat().st_size > MAX_VIEWER_ARTIFACT_BYTES:
+            return "repair_required"
+        rendered = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return "repair_required"
+
+    if (
+        rendered.count(SNAPSHOT_ELEMENT_PREFIX) != 1
+        or rendered.count(SNAPSHOT_ELEMENT_SUFFIX) < 1
+    ):
+        return "repair_required"
+    encoded_start = rendered.find(SNAPSHOT_ELEMENT_PREFIX) + len(
+        SNAPSHOT_ELEMENT_PREFIX
+    )
+    encoded_end = rendered.find(SNAPSHOT_ELEMENT_SUFFIX, encoded_start)
+    if encoded_end < encoded_start:
+        return "repair_required"
+    encoded = rendered[encoded_start:encoded_end]
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+        snapshot = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeError, json.JSONDecodeError):
+        return "repair_required"
+    if not isinstance(snapshot, dict):
+        return "repair_required"
+    project = snapshot.get("project")
+    if not isinstance(project, dict):
+        return "repair_required"
+    if (
+        snapshot.get("snapshot_version") != SNAPSHOT_VERSION
+        or snapshot.get("source_schema_version") != SCHEMA_VERSION
+        or project.get("project_id") != target.project.project_id
+    ):
+        return "repair_required"
+    if compare_snapshot:
+        if current_snapshot is None:
+            return "repair_required"
+        generated_at = snapshot.get("generated_at")
+        if not isinstance(generated_at, str):
+            return "repair_required"
+        expected_snapshot = dict(current_snapshot)
+        expected_snapshot["generated_at"] = generated_at
+        if snapshot != expected_snapshot:
+            return "repair_required"
+    if not verify_template:
+        return "current"
+    try:
+        template = viewer_template_path().read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return "repair_required"
+    normalized_rendered = (
+        rendered[:encoded_start]
+        + TEMPLATE_PLACEHOLDER
+        + rendered[encoded_end:]
+    )
+    return "current" if normalized_rendered == template else "repair_required"
 
 
 def encode_snapshot(snapshot: dict[str, Any]) -> str:

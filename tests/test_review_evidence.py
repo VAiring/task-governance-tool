@@ -10,6 +10,10 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
+from tests.m14_test_support import (
+    initialize_taskgov_internal,
+    run_taskgov_internal,
+)
 from tests.review_test_helpers import seed_review_evidence_connection
 
 
@@ -44,14 +48,7 @@ finally:
 
 
 def run_taskgov(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal(*args)
 
 
 def payload(result):
@@ -59,9 +56,7 @@ def payload(result):
 
 
 def init_db(db, repo):
-    result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-    if result.returncode:
-        raise AssertionError(result.stderr or result.stdout)
+    initialize_taskgov_internal(repo=repo, db=db)
 
 
 def init_git_repo(repo):

@@ -16,7 +16,14 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
+MIN_BACKUP_INTERVAL_MINUTES = 1
+MAX_BACKUP_INTERVAL_MINUTES = 1_440
+MIN_BACKUP_GENERATIONS = 1
+MAX_BACKUP_GENERATIONS = 20
+DEFAULT_BACKUP_INTERVAL_MINUTES = 30
+DEFAULT_BACKUP_GENERATIONS = 3
+MANAGED_BACKUP_GENERATION_PATTERN = re.compile(r"^tg_backup_[0-9a-f]{32}$")
 UNSUPPORTED_JOURNAL_MODE_MESSAGE = (
     "task database uses unsupported WAL journal mode"
 )
@@ -55,15 +62,48 @@ class InitResult:
 
 
 @dataclass(frozen=True)
-class StatusResult:
-    target: DatabaseTarget
-    exists: bool
-    needs_init: bool
-    needs_migration: bool
+class MigrationBackupMetadata:
+    generation_id: str
+    published_at: str
+    publication_retention: int
+
+
+@dataclass(frozen=True)
+class SetupStorageState:
     schema_version: int | None
-    counts: dict[str, int]
-    error_code: str | None = None
-    error_message: str | None = None
+    needs_initialize: bool
+    needs_migration: bool
+    maintenance_enabled: bool
+    backup_interval_minutes: int | None
+    backup_generations: int | None
+
+
+@dataclass(frozen=True)
+class ProjectMaintenanceState:
+    project_id: str
+    enabled_at: str | None
+    backup_interval_minutes: int | None
+    backup_generations: int | None
+    applied_backup_generations: int | None
+    backup_last_success_at: str | None
+    backup_last_outcome_code: str | None
+    backup_last_outcome_at: str | None
+    latest_backup_generation_id: str | None
+    viewer_last_success_at: str | None
+    viewer_last_outcome_code: str | None
+    viewer_last_outcome_at: str | None
+
+    @property
+    def enabled(self) -> bool:
+        return self.enabled_at is not None
+
+
+@dataclass(frozen=True)
+class DoctorStorageState:
+    schema_version: int
+    project_code: str
+    task_counts: dict[str, int]
+    maintenance: ProjectMaintenanceState
 
 
 def skill_root_from_script(script_path: str | os.PathLike[str]) -> Path:
@@ -178,6 +218,41 @@ def utc_now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def validate_utc_timestamp(value: str, *, field: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z",
+        value,
+    ):
+        raise StorageError("internal_error", f"{field} is not a canonical UTC timestamp")
+    try:
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as exc:
+        raise StorageError(
+            "internal_error",
+            f"{field} is not a canonical UTC timestamp",
+        ) from exc
+    return value
+
+
+def validate_migration_backup_metadata(
+    metadata: MigrationBackupMetadata,
+) -> MigrationBackupMetadata:
+    if not isinstance(metadata, MigrationBackupMetadata):
+        raise StorageError("internal_error", "setup backup metadata is invalid")
+    if not MANAGED_BACKUP_GENERATION_PATTERN.fullmatch(metadata.generation_id):
+        raise StorageError("internal_error", "setup backup generation identity is invalid")
+    validate_utc_timestamp(metadata.published_at, field="setup backup publication time")
+    if (
+        isinstance(metadata.publication_retention, bool)
+        or not isinstance(metadata.publication_retention, int)
+        or not MIN_BACKUP_GENERATIONS
+        <= metadata.publication_retention
+        <= MAX_BACKUP_GENERATIONS
+    ):
+        raise StorageError("internal_error", "setup backup retention is invalid")
+    return metadata
+
+
 def configure_connection(connection: sqlite3.Connection) -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.create_function(
@@ -224,7 +299,7 @@ def connect_readonly(db_path: Path) -> sqlite3.Connection:
     if not db_path.exists():
         raise StorageError(
             "db_not_initialized",
-            "database is not initialized; run db init first",
+            "project state is not set up; run setup first",
         )
     uri = db_path.resolve(strict=False).as_uri() + "?mode=ro"
     try:
@@ -501,6 +576,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "task_contract_revisions",
         "task_effort_activity",
         "task_effort_bases",
+        "project_maintenance",
     }
     required_indexes = {
         "idx_tasks_project_status",
@@ -518,12 +594,20 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "idx_contract_project_task_revision",
         "idx_effort_bases_project",
     }
+    required_triggers = {
+        "trg_project_maintenance_enabled_at_immutable",
+    }
     table_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     index_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
+    trigger_rows = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'trigger'"
+    ).fetchall()
     tables = {str(row["name"]) for row in table_rows}
     indexes = {str(row["name"]) for row in index_rows}
+    triggers = {str(row["name"]) for row in trigger_rows}
     missing = [f"table:{name}" for name in sorted(required_tables - tables)]
     missing.extend(f"index:{name}" for name in sorted(required_indexes - indexes))
+    missing.extend(f"trigger:{name}" for name in sorted(required_triggers - triggers))
     if "tasks" in tables:
         task_column_rows = connection.execute("PRAGMA table_info(tasks)").fetchall()
         task_columns = {str(row["name"]) for row in task_column_rows}
@@ -695,6 +779,31 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         missing.extend(
             f"column:{table_name}.{name}"
             for name in sorted(required_columns - columns)
+        )
+    if "project_maintenance" in tables:
+        maintenance_columns = {
+            str(row["name"])
+            for row in connection.execute(
+                "PRAGMA table_info(project_maintenance)"
+            ).fetchall()
+        }
+        required_maintenance_columns = {
+            "project_id",
+            "enabled_at",
+            "backup_interval_minutes",
+            "backup_generations",
+            "applied_backup_generations",
+            "backup_last_success_at",
+            "backup_last_outcome_code",
+            "backup_last_outcome_at",
+            "latest_backup_generation_id",
+            "viewer_last_success_at",
+            "viewer_last_outcome_code",
+            "viewer_last_outcome_at",
+        }
+        missing.extend(
+            f"column:project_maintenance.{name}"
+            for name in sorted(required_maintenance_columns - maintenance_columns)
         )
     return missing
 
@@ -1431,7 +1540,198 @@ def apply_effort_advisory_migration(
         raise
 
 
-def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[dict[str, str]]]:
+def apply_project_maintenance_migration(
+    connection: sqlite3.Connection,
+    *,
+    setup_backup: MigrationBackupMetadata | None = None,
+    fail_stage: str | None = None,
+) -> None:
+    """Add the partial one-row maintenance state used by setup and doctor."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "project-maintenance migration requires no active transaction",
+        )
+    existing_version = current_schema_version(connection)
+    if existing_version >= 10:
+        maintenance_missing = {
+            item
+            for item in required_schema_objects_missing(connection)
+            if item == "table:project_maintenance"
+            or item == "trigger:trg_project_maintenance_enabled_at_immutable"
+            or item.startswith("column:project_maintenance.")
+        }
+        if (
+            missing_migration_versions(connection, existing_version)
+            or maintenance_missing
+        ):
+            raise StorageError(
+                "migration_required",
+                "project-maintenance migration is incomplete",
+            )
+        return
+    if setup_backup is not None:
+        validate_migration_backup_metadata(setup_backup)
+
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        connection.execute(
+            """
+            CREATE TABLE project_maintenance (
+              project_id TEXT PRIMARY KEY,
+              enabled_at TEXT,
+              backup_interval_minutes INTEGER
+                CHECK (
+                  backup_interval_minutes IS NULL
+                  OR backup_interval_minutes BETWEEN 1 AND 1440
+                ),
+              backup_generations INTEGER
+                CHECK (
+                  backup_generations IS NULL
+                  OR backup_generations BETWEEN 1 AND 20
+                ),
+              applied_backup_generations INTEGER
+                CHECK (
+                  applied_backup_generations IS NULL
+                  OR applied_backup_generations BETWEEN 1 AND 20
+                ),
+              backup_last_success_at TEXT,
+              backup_last_outcome_code TEXT
+                CHECK (
+                  backup_last_outcome_code IS NULL
+                  OR backup_last_outcome_code IN ('succeeded', 'deferred', 'failed')
+                ),
+              backup_last_outcome_at TEXT,
+              latest_backup_generation_id TEXT
+                CHECK (
+                  latest_backup_generation_id IS NULL
+                  OR (
+                    length(latest_backup_generation_id) = 42
+                    AND latest_backup_generation_id GLOB
+                      'tg_backup_[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+                  )
+                ),
+              viewer_last_success_at TEXT,
+              viewer_last_outcome_code TEXT
+                CHECK (
+                  viewer_last_outcome_code IS NULL
+                  OR viewer_last_outcome_code IN ('succeeded', 'deferred', 'failed')
+                ),
+              viewer_last_outcome_at TEXT,
+              FOREIGN KEY (project_id) REFERENCES project_meta(project_id),
+              CHECK (
+                (enabled_at IS NULL
+                  AND backup_interval_minutes IS NULL
+                  AND backup_generations IS NULL)
+                OR
+                (enabled_at IS NOT NULL
+                  AND backup_interval_minutes IS NOT NULL
+                  AND backup_generations IS NOT NULL)
+              ),
+              CHECK (
+                (backup_last_outcome_code IS NULL
+                  AND backup_last_outcome_at IS NULL)
+                OR
+                (backup_last_outcome_code IS NOT NULL
+                  AND backup_last_outcome_at IS NOT NULL)
+              ),
+              CHECK (
+                (viewer_last_outcome_code IS NULL
+                  AND viewer_last_outcome_at IS NULL)
+                OR
+                (viewer_last_outcome_code IS NOT NULL
+                  AND viewer_last_outcome_at IS NOT NULL)
+              ),
+              CHECK (
+                (backup_last_success_at IS NULL
+                  AND latest_backup_generation_id IS NULL
+                  AND applied_backup_generations IS NULL)
+                OR
+                (backup_last_success_at IS NOT NULL
+                  AND latest_backup_generation_id IS NOT NULL
+                  AND applied_backup_generations IS NOT NULL)
+              )
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TRIGGER trg_project_maintenance_enabled_at_immutable
+            BEFORE UPDATE OF enabled_at ON project_maintenance
+            WHEN OLD.enabled_at IS NOT NULL AND NEW.enabled_at IS NOT OLD.enabled_at
+            BEGIN
+              SELECT RAISE(ABORT, 'project maintenance enabled_at is immutable');
+            END
+            """
+        )
+        if fail_stage == "after_schema":
+            raise StorageError(
+                "internal_error",
+                "injected project-maintenance migration failure",
+            )
+
+        project_rows = connection.execute(
+            "SELECT project_id FROM project_meta ORDER BY project_id"
+        ).fetchall()
+        if len(project_rows) > 1:
+            raise StorageError(
+                "internal_error",
+                "project-maintenance migration found multiple project identities",
+            )
+        if setup_backup is not None and not project_rows:
+            raise StorageError(
+                "internal_error",
+                "setup backup metadata requires existing project identity",
+            )
+        if project_rows:
+            project_id = str(project_rows[0]["project_id"])
+            if setup_backup is None:
+                connection.execute(
+                    "INSERT INTO project_maintenance(project_id) VALUES (?)",
+                    (project_id,),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO project_maintenance(
+                      project_id, applied_backup_generations,
+                      backup_last_success_at, backup_last_outcome_code,
+                      backup_last_outcome_at, latest_backup_generation_id
+                    ) VALUES (?, ?, ?, 'succeeded', ?, ?)
+                    """,
+                    (
+                        project_id,
+                        setup_backup.publication_retention,
+                        setup_backup.published_at,
+                        setup_backup.published_at,
+                        setup_backup.generation_id,
+                    ),
+                )
+        if fail_stage == "after_row":
+            raise StorageError(
+                "internal_error",
+                "injected project-maintenance migration failure",
+            )
+        connection.execute(
+            "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+            (10, "project_maintenance", utc_now()),
+        )
+        if fail_stage == "before_commit":
+            raise StorageError(
+                "internal_error",
+                "injected project-maintenance migration failure",
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def apply_migrations(
+    connection: sqlite3.Connection,
+    *,
+    setup_backup: MigrationBackupMetadata | None = None,
+) -> tuple[list[int], list[dict[str, str]]]:
     version = current_schema_version(connection)
     if version > SCHEMA_VERSION:
         raise StorageError(
@@ -1496,6 +1796,13 @@ def apply_migrations(connection: sqlite3.Connection) -> tuple[list[int], list[di
     if version < 9:
         apply_effort_advisory_migration(connection)
         applied.append(9)
+        version = 9
+    if version < 10:
+        apply_project_maintenance_migration(
+            connection,
+            setup_backup=setup_backup,
+        )
+        applied.append(10)
     return applied, warnings
 
 
@@ -1535,6 +1842,93 @@ def read_project_meta_id(connection: sqlite3.Connection) -> str | None:
     return str(row["project_id"])
 
 
+def read_project_maintenance(
+    connection: sqlite3.Connection,
+    project_id: str,
+) -> ProjectMaintenanceState | None:
+    row = connection.execute(
+        """
+        SELECT project_id, enabled_at, backup_interval_minutes,
+               backup_generations, applied_backup_generations,
+               backup_last_success_at, backup_last_outcome_code,
+               backup_last_outcome_at, latest_backup_generation_id,
+               viewer_last_success_at, viewer_last_outcome_code,
+               viewer_last_outcome_at
+          FROM project_maintenance
+         WHERE project_id = ?
+        """,
+        (project_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return ProjectMaintenanceState(
+        project_id=str(row["project_id"]),
+        enabled_at=(
+            str(row["enabled_at"]) if row["enabled_at"] is not None else None
+        ),
+        backup_interval_minutes=(
+            int(row["backup_interval_minutes"])
+            if row["backup_interval_minutes"] is not None
+            else None
+        ),
+        backup_generations=(
+            int(row["backup_generations"])
+            if row["backup_generations"] is not None
+            else None
+        ),
+        applied_backup_generations=(
+            int(row["applied_backup_generations"])
+            if row["applied_backup_generations"] is not None
+            else None
+        ),
+        backup_last_success_at=(
+            str(row["backup_last_success_at"])
+            if row["backup_last_success_at"] is not None
+            else None
+        ),
+        backup_last_outcome_code=(
+            str(row["backup_last_outcome_code"])
+            if row["backup_last_outcome_code"] is not None
+            else None
+        ),
+        backup_last_outcome_at=(
+            str(row["backup_last_outcome_at"])
+            if row["backup_last_outcome_at"] is not None
+            else None
+        ),
+        latest_backup_generation_id=(
+            str(row["latest_backup_generation_id"])
+            if row["latest_backup_generation_id"] is not None
+            else None
+        ),
+        viewer_last_success_at=(
+            str(row["viewer_last_success_at"])
+            if row["viewer_last_success_at"] is not None
+            else None
+        ),
+        viewer_last_outcome_code=(
+            str(row["viewer_last_outcome_code"])
+            if row["viewer_last_outcome_code"] is not None
+            else None
+        ),
+        viewer_last_outcome_at=(
+            str(row["viewer_last_outcome_at"])
+            if row["viewer_last_outcome_at"] is not None
+            else None
+        ),
+    )
+
+
+def ensure_project_maintenance_row(
+    connection: sqlite3.Connection,
+    project_id: str,
+) -> None:
+    connection.execute(
+        "INSERT OR IGNORE INTO project_maintenance(project_id) VALUES (?)",
+        (project_id,),
+    )
+
+
 def validate_current_database(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
@@ -1546,7 +1940,7 @@ def validate_current_database(
             "migration_required",
             (
                 f"database schema version {version} does not match supported "
-                f"version {SCHEMA_VERSION}; run db init to migrate"
+                f"version {SCHEMA_VERSION}; run setup to migrate"
             ),
         )
 
@@ -1562,14 +1956,14 @@ def validate_current_database(
     if required_schema_objects_missing(connection):
         raise StorageError(
             "migration_required",
-            "database schema is incomplete; run db init to migrate",
+            "database schema is incomplete; run setup to migrate",
         )
 
     existing_project_id = read_project_meta_id(connection)
     if existing_project_id is None:
         raise StorageError(
             "migration_required",
-            "database project metadata is missing; run db init to repair",
+            "database project metadata is missing; run setup to repair",
         )
     if existing_project_id != target.project.project_id:
         raise StorageError(
@@ -1578,6 +1972,11 @@ def validate_current_database(
                 f"database belongs to project {existing_project_id}, "
                 f"not {target.project.project_id}"
             ),
+        )
+    if read_project_maintenance(connection, existing_project_id) is None:
+        raise StorageError(
+            "migration_required",
+            "database project maintenance state is missing; run setup to repair",
         )
     return version
 
@@ -1588,7 +1987,7 @@ def connect_initialized(target: DatabaseTarget) -> sqlite3.Connection:
     if not target.db_path.exists():
         raise StorageError(
             "db_not_initialized",
-            "database is not initialized; run db init first",
+            "project state is not set up; run setup first",
         )
     try:
         connection = connect_existing(target.db_path)
@@ -1596,7 +1995,7 @@ def connect_initialized(target: DatabaseTarget) -> sqlite3.Connection:
         if not target.db_path.exists():
             raise StorageError(
                 "db_not_initialized",
-                "database is not initialized; run db init first",
+                "project state is not set up; run setup first",
             ) from exc
         raise operational_sqlite_error(
             exc,
@@ -1650,7 +2049,7 @@ def connect_initialized_readonly(target: DatabaseTarget) -> sqlite3.Connection:
         if not target.db_path.exists():
             raise StorageError(
                 "db_not_initialized",
-                "database is not initialized; run db init first",
+                "project state is not set up; run setup first",
             ) from exc
         raise operational_sqlite_error(
             exc,
@@ -1670,6 +2069,162 @@ def connect_initialized_readonly(target: DatabaseTarget) -> sqlite3.Connection:
         connection.close()
         raise
     return connection
+
+
+def validate_backup_policy(
+    *,
+    interval_minutes: int,
+    generations: int,
+) -> tuple[int, int]:
+    if (
+        isinstance(interval_minutes, bool)
+        or not isinstance(interval_minutes, int)
+        or not MIN_BACKUP_INTERVAL_MINUTES
+        <= interval_minutes
+        <= MAX_BACKUP_INTERVAL_MINUTES
+        or isinstance(generations, bool)
+        or not isinstance(generations, int)
+        or not MIN_BACKUP_GENERATIONS <= generations <= MAX_BACKUP_GENERATIONS
+    ):
+        raise StorageError(
+            "invalid_backup_policy",
+            "backup policy is outside the supported range",
+        )
+    return interval_minutes, generations
+
+
+def configure_project_maintenance(
+    target: DatabaseTarget,
+    *,
+    requested_interval_minutes: int | None,
+    requested_generations: int | None,
+    enabled_at: str | None = None,
+) -> tuple[int, int]:
+    activation_time = validate_utc_timestamp(
+        enabled_at or utc_now(),
+        field="maintenance enablement time",
+    )
+    with closing(connect_initialized(target)) as connection:
+        try:
+            begin_initialized_write(connection, target)
+            current = read_project_maintenance(
+                connection,
+                target.project.project_id,
+            )
+            if current is None:
+                raise StorageError(
+                    "migration_required",
+                    "database project maintenance state is missing; run setup to repair",
+                )
+            interval_minutes = (
+                requested_interval_minutes
+                if requested_interval_minutes is not None
+                else (
+                    current.backup_interval_minutes
+                    if current.enabled
+                    else DEFAULT_BACKUP_INTERVAL_MINUTES
+                )
+            )
+            generations = (
+                requested_generations
+                if requested_generations is not None
+                else (
+                    current.backup_generations
+                    if current.enabled
+                    else DEFAULT_BACKUP_GENERATIONS
+                )
+            )
+            interval_minutes, generations = validate_backup_policy(
+                interval_minutes=interval_minutes,
+                generations=generations,
+            )
+            if (
+                current.enabled
+                and current.backup_interval_minutes == interval_minutes
+                and current.backup_generations == generations
+            ):
+                connection.commit()
+                return interval_minutes, generations
+            connection.execute(
+                """
+                UPDATE project_maintenance
+                   SET enabled_at = COALESCE(enabled_at, ?),
+                       backup_interval_minutes = ?,
+                       backup_generations = ?
+                 WHERE project_id = ?
+                """,
+                (
+                    activation_time,
+                    interval_minutes,
+                    generations,
+                    target.project.project_id,
+                ),
+            )
+            connection.commit()
+            return interval_minutes, generations
+        except Exception:
+            connection.rollback()
+            raise
+
+
+def record_setup_backup(
+    target: DatabaseTarget,
+    metadata: MigrationBackupMetadata,
+) -> None:
+    validated = validate_migration_backup_metadata(metadata)
+    with closing(connect_initialized(target)) as connection:
+        try:
+            begin_initialized_write(connection, target)
+            connection.execute(
+                """
+                UPDATE project_maintenance
+                   SET applied_backup_generations = ?,
+                       backup_last_success_at = ?,
+                       backup_last_outcome_code = 'succeeded',
+                       backup_last_outcome_at = ?,
+                       latest_backup_generation_id = ?
+                 WHERE project_id = ?
+                """,
+                (
+                    validated.publication_retention,
+                    validated.published_at,
+                    validated.published_at,
+                    validated.generation_id,
+                    target.project.project_id,
+                ),
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+
+def record_setup_viewer(
+    target: DatabaseTarget,
+    *,
+    published_at: str,
+) -> None:
+    timestamp = validate_utc_timestamp(
+        published_at,
+        field="Viewer publication time",
+    )
+    with closing(connect_initialized(target)) as connection:
+        try:
+            begin_initialized_write(connection, target)
+            connection.execute(
+                """
+                UPDATE project_maintenance
+                   SET viewer_last_success_at = ?,
+                       viewer_last_outcome_code = 'succeeded',
+                       viewer_last_outcome_at = ?
+                 WHERE project_id = ?
+                """,
+                (timestamp, timestamp, target.project.project_id),
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
 
 
 def validate_snapshot_database(
@@ -1813,135 +2368,140 @@ def count_tasks(connection: sqlite3.Connection, project_id: str) -> dict[str, in
     return counts
 
 
-def status_error(
+def read_setup_state(
+    connection: sqlite3.Connection,
     target: DatabaseTarget,
-    *,
-    exists: bool,
-    needs_init: bool,
-    needs_migration: bool,
-    schema_version: int | None,
-    code: str,
-    message: str,
-) -> StatusResult:
-    return StatusResult(
-        target=target,
-        exists=exists,
-        needs_init=needs_init,
-        needs_migration=needs_migration,
-        schema_version=schema_version,
-        counts=empty_counts(),
-        error_code=code,
-        error_message=message,
+) -> SetupStorageState:
+    try:
+        version = current_schema_version(connection)
+        if version == 0:
+            return SetupStorageState(
+                schema_version=None,
+                needs_initialize=True,
+                needs_migration=False,
+                maintenance_enabled=False,
+                backup_interval_minutes=None,
+                backup_generations=None,
+            )
+        if version > SCHEMA_VERSION:
+            raise StorageError(
+                "schema_too_new",
+                "task database schema is newer than this taskgov version",
+            )
+        if missing_migration_versions(connection, version):
+            raise StorageError(
+                "project_state_unreadable",
+                "project state could not be read safely",
+            )
+        if not table_exists(connection, "project_meta"):
+            raise StorageError(
+                "project_state_unreadable",
+                "project state could not be read safely",
+            )
+        existing_project_id = read_project_meta_id(connection)
+        if existing_project_id is None:
+            raise StorageError(
+                "project_state_unreadable",
+                "project state could not be read safely",
+            )
+        if existing_project_id != target.project.project_id:
+            raise StorageError(
+                "project_mismatch",
+                "task database belongs to a different project",
+            )
+        if version < SCHEMA_VERSION:
+            return SetupStorageState(
+                schema_version=version,
+                needs_initialize=False,
+                needs_migration=True,
+                maintenance_enabled=False,
+                backup_interval_minutes=None,
+                backup_generations=None,
+            )
+        if required_schema_objects_missing(connection):
+            raise StorageError(
+                "project_state_unreadable",
+                "project state could not be read safely",
+            )
+        maintenance = read_project_maintenance(
+            connection,
+            target.project.project_id,
+        )
+        if maintenance is None:
+            raise StorageError(
+                "project_state_unreadable",
+                "project state could not be read safely",
+            )
+        return SetupStorageState(
+            schema_version=version,
+            needs_initialize=False,
+            needs_migration=False,
+            maintenance_enabled=maintenance.enabled,
+            backup_interval_minutes=maintenance.backup_interval_minutes,
+            backup_generations=maintenance.backup_generations,
+        )
+    except sqlite3.Error as exc:
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="project state could not be read safely",
+        ) from exc
+
+
+def inspect_setup_state(target: DatabaseTarget) -> SetupStorageState:
+    validate_operational_journal_state(target.db_path)
+    if not target.db_path.exists():
+        return SetupStorageState(
+            schema_version=None,
+            needs_initialize=True,
+            needs_migration=False,
+            maintenance_enabled=False,
+            backup_interval_minutes=None,
+            backup_generations=None,
+        )
+    try:
+        with closing(connect_readonly(target.db_path)) as connection:
+            return read_setup_state(connection, target)
+    except sqlite3.Error as exc:
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="project state could not be read safely",
+        ) from exc
+
+
+def read_doctor_state(
+    connection: sqlite3.Connection,
+    target: DatabaseTarget,
+) -> DoctorStorageState:
+    setup_state = read_setup_state(connection, target)
+    if setup_state.needs_initialize:
+        raise StorageError("setup_required", "project state is not set up")
+    if setup_state.needs_migration:
+        raise StorageError(
+            "migration_required",
+            "task database requires setup migration",
+        )
+    maintenance = read_project_maintenance(
+        connection,
+        target.project.project_id,
+    )
+    if maintenance is None:
+        raise StorageError(
+            "project_state_unreadable",
+            "project state could not be read safely",
+        )
+    return DoctorStorageState(
+        schema_version=SCHEMA_VERSION,
+        project_code="ready" if maintenance.enabled else "setup_required",
+        task_counts=count_tasks(connection, target.project.project_id),
+        maintenance=maintenance,
     )
 
 
-def inspect_database(target: DatabaseTarget) -> StatusResult:
-    try:
-        with closing(connect_readonly(target.db_path)) as connection:
-            version = current_schema_version(connection)
-            if version != SCHEMA_VERSION:
-                return status_error(
-                    target,
-                    exists=True,
-                    needs_init=False,
-                    needs_migration=True,
-                    schema_version=version,
-                    code="migration_required",
-                    message=(
-                        f"database schema version {version} does not match supported "
-                        f"version {SCHEMA_VERSION}; run db init to migrate"
-                    ),
-                )
-
-            if missing_migration_versions(connection, version):
-                return status_error(
-                    target,
-                    exists=True,
-                    needs_init=False,
-                    needs_migration=True,
-                    schema_version=version,
-                    code="migration_required",
-                    message=(
-                        "database migration history is incomplete; restore a valid "
-                        "database backup or inspect the migration history"
-                    ),
-                )
-
-            missing_schema_objects = required_schema_objects_missing(connection)
-            if missing_schema_objects:
-                return status_error(
-                    target,
-                    exists=True,
-                    needs_init=False,
-                    needs_migration=True,
-                    schema_version=version,
-                    code="migration_required",
-                    message="database schema is incomplete; run db init to migrate",
-                )
-
-            existing_project_id = read_project_meta_id(connection)
-            if existing_project_id is None:
-                return status_error(
-                    target,
-                    exists=True,
-                    needs_init=False,
-                    needs_migration=True,
-                    schema_version=version,
-                    code="migration_required",
-                    message="database project metadata is missing; run db init to repair",
-                )
-            if existing_project_id != target.project.project_id:
-                return status_error(
-                    target,
-                    exists=True,
-                    needs_init=False,
-                    needs_migration=False,
-                    schema_version=version,
-                    code="project_mismatch",
-                    message=(
-                        f"database belongs to project {existing_project_id}, "
-                        f"not {target.project.project_id}"
-                    ),
-                )
-
-            return StatusResult(
-                target=target,
-                exists=True,
-                needs_init=False,
-                needs_migration=False,
-                schema_version=version,
-                counts=count_tasks(connection, target.project.project_id),
-            )
-    except StorageError as exc:
-        database_exists = target.db_path.exists()
-        return status_error(
-            target,
-            exists=database_exists,
-            needs_init=(
-                not database_exists and exc.code == "db_not_initialized"
-            ),
-            needs_migration=False,
-            schema_version=None,
-            code=exc.code,
-            message=exc.message,
-        )
-    except sqlite3.Error as exc:
-        mapped = operational_sqlite_error(
-            exc,
-            fallback_message="could not inspect database",
-        )
-        return status_error(
-            target,
-            exists=True,
-            needs_init=False,
-            needs_migration=False,
-            schema_version=None,
-            code=mapped.code,
-            message=mapped.message,
-        )
-
-
-def initialize_database(target: DatabaseTarget) -> InitResult:
+def initialize_database(
+    target: DatabaseTarget,
+    *,
+    setup_backup: MigrationBackupMetadata | None = None,
+) -> InitResult:
     created = not target.db_path.exists()
     try:
         validate_operational_journal_state(target.db_path)
@@ -1958,8 +2518,15 @@ def initialize_database(target: DatabaseTarget) -> InitResult:
                             "project_mismatch",
                             f"database belongs to project {existing_project_id}, not {target.project.project_id}",
                         )
-                migrations_applied, warnings = apply_migrations(connection)
+                migrations_applied, warnings = apply_migrations(
+                    connection,
+                    setup_backup=setup_backup,
+                )
                 ensure_project_meta(connection, target.project)
+                ensure_project_maintenance_row(
+                    connection,
+                    target.project.project_id,
+                )
                 version = validate_current_database(connection, target)
     except StorageError:
         raise

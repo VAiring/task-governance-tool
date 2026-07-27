@@ -17,6 +17,10 @@ sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import self_status as self_status_module
 from task_governance_tool.self_status import inspect_local_package
+try:
+    from m14_test_support import make_physical_install
+except ModuleNotFoundError:
+    from tests.m14_test_support import make_physical_install
 
 
 MANIFEST_NAME = "release-manifest.json"
@@ -98,91 +102,35 @@ def create_windows_junction(link: Path, target: Path) -> None:
 
 
 class SelfStatusTests(unittest.TestCase):
-    def test_isolated_cli_reports_clean_without_writing(self):
+    def test_doctor_reuses_clean_package_inspection_without_writing(self):
         source_result = inspect_local_package(SKILL_ROOT, installed_version="0.7.0")
         self.assertEqual(source_result.status, "clean")
         self.assertEqual(source_result.changed_core_count, 0)
 
         with tempfile.TemporaryDirectory() as tmp:
-            copied = copy_skill(Path(tmp))
-            write_manifest(copied)
-            before = content_snapshot(copied)
-            ignored_repo = Path(tmp) / "must-not-be-created"
-            ignored_db = Path(tmp) / "must-not-exist.sqlite"
-            env = os.environ.copy()
-            env.pop("PYTHONPATH", None)
+            install = make_physical_install(Path(tmp))
+            before = content_snapshot(install.skill_root)
 
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    "-I",
-                    "-S",
-                    "scripts/taskgov.py",
-                    "self",
-                    "status",
-                    "--repo",
-                    str(ignored_repo),
-                    "--db",
-                    str(ignored_db),
-                    "--read-only",
-                    "--json",
-                ],
-                cwd=copied,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
+            result = install.run("doctor", "--read-only", "--json")
 
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(result.stdout)
             self.assertTrue(payload["ok"])
-            self.assertEqual(payload["command"], "self.status")
-            self.assertIsNone(payload["project_id"])
-            self.assertIsNone(payload["db_path"])
-            self.assertEqual(payload["warnings"], [])
-            self.assertEqual(
-                payload["data"],
-                {
-                    "package_name": "task-governance-tool",
-                    "package_version": "0.7.0",
-                    "release_origin": "github:VAiring/task-governance-tool",
-                    "manifest_version": 1,
-                    "status": "clean",
-                    "changed_core_count": 0,
-                    "changed_core_paths": [],
-                    "changed_core_paths_truncated": False,
-                    "unknown_reasons": [],
-                    "suggested_action": "continue",
-                },
-            )
-            self.assertEqual(content_snapshot(copied), before)
-            self.assertFalse((copied / "state").exists())
-            self.assertFalse(any(copied.rglob("__pycache__")))
-            self.assertFalse(ignored_repo.exists())
-            self.assertFalse(ignored_db.exists())
+            self.assertEqual(payload["command"], "doctor")
+            self.assertNotIn("db_path", payload)
+            package = payload["data"]["components"]["package"]
+            self.assertEqual(package["status"], "clean")
+            self.assertEqual(package["changed_core_count"], 0)
+            self.assertEqual(package["changed_core_paths"], [])
+            self.assertEqual(package["unknown_reasons"], [])
+            self.assertEqual(content_snapshot(install.skill_root), before)
+            self.assertFalse((install.skill_root / "state").exists())
+            self.assertFalse(any(install.skill_root.rglob("__pycache__")))
 
-            text_result = subprocess.run(
-                [
-                    sys.executable,
-                    "-I",
-                    "-S",
-                    "scripts/taskgov.py",
-                    "self",
-                    "status",
-                ],
-                cwd=copied,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
+            text_result = install.run("doctor")
             self.assertEqual(text_result.returncode, 0, text_result.stderr)
-            self.assertIn("Status: clean", text_result.stdout)
-            self.assertIn("Suggested action: continue", text_result.stdout)
-            self.assertEqual(content_snapshot(copied), before)
+            self.assertEqual(text_result.stdout, "Doctor: setup_required\n")
+            self.assertEqual(content_snapshot(install.skill_root), before)
 
     def test_changed_missing_and_unexpected_core_are_modified(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -348,15 +296,17 @@ class SelfStatusTests(unittest.TestCase):
                 ("unsupported_install_layout",),
             )
 
+            repo = root / "target-project"
+            repo.mkdir()
             status = subprocess.run(
                 [
                     sys.executable,
                     "-I",
                     "-S",
                     "scripts/taskgov.py",
-                    "self",
-                    "status",
-                    "--read-only",
+                    "doctor",
+                    "--repo",
+                    str(repo),
                     "--json",
                 ],
                 cwd=junction,
@@ -367,40 +317,34 @@ class SelfStatusTests(unittest.TestCase):
                 check=False,
             )
 
-            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertEqual(status.returncode, 2, status.stderr)
             status_payload = json.loads(status.stdout)
-            self.assertEqual(status_payload["data"]["status"], "unknown")
+            package = status_payload["data"]["components"]["package"]
+            self.assertEqual(package["status"], "unknown")
             self.assertEqual(
-                status_payload["data"]["unknown_reasons"],
+                package["unknown_reasons"],
                 ["unsupported_install_layout"],
             )
             self.assertEqual(
                 status_payload["data"]["suggested_action"],
                 "continue",
             )
-            self.assertEqual(status_payload["command"], "self.status")
-            self.assertIsNone(status_payload["project_id"])
-            self.assertIsNone(status_payload["db_path"])
-            self.assertEqual(status_payload["errors"], [])
+            self.assertEqual(status_payload["command"], "doctor")
+            self.assertNotIn("db_path", status_payload)
             self.assertEqual(
-                status_payload["warnings"],
-                [
-                    {
-                        "code": "package_status_unknown",
-                        "message": "package self-status is unknown; continue current task",
-                    }
-                ],
+                status_payload["data"]["components"]["project_state"]["code"],
+                "invalid_layout",
             )
+            self.assertEqual(status_payload["warnings"][0]["code"], "package_status_unknown")
+            self.assertEqual(status_payload["errors"][0]["code"], "unsupported_install_layout")
 
-            repo = root / "target-project"
             initialized = subprocess.run(
                 [
                     sys.executable,
                     "-I",
                     "-S",
                     "scripts/taskgov.py",
-                    "db",
-                    "init",
+                    "setup",
                     "--repo",
                     str(repo),
                     "--json",
@@ -415,31 +359,24 @@ class SelfStatusTests(unittest.TestCase):
 
             self.assertEqual(initialized.returncode, 2, initialized.stderr)
             initialized_payload = json.loads(initialized.stdout)
+            self.assertEqual(initialized_payload["command"], "setup")
+            self.assertNotIn("db_path", initialized_payload)
             self.assertEqual(
-                initialized_payload,
-                {
-                    "ok": False,
-                    "command": "db.init",
-                    "project_id": None,
-                    "db_path": None,
-                    "data": {},
-                    "warnings": [],
-                    "errors": [
-                        {
-                            "code": "unsupported_install_layout",
-                            "message": (
-                                "stateful commands require a physical "
-                                "project-scoped skill copy"
-                            ),
-                        }
-                    ],
-                },
+                initialized_payload["errors"],
+                [{
+                    "code": "unsupported_install_layout",
+                    "message": (
+                        "stateful use requires one supported physical "
+                        "project-scoped package layout"
+                    ),
+                }],
             )
             serialized = json.dumps(initialized_payload)
             self.assertNotIn(str(junction), serialized)
             self.assertNotIn(str(physical), serialized)
             self.assertFalse((physical / "state").exists())
-            self.assertFalse(repo.exists())
+            self.assertTrue(repo.is_dir())
+            self.assertEqual(list(repo.iterdir()), [])
             self.assertEqual(content_snapshot(physical), before)
 
     @unittest.skipUnless(os.name == "nt", "Windows junction behavior")
@@ -467,9 +404,7 @@ class SelfStatusTests(unittest.TestCase):
                     "-I",
                     "-S",
                     entrypoint,
-                    "self",
-                    "status",
-                    "--read-only",
+                    "doctor",
                     "--json",
                 ],
                 cwd=target,
@@ -479,26 +414,22 @@ class SelfStatusTests(unittest.TestCase):
                 stderr=subprocess.PIPE,
                 check=False,
             )
-            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertEqual(status.returncode, 2, status.stderr)
             status_payload = json.loads(status.stdout)
-            self.assertEqual(status_payload["data"]["status"], "unknown")
+            package = status_payload["data"]["components"]["package"]
+            self.assertEqual(package["status"], "unknown")
             self.assertEqual(
-                status_payload["data"]["unknown_reasons"],
+                package["unknown_reasons"],
                 ["unsupported_install_layout"],
             )
-            self.assertEqual(status_payload["command"], "self.status")
-            self.assertIsNone(status_payload["project_id"])
-            self.assertIsNone(status_payload["db_path"])
-            self.assertEqual(status_payload["errors"], [])
+            self.assertEqual(status_payload["command"], "doctor")
+            self.assertNotIn("db_path", status_payload)
             self.assertEqual(
-                status_payload["warnings"],
-                [
-                    {
-                        "code": "package_status_unknown",
-                        "message": "package self-status is unknown; continue current task",
-                    }
-                ],
+                status_payload["data"]["components"]["project_state"]["code"],
+                "invalid_layout",
             )
+            self.assertEqual(status_payload["warnings"][0]["code"], "package_status_unknown")
+            self.assertEqual(status_payload["errors"][0]["code"], "unsupported_install_layout")
 
             initialized = subprocess.run(
                 [
@@ -506,8 +437,7 @@ class SelfStatusTests(unittest.TestCase):
                     "-I",
                     "-S",
                     entrypoint,
-                    "db",
-                    "init",
+                    "setup",
                     "--json",
                 ],
                 cwd=target,
@@ -519,25 +449,11 @@ class SelfStatusTests(unittest.TestCase):
             )
             self.assertEqual(initialized.returncode, 2, initialized.stderr)
             initialized_payload = json.loads(initialized.stdout)
+            self.assertEqual(initialized_payload["command"], "setup")
+            self.assertNotIn("db_path", initialized_payload)
             self.assertEqual(
-                initialized_payload,
-                {
-                    "ok": False,
-                    "command": "db.init",
-                    "project_id": None,
-                    "db_path": None,
-                    "data": {},
-                    "warnings": [],
-                    "errors": [
-                        {
-                            "code": "unsupported_install_layout",
-                            "message": (
-                                "stateful commands require a physical "
-                                "project-scoped skill copy"
-                            ),
-                        }
-                    ],
-                },
+                initialized_payload["errors"][0]["code"],
+                "unsupported_install_layout",
             )
             serialized = json.dumps(initialized_payload)
             self.assertNotIn(str(agents / "skills"), serialized)
@@ -571,9 +487,7 @@ class SelfStatusTests(unittest.TestCase):
                     "-I",
                     "-S",
                     entrypoint,
-                    "self",
-                    "status",
-                    "--read-only",
+                    "doctor",
                     "--json",
                 ],
                 cwd=target,
@@ -583,16 +497,21 @@ class SelfStatusTests(unittest.TestCase):
                 stderr=subprocess.PIPE,
                 check=False,
             )
-            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertEqual(status.returncode, 2, status.stderr)
             status_payload = json.loads(status.stdout)
-            self.assertEqual(status_payload["data"]["status"], "unknown")
+            package = status_payload["data"]["components"]["package"]
+            self.assertEqual(package["status"], "unknown")
             self.assertEqual(
-                status_payload["data"]["unknown_reasons"],
+                package["unknown_reasons"],
                 ["unsupported_install_layout"],
             )
             self.assertEqual(
                 status_payload["data"]["suggested_action"],
                 "continue",
+            )
+            self.assertEqual(
+                status_payload["data"]["components"]["project_state"]["code"],
+                "invalid_layout",
             )
 
             initialized = subprocess.run(
@@ -601,8 +520,7 @@ class SelfStatusTests(unittest.TestCase):
                     "-I",
                     "-S",
                     entrypoint,
-                    "db",
-                    "init",
+                    "setup",
                     "--json",
                 ],
                 cwd=target,
@@ -613,25 +531,12 @@ class SelfStatusTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(initialized.returncode, 2, initialized.stderr)
+            initialized_payload = json.loads(initialized.stdout)
+            self.assertEqual(initialized_payload["command"], "setup")
+            self.assertNotIn("db_path", initialized_payload)
             self.assertEqual(
-                json.loads(initialized.stdout),
-                {
-                    "ok": False,
-                    "command": "db.init",
-                    "project_id": None,
-                    "db_path": None,
-                    "data": {},
-                    "warnings": [],
-                    "errors": [
-                        {
-                            "code": "unsupported_install_layout",
-                            "message": (
-                                "stateful commands require a physical "
-                                "project-scoped skill copy"
-                            ),
-                        }
-                    ],
-                },
+                initialized_payload["errors"][0]["code"],
+                "unsupported_install_layout",
             )
             self.assertFalse((shared / "state").exists())
             self.assertFalse((installed / "state").exists())

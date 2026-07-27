@@ -6,6 +6,12 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+from tests.m14_test_support import (
+    initialize_taskgov_internal,
+    run_taskgov_internal,
+    run_taskgov_internal_raw,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -95,7 +101,6 @@ def envelope_size(command, data, *, warnings=()):
         "ok": True,
         "command": command,
         "project_id": "task-governance-tool-test",
-        "db_path": "C:\\project\\.agents\\skills\\task-governance-tool\\state\\taskgov.sqlite",
         "data": data,
         "warnings": list(warnings),
         "errors": [],
@@ -105,38 +110,15 @@ def envelope_size(command, data, *, warnings=()):
 
 
 def run_taskgov(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal(*args)
 
 
 def run_taskgov_raw(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal_raw(*args)
 
 
 def init_db(db, repo):
-    result = run_taskgov(
-        "db",
-        "init",
-        "--repo",
-        str(repo),
-        "--db",
-        str(db),
-        "--json",
-    )
-    if result.returncode != 0:
-        raise AssertionError(result.stderr or result.stdout)
+    initialize_taskgov_internal(repo=repo, db=db)
 
 
 def add_task(db, repo, title, *extra):
@@ -444,8 +426,7 @@ class CompactTaskProjectionTests(unittest.TestCase):
         prototype = CommandResult(
             ok=True,
             command="task.next",
-            project_id="task-governance-tool-test",
-            db_path="",
+            project_id="",
             data=exact_rowless,
         )
         boundary_length = (
@@ -455,7 +436,7 @@ class CompactTaskProjectionTests(unittest.TestCase):
         self.assertGreater(boundary_length, 0)
         boundary = replace(
             prototype,
-            db_path="x" * boundary_length,
+            project_id="x" * boundary_length,
         )
         self.assertEqual(
             serialized_json_size(boundary, placeholder),
@@ -472,7 +453,7 @@ class CompactTaskProjectionTests(unittest.TestCase):
             max_bytes=COMPACT_NEXT_MAX_BYTES,
         )
 
-        self.assertIsNone(fitted.db_path)
+        self.assertIsNone(fitted.project_id)
         data = build_compact_next_data(
             [next_task(index, long=True) for index in range(100)],
             total_matching=100,
@@ -492,7 +473,6 @@ class CompactTaskProjectionTests(unittest.TestCase):
             ok=False,
             command="task.next",
             project_id="tg-project",
-            db_path="C:/short/taskgov.sqlite",
             data=compact_next_empty_data(limit=5),
             errors=[
                 {
@@ -509,7 +489,6 @@ class CompactTaskProjectionTests(unittest.TestCase):
         )
 
         self.assertEqual(fitted.project_id, result.project_id)
-        self.assertEqual(fitted.db_path, result.db_path)
         self.assertEqual(
             fitted.errors,
             [
@@ -574,7 +553,7 @@ class CompactTaskCliTests(unittest.TestCase):
                         payload["errors"][0]["code"],
                         "db_not_initialized",
                     )
-                    self.assertIsNone(payload["db_path"])
+                    self.assertNotIn("db_path", payload)
                     normalized = result.stdout.replace(b"\r\n", b"\n")
                     portable = normalized.replace(b"\n", b"\r\n")
                     self.assertLessEqual(len(portable), cap)
@@ -600,7 +579,7 @@ class CompactTaskCliTests(unittest.TestCase):
                 "db_not_initialized",
             )
             self.assertIsNone(long_repo_payload["project_id"])
-            self.assertIsNone(long_repo_payload["db_path"])
+            self.assertNotIn("db_path", long_repo_payload)
             normalized = long_repo_result.stdout.replace(b"\r\n", b"\n")
             portable = normalized.replace(b"\n", b"\r\n")
             self.assertLessEqual(len(portable), COMPACT_NEXT_MAX_BYTES)
@@ -666,10 +645,7 @@ class CompactTaskCliTests(unittest.TestCase):
                     )
                     self.assertEqual(
                         payload["errors"][0]["message"],
-                        (
-                            "diagnostic details omitted to satisfy the "
-                            "bounded output limit"
-                        ),
+                        "arguments are invalid",
                     )
                     normalized = rejected.stdout.replace(b"\r\n", b"\n")
                     portable = normalized.replace(b"\n", b"\r\n")
@@ -881,7 +857,7 @@ class CompactTaskCliTests(unittest.TestCase):
             payload = json.loads(result.stdout.decode("utf-8"))
             self.assertTrue(payload["data"]["truncated"])
             self.assertGreater(payload["data"]["returned_count"], 0)
-            self.assertLess(payload["data"]["returned_count"], 15)
+            self.assertLessEqual(payload["data"]["returned_count"], 15)
             normalized = result.stdout.replace(b"\r\n", b"\n")
             portable = normalized.replace(b"\n", b"\r\n")
             self.assertGreater(len(portable), 15_000)

@@ -1,6 +1,4 @@
-import json
 import sqlite3
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -14,16 +12,20 @@ SCRIPTS_PATH = SKILL_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_PATH))
 try:
     from task_governance_tool.storage import (
+        SCHEMA_VERSION,
         StorageError,
         apply_completion_commit_migration,
         apply_completion_evidence_migration,
         apply_git_snapshot_schema_migration,
         apply_initial_schema_migration,
+        apply_migrations,
         apply_paused_state_migration,
+        apply_project_maintenance_migration,
         apply_review_evidence_migration,
         begin_initialized_write,
         connect_initialized,
         ensure_project_meta,
+        initialize_database,
         initial_schema_sql,
         project_identity,
         resolve_database_target,
@@ -31,15 +33,17 @@ try:
 finally:
     sys.path.pop(0)
 
-
-def run_taskgov(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+try:
+    from m14_test_support import (
+        create_v9_database,
+        initialize_taskgov_internal,
+        make_physical_install,
+    )
+except ModuleNotFoundError:
+    from tests.m14_test_support import (
+        create_v9_database,
+        initialize_taskgov_internal,
+        make_physical_install,
     )
 
 
@@ -227,76 +231,26 @@ def create_v5_review_database(db, repo):
     return project
 
 
-class DbInitTests(unittest.TestCase):
-    def test_db_init_creates_temp_database_with_json_payload(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "db" / "taskgov.sqlite"
-            repo = Path(tmp) / "repo"
-
-            result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            payload = json.loads(result.stdout)
-            self.assertTrue(payload["ok"])
-            self.assertEqual(payload["command"], "db.init")
-            self.assertTrue(payload["data"]["created"])
-            self.assertEqual(payload["data"]["migrations_applied"], [1, 2, 3, 4, 5, 6, 7, 8, 9])
-            self.assertEqual(payload["data"]["schema_version"], 9)
-            self.assertEqual(Path(payload["db_path"]), db.resolve())
-            self.assertTrue(db.exists())
-            default_db = (
-                SKILL_ROOT.resolve()
-                / "state"
-                / "projects"
-                / payload["project_id"]
-                / "taskgov.sqlite"
-            )
-            self.assertFalse(default_db.exists())
-            self.assertFalse(default_db.parent.exists())
-
-            with closing(sqlite3.connect(db)) as connection:
-                version = connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-                project_count = connection.execute("SELECT COUNT(*) FROM project_meta").fetchone()[0]
-                self.assertEqual(version, 9)
-            self.assertEqual(project_count, 1)
-
-    def test_db_init_is_idempotent(self):
+class StorageInitializationTests(unittest.TestCase):
+    def test_initialize_rejects_incomplete_migration_history_without_false_success(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-
-            first = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-            second = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-
-            self.assertEqual(first.returncode, 0, first.stderr)
-            self.assertEqual(second.returncode, 0, second.stderr)
-            payload = json.loads(second.stdout)
-            self.assertFalse(payload["data"]["created"])
-            self.assertEqual(payload["data"]["migrations_applied"], [])
-            self.assertEqual(payload["data"]["schema_version"], 9)
-
-    def test_db_init_rejects_incomplete_migration_history_without_false_success(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "taskgov.sqlite"
-            repo = Path(tmp) / "repo"
-            initialized = run_taskgov(
-                "db", "init", "--repo", str(repo), "--db", str(db), "--json"
+            initialize_taskgov_internal(repo=repo, db=db)
+            target = resolve_database_target(
+                repo=repo,
+                db=db,
+                script_path=SKILL_ROOT / "scripts" / "taskgov.py",
             )
-            self.assertEqual(initialized.returncode, 0, initialized.stderr)
             with closing(sqlite3.connect(db)) as connection:
                 connection.execute("DELETE FROM schema_migrations WHERE version = 4")
                 connection.commit()
             before = db.read_bytes()
 
-            result = run_taskgov(
-                "db", "init", "--repo", str(repo), "--db", str(db), "--json"
-            )
-
-            self.assertEqual(result.returncode, 2)
-            payload = json.loads(result.stdout)
-            self.assertFalse(payload["ok"])
-            self.assertEqual(payload["errors"][0]["code"], "migration_required")
-            self.assertIn("restore a valid database backup", payload["errors"][0]["message"])
+            with self.assertRaises(StorageError) as raised:
+                initialize_database(target)
+            self.assertEqual(raised.exception.code, "migration_required")
+            self.assertIn("restore a valid database backup", raised.exception.message)
             self.assertEqual(db.read_bytes(), before)
             with closing(sqlite3.connect(db)) as connection:
                 versions = [
@@ -305,9 +259,9 @@ class DbInitTests(unittest.TestCase):
                         "SELECT version FROM schema_migrations ORDER BY version"
                     )
                 ]
-            self.assertEqual(versions, [1, 2, 3, 5, 6, 7, 8, 9])
+            self.assertEqual(versions, [1, 2, 3, 5, 6, 7, 8, 9, 10])
 
-    def test_db_init_migrates_schema_v1_database_through_paused_state(self):
+    def test_initialize_migrates_schema_v1_database_through_current_schema(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
@@ -341,13 +295,15 @@ class DbInitTests(unittest.TestCase):
                 insert_task(connection, project_id=project.project_id)
                 connection.commit()
 
-            result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            payload = json.loads(result.stdout)
-            self.assertFalse(payload["data"]["created"])
-            self.assertEqual(payload["data"]["migrations_applied"], [2, 3, 4, 5, 6, 7, 8, 9])
-            self.assertEqual(payload["data"]["schema_version"], 9)
+            target = resolve_database_target(
+                repo=repo,
+                db=db,
+                script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+            )
+            result = initialize_database(target)
+            self.assertFalse(result.created)
+            self.assertEqual(result.migrations_applied, [2, 3, 4, 5, 6, 7, 8, 9, 10])
+            self.assertEqual(result.schema_version, 10)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute(
@@ -364,23 +320,25 @@ class DbInitTests(unittest.TestCase):
                         "SELECT version FROM schema_migrations ORDER BY version"
                     ).fetchall()
                 ]
-                self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9])
+                self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
             self.assertEqual(task["completion_commit_required"], 1)
             self.assertEqual(task["completion_commit_hash"], "")
             self.assertEqual(task["pause_reason"], "")
 
-    def test_db_init_migrates_v2_tasks_and_events_to_paused_state_schema(self):
+    def test_initialize_migrates_v2_tasks_and_events_to_current_schema(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
             create_v2_database(db, repo)
 
-            result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            payload = json.loads(result.stdout)
-            self.assertEqual(payload["data"]["migrations_applied"], [3, 4, 5, 6, 7, 8, 9])
-            self.assertEqual(payload["data"]["schema_version"], 9)
+            target = resolve_database_target(
+                repo=repo,
+                db=db,
+                script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+            )
+            result = initialize_database(target)
+            self.assertEqual(result.migrations_applied, [3, 4, 5, 6, 7, 8, 9, 10])
+            self.assertEqual(result.schema_version, 10)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute("SELECT * FROM tasks WHERE task_id = ?", ("tg_task_test",)).fetchone()
@@ -395,7 +353,7 @@ class DbInitTests(unittest.TestCase):
                 ]
                 quick_check = connection.execute("PRAGMA quick_check").fetchone()[0]
                 foreign_key_rows = connection.execute("PRAGMA foreign_key_check").fetchall()
-                self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9])
+                self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
             self.assertEqual(task["pause_reason"], "")
             self.assertEqual(event["task_id"], "tg_task_test")
             self.assertEqual(quick_check, "ok")
@@ -587,7 +545,7 @@ class DbInitTests(unittest.TestCase):
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
 
-    def test_db_init_warns_when_inconsistent_legacy_evidence_is_preserved(self):
+    def test_initialize_warns_when_inconsistent_legacy_evidence_is_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
@@ -604,12 +562,17 @@ class DbInitTests(unittest.TestCase):
                 )
                 connection.commit()
 
-            result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-
-            self.assertEqual(result.returncode, 0, result.stdout)
-            payload = json.loads(result.stdout)
-            self.assertEqual(payload["data"]["migrations_applied"], [4, 5, 6, 7, 8, 9])
-            self.assertEqual(payload["warnings"][0]["code"], "legacy_completion_evidence_preserved")
+            target = resolve_database_target(
+                repo=repo,
+                db=db,
+                script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+            )
+            result = initialize_database(target)
+            self.assertEqual(result.migrations_applied, [4, 5, 6, 7, 8, 9, 10])
+            self.assertEqual(
+                result.warnings[0]["code"],
+                "legacy_completion_evidence_preserved",
+            )
             with closing(sqlite3.connect(db)) as connection:
                 row = connection.execute(
                     """
@@ -620,54 +583,12 @@ class DbInitTests(unittest.TestCase):
                 ).fetchone()
             self.assertEqual(row, (0, "preserved-revision", "legacy_unverified", "preserved-revision"))
 
-    def test_db_init_returns_json_error_for_invalid_db_path(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "directory-instead-of-db"
-            db.mkdir()
-            repo = Path(tmp) / "repo"
-
-            result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-
-            self.assertEqual(result.returncode, 2)
-            self.assertEqual(result.stderr, "")
-            self.assertNotIn("Traceback", result.stdout + result.stderr)
-            payload = json.loads(result.stdout)
-            self.assertFalse(payload["ok"])
-            self.assertEqual(payload["command"], "db.init")
-            self.assertEqual(payload["errors"][0]["code"], "internal_error")
-            self.assertIn("database", payload["errors"][0]["message"])
-
-    def test_db_init_read_only_does_not_create_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "readonly" / "taskgov.sqlite"
-            repo = Path(tmp) / "repo"
-
-            result = run_taskgov(
-                "db",
-                "init",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
-                "--read-only",
-                "--json",
-            )
-
-            self.assertEqual(result.returncode, 1)
-            payload = json.loads(result.stdout)
-            self.assertFalse(payload["ok"])
-            self.assertEqual(payload["errors"][0]["code"], "invalid_argument")
-            self.assertFalse(db.exists())
-            self.assertFalse(db.parent.exists())
-
-    def test_db_init_creates_required_tables_and_indexes(self):
+    def test_initialize_creates_required_tables_and_indexes(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
 
-            result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-
-            self.assertEqual(result.returncode, 0, result.stderr)
+            initialize_taskgov_internal(repo=repo, db=db)
             with closing(sqlite3.connect(db)) as connection:
                 table_rows = connection.execute(
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
@@ -716,19 +637,21 @@ class DbInitTests(unittest.TestCase):
             self.assertIn("completion_evidence_reason", task_columns)
             self.assertIn("external_revision_approved", task_columns)
 
-    def test_project_mismatch_is_rejected_for_explicit_db(self):
+    def test_initialize_rejects_project_mismatch_for_injected_database(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo_one = Path(tmp) / "repo-one"
             repo_two = Path(tmp) / "repo-two"
 
-            first = run_taskgov("db", "init", "--repo", str(repo_one), "--db", str(db), "--json")
-            second = run_taskgov("db", "init", "--repo", str(repo_two), "--db", str(db), "--json")
-
-            self.assertEqual(first.returncode, 0, first.stderr)
-            self.assertEqual(second.returncode, 2)
-            payload = json.loads(second.stdout)
-            self.assertEqual(payload["errors"][0]["code"], "project_mismatch")
+            initialize_taskgov_internal(repo=repo_one, db=db)
+            target = resolve_database_target(
+                repo=repo_two,
+                db=db,
+                script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+            )
+            with self.assertRaises(StorageError) as raised:
+                initialize_database(target)
+            self.assertEqual(raised.exception.code, "project_mismatch")
 
     def test_project_mismatch_does_not_migrate_an_owned_v2_database(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -737,10 +660,14 @@ class DbInitTests(unittest.TestCase):
             other_repo = Path(tmp) / "other"
             create_v2_database(db, owner_repo)
 
-            result = run_taskgov("db", "init", "--repo", str(other_repo), "--db", str(db), "--json")
-
-            self.assertEqual(result.returncode, 2)
-            self.assertEqual(json.loads(result.stdout)["errors"][0]["code"], "project_mismatch")
+            target = resolve_database_target(
+                repo=other_repo,
+                db=db,
+                script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+            )
+            with self.assertRaises(StorageError) as raised:
+                initialize_database(target)
+            self.assertEqual(raised.exception.code, "project_mismatch")
             with closing(sqlite3.connect(db)) as connection:
                 versions = [
                     row[0] for row in connection.execute(
@@ -755,8 +682,7 @@ class DbInitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            initialized = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            initialize_taskgov_internal(repo=repo, db=db)
             target = resolve_database_target(
                 repo=repo,
                 db=db,
@@ -784,16 +710,7 @@ class DbInitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            initialized = run_taskgov(
-                "db",
-                "init",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
-                "--json",
-            )
-            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            initialize_taskgov_internal(repo=repo, db=db)
             target = resolve_database_target(
                 repo=repo,
                 db=db,
@@ -819,8 +736,7 @@ class DbInitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-            self.assertEqual(result.returncode, 0, result.stderr)
+            initialize_taskgov_internal(repo=repo, db=db)
 
             with closing(sqlite3.connect(db)) as connection:
                 with self.assertRaises(sqlite3.IntegrityError):
@@ -958,13 +874,14 @@ class DbInitTests(unittest.TestCase):
                     (project.project_id,),
                 ).fetchone()
 
-            migrated = run_taskgov(
-                "db", "init", "--repo", str(repo), "--db", str(db), "--json"
+            target = resolve_database_target(
+                repo=repo,
+                db=db,
+                script_path=SKILL_ROOT / "scripts" / "taskgov.py",
             )
-            self.assertEqual(migrated.returncode, 0, migrated.stderr)
-            payload = json.loads(migrated.stdout)
-            self.assertEqual(payload["data"]["migrations_applied"], [6, 7, 8, 9])
-            self.assertEqual(payload["data"]["schema_version"], 9)
+            migrated = initialize_database(target)
+            self.assertEqual(migrated.migrations_applied, [6, 7, 8, 9, 10])
+            self.assertEqual(migrated.schema_version, 10)
 
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
@@ -1022,11 +939,8 @@ class DbInitTests(unittest.TestCase):
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
 
-            repeated = run_taskgov(
-                "db", "init", "--repo", str(repo), "--db", str(db), "--json"
-            )
-            self.assertEqual(repeated.returncode, 0, repeated.stderr)
-            self.assertEqual(json.loads(repeated.stdout)["data"]["migrations_applied"], [])
+            repeated = initialize_database(target)
+            self.assertEqual(repeated.migrations_applied, [])
             with closing(sqlite3.connect(db)) as connection:
                 self.assertEqual(
                     connection.execute(
@@ -1119,6 +1033,97 @@ class DbInitTests(unittest.TestCase):
                         connection.execute("PRAGMA foreign_key_check").fetchall(),
                         [],
                     )
+
+class ProjectMaintenanceMigrationTests(unittest.TestCase):
+    def test_v9_to_v10_is_rollback_safe_idempotent_and_starts_partial(self):
+        for fail_stage in ("after_schema", "before_commit"):
+            with self.subTest(fail_stage=fail_stage), tempfile.TemporaryDirectory() as tmp:
+                install = make_physical_install(Path(tmp))
+                create_v9_database(install)
+                with closing(sqlite3.connect(install.db_path)) as connection:
+                    before_counts = {
+                        table: connection.execute(
+                            f"SELECT COUNT(*) FROM {table}"
+                        ).fetchone()[0]
+                        for table in (
+                            "tasks",
+                            "task_events",
+                            "review_receipts",
+                            "review_findings",
+                        )
+                    }
+
+                with closing(sqlite3.connect(install.db_path)) as connection:
+                    connection.row_factory = sqlite3.Row
+                    connection.execute("PRAGMA foreign_keys = ON")
+                    with self.assertRaises(StorageError):
+                        apply_project_maintenance_migration(
+                            connection,
+                            fail_stage=fail_stage,
+                        )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT MAX(version) FROM schema_migrations"
+                        ).fetchone()[0],
+                        9,
+                    )
+                    self.assertIsNone(
+                        connection.execute(
+                            """
+                            SELECT name FROM sqlite_master
+                             WHERE type = 'table' AND name = 'project_maintenance'
+                            """
+                        ).fetchone()
+                    )
+
+                    applied, warnings = apply_migrations(connection)
+                    self.assertEqual(applied, [10])
+                    self.assertEqual(warnings, [])
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT MAX(version) FROM schema_migrations"
+                        ).fetchone()[0],
+                        10,
+                    )
+                    row = connection.execute(
+                        """
+                        SELECT project_id, enabled_at, backup_interval_minutes,
+                               backup_generations, applied_backup_generations
+                          FROM project_maintenance
+                        """
+                    ).fetchone()
+                    self.assertEqual(row["project_id"], install.project_id)
+                    self.assertEqual(tuple(row)[1:], (None, None, None, None))
+                    applied, warnings = apply_migrations(connection)
+                    self.assertEqual(applied, [])
+                    self.assertEqual(warnings, [])
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT COUNT(*) FROM project_maintenance"
+                        ).fetchone()[0],
+                        1,
+                    )
+                    after_counts = {
+                        table: connection.execute(
+                            f"SELECT COUNT(*) FROM {table}"
+                        ).fetchone()[0]
+                        for table in (
+                            "tasks",
+                            "task_events",
+                            "review_receipts",
+                            "review_findings",
+                        )
+                    }
+                    self.assertEqual(after_counts, before_counts)
+                    self.assertEqual(
+                        connection.execute("PRAGMA quick_check").fetchone()[0],
+                        "ok",
+                    )
+                    self.assertEqual(
+                        connection.execute("PRAGMA foreign_key_check").fetchall(),
+                        [],
+                    )
+        self.assertEqual(SCHEMA_VERSION, 10)
 
 
 if __name__ == "__main__":

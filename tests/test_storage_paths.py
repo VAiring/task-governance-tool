@@ -66,7 +66,7 @@ class StoragePathTests(unittest.TestCase):
             SKILL_ROOT.resolve() / "state" / "projects" / "example-123456789abc" / "taskgov.sqlite",
         )
 
-    def test_explicit_db_override_does_not_create_files(self):
+    def test_explicit_db_path_remains_an_internal_repository_test_seam(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             db = Path(tmp) / "custom" / "taskgov.sqlite"

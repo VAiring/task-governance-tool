@@ -1,6 +1,5 @@
 import json
 import sqlite3
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -27,17 +26,10 @@ from task_governance_tool.storage import (  # noqa: E402
     ensure_project_meta,
     project_identity,
 )
-
-
-def run_taskgov(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+try:  # noqa: E402
+    from m14_test_support import json_payload, make_physical_install
+except ModuleNotFoundError:  # noqa: E402
+    from tests.m14_test_support import json_payload, make_physical_install
 
 
 def load_fixture() -> dict:
@@ -324,7 +316,7 @@ def legacy_v2_projection(connection: sqlite3.Connection) -> dict:
 
 
 class RealisticMigrationAcceptanceTests(unittest.TestCase):
-    def test_v2_fixture_migrates_to_v9_without_losing_observed_state(self):
+    def test_v2_fixture_setup_migrates_to_v10_without_losing_observed_state(self):
         fixture = load_fixture()
         self.assertEqual(fixture["schema_version"], 2)
         self.assertEqual(len(fixture["tasks"]), 12)
@@ -336,9 +328,10 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            repo = root / "governed-project"
-            repo.mkdir()
-            db_path = root / "taskgov.sqlite"
+            install = make_physical_install(root)
+            repo = install.project_root
+            db_path = install.db_path
+            db_path.parent.mkdir(parents=True)
             project = create_realistic_v2_database(db_path, repo, fixture)
             with closing(sqlite3.connect(db_path)) as connection:
                 before_migration = legacy_v2_projection(connection)
@@ -347,15 +340,22 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                     (project.project_id,),
                 ).fetchone()[0]
 
-            migrated = run_taskgov(
-                "db", "init", "--repo", str(repo), "--db", str(db_path), "--json"
-            )
+            migrated = install.run("setup", "--json")
 
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
-            payload = json.loads(migrated.stdout)
+            payload = json_payload(migrated)
             self.assertEqual(payload["project_id"], project.project_id)
-            self.assertEqual(payload["data"]["migrations_applied"], [3, 4, 5, 6, 7, 8, 9])
-            self.assertEqual(payload["data"]["schema_version"], 9)
+            self.assertEqual(payload["data"]["schema_from"], 2)
+            self.assertEqual(payload["data"]["schema_to"], 10)
+            self.assertEqual(
+                payload["data"]["completed_writes"],
+                [
+                    "migration_backup",
+                    "database_migrate",
+                    "maintenance_configure",
+                    "viewer_publish",
+                ],
+            )
 
             with closing(sqlite3.connect(db_path)) as connection:
                 connection.row_factory = sqlite3.Row
@@ -430,22 +430,24 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 )
                 before_second_init = durable_projection(connection)
 
-            repeated = run_taskgov(
-                "db", "init", "--repo", str(repo), "--db", str(db_path), "--json"
-            )
+            repeated = install.run("setup", "--json")
             self.assertEqual(repeated.returncode, 0, repeated.stderr)
-            self.assertEqual(json.loads(repeated.stdout)["data"]["migrations_applied"], [])
+            repeated_data = json_payload(repeated)["data"]
+            self.assertEqual(repeated_data["status"], "already_setup")
+            self.assertEqual(repeated_data["planned_writes"], [])
+            self.assertEqual(repeated_data["completed_writes"], [])
             with closing(sqlite3.connect(db_path)) as connection:
                 self.assertEqual(durable_projection(connection), before_second_init)
 
-    def test_v5_and_v6_fixture_migrate_to_v9_with_review_evidence_intact(self):
+    def test_v5_and_v6_fixture_setup_migrates_to_v10_with_review_evidence_intact(self):
         fixture = load_fixture()
-        for source_version, expected_migrations in ((5, [6, 7, 8, 9]), (6, [7, 8, 9])):
+        for source_version in (5, 6):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                repo = root / "governed-project"
-                repo.mkdir()
-                db_path = root / "taskgov.sqlite"
+                install = make_physical_install(root)
+                repo = install.project_root
+                db_path = install.db_path
+                db_path.parent.mkdir(parents=True)
                 project = create_realistic_review_database(
                     db_path,
                     repo,
@@ -455,23 +457,21 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 with closing(sqlite3.connect(db_path)) as connection:
                     before = post_v5_durable_projection(connection)
 
-                migrated = run_taskgov(
-                    "db",
-                    "init",
-                    "--repo",
-                    str(repo),
-                    "--db",
-                    str(db_path),
-                    "--json",
-                )
+                migrated = install.run("setup", "--json")
 
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
-                payload = json.loads(migrated.stdout)
+                payload = json_payload(migrated)
+                self.assertEqual(payload["data"]["schema_from"], source_version)
+                self.assertEqual(payload["data"]["schema_to"], 10)
                 self.assertEqual(
-                    payload["data"]["migrations_applied"],
-                    expected_migrations,
+                    payload["data"]["completed_writes"],
+                    [
+                        "migration_backup",
+                        "database_migrate",
+                        "maintenance_configure",
+                        "viewer_publish",
+                    ],
                 )
-                self.assertEqual(payload["data"]["schema_version"], 9)
                 self.assertEqual(payload["project_id"], project.project_id)
                 with closing(sqlite3.connect(db_path)) as connection:
                     self.assertEqual(post_v5_durable_projection(connection), before)

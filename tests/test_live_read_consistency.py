@@ -8,6 +8,8 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
+from tests.m14_test_support import run_taskgov_internal
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -18,6 +20,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from task_governance_tool.storage import (  # noqa: E402
     DATABASE_BUSY_MESSAGE,
     StorageError,
+    count_tasks,
     connect_initialized_readonly,
     connect_readonly,
     initialize_database,
@@ -33,14 +36,7 @@ UNSUPPORTED_JOURNAL_MODE_MESSAGE = (
 
 
 def run_taskgov(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal(*args)
 
 
 def initialized_target(tmp: str):
@@ -215,9 +211,8 @@ class LiveReadConsistencyTests(unittest.TestCase):
 
                     output = root / f"viewer{suffix[1:]}.html"
                     for command in (
-                        ("db", "status"),
-                        ("db", "init"),
                         ("task", "list"),
+                        ("task", "add", "--title", "must not write"),
                         (
                             "web",
                             "export",
@@ -292,55 +287,23 @@ class LiveReadConsistencyTests(unittest.TestCase):
                 self.assertTrue(journal.exists())
                 self.assertGreater(journal.stat().st_size, 512)
 
-                result = run_taskgov(
-                    "db",
-                    "status",
-                    "--repo",
-                    str(target.project.canonical_repo),
-                    "--db",
-                    str(target.db_path),
-                    "--json",
-                )
-                payload = json.loads(result.stdout)
-                if result.returncode == 0:
-                    self.assertTrue(payload["ok"])
-                    self.assertEqual(
-                        payload["data"]["counts"]["active"],
-                        task_count,
-                    )
-                    self.assertEqual(payload["data"]["counts"]["done"], 0)
+                try:
+                    with closing(connect_initialized_readonly(target)) as reader:
+                        counts = count_tasks(reader, target.project.project_id)
+                except StorageError as exc:
+                    self.assertEqual(exc.code, "database_busy")
+                    self.assertEqual(exc.message, DATABASE_BUSY_MESSAGE)
                 else:
-                    self.assertEqual(result.returncode, 2)
-                    self.assertFalse(payload["ok"])
-                    self.assertEqual(
-                        payload["errors"],
-                        [
-                            {
-                                "code": "database_busy",
-                                "message": DATABASE_BUSY_MESSAGE,
-                            }
-                        ],
-                    )
+                    self.assertEqual(counts["active"], task_count)
+                    self.assertEqual(counts["done"], 0)
             finally:
                 writer.rollback()
                 writer.close()
 
-            after = run_taskgov(
-                "db",
-                "status",
-                "--repo",
-                str(target.project.canonical_repo),
-                "--db",
-                str(target.db_path),
-                "--json",
-            )
-            self.assertEqual(after.returncode, 0, after.stderr)
-            after_payload = json.loads(after.stdout)
-            self.assertEqual(
-                after_payload["data"]["counts"]["active"],
-                task_count,
-            )
-            self.assertEqual(after_payload["data"]["counts"]["done"], 0)
+            with closing(connect_initialized_readonly(target)) as reader:
+                after_counts = count_tasks(reader, target.project.project_id)
+            self.assertEqual(after_counts["active"], task_count)
+            self.assertEqual(after_counts["done"], 0)
 
     def test_persistent_wal_header_rejects_read_and_write_without_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -355,9 +318,8 @@ class LiveReadConsistencyTests(unittest.TestCase):
             before = target.db_path.read_bytes()
 
             for command in (
-                ("db", "status"),
-                ("db", "init"),
                 ("task", "list"),
+                ("task", "add", "--title", "must not write"),
                 ("task", "next"),
                 ("task", "current"),
                 ("task", "show", "tg_task_missing"),

@@ -40,13 +40,21 @@ jobs:
         run: |
           python task-governance-tool/scripts/taskgov.py --help
           python task-governance-tool/scripts/taskgov.py --version
-          $selfStatusJson = python task-governance-tool/scripts/taskgov.py self status --read-only --json
+          $doctorJson = python task-governance-tool/scripts/taskgov.py doctor --repo . --read-only --json
           if ($LASTEXITCODE -ne 0) {
-            throw 'Local package self-status command failed'
+            throw 'Local package doctor command failed'
+          }
+          $doctor = $doctorJson | ConvertFrom-Json
+          if (-not $doctor.ok -or $doctor.data.components.package.status -ne 'clean') {
+            throw "Checked-in package is not clean: $($doctor.data.components.package.status)"
+          }
+          $selfStatusJson = python task-governance-tool/scripts/taskgov.py self status --read-only --json
+          if ($LASTEXITCODE -ne 2) {
+            throw 'Removed public self command did not fail with exit 2'
           }
           $selfStatus = $selfStatusJson | ConvertFrom-Json
-          if (-not $selfStatus.ok -or $selfStatus.data.status -ne 'clean') {
-            throw "Checked-in package is not clean: $($selfStatus.data.status)"
+          if ($selfStatus.ok -or $selfStatus.errors[0].code -ne 'invalid_command') {
+            throw 'Removed public self command did not return invalid_command'
           }
           python task-governance-tool/scripts/taskgov.py task next --help
           python task-governance-tool/scripts/taskgov.py handoff --help
@@ -95,7 +103,11 @@ jobs:
             "$skillRoot/agents/openai.yaml",
             "$skillRoot/scripts/taskgov.py",
             "$skillRoot/scripts/task_governance_tool/__init__.py",
+            "$skillRoot/scripts/task_governance_tool/backup.py",
             "$skillRoot/scripts/task_governance_tool/cli.py",
+            "$skillRoot/scripts/task_governance_tool/doctor.py",
+            "$skillRoot/scripts/task_governance_tool/project_scope.py",
+            "$skillRoot/scripts/task_governance_tool/setup.py",
             "$skillRoot/scripts/task_governance_tool/storage.py",
             "$skillRoot/scripts/task_governance_tool/tasks.py",
             "$skillRoot/scripts/task_governance_tool/ordering.py",
@@ -128,8 +140,8 @@ jobs:
           if ($runtimeInit -notmatch '__version__\s*=\s*"0\.7\.0"') {
             throw 'Runtime package version is not 0.7.0'
           }
-          if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*9') {
-            throw 'Runtime schema version is not 9'
+          if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*10') {
+            throw 'Runtime schema version is not 10'
           }
           if ($viewer -notmatch 'SNAPSHOT_VERSION\s*=\s*3') {
             throw 'Viewer snapshot version is not 3'

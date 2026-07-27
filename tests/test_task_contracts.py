@@ -8,6 +8,12 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 
+from tests.m14_test_support import (
+    initialize_taskgov_internal,
+    remove_v10_maintenance_for_test,
+    run_taskgov_internal,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -26,14 +32,7 @@ from task_governance_tool.tasks import edit_task  # noqa: E402
 
 
 def run_taskgov(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal(*args)
 
 
 def json_command(*args):
@@ -42,17 +41,7 @@ def json_command(*args):
 
 
 def init_db(db, repo):
-    result, payload = json_command(
-        "db",
-        "init",
-        "--repo",
-        str(repo),
-        "--db",
-        str(db),
-    )
-    if result.returncode != 0:
-        raise AssertionError(result.stderr or result.stdout)
-    return payload
+    return initialize_taskgov_internal(repo=repo, db=db)
 
 
 def add_task(db, repo, title, *extra):
@@ -1034,6 +1023,7 @@ class TaskContractMigrationTests(unittest.TestCase):
             self.assertEqual(handoff_result.returncode, 0, handoff_result.stderr)
             handoff_id = handoff["data"]["handoff"]["handoff_id"]
             with closing(connect(db)) as connection:
+                remove_v10_maintenance_for_test(connection)
                 connection.execute("DELETE FROM schema_migrations WHERE version = 9")
                 connection.execute("DROP TABLE task_effort_bases")
                 connection.execute("DROP TABLE task_effort_activity")

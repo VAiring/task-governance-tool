@@ -48,20 +48,22 @@ from task_governance_tool.handoffs import (
 )
 from task_governance_tool.storage import (
     DATABASE_BUSY_MESSAGE,
-    StatusResult,
+    DatabaseTarget,
     StorageError,
     begin_initialized_write,
     connect_initialized,
     connect_initialized_readonly,
     connect_snapshot_readonly,
-    initialize_database,
-    inspect_database,
+    count_tasks,
     is_sqlite_busy_or_locked,
-    lexical_skill_root_from_script,
     operational_sqlite_error,
     resolve_database_target,
     skill_root_from_script,
-    uses_unsupported_linked_install,
+)
+from task_governance_tool.doctor import run_doctor
+from task_governance_tool.project_scope import (
+    STRUCTURAL_CODES,
+    inspect_project_scope,
 )
 from task_governance_tool.selection import select_next_tasks
 from task_governance_tool.reviews import (
@@ -71,7 +73,7 @@ from task_governance_tool.reviews import (
     resolve_review_finding,
     set_requested_review_target,
 )
-from task_governance_tool.self_status import inspect_local_package
+from task_governance_tool.setup import run_setup
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
     TaskRepositoryError,
@@ -106,10 +108,11 @@ BOUNDED_DIAGNOSTIC_OMISSION_MESSAGE = (
 class CommandContext:
     command: str
     repo: str
-    db: str | None
+    repo_explicit: bool
     json_output: bool
     read_only: bool
     args: argparse.Namespace
+    target_override: DatabaseTarget | None = None
 
 
 @dataclass(frozen=True)
@@ -118,7 +121,6 @@ class CommandResult:
     command: str
     data: dict[str, Any] = field(default_factory=dict)
     project_id: str | None = None
-    db_path: str | None = None
     warnings: list[dict[str, str]] = field(default_factory=list)
     errors: list[dict[str, str]] = field(default_factory=list)
     text: str = ""
@@ -129,7 +131,6 @@ class CommandResult:
             "ok": self.ok,
             "command": self.command,
             "project_id": self.project_id,
-            "db_path": self.db_path,
             "data": self.data,
             "warnings": self.warnings,
             "errors": self.errors,
@@ -138,7 +139,23 @@ class CommandResult:
 
 class TaskgovArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
-        raise CommandLineError("invalid_argument", message)
+        raise CommandLineError("invalid_argument", "arguments are invalid")
+
+    def _check_value(self, action: argparse.Action, value: Any) -> None:
+        if (
+            isinstance(action, RootCommandSubparsersAction)
+            and value not in action.choices
+        ):
+            raise CommandLineError(
+                "invalid_command",
+                "command is not available",
+                exit_code=EXIT_TOOL_ERROR,
+            )
+        super()._check_value(action, value)
+
+
+class RootCommandSubparsersAction(argparse._SubParsersAction):
+    """Marker for fixed, non-echoing root-command validation."""
 
 
 class CommandLineError(Exception):
@@ -184,11 +201,10 @@ def serialized_json_size(result: CommandResult, data: dict[str, Any]) -> int:
 
 def diagnostic_identity_candidates(
     result: CommandResult,
-) -> tuple[CommandResult, CommandResult, CommandResult]:
+) -> tuple[CommandResult, CommandResult]:
     return (
         result,
-        replace(result, db_path=None),
-        replace(result, project_id=None, db_path=None),
+        replace(result, project_id=None),
     )
 
 
@@ -250,7 +266,6 @@ def fit_bounded_json_result(
         ok=False,
         command=result.command,
         project_id=None,
-        db_path=None,
         data={},
         errors=[
             {
@@ -263,10 +278,18 @@ def fit_bounded_json_result(
     return emergency
 
 
-def error_result(command: str, code: str, message: str, exit_code: int) -> CommandResult:
+def error_result(
+    command: str,
+    code: str,
+    message: str,
+    exit_code: int,
+    *,
+    project_id: str | None = None,
+) -> CommandResult:
     return CommandResult(
         ok=False,
         command=command,
+        project_id=project_id,
         errors=[{"code": code, "message": message}],
         exit_code=exit_code,
     )
@@ -288,7 +311,6 @@ def add_common_options(parser: argparse.ArgumentParser) -> None:
         default=argparse.SUPPRESS,
         help="target project root; defaults to current directory",
     )
-    parser.add_argument("--db", default=argparse.SUPPRESS, help="explicit SQLite database path")
     parser.add_argument(
         "--json",
         action="store_true",
@@ -310,21 +332,38 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     add_common_options(parser)
-
-    subparsers = parser.add_subparsers(dest="command")
-
-    db_parser = subparsers.add_parser("db", help="database commands")
-    db_subparsers = db_parser.add_subparsers(dest="db_command")
-    add_common_options(db_subparsers.add_parser("init", help="create or migrate the task database"))
-    add_common_options(db_subparsers.add_parser("status", help="inspect database status without mutation"))
-
-    self_parser = subparsers.add_parser("self", help="installed package inspection commands")
-    self_subparsers = self_parser.add_subparsers(dest="self_command")
-    self_status_parser = self_subparsers.add_parser(
-        "status",
-        help="compare packaged core files with the release manifest",
+    parser.register(
+        "action",
+        "root_command_parsers",
+        RootCommandSubparsersAction,
     )
-    add_common_options(self_status_parser)
+
+    subparsers = parser.add_subparsers(
+        dest="command",
+        action="root_command_parsers",
+    )
+
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help="initialize, migrate, and configure local project state",
+    )
+    add_common_options(setup_parser)
+    setup_parser.add_argument(
+        "--backup-interval-minutes",
+        type=int,
+        default=None,
+    )
+    setup_parser.add_argument(
+        "--backup-generations",
+        type=int,
+        default=None,
+    )
+
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="inspect package and project readiness without writing",
+    )
+    add_common_options(doctor_parser)
 
     task_parser = subparsers.add_parser("task", help="task commands")
     task_subparsers = task_parser.add_subparsers(dest="task_command")
@@ -569,10 +608,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def command_name(args: argparse.Namespace) -> str:
-    if args.command == "db" and args.db_command:
-        return f"db.{args.db_command}"
-    if args.command == "self" and args.self_command:
-        return f"self.{args.self_command}"
     if args.command == "task" and args.task_command:
         return f"task.{args.task_command}"
     if args.command == "handoff" and args.handoff_command:
@@ -586,34 +621,60 @@ def command_name(args: argparse.Namespace) -> str:
     return "help"
 
 
-def make_context(args: argparse.Namespace) -> CommandContext:
+def make_context(
+    args: argparse.Namespace,
+    *,
+    target_override: DatabaseTarget | None = None,
+) -> CommandContext:
     return CommandContext(
         command=command_name(args),
         repo=getattr(args, "repo", "."),
-        db=getattr(args, "db", None),
+        repo_explicit=hasattr(args, "repo"),
         json_output=bool(getattr(args, "json", False)),
         read_only=bool(getattr(args, "read_only", False)),
         args=args,
+        target_override=target_override,
+    )
+
+
+def resolve_context_target(context: CommandContext) -> DatabaseTarget:
+    if context.target_override is not None:
+        return context.target_override
+    return resolve_database_target(
+        repo=context.repo,
+        db=None,
+        script_path=cli_script_path(),
     )
 
 
 def handle_command(context: CommandContext) -> CommandResult:
-    if (
-        context.command != "self.status"
-        and uses_unsupported_linked_install(cli_script_path())
-    ):
-        return error_result(
-            context.command,
-            "unsupported_install_layout",
-            "stateful commands require a physical project-scoped skill copy",
-            EXIT_TOOL_ERROR,
+    if context.command == "setup":
+        return handle_setup(context)
+    if context.command == "doctor":
+        return handle_doctor(context)
+
+    if context.target_override is None:
+        scope_inspection = inspect_project_scope(
+            repo=context.repo,
+            repo_explicit=context.repo_explicit,
+            script_path=cli_script_path(),
+            include_runtime=False,
+            include_package=False,
+            include_ignore=False,
         )
-    if context.command == "db.init":
-        return handle_db_init(context)
-    if context.command == "db.status":
-        return handle_db_status(context)
-    if context.command == "self.status":
-        return handle_self_status(context)
+        scope_issue = scope_inspection.first_issue(allowed_codes=STRUCTURAL_CODES)
+        if scope_issue is not None:
+            return error_result(
+                context.command,
+                scope_issue.code,
+                scope_issue.message,
+                EXIT_TOOL_ERROR,
+                project_id=(
+                    scope_inspection.scope.target.project.project_id
+                    if scope_inspection.scope is not None
+                    else None
+                ),
+            )
     if context.command == "task.add":
         return handle_task_add(context)
     if context.command == "task.list":
@@ -659,58 +720,63 @@ def cli_script_path() -> Path:
     return _CLI_SCRIPT_PATH
 
 
-def self_status_text(data: dict[str, Any]) -> str:
-    lines = [
-        f"Package: {data['package_name']} {data['package_version']}",
-        f"Release origin: {data['release_origin'] or 'unknown'}",
-        f"Manifest version: {data['manifest_version'] if data['manifest_version'] is not None else 'unknown'}",
-        f"Status: {data['status']}",
-        f"Changed core files: {data['changed_core_count']}",
-    ]
-    if data["changed_core_paths"]:
-        lines.append("Changed paths:")
-        lines.extend(f"- {path}" for path in data["changed_core_paths"])
-        if data["changed_core_paths_truncated"]:
-            lines.append("- ...")
-    if data["unknown_reasons"]:
-        lines.append(f"Unknown reasons: {', '.join(data['unknown_reasons'])}")
-    lines.append(f"Suggested action: {data['suggested_action']}")
-    return "\n".join(lines)
-
-
-def handle_self_status(context: CommandContext) -> CommandResult:
-    script_path = cli_script_path()
-    package_status = inspect_local_package(
-        lexical_skill_root_from_script(script_path),
-        installed_version=__version__,
-        unsupported_install_layout=uses_unsupported_linked_install(script_path),
+def handle_setup(context: CommandContext) -> CommandResult:
+    service_result = run_setup(
+        repo=context.repo,
+        repo_explicit=context.repo_explicit,
+        script_path=cli_script_path(),
+        read_only=context.read_only,
+        backup_interval_minutes=getattr(
+            context.args,
+            "backup_interval_minutes",
+            None,
+        ),
+        backup_generations=getattr(
+            context.args,
+            "backup_generations",
+            None,
+        ),
     )
-    data = package_status.to_data()
-    warnings: list[dict[str, str]] = []
-    if package_status.status == "modified":
-        warnings.append(
-            {
-                "code": "package_core_modified",
-                "message": (
-                    f"{package_status.changed_core_count} packaged core file(s) "
-                    "differ from the release manifest; continue current task"
-                ),
-            }
-        )
-    elif package_status.status == "unknown":
-        warnings.append(
-            {
-                "code": "package_status_unknown",
-                "message": "package self-status is unknown; continue current task",
-            }
-        )
     return CommandResult(
-        ok=True,
+        ok=service_result.ok,
         command=context.command,
-        data=data,
-        warnings=warnings,
-        text=self_status_text(data),
-        exit_code=EXIT_SUCCESS,
+        project_id=service_result.project_id,
+        data=service_result.data,
+        errors=(
+            [
+                {
+                    "code": service_result.error_code,
+                    "message": service_result.error_message,
+                }
+            ]
+            if service_result.error_code is not None
+            and service_result.error_message is not None
+            else []
+        ),
+        text=service_result.text,
+        exit_code=(
+            EXIT_SUCCESS if service_result.ok else EXIT_TOOL_ERROR
+        ),
+    )
+
+
+def handle_doctor(context: CommandContext) -> CommandResult:
+    service_result = run_doctor(
+        repo=context.repo,
+        repo_explicit=context.repo_explicit,
+        script_path=cli_script_path(),
+    )
+    return CommandResult(
+        ok=service_result.ok,
+        command=context.command,
+        project_id=service_result.project_id,
+        data=service_result.data,
+        warnings=service_result.warnings,
+        errors=service_result.errors,
+        text=service_result.text,
+        exit_code=(
+            EXIT_SUCCESS if service_result.ok else EXIT_TOOL_ERROR
+        ),
     )
 
 
@@ -730,7 +796,6 @@ def web_export_failure_result(
     context: CommandContext,
     *,
     project_id: str,
-    db_path: str,
     output_path: str | None,
     code: str,
     message: str,
@@ -740,7 +805,6 @@ def web_export_failure_result(
         ok=False,
         command=context.command,
         project_id=project_id,
-        db_path=db_path,
         data=web_export_empty_data(output_path),
         errors=[{"code": code, "message": message}],
         exit_code=exit_code,
@@ -766,9 +830,8 @@ def viewer_error_exit_code(code: str) -> int:
 
 def handle_web_export(context: CommandContext) -> CommandResult:
     script_path = cli_script_path()
-    target = resolve_database_target(repo=context.repo, db=context.db, script_path=script_path)
+    target = resolve_context_target(context)
     project_id = target.project.project_id
-    db_path = str(target.db_path)
     try:
         output_target = resolve_viewer_output_target(
             output=getattr(context.args, "output", None),
@@ -779,7 +842,6 @@ def handle_web_export(context: CommandContext) -> CommandResult:
         return web_export_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             output_path=None,
             code=exc.code,
             message=exc.message,
@@ -795,7 +857,6 @@ def handle_web_export(context: CommandContext) -> CommandResult:
         return web_export_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             output_path=output_path,
             code=exc.code,
             message=exc.message,
@@ -805,7 +866,6 @@ def handle_web_export(context: CommandContext) -> CommandResult:
         return web_export_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             output_path=output_path,
             code=exc.code,
             message=exc.message,
@@ -815,7 +875,6 @@ def handle_web_export(context: CommandContext) -> CommandResult:
         return web_export_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             output_path=output_path,
             code="internal_error",
             message="could not read viewer snapshot",
@@ -825,7 +884,6 @@ def handle_web_export(context: CommandContext) -> CommandResult:
         return web_export_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             output_path=output_path,
             code="internal_error",
             message="viewer snapshot could not be rendered",
@@ -842,7 +900,6 @@ def handle_web_export(context: CommandContext) -> CommandResult:
             return web_export_failure_result(
                 context,
                 project_id=project_id,
-                db_path=db_path,
                 output_path=output_path,
                 code=exc.code,
                 message=exc.message,
@@ -862,169 +919,8 @@ def handle_web_export(context: CommandContext) -> CommandResult:
         ok=True,
         command=context.command,
         project_id=project_id,
-        db_path=db_path,
         data=data,
         text=web_export_text(data),
-        exit_code=EXIT_SUCCESS,
-    )
-
-
-def handle_db_init(context: CommandContext) -> CommandResult:
-    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
-    if context.read_only:
-        return CommandResult(
-            ok=False,
-            command=context.command,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            errors=[
-                {
-                    "code": "invalid_argument",
-                    "message": "db init cannot run with --read-only because it writes the database",
-                }
-            ],
-            exit_code=EXIT_USAGE,
-        )
-
-    try:
-        result = initialize_database(target)
-    except StorageError as exc:
-        return CommandResult(
-            ok=False,
-            command=context.command,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            errors=[{"code": exc.code, "message": exc.message}],
-            exit_code=EXIT_TOOL_ERROR,
-        )
-
-    data = {
-        "created": result.created,
-        "migrations_applied": result.migrations_applied,
-        "schema_version": result.schema_version,
-    }
-    action = "created" if result.created else "initialized"
-    return CommandResult(
-        ok=True,
-        command=context.command,
-        project_id=target.project.project_id,
-        db_path=str(target.db_path),
-        data=data,
-        warnings=result.warnings,
-        text=(
-            f"DB {action}: {target.db_path}\n"
-            f"Project: {target.project.project_id}\n"
-            f"Schema version: {result.schema_version}\n"
-            f"Migrations applied: {', '.join(str(v) for v in result.migrations_applied) or 'none'}"
-        ),
-        exit_code=EXIT_SUCCESS,
-    )
-
-
-def status_data(
-    status: StatusResult,
-    effort_profile: EffortProfile | None = None,
-) -> dict[str, Any]:
-    data = {
-        "exists": status.exists,
-        "needs_init": status.needs_init,
-        "needs_migration": status.needs_migration,
-        "schema_version": status.schema_version,
-        "counts": status.counts,
-        "handoff_delivery": {
-            "adapter_enabled": False,
-            "sync_due": False,
-        },
-    }
-    if effort_profile is not None and effort_profile.enabled:
-        data["effort_advisory"] = {
-            "enabled": True,
-            "profile": effort_profile.profile_id,
-            "profile_hash": effort_profile.profile_hash,
-        }
-    elif (
-        effort_profile is not None
-        and effort_profile.present
-        and not effort_profile.valid
-    ):
-        data["effort_advisory"] = {
-            "enabled": False,
-            "configuration": "invalid",
-        }
-    return data
-
-
-def status_text(
-    status: StatusResult,
-    effort_profile: EffortProfile | None = None,
-) -> str:
-    schema_version = status.schema_version if status.schema_version is not None else "none"
-    if status.needs_init:
-        state = "needs init"
-    elif status.needs_migration:
-        state = "needs migration"
-    elif status.error_code:
-        state = status.error_code.replace("_", " ")
-    else:
-        state = "ready"
-    counts = status.counts
-    text = (
-        f"DB: {status.target.db_path}\n"
-        f"Project: {status.target.project.project_id}\n"
-        f"Status: {state}\n"
-        f"Schema version: {schema_version}\n"
-        f"Active: {counts['active']}  Paused: {counts['paused']}  "
-        f"Blocked: {counts['blocked']}  "
-        f"Review pending: {counts['review_pending']}  Done: {counts['done']}\n"
-        f"Next actionable: {counts['next_actionable']}\n"
-        f"Pending handoffs: {counts['handoff_pending']}  "
-        "Adapter enabled: false  Sync due: false"
-    )
-    if effort_profile is not None and effort_profile.enabled:
-        text += f"\nEffort advisory: enabled ({effort_profile.profile_id})"
-    elif (
-        effort_profile is not None
-        and effort_profile.present
-        and not effort_profile.valid
-    ):
-        text += "\nEffort advisory: disabled (invalid configuration)"
-    return text
-
-
-def handle_db_status(context: CommandContext) -> CommandResult:
-    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
-    status = inspect_database(target)
-    effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
-    effort_warnings = []
-    if effort_profile.present and not effort_profile.valid:
-        effort_warnings.append(
-            {
-                "code": "effort_advisory_profile_invalid",
-                "message": "Effort Advisory configuration is invalid; advisory remains disabled.",
-                "suggested_action": "continue",
-            }
-        )
-    if status.error_code:
-        return CommandResult(
-            ok=False,
-            command=context.command,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            data=status_data(status, effort_profile),
-            warnings=effort_warnings,
-            errors=[{"code": status.error_code, "message": status.error_message or status.error_code}],
-            text=status_text(status, effort_profile),
-            exit_code=EXIT_TOOL_ERROR,
-        )
-
-    return CommandResult(
-        ok=True,
-        command=context.command,
-        project_id=target.project.project_id,
-        db_path=str(target.db_path),
-        data=status_data(status, effort_profile),
-        warnings=effort_warnings,
-        text=status_text(status, effort_profile),
         exit_code=EXIT_SUCCESS,
     )
 
@@ -1059,7 +955,6 @@ def validation_failure_result(
     context: CommandContext,
     *,
     project_id: str | None,
-    db_path: str | None,
     exc: TaskValidationError | TaskRepositoryError,
 ) -> CommandResult:
     exit_code = EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE
@@ -1067,7 +962,6 @@ def validation_failure_result(
         ok=False,
         command=context.command,
         project_id=project_id,
-        db_path=db_path,
         errors=[{"code": exc.code, "message": exc.message}],
         exit_code=exit_code,
     )
@@ -1097,13 +991,12 @@ def task_add_text(
 
 
 def handle_task_add(context: CommandContext) -> CommandResult:
-    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    target = resolve_context_target(context)
     if context.read_only:
         return CommandResult(
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             errors=[
                 {
                     "code": "invalid_argument",
@@ -1129,14 +1022,12 @@ def handle_task_add(context: CommandContext) -> CommandResult:
         return validation_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             exc=exc,
         )
     except TaskRepositoryError as exc:
         return validation_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             exc=exc,
         )
     except StorageError as exc:
@@ -1144,7 +1035,6 @@ def handle_task_add(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_TOOL_ERROR,
         )
@@ -1157,7 +1047,6 @@ def handle_task_add(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             errors=[{"code": mapped.code, "message": mapped.message}],
             exit_code=EXIT_TOOL_ERROR,
         )
@@ -1169,7 +1058,6 @@ def handle_task_add(context: CommandContext) -> CommandResult:
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
-        db_path=str(target.db_path),
         data=data,
         text=task_add_text(result.task, result.event, result.contract_write),
         exit_code=EXIT_SUCCESS,
@@ -1203,7 +1091,7 @@ def task_list_text(tasks: list[dict[str, Any]], count: int, limit: int) -> str:
 
 
 def handle_task_list(context: CommandContext) -> CommandResult:
-    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    target = resolve_context_target(context)
     try:
         with closing(connect_initialized_readonly(target)) as connection:
             result = list_tasks(connection, target.project, **task_list_input(context.args))
@@ -1211,7 +1099,6 @@ def handle_task_list(context: CommandContext) -> CommandResult:
         return validation_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             exc=exc,
         )
     except StorageError as exc:
@@ -1219,7 +1106,6 @@ def handle_task_list(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data={"tasks": [], "count": 0, "limit": 0},
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_TOOL_ERROR,
@@ -1235,7 +1121,6 @@ def handle_task_list(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data={"tasks": [], "count": 0, "limit": 0},
             errors=[{"code": code, "message": message}],
             exit_code=EXIT_TOOL_ERROR,
@@ -1246,7 +1131,6 @@ def handle_task_list(context: CommandContext) -> CommandResult:
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
-        db_path=str(target.db_path),
         data=data,
         text=task_list_text(result.tasks, result.count, result.limit),
         exit_code=EXIT_SUCCESS,
@@ -1270,7 +1154,6 @@ def task_next_failure_result(
     context: CommandContext,
     *,
     project_id: str | None,
-    db_path: str | None,
     code: str,
     message: str,
     exit_code: int,
@@ -1284,7 +1167,6 @@ def task_next_failure_result(
         ok=False,
         command=context.command,
         project_id=project_id,
-        db_path=db_path,
         data=data,
         errors=[{"code": code, "message": message}],
         exit_code=exit_code,
@@ -1312,26 +1194,18 @@ def task_next_text(
 
 
 def handle_task_next(context: CommandContext) -> CommandResult:
-    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
-    status = inspect_database(target)
-    if status.error_code:
-        return task_next_failure_result(
-            context,
-            project_id=target.project.project_id,
-            db_path=str(target.db_path),
-            code=status.error_code,
-            message=status.error_message or status.error_code,
-            exit_code=EXIT_TOOL_ERROR,
-        )
-
+    target = resolve_context_target(context)
     try:
         with closing(connect_initialized_readonly(target)) as connection:
             result = select_next_tasks(connection, target.project, **task_next_input(context.args))
+            paused_count = count_tasks(
+                connection,
+                target.project.project_id,
+            )["paused"]
     except TaskValidationError as exc:
         return task_next_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             code=exc.code,
             message=exc.message,
             exit_code=EXIT_USAGE,
@@ -1340,7 +1214,6 @@ def handle_task_next(context: CommandContext) -> CommandResult:
         return task_next_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             code=exc.code,
             message=exc.message,
             exit_code=EXIT_TOOL_ERROR,
@@ -1350,7 +1223,6 @@ def handle_task_next(context: CommandContext) -> CommandResult:
         return task_next_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             code=code,
             message=(
                 DATABASE_BUSY_MESSAGE
@@ -1367,7 +1239,7 @@ def handle_task_next(context: CommandContext) -> CommandResult:
         "selection_rules": result.selection_rules,
     }
     warnings = []
-    paused_count = int(status.counts["paused"])
+    paused_count = int(paused_count)
     if paused_count > 0:
         paused_summary = (
             "1 paused task exists"
@@ -1387,7 +1259,6 @@ def handle_task_next(context: CommandContext) -> CommandResult:
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
-        db_path=str(target.db_path),
         data=data,
         warnings=warnings,
         text=task_next_text(result.tasks, result.count, result.limit, warnings),
@@ -1417,7 +1288,6 @@ def handle_task_next(context: CommandContext) -> CommandResult:
             return task_next_failure_result(
                 context,
                 project_id=target.project.project_id,
-                db_path=str(target.db_path),
                 code="internal_error",
                 message="could not build compact next-task output",
                 exit_code=EXIT_TOOL_ERROR,
@@ -1457,7 +1327,7 @@ def task_current_text(tasks: list[dict[str, Any]], count: int, limit: int) -> st
 
 
 def handle_task_current(context: CommandContext) -> CommandResult:
-    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    target = resolve_context_target(context)
     try:
         status_filter = validate_current_status_filter(
             getattr(context.args, "status", None)
@@ -1467,7 +1337,6 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data=task_current_result_data(context),
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_USAGE,
@@ -1488,7 +1357,6 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data=task_current_result_data(context, effective_statuses),
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_USAGE,
@@ -1498,7 +1366,6 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data=task_current_result_data(context, effective_statuses),
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_TOOL_ERROR,
@@ -1509,7 +1376,6 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data=task_current_result_data(context, effective_statuses),
             errors=[
                 {
@@ -1533,7 +1399,6 @@ def handle_task_current(context: CommandContext) -> CommandResult:
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
-        db_path=str(target.db_path),
         data=data,
         text=task_current_text(result.tasks, result.count, result.limit),
         exit_code=EXIT_SUCCESS,
@@ -1565,7 +1430,6 @@ def handle_task_current(context: CommandContext) -> CommandResult:
                 ok=False,
                 command=context.command,
                 project_id=target.project.project_id,
-                db_path=str(target.db_path),
                 data=compact_current_empty_data(effective_statuses),
                 errors=[
                     {
@@ -1635,7 +1499,7 @@ def task_effort_text(data: dict[str, Any]) -> str:
 
 
 def handle_task_effort(context: CommandContext) -> CommandResult:
-    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    target = resolve_context_target(context)
     raw_task_id = getattr(context.args, "task_id", "")
     try:
         task_id = validate_task_id(raw_task_id)
@@ -1652,7 +1516,6 @@ def handle_task_effort(context: CommandContext) -> CommandResult:
         return validation_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             exc=exc,
         )
     except EffortAdvisoryError as exc:
@@ -1660,7 +1523,6 @@ def handle_task_effort(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data=task_effort_empty_data(task_id),
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_USAGE if exc.code == "not_found" else EXIT_TOOL_ERROR,
@@ -1670,7 +1532,6 @@ def handle_task_effort(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data=task_effort_empty_data(raw_task_id),
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_TOOL_ERROR,
@@ -1681,7 +1542,6 @@ def handle_task_effort(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data=task_effort_empty_data(raw_task_id),
             errors=[
                 {
@@ -1700,7 +1560,6 @@ def handle_task_effort(context: CommandContext) -> CommandResult:
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
-        db_path=str(target.db_path),
         data=result.data,
         warnings=result.warnings,
         text=task_effort_text(result.data),
@@ -1768,7 +1627,7 @@ def task_show_text(
 
 
 def handle_task_show(context: CommandContext) -> CommandResult:
-    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    target = resolve_context_target(context)
     try:
         with closing(connect_initialized_readonly(target)) as connection:
             result = show_task(connection, target.project, getattr(context.args, "task_id", ""))
@@ -1776,7 +1635,6 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         return validation_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             exc=exc,
         )
     except TaskRepositoryError as exc:
@@ -1785,7 +1643,6 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                 ok=False,
                 command=context.command,
                 project_id=target.project.project_id,
-                db_path=str(target.db_path),
                 data={
                     "task": None,
                     "events": [],
@@ -1800,7 +1657,6 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         return validation_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             exc=exc,
         )
     except HandoffError:
@@ -1808,7 +1664,6 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data={
                 "task": None,
                 "events": [],
@@ -1825,7 +1680,6 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data={
                 "task": None,
                 "events": [],
@@ -1843,7 +1697,6 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             data={
                 "task": None,
                 "events": [],
@@ -1890,7 +1743,6 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
-        db_path=str(target.db_path),
         data=data,
         warnings=warnings,
         text=task_show_text(
@@ -1949,7 +1801,6 @@ def task_edit_failure_result(
     context: CommandContext,
     *,
     project_id: str | None,
-    db_path: str | None,
     code: str,
     message: str,
     exit_code: int,
@@ -1958,7 +1809,6 @@ def task_edit_failure_result(
         ok=False,
         command=context.command,
         project_id=project_id,
-        db_path=db_path,
         data=task_edit_empty_data(),
         errors=[{"code": code, "message": message}],
         exit_code=exit_code,
@@ -1996,12 +1846,11 @@ def task_edit_text(
 
 
 def handle_task_edit(context: CommandContext) -> CommandResult:
-    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    target = resolve_context_target(context)
     if context.read_only:
         return task_edit_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             code="invalid_argument",
             message="task edit cannot run with --read-only because it writes the database",
             exit_code=EXIT_USAGE,
@@ -2024,7 +1873,6 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
         return task_edit_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             code=exc.code,
             message=exc.message,
             exit_code=EXIT_USAGE,
@@ -2034,7 +1882,6 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
         return task_edit_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             code=exc.code,
             message=exc.message,
             exit_code=exit_code,
@@ -2043,7 +1890,6 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
         return task_edit_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             code=exc.code,
             message=exc.message,
             exit_code=EXIT_TOOL_ERROR,
@@ -2056,7 +1902,6 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
         return task_edit_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             code=mapped.code,
             message=mapped.message,
             exit_code=EXIT_TOOL_ERROR,
@@ -2069,7 +1914,6 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
-        db_path=str(target.db_path),
         data=data,
         text=task_edit_text(
             result.task,
@@ -2167,7 +2011,6 @@ def task_complete_failure_result(
     context: CommandContext,
     *,
     project_id: str | None,
-    db_path: str | None,
     task_id: str | None,
     code: str,
     message: str,
@@ -2182,7 +2025,6 @@ def task_complete_failure_result(
         ok=False,
         command=context.command,
         project_id=project_id,
-        db_path=db_path,
         data=data,
         errors=[{"code": code, "message": message}],
         exit_code=exit_code,
@@ -2193,7 +2035,6 @@ def completion_domain_error_result(
     context: CommandContext,
     *,
     project_id: str | None,
-    db_path: str | None,
     task_id: str | None,
     exc: TaskValidationError | TaskRepositoryError,
 ) -> CommandResult:
@@ -2205,7 +2046,6 @@ def completion_domain_error_result(
     return task_complete_failure_result(
         context,
         project_id=project_id,
-        db_path=db_path,
         task_id=task_id,
         code=exc.code,
         message=exc.message,
@@ -2230,7 +2070,6 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
                 return completion_domain_error_result(
                     context,
                     project_id=None,
-                    db_path=None,
                     task_id=None,
                     exc=task_id_error,
                 )
@@ -2248,21 +2087,15 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
             return completion_domain_error_result(
                 context,
                 project_id=None,
-                db_path=None,
                 task_id=None,
                 exc=exc,
             )
 
-    target = resolve_database_target(
-        repo=context.repo,
-        db=context.db,
-        script_path=cli_script_path(),
-    )
+    target = resolve_context_target(context)
     if context.read_only and not check_only:
         return task_complete_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             task_id=request.task_id,
             code="invalid_argument",
             message=(
@@ -2289,7 +2122,6 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
                 ok=True,
                 command=context.command,
                 project_id=target.project.project_id,
-                db_path=str(target.db_path),
                 data=data,
                 text=task_completion_check_text(data),
                 exit_code=EXIT_SUCCESS,
@@ -2309,7 +2141,6 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
         return completion_domain_error_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             task_id=request.task_id,
             exc=exc,
         )
@@ -2317,7 +2148,6 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
         return task_complete_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             task_id=request.task_id,
             code=exc.code,
             message=exc.message,
@@ -2335,7 +2165,6 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
         return task_complete_failure_result(
             context,
             project_id=target.project.project_id,
-            db_path=str(target.db_path),
             task_id=request.task_id,
             code=mapped.code,
             message=mapped.message,
@@ -2351,7 +2180,6 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
-        db_path=str(target.db_path),
         data=data,
         text=task_edit_text(
             result.task,
@@ -2391,7 +2219,6 @@ def handoff_failure_result(
     context: CommandContext,
     *,
     project_id: str,
-    db_path: str,
     code: str,
     message: str,
     exit_code: int,
@@ -2400,7 +2227,6 @@ def handoff_failure_result(
         ok=False,
         command=context.command,
         project_id=project_id,
-        db_path=db_path,
         data=handoff_empty_data(context.command),
         errors=[{"code": code, "message": message}],
         exit_code=exit_code,
@@ -2461,7 +2287,6 @@ def _handle_handoff_record(
     *,
     target: Any,
     project_id: str,
-    db_path: str,
 ) -> CommandResult:
     result = None
     for attempt in range(2):
@@ -2487,7 +2312,6 @@ def _handle_handoff_record(
             return handoff_failure_result(
                 context,
                 project_id=project_id,
-                db_path=db_path,
                 code=exc.code,
                 message=exc.message,
                 exit_code=exit_code,
@@ -2498,7 +2322,6 @@ def _handle_handoff_record(
             return handoff_failure_result(
                 context,
                 project_id=project_id,
-                db_path=db_path,
                 code=exc.code,
                 message=exc.message,
                 exit_code=EXIT_TOOL_ERROR,
@@ -2513,7 +2336,6 @@ def _handle_handoff_record(
             return handoff_failure_result(
                 context,
                 project_id=project_id,
-                db_path=db_path,
                 code=(
                     mapped.code
                     if mapped.code == "database_busy"
@@ -2530,7 +2352,6 @@ def _handle_handoff_record(
         return handoff_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             code="handoff_not_persisted",
             message="local handoff could not be persisted",
             exit_code=EXIT_TOOL_ERROR,
@@ -2548,7 +2369,6 @@ def _handle_handoff_record(
         ok=True,
         command=context.command,
         project_id=project_id,
-        db_path=db_path,
         data=data,
         text=handoff_text(context.command, data),
         exit_code=EXIT_SUCCESS,
@@ -2556,18 +2376,12 @@ def _handle_handoff_record(
 
 
 def handle_handoff_command(context: CommandContext) -> CommandResult:
-    target = resolve_database_target(
-        repo=context.repo,
-        db=context.db,
-        script_path=cli_script_path(),
-    )
+    target = resolve_context_target(context)
     project_id = target.project.project_id
-    db_path = str(target.db_path)
     if context.command in {"handoff.record", "handoff.withdraw"} and context.read_only:
         return handoff_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             code="invalid_argument",
             message=(
                 f"{context.command.replace('.', ' ')} cannot run with --read-only "
@@ -2580,7 +2394,6 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
             context,
             target=target,
             project_id=project_id,
-            db_path=db_path,
         )
 
     if context.command in {"handoff.list", "handoff.show"}:
@@ -2612,7 +2425,6 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
             return handoff_failure_result(
                 context,
                 project_id=project_id,
-                db_path=db_path,
                 code=exc.code,
                 message=exc.message,
                 exit_code=(
@@ -2623,7 +2435,6 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
             return handoff_failure_result(
                 context,
                 project_id=project_id,
-                db_path=db_path,
                 code=exc.code,
                 message=exc.message,
                 exit_code=EXIT_TOOL_ERROR,
@@ -2633,7 +2444,6 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
             return handoff_failure_result(
                 context,
                 project_id=project_id,
-                db_path=db_path,
                 code=code,
                 message=(
                     DATABASE_BUSY_MESSAGE
@@ -2661,7 +2471,6 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
             return handoff_failure_result(
                 context,
                 project_id=project_id,
-                db_path=db_path,
                 code=exc.code,
                 message=exc.message,
                 exit_code=(
@@ -2672,7 +2481,6 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
             return handoff_failure_result(
                 context,
                 project_id=project_id,
-                db_path=db_path,
                 code=exc.code,
                 message=exc.message,
                 exit_code=EXIT_TOOL_ERROR,
@@ -2685,7 +2493,6 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
             return handoff_failure_result(
                 context,
                 project_id=project_id,
-                db_path=db_path,
                 code=mapped.code,
                 message=mapped.message,
                 exit_code=EXIT_TOOL_ERROR,
@@ -2695,7 +2502,6 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
         ok=True,
         command=context.command,
         project_id=project_id,
-        db_path=db_path,
         data=data,
         text=handoff_text(context.command, data),
         exit_code=EXIT_SUCCESS,
@@ -2714,7 +2520,6 @@ def review_failure_result(
     context: CommandContext,
     *,
     project_id: str,
-    db_path: str,
     code: str,
     message: str,
     exit_code: int,
@@ -2723,7 +2528,6 @@ def review_failure_result(
         ok=False,
         command=context.command,
         project_id=project_id,
-        db_path=db_path,
         data=review_empty_data(context.command),
         errors=[{"code": code, "message": message}],
         exit_code=exit_code,
@@ -2762,14 +2566,12 @@ def review_text(command: str, data: dict[str, Any]) -> str:
 
 
 def handle_review_command(context: CommandContext) -> CommandResult:
-    target = resolve_database_target(repo=context.repo, db=context.db, script_path=cli_script_path())
+    target = resolve_context_target(context)
     project_id = target.project.project_id
-    db_path = str(target.db_path)
     if context.read_only:
         return review_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             code="invalid_argument",
             message=f"{context.command.replace('.', ' ')} cannot run with --read-only because it writes the database",
             exit_code=EXIT_USAGE,
@@ -2829,7 +2631,6 @@ def handle_review_command(context: CommandContext) -> CommandResult:
         return review_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             code=exc.code,
             message=exc.message,
             exit_code=EXIT_USAGE,
@@ -2838,7 +2639,6 @@ def handle_review_command(context: CommandContext) -> CommandResult:
         return review_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             code=exc.code,
             message=exc.message,
             exit_code=EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE,
@@ -2847,7 +2647,6 @@ def handle_review_command(context: CommandContext) -> CommandResult:
         return review_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             code=exc.code,
             message=exc.message,
             exit_code=EXIT_TOOL_ERROR,
@@ -2860,7 +2659,6 @@ def handle_review_command(context: CommandContext) -> CommandResult:
         return review_failure_result(
             context,
             project_id=project_id,
-            db_path=db_path,
             code=mapped.code,
             message=mapped.message,
             exit_code=EXIT_TOOL_ERROR,
@@ -2870,7 +2668,6 @@ def handle_review_command(context: CommandContext) -> CommandResult:
         ok=True,
         command=context.command,
         project_id=project_id,
-        db_path=db_path,
         data=data,
         text=review_text(context.command, data),
         exit_code=EXIT_SUCCESS,
@@ -2904,18 +2701,28 @@ def lexical_json_requested(argv: Sequence[str]) -> bool:
     return False
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def lexical_removed_db_option(argv: Sequence[str]) -> bool:
+    return any(token == "--db" or token.startswith("--db=") for token in argv)
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    _target_override: DatabaseTarget | None = None,
+) -> int:
     raw_argv = tuple(argv if argv is not None else sys.argv[1:])
     parser = build_parser()
     try:
-        args = parser.parse_args(argv)
+        if lexical_removed_db_option(raw_argv):
+            raise CommandLineError(
+                "invalid_option",
+                "option is not available",
+                exit_code=EXIT_TOOL_ERROR,
+            )
+        args = parser.parse_args(raw_argv)
         if args.command is None:
             parser.print_help()
             return EXIT_SUCCESS
-        if args.command == "db" and args.db_command is None:
-            raise CommandLineError("invalid_argument", "db requires a subcommand: init or status")
-        if args.command == "self" and args.self_command is None:
-            raise CommandLineError("invalid_argument", "self requires a subcommand: status")
         if args.command == "task" and args.task_command is None:
             raise CommandLineError(
                 "invalid_argument",
@@ -2958,7 +2765,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         if args.command == "web" and args.web_command is None:
             raise CommandLineError("invalid_argument", "web requires a subcommand: export")
-        context = make_context(args)
+        context = make_context(args, target_override=_target_override)
         result = handle_command(context)
         return emit_result(
             result,
@@ -2967,6 +2774,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except CommandLineError as exc:
         json_output = lexical_json_requested(raw_argv)
+        if not json_output and exc.code in {"invalid_command", "invalid_option"}:
+            print(f"taskgov: {exc.message}", file=sys.stderr)
+            return exc.exit_code
         result = error_result("parse", exc.code, exc.message, exc.exit_code)
         return emit_result(
             result,

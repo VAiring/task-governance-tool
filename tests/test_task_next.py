@@ -8,6 +8,15 @@ from contextlib import closing
 from pathlib import Path
 
 from tests.review_test_helpers import seed_review_evidence
+from tests.m14_test_support import (
+    initialize_taskgov_internal,
+    run_taskgov_internal,
+)
+from task_governance_tool.storage import (
+    connect_initialized_readonly,
+    count_tasks,
+    resolve_database_target,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,21 +24,11 @@ SKILL_ROOT = ROOT / "task-governance-tool"
 
 
 def run_taskgov(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal(*args)
 
 
 def init_db(db, repo):
-    result = run_taskgov("db", "init", "--repo", str(repo), "--db", str(db), "--json")
-    if result.returncode != 0:
-        raise AssertionError(result.stderr or result.stdout)
-    return json.loads(result.stdout)
+    return initialize_taskgov_internal(repo=repo, db=db)
 
 
 def add_task(db, repo, title, *extra):
@@ -85,11 +84,14 @@ def next_tasks(db, repo, *extra):
     return json.loads(result.stdout)
 
 
-def db_status(db, repo):
-    result = run_taskgov("db", "status", "--repo", str(repo), "--db", str(db), "--json")
-    if result.returncode != 0:
-        raise AssertionError(result.stderr or result.stdout)
-    return json.loads(result.stdout)
+def database_counts(db, repo):
+    target = resolve_database_target(
+        repo=repo,
+        db=db,
+        script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+    )
+    with closing(connect_initialized_readonly(target)) as connection:
+        return count_tasks(connection, target.project.project_id)
 
 
 def show_task(db, repo, task_id):
@@ -127,14 +129,14 @@ class TaskNextTests(unittest.TestCase):
                 add_task(db, repo, f"Ready task {index}")
 
             payload = next_tasks(db, repo)
-            status = db_status(db, repo)
+            counts = database_counts(db, repo)
 
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["command"], "task.next")
             self.assertEqual(payload["data"]["count"], 5)
             self.assertEqual(payload["data"]["limit"], 5)
             self.assertEqual(len(payload["data"]["tasks"]), 5)
-            self.assertEqual(status["data"]["counts"]["next_actionable"], 6)
+            self.assertEqual(counts["next_actionable"], 6)
             self.assertEqual(payload["warnings"], [])
             self.assertEqual(payload["data"]["selection_rules"]["status"], "ready")
             self.assertEqual(
@@ -324,10 +326,10 @@ class TaskNextTests(unittest.TestCase):
             )
 
             payload = next_tasks(db, repo, "--limit", "10")
-            status = db_status(db, repo)
+            counts = database_counts(db, repo)
 
             self.assertEqual(titles(payload), ["Optional ready", "Done lane later"])
-            self.assertEqual(status["data"]["counts"]["next_actionable"], payload["data"]["count"])
+            self.assertEqual(counts["next_actionable"], payload["data"]["count"])
 
     def test_task_next_missing_db_does_not_create_files(self):
         with tempfile.TemporaryDirectory() as tmp:

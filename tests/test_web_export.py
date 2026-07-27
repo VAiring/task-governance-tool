@@ -12,6 +12,13 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.m14_test_support import (
+    initialize_taskgov_internal,
+    internal_command_context,
+    make_physical_install,
+    run_taskgov_internal,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -19,7 +26,7 @@ SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from task_governance_tool.cli import build_parser, handle_web_export, make_context  # noqa: E402
+from task_governance_tool.cli import handle_web_export  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
     apply_completion_commit_migration,
     apply_completion_evidence_migration,
@@ -47,34 +54,17 @@ from task_governance_tool.viewer import (  # noqa: E402
 
 
 def run_taskgov(*args, skill_root=SKILL_ROOT, isolated=False):
-    command = [sys.executable]
     if isolated:
-        command.extend(["-I", "-S"])
-    command.extend(["scripts/taskgov.py", *args])
-    return subprocess.run(
-        command,
+        raise AssertionError("use PhysicalInstall.run for subprocess boundaries")
+    return run_taskgov_internal(
+        *args,
         cwd=skill_root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+        script_path=skill_root / "scripts" / "taskgov.py",
     )
 
 
 def init_db(db, repo, *, skill_root=SKILL_ROOT):
-    result = run_taskgov(
-        "db",
-        "init",
-        "--repo",
-        str(repo),
-        "--db",
-        str(db),
-        "--json",
-        skill_root=skill_root,
-    )
-    if result.returncode != 0:
-        raise AssertionError(result.stderr or result.stdout)
-    return json.loads(result.stdout)
+    return initialize_taskgov_internal(repo=repo, db=db)
 
 
 def add_task(db, repo, title="Viewer task", *, skill_root=SKILL_ROOT):
@@ -829,18 +819,16 @@ class WebExportTests(unittest.TestCase):
             db = root / "taskgov.sqlite"
             init_db(db, repo)
             output = root / "viewer.html"
-            args = build_parser().parse_args(
-                [
-                    "web", "export", "--repo", str(repo), "--db", str(db),
-                    "--output", str(output), "--json",
-                ]
-            )
-
             with patch(
                 "task_governance_tool.cli.write_viewer_html",
                 side_effect=ViewerError("output_write_failed", "simulated failure"),
             ):
-                result = handle_web_export(make_context(args))
+                result = handle_web_export(
+                    internal_command_context(
+                        "web", "export", "--repo", str(repo), "--db", str(db),
+                        "--output", str(output), "--json",
+                    )
+                )
 
             self.assertEqual(result.exit_code, 2)
             self.assertEqual(result.errors[0]["code"], "output_write_failed")
@@ -855,18 +843,16 @@ class WebExportTests(unittest.TestCase):
             db = root / "taskgov.sqlite"
             init_db(db, repo)
             output = root / "viewer.html"
-            args = build_parser().parse_args(
-                [
-                    "web", "export", "--repo", str(repo), "--db", str(db),
-                    "--output", str(output), "--json",
-                ]
-            )
-
             with patch(
                 "task_governance_tool.cli.write_viewer_html",
                 side_effect=ViewerError("output_path_invalid", "late path change"),
             ):
-                result = handle_web_export(make_context(args))
+                result = handle_web_export(
+                    internal_command_context(
+                        "web", "export", "--repo", str(repo), "--db", str(db),
+                        "--output", str(output), "--json",
+                    )
+                )
 
             self.assertEqual(result.exit_code, 1)
             self.assertEqual(result.errors[0]["code"], "output_path_invalid")
@@ -881,18 +867,16 @@ class WebExportTests(unittest.TestCase):
             db = root / "taskgov.sqlite"
             init_db(db, repo)
             output = root / "viewer.html"
-            args = build_parser().parse_args(
-                [
-                    "web", "export", "--repo", str(repo), "--db", str(db),
-                    "--output", str(output), "--json",
-                ]
-            )
-
             with patch(
                 "task_governance_tool.cli.render_viewer_html",
                 side_effect=ValueError("unexpected renderer failure"),
             ):
-                result = handle_web_export(make_context(args))
+                result = handle_web_export(
+                    internal_command_context(
+                        "web", "export", "--repo", str(repo), "--db", str(db),
+                        "--output", str(output), "--json",
+                    )
+                )
 
             self.assertEqual(result.exit_code, 2)
             self.assertEqual(result.errors[0]["code"], "internal_error")
@@ -921,43 +905,26 @@ class WebExportTests(unittest.TestCase):
 
     def test_project_scoped_skill_copy_exports_default_and_approved_state_output(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            repo = root / "target-project"
-            installed = repo / ".agents" / "skills" / "task-governance-tool"
-            installed.parent.mkdir(parents=True)
-            shutil.copytree(
-                SKILL_ROOT,
-                installed,
-                ignore=shutil.ignore_patterns("state", "__pycache__", "*.pyc", ".pytest_cache"),
-            )
-
-            init_result = run_taskgov(
-                "db", "init", "--repo", str(repo), "--json",
-                skill_root=installed, isolated=True,
-            )
+            install = make_physical_install(Path(tmp))
+            init_result = install.run("setup", "--json")
             self.assertEqual(init_result.returncode, 0, init_result.stderr)
             project_id = json.loads(init_result.stdout)["project_id"]
-            add_result = run_taskgov(
-                "task", "add", "--repo", str(repo), "--title", "Installed copy task", "--json",
-                skill_root=installed, isolated=True,
+            add_result = install.run(
+                "task", "add", "--title", "Installed copy task", "--json",
             )
             self.assertEqual(add_result.returncode, 0, add_result.stderr)
 
-            exported = run_taskgov(
-                "web", "export", "--repo", str(repo), "--json",
-                skill_root=installed, isolated=True,
-            )
+            exported = install.run("web", "export", "--json")
             self.assertEqual(exported.returncode, 0, exported.stderr)
             payload = json.loads(exported.stdout)
-            expected = default_viewer_output_path(installed, project_id)
+            expected = default_viewer_output_path(install.skill_root, project_id)
             self.assertEqual(payload["data"]["output_path"], str(expected))
             self.assertTrue(expected.exists())
             self.assertEqual(embedded_snapshot(expected)["tasks"][0]["title"], "Installed copy task")
 
             approved = expected.parent / "approved.html"
-            explicit = run_taskgov(
-                "web", "export", "--repo", str(repo), "--output", str(approved), "--json",
-                skill_root=installed, isolated=True,
+            explicit = install.run(
+                "web", "export", "--output", str(approved), "--json",
             )
             self.assertEqual(explicit.returncode, 0, explicit.stderr)
             self.assertTrue(approved.exists())

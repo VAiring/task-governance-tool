@@ -1,5 +1,3 @@
-import contextlib
-import io
 import json
 import sqlite3
 import subprocess
@@ -11,6 +9,11 @@ from pathlib import Path
 from unittest import mock
 
 from tests.review_test_helpers import seed_review_evidence
+from tests.m14_test_support import (
+    initialize_taskgov_internal,
+    run_taskgov_internal,
+    run_taskgov_internal_raw,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,7 +22,6 @@ SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from task_governance_tool import cli as cli_module  # noqa: E402
 from task_governance_tool import completion_workflow  # noqa: E402
 from task_governance_tool import tasks as task_service  # noqa: E402
 from task_governance_tool.completion import (  # noqa: E402
@@ -28,38 +30,15 @@ from task_governance_tool.completion import (  # noqa: E402
 
 
 def run_taskgov(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal(*args)
 
 
 def run_taskgov_raw(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal_raw(*args)
 
 
 def init_db(db, repo):
-    result = run_taskgov(
-        "db",
-        "init",
-        "--repo",
-        str(repo),
-        "--db",
-        str(db),
-        "--json",
-    )
-    if result.returncode != 0:
-        raise AssertionError(result.stderr or result.stdout)
+    initialize_taskgov_internal(repo=repo, db=db)
 
 
 def add_task(db, repo, title, *extra):
@@ -239,7 +218,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                 payload["errors"][0]["code"],
                 "db_not_initialized",
             )
-            self.assertIsNone(payload["db_path"])
+            self.assertNotIn("db_path", payload)
             normalized = result.stdout.replace(b"\r\n", b"\n")
             portable = normalized.replace(b"\n", b"\r\n")
             self.assertLessEqual(
@@ -336,12 +315,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                 ][0]["code"],
                 "invalid_argument",
             )
-            for result in (
-                mismatch,
-                rejected,
-                abbreviated,
-                abbreviated_parse,
-            ):
+            for result in (mismatch, abbreviated):
                 payload = json.loads(result.stdout.decode("utf-8"))
                 self.assertEqual(
                     payload["errors"][0]["message"],
@@ -350,6 +324,18 @@ class TaskCompleteCliTests(unittest.TestCase):
                         "bounded output limit"
                     ),
                 )
+            for result in (rejected, abbreviated_parse):
+                payload = json.loads(result.stdout.decode("utf-8"))
+                self.assertEqual(
+                    payload["errors"][0]["message"],
+                    "arguments are invalid",
+                )
+            for result in (
+                mismatch,
+                rejected,
+                abbreviated,
+                abbreviated_parse,
+            ):
                 normalized = result.stdout.replace(b"\r\n", b"\n")
                 portable = normalized.replace(b"\n", b"\r\n")
                 self.assertLessEqual(
@@ -584,8 +570,6 @@ class TaskCompleteCliTests(unittest.TestCase):
                     connection.commit()
                 return plan
 
-            stdout = io.StringIO()
-            stderr = io.StringIO()
             argv = list(
                 complete_args(
                     db,
@@ -599,14 +583,12 @@ class TaskCompleteCliTests(unittest.TestCase):
                 completion_workflow,
                 "prepare_completion_plan",
                 side_effect=mutate_after_git,
-            ), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(
-                stderr
             ):
-                exit_code = cli_module.main(argv)
+                command = run_taskgov_internal(*argv)
 
-            self.assertEqual(exit_code, 0)
-            self.assertEqual(stderr.getvalue(), "")
-            payload = json.loads(stdout.getvalue())
+            self.assertEqual(command.returncode, 0)
+            self.assertEqual(command.stderr, "")
+            payload = json.loads(command.stdout)
             self.assertEqual(
                 payload["data"]["blocking_codes"],
                 ["completion_check_stale"],
@@ -644,7 +626,6 @@ class TaskCompleteCliTests(unittest.TestCase):
                     connection.commit()
                 return plan
 
-            stdout = io.StringIO()
             argv = list(
                 complete_args(
                     db,
@@ -658,11 +639,11 @@ class TaskCompleteCliTests(unittest.TestCase):
                 completion_workflow,
                 "prepare_completion_plan",
                 side_effect=mutate_unrelated_after_git,
-            ), contextlib.redirect_stdout(stdout):
-                exit_code = cli_module.main(argv)
+            ):
+                command = run_taskgov_internal(*argv)
 
-            self.assertEqual(exit_code, 0)
-            payload = json.loads(stdout.getvalue())
+            self.assertEqual(command.returncode, 0)
+            payload = json.loads(command.stdout)
             self.assertTrue(payload["data"]["ready"])
             self.assertEqual(payload["data"]["blocking_codes"], [])
 
@@ -709,17 +690,16 @@ class TaskCompleteCliTests(unittest.TestCase):
                 "--check",
                 "--json",
             ]
-            stdout = io.StringIO()
             with mock.patch.object(
                 completion_workflow,
                 "prepare_completion_plan",
                 side_effect=block_then_mutate,
-            ), contextlib.redirect_stdout(stdout):
-                exit_code = cli_module.main(argv)
+            ):
+                command = run_taskgov_internal(*argv)
 
-            self.assertEqual(exit_code, 0)
+            self.assertEqual(command.returncode, 0)
             self.assertEqual(
-                json.loads(stdout.getvalue())["data"]["blocking_codes"],
+                json.loads(command.stdout)["data"]["blocking_codes"],
                 ["completion_check_stale"],
             )
 
@@ -923,7 +903,6 @@ class TaskCompleteCliTests(unittest.TestCase):
                 "--check",
                 "--json",
             ]
-            stdout = io.StringIO()
             with mock.patch.object(
                 completion_workflow,
                 "connect_initialized_readonly",
@@ -936,11 +915,11 @@ class TaskCompleteCliTests(unittest.TestCase):
                 task_service,
                 "revalidate_done_git_evidence",
                 side_effect=assert_closed_then_revalidate,
-            ), contextlib.redirect_stdout(stdout):
-                exit_code = cli_module.main(argv)
+            ):
+                command = run_taskgov_internal(*argv)
 
-            self.assertEqual(exit_code, 0)
-            self.assertTrue(json.loads(stdout.getvalue())["data"]["ready"])
+            self.assertEqual(command.returncode, 0)
+            self.assertTrue(json.loads(command.stdout)["data"]["ready"])
             self.assertEqual(len(opened), 2)
             self.assertTrue(all(item.closed for item in opened))
 
@@ -1102,7 +1081,6 @@ class TaskCompleteCliTests(unittest.TestCase):
                     observations,
                 )
 
-            stdout = io.StringIO()
             argv = list(complete_args(db, repo, task["task_id"], "--json"))
             with mock.patch.object(
                 completion_workflow,
@@ -1112,12 +1090,12 @@ class TaskCompleteCliTests(unittest.TestCase):
                 completion_workflow,
                 "connect_initialized",
                 side_effect=recording_write,
-            ), contextlib.redirect_stdout(stdout):
-                exit_code = cli_module.main(argv)
+            ):
+                command = run_taskgov_internal(*argv)
 
-            self.assertEqual(exit_code, 0)
+            self.assertEqual(command.returncode, 0)
             self.assertEqual(
-                json.loads(stdout.getvalue())["data"]["task"]["status"],
+                json.loads(command.stdout)["data"]["task"]["status"],
                 "done",
             )
             self.assertTrue(observations)

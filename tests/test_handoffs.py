@@ -9,6 +9,13 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
+from tests.m14_test_support import (
+    initialize_taskgov_internal,
+    internal_command_context,
+    remove_v10_maintenance_for_test,
+    run_taskgov_internal,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -16,7 +23,7 @@ SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from task_governance_tool.cli import build_parser, handle_command, make_context  # noqa: E402
+from task_governance_tool.cli import handle_command  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
     StorageError,
     apply_handoff_outbox_migration,
@@ -29,14 +36,7 @@ from task_governance_tool.storage import (  # noqa: E402
 
 
 def run_taskgov(*args):
-    return subprocess.run(
-        [sys.executable, "scripts/taskgov.py", *args],
-        cwd=SKILL_ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    return run_taskgov_internal(*args)
 
 
 def json_command(*args):
@@ -46,17 +46,7 @@ def json_command(*args):
 
 
 def init_db(db, repo):
-    result, payload = json_command(
-        "db",
-        "init",
-        "--repo",
-        str(repo),
-        "--db",
-        str(db),
-    )
-    if result.returncode != 0:
-        raise AssertionError(result.stderr or result.stdout)
-    return payload
+    return initialize_taskgov_internal(repo=repo, db=db)
 
 
 def add_task(db, repo, title="Source task"):
@@ -153,20 +143,6 @@ class HandoffCommandTests(unittest.TestCase):
                 handoff["handoff_id"],
             )
 
-            _, status = json_command(
-                "db",
-                "status",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
-                "--read-only",
-            )
-            self.assertEqual(status["data"]["counts"]["handoff_pending"], 1)
-            self.assertEqual(
-                status["data"]["handoff_delivery"],
-                {"adapter_enabled": False, "sync_due": False},
-            )
             _, shown = json_command(
                 "task",
                 "show",
@@ -391,30 +367,26 @@ class HandoffCommandTests(unittest.TestCase):
             task = add_task(db, repo)
             _, created = record(db, repo, task["task_id"])
             handoff_id = created["data"]["handoff"]["handoff_id"]
-            list_args = build_parser().parse_args(
-                [
-                    "handoff",
-                    "list",
-                    "--repo",
-                    str(repo),
-                    "--db",
-                    str(db),
-                    "--read-only",
-                    "--json",
-                ]
+            list_context = internal_command_context(
+                "handoff",
+                "list",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--read-only",
+                "--json",
             )
-            show_args = build_parser().parse_args(
-                [
-                    "handoff",
-                    "show",
-                    "--repo",
-                    str(repo),
-                    "--db",
-                    str(db),
-                    handoff_id,
-                    "--read-only",
-                    "--json",
-                ]
+            show_context = internal_command_context(
+                "handoff",
+                "show",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                handoff_id,
+                "--read-only",
+                "--json",
             )
 
             def open_validated(target):
@@ -430,8 +402,8 @@ class HandoffCommandTests(unittest.TestCase):
                 "task_governance_tool.cli.connect_initialized_readonly",
                 side_effect=open_validated,
             ) as validated_reader:
-                list_result = handle_command(make_context(list_args))
-                show_result = handle_command(make_context(show_args))
+                list_result = handle_command(list_context)
+                show_result = handle_command(show_context)
 
             self.assertTrue(list_result.ok)
             self.assertEqual(list_result.data["count"], 1)
@@ -451,7 +423,7 @@ class HandoffCommandTests(unittest.TestCase):
                     "validated reader unavailable",
                 ),
             ):
-                failure = handle_command(make_context(list_args))
+                failure = handle_command(list_context)
             self.assertFalse(failure.ok)
             self.assertEqual(failure.errors[0]["code"], "internal_error")
             self.assertEqual(
@@ -981,21 +953,18 @@ class HandoffCommandTests(unittest.TestCase):
             task = add_task(db, repo)
 
             def context_for(summary):
-                args = build_parser().parse_args(
-                    [
-                        "handoff",
-                        "record",
-                        "--repo",
-                        str(repo),
-                        "--db",
-                        str(db),
-                        task["task_id"],
-                        "--summary",
-                        summary,
-                        "--json",
-                    ]
+                return internal_command_context(
+                    "handoff",
+                    "record",
+                    "--repo",
+                    str(repo),
+                    "--db",
+                    str(db),
+                    task["task_id"],
+                    "--summary",
+                    summary,
+                    "--json",
                 )
-                return make_context(args)
 
             attempts = 0
 
@@ -1052,22 +1021,18 @@ class HandoffCommandTests(unittest.TestCase):
             self.assertEqual(rows, [("Recovered after busy commit",)])
 
     def test_transient_record_failure_retries_once_then_is_not_durable(self):
-        parser = build_parser()
-        args = parser.parse_args(
-            [
-                "handoff",
-                "record",
-                "--repo",
-                ".",
-                "--db",
-                "unused.sqlite",
-                "tg_task_source",
-                "--summary",
-                "Safe summary",
-                "--json",
-            ]
+        context = internal_command_context(
+            "handoff",
+            "record",
+            "--repo",
+            ".",
+            "--db",
+            "unused.sqlite",
+            "tg_task_source",
+            "--summary",
+            "Safe summary",
+            "--json",
         )
-        context = make_context(args)
         with mock.patch(
             "task_governance_tool.cli.connect_initialized",
             side_effect=sqlite3.OperationalError("database is locked"),
@@ -1105,7 +1070,8 @@ class HandoffMigrationTests(unittest.TestCase):
             identity = project_identity(repo)
             with closing(connect(db)) as connection:
                 applied, _ = apply_migrations(connection)
-                self.assertEqual(applied, [1, 2, 3, 4, 5, 6, 7, 8, 9])
+                self.assertEqual(applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+                remove_v10_maintenance_for_test(connection)
                 connection.execute("DELETE FROM schema_migrations WHERE version = 9")
                 connection.execute("DROP TABLE task_effort_bases")
                 connection.execute("DROP TABLE task_effort_activity")
@@ -1204,6 +1170,7 @@ class HandoffMigrationTests(unittest.TestCase):
                 db = Path(tmp) / "taskgov.sqlite"
                 with closing(connect(db)) as connection:
                     apply_migrations(connection)
+                    remove_v10_maintenance_for_test(connection)
                     connection.execute("DELETE FROM schema_migrations WHERE version = 9")
                     connection.execute("DROP TABLE task_effort_bases")
                     connection.execute("DROP TABLE task_effort_activity")

@@ -18,6 +18,10 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool.cli import build_parser  # noqa: E402
+try:  # noqa: E402
+    from m14_test_support import make_physical_install
+except ModuleNotFoundError:  # noqa: E402
+    from tests.m14_test_support import make_physical_install
 
 
 def copy_skill_to(destination: Path, *, source: Path = SKILL_ROOT) -> Path:
@@ -165,7 +169,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             )
             self.assertIn("fresh", normalized)
         self.assertIn('__version__ = "0.7.0"', runtime_init)
-        self.assertIn("SCHEMA_VERSION = 9", storage)
+        self.assertIn("SCHEMA_VERSION = 10", storage)
         self.assertIn("SNAPSHOT_VERSION = 3", viewer)
         self.assertIn("review_target_base_revision", release_note)
         self.assertIn("omits", release_note)
@@ -224,49 +228,17 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("Additional Task Contract user questions: 0", forward_note)
 
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            copied = copy_skill_to(root)
-            repo = root / "repo"
-            repo.mkdir()
-            db = root / "taskgov.sqlite"
-            env = os.environ.copy()
-            env.pop("PYTHONPATH", None)
+            install = make_physical_install(Path(tmp))
 
             def run(*args):
-                return subprocess.run(
-                    [
-                        sys.executable,
-                        "-I",
-                        "-S",
-                        "scripts/taskgov.py",
-                        *args,
-                        "--json",
-                    ],
-                    cwd=copied,
-                    env=env,
-                    text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=False,
-                )
+                return install.run(*args, "--json")
 
-            initialized = run(
-                "db",
-                "init",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
-            )
+            initialized = run("setup")
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
-            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_version"], 9)
+            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 10)
             added = run(
                 "task",
                 "add",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
                 "--title",
                 "Isolated source task",
             )
@@ -275,10 +247,6 @@ class SkillSelfContainmentTests(unittest.TestCase):
             recorded = run(
                 "handoff",
                 "record",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
                 task_id,
                 "--summary",
                 "Isolated discovery",
@@ -290,29 +258,17 @@ class SkillSelfContainmentTests(unittest.TestCase):
             listed = run(
                 "handoff",
                 "list",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
             )
             self.assertEqual(json.loads(listed.stdout)["data"]["total_matching"], 1)
             shown = run(
                 "handoff",
                 "show",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
                 handoff_id,
             )
             self.assertEqual(shown.returncode, 0, shown.stderr)
             withdrawn = run(
                 "handoff",
                 "withdraw",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
                 handoff_id,
                 "--reason",
                 "Explicit isolated test direction",
@@ -325,10 +281,6 @@ class SkillSelfContainmentTests(unittest.TestCase):
             contract_added = run(
                 "task",
                 "add",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
                 "--title",
                 "Isolated Contract task",
                 "--contract-scope",
@@ -345,10 +297,6 @@ class SkillSelfContainmentTests(unittest.TestCase):
             contract_shown = run(
                 "task",
                 "show",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
                 contract_payload["data"]["task"]["task_id"],
             )
             self.assertEqual(contract_shown.returncode, 0, contract_shown.stderr)
@@ -357,15 +305,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 1,
             )
 
-            help_result = subprocess.run(
-                [sys.executable, "-I", "-S", "scripts/taskgov.py", "handoff", "--help"],
-                cwd=copied,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
+            help_result = install.run("handoff", "--help")
             self.assertEqual(help_result.returncode, 0, help_result.stderr)
             self.assertNotIn("sync", help_result.stdout)
 
@@ -531,80 +471,76 @@ class SkillSelfContainmentTests(unittest.TestCase):
                     feature_version=(3, 12),
                 )
 
-    def test_documented_target_root_invocation_uses_physical_install_state(self):
+    def test_m14_2_target_root_invocation_uses_physical_install_state(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target-project"
-            skill_parent = target / ".agents" / "skills"
-            skill_parent.mkdir(parents=True)
-            installed = copy_skill_to(skill_parent)
-            env = os.environ.copy()
-            env.pop("PYTHONPATH", None)
-            entrypoint = (
-                ".agents/skills/task-governance-tool/scripts/taskgov.py"
-            )
-
-            def run(*args):
-                return subprocess.run(
-                    [sys.executable, "-I", "-S", entrypoint, *args, "--json"],
-                    cwd=target,
-                    env=env,
-                    text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=False,
-                )
-
-            package = run("self", "status", "--read-only")
-            self.assertEqual(package.returncode, 0, package.stderr)
-            self.assertEqual(json.loads(package.stdout)["data"]["status"], "clean")
-            missing = run("db", "status", "--read-only")
-            self.assertEqual(missing.returncode, 2, missing.stderr)
+            install = make_physical_install(Path(tmp))
+            missing = install.run("doctor", "--read-only", "--json")
+            self.assertEqual(missing.returncode, 0, missing.stderr)
             self.assertEqual(
-                json.loads(missing.stdout)["errors"][0]["code"],
-                "db_not_initialized",
+                json.loads(missing.stdout)["data"]["components"]["package"]["status"],
+                "clean",
             )
-            self.assertFalse((installed / "state").exists())
+            self.assertEqual(
+                json.loads(missing.stdout)["data"]["components"]["project_state"]["code"],
+                "setup_required",
+            )
+            self.assertFalse((install.skill_root / "state").exists())
 
-            initialized = run("db", "init")
+            initialized = install.run("setup", "--json")
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
             payload = json.loads(initialized.stdout)
-            db_path = Path(payload["db_path"])
-            self.assertTrue(db_path.is_file())
-            self.assertTrue(db_path.is_relative_to(installed / "state"))
-            self.assertEqual(payload["data"]["schema_version"], 9)
+            self.assertNotIn("db_path", payload)
+            self.assertTrue(install.db_path.is_file())
+            self.assertTrue(install.db_path.is_relative_to(install.skill_root / "state"))
+            self.assertEqual(payload["data"]["schema_to"], 10)
 
-            from_skill_root = subprocess.run(
-                [
-                    sys.executable,
-                    "-I",
-                    "-S",
-                    "scripts/taskgov.py",
-                    "db",
-                    "status",
-                    "--repo",
-                    str(target),
-                    "--read-only",
-                    "--json",
-                ],
-                cwd=installed,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
+            from_skill_root = install.run(
+                "doctor",
+                "--repo",
+                str(install.project_root),
+                "--json",
+                cwd=install.skill_root,
             )
             self.assertEqual(from_skill_root.returncode, 0, from_skill_root.stderr)
             from_skill_payload = json.loads(from_skill_root.stdout)
             self.assertEqual(from_skill_payload["project_id"], payload["project_id"])
-            self.assertEqual(from_skill_payload["db_path"], payload["db_path"])
+            self.assertNotIn("db_path", from_skill_payload)
+            self.assertEqual(
+                from_skill_payload["data"]["components"]["project_state"]["code"],
+                "ready",
+            )
 
-    def test_readme_command_inventory_matches_parser_leaves(self):
+    def test_m14_2_parser_stage_is_exact_before_m14_7_readme_publication(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         command_section = readme.split("## Commands", 1)[1].split("## Non-Goals", 1)[0]
         documented = set(re.findall(r"^- `taskgov ([^`]+)`$", command_section, re.MULTILINE))
 
         self.assertEqual(
-            documented | {"task complete"},
+            parser_leaf_commands(build_parser()),
+            {
+                "setup",
+                "doctor",
+                "task add",
+                "task list",
+                "task next",
+                "task current",
+                "task effort",
+                "task show",
+                "task edit",
+                "task complete",
+                "handoff record",
+                "handoff list",
+                "handoff show",
+                "handoff withdraw",
+                "review target set",
+                "review receipt add",
+                "review finding add",
+                "review finding resolve",
+                "web export",
+            },
+        )
+        self.assertNotEqual(
+            documented,
             parser_leaf_commands(build_parser()),
         )
         self.assertEqual(len(documented), 19)
@@ -770,8 +706,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("$skillRoot/scripts/task_governance_tool/effort.py", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/self_status.py", workflow)
         self.assertIn("$skillRoot/release-manifest.json", workflow)
-        self.assertIn("$selfStatusJson | ConvertFrom-Json", workflow)
-        self.assertIn("$selfStatus.data.status -ne 'clean'", workflow)
+        self.assertIn("$doctorJson | ConvertFrom-Json", workflow)
+        self.assertIn("$doctor.data.components.package.status -ne 'clean'", workflow)
+        self.assertIn("self status", workflow)
+        self.assertIn("invalid_command", workflow)
         self.assertIn("SCHEMA_VERSION", workflow)
         self.assertIn("0\\.7\\.0", workflow)
         self.assertIn("task-viewer\\.html$", workflow)

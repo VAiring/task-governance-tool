@@ -2130,6 +2130,13 @@ The sole backup primitive:
    1-20 `publication_retention` fixed by the caller before copying; and
 6. returns that bounded identity/time metadata, never a public path.
 
+The canonical directory is `<project-state>/backups`. The only recognized
+pre-v11 basename is
+`taskgov-backup-v1_<YYYYMMDDTHHMMSSZ>_<32-lowercase-hex>_r<1-20>.sqlite`;
+the internal generation identity is `tg_backup_<same-32-lowercase-hex>`.
+Parsing must be exact. Other names, links, non-regular files, invalid copies,
+and copies for another project are neither managed nor pruned.
+
 Setup migration calls it before beginning migration. M14.3 calls the same
 primitive after a business transaction closes. Rotation is a caller policy
 around this primitive, not another copy implementation. Before schema v11
@@ -2137,7 +2144,18 @@ exists, setup recognizes only canonical regular artifacts whose copied
 database validates as the same project, orders them by publication time then
 generation identity, and applies the effective explicit/default retention
 after each successful publish. Repeated failed migrations therefore remain
-bounded without treating an arbitrary file as managed.
+bounded without treating an arbitrary file as managed. Retry-time recovery may
+finish an interrupted pre-v10 prune using only the newest recognized
+artifact's immutable filename retention; the new attempt's requested value is
+not applied until its own copy publishes successfully.
+
+Write-mode setup takes the canonical zero-wait backup artifact lock before
+pre-v11 reconciliation/publication and holds it through the corresponding
+migration commit. The lock is OS-held on one byte of a validated regular file,
+is released by process termination, and never extends a SQLite writer
+transaction across the copy. This binds the metadata passed to migration to a
+generation that another setup cannot prune. M14.3 reuses the same primitive
+for routine and v11+ setup backup stages.
 
 For an existing v10 source, `migration_backup` is not complete until the
 published identity/time/outcome and `applied_backup_generations` are written to
@@ -2155,11 +2173,21 @@ latest managed-generation identity, and nullable internal
 `applied_backup_generations`. Setup parses the only public configuration
 options, applies defaults 30/3 only for an unconfigured project, preserves
 omitted existing values, and atomically writes a changed policy. Equal explicit
-values are a replay. A policy-only update changes no applied value, invokes
-neither coordinator nor pruning, and is enforced only after the next successful
-managed publication records the configured value as applied. `SetupResult`
-uses the exact scalar-state semantics and null rules in the specification;
-previews never report planned state as durable state.
+values are a replay. The short configuration transaction rereads the current
+maintenance row and resolves omitted fields there, rather than writing values
+frozen by an earlier setup preflight. A policy-only update changes no applied
+value, invokes neither coordinator nor pruning, and is enforced only after the
+next successful managed publication records the configured value as applied.
+`SetupResult` uses the exact scalar-state semantics and null rules in the
+specification; previews never report planned state as durable state.
+
+The v10 table is `project_maintenance`. Besides `project_id`, its fixed columns
+are `enabled_at`, `backup_interval_minutes`, `backup_generations`,
+`applied_backup_generations`, `backup_last_success_at`,
+`backup_last_outcome_code`, `backup_last_outcome_at`,
+`latest_backup_generation_id`, `viewer_last_success_at`,
+`viewer_last_outcome_code`, and `viewer_last_outcome_at`. A database trigger
+prevents a non-null `enabled_at` from changing or returning to null.
 
 `SetupPlan` resolves immutable `publication_retention` before the backup
 primitive runs. A partial/unconfigured source uses the validated explicit

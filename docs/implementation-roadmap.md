@@ -2555,6 +2555,8 @@ Write scope:
 - schema-v10 one-way maintenance opt-in;
 - schema-v10 bounded interval/retention with setup-only configuration;
 - one validated SQLite-backup primitive;
+- one shared zero-wait artifact lock held from setup backup through migration,
+  without holding a SQLite writer lock while copying;
 - setup initialization/migration and canonical Viewer repair;
 - directly coupled help/docs/tests, not active Skill/release publication.
 
@@ -2572,6 +2574,8 @@ Verification:
 - setup copies carry managed generation identity, and repeated failed
   migrations remain bounded by the effective explicit/default retention even
   before a v11 generation table exists;
+- concurrent setup cannot prune the generation bound to an in-flight migration
+  or revert explicitly configured policy through omitted stale values;
 - v10 `applied_backup_generations` is null when no managed publication exists,
   while v1-v9 migration records the setup plan's explicit/default
   `publication_retention` beside the copy identity;
@@ -2593,7 +2597,7 @@ Write scope:
 - schema-v11 managed-backup generation table reusing v10 policy/outcome state;
 - reuse of the M14.2 primitive and opt-in;
 - stored-policy due calculation with 1,800-second/three-generation defaults,
-  zero-wait crash-releasing OS locks, and bounded warnings;
+  reuse of the crash-releasing M14.2 OS lock, and bounded warnings;
 - doctor backup rows and backup-only performance fixtures.
 
 Verification:

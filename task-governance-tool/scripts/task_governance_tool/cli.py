@@ -79,6 +79,13 @@ from task_governance_tool.reviews import (
     resolve_review_finding,
     set_requested_review_target,
 )
+from task_governance_tool.review_packet import (
+    OVERSIZED_PACKET_MESSAGE,
+    REVIEW_PACKET_MAX_BYTES,
+    ReviewPacketError,
+    format_review_packet_text,
+    prepare_review_packet,
+)
 from task_governance_tool.setup import run_setup
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
@@ -195,9 +202,18 @@ def emit_result(
                 result,
                 max_bytes=max_json_bytes,
             )
-        print(json.dumps(result.to_json_object(), indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                result.to_json_object(),
+                indent=2,
+                sort_keys=result.command != "review.prepare",
+            )
+        )
     elif result.text:
-        print(result.text)
+        if result.command == "review.prepare" and hasattr(sys.stdout, "buffer"):
+            sys.stdout.buffer.write((result.text + "\n").encode("utf-8"))
+        else:
+            print(result.text)
     elif result.errors:
         print(result.errors[0]["message"], file=sys.stderr)
     return result.exit_code
@@ -571,8 +587,18 @@ def build_parser() -> argparse.ArgumentParser:
     handoff_withdraw_parser.add_argument("handoff_id")
     handoff_withdraw_parser.add_argument("--reason", required=True)
 
-    review_parser = subparsers.add_parser("review", help="structured review evidence commands")
+    review_parser = subparsers.add_parser(
+        "review",
+        help="bounded review context and structured evidence commands",
+    )
     review_subparsers = review_parser.add_subparsers(dest="review_entity")
+
+    review_prepare_parser = review_subparsers.add_parser(
+        "prepare",
+        help="prepare bounded read-only review context",
+    )
+    add_common_options(review_prepare_parser)
+    review_prepare_parser.add_argument("task_id")
 
     review_target_parser = review_subparsers.add_parser("target", help="review target commands")
     review_target_subparsers = review_target_parser.add_subparsers(dest="review_action")
@@ -636,8 +662,11 @@ def command_name(args: argparse.Namespace) -> str:
         return f"task.{args.task_command}"
     if args.command == "handoff" and args.handoff_command:
         return f"handoff.{args.handoff_command}"
-    if args.command == "review" and args.review_entity and args.review_action:
-        return f"review.{args.review_entity}.{args.review_action}"
+    if args.command == "review" and args.review_entity:
+        if args.review_entity == "prepare":
+            return "review.prepare"
+        if args.review_action:
+            return f"review.{args.review_entity}.{args.review_action}"
     if args.command == "web" and args.web_command:
         return f"web.{args.web_command}"
     if args.command:
@@ -719,6 +748,8 @@ def handle_command(context: CommandContext) -> CommandResult:
         return handle_task_complete(context)
     if context.command.startswith("handoff."):
         return handle_handoff_command(context)
+    if context.command == "review.prepare":
+        return handle_review_prepare(context)
     if context.command.startswith("review."):
         return handle_review_command(context)
     if context.command == "web.export":
@@ -2676,7 +2707,75 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
     )
 
 
+def handle_review_prepare(context: CommandContext) -> CommandResult:
+    target = resolve_context_target(context)
+    project_id = target.project.project_id
+    try:
+        data = prepare_review_packet(
+            target,
+            getattr(context.args, "task_id", ""),
+        )
+        text = format_review_packet_text(data)
+        result = CommandResult(
+            ok=True,
+            command=context.command,
+            project_id=project_id,
+            data=data,
+            text=text,
+            exit_code=EXIT_SUCCESS,
+        )
+        text_size = len((text + "\n").encode("utf-8"))
+        json_size = serialized_json_size(result, data)
+        if (
+            (context.json_output and json_size > REVIEW_PACKET_MAX_BYTES)
+            or (not context.json_output and text_size > REVIEW_PACKET_MAX_BYTES)
+        ):
+            raise ReviewPacketError(
+                "review_packet_too_large",
+                OVERSIZED_PACKET_MESSAGE,
+            )
+        return result
+    except (
+        ReviewPacketError,
+        TaskRepositoryError,
+        TaskValidationError,
+    ) as exc:
+        return review_failure_result(
+            context,
+            project_id=project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=(
+                EXIT_TOOL_ERROR
+                if exc.code == "internal_error"
+                else EXIT_USAGE
+            ),
+        )
+    except StorageError as exc:
+        return review_failure_result(
+            context,
+            project_id=project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error as exc:
+        mapped = operational_sqlite_error(
+            exc,
+            fallback_message="could not prepare review context",
+        )
+        return review_failure_result(
+            context,
+            project_id=project_id,
+            code=mapped.code,
+            message=mapped.message,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+
 def review_empty_data(command: str) -> dict[str, Any]:
+    if command == "review.prepare":
+        return {}
     if command == "review.target.set":
         return {"task": None, "changed_fields": [], "event": None}
     if command == "review.receipt.add":
@@ -2849,6 +2948,11 @@ def handle_review_command(context: CommandContext) -> CommandResult:
 def bounded_json_limit_from_args(args: argparse.Namespace) -> int | None:
     if not bool(getattr(args, "json", False)):
         return None
+    if (
+        getattr(args, "command", None) == "review"
+        and getattr(args, "review_entity", None) == "prepare"
+    ):
+        return REVIEW_PACKET_MAX_BYTES
     leaf = getattr(args, "task_command", None)
     if getattr(args, "command", None) != "task":
         return None
@@ -2952,11 +3056,14 @@ def main(
             )
         if args.command == "review" and (
             getattr(args, "review_entity", None) is None
-            or getattr(args, "review_action", None) is None
+            or (
+                getattr(args, "review_entity", None) != "prepare"
+                and getattr(args, "review_action", None) is None
+            )
         ):
             raise CommandLineError(
                 "invalid_argument",
-                "review requires target set, receipt add, finding add, or finding resolve",
+                "review requires prepare, target set, receipt add, finding add, or finding resolve",
             )
         if (
             args.command == "review"

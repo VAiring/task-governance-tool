@@ -510,7 +510,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "ready",
             )
 
-    def test_m14_4_parser_stage_is_exact_before_m14_7_readme_publication(self):
+    def test_m14_5_parser_stage_is_exact_before_m14_7_readme_publication(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         command_section = readme.split("## Commands", 1)[1].split("## Non-Goals", 1)[0]
         documented = set(re.findall(r"^- `taskgov ([^`]+)`$", command_section, re.MULTILINE))
@@ -533,6 +533,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "handoff list",
                 "handoff show",
                 "handoff withdraw",
+                "review prepare",
                 "review target set",
                 "review receipt add",
                 "review finding add",
@@ -582,6 +583,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         )
         self.assertIn(
             "profile-enabled path has at most ten",
+            graph,
+        )
+        self.assertIn(
+            "instead of separate task, Contract, target, and Git",
             graph,
         )
         for excluded in (

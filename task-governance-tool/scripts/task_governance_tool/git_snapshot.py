@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from task_governance_tool.completion import (
@@ -32,6 +32,12 @@ TREE_HEADER = re.compile(
     rb"(?P<object_type>blob|commit|tree) "
     rb"(?P<object_id>(?:[0-9a-f]{40}|[0-9a-f]{64}))\Z"
 )
+RAW_DIFF_HEADER = re.compile(
+    rb":[0-7]{6} [0-7]{6} "
+    rb"(?:[0-9a-f]{40}|[0-9a-f]{64}) "
+    rb"(?:[0-9a-f]{40}|[0-9a-f]{64}) "
+    rb"[ACDMRTUXB][0-9]*\Z"
+)
 
 
 @dataclass(frozen=True)
@@ -56,6 +62,11 @@ class GitSnapshot:
     base_revision: str
     fingerprint: str
     entry_count: int
+    changed_paths: tuple[bytes, ...] = field(
+        default=(),
+        repr=False,
+        compare=False,
+    )
 
 
 def snapshot_error(code: str, message: str, field: str) -> GitSnapshotError:
@@ -148,6 +159,32 @@ def split_nul_records(
     if any(not record for record in records):
         raise snapshot_error(code, message, field)
     return records
+
+
+def parse_raw_diff_paths(payload: bytes) -> tuple[bytes, ...]:
+    records = split_nul_records(
+        payload,
+        code="invalid_review_evidence",
+        field="review_target_value",
+        message="Git snapshot change output is malformed",
+    )
+    if len(records) % 2 != 0:
+        raise snapshot_error(
+            "invalid_review_evidence",
+            "Git snapshot change output is malformed",
+            "review_target_value",
+        )
+    paths: list[bytes] = []
+    for index in range(0, len(records), 2):
+        metadata, path = records[index : index + 2]
+        if RAW_DIFF_HEADER.fullmatch(metadata) is None or not path:
+            raise snapshot_error(
+                "invalid_review_evidence",
+                "Git snapshot change output is malformed",
+                "review_target_value",
+            )
+        paths.append(path)
+    return tuple(paths)
 
 
 def parse_index_entries(payload: bytes) -> list[GitSnapshotEntry]:
@@ -353,10 +390,17 @@ def capture_git_snapshot(repo: Path) -> GitSnapshot:
         base_revision=base_before,
         fingerprint=manifest_fingerprint(base_before, entries),
         entry_count=len(entries),
+        changed_paths=parse_raw_diff_paths(visible_before),
     )
 
 
-def parse_commit_tree_and_parents(payload: bytes) -> tuple[str, list[str]]:
+def parse_commit_tree_and_parents(
+    payload: bytes,
+    *,
+    code: str = "review_target_mismatch",
+    field: str = "completion_revision",
+    message: str = "completion commit topology is unsupported",
+) -> tuple[str, list[str]]:
     header = payload.split(b"\n\n", 1)[0]
     tree_ids: list[str] = []
     parent_ids: list[str] = []
@@ -367,21 +411,13 @@ def parse_commit_tree_and_parents(payload: bytes) -> tuple[str, list[str]]:
             elif line.startswith(b"parent "):
                 parent_ids.append(line[7:].decode("ascii", errors="strict"))
     except UnicodeDecodeError as exc:
-        raise snapshot_error(
-            "review_target_mismatch",
-            "completion commit topology is unsupported",
-            "completion_revision",
-        ) from exc
+        raise snapshot_error(code, message, field) from exc
     if (
         len(tree_ids) != 1
         or not FULL_GIT_OBJECT_ID.fullmatch(tree_ids[0])
         or any(not FULL_GIT_OBJECT_ID.fullmatch(parent) for parent in parent_ids)
     ):
-        raise snapshot_error(
-            "review_target_mismatch",
-            "completion commit topology is unsupported",
-            "completion_revision",
-        )
+        raise snapshot_error(code, message, field)
     return tree_ids[0], parent_ids
 
 

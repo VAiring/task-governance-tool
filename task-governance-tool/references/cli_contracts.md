@@ -19,6 +19,7 @@ matter.
 - [`task edit`](#task-edit)
 - [`task complete`](#task-complete)
 - [Local handoff commands](#local-handoff-commands)
+- [`review prepare`](#review-prepare)
 - [Review evidence commands](#review-evidence-commands)
 - [`web export`](#web-export)
 - [Error Codes](#error-codes)
@@ -84,9 +85,9 @@ All JSON output uses this envelope:
 
 Inspection commands are read-only by default: `self status`, `db status`,
 `task list`, `task next`, `task current`, `task effort`, `task show`, `task
-complete --check`, `handoff list`, and `handoff show`. `self status` is
-package-local: it accepts the common `--repo` and `--db` spellings but does not
-read or resolve either.
+complete --check`, `handoff list`, `handoff show`, and `review prepare`.
+`self status` is package-local: it accepts the common `--repo` and `--db`
+spellings but does not read or resolve either.
 
 Database write commands are `db init`, `task add`, `task edit`, `task
 complete` without `--check`, and the four `review` evidence commands, plus
@@ -1001,6 +1002,84 @@ delivery, or `handoff sync` command. The agent always uses `handoff record`
 regardless of Issue Skill presence. A pending record never changes task
 selection or completion and emits no warning.
 
+### `review prepare`
+
+Prepare one bounded, read-only reviewer packet for the current target:
+
+```powershell
+python scripts/taskgov.py review prepare --repo <target-project> <task-id> --read-only --json
+```
+
+The command supports `git_snapshot`, `git_commit`, `diff_fingerprint`, and
+`external_revision`. It takes no caller focus, reviewer, import, receipt file,
+or output path. It launches no reviewer, imports no result, writes no packet,
+and changes neither SQLite nor target-project Git.
+
+Success data keys are exactly:
+
+```text
+task, contract, review_target, changed_paths_available, changed_paths,
+changed_paths_total, changed_paths_truncated, review_focus, required_output,
+receipt_command
+```
+
+`task` contains only `task_id`, `title`, `status`, `verification`, and
+`review_tier`. `contract` contains only `revision`, `scope`, `acceptance`, and
+`constraints`, including the revision-zero empty projection. `review_target`
+contains only `kind`, `value`, `base_revision`, and `generation`. Focus,
+required output, and the receipt-command shape are fixed by the CLI rather than
+caller input.
+
+`git_snapshot` recaptures the existing eight-call staged snapshot and emits its
+staged delta paths only when its base and fingerprint still match.
+`git_commit` re-resolves the canonical commit and lists paths against its first
+parent; a root commit is compared with the empty tree. The two non-Git kinds
+return `changed_paths_available=false`, an empty path list, zero total, no
+truncation, and perform zero Git subprocesses.
+
+Every path must be strict UTF-8 and an unambiguous relative project path.
+Backslash, drive-prefixed, absolute, empty/dot/traversal components, and
+control, format, or line-separator characters are unsafe. All paths are checked
+before truncation,
+sorted bytewise, and then bounded to 100 rows, 240 UTF-8 bytes per row, and
+16,384 aggregate path bytes. Omission sets
+`changed_paths_truncated=true`; `changed_paths_total` remains exact.
+
+Text uses this exact line grammar and section order. Dynamic scalar values are
+JSON-quoted so embedded newlines cannot create headings:
+
+```text
+Task: <task-id> | "<title>" | review_tier=<review-tier>
+Status: <status>
+Verification: "<verification>"
+Contract revision: <revision>
+Scope: "<scope>"
+Acceptance: "<acceptance>"
+Constraints: "<constraints>"
+Review target: kind=<kind> value="<value>" base_revision="<base>" generation=<generation>
+Changed paths: unavailable | <returned>/<total> [(truncated)]
+[- <relative-path> ...]
+Review focus:
+[- <fixed-focus> ...]
+Required output:
+[- <fixed-output> ...]
+Receipt command: taskgov review receipt add <task-id> --reviewer <reviewer-key> --kind independent --verdict <pass|changes_requested> --summary <sanitized-summary> --json
+```
+
+Text output uses LF plus one final newline. Complete text or JSON stdout, including
+the JSON envelope, is at most 32,768 UTF-8 bytes. Git observation uses at most
+ten shell-free subprocesses. SQLite is closed during Git work; a second
+read-only transaction revalidates project/task identity, Contract revision,
+and every target field and generation.
+
+Missing, concurrently changed, unsafe-path, and oversized cases return no
+partial packet and these fixed errors:
+
+- `review_target_missing`: `review target is required before preparing a review packet`
+- `review_packet_stale`: `review context changed while preparing the packet`
+- `review_packet_path_unsafe`: `review packet contains an unsafe project path`
+- `review_packet_too_large`: `review packet exceeds the supported size`
+
 ### Review evidence commands
 
 Set or replace the current review target:
@@ -1160,6 +1239,10 @@ Known error codes include:
 - `review_tier_downgrade_forbidden`
 - `review_changes_requested`
 - `review_target_mismatch`
+- `review_target_missing`
+- `review_packet_stale`
+- `review_packet_path_unsafe`
+- `review_packet_too_large`
 - `handoff_not_persisted`
 - `handoff_not_withdrawable`
 - `handoff_occurrence_invalid`

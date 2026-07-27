@@ -16,6 +16,7 @@ try:
         capture_git_snapshot,
         manifest_fingerprint,
         parse_index_entries,
+        parse_raw_diff_paths,
         verify_git_snapshot_commit,
     )
 finally:
@@ -138,6 +139,38 @@ class GitSnapshotTests(unittest.TestCase):
                     parse_index_entries(payload)
                 self.assertEqual(raised.exception.code, "invalid_review_evidence")
 
+    def test_raw_diff_paths_require_canonical_metadata_path_pairs(self):
+        object_id = b"a" * 40
+        payload = (
+            b":100644 100644 "
+            + object_id
+            + b" "
+            + object_id
+            + b" M\0z.txt\0"
+            + b":000000 100644 "
+            + b"0" * 40
+            + b" "
+            + object_id
+            + b" A\0a.txt\0"
+        )
+        self.assertEqual(
+            parse_raw_diff_paths(payload),
+            (b"z.txt", b"a.txt"),
+        )
+        for malformed in (
+            payload[:-1],
+            b"not-metadata\0path\0",
+            payload + b"orphan\0",
+            b":100644 100644 " + object_id + b" " + object_id + b" M\0\0",
+        ):
+            with self.subTest(payload=malformed):
+                with self.assertRaises(GitSnapshotError) as raised:
+                    parse_raw_diff_paths(malformed)
+                self.assertEqual(
+                    raised.exception.code,
+                    "invalid_review_evidence",
+                )
+
     def test_capture_rejects_real_intent_to_add_without_changing_git(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
@@ -167,6 +200,7 @@ class GitSnapshotTests(unittest.TestCase):
             self.assertEqual(repository_file_state(repo), before_capture)
             self.assertEqual(snapshot.base_revision, base)
             self.assertEqual(snapshot.entry_count, 2)
+            self.assertEqual(snapshot.changed_paths, (b"staged.txt",))
 
             tree = git(repo, "write-tree").stdout.strip()
             candidate = commit_tree(repo, tree, base, message="completion")

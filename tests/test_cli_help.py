@@ -20,7 +20,7 @@ except ModuleNotFoundError:
     from tests.m14_test_support import make_physical_install
 
 
-M14_4_STAGE_LEAVES = {
+M14_5_STAGE_LEAVES = {
     "setup",
     "doctor",
     "task add",
@@ -36,6 +36,7 @@ M14_4_STAGE_LEAVES = {
     "handoff list",
     "handoff show",
     "handoff withdraw",
+    "review prepare",
     "review target set",
     "review receipt add",
     "review finding add",
@@ -63,8 +64,8 @@ def parser_leaf_commands(
 
 
 class CliHelpTests(unittest.TestCase):
-    def test_m14_4_staged_parser_has_only_its_twenty_leaves(self):
-        self.assertEqual(parser_leaf_commands(build_parser()), M14_4_STAGE_LEAVES)
+    def test_m14_5_staged_parser_has_only_its_twenty_one_leaves(self):
+        self.assertEqual(parser_leaf_commands(build_parser()), M14_5_STAGE_LEAVES)
 
     def test_root_help_is_read_only_and_hides_removed_storage_surface(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -182,9 +183,22 @@ class CliHelpTests(unittest.TestCase):
                 self.assertIn(command, handoff.stdout)
             self.assertNotIn("sync", handoff.stdout)
             self.assertEqual(review.returncode, 0, review.stderr)
-            for command in ("target", "receipt", "finding"):
+            for command in ("prepare", "target", "receipt", "finding"):
                 self.assertIn(command, review.stdout)
-            self.assertNotIn("prepare", review.stdout)
+
+            prepare = install.run("review", "prepare", "--help")
+            self.assertEqual(prepare.returncode, 0, prepare.stderr)
+            for supported in ("task_id", "--repo", "--json", "--read-only"):
+                self.assertIn(supported, prepare.stdout)
+            for unsupported in (
+                "--focus",
+                "--reviewer",
+                "--import",
+                "--output",
+                "--file",
+                "--db",
+            ):
+                self.assertNotIn(unsupported, prepare.stdout)
 
     def test_removed_groups_are_not_compatibility_help_handlers(self):
         with tempfile.TemporaryDirectory() as tmp:

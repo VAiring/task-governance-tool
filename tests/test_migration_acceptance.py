@@ -316,7 +316,55 @@ def legacy_v2_projection(connection: sqlite3.Connection) -> dict:
 
 
 class RealisticMigrationAcceptanceTests(unittest.TestCase):
-    def test_v2_fixture_setup_migrates_to_v10_without_losing_observed_state(self):
+    def assert_single_seeded_managed_backup(
+        self,
+        connection: sqlite3.Connection,
+        db_path: Path,
+    ) -> None:
+        self.assertEqual(
+            connection.execute(
+                "SELECT MAX(version) FROM schema_migrations"
+            ).fetchone()[0],
+            11,
+        )
+        generations = connection.execute(
+            """
+            SELECT generation_id, published_at, publication_retention
+              FROM managed_backup_generations
+             ORDER BY published_at, generation_id
+            """
+        ).fetchall()
+        self.assertEqual(len(generations), 1)
+        generation = tuple(generations[0])
+        maintenance = tuple(
+            connection.execute(
+                """
+                SELECT latest_backup_generation_id, backup_last_success_at,
+                       applied_backup_generations, backup_last_outcome_code,
+                       backup_last_outcome_at
+                  FROM project_maintenance
+                """
+            ).fetchone()
+        )
+        self.assertEqual(
+            maintenance,
+            (*generation, "succeeded", generation[1]),
+        )
+        artifacts = sorted(
+            (db_path.parent / "backups").glob(
+                "taskgov-backup-v1_*.sqlite"
+            )
+        )
+        self.assertEqual(len(artifacts), 1)
+        self.assertIn(
+            (
+                f"_{generation[0].removeprefix('tg_backup_')}"
+                f"_r{generation[2]}.sqlite"
+            ),
+            artifacts[0].name,
+        )
+
+    def test_v2_fixture_setup_migrates_to_v11_without_losing_observed_state(self):
         fixture = load_fixture()
         self.assertEqual(fixture["schema_version"], 2)
         self.assertEqual(len(fixture["tasks"]), 12)
@@ -346,7 +394,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(migrated)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 2)
-            self.assertEqual(payload["data"]["schema_to"], 10)
+            self.assertEqual(payload["data"]["schema_to"], 11)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 [
@@ -428,6 +476,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                     connection.execute("SELECT COUNT(*) FROM handoff_records").fetchone()[0],
                     0,
                 )
+                self.assert_single_seeded_managed_backup(connection, db_path)
                 before_second_init = durable_projection(connection)
 
             repeated = install.run("setup", "--json")
@@ -438,8 +487,9 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             self.assertEqual(repeated_data["completed_writes"], [])
             with closing(sqlite3.connect(db_path)) as connection:
                 self.assertEqual(durable_projection(connection), before_second_init)
+                self.assert_single_seeded_managed_backup(connection, db_path)
 
-    def test_v5_and_v6_fixture_setup_migrates_to_v10_with_review_evidence_intact(self):
+    def test_v5_and_v6_fixture_setup_migrates_to_v11_with_review_evidence_intact(self):
         fixture = load_fixture()
         for source_version in (5, 6):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
@@ -462,7 +512,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 payload = json_payload(migrated)
                 self.assertEqual(payload["data"]["schema_from"], source_version)
-                self.assertEqual(payload["data"]["schema_to"], 10)
+                self.assertEqual(payload["data"]["schema_to"], 11)
                 self.assertEqual(
                     payload["data"]["completed_writes"],
                     [
@@ -527,6 +577,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                         connection.execute("PRAGMA foreign_key_check").fetchall(),
                         [],
                     )
+                    self.assert_single_seeded_managed_backup(connection, db_path)
 
     def test_v7_migration_rollback_preserves_realistic_v6_fixture(self):
         fixture = load_fixture()

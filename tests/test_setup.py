@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 try:  # noqa: E402
     from m14_test_support import (
         canonical_managed_sqlite_files,
+        create_v10_database,
         create_v9_database,
         file_snapshot,
         json_payload,
@@ -20,6 +21,7 @@ try:  # noqa: E402
 except ModuleNotFoundError:  # noqa: E402
     from tests.m14_test_support import (
         canonical_managed_sqlite_files,
+        create_v10_database,
         create_v9_database,
         file_snapshot,
         json_payload,
@@ -29,6 +31,7 @@ except ModuleNotFoundError:  # noqa: E402
 
 from task_governance_tool import setup as setup_service
 from task_governance_tool import project_scope as project_scope_service
+from task_governance_tool.storage import MigrationBackupMetadata
 
 
 SETUP_DATA_KEYS = {
@@ -79,7 +82,7 @@ class SetupCommandTests(unittest.TestCase):
                     "planned_writes": FRESH_WRITES,
                     "completed_writes": [],
                     "schema_from": None,
-                    "schema_to": 10,
+                    "schema_to": 11,
                     "maintenance_enabled": False,
                     "backup_interval_minutes": 30,
                     "backup_generations": 3,
@@ -97,7 +100,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(completed_data["planned_writes"], FRESH_WRITES)
             self.assertEqual(completed_data["completed_writes"], FRESH_WRITES)
             self.assertEqual(completed_data["schema_from"], None)
-            self.assertEqual(completed_data["schema_to"], 10)
+            self.assertEqual(completed_data["schema_to"], 11)
             self.assertTrue(completed_data["maintenance_enabled"])
             self.assertEqual(completed_data["backup_interval_minutes"], 30)
             self.assertEqual(completed_data["backup_generations"], 3)
@@ -149,7 +152,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": [],
                         "completed_writes": [],
                         "schema_from": None,
-                        "schema_to": 10,
+                        "schema_to": 11,
                         "maintenance_enabled": None,
                         "backup_interval_minutes": None,
                         "backup_generations": None,
@@ -434,7 +437,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": planned,
                         "completed_writes": completed,
                         "schema_from": schema_from,
-                        "schema_to": 10,
+                        "schema_to": 11,
                         "maintenance_enabled": maintenance_enabled,
                         "backup_interval_minutes": 30,
                         "backup_generations": 3,
@@ -482,7 +485,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": [],
                         "completed_writes": [],
                         "schema_from": None,
-                        "schema_to": 10,
+                        "schema_to": 11,
                         "maintenance_enabled": None,
                         "backup_interval_minutes": None,
                         "backup_generations": None,
@@ -604,7 +607,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             data = self.assert_setup_shape(json_payload(migrated))
             self.assertEqual(data["schema_from"], 9)
-            self.assertEqual(data["schema_to"], 10)
+            self.assertEqual(data["schema_to"], 11)
             self.assertEqual(data["planned_writes"], MIGRATION_WRITES)
             self.assertEqual(data["completed_writes"], MIGRATION_WRITES)
             self.assertEqual(data["backup_generations"], 2)
@@ -623,7 +626,7 @@ class SetupCommandTests(unittest.TestCase):
             with closing(sqlite3.connect(install.db_path)) as connection:
                 self.assertEqual(
                     connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0],
-                    10,
+                    11,
                 )
                 row = connection.execute(
                     """
@@ -638,6 +641,113 @@ class SetupCommandTests(unittest.TestCase):
                 file_snapshot(install.project_root, exclude_state=True),
                 before_non_state,
             )
+
+    def test_configured_v10_setup_seeds_generation_without_reconfiguring_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            create_v10_database(
+                install,
+                enabled=True,
+                interval_minutes=45,
+                generations=2,
+            )
+
+            migrated = install.run("setup", "--json")
+
+            self.assertEqual(migrated.returncode, 0, migrated.stderr)
+            data = self.assert_setup_shape(json_payload(migrated))
+            expected_writes = [
+                "migration_backup",
+                "database_migrate",
+                "viewer_publish",
+            ]
+            self.assertEqual(data["schema_from"], 10)
+            self.assertEqual(data["schema_to"], 11)
+            self.assertEqual(data["planned_writes"], expected_writes)
+            self.assertEqual(data["completed_writes"], expected_writes)
+            self.assertEqual(data["backup_interval_minutes"], 45)
+            self.assertEqual(data["backup_generations"], 2)
+            with closing(sqlite3.connect(install.db_path)) as connection:
+                connection.row_factory = sqlite3.Row
+                maintenance = connection.execute(
+                    """
+                    SELECT backup_interval_minutes, backup_generations,
+                           applied_backup_generations, backup_last_success_at,
+                           latest_backup_generation_id
+                      FROM project_maintenance
+                    """
+                ).fetchone()
+                generation = connection.execute(
+                    """
+                    SELECT generation_id, published_at,
+                           publication_retention
+                      FROM managed_backup_generations
+                    """
+                ).fetchone()
+                self.assertEqual(
+                    (
+                        maintenance["backup_interval_minutes"],
+                        maintenance["backup_generations"],
+                        maintenance["applied_backup_generations"],
+                    ),
+                    (45, 2, 2),
+                )
+                self.assertEqual(
+                    (
+                        generation["generation_id"],
+                        generation["published_at"],
+                        generation["publication_retention"],
+                    ),
+                    (
+                        maintenance["latest_backup_generation_id"],
+                        maintenance["backup_last_success_at"],
+                        2,
+                    ),
+                )
+
+    def test_v10_missing_latest_artifact_fails_backup_before_v11_migration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            missing = MigrationBackupMetadata(
+                generation_id=f"tg_backup_{1:032x}",
+                published_at="2026-07-27T00:00:01Z",
+                publication_retention=3,
+            )
+            create_v10_database(
+                install,
+                enabled=True,
+                setup_backup=missing,
+            )
+
+            failed = install.run("setup", "--json")
+
+            self.assertEqual(failed.returncode, 2)
+            payload = json_payload(failed)
+            self.assertEqual(
+                payload["errors"],
+                [{
+                    "code": "setup_backup_failed",
+                    "message": "setup backup could not be completed",
+                }],
+            )
+            self.assertEqual(payload["data"]["schema_from"], 10)
+            self.assertEqual(payload["data"]["completed_writes"], [])
+            with closing(sqlite3.connect(install.db_path)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT MAX(version) FROM schema_migrations"
+                    ).fetchone()[0],
+                    10,
+                )
+                self.assertIsNone(
+                    connection.execute(
+                        """
+                        SELECT name FROM sqlite_master
+                         WHERE type = 'table'
+                           AND name = 'managed_backup_generations'
+                        """
+                    ).fetchone()
+                )
 
     def test_migration_lock_spans_backup_publication_and_migration_commit(self):
         with tempfile.TemporaryDirectory() as tmp:

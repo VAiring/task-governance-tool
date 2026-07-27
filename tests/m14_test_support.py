@@ -23,6 +23,7 @@ if str(SOURCE_SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool.storage import (  # noqa: E402
     DatabaseTarget,
+    MigrationBackupMetadata,
     apply_completion_commit_migration,
     apply_completion_evidence_migration,
     apply_effort_advisory_migration,
@@ -30,6 +31,7 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_handoff_outbox_migration,
     apply_initial_schema_migration,
     apply_paused_state_migration,
+    apply_project_maintenance_migration,
     apply_review_evidence_migration,
     apply_task_contract_migration,
     connect,
@@ -282,6 +284,7 @@ def run_taskgov_internal(
     *args: str,
     cwd: Path | None = None,
     script_path: Path | None = None,
+    maintenance_enabled: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run the public parser with only the private DatabaseTarget test seam.
 
@@ -305,6 +308,7 @@ def run_taskgov_internal(
             returncode = cli_module.main(
                 filtered,
                 _target_override=target,
+                _maintenance_enabled=maintenance_enabled,
             )
         except SystemExit as exc:
             returncode = int(exc.code or 0)
@@ -320,8 +324,14 @@ def run_taskgov_internal_raw(
     *args: str,
     cwd: Path | None = None,
     script_path: Path | None = None,
+    maintenance_enabled: bool = True,
 ) -> subprocess.CompletedProcess[bytes]:
-    result = run_taskgov_internal(*args, cwd=cwd, script_path=script_path)
+    result = run_taskgov_internal(
+        *args,
+        cwd=cwd,
+        script_path=script_path,
+        maintenance_enabled=maintenance_enabled,
+    )
     return subprocess.CompletedProcess(
         args=result.args,
         returncode=result.returncode,
@@ -363,7 +373,8 @@ def initialize_taskgov_internal(
 def remove_v10_maintenance_for_test(connection) -> None:
     """Downgrade a current test database before exercising an older migration."""
 
-    connection.execute("DELETE FROM schema_migrations WHERE version = 10")
+    connection.execute("DELETE FROM schema_migrations WHERE version IN (10, 11)")
+    connection.execute("DROP TABLE managed_backup_generations")
     connection.execute("DROP TABLE project_maintenance")
 
 
@@ -412,3 +423,54 @@ def create_v9_target(target: DatabaseTarget) -> None:
 
 def create_v9_database(install: PhysicalInstall) -> None:
     create_v9_target(install.target)
+
+
+def create_v10_target(
+    target: DatabaseTarget,
+    *,
+    enabled: bool = False,
+    setup_backup: MigrationBackupMetadata | None = None,
+    interval_minutes: int = 30,
+    generations: int = 3,
+) -> None:
+    """Create a staged schema-v10 fixture without invoking current migration."""
+
+    create_v9_target(target)
+    with closing(connect(target.db_path)) as connection:
+        apply_project_maintenance_migration(
+            connection,
+            setup_backup=setup_backup,
+        )
+        if enabled:
+            connection.execute(
+                """
+                UPDATE project_maintenance
+                   SET enabled_at = '2026-07-27T00:00:00Z',
+                       backup_interval_minutes = ?,
+                       backup_generations = ?
+                 WHERE project_id = ?
+                """,
+                (
+                    interval_minutes,
+                    generations,
+                    target.project.project_id,
+                ),
+            )
+            connection.commit()
+
+
+def create_v10_database(
+    install: PhysicalInstall,
+    *,
+    enabled: bool = False,
+    setup_backup: MigrationBackupMetadata | None = None,
+    interval_minutes: int = 30,
+    generations: int = 3,
+) -> None:
+    create_v10_target(
+        install.target,
+        enabled=enabled,
+        setup_backup=setup_backup,
+        interval_minutes=interval_minutes,
+        generations=generations,
+    )

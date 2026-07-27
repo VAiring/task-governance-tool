@@ -12,12 +12,14 @@ SCRIPTS_PATH = SKILL_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_PATH))
 try:
     from task_governance_tool.storage import (
+        MigrationBackupMetadata,
         SCHEMA_VERSION,
         StorageError,
         apply_completion_commit_migration,
         apply_completion_evidence_migration,
         apply_git_snapshot_schema_migration,
         apply_initial_schema_migration,
+        apply_managed_backup_generations_migration,
         apply_migrations,
         apply_paused_state_migration,
         apply_project_maintenance_migration,
@@ -35,12 +37,14 @@ finally:
 
 try:
     from m14_test_support import (
+        create_v10_database,
         create_v9_database,
         initialize_taskgov_internal,
         make_physical_install,
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
+        create_v10_database,
         create_v9_database,
         initialize_taskgov_internal,
         make_physical_install,
@@ -259,7 +263,7 @@ class StorageInitializationTests(unittest.TestCase):
                         "SELECT version FROM schema_migrations ORDER BY version"
                     )
                 ]
-            self.assertEqual(versions, [1, 2, 3, 5, 6, 7, 8, 9, 10])
+            self.assertEqual(versions, [1, 2, 3, 5, 6, 7, 8, 9, 10, 11])
 
     def test_initialize_migrates_schema_v1_database_through_current_schema(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -302,8 +306,11 @@ class StorageInitializationTests(unittest.TestCase):
             )
             result = initialize_database(target)
             self.assertFalse(result.created)
-            self.assertEqual(result.migrations_applied, [2, 3, 4, 5, 6, 7, 8, 9, 10])
-            self.assertEqual(result.schema_version, 10)
+            self.assertEqual(
+                result.migrations_applied,
+                [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+            )
+            self.assertEqual(result.schema_version, 11)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute(
@@ -320,7 +327,10 @@ class StorageInitializationTests(unittest.TestCase):
                         "SELECT version FROM schema_migrations ORDER BY version"
                     ).fetchall()
                 ]
-                self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+                self.assertEqual(
+                    versions,
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                )
             self.assertEqual(task["completion_commit_required"], 1)
             self.assertEqual(task["completion_commit_hash"], "")
             self.assertEqual(task["pause_reason"], "")
@@ -337,8 +347,11 @@ class StorageInitializationTests(unittest.TestCase):
                 script_path=SKILL_ROOT / "scripts" / "taskgov.py",
             )
             result = initialize_database(target)
-            self.assertEqual(result.migrations_applied, [3, 4, 5, 6, 7, 8, 9, 10])
-            self.assertEqual(result.schema_version, 10)
+            self.assertEqual(
+                result.migrations_applied,
+                [3, 4, 5, 6, 7, 8, 9, 10, 11],
+            )
+            self.assertEqual(result.schema_version, 11)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute("SELECT * FROM tasks WHERE task_id = ?", ("tg_task_test",)).fetchone()
@@ -353,7 +366,10 @@ class StorageInitializationTests(unittest.TestCase):
                 ]
                 quick_check = connection.execute("PRAGMA quick_check").fetchone()[0]
                 foreign_key_rows = connection.execute("PRAGMA foreign_key_check").fetchall()
-                self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+                self.assertEqual(
+                    versions,
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                )
             self.assertEqual(task["pause_reason"], "")
             self.assertEqual(event["task_id"], "tg_task_test")
             self.assertEqual(quick_check, "ok")
@@ -568,7 +584,10 @@ class StorageInitializationTests(unittest.TestCase):
                 script_path=SKILL_ROOT / "scripts" / "taskgov.py",
             )
             result = initialize_database(target)
-            self.assertEqual(result.migrations_applied, [4, 5, 6, 7, 8, 9, 10])
+            self.assertEqual(
+                result.migrations_applied,
+                [4, 5, 6, 7, 8, 9, 10, 11],
+            )
             self.assertEqual(
                 result.warnings[0]["code"],
                 "legacy_completion_evidence_preserved",
@@ -613,6 +632,7 @@ class StorageInitializationTests(unittest.TestCase):
                     "tasks",
                     "task_events",
                     "tool_events",
+                    "managed_backup_generations",
                 }.issubset(tables)
             )
             self.assertTrue(
@@ -623,6 +643,7 @@ class StorageInitializationTests(unittest.TestCase):
                     "idx_tasks_project_lane_order_unique",
                     "idx_task_events_task_created",
                     "idx_tasks_project_completion_commit",
+                    "idx_managed_backup_project_published",
                 }.issubset(indexes)
             )
             self.assertIn("CREATE UNIQUE INDEX", unique_index_sql.upper())
@@ -880,8 +901,11 @@ class StorageInitializationTests(unittest.TestCase):
                 script_path=SKILL_ROOT / "scripts" / "taskgov.py",
             )
             migrated = initialize_database(target)
-            self.assertEqual(migrated.migrations_applied, [6, 7, 8, 9, 10])
-            self.assertEqual(migrated.schema_version, 10)
+            self.assertEqual(
+                migrated.migrations_applied,
+                [6, 7, 8, 9, 10, 11],
+            )
+            self.assertEqual(migrated.schema_version, 11)
 
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
@@ -1076,9 +1100,7 @@ class ProjectMaintenanceMigrationTests(unittest.TestCase):
                         ).fetchone()
                     )
 
-                    applied, warnings = apply_migrations(connection)
-                    self.assertEqual(applied, [10])
-                    self.assertEqual(warnings, [])
+                    apply_project_maintenance_migration(connection)
                     self.assertEqual(
                         connection.execute(
                             "SELECT MAX(version) FROM schema_migrations"
@@ -1094,9 +1116,7 @@ class ProjectMaintenanceMigrationTests(unittest.TestCase):
                     ).fetchone()
                     self.assertEqual(row["project_id"], install.project_id)
                     self.assertEqual(tuple(row)[1:], (None, None, None, None))
-                    applied, warnings = apply_migrations(connection)
-                    self.assertEqual(applied, [])
-                    self.assertEqual(warnings, [])
+                    apply_project_maintenance_migration(connection)
                     self.assertEqual(
                         connection.execute(
                             "SELECT COUNT(*) FROM project_maintenance"
@@ -1123,7 +1143,210 @@ class ProjectMaintenanceMigrationTests(unittest.TestCase):
                         connection.execute("PRAGMA foreign_key_check").fetchall(),
                         [],
                     )
-        self.assertEqual(SCHEMA_VERSION, 10)
+        self.assertEqual(SCHEMA_VERSION, 11)
+
+
+class ManagedBackupGenerationMigrationTests(unittest.TestCase):
+    @staticmethod
+    def metadata(index: int, retention: int = 3) -> MigrationBackupMetadata:
+        return MigrationBackupMetadata(
+            generation_id=f"tg_backup_{index:032x}",
+            published_at=f"2026-07-27T00:00:{index:02d}Z",
+            publication_retention=retention,
+        )
+
+    def test_v10_to_v11_seeds_deterministic_rows_and_enforces_bounds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            generations = (
+                self.metadata(1),
+                self.metadata(2),
+                self.metadata(3),
+            )
+            create_v10_database(
+                install,
+                setup_backup=generations[-1],
+            )
+
+            with closing(sqlite3.connect(install.db_path)) as connection:
+                connection.row_factory = sqlite3.Row
+                connection.execute("PRAGMA foreign_keys = ON")
+                apply_managed_backup_generations_migration(
+                    connection,
+                    managed_backups=tuple(reversed(generations)),
+                )
+                rows = connection.execute(
+                    """
+                    SELECT generation_id, project_id, published_at,
+                           publication_retention
+                      FROM managed_backup_generations
+                     ORDER BY published_at, generation_id
+                    """
+                ).fetchall()
+                self.assertEqual(
+                    [
+                        (
+                            row["generation_id"],
+                            row["project_id"],
+                            row["published_at"],
+                            row["publication_retention"],
+                        )
+                        for row in rows
+                    ],
+                    [
+                        (
+                            item.generation_id,
+                            install.project_id,
+                            item.published_at,
+                            item.publication_retention,
+                        )
+                        for item in generations
+                    ],
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT MAX(version) FROM schema_migrations"
+                    ).fetchone()[0],
+                    11,
+                )
+                apply_managed_backup_generations_migration(
+                    connection,
+                    managed_backups=generations,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM managed_backup_generations"
+                    ).fetchone()[0],
+                    3,
+                )
+                invalid_rows = (
+                    (
+                        "invalid-generation",
+                        install.project_id,
+                        "2026-07-27T00:00:04Z",
+                        3,
+                    ),
+                    (
+                        f"tg_backup_{4:032x}",
+                        install.project_id,
+                        "not-a-canonical-time",
+                        3,
+                    ),
+                    (
+                        f"tg_backup_{5:032x}",
+                        install.project_id,
+                        "2026-07-27T00:00:05Z",
+                        21,
+                    ),
+                )
+                for row in invalid_rows:
+                    with self.subTest(row=row), self.assertRaises(
+                        sqlite3.IntegrityError
+                    ):
+                        connection.execute(
+                            """
+                            INSERT INTO managed_backup_generations(
+                              generation_id, project_id, published_at,
+                              publication_retention
+                            ) VALUES (?, ?, ?, ?)
+                            """,
+                            row,
+                        )
+                self.assertEqual(
+                    connection.execute("PRAGMA quick_check").fetchone()[0],
+                    "ok",
+                )
+                self.assertEqual(
+                    connection.execute("PRAGMA foreign_key_check").fetchall(),
+                    [],
+                )
+
+    def test_v11_migration_rolls_back_each_stage_then_is_idempotent(self):
+        latest = self.metadata(2, retention=2)
+        generations = (self.metadata(1, retention=2), latest)
+        for fail_stage in ("after_schema", "after_rows", "before_commit"):
+            with self.subTest(fail_stage=fail_stage), tempfile.TemporaryDirectory() as tmp:
+                install = make_physical_install(Path(tmp))
+                create_v10_database(install, setup_backup=latest)
+                with closing(sqlite3.connect(install.db_path)) as connection:
+                    connection.row_factory = sqlite3.Row
+                    connection.execute("PRAGMA foreign_keys = ON")
+                    with self.assertRaises(StorageError):
+                        apply_managed_backup_generations_migration(
+                            connection,
+                            managed_backups=generations,
+                            fail_stage=fail_stage,
+                        )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT MAX(version) FROM schema_migrations"
+                        ).fetchone()[0],
+                        10,
+                    )
+                    self.assertIsNone(
+                        connection.execute(
+                            """
+                            SELECT name FROM sqlite_master
+                             WHERE type = 'table'
+                               AND name = 'managed_backup_generations'
+                            """
+                        ).fetchone()
+                    )
+                    apply_managed_backup_generations_migration(
+                        connection,
+                        managed_backups=generations,
+                    )
+                    apply_managed_backup_generations_migration(
+                        connection,
+                        managed_backups=generations,
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT COUNT(*) FROM managed_backup_generations"
+                        ).fetchone()[0],
+                        2,
+                    )
+
+    def test_v11_migration_rejects_missing_or_mismatched_latest_pointer(self):
+        latest = self.metadata(2, retention=2)
+        cases = {
+            "missing": (self.metadata(1, retention=2),),
+            "empty": (),
+            "mismatched": (
+                MigrationBackupMetadata(
+                    generation_id=latest.generation_id,
+                    published_at="2026-07-27T00:00:03Z",
+                    publication_retention=latest.publication_retention,
+                ),
+            ),
+        }
+        for name, generations in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                install = make_physical_install(Path(tmp))
+                create_v10_database(install, setup_backup=latest)
+                with closing(sqlite3.connect(install.db_path)) as connection:
+                    connection.row_factory = sqlite3.Row
+                    connection.execute("PRAGMA foreign_keys = ON")
+                    with self.assertRaises(StorageError):
+                        apply_managed_backup_generations_migration(
+                            connection,
+                            managed_backups=generations,
+                        )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT MAX(version) FROM schema_migrations"
+                        ).fetchone()[0],
+                        10,
+                    )
+                    self.assertIsNone(
+                        connection.execute(
+                            """
+                            SELECT name FROM sqlite_master
+                             WHERE type = 'table'
+                               AND name = 'managed_backup_generations'
+                            """
+                        ).fetchone()
+                    )
 
 
 if __name__ == "__main__":

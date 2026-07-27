@@ -46,6 +46,11 @@ from task_governance_tool.handoffs import (
     show_handoff,
     withdraw_handoff,
 )
+from task_governance_tool.maintenance import (
+    BACKUP_WARNING_MESSAGES,
+    MutationOutcome,
+    run_post_commit_maintenance,
+)
 from task_governance_tool.storage import (
     DATABASE_BUSY_MESSAGE,
     DatabaseTarget,
@@ -125,6 +130,11 @@ class CommandResult:
     errors: list[dict[str, str]] = field(default_factory=list)
     text: str = ""
     exit_code: int = EXIT_SUCCESS
+    mutation_outcome: MutationOutcome | None = field(
+        default=None,
+        compare=False,
+        repr=False,
+    )
 
     def to_json_object(self) -> dict[str, Any]:
         return {
@@ -1061,6 +1071,10 @@ def handle_task_add(context: CommandContext) -> CommandResult:
         data=data,
         text=task_add_text(result.task, result.event, result.contract_write),
         exit_code=EXIT_SUCCESS,
+        mutation_outcome=MutationOutcome(
+            state_changed=True,
+            viewer_relevant=True,
+        ),
     )
 
 
@@ -1922,6 +1936,10 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
             result.contract_write,
         ),
         exit_code=EXIT_SUCCESS,
+        mutation_outcome=MutationOutcome(
+            state_changed=result.event is not None,
+            viewer_relevant=True,
+        ),
     )
 
 
@@ -2188,6 +2206,10 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
             completed=True,
         ),
         exit_code=EXIT_SUCCESS,
+        mutation_outcome=MutationOutcome(
+            state_changed=True,
+            viewer_relevant=True,
+        ),
     )
 
 
@@ -2372,6 +2394,10 @@ def _handle_handoff_record(
         data=data,
         text=handoff_text(context.command, data),
         exit_code=EXIT_SUCCESS,
+        mutation_outcome=MutationOutcome(
+            state_changed=bool(result.created),
+            viewer_relevant=False,
+        ),
     )
 
 
@@ -2505,6 +2531,14 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
         data=data,
         text=handoff_text(context.command, data),
         exit_code=EXIT_SUCCESS,
+        mutation_outcome=(
+            MutationOutcome(
+                state_changed=True,
+                viewer_relevant=False,
+            )
+            if context.command == "handoff.withdraw"
+            else None
+        ),
     )
 
 
@@ -2671,6 +2705,10 @@ def handle_review_command(context: CommandContext) -> CommandResult:
         data=data,
         text=review_text(context.command, data),
         exit_code=EXIT_SUCCESS,
+        mutation_outcome=MutationOutcome(
+            state_changed=True,
+            viewer_relevant=True,
+        ),
     )
 
 
@@ -2705,10 +2743,44 @@ def lexical_removed_db_option(argv: Sequence[str]) -> bool:
     return any(token == "--db" or token.startswith("--db=") for token in argv)
 
 
+def apply_post_commit_maintenance(
+    context: CommandContext,
+    result: CommandResult,
+) -> CommandResult:
+    outcome = result.mutation_outcome
+    if not result.ok or outcome is None or not outcome.state_changed:
+        return result
+    try:
+        warnings = run_post_commit_maintenance(
+            resolve_context_target(context),
+            outcome,
+        )
+    except Exception:
+        warnings = [
+            {
+                "code": "backup_failed",
+                "message": BACKUP_WARNING_MESSAGES["failed"],
+            }
+        ]
+    if not warnings:
+        return result
+    warning_text = "\n".join(warning["message"] for warning in warnings)
+    return replace(
+        result,
+        warnings=[*result.warnings, *warnings],
+        text=(
+            f"{result.text}\n{warning_text}"
+            if result.text
+            else warning_text
+        ),
+    )
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     _target_override: DatabaseTarget | None = None,
+    _maintenance_enabled: bool = True,
 ) -> int:
     raw_argv = tuple(argv if argv is not None else sys.argv[1:])
     parser = build_parser()
@@ -2767,6 +2839,8 @@ def main(
             raise CommandLineError("invalid_argument", "web requires a subcommand: export")
         context = make_context(args, target_override=_target_override)
         result = handle_command(context)
+        if _maintenance_enabled:
+            result = apply_post_commit_maintenance(context, result)
         return emit_result(
             result,
             json_output=context.json_output,

@@ -10,7 +10,7 @@ from unittest import mock
 
 try:
     from m14_test_support import (
-        create_v9_database,
+        create_v10_database,
         file_snapshot,
         json_payload,
         make_physical_install,
@@ -18,7 +18,7 @@ try:
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
-        create_v9_database,
+        create_v10_database,
         file_snapshot,
         json_payload,
         make_physical_install,
@@ -113,7 +113,7 @@ class DoctorCommandTests(unittest.TestCase):
                 {
                     "code": "setup_required",
                     "schema_version": None,
-                    "required_schema_version": 10,
+                    "required_schema_version": 11,
                 },
             )
             for component in ("task_summary", "handoff_delivery", "maintenance"):
@@ -125,6 +125,30 @@ class DoctorCommandTests(unittest.TestCase):
             self.assertEqual(payload["errors"], [])
             self.assertEqual(file_snapshot(install.project_root), before)
             self.assertFalse((install.skill_root / "state").exists())
+
+    def test_fresh_setup_reports_first_backup_due_without_starting_work(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            setup = install.run("setup", "--json")
+            self.assertEqual(setup.returncode, 0, setup.stderr)
+            before = file_snapshot(install.project_root)
+
+            result = install.run("doctor", "--json")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json_payload(result)
+            self.assertEqual(payload["warnings"], [])
+            backup = self.assert_doctor_shape(payload)["components"][
+                "maintenance"
+            ]["backup"]
+            self.assertEqual(backup["code"], "due")
+            self.assertTrue(backup["due"])
+            self.assertIsNone(backup["last_success_at"])
+            self.assertEqual(
+                backup["last_outcome"],
+                {"code": "none", "occurred_at": None},
+            )
+            self.assertEqual(file_snapshot(install.project_root), before)
 
     def test_ready_state_uses_exact_component_shapes_and_one_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -166,8 +190,8 @@ class DoctorCommandTests(unittest.TestCase):
                 components["project_state"],
                 {
                     "code": "ready",
-                    "schema_version": 10,
-                    "required_schema_version": 10,
+                    "schema_version": 11,
+                    "required_schema_version": 11,
                 },
             )
             self.assertEqual(set(components["task_summary"]), TASK_SUMMARY_KEYS)
@@ -198,14 +222,17 @@ class DoctorCommandTests(unittest.TestCase):
             self.assertEqual(maintenance["code"], "enabled")
             self.assertTrue(maintenance["opted_in"])
             self.assertEqual(set(maintenance["backup"]), BACKUP_KEYS)
-            self.assertEqual(maintenance["backup"]["code"], "configured")
-            self.assertIsNone(maintenance["backup"]["due"])
+            self.assertEqual(maintenance["backup"]["code"], "current")
+            self.assertFalse(maintenance["backup"]["due"])
             self.assertEqual(maintenance["backup"]["interval_minutes"], 30)
             self.assertEqual(maintenance["backup"]["generations"], 3)
-            self.assertIsNone(maintenance["backup"]["last_success_at"])
+            self.assertIsNotNone(maintenance["backup"]["last_success_at"])
             self.assertEqual(
-                maintenance["backup"]["last_outcome"],
-                {"code": "none", "occurred_at": None},
+                maintenance["backup"]["last_outcome"]["code"],
+                "succeeded",
+            )
+            self.assertIsNotNone(
+                maintenance["backup"]["last_outcome"]["occurred_at"]
             )
             self.assertEqual(set(maintenance["viewer"]), VIEWER_KEYS)
             self.assertEqual(maintenance["viewer"]["code"], "published")
@@ -229,7 +256,7 @@ class DoctorCommandTests(unittest.TestCase):
     def test_supported_older_schema_is_migration_required_without_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            create_v9_database(install)
+            create_v10_database(install)
             before = file_snapshot(install.project_root)
             before_db = hashlib.sha256(install.db_path.read_bytes()).hexdigest()
 
@@ -243,8 +270,8 @@ class DoctorCommandTests(unittest.TestCase):
                 data["components"]["project_state"],
                 {
                     "code": "migration_required",
-                    "schema_version": 9,
-                    "required_schema_version": 10,
+                    "schema_version": 10,
+                    "required_schema_version": 11,
                 },
             )
             for component in ("task_summary", "handoff_delivery", "maintenance"):
@@ -317,7 +344,7 @@ class DoctorCommandTests(unittest.TestCase):
                 {
                     "code": "invalid_layout",
                     "schema_version": None,
-                    "required_schema_version": 10,
+                    "required_schema_version": 11,
                 },
             )
             for component in ("task_summary", "handoff_delivery", "maintenance"):
@@ -338,8 +365,8 @@ class DoctorCommandTests(unittest.TestCase):
             ("unsupported_journal_mode", "unsupported_journal", None, "connect"),
             ("database_busy", "busy", None, "connect"),
             ("project_state_unreadable", "unreadable", None, "connect"),
-            ("project_mismatch", "foreign", 10, "state"),
-            ("schema_too_new", "newer", 11, "state"),
+            ("project_mismatch", "foreign", 11, "state"),
+            ("schema_too_new", "newer", 12, "state"),
         )
         for source_code, projected_code, schema_version, phase in cases:
             with self.subTest(code=source_code), tempfile.TemporaryDirectory() as tmp:
@@ -413,7 +440,7 @@ class DoctorCommandTests(unittest.TestCase):
                     {
                         "code": projected_code,
                         "schema_version": schema_version,
-                        "required_schema_version": 10,
+                        "required_schema_version": 11,
                     },
                 )
                 for component in ("task_summary", "handoff_delivery", "maintenance"):

@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from task_governance_tool.backup import managed_backup_lock, publish_setup_backup
+from task_governance_tool.backup import (
+    discover_managed_backup_metadata,
+    managed_backup_lock,
+    publish_setup_backup,
+)
 from task_governance_tool.project_scope import (
     PREFLIGHT_MESSAGES,
     PROJECT_STATE_MESSAGES,
@@ -483,6 +487,9 @@ def run_setup(
                         backup_metadata
                         if schema_from is not None and schema_from < 10
                         else None
+                    ),
+                    managed_backups=discover_managed_backup_metadata(
+                        scope.target
                     ),
                 )
                 completed.append("database_migrate")

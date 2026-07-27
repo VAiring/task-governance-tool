@@ -8,27 +8,39 @@ import secrets
 import sqlite3
 import stat
 import tempfile
+from errno import EACCES, EAGAIN, EDEADLK
 from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Iterator
 
 from task_governance_tool.storage import (
+    MAX_BACKUP_INTERVAL_MINUTES,
     MAX_BACKUP_GENERATIONS,
+    MIN_BACKUP_INTERVAL_MINUTES,
     MIN_BACKUP_GENERATIONS,
     SCHEMA_VERSION,
     DatabaseTarget,
+    ManagedBackupRepositoryState,
     MigrationBackupMetadata,
+    ProjectMaintenanceState,
     StorageError,
     configure_connection,
     connect_readonly,
     current_schema_version,
+    delete_managed_backup_generation,
+    import_managed_backup_generations,
     missing_migration_versions,
+    normalize_managed_backup_pointer,
+    read_managed_backup_repository,
     read_project_maintenance,
+    record_backup_attempt_outcome,
+    record_managed_backup,
     record_setup_backup,
     utc_now,
     validate_migration_backup_metadata,
+    validate_utc_timestamp,
 )
 
 
@@ -51,6 +63,12 @@ class _Artifact:
         return (self.metadata.published_at, self.metadata.generation_id)
 
 
+@dataclass(frozen=True)
+class RoutineBackupResult:
+    code: str
+    attempted: bool
+
+
 def _failure() -> StorageError:
     return StorageError("setup_backup_failed", _FAILURE_MESSAGE)
 
@@ -68,14 +86,74 @@ def _retention(value: int) -> int:
     return value
 
 
-def _new_metadata(retention: int) -> MigrationBackupMetadata:
+def _new_metadata(
+    retention: int,
+    *,
+    published_at: str | None = None,
+    after: MigrationBackupMetadata | None = None,
+) -> MigrationBackupMetadata:
+    timestamp = validate_utc_timestamp(
+        published_at or utc_now(),
+        field="setup backup publication time",
+    )
+    if after is not None and timestamp <= after.published_at:
+        try:
+            timestamp = (
+                datetime.strptime(
+                    after.published_at,
+                    "%Y-%m-%dT%H:%M:%SZ",
+                )
+                .replace(tzinfo=UTC)
+                + timedelta(seconds=1)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except (OverflowError, ValueError) as exc:
+            raise _failure() from exc
     return validate_migration_backup_metadata(
         MigrationBackupMetadata(
             generation_id=f"tg_backup_{secrets.token_hex(16)}",
-            published_at=utc_now(),
+            published_at=timestamp,
             publication_retention=_retention(retention),
         )
     )
+
+
+def managed_backup_due(
+    maintenance: ProjectMaintenanceState,
+    *,
+    observed_at: str,
+) -> bool:
+    """Return the fixed stored-policy due state without writing."""
+    timestamp = validate_utc_timestamp(
+        observed_at,
+        field="backup due observation time",
+    )
+    if not maintenance.enabled:
+        return False
+    interval = maintenance.backup_interval_minutes
+    if (
+        isinstance(interval, bool)
+        or not isinstance(interval, int)
+        or interval < MIN_BACKUP_INTERVAL_MINUTES
+        or interval > MAX_BACKUP_INTERVAL_MINUTES
+    ):
+        raise StorageError("internal_error", "backup interval is invalid")
+    if maintenance.backup_last_outcome_code in {
+        "deferred",
+        "failed",
+    }:
+        return True
+    last_success = maintenance.backup_last_success_at
+    if last_success is None:
+        return True
+    validate_utc_timestamp(last_success, field="backup success time")
+    observed = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=UTC
+    )
+    succeeded = datetime.strptime(
+        last_success,
+        "%Y-%m-%dT%H:%M:%SZ",
+    ).replace(tzinfo=UTC)
+    return (observed - succeeded).total_seconds() >= interval * 60
 
 
 def _filename(metadata: MigrationBackupMetadata) -> str:
@@ -173,7 +251,17 @@ def _acquire_os_lock(descriptor: int) -> None:
 
     import fcntl
 
-    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    fcntl.lockf(
+        descriptor,
+        fcntl.LOCK_EX | fcntl.LOCK_NB,
+        1,
+        0,
+        os.SEEK_SET,
+    )
+
+
+def _lock_contended(exc: OSError) -> bool:
+    return exc.errno in {EACCES, EAGAIN, EDEADLK}
 
 
 def _release_os_lock(descriptor: int) -> None:
@@ -186,7 +274,13 @@ def _release_os_lock(descriptor: int) -> None:
 
     import fcntl
 
-    fcntl.flock(descriptor, fcntl.LOCK_UN)
+    fcntl.lockf(
+        descriptor,
+        fcntl.LOCK_UN,
+        1,
+        0,
+        os.SEEK_SET,
+    )
 
 
 @contextmanager
@@ -212,7 +306,15 @@ def managed_backup_lock(target: DatabaseTarget) -> Iterator[None]:
         if details.st_size == 0:
             os.write(descriptor, b"\0")
             os.fsync(descriptor)
-        _acquire_os_lock(descriptor)
+        try:
+            _acquire_os_lock(descriptor)
+        except OSError as exc:
+            if _lock_contended(exc):
+                raise StorageError(
+                    "backup_lock_contended",
+                    _FAILURE_MESSAGE,
+                ) from exc
+            raise
         locked = True
     except StorageError:
         if descriptor is not None:
@@ -315,6 +417,27 @@ def _discover(target: DatabaseTarget) -> list[_Artifact]:
     return sorted(artifacts, key=lambda artifact: artifact.key)
 
 
+def discover_managed_backup_metadata(
+    target: DatabaseTarget,
+) -> tuple[MigrationBackupMetadata, ...]:
+    """Return validated canonical artifacts without exposing their paths."""
+    return tuple(artifact.metadata for artifact in _discover(target))
+
+
+def _new_publication_metadata(
+    target: DatabaseTarget,
+    retention: int,
+    *,
+    published_at: str,
+) -> MigrationBackupMetadata:
+    artifacts = _discover(target)
+    return _new_metadata(
+        retention,
+        published_at=published_at,
+        after=artifacts[-1].metadata if artifacts else None,
+    )
+
+
 def _delete(artifact: _Artifact) -> None:
     if (
         _file_identity(artifact.path) != artifact.identity
@@ -352,7 +475,7 @@ def _prune(
 def _reconcile_v10(target: DatabaseTarget) -> None:
     artifacts = _discover(target)
     with closing(connect_readonly(target.db_path)) as connection:
-        _validate_database(connection, target, SCHEMA_VERSION)
+        _validate_database(connection, target, 10)
         state = read_project_maintenance(connection, target.project.project_id)
     if state is None:
         raise _failure()
@@ -397,6 +520,149 @@ def _reconcile_v10(target: DatabaseTarget) -> None:
         artifacts,
         current.metadata.publication_retention,
         current.metadata.generation_id,
+    )
+
+
+def _reconcile_v11(
+    target: DatabaseTarget,
+    *,
+    observed_at: str,
+    migration_source: bool = False,
+) -> bool:
+    """Repair one bounded v11 generation set before any new publication."""
+    timestamp = validate_utc_timestamp(
+        observed_at,
+        field="backup reconciliation time",
+    )
+    artifacts = _discover(target)
+    artifact_by_id = {
+        artifact.metadata.generation_id: artifact for artifact in artifacts
+    }
+    repository = read_managed_backup_repository(
+        target,
+        migration_source=migration_source,
+    )
+    row_ids = {
+        metadata.generation_id for metadata in repository.generations
+    }
+    file_only = tuple(
+        artifact.metadata
+        for artifact in artifacts
+        if artifact.metadata.generation_id not in row_ids
+    )
+    if file_only:
+        import_managed_backup_generations(
+            target,
+            file_only,
+            migration_source=migration_source,
+        )
+        repository = read_managed_backup_repository(
+            target,
+            migration_source=migration_source,
+        )
+
+    invalid_rows = tuple(
+        metadata
+        for metadata in repository.generations
+        if (
+            metadata.generation_id not in artifact_by_id
+            or artifact_by_id[metadata.generation_id].metadata != metadata
+        )
+    )
+    if invalid_rows:
+        for metadata in invalid_rows:
+            delete_managed_backup_generation(
+                target,
+                metadata.generation_id,
+                failure_at=timestamp,
+                migration_source=migration_source,
+            )
+        return False
+
+    if not repository.generations:
+        if repository.maintenance.latest_backup_generation_id is not None:
+            normalize_managed_backup_pointer(
+                target,
+                migration_source=migration_source,
+            )
+        return True
+    expected_latest = repository.generations[-1]
+    latest_id = repository.maintenance.latest_backup_generation_id
+    if (
+        latest_id != expected_latest.generation_id
+        or repository.maintenance.backup_last_success_at
+        != expected_latest.published_at
+        or repository.maintenance.applied_backup_generations
+        != expected_latest.publication_retention
+    ):
+        normalize_managed_backup_pointer(
+            target,
+            migration_source=migration_source,
+        )
+        repository = read_managed_backup_repository(
+            target,
+            migration_source=migration_source,
+        )
+        latest_id = repository.maintenance.latest_backup_generation_id
+    retention = repository.maintenance.applied_backup_generations
+    if retention is None:
+        raise _failure()
+    ordered = list(repository.generations)
+    keep_ids = {
+        metadata.generation_id for metadata in ordered[-_retention(retention):]
+    }
+    if latest_id is None or latest_id not in keep_ids:
+        raise _failure()
+    for metadata in ordered:
+        if metadata.generation_id in keep_ids:
+            continue
+        artifact = artifact_by_id.get(metadata.generation_id)
+        if artifact is None or artifact.metadata != metadata:
+            raise _failure()
+        _delete(artifact)
+        delete_managed_backup_generation(
+            target,
+            metadata.generation_id,
+            migration_source=migration_source,
+        )
+    return True
+
+
+def _reconciliation_needed(
+    target: DatabaseTarget,
+    repository: ManagedBackupRepositoryState,
+) -> bool:
+    """Detect crash residue cheaply; the locked reconciler performs validation."""
+    directory = _directory(target, create=False)
+    observed: list[MigrationBackupMetadata] = []
+    if directory.exists():
+        try:
+            paths = sorted(directory.iterdir(), key=lambda path: path.name)
+        except OSError:
+            return True
+        for path in paths:
+            metadata = _parse_filename(path.name)
+            if metadata is not None and _file_identity(path) is not None:
+                observed.append(metadata)
+    observed.sort(
+        key=lambda metadata: (
+            metadata.published_at,
+            metadata.generation_id,
+        )
+    )
+    generations = repository.generations
+    if tuple(observed) != generations:
+        return True
+    maintenance = repository.maintenance
+    if not generations:
+        return maintenance.latest_backup_generation_id is not None
+    latest = generations[-1]
+    return (
+        maintenance.latest_backup_generation_id != latest.generation_id
+        or maintenance.backup_last_success_at != latest.published_at
+        or maintenance.applied_backup_generations
+        != latest.publication_retention
+        or len(generations) > latest.publication_retention
     )
 
 
@@ -452,14 +718,103 @@ def _copy(target: DatabaseTarget, metadata: MigrationBackupMetadata) -> int:
                     Path(str(temporary) + suffix).unlink()
 
 
+def _record_attempt_outcome(
+    target: DatabaseTarget,
+    *,
+    code: str,
+    occurred_at: str,
+) -> None:
+    with suppress(Exception):
+        record_backup_attempt_outcome(
+            target,
+            code=code,
+            occurred_at=occurred_at,
+        )
+
+
+def run_routine_backup(
+    target: DatabaseTarget,
+    *,
+    observed_at: str | None = None,
+) -> RoutineBackupResult:
+    """Run at most one due managed publication after a business commit."""
+    timestamp = validate_utc_timestamp(
+        observed_at or utc_now(),
+        field="routine backup observation time",
+    )
+    repository = read_managed_backup_repository(target)
+    if not repository.maintenance.enabled:
+        return RoutineBackupResult(code="not_opted_in", attempted=False)
+    due = managed_backup_due(
+        repository.maintenance,
+        observed_at=timestamp,
+    )
+    if not due and not _reconciliation_needed(target, repository):
+        return RoutineBackupResult(code="current", attempted=False)
+
+    try:
+        with managed_backup_lock(target):
+            if not _reconcile_v11(target, observed_at=timestamp):
+                _record_attempt_outcome(
+                    target,
+                    code="failed",
+                    occurred_at=timestamp,
+                )
+                return RoutineBackupResult(code="failed", attempted=True)
+            repository = read_managed_backup_repository(target)
+            if not managed_backup_due(
+                repository.maintenance,
+                observed_at=timestamp,
+            ):
+                return RoutineBackupResult(code="current", attempted=True)
+            retention = repository.maintenance.backup_generations
+            if retention is None:
+                raise _failure()
+            metadata = _new_publication_metadata(
+                target,
+                retention,
+                published_at=timestamp,
+            )
+            _copy(target, metadata)
+            artifacts = _discover(target)
+            if not any(artifact.metadata == metadata for artifact in artifacts):
+                raise _failure()
+            record_managed_backup(target, metadata)
+            if not _reconcile_v11(target, observed_at=timestamp):
+                raise _failure()
+            return RoutineBackupResult(code="succeeded", attempted=True)
+    except StorageError as exc:
+        code = "deferred" if exc.code == "backup_lock_contended" else "failed"
+        _record_attempt_outcome(
+            target,
+            code=code,
+            occurred_at=timestamp,
+        )
+        return RoutineBackupResult(code=code, attempted=True)
+    except Exception:
+        _record_attempt_outcome(
+            target,
+            code="failed",
+            occurred_at=timestamp,
+        )
+        return RoutineBackupResult(code="failed", attempted=True)
+
+
 def publish_setup_backup(
     target: DatabaseTarget,
     publication_retention: int,
 ) -> MigrationBackupMetadata:
     """Publish one validated copy, commit v10 metadata, then prune."""
-    metadata = _new_metadata(publication_retention)
+    observed_at = utc_now()
     source_version = _source_version(target)
-    if source_version == SCHEMA_VERSION:
+    if source_version >= 11:
+        if not _reconcile_v11(
+            target,
+            observed_at=observed_at,
+            migration_source=True,
+        ):
+            raise _failure()
+    elif source_version == 10:
         _reconcile_v10(target)
     else:
         existing = _discover(target)
@@ -475,15 +830,33 @@ def publish_setup_backup(
                 previous.metadata.generation_id,
             )
 
+    metadata = _new_publication_metadata(
+        target,
+        publication_retention,
+        published_at=observed_at,
+    )
     copied_version = _copy(target, metadata)
     artifacts = _discover(target)
     if not any(item.metadata == metadata for item in artifacts):
         raise _failure()
-    if copied_version == SCHEMA_VERSION:
-        record_setup_backup(target, metadata)
-    _prune(
-        artifacts,
-        metadata.publication_retention,
-        metadata.generation_id,
-    )
+    if copied_version >= 11:
+        record_managed_backup(
+            target,
+            metadata,
+            migration_source=True,
+        )
+        if not _reconcile_v11(
+            target,
+            observed_at=metadata.published_at,
+            migration_source=True,
+        ):
+            raise _failure()
+    else:
+        if copied_version == 10:
+            record_setup_backup(target, metadata)
+        _prune(
+            artifacts,
+            metadata.publication_retention,
+            metadata.generation_id,
+        )
     return metadata

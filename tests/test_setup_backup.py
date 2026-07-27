@@ -9,7 +9,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import create_v9_target
+from tests.m14_test_support import create_v10_target, create_v9_target
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +17,8 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
+from task_governance_tool import backup as backup_service  # noqa: E402
+from task_governance_tool import storage as storage_service  # noqa: E402
 from task_governance_tool.backup import (  # noqa: E402
     managed_backup_lock,
     publish_setup_backup,
@@ -25,6 +27,7 @@ from task_governance_tool.storage import (  # noqa: E402
     StorageError,
     connect_readonly,
     initialize_database,
+    read_managed_backup_repository,
     read_project_maintenance,
     resolve_database_target,
 )
@@ -325,7 +328,7 @@ class SetupBackupTests(unittest.TestCase):
     def test_v10_metadata_failure_does_not_prune_and_restart_reconciles(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = make_target(Path(tmp))
-            initialize_database(target)
+            create_v10_target(target)
             first_time, first_id = deterministic_metadata(1)
             first = publish(target, 1, 1)
             second_time, second_id = deterministic_metadata(2)
@@ -371,6 +374,102 @@ class SetupBackupTests(unittest.TestCase):
             self.assertEqual(state.latest_backup_generation_id, second_id)
             self.assertEqual(state.backup_last_success_at, second_time)
             self.assertEqual(state.applied_backup_generations, 1)
+
+    def test_v11_setup_publication_keeps_rows_files_and_pointer_in_one_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp))
+            initialize_database(target)
+
+            for index in range(1, 4):
+                publish(target, 2, index)
+
+            with closing(connect_readonly(target.db_path)) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT generation_id, published_at,
+                           publication_retention
+                      FROM managed_backup_generations
+                     ORDER BY published_at, generation_id
+                    """
+                ).fetchall()
+                state = read_project_maintenance(
+                    connection,
+                    target.project.project_id,
+                )
+            self.assertEqual(len(canonical_files(target)), 2)
+            self.assertEqual(
+                [str(row["generation_id"]) for row in rows],
+                [deterministic_metadata(index)[1] for index in (2, 3)],
+            )
+            self.assertIsNotNone(state)
+            self.assertEqual(
+                state.latest_backup_generation_id,
+                deterministic_metadata(3)[1],
+            )
+            self.assertEqual(
+                state.backup_last_success_at,
+                deterministic_metadata(3)[0],
+            )
+            self.assertEqual(state.applied_backup_generations, 2)
+
+    def test_v11_setup_reconciliation_accepts_supported_older_source_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp))
+            initialize_database(target)
+            first = publish(target, 2, 1)
+
+            with mock.patch.object(
+                backup_service,
+                "record_managed_backup",
+                side_effect=StorageError(
+                    "internal_error",
+                    "injected file-only generation",
+                ),
+            ):
+                with self.assertRaisesRegex(StorageError, "file-only generation"):
+                    publish(target, 2, 2)
+
+            self.assertEqual(len(canonical_files(target)), 2)
+            with (
+                mock.patch.object(storage_service, "SCHEMA_VERSION", 12),
+                mock.patch.object(backup_service, "SCHEMA_VERSION", 12),
+            ):
+                with self.assertRaisesRegex(
+                    StorageError,
+                    "does not match supported version 12",
+                ):
+                    read_managed_backup_repository(target)
+                third = publish(target, 2, 3)
+
+            with closing(connect_readonly(target.db_path)) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT generation_id, published_at,
+                           publication_retention
+                      FROM managed_backup_generations
+                     ORDER BY published_at, generation_id
+                    """
+                ).fetchall()
+                state = read_project_maintenance(
+                    connection,
+                    target.project.project_id,
+                )
+            self.assertEqual(
+                [str(row["generation_id"]) for row in rows],
+                [
+                    deterministic_metadata(2)[1],
+                    third.generation_id,
+                ],
+            )
+            self.assertEqual(len(canonical_files(target)), 2)
+            self.assertNotEqual(first.generation_id, third.generation_id)
+            self.assertIsNotNone(state)
+            self.assertEqual(
+                state.latest_backup_generation_id,
+                third.generation_id,
+            )
+            self.assertEqual(state.backup_last_success_at, third.published_at)
+            self.assertEqual(state.applied_backup_generations, 2)
 
 
 if __name__ == "__main__":

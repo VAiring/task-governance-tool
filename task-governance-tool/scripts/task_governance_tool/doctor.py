@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from task_governance_tool.backup import managed_backup_due
 from task_governance_tool.project_scope import (
     PREFLIGHT_MESSAGES,
     PROJECT_STATE_MESSAGES,
@@ -24,6 +25,7 @@ from task_governance_tool.storage import (
     default_viewer_output_path,
     is_sqlite_busy_or_locked,
     read_doctor_state,
+    utc_now,
 )
 from task_governance_tool.viewer import inspect_canonical_viewer_status
 
@@ -81,9 +83,18 @@ def _maintenance_component(
     maintenance: ProjectMaintenanceState,
     *,
     viewer_current: bool,
+    observed_at: str,
 ) -> dict[str, Any]:
     enabled = maintenance.enabled
     backup_succeeded = maintenance.backup_last_outcome_code == "succeeded"
+    backup_due = (
+        managed_backup_due(
+            maintenance,
+            observed_at=observed_at,
+        )
+        if enabled
+        else None
+    )
     backup_outcome_code = (
         maintenance.backup_last_outcome_code
         if enabled or backup_succeeded
@@ -99,11 +110,16 @@ def _maintenance_component(
         "opted_in": enabled,
         "backup": {
             "code": (
-                "setup_copy_succeeded"
-                if backup_succeeded
-                else ("configured" if enabled else "not_opted_in")
+                (
+                    maintenance.backup_last_outcome_code
+                    if maintenance.backup_last_outcome_code
+                    in {"deferred", "failed"}
+                    else ("due" if backup_due else "current")
+                )
+                if enabled
+                else "not_opted_in"
             ),
-            "due": None,
+            "due": backup_due,
             "interval_minutes": (
                 maintenance.backup_interval_minutes if enabled else None
             ),
@@ -319,6 +335,7 @@ def run_doctor(
     maintenance = _maintenance_component(
         storage_state.maintenance,
         viewer_current=viewer_status == "current",
+        observed_at=utc_now(),
     )
     project_code = storage_state.project_code
     warning = (

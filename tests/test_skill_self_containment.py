@@ -169,7 +169,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             )
             self.assertIn("fresh", normalized)
         self.assertIn('__version__ = "0.7.0"', runtime_init)
-        self.assertIn("SCHEMA_VERSION = 10", storage)
+        self.assertIn("SCHEMA_VERSION = 11", storage)
         self.assertIn("SNAPSHOT_VERSION = 3", viewer)
         self.assertIn("review_target_base_revision", release_note)
         self.assertIn("omits", release_note)
@@ -235,7 +235,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
             initialized = run("setup")
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
-            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 10)
+            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 11)
             added = run(
                 "task",
                 "add",
@@ -492,7 +492,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertNotIn("db_path", payload)
             self.assertTrue(install.db_path.is_file())
             self.assertTrue(install.db_path.is_relative_to(install.skill_root / "state"))
-            self.assertEqual(payload["data"]["schema_to"], 10)
+            self.assertEqual(payload["data"]["schema_to"], 11)
 
             from_skill_root = install.run(
                 "doctor",

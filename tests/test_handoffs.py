@@ -1070,7 +1070,10 @@ class HandoffMigrationTests(unittest.TestCase):
             identity = project_identity(repo)
             with closing(connect(db)) as connection:
                 applied, _ = apply_migrations(connection)
-                self.assertEqual(applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+                self.assertEqual(
+                    applied,
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                )
                 remove_v10_maintenance_for_test(connection)
                 connection.execute("DELETE FROM schema_migrations WHERE version = 9")
                 connection.execute("DROP TABLE task_effort_bases")

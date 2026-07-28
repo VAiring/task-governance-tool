@@ -1,9 +1,9 @@
 # task-governance-tool MVP Design
 
-Status: implemented through TG-M15.6 at release v0.8.0/schema v13 and Viewer
-snapshot v3. TG-M16.0 fixes the reduced loop-discipline trial design; its
-runtime and active-Skill units remain pending. TG-M12.3 Issue adapter remains
-blocked.
+Status: implemented through the TG-M16.1 runtime slice at release
+v0.8.0/schema v13 and Viewer snapshot v3. The active Skill remains on its
+M15.6 guidance until TG-M16.2, and TG-M16.4 owns final package
+synchronization. TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.

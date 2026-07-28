@@ -1,9 +1,10 @@
 # task-governance-tool MVP Specification
 
-Status: implemented through TG-M15.6 at release v0.8.0/schema v13 and Viewer
-snapshot v3. TG-M16.0 fixes the approved reduced loop-discipline trial
-contract; TG-M16 runtime and active-Skill units are not yet implemented.
-TG-M12.3 Issue adapter remains blocked on a future intake contract.
+Status: implemented through the TG-M16.1 runtime slice at release
+v0.8.0/schema v13 and Viewer snapshot v3. The active Skill remains on its
+M15.6 guidance until TG-M16.2, and TG-M16.4 owns final package
+synchronization. TG-M12.3 Issue adapter remains blocked on a future intake
+contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -1238,8 +1239,8 @@ Acceptance requires automated proof that:
   an existing basis it also leaves advisory state unchanged, while after a
   prior basis it may advance only hidden activity counters; enabled threshold
   or unknown results through TG-M15.6 always continue and never mutate
-  Task/handoff/acceptance/review state; TG-M16.1 later changes only an
-  exceeded result's action while preserving that no-mutation boundary;
+  Task/handoff/acceptance/review state; TG-M16.1 changes only an exceeded
+  result's action while preserving that no-mutation boundary;
 - package self-status is deterministic and read-only for clean, modified,
   missing/invalid-manifest, excluded-directory, and installed-copy cases;
   every result continues and changes no package, SQLite, Git, or target state;

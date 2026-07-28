@@ -153,6 +153,49 @@ class EffortProfileTests(unittest.TestCase):
             self.assertFalse(invalid.enabled)
             self.assertEqual(invalid.diagnostic, "profile_invalid")
 
+    def test_action_selection_uses_only_valid_enabled_nonempty_exceeded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            skill = Path(tmp) / "skill"
+            skill.mkdir()
+            absent = load_effort_profile(skill)
+            disabled = write_profile(skill, enabled=False)
+            enabled = write_profile(skill, thresholds={"changed_files": 0})
+            invalid = disabled_profile(
+                present=True,
+                diagnostic="profile_invalid",
+            )
+            cases = (
+                ("absent", absent, [], "continue"),
+                ("absent_with_exceeded", absent, ["changed_files"], "continue"),
+                ("disabled", disabled, [], "continue"),
+                (
+                    "disabled_with_exceeded",
+                    disabled,
+                    ["changed_files"],
+                    "continue",
+                ),
+                ("invalid", invalid, [], "continue"),
+                (
+                    "invalid_with_exceeded",
+                    invalid,
+                    ["changed_files"],
+                    "continue",
+                ),
+                ("below_threshold", enabled, [], "continue"),
+                (
+                    "exceeded",
+                    enabled,
+                    ["changed_files"],
+                    "reconcile_scope",
+                ),
+            )
+            for name, profile, exceeded, expected in cases:
+                with self.subTest(name=name):
+                    self.assertEqual(
+                        effort_service._select_suggested_action(profile, exceeded),
+                        expected,
+                    )
+
 
 class EffortMigrationTests(unittest.TestCase):
     def _create_v8(self, db, repo):
@@ -728,9 +771,21 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                 "changed_lines",
                 "changed_modules",
             ])
-            self.assertEqual(first.data["suggested_action"], "continue")
+            self.assertEqual(first.data["suggested_action"], "reconcile_scope")
             self.assertEqual(first.data["warning_key"], WARNING_KEY)
-            self.assertEqual(first.warnings[0]["warning_key"], WARNING_KEY)
+            self.assertEqual(
+                first.warnings,
+                [
+                    {
+                        "code": "effort_advisory_threshold_exceeded",
+                        "message": "One or more configured effort thresholds were exceeded.",
+                        "warning_key": WARNING_KEY,
+                        "suggested_action": "reconcile_scope",
+                    }
+                ],
+            )
+            self.assertEqual(second.data["suggested_action"], "reconcile_scope")
+            self.assertEqual(second.warnings, first.warnings)
             self.assertEqual(
                 first.data["measurements"],
                 second.data["measurements"],
@@ -748,7 +803,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             root = Path(tmp)
             skill = root / "skill"
             skill.mkdir()
-            profile = write_profile(skill)
+            profile = write_profile(skill, thresholds={"changed_files": 0})
             repo = root / "repo"
             initialize_git_repo(repo)
             db = root / "taskgov.sqlite"
@@ -814,6 +869,9 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         blocked_reason="Synthetic hold",
                         effort_profile=disabled_profile(),
                     )
+            (repo / "overlap.txt").write_text("overlap\n", encoding="utf-8")
+            git(repo, "add", "overlap.txt")
+            git(repo, "commit", "-q", "-m", "overlap")
             with closing(connect_readonly(db)) as connection:
                 overlapped = build_effort_advisory(
                     connection,
@@ -824,7 +882,22 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                 )
             self.assertEqual(overlapped.data["attribution"], "unknown")
             self.assertIn("active_task_overlap", overlapped.data["unknown_reasons"])
-            self.assertEqual(overlapped.data["suggested_action"], "continue")
+            self.assertEqual(overlapped.data["exceeded"], ["changed_files"])
+            self.assertEqual(
+                overlapped.data["suggested_action"],
+                "reconcile_scope",
+            )
+            self.assertEqual(
+                overlapped.warnings,
+                [
+                    {
+                        "code": "effort_advisory_threshold_exceeded",
+                        "message": "One or more configured effort thresholds were exceeded.",
+                        "warning_key": WARNING_KEY,
+                        "suggested_action": "reconcile_scope",
+                    }
+                ],
+            )
 
     def test_activity_started_during_git_observation_is_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1177,6 +1250,46 @@ class EffortAdvisoryCliTests(unittest.TestCase):
             self.assertTrue(payload["data"]["enabled"])
             self.assertEqual(payload["data"]["suggested_action"], "continue")
             self.assertEqual(payload["data"]["warning_key"], WARNING_KEY)
+
+            change = repo / "effort-change.txt"
+            change.write_text("exceeded\n", encoding="utf-8")
+            git(repo, "add", "effort-change.txt")
+            git(repo, "commit", "-q", "-m", "exceed effort threshold")
+            db_before = install.db_path.read_bytes()
+            repo_before = repo_file_bytes(repo)
+            sidecars_before = sorted(
+                path.name for path in install.db_path.parent.glob("taskgov.sqlite-*")
+            )
+            exceeded = command("task", "effort", task_id, "--read-only")
+            self.assertEqual(exceeded.returncode, 0, exceeded.stderr)
+            exceeded_payload = json.loads(exceeded.stdout)
+            self.assertEqual(
+                exceeded_payload["data"]["suggested_action"],
+                "reconcile_scope",
+            )
+            self.assertEqual(
+                exceeded_payload["warnings"],
+                [
+                    {
+                        "code": "effort_advisory_threshold_exceeded",
+                        "message": "One or more configured effort thresholds were exceeded.",
+                        "warning_key": WARNING_KEY,
+                        "suggested_action": "reconcile_scope",
+                    }
+                ],
+            )
+            self.assertEqual(install.db_path.read_bytes(), db_before)
+            self.assertEqual(repo_file_bytes(repo), repo_before)
+            self.assertEqual(
+                sorted(
+                    path.name
+                    for path in install.db_path.parent.glob("taskgov.sqlite-*")
+                ),
+                sidecars_before,
+            )
+            change.unlink()
+            git(repo, "add", "-u", "effort-change.txt")
+            git(repo, "commit", "-q", "-m", "restore effort baseline")
 
             write_profile(copied_skill)
             git(repo, "add", ".agents/skills/task-governance-tool/config")

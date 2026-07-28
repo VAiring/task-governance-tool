@@ -18,11 +18,13 @@ workspace.
 ## Current Project Shape
 
 - The intended repository root is `C:\WorkSpace\task-governance-tool`.
-- The project is implemented through TG-M15.6 at v0.8.0/schema v13 with Viewer
-  snapshot v3. TG-M16.0 has fixed the reduced loop-discipline trial contract;
-  its runtime and active-Skill units remain gated in the TG-M16 lane. The
-  installable package, CLI, migrations, tests, and formal documents already
-  exist; inspect them before changing an established contract.
+- The project is implemented through the TG-M16.1 runtime slice at
+  v0.8.0/schema v13 with Viewer snapshot v3. TG-M16.1 is an intentionally
+  non-publication-ready intermediate revision: active-Skill guidance remains
+  at the M15.6 behavior until TG-M16.2, and TG-M16.4 owns final package
+  synchronization. The installable package, CLI, migrations, tests, and formal
+  documents already exist; inspect them before changing an established
+  contract.
 - The workspace is Git-managed, initialized on the `main` branch. Continue to
   verify Git state before workflow steps because clones or copied workspaces may
   differ.
@@ -310,13 +312,13 @@ The product must not become:
   Scope Reconciliation guidance, and TG-M16.4 synchronizes the package and
   runs behavioral acceptance. The former setup/bootstrap and project
   instruction-adoption unit TG-M16.3 is cancelled.
-- TG-M16.0 is documentation-only. The runtime retains the M15.6 `continue`
-  action until TG-M16.1; the active Skill retains its existing guidance until
-  TG-M16.2. The intermediate TG-M16.1 revision may expose the non-blocking
-  action before the Skill consumes it and is not a publication-ready M16
-  package. TG-M16.4 owns final synchronization and publication acceptance.
-  The remaining bullets define those later units' acceptance boundary, not an
-  added pre-implementation normal-loop obligation.
+- TG-M16.0 is documentation-only. The runtime now exposes the TG-M16.1
+  non-blocking action, while the active Skill retains its existing guidance
+  until TG-M16.2. This intermediate TG-M16.1 revision exposes the action before
+  the Skill consumes it and is not a publication-ready M16 package. TG-M16.4
+  owns final synchronization and publication acceptance. The remaining bullets
+  define the current and later units' acceptance boundary, not an added
+  normal-loop obligation.
 - TG-M16.1 changes only a valid, enabled Effort observation whose `exceeded`
   list is nonempty from `continue` to `reconcile_scope`. Absent, disabled,
   invalid, below-threshold, and unknown-only observations continue. Exceeded

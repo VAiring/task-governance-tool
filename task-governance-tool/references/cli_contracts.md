@@ -407,9 +407,12 @@ Git work.
 Enabled data contains `task_id`, `enabled`, `profile`, `measurements`,
 `thresholds`, `exceeded`, `basis`, `observation`, `coverage`, `attribution`,
 `unknown_reasons`, `warning_key`, and `suggested_action`.
-`suggested_action` is always `continue`. Threshold or attribution results
-never change status, acceptance, review, completion, or target state. The
-command emits no paths, stderr, diffs, raw logs, or Git writes.
+For a valid enabled profile, `suggested_action` is `reconcile_scope` exactly
+when `exceeded` is nonempty, including when attribution is also unknown;
+otherwise it is `continue`. The threshold warning uses the same action, and
+one observation emits at most one such warning. Threshold or attribution
+results never change status, acceptance, review, completion, or target state.
+The command emits no paths, stderr, diffs, raw logs, or Git writes.
 
 ### `task show`
 

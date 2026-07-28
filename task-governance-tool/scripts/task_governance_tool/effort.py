@@ -67,6 +67,15 @@ class EffortProfile:
     diagnostic: str | None = None
 
 
+def _select_suggested_action(
+    profile: EffortProfile,
+    exceeded: list[str],
+) -> str:
+    if profile.valid and profile.enabled and exceeded:
+        return "reconcile_scope"
+    return "continue"
+
+
 @dataclass(frozen=True)
 class GitEndpoint:
     available: bool
@@ -734,7 +743,7 @@ def _empty_advisory_data(
         "attribution": "unknown",
         "unknown_reasons": [reason],
         "warning_key": WARNING_KEY,
-        "suggested_action": "continue",
+        "suggested_action": _select_suggested_action(profile, []),
     }
 
 
@@ -919,6 +928,7 @@ def build_effort_advisory(
         and measurements[metric] is not None
         and int(measurements[metric]) > profile.thresholds[metric]
     ]
+    suggested_action = _select_suggested_action(profile, exceeded)
     observed_at = utc_now()
     data = {
         "task_id": task_id,
@@ -955,7 +965,7 @@ def build_effort_advisory(
         "attribution": "exclusive_task_window" if not reasons else "unknown",
         "unknown_reasons": _ordered_reasons(reasons),
         "warning_key": WARNING_KEY,
-        "suggested_action": "continue",
+        "suggested_action": suggested_action,
     }
     warnings = []
     if exceeded:
@@ -964,7 +974,7 @@ def build_effort_advisory(
                 "code": "effort_advisory_threshold_exceeded",
                 "message": "One or more configured effort thresholds were exceeded.",
                 "warning_key": WARNING_KEY,
-                "suggested_action": "continue",
+                "suggested_action": suggested_action,
             }
         )
     return EffortAdvisoryResult(data=data, warnings=warnings)

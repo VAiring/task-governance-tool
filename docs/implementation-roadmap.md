@@ -1,9 +1,9 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through the TG-M16.2 active-Skill guidance slice
-are complete at v0.8.0/schema v13 with Viewer snapshot v3. TG-M16.4 is approved
-and pending; TG-M16.3 is cancelled. TG-M12.3 remains blocked on a future Issue
-Skill intake contract.
+Status: implementation units through the TG-M16.4 reduced loop-discipline
+behavioral acceptance are complete at v0.8.0/schema v13 with Viewer snapshot
+v3. TG-M16.3 is cancelled. TG-M12.3 remains blocked on a future Issue Skill
+intake contract.
 The default-browser launch follow-up remains requirements-only pending design
 and roadmap approval.
 
@@ -3205,7 +3205,7 @@ Lane: `TG-M16`
 Lane order: 50
 Review tier: Tier 2
 Depends on: completed TG-M16.1 and TG-M16.2; cancelled TG-M16.3
-Status: approved
+Status: complete
 
 Intended outcome:
 

@@ -260,6 +260,94 @@ class SkillSelfContainmentTests(unittest.TestCase):
             manifest["core_files"],
         )
 
+    def test_m16_package_guidance_and_forward_evidence_are_synchronized(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        release_note = (ROOT / "docs" / "release-install.md").read_text(
+            encoding="utf-8"
+        )
+        forward_note = (
+            ROOT / "docs" / "forward-tests" / "tg-m16-loop-discipline.md"
+        ).read_text(encoding="utf-8")
+        specification = (ROOT / "docs" / "specification.md").read_text(
+            encoding="utf-8"
+        )
+        design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8")
+        roadmap = (ROOT / "docs" / "implementation-roadmap.md").read_text(
+            encoding="utf-8"
+        )
+        plan = (ROOT / "plan.md").read_text(encoding="utf-8")
+        manifest = json.loads(
+            (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
+        )
+
+        for text in (readme, release_note):
+            normalized = " ".join(text.split())
+            for phrase in (
+                "suggested_action=reconcile_scope",
+                "references/reconciliation.md",
+                "one non-blocking",
+                "two materially equivalent",
+                "session-local",
+                "unrelated ready work",
+            ):
+                self.assertIn(phrase, normalized)
+        self.assertIn("three one-level Skill references", release_note)
+        self.assertIn("20 command leaves", release_note)
+        self.assertIn("nine governance subprocess", release_note)
+        self.assertIn("or ten when", release_note)
+
+        self.assertIn(
+            "Context: three fresh sub-agents with no inherited task discussion",
+            forward_note,
+        )
+        self.assertIn("\nResult: PASS\n", forward_note.split("## Boundary", 1)[0])
+        for heading in (
+            "## Session A: Effort And Test Repair",
+            "## Session B: Review Remediation",
+            "## Session C: Durable Rediscovery",
+        ):
+            self.assertIn(heading, forward_note)
+            session_section = forward_note.split(heading, 1)[1].split(
+                "\n## ",
+                1,
+            )[0]
+            self.assertEqual(session_section.count("Result: PASS"), 1)
+        normalized_forward = " ".join(forward_note.split())
+        for phrase in (
+            "rejected a third equivalent repair",
+            "refused to reuse historical PASS receipts",
+            "continued the unrelated lane",
+            "must not be reconstructed",
+            "setup is not a resume prerequisite",
+            "no consuming-project instruction chain is inspected",
+            "Remaining user decisions are returned once",
+        ):
+            self.assertIn(phrase, normalized_forward)
+
+        for authority in (specification, design, roadmap, plan):
+            status_block = authority.split("\n\n", 2)[1]
+            normalized_authority = " ".join(status_block.split())
+            self.assertIn("TG-M16.4", normalized_authority)
+            self.assertIn(
+                "behavioral acceptance",
+                normalized_authority.lower(),
+            )
+            self.assertNotIn(
+                "TG-M16.4 is approved and pending",
+                normalized_authority,
+            )
+            self.assertNotIn(
+                "TG-M16.4 package synchronization remains pending",
+                normalized_authority,
+            )
+        m164_roadmap = roadmap.split(
+            "### TG-M16.4 Package Synchronization And Behavioral Acceptance",
+            1,
+        )[1].split("\n## ", 1)[0]
+        self.assertIn("Status: complete", m164_roadmap)
+        self.assertNotIn("Status: approved", m164_roadmap)
+        self.assertIn("references/reconciliation.md", manifest["core_files"])
+
     def test_tg_m11_snapshot_reopen_and_release_metadata_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(

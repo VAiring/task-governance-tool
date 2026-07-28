@@ -113,6 +113,22 @@ the optional Effort Advisory is enabled, so the default-off flow needs no extra
 LLM choice or command. `task current` rediscovers paused, blocked,
 review-pending, and in-progress work.
 
+When that deterministic flag is enabled, run `task effort` once at the existing
+verification/review boundary. `suggested_action=continue` proceeds normally;
+`suggested_action=reconcile_scope` loads
+`references/reconciliation.md` for one non-blocking episode covering the whole
+result, not one episode per exceeded metric. The signal itself never changes
+Task state, acceptance, handoffs, or review evidence.
+
+A failed verification or blocking review prevents only the affected Task's
+completion while safe authorized repair and unrelated ready work continue.
+Never weaken a test merely to obtain PASS. Without new evidence, two materially
+equivalent failed repairs prohibit a third equivalent repair; wrapper, command,
+or working-directory changes alone are not new evidence. Attempt comparison is
+session-local and resets in a fresh session. Hand off out-of-scope discoveries,
+block only after safe authorized work is exhausted, and batch any remaining
+user decisions after unrelated safe work.
+
 At a genuine continuation boundary, an optional typed checkpoint records only
 the bounded summary, next action, and unresolved risks:
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import builtins
+import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -9,6 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from tests.m14_test_support import file_snapshot, make_physical_install
 
@@ -21,6 +25,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool import __version__  # noqa: E402
 from task_governance_tool.cli import build_parser  # noqa: E402
+from task_governance_tool.setup import run_setup  # noqa: E402
 from task_governance_tool.storage import SCHEMA_VERSION  # noqa: E402
 from task_governance_tool.viewer import SNAPSHOT_VERSION  # noqa: E402
 
@@ -358,6 +363,99 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         self.assertIn(__version__, workflow)
         self.assertRegex(workflow, r"SCHEMA_VERSION[^\r\n]*13")
         self.assertNotIn("web export --help", workflow)
+
+    def test_m16_setup_does_not_seed_tasks_or_adopt_project_instructions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            instructions_path = install.project_root / "AGENTS.md"
+            instructions_content = (
+                "# Existing project instructions\n\n"
+                "This file is a sentinel and must not be inspected or adopted "
+                "by setup.\n"
+            )
+            instructions_path.write_text(instructions_content, encoding="utf-8")
+            before = file_snapshot(install.project_root, exclude_state=True)
+
+            instruction_key = os.path.normcase(
+                os.path.abspath(os.fspath(instructions_path))
+            )
+
+            def reject_instruction_access(candidate):
+                if isinstance(candidate, int):
+                    return
+                try:
+                    candidate_key = os.path.normcase(
+                        os.path.abspath(os.fspath(candidate))
+                    )
+                except TypeError:
+                    return
+                if candidate_key == instruction_key:
+                    raise AssertionError(
+                        "setup inspected the consuming project's AGENTS.md"
+                    )
+
+            original_open = builtins.open
+            original_io_open = io.open
+            original_stat = os.stat
+            original_lstat = os.lstat
+
+            def guarded_open(candidate, *args, **kwargs):
+                reject_instruction_access(candidate)
+                return original_open(candidate, *args, **kwargs)
+
+            def guarded_io_open(candidate, *args, **kwargs):
+                reject_instruction_access(candidate)
+                return original_io_open(candidate, *args, **kwargs)
+
+            def guarded_stat(candidate, *args, **kwargs):
+                reject_instruction_access(candidate)
+                return original_stat(candidate, *args, **kwargs)
+
+            def guarded_lstat(candidate, *args, **kwargs):
+                reject_instruction_access(candidate)
+                return original_lstat(candidate, *args, **kwargs)
+
+            with (
+                mock.patch("builtins.open", guarded_open),
+                mock.patch("io.open", guarded_io_open),
+                mock.patch("os.stat", guarded_stat),
+                mock.patch("os.lstat", guarded_lstat),
+            ):
+                setup_result = run_setup(
+                    repo=str(install.project_root),
+                    repo_explicit=True,
+                    script_path=install.entrypoint,
+                    read_only=False,
+                    backup_interval_minutes=None,
+                    backup_generations=None,
+                )
+            self.assertTrue(setup_result.ok, setup_result)
+
+            setup_payload, _ = self.run_json(install, "setup")
+            self.assertEqual(
+                file_snapshot(install.project_root, exclude_state=True),
+                before,
+            )
+            self.assertEqual(
+                instructions_path.read_text(encoding="utf-8"),
+                instructions_content,
+            )
+            self.assertTrue(
+                all(
+                    not key.startswith("instruction")
+                    and key not in {"bootstrap_task", "policy_task"}
+                    for key in nested_keys(setup_payload)
+                )
+            )
+
+            listed, _ = self.run_json(
+                install,
+                "task",
+                "list",
+                "--include-done",
+            )
+            self.assertEqual(listed["data"]["count"], 0)
+            self.assertEqual(listed["data"]["tasks"], [])
 
     def test_all_review_target_kinds_work_through_the_installed_public_cli(self):
         with tempfile.TemporaryDirectory() as tmp:

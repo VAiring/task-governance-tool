@@ -22,8 +22,8 @@ installable archive whose root is the repository's
 
 The installable package contains the co-located release manifest, `SKILL.md`,
 display metadata, bundled Viewer template, CLI entry point and runtime modules,
-and the two one-level Skill references. The manifest is the exact inventory and
-digest authority for packaged core files.
+and the three one-level Skill references. The manifest is the exact inventory
+and digest authority for packaged core files.
 
 The archive must exclude:
 
@@ -202,7 +202,7 @@ unchanged.
 
 ## Public CLI Surface
 
-The release exposes exactly these 20 leaves:
+The release exposes exactly these 20 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -235,6 +235,18 @@ calls with the default-off Effort Advisory, or ten when an enabled valid
 profile mechanically adds `task effort`. Doctor, checkpoint, and completion
 check are optional and absent from the standard success path.
 
+An enabled `task effort` result returns `suggested_action=continue` or the
+single non-blocking `suggested_action=reconcile_scope` route. The latter loads
+`references/reconciliation.md` once for the whole result. Initial failure
+integrity remains in the Skill itself:
+failed verification or blocking review prevents affected completion but not
+safe authorized repair or unrelated ready work, and tests are never weakened
+merely to obtain PASS. Without new evidence, two materially equivalent failed
+repairs or review-remediation cycles prohibit a third equivalent cycle. The
+comparison is session-local, creates no SQLite counter or new command, and
+resets in a fresh session; durable Task, handoff, finding, and receipt state
+remains available through normal rediscovery.
+
 For review before the completion commit, stage exactly the intended files,
 set the target with `review target set <task-id> --kind git_snapshot`, and use
 the single bounded packet from `review prepare`. Unstaged and untracked files
@@ -264,8 +276,8 @@ project's governing documents and current user decisions remain authoritative.
 
 Before creating the 0.8.0 artifact:
 
-1. Confirm all M14.1-M14.7 acceptance and required Tier 2 reviews passed on
-   their exact revisions.
+1. Confirm all M14.1-M14.7 and reduced TG-M16 acceptance and required Tier 2
+   reviews passed on their exact revisions.
 2. Run the complete offline test suite and `git diff --check`.
 3. Verify root and group help expose exactly the 20 leaves above.
 4. Verify unknown removed surfaces and raw path options fail before any
@@ -275,8 +287,9 @@ Before creating the 0.8.0 artifact:
 6. Validate an isolated physical project-scoped install: package status is
    clean in `doctor`, setup preview is no-write, setup succeeds, and a repeated
    setup is idempotent.
-7. Run the installed-Skill self-containment and realistic
-   setup-to-completion smoke tests.
+7. Run the installed-Skill self-containment, realistic setup-to-completion
+   smoke tests, and the TG-M16 fresh-session repair, review, and rediscovery
+   pressure scenarios.
 8. Confirm the archive manifest includes every packaged core file with current
    digests and package version `0.8.0`.
 9. Confirm generated state, SQLite files and sidecars, backups, locks, Viewer
@@ -295,4 +308,8 @@ Version 0.8.0 consolidates setup and diagnostics, adds typed checkpoints and a
 bounded Review Packet, moves backup and Viewer upkeep behind deterministic
 post-commit maintenance, removes storage and Viewer administration from the
 public CLI, and migrates local state through schema v13. Viewer snapshot v3 is
-unchanged while its accepted source schemas expand through v13.
+unchanged while its accepted source schemas expand through v13. Reduced loop
+discipline routes only deterministically exceeded Effort results to one
+non-blocking reconciliation episode and bounds repeated repair in session-local
+guidance without adding a command, schema field, persisted counter, or normal
+green-path stop.

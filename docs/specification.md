@@ -1,10 +1,10 @@
 # task-governance-tool MVP Specification
 
-Status: implemented through the TG-M16.2 active-Skill guidance slice at
-release v0.8.0/schema v13 and Viewer snapshot v3. TG-M16.1 supplies runtime
-Effort routing, TG-M16.2 supplies conditional session-local reconciliation,
-and TG-M16.4 owns final package synchronization. TG-M12.3 Issue adapter
-remains blocked on a future intake contract.
+Status: implemented through the TG-M16.4 reduced loop-discipline behavioral
+acceptance at release v0.8.0/schema v13 and Viewer snapshot v3. TG-M16.1
+supplies runtime Effort routing, while TG-M16.2 and TG-M16.4 supply the
+conditional session-local guidance and synchronized package evidence.
+TG-M12.3 Issue adapter remains blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -2638,7 +2638,7 @@ snapshot, or normal-loop change.
 
 ## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial
 
-TG-M16 is approved as a reduced behavioral trial. TG-M16.0 fixes this formal
+TG-M16 is implemented as a reduced behavioral trial. TG-M16.0 fixes this formal
 contract before any runtime or active-Skill change. TG-M16.1 owns only Effort
 action routing, TG-M16.2 owns concise Test Repair and Scope Reconciliation
 guidance, and TG-M16.4 owns final package synchronization and behavioral

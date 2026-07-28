@@ -189,10 +189,13 @@ The default JSON `task show` result always supplies
 python .agents/skills/task-governance-tool/scripts/taskgov.py task effort --repo <target-project> <task-id> --read-only --json
 ```
 
-Run it once at the existing verification/review boundary. Always follow its
-fixed `suggested_action=continue`. Do not ask the user, create a handoff,
-expand acceptance, pause, block, fail, or add a completion/review gate merely
-because a threshold is exceeded or attribution is unknown. A separate
+Run it once at the existing verification/review boundary. Continue directly
+when `suggested_action=continue`. When
+`suggested_action=reconcile_scope`, read
+[reconciliation.md](reconciliation.md) and run one non-blocking
+session-local episode for the whole result, not one episode per exceeded
+metric. Neither action by itself asks the user, creates a handoff, expands
+acceptance, pauses, blocks, fails, or adds a completion/review gate. A separate
 concrete safety problem still follows the project's existing safety rules.
 
 Do not create or change an Effort Advisory profile without explicit
@@ -244,10 +247,12 @@ After blocking one lane, return to `task next` for unrelated ready work.
 
 Classify each discovery once:
 
-1. Keep it in the current task only when current acceptance requires it and
-   current authority safely permits it.
-2. Record it as the current task's blocker only when it prevents acceptance
-   and cannot be resolved within current authority.
+1. Keep it in the current Task only when it is within accepted scope and
+   current authority safely permits the repair. This includes
+   acceptance-required work and regressions introduced by that Task; a failing
+   test alone establishes neither condition.
+2. Record it as the current Task's blocker only when it prevents acceptance
+   and safe authorized work for the affected Task or lane is exhausted.
 3. Otherwise, durably hand it off before continuing:
 
    ```powershell
@@ -343,7 +348,12 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add
 Record findings with `review finding add` and resolve them with
 `review finding resolve`. A current-generation `changes_requested` receipt or
 an unresolved high/medium finding blocks completion. After a meaningful fix,
-set a newer target and obtain fresh qualifying receipts.
+set a newer target and obtain a fresh current-generation review result. A
+result that remains blocking counts as an unsuccessful remediation cycle;
+completion still requires fresh qualifying PASS receipts.
+If test or review failure recurs after an attempted repair, read
+[reconciliation.md](reconciliation.md) before another materially equivalent
+repair or remediation cycle.
 
 Optionally preview completion readiness without writing:
 

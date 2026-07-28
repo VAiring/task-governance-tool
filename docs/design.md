@@ -1,9 +1,10 @@
 # task-governance-tool MVP Design
 
-Status: implemented through the TG-M16.1 runtime slice at release
-v0.8.0/schema v13 and Viewer snapshot v3. The active Skill remains on its
-M15.6 guidance until TG-M16.2, and TG-M16.4 owns final package
-synchronization. TG-M12.3 Issue adapter remains blocked.
+Status: implemented through the TG-M16.2 active-Skill guidance slice at
+release v0.8.0/schema v13 and Viewer snapshot v3. TG-M16.1 supplies runtime
+Effort routing, TG-M16.2 supplies conditional session-local reconciliation,
+and TG-M16.4 owns final package synchronization. TG-M12.3 Issue adapter
+remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -78,6 +79,7 @@ task-governance-tool/
   references/
     task_workflow.md
     cli_contracts.md
+    reconciliation.md
 tests/
 fixtures/
   task-status-mvp/
@@ -2977,16 +2979,16 @@ single Effort call and nine/ten-call budgets are unchanged.
 ### Session-Local Guidance Model
 
 M16.2 represents neither retries nor reconciliation in SQLite. The active
-Skill will add one short trigger that loads
+Skill adds one short trigger that loads
 `references/reconciliation.md` only after `reconcile_scope` or repeated test
-or review failure. Root `AGENTS.md` will hold only the durable short
-invariants; the one-level reference will hold the bounded procedure and
-examples. Normal successful work loads no extra reference and performs no
-extra taskgov call.
+or review failure. The Skill Operating Rules and root `AGENTS.md` hold only the
+durable first-failure, test-integrity, and continue-first invariants; the
+one-level reference holds the bounded procedure and examples. Normal successful
+work loads no extra reference and performs no extra taskgov call.
 
-The procedure keeps a session-local comparison of failed attempts. Two failed
-repairs with the same material hypothesis and repair prohibit a third
-equivalent execution when no new evidence exists. Wrapper, command spelling,
+The procedure keeps a session-local comparison of failed attempts.
+After two materially equivalent failed repairs, a third equivalent execution
+is prohibited when no new evidence exists. Wrapper, command spelling,
 working-directory, Task-label, or execution-unit-label changes do not create
 new evidence by themselves. A safe diagnostic is allowed and is new evidence
 only if its result can materially alter the causal hypothesis, authorized
@@ -3013,8 +3015,10 @@ continue. Any decisions that remain after safe independent work are returned
 in one bounded batch.
 
 Review remediation begins with the existing blocking receipt/finding state. A
-meaningful fix advances to a fresh target generation and fresh receipts. Two
-unsuccessful materially equivalent remediation cycles without new evidence
+meaningful fix advances to a fresh target generation and a fresh
+current-generation review result. A result that remains blocking counts as one
+unsuccessful cycle; completion still requires fresh qualifying PASS receipts.
+Two unsuccessful materially equivalent remediation cycles without new evidence
 prohibit a third equivalent cycle and use the same bounded decision or blocker
 path. There is no second review state machine or attempt record.
 

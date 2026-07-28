@@ -133,6 +133,133 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("verification and review gates", skill_md.lower())
         self.assertIn("current governed task", openai_yaml.lower())
 
+    def test_m16_reconciliation_guidance_is_conditional_and_bounded(self):
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
+            encoding="utf-8"
+        )
+        reconciliation_path = SKILL_ROOT / "references" / "reconciliation.md"
+        reconciliation = reconciliation_path.read_text(encoding="utf-8")
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        specification = (ROOT / "docs" / "specification.md").read_text(
+            encoding="utf-8"
+        )
+        design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8")
+        manifest = json.loads(
+            (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
+        )
+
+        direct_link = (
+            "[references/reconciliation.md](references/reconciliation.md)"
+        )
+        self.assertIn(direct_link, skill_md)
+        self.assertIn("[reconciliation.md](reconciliation.md)", workflow)
+        self.assertIn(
+            "`task-governance-tool/references/reconciliation.md`",
+            agents,
+        )
+        normalized_agents = " ".join(agents.split())
+        self.assertIn(
+            "does not by itself stop safe authorized diagnosis, repair, or "
+            "unrelated ready lanes",
+            normalized_agents,
+        )
+        self.assertIn(
+            "Never weaken a test merely to obtain PASS",
+            normalized_agents,
+        )
+        self.assertIn(
+            "no safe authorized approved work remains because affected repair "
+            "paths are exhausted, remaining work is blocked or dependent, a "
+            "required user decision is missing, or an external state change is "
+            "needed",
+            normalized_agents,
+        )
+        normalized_skill = " ".join(skill_md.split())
+        for phrase in (
+            "does not by itself stop safe authorized diagnosis, repair, or "
+            "unrelated ready work",
+            "Never weaken a test merely to obtain PASS",
+            "Change a wrong test only when current authority establishes the "
+            "expected behavior",
+            "changing a Task Contract or acceptance requires later explicit "
+            "authority",
+        ):
+            self.assertIn(phrase, normalized_skill)
+        self.assertIn("data.suggested_action=reconcile_scope", skill_md)
+        self.assertIn("failure recurs after an attempted repair", skill_md)
+        self.assertIn("Neither trigger adds a green-path command", skill_md)
+        self.assertNotIn(
+            "Always follow its\nfixed `suggested_action=continue`",
+            workflow,
+        )
+        self.assertLessEqual(len(reconciliation.splitlines()), 100)
+        self.assertNotIn("taskgov.py", reconciliation)
+        self.assertNotIn("](", reconciliation)
+
+        for marker in (
+            "**Evidence and authority.**",
+            "**Material equivalence.**",
+            "**Useful diagnostics.**",
+            "**Attempt boundary.**",
+            "**Test integrity.**",
+            "**Scope classification.**",
+            "**Review remediation.**",
+            "**Continue safely.**",
+        ):
+            self.assertIn(marker, reconciliation)
+
+        normalized = " ".join(reconciliation.split())
+        for phrase in (
+            "after two materially equivalent failed repairs",
+            "do not execute a third equivalent repair",
+            "working directory",
+            "Never weaken a test merely to obtain PASS",
+            "later explicit authority",
+            "within accepted scope and current authority",
+            "A failing test alone establishes neither condition",
+            "after safe authorized work",
+            "hand off the out-of-scope discovery immediately",
+            "Reserve `paused` for an explicit temporary interruption",
+            "current-generation `changes_requested` receipt",
+            "a fresh review target, and a fresh current-generation review result",
+            "A result that remains blocking counts as one unsuccessful cycle",
+            "completion still requires fresh qualifying PASS receipts",
+            "after two materially equivalent unsuccessful remediation cycles",
+            "Continue unrelated safe ready lanes",
+            "one bounded batch",
+            "Keep attempt comparison session-local",
+            "A fresh session resets the comparison",
+        ):
+            self.assertIn(phrase, normalized)
+
+        specification_m16 = " ".join(
+            specification.split(
+                "## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial",
+                1,
+            )[1]
+            .split("\n## ", 1)[0]
+            .split()
+        )
+        design_m16 = " ".join(
+            design.split(
+                "## Approved TG-M16 Reduced Loop Discipline Trial Design",
+                1,
+            )[1]
+            .split("\n## ", 1)[0]
+            .split()
+        )
+        for authority in (specification_m16, design_m16):
+            self.assertIn("two materially equivalent", authority)
+            self.assertIn("current authority", authority)
+            self.assertIn("fresh target", authority)
+            self.assertIn("remains blocking counts as one unsuccessful", authority)
+            self.assertIn("unrelated", authority)
+        self.assertIn(
+            "references/reconciliation.md",
+            manifest["core_files"],
+        )
+
     def test_tg_m11_snapshot_reopen_and_release_metadata_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
@@ -747,6 +874,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("$skillRoot/scripts/task_governance_tool/handoffs.py", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/contracts.py", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/effort.py", workflow)
+        self.assertIn("$skillRoot/references/reconciliation.md", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/self_status.py", workflow)
         self.assertIn("$skillRoot/release-manifest.json", workflow)
         self.assertIn("$doctorJson | ConvertFrom-Json", workflow)
@@ -815,6 +943,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "scripts/task_governance_tool/viewer_config.py",
             manifest["core_files"],
         )
+        self.assertIn("references/reconciliation.md", manifest["core_files"])
         self.assertNotIn("config/viewer.json", manifest["core_files"])
         self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))
         self.assertFalse(any(path.startswith("task-governance-tool/config/") for path in tracked))

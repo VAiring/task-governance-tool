@@ -1,13 +1,13 @@
 # task-governance-tool Initial Plan
 
-Status: implemented through the TG-M16.1 runtime slice at v0.8.0/schema v13
-with Viewer snapshot v3. The active Skill remains on its M15.6 guidance until
-TG-M16.2. The TG-M12.3 Issue adapter remains blocked.
+Status: implemented through the TG-M16.2 active-Skill guidance slice at
+v0.8.0/schema v13 with Viewer snapshot v3. TG-M16.4 owns final package
+synchronization. The TG-M12.3 Issue adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
-Reduced TG-M16 has a fixed formal contract and the TG-M16.1 runtime route is
-implemented. Active-Skill guidance remains pending in TG-M16.2, followed by
-TG-M16.4 package synchronization.
+Reduced TG-M16 has a fixed formal contract, the TG-M16.1 runtime route is
+implemented, and TG-M16.2 supplies the active session-local guidance. TG-M16.4
+package synchronization remains pending.
 
 This document captures early ideas for a reusable task-governance-tool Codex
 skill/tooling project. Product behavior is now governed by
@@ -1116,9 +1116,9 @@ Open issues:
 All approved implementation units through TG-M15.6 and the bounded M15
 correction tasks C1 through C3 are complete. Exact verification, review, and
 completion evidence is maintained in SQLite.
-The reduced TG-M16.0 formal contract and TG-M16.1 runtime route are complete.
-TG-M16.2 and TG-M16.4 remain approved sequential work, while TG-M16.3 is
-cancelled.
+The reduced TG-M16.0 formal contract, TG-M16.1 runtime route, and TG-M16.2
+active guidance are complete. TG-M16.4 remains approved sequential work, while
+TG-M16.3 is cancelled.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

@@ -18,23 +18,17 @@ workspace.
 ## Current Project Shape
 
 - The intended repository root is `C:\WorkSpace\task-governance-tool`.
-- The project is implemented through the TG-M16.1 runtime slice at
-  v0.8.0/schema v13 with Viewer snapshot v3. TG-M16.1 is an intentionally
-  non-publication-ready intermediate revision: active-Skill guidance remains
-  at the M15.6 behavior until TG-M16.2, and TG-M16.4 owns final package
-  synchronization. The installable package, CLI, migrations, tests, and formal
-  documents already exist; inspect them before changing an established
-  contract.
+- The installable package, CLI, migrations, tests, and formal documents already
+  exist; inspect them before changing an established contract.
+- Current release/runtime state, approved or pending execution units, and
+  milestone history are maintained in `docs/implementation-roadmap.md` and
+  `plan.md`. Consult those authorities instead of mirroring volatile status
+  here.
 - The workspace is Git-managed, initialized on the `main` branch. Continue to
   verify Git state before workflow steps because clones or copied workspaces may
   differ.
-- Initial root-level documents:
-  - `AGENTS.md`
-  - `plan.md`
-  - root `references/` for copied external reference material only
-- The copied KuraKoma task status file, if present, is a reference example for
-  quality bar, roadmap granularity, and review discipline. It is not this
-  project's current task status.
+- Root `references/` and copied task-status material are external examples only;
+  they are not authority or current project status.
 - Installable skill package references, such as
   `task-governance-tool/references/` inside a skill folder, are distinct from
   root copied references. Skill package references are governed by `SKILL.md`;
@@ -129,9 +123,9 @@ The product must not become:
   read-only diagnosis.
 - Do not advertise deferred behavior such as verification-run recording,
   external Issue delivery, cross-project profiles, automatic browser launch,
-  browser mutation control, or network synchronization. TG-M15.5's optional
-  same-file reload is presentation behavior inside an already opened generated
-  Viewer, not a Skill trigger or normal-loop action.
+  browser mutation control, or network synchronization. Optional same-file
+  reload inside an already opened generated Viewer is presentation behavior,
+  not a Skill trigger or normal-loop action.
 - Prefer deterministic scripts for repeated or fragile operations:
   - detect a project profile
   - summarize current task state
@@ -183,180 +177,48 @@ The product must not become:
 - Any command that writes to the task-governance-tool database must say what it
   will record. Any command that writes to a target project must require explicit
   user intent and should offer a dry-run first.
-- Completed TG-M14 setup opt-in authorizes only the canonical bounded
-  post-commit Viewer maintenance and idempotent setup repair defined below.
-  There is no public Viewer/export command or custom output. Inspection
-  commands, including `doctor`, never authorize a Viewer write.
+- Explicit setup opt-in authorizes only the canonical bounded post-commit
+  Viewer maintenance and idempotent setup repair defined in the current
+  specification and design. There is no public Viewer/export command or custom
+  output. Inspection commands, including `doctor`, never authorize a Viewer
+  write.
 - Profile detection must emit evidence, confidence, matched governing docs,
   reference-only exclusions, and an `unknown` or `needs_user_confirmation`
   state when confidence is low.
 - Low-confidence profile detection must not authorize target-project mutation
   or expensive verification. It may suggest the concrete user confirmation
   needed next.
-- Store schema version and migration history from the start if SQLite is used.
+- Store SQLite schema version and migration history.
 - Prefer explicit JSON contracts for machine-readable command output.
 - Use stable IDs for records that cross boundaries, such as `project_id`,
   `profile_id`, `task_id`, `execution_unit_id`, `verification_run_id`, and
   `review_request_id`.
-- Avoid broad abstractions until the first project profile and CLI flow are
-  implemented and tested.
+- Avoid abstractions broader than the implemented and tested profile and CLI
+  flows.
 
-## Implemented M14 Boundary
+## Product Contract Routing And Durable Agent Guardrails
 
-- M14 is implemented at v0.8.0/schema v13. M14.0 fixed the formal contracts;
-  M14.1-M14.6 implemented bounded slices, and M14.7 synchronized the active
-  parser, help, Skill, README, release package, manifest, workflow, and tests.
-- The completed M14 public surface is exactly 20 command leaves: `setup`,
-  `doctor`, task `add/list/next/current/effort/show/edit/complete/checkpoint`,
-  handoff `record/list/show/withdraw`, and review `prepare`, `target set`,
-  `receipt add`, `finding add`, and `finding resolve`.
-- The completed M14 surface removes public `self`, `db`, `web`, `--db`, raw
-  storage paths, compatibility aliases, and replacement storage, Viewer,
-  export, repair, maintenance, disable, or admin commands. Internal path
-  injection remains an implementation and test boundary, not an LLM choice.
-- `doctor` is the sole diagnostic. It is inherently read-only, never
-  fixes or prepares state, is not a normal Task-loop prerequisite, and keeps
-  recognized advisory results at `suggested_action=continue`.
-- `setup` is the sole public initializer, migrator, one-way local
-  maintenance opt-in, and canonical Viewer repair action. It is explicit,
-  noninteractive, idempotent, and limited to a physical project-scoped Skill.
-- Backup and Viewer publication maintenance is bounded same-process
-  post-commit work, never a daemon, thread, timer, detached process, queue,
-  scheduler, or service. Setup stores the project-local backup policy with
-  defaults of 30 minutes after the last successful managed backup and 3
-  retained generations. Only explicit setup options may change those values;
-  the normal Skill workflow supplies no policy choice. A failed attempt
-  remains due for the next eligible successful mutation.
-- M14 adds no mandatory doctor call, LLM judgment, question, or routine stop.
-  Checkpoints are optional at genuine continuation boundaries; Review Packet
-  generation replaces separate review-context reads. The already mandatory
-  `task show` mechanically exposes whether the existing Effort Advisory is
-  enabled; the default-off flow is bounded to 9 governance calls and an enabled
-  profile to 10, with no LLM choice.
-- Every M14.1-M14.6 unit that changes manifest-covered core files must refresh
-  integrity inventory/hashes in the same reviewed revision. M14.7 alone owns
-  final release metadata/version and active publication synchronization.
-
-## Approved M15.5 Boundary
-
-- TG-M15.5 adds only opt-in reload behavior to the already generated static
-  Viewer. It adds no public command, setup option, normal Task-loop call,
-  SQLite field, Viewer snapshot field, LLM judgment, user-return stop,
-  automatic browser launch, watcher, service, network use, or direct browser
-  database access.
-- The sole presentation policy location is the physical project-scoped
-  package's `config/viewer.json`. Taskgov never creates or edits this optional
-  target-project file. When the file is absent, generated HTML disables
-  automatic refresh and creates no browser refresh timer.
-- A present profile is strict, UTF-8, regular, non-link/non-reparse,
-  size-bounded to 16,384 bytes, and contains exactly schema version 1, profile
-  `visibility-refresh-v1`, and an integer interval from 5 through 3,600
-  seconds. Invalid presentation policy never changes a committed business
-  result or the last good Viewer.
-- Taskgov loads the profile once per Viewer publication attempt. Setup preview
-  reports an invalid present profile as Viewer repair work without writing;
-  actual setup uses its existing incomplete result. Routine publication uses
-  the existing sanitized Viewer-failure warning. Doctor does not inspect this
-  optional presentation policy.
-- The rendered page may schedule at most one browser timeout only after
-  snapshot decode and initial render succeed, only under `file:`, and only
-  while visible. It uses monotonic elapsed time, requests at most one
-  same-document reload per loaded page, and schedules no work after
-  decode/render failure. Browser throttling may make refresh late but never
-  early.
-- M15.5 does not persist filter, selection, focus, or scroll state. That is the
-  separate TG-M15.6 slice.
-
-## Approved M15.6 Boundary
-
-- TG-M15.6 adds one privacy-bounded, one-shot History API handoff only for the
-  M15.5 automatic `file:` reload. It adds no public command, configuration,
-  normal Task-loop call, LLM judgment, user-return stop, SQLite field, Viewer
-  snapshot field, URL state, history entry, network use, or CSP relaxation.
-- Immediately before the existing automatic reload, the Viewer may call
-  `history.replaceState(state, "")` with no URL argument. It never overwrites
-  or clears a non-null state that it does not own. Save failure never prevents
-  the reload.
-- The exact schema-1 envelope is capped at 4,096 UTF-8 bytes and contains only
-  its fixed owner/time fields, status/kind/lane/priority/tag/terminal filters,
-  selected Task ID, nonnegative document scroll coordinates, and a focus ID
-  from the fixed Viewer-control allow-list. Search text, task content, snapshot
-  content, arbitrary selectors, dynamic task-row focus, URLs/paths, and nested
-  panel or text-selection state are prohibited.
-- On an eligible `file:` load, the Viewer recognizes its exact owner and clears
-  owned state before snapshot decoding, including invalid, non-reload, and
-  fatal-decode cases. Only a reload navigation may then restore an exact state
-  whose age, keys, types, bounds, current options, visible selection, and fixed
-  focus target validate. If clearing fails, it restores nothing. Non-`file:`
-  and non-owned state are untouched. If a later focus or scroll operation
-  fails, it best-effort blurs only a fixed control that this restore just
-  focused, then returns filters, selection, and scroll to their defaults.
-- On an auto-refresh-enabled `file:` page, or one loading an outstanding owned
-  state, the Viewer sets
-  `history.scrollRestoration` to `manual` before UI restoration so browser
-  reload scroll does not compete with the bounded envelope. If that capability
-  is unavailable, envelope save/restore is disabled but M15.5 reload continues.
-  A History-state read exception also disables envelope save/restore, but does
-  not skip the manual-mode attempt on an enabled `file:` page.
-- History state is browser-managed and may be session-restored; it is not
-  described as memory-only. Cookies, Web Storage, IndexedDB, Cache API,
-  service workers, `pushState`, URL/query/fragment state, cross-tab sync, and
-  manual-reload capture remain prohibited. Interrupted automatic navigation may
-  leave one bounded envelope for a later qualifying reload to consume.
-
-## Approved M16 Reduced Loop Discipline Boundary
-
-- TG-M16 is a reduced behavioral trial, not a workflow-engine expansion.
-  TG-M16.0 fixes the formal contract, TG-M16.1 implements one deterministic
-  Effort action route, TG-M16.2 adds concise session-local Test Repair and
-  Scope Reconciliation guidance, and TG-M16.4 synchronizes the package and
-  runs behavioral acceptance. The former setup/bootstrap and project
-  instruction-adoption unit TG-M16.3 is cancelled.
-- TG-M16.0 is documentation-only. The runtime now exposes the TG-M16.1
-  non-blocking action, while the active Skill retains its existing guidance
-  until TG-M16.2. This intermediate TG-M16.1 revision exposes the action before
-  the Skill consumes it and is not a publication-ready M16 package. TG-M16.4
-  owns final synchronization and publication acceptance. The remaining bullets
-  define the current and later units' acceptance boundary, not an added
-  normal-loop obligation.
-- TG-M16.1 changes only a valid, enabled Effort observation whose `exceeded`
-  list is nonempty from `continue` to `reconcile_scope`. Absent, disabled,
-  invalid, below-threshold, and unknown-only observations continue. Exceeded
-  metrics still route to `reconcile_scope` when attribution is also unknown.
-  Data and warning actions match and one observation creates at most one
-  non-blocking reconciliation episode, never one episode per metric.
-- The Effort signal does not itself ask a question, stop work, fail a Task, or
-  mutate Task status, Contract, acceptance, handoff, review, or completion
-  state. It adds no observation or judgment to the default-off green path and
-  leaves the existing nine/ten-call bounds unchanged.
-- TG-M16.2 remains session-local guidance. Without new evidence, two
-  materially equivalent failed repair attempts prohibit a third equivalent
-  retry; superficial command, working-directory, or execution-unit relabeling
-  is not new evidence. Safe diagnostics that can materially change the causal
-  hypothesis or authorized repair remain allowed. Tests are not weakened
-  merely to obtain a pass, and Contract or acceptance changes still require
-  later explicit authority.
-- Reconciliation reuses the existing accepted-scope classifier. Work stays in
-  the current Task only when it is within accepted scope and can proceed under
-  current authority, including acceptance-required work and regressions
-  introduced by that Task. A failing test alone establishes neither
-  ownership condition. Other discoveries use local handoff; blockers are
-  recorded only after safe authorized work is exhausted; `paused` remains an
-  explicit temporary interruption. Unrelated ready lanes continue and user
-  decisions are batched after safe independent work.
-- A current-generation `changes_requested` receipt or an unresolved high or
-  medium finding blocks completion immediately. Historical receipts, PASS
-  receipts, and low findings do not independently add a stop. A meaningful
-  repair resolves applicable findings, advances to a fresh target, and obtains
-  fresh receipts. Two unsuccessful materially equivalent remediation cycles
-  without new evidence prohibit a third equivalent cycle and lead to one
-  bounded decision or existing blocker path, without stopping unrelated safe
-  lanes.
-- M16 adds no durable retry counter, latch, command, schema, setup stage,
-  bootstrap Task, instruction-chain audit, consuming-project `AGENTS.md` edit,
-  target-project mutation, network action, or background work. Operational
-  evidence may support a separately approved adoption design later; it is not
-  a standing follow-up in M16.
+- Do not duplicate release- or milestone-specific product contracts, status,
+  command inventories, schemas, constants, truth tables, acceptance matrices,
+  or history in this file. Product behavior belongs in `docs/specification.md`,
+  implementation structure in `docs/design.md`, execution order and status in
+  `docs/implementation-roadmap.md`, and decisions or open issues in `plan.md`.
+- Treat the current CLI, storage, setup/doctor, maintenance, Viewer, and output
+  contracts as established. Read their exact current formal sections and
+  directly coupled code and tests before changing them; do not reconstruct them
+  from milestone summaries.
+- Use only the current implemented Skill workflow and public CLI. Do not invent
+  removed or administrative commands, compatibility aliases, or raw storage
+  paths. `doctor` is read-only and not a normal Task-loop prerequisite;
+  initialization, migration, maintenance opt-in, and Viewer repair require
+  explicit `setup`.
+- Optional same-file Viewer reload and its one-shot UI-state handoff are
+  presentation-only. They authorize no Skill trigger, normal Task-loop call,
+  automatic browser launch, network action, or target-project/config write.
+- Approved but not-yet-implemented agent guidance is an acceptance boundary,
+  not an active normal-loop instruction. Follow the current Skill until the
+  owning execution unit and synchronization gate are complete; a runtime
+  advisory does not itself expand authority or activate later guidance.
 
 ## SQLite And State Rules
 
@@ -365,7 +227,7 @@ The product must not become:
   retain explicit path injection.
 - Because the MVP skill is installed per governed project, generated local
   state belongs under the physical project-scoped package's `state/`
-  directory. The completed M14 CLI does not expose an alternate state path.
+  directory. The public CLI does not expose an alternate state path.
 - Generated state under a project-scoped install must be ignored or otherwise
   kept out of source commits before `setup` or other write commands are used.
 - The canonical static Viewer produced by explicit setup and opted-in bounded
@@ -426,14 +288,18 @@ The product must not become:
 
 ## Documentation Maintenance
 
-- Keep this project documentation-driven until the first implementation roadmap
-  is approved.
-- Record initial ideas and open issues in `plan.md`. Use formal documents such
-  as `docs/implementation-roadmap.md` once they are introduced for approved
-  implementation-facing roadmaps.
-- If formal requirements, specification, DB design, or implementation-task
-  documents are introduced later, update this file's Source Of Truth section in
-  the same task.
+- Keep this file limited to durable agent behavior, safety, authority routing,
+  and workflow gates. Put product behavior, implementation detail, execution
+  status, and decision history in their owning documents.
+- Reference governing sections instead of copying their detailed contracts
+  here. Do not add milestone histories, command inventories, constants, schemas,
+  truth tables, or acceptance matrices to this file.
+- Prefer replacement or relocation over additive growth. Any temporary
+  milestone note must identify its owner and retirement condition and must be
+  removed or reduced to a durable invariant when that condition is met.
+- Update this file only when durable agent behavior, safety, authority routing,
+  or workflow discipline changes. Product changes still update their owning
+  formal documents and directly coupled artifacts in the same task.
 - Keep local-only logs, scratch outputs, caches, generated databases, virtual
   environments, and test artifacts out of public commits by default.
 
@@ -476,11 +342,21 @@ The product must not become:
   continue through ready approved execution units by default.
 - Sequential tasks may block their own lane or dependency chain, but they should
   not stop unrelated ready optional tasks or ready tasks in other lanes.
-- Stop only when all approved units are complete, a verification gate fails, a
-  valid high/medium review finding blocks completion, no approved ready work
-  remains because of blockers or dependencies, a required user decision is
-  missing, an external state change is needed, or the user changes scope or asks
-  to pause.
+- A failed verification or current blocking review result prevents completion
+  of the affected unit; it does not by itself stop safe authorized diagnosis,
+  repair, or unrelated ready lanes. Never weaken a test merely to obtain PASS.
+  Change a wrong test only under current governing authority; changing a Task
+  Contract or acceptance still requires later explicit authority.
+- When `task effort` returns `reconcile_scope`, or a test or review failure
+  recurs after an attempted repair, read
+  `task-governance-tool/references/reconciliation.md` before another materially
+  equivalent repair. Apply the referenced session-local invariants without
+  adding a normal-path command, persisted counter, or unrelated-lane stop.
+- Stop only when all approved units are complete; when no safe authorized
+  approved work remains because affected repair paths are exhausted, remaining
+  work is blocked or dependent, a required user decision is missing, or an
+  external state change is needed; or when the user changes scope or asks to
+  pause.
 - At every execution-unit boundary, re-read the governing docs required by the
   Reread Rule, declare intended outcome, write scope, verification gate, and
   review tier, then update `plan.md` or a later task-status artifact until

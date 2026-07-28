@@ -1,10 +1,10 @@
 # task-governance-tool MVP Specification
 
-Status: implemented through the TG-M16.1 runtime slice at release
-v0.8.0/schema v13 and Viewer snapshot v3. The active Skill remains on its
-M15.6 guidance until TG-M16.2, and TG-M16.4 owns final package
-synchronization. TG-M12.3 Issue adapter remains blocked on a future intake
-contract.
+Status: implemented through the TG-M16.2 active-Skill guidance slice at
+release v0.8.0/schema v13 and Viewer snapshot v3. TG-M16.1 supplies runtime
+Effort routing, TG-M16.2 supplies conditional session-local reconciliation,
+and TG-M16.4 owns final package synchronization. TG-M12.3 Issue adapter
+remains blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -2710,10 +2710,12 @@ Existing review gates remain authoritative. A current-generation
 `changes_requested` receipt or an unresolved high or medium finding blocks
 completion; historical receipts, PASS receipts, and low findings do not
 independently add a stop. A meaningful fix resolves applicable findings,
-advances to a fresh review target, and obtains fresh qualifying receipts.
-Without new evidence, two unsuccessful materially equivalent review
-remediation cycles prohibit a third equivalent cycle. The agent then uses one
-bounded existing decision or blocker path for the affected work while
+advances review evidence to a fresh target, and obtains a fresh
+current-generation review result. A result that remains blocking counts as one
+unsuccessful remediation cycle; completion still requires fresh qualifying
+PASS receipts. Without new evidence, two unsuccessful materially equivalent
+review remediation cycles prohibit a third equivalent cycle. The agent then
+uses one bounded existing decision or blocker path for the affected work while
 unrelated safe lanes continue.
 
 All attempt counting is session-local and may reset in a fresh session; durable

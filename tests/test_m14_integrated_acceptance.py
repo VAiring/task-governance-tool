@@ -100,6 +100,7 @@ GUIDANCE_FILES = (
     ROOT / "docs" / "release-install.md",
     SKILL_ROOT / "SKILL.md",
     SKILL_ROOT / "references" / "cli_contracts.md",
+    SKILL_ROOT / "references" / "reconciliation.md",
     SKILL_ROOT / "references" / "task_workflow.md",
 )
 
@@ -301,6 +302,10 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         )
         self.assertIn(
             "scripts/task_governance_tool/artifact_lock.py",
+            manifest["core_files"],
+        )
+        self.assertIn(
+            "references/reconciliation.md",
             manifest["core_files"],
         )
 

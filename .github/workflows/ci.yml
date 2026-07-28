@@ -166,6 +166,7 @@ jobs:
             "$skillRoot/scripts/task_governance_tool/viewer_maintenance.py",
             "$skillRoot/assets/task-viewer.template.html",
             "$skillRoot/references/task_workflow.md",
+            "$skillRoot/references/reconciliation.md",
             "$skillRoot/references/cli_contracts.md"
           )
           foreach ($file in $requiredFiles) {

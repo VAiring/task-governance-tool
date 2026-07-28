@@ -90,6 +90,12 @@ Use this normal flow:
    reviews, and record their receipts and findings.
 8. Complete through `task complete` after verification and review gates pass.
 
+Read [references/reconciliation.md](references/reconciliation.md) only when
+the Effort result returns `data.suggested_action=reconcile_scope`, or when a
+test or review failure recurs after an attempted repair. Treat one Effort
+result as one non-blocking episode, not one episode per exceeded metric.
+Neither trigger adds a green-path command, question, or stop.
+
 For a no-finding Tier 2 task that must select new work, this graph uses at most
 nine governance subprocess calls with the advisory disabled and ten when an
 existing valid profile enables it. `doctor`, completion `--check`, and
@@ -106,14 +112,23 @@ mandatory question, judgment, or user-return stop.
   ready candidates.
 - Enforce sequential predecessors for both selection and direct transitions.
   A blocked lane does not stop unrelated ready work.
+- A failed verification or current blocking review result prevents completion
+  of the affected Task; it does not by itself stop safe authorized diagnosis,
+  repair, or unrelated ready work. Never weaken a test merely to obtain PASS.
+  Change a wrong test only when current authority establishes the expected
+  behavior; changing a Task Contract or acceptance requires later explicit
+  authority.
 - Copy a Task Contract only when scope and acceptance already exist in current
   authority. Leave revision zero otherwise without asking. Revise a Contract
   only from later explicit authority and record the reason.
 - Pause only active/review-pending work with `--pause-reason`; block with
   `--blocked-reason`; resume explicitly to `in_progress`.
-- Classify a new finding once: keep authorized acceptance work in the current
-  task, record an unmet acceptance condition as its blocker, and immediately
-  `handoff record` everything else before continuing.
+- Classify a new finding once. Keep it in the current Task only when it is
+  within accepted scope and current authority permits the repair, including
+  acceptance-required work and regressions introduced by that Task; a failing
+  test alone establishes neither condition. Record an unmet acceptance
+  condition as its blocker only after safe authorized work is exhausted, and
+  immediately `handoff record` everything else before continuing.
 - Use the same handoff command regardless of Issue tooling. A durable
   `pending_handoff` neither expands acceptance nor blocks otherwise accepted
   work. Use `handoff withdraw` only on explicit user direction.
@@ -168,3 +183,6 @@ pausing, resuming, handing off, reviewing, checkpointing, or completing work.
 
 Read [references/cli_contracts.md](references/cli_contracts.md) when exact
 arguments, JSON fields, bounds, or errors matter.
+
+Read [references/reconciliation.md](references/reconciliation.md) only for the
+conditional reconciliation or repeated-failure triggers defined above.

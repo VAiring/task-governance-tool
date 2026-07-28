@@ -68,3 +68,49 @@ browser-control URL policy. No alternate browser-control workaround was used.
 Current static renderer tests continue to cover the desktop and narrow-screen
 media rules, security policy, text-only rendering, controls, and layout markers.
 The generated file remains ignored and outside release artifacts.
+
+## TG-M15.5 Visibility-Aware Reload Evidence
+
+Date: 2026-07-28
+
+A fresh physical project-scoped copy was set up with an unshipped
+`config/viewer.json` interval of 5 seconds. `setup` published the decimal
+interval into the canonical Viewer, and a routine `task add` published the
+latest snapshot. After the config file was removed, the next routine mutation
+published interval sentinel `0`; the decoded snapshot contained both task
+markers. This confirms that the installed package reads its own optional
+profile and that an absent profile disables refresh on the next relevant
+publication. The temporary project and its generated state were then removed.
+
+Browser automation again rejected direct navigation to the generated
+`file://` artifact. The safety response explicitly prohibited switching to an
+alternate browser surface or indirect URL workaround, so none was attempted.
+The user then performed the permitted real-browser check. They opened the
+generated `file://` Viewer while its header showed
+`Snapshot generated: 2026-07-28T11:11:48Z`. A task note mutation published a
+new snapshot, and the still-open Viewer showed
+`Snapshot generated: 2026-07-28T13:44:28Z` without a manual reload. The user
+provided a screenshot and confirmed the updated header, so the visible-page
+reload smoke passed.
+
+As the strongest non-browser check, Node.js 24.14.1 extracted the exact shipped
+initialization and scheduler blocks from
+`assets/task-viewer.template.html` and executed them with fake monotonic time,
+visibility, timeout, and reload boundaries. The harness passed all of these
+cases:
+
+- sentinel `0` and non-`file:` locations create no listener, timeout, or reload;
+- a visible valid interval owns one timeout;
+- hiding clears that timeout;
+- becoming visible before the deadline schedules only the remainder;
+- an early timeout recheck cannot reload before the deadline;
+- becoming visible after the deadline requests one reload immediately; and
+- later visibility events cannot create another timeout or reload request.
+
+The harness also confirmed that fatal UTF-8 decoding rejects malformed bytes.
+Focused Python tests bind the scheduler's one-timeout, one-reload, monotonic
+remainder expressions and prove that initial rendering precedes scheduler
+startup. Together with the user-observed `file://` refresh, this satisfies the
+formal forward-test gate. The temporary profile was then removed, `setup`
+republished sentinel `0`, and the repository returned to its default
+refresh-disabled state.

@@ -1,8 +1,8 @@
 # task-governance-tool MVP Specification
 
-Status: implemented through TG-M15.4 at release v0.8.0/schema v13 and Viewer
-snapshot v3. TG-M12.3 Issue adapter remains blocked on a future intake
-contract.
+Status: implemented through TG-M15.5 at release v0.8.0/schema v13 and Viewer
+snapshot v3. TG-M15.6 is the approved ready browser-state slice. TG-M12.3
+Issue adapter remains blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -2012,11 +2012,12 @@ recovery instead of making empty state.
 
 Maintenance is enabled once by successful setup and has no disable surface in
 M14. Every successful backup-eligible business mutation commits and closes its
-SQLite connection before same-process maintenance; Viewer refresh is then
+SQLite connection before same-process maintenance; Viewer publication is then
 gated to the Viewer-relevant subset. Read-only, failed, replayed, no-op, and
-maintenance-internal operations trigger nothing. No detached process, child
-process, thread, timer, watcher, service, queue, daemon, scheduler, or network
-operation is permitted.
+maintenance-internal operations trigger nothing. Taskgov itself starts no
+detached process, child process, thread, timer, watcher, service, queue, daemon,
+scheduler, or network operation. TG-M15.5's optional timer lives only inside an
+already opened generated `file://` page and performs no taskgov process work.
 
 Viewer refresh runs first to honor the near-real-time observation goal; an
 independent due backup attempt runs second. Each artifact lock is fail-fast
@@ -2127,8 +2128,9 @@ Viewer maintenance reuses snapshot v3, the existing renderer, canonical output,
 path protection, and atomic publication. A per-Viewer generation check prevents
 older-over-newer publication. One initial render plus at most one follow-up is
 allowed per mutation. Remaining churn stays due until the next eligible
-mutation. Setup rerun is the only explicit force/repair action; browser reload
-remains manual.
+mutation. Setup rerun is the only explicit force/repair action. Browser reload
+remains manual when the optional TG-M15.5 Viewer profile is absent; a valid
+profile may automate only that same local reload.
 
 The hard performance fixture is fixed:
 
@@ -2321,9 +2323,9 @@ stop, Issue action, Git write, target mutation, network use, or project test
 strategy.
 
 Overview, action aliases, result or receipt-file import, verification receipts,
-manual backup, standalone/manual restore, general export, relocation, browser launch/auto-refresh,
-live server, search, pagination, Issue lifecycle, generic diagnostics, and
-workflow automation remain deferred.
+manual backup, standalone/manual restore, general export, relocation, browser
+launch, browser-state persistence, live server, search, pagination, Issue
+lifecycle, generic diagnostics, and workflow automation remain deferred.
 
 ## Static Task Viewer
 
@@ -2384,8 +2386,10 @@ An older capture cannot replace a newer publication. Churn remaining after two
 renders stays due for the next eligible mutation. Contention records
 `deferred`; another bounded failure records `failed`; both preserve the
 primary command result and last good artifact. Doctor reports only the stored
-generation/outcome facts and never inspects or repairs the HTML. Browser reload
-remains manual and `generated_at` is the visible freshness boundary.
+generation/outcome facts and never inspects or repairs the HTML or its optional
+presentation profile. `generated_at` remains the visible boundary of the
+snapshot currently rendered; browser reload never implies direct database
+observation.
 
 ### Viewer Experience And Safety
 
@@ -2402,11 +2406,87 @@ server, direct browser-to-SQLite access, watcher, automatic browser launch, or
 browser-side mutation. Its exact content security policy and prohibited DOM
 sinks are defined and tested in `docs/design.md`.
 
+### Optional Visibility-Aware Reload
+
+TG-M15.5 adds one presentation-only profile at:
+
+```text
+<installed-skill-root>/config/viewer.json
+```
+
+Taskgov never creates, edits, migrates, or supplies a default copy of this
+file. If the canonical file is absent, automatic refresh is disabled, the
+rendered interval sentinel is decimal `0`, no browser refresh timeout is
+created, and the user refreshes the page manually. A present profile is at
+most 16,384 bytes of strict UTF-8 JSON and has exactly:
+
+```json
+{
+  "schema_version": 1,
+  "profile": "visibility-refresh-v1",
+  "refresh_interval_seconds": 30
+}
+```
+
+`refresh_interval_seconds` is a JSON integer from 5 through 3,600 inclusive;
+booleans and floating-point values are invalid. Malformed JSON, invalid UTF-8,
+duplicate or unknown keys, missing keys, out-of-range values, oversized
+content, broken links, symbolic links, reparse points or junctions anywhere in
+the config path, and non-regular final objects are invalid. Bounded descriptor
+and identity checks fail closed if the file is replaced while read. Errors are
+sanitized and expose no path, OS exception, content, or expected/actual
+metadata.
+
+One publication attempt observes this profile once and reuses that result for
+both of its at-most-two renders. The bundled template contains exactly one
+base64 snapshot placeholder and exactly one separate decimal interval
+placeholder. A config change, including deletion, takes effect on the next
+Viewer-relevant publication. Explicit setup also compares the currently
+rendered interval/template with the current profile and plans
+`viewer_publish` when they differ.
+
+An invalid present profile makes `setup --read-only` a successful no-write
+preview with `viewer_status="repair_required"` and `viewer_publish` in the
+planned writes. Actual setup preserves any last-good Viewer and returns the
+existing `setup_incomplete` failure. The same invalid profile during routine
+post-commit publication preserves the committed primary mutation and last-good
+Viewer, records the existing bounded failed outcome, and emits only
+`viewer_refresh_failed` for this Viewer/config failure. The independent due
+backup attempt still runs second and may emit its own existing bounded warning.
+Doctor does not inspect the optional profile and adds no status, warning,
+judgment, or stop for it.
+
+After fatal UTF-8 snapshot decoding and the initial DOM render both succeed,
+the page enables scheduling only when `location.protocol === "file:"` and the
+rendered interval is positive. It records a monotonic load epoch with
+`performance.now()` and owns at most one timeout. While
+`document.visibilityState` is not `visible`, it clears and owns no timeout and
+requests no reload. When the page becomes visible or the timeout fires, it
+rechecks visibility and monotonic elapsed time. If at least the configured
+interval has elapsed it requests at most one same-document reload for that
+loaded page; otherwise it schedules only the remaining delay. Browser
+throttling may make a request later but never earlier. Decode or render failure
+schedules nothing.
+
+The reload reads only the latest atomically published HTML file. It is not
+real-time database observation and may retain an older snapshot until taskgov
+successfully publishes another one. TG-M15.5 stores no filter, selection,
+focus, or scroll state; reload may reset those ephemeral values. It adds no
+public command or option, normal-loop call, LLM decision, automatic launch,
+network access, service worker, storage API, background taskgov process,
+SQLite field, or Viewer snapshot field.
+
 Acceptance requires schema-5-to-13 snapshot compatibility, privacy allow-list
 tests, atomic/last-good path tests, zero-wait and two-render bounds, Viewer-only
 and Viewer-plus-backup performance fixtures, offline `file://` usability, and
-exclusion of generated HTML from source and release artifacts. Browser launch
-or auto-refresh remains a separate deferred feature.
+exclusion of generated HTML from source and release artifacts. TG-M15.5 also
+requires strict config/path/replacement tests, absence-as-disabled behavior,
+setup preview/failure and routine last-good behavior, exact two-placeholder
+rendering, structural scheduling/CSP/storage/network tests, and a real
+`file://` browser forward test. Package/archive checks must prove that the
+optional `config/viewer.json` is absent from the release artifact while the
+loader and changed runtime sources remain manifest-covered. Automatic browser
+launch remains deferred.
 
 ## Task Ordering
 

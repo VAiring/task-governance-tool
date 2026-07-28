@@ -22,11 +22,17 @@ from task_governance_tool.storage import (
     validate_snapshot_database,
 )
 from task_governance_tool.tasks import STATUSES, list_tasks_for_viewer
+from task_governance_tool.viewer_config import (
+    VIEWER_REFRESH_DISABLED_SECONDS,
+    VIEWER_REFRESH_MAX_SECONDS,
+    VIEWER_REFRESH_MIN_SECONDS,
+)
 
 
 SNAPSHOT_VERSION = 3
 VIEWER_EVENT_LIMIT = 10
 TEMPLATE_PLACEHOLDER = "__TASKGOV_SNAPSHOT_BASE64__"
+REFRESH_INTERVAL_PLACEHOLDER = "__TASKGOV_REFRESH_INTERVAL_SECONDS__"
 TEMPLATE_RELATIVE_PATH = Path("assets") / "task-viewer.template.html"
 SNAPSHOT_ELEMENT_PREFIX = (
     '<script id="taskgov-snapshot" type="application/octet-stream">'
@@ -107,8 +113,13 @@ def build_viewer_snapshot(
     )
 
 
-def viewer_template_path() -> Path:
-    return Path(__file__).resolve().parents[2] / TEMPLATE_RELATIVE_PATH
+def viewer_template_path(skill_root: Path | None = None) -> Path:
+    root = (
+        Path(skill_root)
+        if skill_root is not None
+        else Path(__file__).resolve().parents[2]
+    )
+    return root / TEMPLATE_RELATIVE_PATH
 
 
 def inspect_canonical_viewer_status(
@@ -118,6 +129,8 @@ def inspect_canonical_viewer_status(
     current_snapshot: dict[str, Any] | None,
     compare_snapshot: bool,
     verify_template: bool,
+    refresh_interval_seconds: int = VIEWER_REFRESH_DISABLED_SECONDS,
+    skill_root: Path | None = None,
 ) -> str:
     """Inspect one canonical artifact at the requested maintenance boundary."""
 
@@ -175,15 +188,25 @@ def inspect_canonical_viewer_status(
     if not verify_template:
         return "current"
     try:
-        template = viewer_template_path().read_text(encoding="utf-8")
+        template = viewer_template_path(skill_root).read_text(encoding="utf-8")
+        expected_template = _prepare_template(
+            template,
+            refresh_interval_seconds=refresh_interval_seconds,
+        )
     except (OSError, UnicodeError):
+        return "repair_required"
+    except ViewerError:
         return "repair_required"
     normalized_rendered = (
         rendered[:encoded_start]
         + TEMPLATE_PLACEHOLDER
         + rendered[encoded_end:]
     )
-    return "current" if normalized_rendered == template else "repair_required"
+    return (
+        "current"
+        if normalized_rendered == expected_template
+        else "repair_required"
+    )
 
 
 def encode_snapshot(snapshot: dict[str, Any]) -> str:
@@ -201,10 +224,50 @@ def encode_snapshot(snapshot: dict[str, Any]) -> str:
     return base64.b64encode(serialized).decode("ascii")
 
 
+def _validate_refresh_interval(value: int) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or (
+            value != VIEWER_REFRESH_DISABLED_SECONDS
+            and not VIEWER_REFRESH_MIN_SECONDS
+            <= value
+            <= VIEWER_REFRESH_MAX_SECONDS
+        )
+    ):
+        raise ViewerError(
+            "internal_error",
+            "viewer refresh interval is unsupported",
+        )
+
+
+def _prepare_template(
+    template: str,
+    *,
+    refresh_interval_seconds: int,
+) -> str:
+    _validate_refresh_interval(refresh_interval_seconds)
+    if template.count(TEMPLATE_PLACEHOLDER) != 1:
+        raise ViewerError(
+            "internal_error",
+            "viewer template must contain exactly one snapshot placeholder",
+        )
+    if template.count(REFRESH_INTERVAL_PLACEHOLDER) != 1:
+        raise ViewerError(
+            "internal_error",
+            "viewer template must contain exactly one refresh placeholder",
+        )
+    return template.replace(
+        REFRESH_INTERVAL_PLACEHOLDER,
+        str(refresh_interval_seconds),
+    )
+
+
 def render_viewer_html(
     snapshot: dict[str, Any],
     *,
     template_path: Path | None = None,
+    refresh_interval_seconds: int = VIEWER_REFRESH_DISABLED_SECONDS,
 ) -> str:
     source_path = template_path or viewer_template_path()
     try:
@@ -212,12 +275,11 @@ def render_viewer_html(
     except (OSError, UnicodeError) as exc:
         raise ViewerError("internal_error", "viewer template could not be read") from exc
 
-    if template.count(TEMPLATE_PLACEHOLDER) != 1:
-        raise ViewerError(
-            "internal_error",
-            "viewer template must contain exactly one snapshot placeholder",
-        )
-    return template.replace(TEMPLATE_PLACEHOLDER, encode_snapshot(snapshot))
+    prepared = _prepare_template(
+        template,
+        refresh_interval_seconds=refresh_interval_seconds,
+    )
+    return prepared.replace(TEMPLATE_PLACEHOLDER, encode_snapshot(snapshot))
 
 
 def path_key(path: Path) -> str:

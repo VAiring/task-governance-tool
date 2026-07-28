@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from contextlib import closing
@@ -234,6 +235,94 @@ class ViewerMaintenanceTests(unittest.TestCase):
             self.assertEqual(state.last_success_at, before.last_success_at)
             self.assertEqual(state.last_outcome_code, "failed")
 
+    def test_configured_interval_is_published_on_next_relevant_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skill_root = root / "skill"
+            skill_root.mkdir()
+            target = make_target(root, enabled=True)
+            output = resolve_canonical_viewer_output_target(target)
+
+            viewer_service.publish_setup_viewer(
+                target,
+                observed_at=FIXED_TIME,
+                skill_root=skill_root,
+            )
+            self.assertIn(
+                'data-taskgov-refresh-interval-seconds="0"',
+                output.path.read_text(encoding="utf-8"),
+            )
+
+            config = skill_root / "config" / "viewer.json"
+            config.parent.mkdir()
+            for interval in (5, 30):
+                with self.subTest(interval=interval):
+                    config.write_text(
+                        json.dumps(
+                            {
+                                "schema_version": 1,
+                                "profile": "visibility-refresh-v1",
+                                "refresh_interval_seconds": interval,
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                    add_viewer_event(target, f"Interval {interval}")
+                    result = viewer_service.run_routine_viewer_refresh(
+                        target,
+                        observed_at=FIXED_TIME,
+                        skill_root=skill_root,
+                    )
+                    self.assertEqual(
+                        (result.code, result.renders),
+                        ("succeeded", 1),
+                    )
+                    self.assertIn(
+                        (
+                            "data-taskgov-refresh-interval-seconds="
+                            f'"{interval}"'
+                        ),
+                        output.path.read_text(encoding="utf-8"),
+                    )
+
+    def test_invalid_config_preserves_last_good_and_due_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skill_root = root / "skill"
+            skill_root.mkdir()
+            target = make_target(root, enabled=True)
+            with mock.patch.object(
+                viewer_service,
+                "utc_now",
+                return_value=FIXED_TIME,
+            ):
+                viewer_service.publish_setup_viewer(
+                    target,
+                    observed_at=FIXED_TIME,
+                    skill_root=skill_root,
+                )
+            output = resolve_canonical_viewer_output_target(target)
+            last_good = output.path.read_bytes()
+            before = viewer_state(target)
+            config = skill_root / "config" / "viewer.json"
+            config.parent.mkdir()
+            config.write_text('{"schema_version":1}', encoding="utf-8")
+            add_viewer_event(target, "Invalid config change")
+
+            result = viewer_service.run_routine_viewer_refresh(
+                target,
+                observed_at="2026-07-27T00:00:01Z",
+                skill_root=skill_root,
+            )
+
+            self.assertEqual((result.code, result.renders), ("failed", 0))
+            self.assertEqual(output.path.read_bytes(), last_good)
+            state = viewer_state(target)
+            self.assertTrue(state.due)
+            self.assertEqual(state.rendered_generation, before.rendered_generation)
+            self.assertEqual(state.last_success_at, before.last_success_at)
+            self.assertEqual(state.last_outcome_code, "failed")
+
     def test_second_render_progress_is_bounded_and_remaining_churn_stays_due(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = make_target(Path(tmp), enabled=True)
@@ -249,11 +338,18 @@ class ViewerMaintenanceTests(unittest.TestCase):
                 add_viewer_event(target, f"Viewer churn {write_count}")
                 return False
 
-            with mock.patch.object(
-                viewer_service,
-                "write_viewer_html",
-                side_effect=write_and_advance,
-            ) as writer:
+            with (
+                mock.patch.object(
+                    viewer_service,
+                    "write_viewer_html",
+                    side_effect=write_and_advance,
+                ) as writer,
+                mock.patch.object(
+                    viewer_service,
+                    "load_viewer_refresh_interval",
+                    return_value=5,
+                ) as loader,
+            ):
                 result = viewer_service.run_routine_viewer_refresh(
                     target,
                     observed_at=FIXED_TIME,
@@ -262,6 +358,7 @@ class ViewerMaintenanceTests(unittest.TestCase):
             self.assertEqual(result.code, "succeeded")
             self.assertEqual(result.renders, 2)
             self.assertEqual(writer.call_count, 2)
+            loader.assert_called_once_with(None)
             state = viewer_state(target)
             self.assertTrue(state.due)
             self.assertEqual(

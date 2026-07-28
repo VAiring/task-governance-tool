@@ -250,6 +250,95 @@ class SetupCommandTests(unittest.TestCase):
                 )
             self.assertEqual(after, before)
 
+    def test_setup_previews_and_repairs_viewer_interval_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            initialized = install.run("setup", "--json")
+            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            config = install.skill_root / "config" / "viewer.json"
+            config.parent.mkdir()
+            config.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "profile": "visibility-refresh-v1",
+                        "refresh_interval_seconds": 5,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            preview = install.run("setup", "--read-only", "--json")
+            self.assertEqual(preview.returncode, 0, preview.stderr)
+            preview_data = self.assert_setup_shape(json_payload(preview))
+            self.assertEqual(preview_data["planned_writes"], ["viewer_publish"])
+            self.assertEqual(preview_data["completed_writes"], [])
+            self.assertEqual(preview_data["viewer_status"], "repair_required")
+
+            repaired = install.run("setup", "--json")
+            self.assertEqual(repaired.returncode, 0, repaired.stderr)
+            repaired_data = self.assert_setup_shape(json_payload(repaired))
+            self.assertEqual(repaired_data["planned_writes"], ["viewer_publish"])
+            self.assertEqual(repaired_data["completed_writes"], ["viewer_publish"])
+            self.assertIn(
+                'data-taskgov-refresh-interval-seconds="5"',
+                install.viewer_path.read_text(encoding="utf-8"),
+            )
+            replay = install.run("setup", "--json")
+            self.assertEqual(replay.returncode, 0, replay.stderr)
+            self.assertEqual(
+                self.assert_setup_shape(json_payload(replay))["planned_writes"],
+                [],
+            )
+
+            config.unlink()
+            disabled_preview = install.run("setup", "--read-only", "--json")
+            self.assertEqual(
+                self.assert_setup_shape(json_payload(disabled_preview))[
+                    "planned_writes"
+                ],
+                ["viewer_publish"],
+            )
+            disabled = install.run("setup", "--json")
+            self.assertEqual(disabled.returncode, 0, disabled.stderr)
+            self.assertIn(
+                'data-taskgov-refresh-interval-seconds="0"',
+                install.viewer_path.read_text(encoding="utf-8"),
+            )
+
+    def test_invalid_viewer_config_preview_is_no_write_and_setup_preserves_viewer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            initialized = install.run("setup", "--json")
+            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            last_good = install.viewer_path.read_bytes()
+            config = install.skill_root / "config" / "viewer.json"
+            config.parent.mkdir()
+            config.write_text('{"schema_version":1}', encoding="utf-8")
+
+            before = file_snapshot(install.project_root)
+            preview = install.run("setup", "--read-only", "--json")
+            after_preview = file_snapshot(install.project_root)
+
+            self.assertEqual(preview.returncode, 0, preview.stderr)
+            preview_data = self.assert_setup_shape(json_payload(preview))
+            self.assertEqual(preview_data["planned_writes"], ["viewer_publish"])
+            self.assertEqual(preview_data["completed_writes"], [])
+            self.assertEqual(preview_data["viewer_status"], "repair_required")
+            self.assertEqual(after_preview, before)
+
+            attempted = install.run("setup", "--json")
+            payload = json_payload(attempted)
+
+            self.assertEqual(attempted.returncode, 2)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["errors"][0]["code"], "setup_incomplete")
+            attempted_data = self.assert_setup_shape(payload)
+            self.assertEqual(attempted_data["planned_writes"], ["viewer_publish"])
+            self.assertEqual(attempted_data["completed_writes"], [])
+            self.assertEqual(attempted_data["viewer_status"], "repair_required")
+            self.assertEqual(install.viewer_path.read_bytes(), last_good)
+
     def test_broken_canonical_viewer_link_requires_repair_and_is_not_overwritten(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))

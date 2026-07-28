@@ -1,8 +1,9 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through TG-M15.4 are complete at v0.8.0/schema
-v13 with Viewer snapshot v3. TG-M12.3 remains blocked on a future Issue Skill
-intake contract.
+Status: implementation units through TG-M15.5 are complete at v0.8.0/schema
+v13 with Viewer snapshot v3. TG-M15.6 is the separately approved ready
+browser-state slice. TG-M12.3 remains blocked on a future Issue Skill intake
+contract.
 The default-browser launch follow-up remains requirements-only pending design
 and roadmap approval.
 
@@ -2787,12 +2788,13 @@ relocation, search/pagination, or a mandatory LLM decision or stop.
 TG-M15.1 through TG-M15.3 are the completed three-unit sequential lane approved
 from the independent v0.8.0 review follow-up. TG-M15.4 is the completed,
 separately approved optional correction for enclosing-Git ignore verification.
-These units keep
-version 0.8.0, schema v13, Viewer snapshot v3, and the 20-leaf public surface.
-TG-M15.1, TG-M15.2, and TG-M15.4 are Tier 2 contract changes; the exact-SHA
-TG-M15.3 gate is Tier 0 because it is a deterministic external observation
-with no source, workflow, schema, state-contract, or target-project mutation.
-No unit authorizes a PR, merge, tag, release, or publication.
+TG-M15.5 is the approved opt-in Viewer reload unit; TG-M15.6 follows it as a
+separate browser-state unit. These units keep version 0.8.0, schema v13, Viewer
+snapshot v3, and the 20-leaf public surface. TG-M15.1, TG-M15.2, TG-M15.4,
+TG-M15.5, and TG-M15.6 are Tier 2 contract changes; the exact-SHA TG-M15.3 gate
+is Tier 0 because it is a deterministic external observation with no source,
+workflow, schema, state-contract, or target-project mutation. No unit
+authorizes a PR, merge, tag, release, or publication.
 
 ### TG-M15.1 Setup-Owned Managed-Backup Recovery
 
@@ -2935,12 +2937,74 @@ Verification:
   `git diff --check`, exact-SHA Windows Python 3.12/3.14 Actions, and two
   exact-final-revision Tier 2 PASS reviews.
 
+### TG-M15.5 Visibility-Aware Viewer Auto-Refresh
+
+Kind: sequential
+Lane: `TG-M15-VIEWER`
+Review tier: Tier 2
+Depends on: completed TG-M15.4 source baseline
+Status: implemented
+
+Intended outcome:
+
+- Let an already opened canonical static Viewer observe newly published local
+  snapshots through a bounded browser reload without adding a live service,
+  watcher, automatic launch, or normal Task-loop action.
+- Keep automatic refresh explicitly opt-in: no canonical Viewer profile means
+  no timer and manual browser refresh only.
+
+Write scope:
+
+- Phase A updates `AGENTS.md`, specification, design, roadmap, plan, and
+  directly coupled release/user guidance before runtime changes;
+- Phase B adds only a dedicated bounded Viewer-profile loader, one renderer
+  interval placeholder, setup/publication integration, one visibility-aware
+  template scheduler, focused tests, package-manifest/CI inventory updates,
+  and forward-test evidence;
+- the optional user file is exactly
+  `<installed-skill-root>/config/viewer.json`, is never created or changed by
+  taskgov, and is not a shipped release-manifest entry.
+
+Ordering:
+
+- Phase B starts only after Phase A fixes absence, schema/range/size, unsafe
+  path, setup preview/failure, routine last-good, file-only, monotonic timing,
+  and browser-state boundaries without contradiction.
+- M15.6 cannot start until M15.5 is complete. M15.5 adds no persistence for
+  filters, selection, focus, or scroll.
+
+Verification:
+
+- missing profile resolves to embedded interval `0`, no timer, and no
+  automatic reload; a present profile accepts only exact schema 1/profile
+  `visibility-refresh-v1` and integer 5-3,600 seconds;
+- the 16,384-byte cap, strict UTF-8/JSON fields, duplicate/unknown/missing/
+  bool/float/range failures, link/reparse/non-file/replacement failures, and
+  sanitized output are deterministic;
+- one profile observation is reused across both bounded renders, the template
+  has exactly one snapshot and one decimal interval placeholder, and setup
+  detects template/interval drift;
+- invalid config produces a successful no-write setup repair preview, existing
+  `setup_incomplete` for actual setup, and existing
+  `viewer_refresh_failed` for routine post-commit work while preserving the
+  last-good Viewer and primary mutation;
+- scheduling begins only after fatal UTF-8 decode and initial render, runs only
+  under `file:`, owns at most one timeout while visible, uses
+  `performance.now()` and the remaining duration, and requests at most one
+  same-document reload per loaded page;
+- exact CSP, no-network, no-storage, text-only rendering, 20 command leaves,
+  compact JSON, version 0.8.0, schema v13, Viewer snapshot v3, and nine/ten-call
+  normal-loop bounds remain unchanged;
+- focused and full offline tests, Skill/package validation, real `file://`
+  browser forward test, `git diff --check`, exact-SHA Windows Python
+  3.12/3.14 Actions, and two exact-final-revision Tier 2 PASS reviews.
+
 ## Roadmap Completion Criteria
 
 The currently approved roadmap is complete when:
 
-- all approved sequential units through TG-M14.7 and approved TG-M15
-  corrections are complete;
+- all approved sequential units through TG-M14.7 and approved TG-M15 units
+  through TG-M15.6 are complete;
 - every unit's documented verification and review gate has passed for its exact
   final revision;
 - no valid High or Medium review finding remains unresolved;

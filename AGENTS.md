@@ -18,10 +18,10 @@ workspace.
 ## Current Project Shape
 
 - The intended repository root is `C:\WorkSpace\task-governance-tool`.
-- The project is implemented through TG-M15.4 at v0.8.0/schema v13 with Viewer
-  snapshot v3. The installable package, CLI, migrations, tests, and formal
-  documents already exist; inspect them before changing an established
-  contract.
+- The project is implemented through TG-M15.5 at v0.8.0/schema v13 with Viewer
+  snapshot v3. TG-M15.6 is the approved ready browser-state slice. The
+  installable package, CLI, migrations, tests, and formal documents already
+  exist; inspect them before changing an established contract.
 - The workspace is Git-managed, initialized on the `main` branch. Continue to
   verify Git state before workflow steps because clones or copied workspaces may
   differ.
@@ -125,8 +125,10 @@ The product must not become:
   preparation, evidence-gated completion, optional checkpoints, setup, and
   read-only diagnosis.
 - Do not advertise deferred behavior such as verification-run recording,
-  external Issue delivery, cross-project profiles, browser automation, or
-  network synchronization.
+  external Issue delivery, cross-project profiles, automatic browser launch,
+  browser mutation control, or network synchronization. TG-M15.5's optional
+  same-file reload is presentation behavior inside an already opened generated
+  Viewer, not a Skill trigger or normal-loop action.
 - Prefer deterministic scripts for repeated or fragile operations:
   - detect a project profile
   - summarize current task state
@@ -215,13 +217,13 @@ The product must not become:
 - `setup` is the sole public initializer, migrator, one-way local
   maintenance opt-in, and canonical Viewer repair action. It is explicit,
   noninteractive, idempotent, and limited to a physical project-scoped Skill.
-- Backup and Viewer maintenance is bounded same-process post-commit
-  work, never a daemon, thread, timer, detached process, queue, scheduler, or
-  service. Setup stores the project-local backup policy with defaults of 30
-  minutes after the last successful managed backup and 3 retained generations.
-  Only explicit setup options may change those values; the normal Skill
-  workflow supplies no policy choice. A failed attempt remains due for the
-  next eligible successful mutation.
+- Backup and Viewer publication maintenance is bounded same-process
+  post-commit work, never a daemon, thread, timer, detached process, queue,
+  scheduler, or service. Setup stores the project-local backup policy with
+  defaults of 30 minutes after the last successful managed backup and 3
+  retained generations. Only explicit setup options may change those values;
+  the normal Skill workflow supplies no policy choice. A failed attempt
+  remains due for the next eligible successful mutation.
 - M14 adds no mandatory doctor call, LLM judgment, question, or routine stop.
   Checkpoints are optional at genuine continuation boundaries; Review Packet
   generation replaces separate review-context reads. The already mandatory
@@ -231,6 +233,36 @@ The product must not become:
 - Every M14.1-M14.6 unit that changes manifest-covered core files must refresh
   integrity inventory/hashes in the same reviewed revision. M14.7 alone owns
   final release metadata/version and active publication synchronization.
+
+## Approved M15.5 Boundary
+
+- TG-M15.5 adds only opt-in reload behavior to the already generated static
+  Viewer. It adds no public command, setup option, normal Task-loop call,
+  SQLite field, Viewer snapshot field, LLM judgment, user-return stop,
+  automatic browser launch, watcher, service, network use, or direct browser
+  database access.
+- The sole presentation policy location is the physical project-scoped
+  package's `config/viewer.json`. Taskgov never creates or edits this optional
+  target-project file. When the file is absent, generated HTML disables
+  automatic refresh and creates no browser refresh timer.
+- A present profile is strict, UTF-8, regular, non-link/non-reparse,
+  size-bounded to 16,384 bytes, and contains exactly schema version 1, profile
+  `visibility-refresh-v1`, and an integer interval from 5 through 3,600
+  seconds. Invalid presentation policy never changes a committed business
+  result or the last good Viewer.
+- Taskgov loads the profile once per Viewer publication attempt. Setup preview
+  reports an invalid present profile as Viewer repair work without writing;
+  actual setup uses its existing incomplete result. Routine publication uses
+  the existing sanitized Viewer-failure warning. Doctor does not inspect this
+  optional presentation policy.
+- The rendered page may schedule at most one browser timeout only after
+  snapshot decode and initial render succeed, only under `file:`, and only
+  while visible. It uses monotonic elapsed time, requests at most one
+  same-document reload per loaded page, and schedules no work after
+  decode/render failure. Browser throttling may make refresh late but never
+  early.
+- M15.5 does not persist filter, selection, focus, or scroll state. That is the
+  separate TG-M15.6 slice.
 
 ## SQLite And State Rules
 
@@ -246,6 +278,9 @@ The product must not become:
   post-commit maintenance lives under that ignored project-specific `state/`
   directory. It is a local projection of SQLite state, not an additional
   source of truth, and must remain out of source commits and release artifacts.
+- The optional `config/viewer.json` presentation policy is separate from
+  SQLite backup policy and generated `state/`. Its absence is a valid
+  disabled state; taskgov never creates it as a setup side effect.
 - The SQLite database is a helper state store, not the source of truth for a
   target project's decisions.
 - Store references to governing files, command names, hashes, timestamps,

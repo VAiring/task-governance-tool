@@ -14,6 +14,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool.viewer import (  # noqa: E402
+    REFRESH_INTERVAL_PLACEHOLDER,
     TEMPLATE_PLACEHOLDER,
     ViewerError,
     encode_snapshot,
@@ -168,10 +169,11 @@ def embedded_snapshot(html):
 
 
 class ViewerRendererTests(unittest.TestCase):
-    def test_bundled_template_has_exactly_one_placeholder(self):
+    def test_bundled_template_has_exactly_one_placeholder_of_each_kind(self):
         template = viewer_template_path().read_text(encoding="utf-8")
 
         self.assertEqual(template.count(TEMPLATE_PLACEHOLDER), 1)
+        self.assertEqual(template.count(REFRESH_INTERVAL_PLACEHOLDER), 1)
         self.assertIn("<title>Task Viewer</title>", template)
         self.assertIn('id="search-filter"', template)
         self.assertIn('id="task-detail"', template)
@@ -194,20 +196,35 @@ class ViewerRendererTests(unittest.TestCase):
 
         self.assertNotIn(malicious, rendered)
         self.assertNotIn(TEMPLATE_PLACEHOLDER, rendered)
+        self.assertNotIn(REFRESH_INTERVAL_PLACEHOLDER, rendered)
+        self.assertIn(
+            'data-taskgov-refresh-interval-seconds="0"',
+            rendered,
+        )
         self.assertEqual(embedded_snapshot(rendered), snapshot)
 
     def test_render_rejects_missing_multiple_and_unreadable_templates(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            missing_placeholder = root / "missing.html"
-            missing_placeholder.write_text("<html></html>", encoding="utf-8")
-            multiple_placeholders = root / "multiple.html"
-            multiple_placeholders.write_text(
-                TEMPLATE_PLACEHOLDER + TEMPLATE_PLACEHOLDER,
-                encoding="utf-8",
-            )
+            invalid_templates = {
+                "missing_both.html": "<html></html>",
+                "missing_snapshot.html": REFRESH_INTERVAL_PLACEHOLDER,
+                "multiple_snapshot.html": (
+                    TEMPLATE_PLACEHOLDER
+                    + TEMPLATE_PLACEHOLDER
+                    + REFRESH_INTERVAL_PLACEHOLDER
+                ),
+                "missing_refresh.html": TEMPLATE_PLACEHOLDER,
+                "multiple_refresh.html": (
+                    TEMPLATE_PLACEHOLDER
+                    + REFRESH_INTERVAL_PLACEHOLDER
+                    + REFRESH_INTERVAL_PLACEHOLDER
+                ),
+            }
 
-            for path in (missing_placeholder, multiple_placeholders):
+            for name, content in invalid_templates.items():
+                path = root / name
+                path.write_text(content, encoding="utf-8")
                 with self.subTest(path=path.name):
                     with self.assertRaises(ViewerError) as failure:
                         render_viewer_html(sample_snapshot(), template_path=path)
@@ -216,6 +233,27 @@ class ViewerRendererTests(unittest.TestCase):
             with self.assertRaises(ViewerError) as unreadable:
                 render_viewer_html(sample_snapshot(), template_path=root / "absent.html")
             self.assertEqual(unreadable.exception.code, "internal_error")
+
+    def test_render_accepts_disabled_or_configured_decimal_interval_only(self):
+        for interval in (0, 5, 30, 3600):
+            with self.subTest(interval=interval):
+                rendered = render_viewer_html(
+                    sample_snapshot(),
+                    refresh_interval_seconds=interval,
+                )
+                self.assertIn(
+                    f'data-taskgov-refresh-interval-seconds="{interval}"',
+                    rendered,
+                )
+
+        for value in (True, -1, 1, 4, 3601, 30.0, "30"):
+            with self.subTest(value=value):
+                with self.assertRaises(ViewerError) as failure:
+                    render_viewer_html(
+                        sample_snapshot(),
+                        refresh_interval_seconds=value,
+                    )
+                self.assertEqual(failure.exception.code, "internal_error")
 
     def test_render_rejects_unsupported_snapshot_version(self):
         snapshot = sample_snapshot()
@@ -302,6 +340,71 @@ class ViewerRendererTests(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, template)
+
+    def test_template_contains_bounded_visibility_scheduler(self):
+        template = viewer_template_path().read_text(encoding="utf-8")
+
+        for marker in (
+            'window.location.protocol === "file:"',
+            'document.visibilityState !== "visible"',
+            "performance.now()",
+            "refreshTimeoutHandle",
+            'document.addEventListener("visibilitychange"',
+            "window.clearTimeout(refreshTimeoutHandle)",
+            "window.setTimeout(() =>",
+            "remainingMilliseconds",
+            "reloadRequested = true",
+            "window.location.reload()",
+            'new TextDecoder("utf-8", { fatal: true })',
+            "startAutoRefresh();",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, template)
+        self.assertNotIn("setInterval", template)
+        self.assertEqual(template.count("window.setTimeout("), 1)
+        self.assertEqual(template.count("window.location.reload()"), 1)
+        self.assertIn(
+            """        const remainingMilliseconds = (
+          refreshIntervalMilliseconds
+          - (performance.now() - refreshEpochMilliseconds)
+        );""",
+            template,
+        )
+        self.assertIn(
+            """        if (remainingMilliseconds <= 0) {
+          reloadRequested = true;
+          window.location.reload();
+          return;
+        }""",
+            template,
+        )
+        self.assertIn(
+            """        refreshTimeoutHandle = window.setTimeout(() => {
+          refreshTimeoutHandle = null;
+          reconcileAutoRefresh();
+        }, remainingMilliseconds);""",
+            template,
+        )
+        start_body = template.split(
+            "const startAutoRefresh = () => {",
+            1,
+        )[1].split("};", 1)[0]
+        self.assertLess(
+            start_body.index(
+                "refreshEpochMilliseconds = performance.now();"
+            ),
+            start_body.index(
+                'document.addEventListener("visibilitychange"'
+            ),
+        )
+        initialization = template.split("try {", 1)[1].split(
+            "} catch (error)",
+            1,
+        )[0]
+        self.assertLess(
+            initialization.rfind("renderTasks();"),
+            initialization.index("startAutoRefresh();"),
+        )
 
 
 if __name__ == "__main__":

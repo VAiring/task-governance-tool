@@ -733,8 +733,18 @@ Successful `setup` enables bounded local continuity once. There is no disable
 surface. After eligible successful business writes, the business transaction
 commits and closes before same-process projection refresh and any due managed
 copy. Projection refresh precedes the due-copy attempt. Work is fail-fast,
-bounded to at most two renders and one copy attempt, and never uses a daemon,
-thread, timer, detached process, queue, scheduler, service, or network.
+bounded to at most two renders and one copy attempt, and taskgov never uses a
+daemon, thread, timer, detached process, queue, scheduler, service, or network.
+
+The optional physical `config/viewer.json` is browser-presentation policy, not
+a CLI or normal-loop choice. Taskgov never creates it; absence means the
+generated page owns no refresh timer. A valid exact schema-1
+`visibility-refresh-v1` profile may embed a 5-3,600 second interval on the next
+Viewer publication. Invalid policy keeps routine task success and the last-good
+Viewer and uses the existing `viewer_refresh_failed` warning; actual setup uses
+`setup_incomplete`. `setup --read-only` remains successful and no-write,
+reports `viewer_status="repair_required"`, and includes `viewer_publish` in
+`planned_writes`. Doctor does not inspect this policy.
 
 These operations add no Skill command or LLM judgment. Their artifacts and
 paths are absent from public command output. Snapshot v3 reads source schemas

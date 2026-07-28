@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import closing, suppress
 from dataclasses import dataclass
+from pathlib import Path
 
 from task_governance_tool.artifact_lock import (
     ArtifactLockError,
@@ -30,6 +31,7 @@ from task_governance_tool.viewer import (
     validate_default_output_parent,
     write_viewer_html,
 )
+from task_governance_tool.viewer_config import load_viewer_refresh_interval
 
 
 VIEWER_LOCK_FILENAME = "taskgov-viewer.lock"
@@ -109,6 +111,7 @@ def _refresh(
     *,
     force: bool,
     observed_at: str,
+    skill_root: Path | None,
 ) -> ViewerRefreshResult:
     observed_at = validate_utc_timestamp(
         observed_at,
@@ -127,6 +130,7 @@ def _refresh(
         if not force and not first.viewer.due:
             return ViewerRefreshResult(code="current", renders=0)
 
+        refresh_interval_seconds = load_viewer_refresh_interval(skill_root)
         output = resolve_canonical_viewer_output_target(target)
         _prepare_lock(output)
         lock_path = output.path.parent / VIEWER_LOCK_FILENAME
@@ -163,7 +167,10 @@ def _refresh(
                 snapshot = capture.snapshot
                 if snapshot is None:
                     break
-                rendered = render_viewer_html(snapshot.snapshot)
+                rendered = render_viewer_html(
+                    snapshot.snapshot,
+                    refresh_interval_seconds=refresh_interval_seconds,
+                )
                 write_viewer_html(output, rendered)
                 record_viewer_publication(
                     target,
@@ -185,6 +192,7 @@ def run_routine_viewer_refresh(
     target: DatabaseTarget,
     *,
     observed_at: str | None = None,
+    skill_root: Path | None = None,
 ) -> ViewerRefreshResult:
     """Refresh when due, without waiting or changing the primary command."""
 
@@ -192,6 +200,7 @@ def run_routine_viewer_refresh(
         target,
         force=False,
         observed_at=observed_at or utc_now(),
+        skill_root=skill_root,
     )
 
 
@@ -199,6 +208,7 @@ def publish_setup_viewer(
     target: DatabaseTarget,
     *,
     observed_at: str | None = None,
+    skill_root: Path | None = None,
 ) -> ViewerRefreshResult:
     """Force one bounded canonical publication for explicit setup repair."""
 
@@ -206,4 +216,5 @@ def publish_setup_viewer(
         target,
         force=True,
         observed_at=observed_at or utc_now(),
+        skill_root=skill_root,
     )

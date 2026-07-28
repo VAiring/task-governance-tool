@@ -259,6 +259,33 @@ class DoctorCommandTests(unittest.TestCase):
             )
             self.assertEqual(file_snapshot(install.project_root), before)
 
+    def test_doctor_does_not_inspect_optional_viewer_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            setup = install.run("setup", "--json")
+            self.assertEqual(setup.returncode, 0, setup.stderr)
+            config = install.skill_root / "config" / "viewer.json"
+            config.parent.mkdir()
+            config.write_text('{"invalid":"presentation policy"}', encoding="utf-8")
+            before = file_snapshot(install.project_root)
+
+            result = install.run("doctor", "--json")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json_payload(result)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["warnings"], [])
+            self.assertEqual(payload["errors"], [])
+            data = self.assert_doctor_shape(payload)
+            self.assertEqual(data["components"]["package"]["status"], "clean")
+            self.assertEqual(
+                data["components"]["maintenance"]["viewer"]["code"],
+                "current",
+            )
+            self.assertNotIn("viewer.json", result.stdout)
+            self.assertNotIn("presentation policy", result.stdout)
+            self.assertEqual(file_snapshot(install.project_root), before)
+
     def test_ready_state_uses_exact_component_shapes_and_one_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))

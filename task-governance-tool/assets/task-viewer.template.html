@@ -643,7 +643,7 @@
     }
   </style>
 </head>
-<body>
+<body data-taskgov-refresh-interval-seconds="__TASKGOV_REFRESH_INTERVAL_SECONDS__">
   <header class="app-header">
     <div class="header-inner">
       <div>
@@ -787,6 +787,19 @@
         workspace: document.getElementById("workspace")
       };
       let snapshot;
+      const refreshIntervalSeconds = Number(
+        document.body.dataset.taskgovRefreshIntervalSeconds
+      );
+      const refreshIntervalMilliseconds = refreshIntervalSeconds * 1000;
+      const autoRefreshEnabled = (
+        window.location.protocol === "file:"
+        && Number.isInteger(refreshIntervalSeconds)
+        && refreshIntervalSeconds >= 5
+        && refreshIntervalSeconds <= 3600
+      );
+      let refreshEpochMilliseconds = null;
+      let refreshTimeoutHandle = null;
+      let reloadRequested = false;
       let selectedTaskId = null;
       let pendingFocusTaskId = null;
       let laneValues = [];
@@ -849,7 +862,9 @@
       const decodeSnapshot = () => {
         const encoded = document.getElementById("taskgov-snapshot").textContent.trim();
         const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
-        return JSON.parse(new TextDecoder("utf-8").decode(bytes));
+        return JSON.parse(
+          new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+        );
       };
 
       const initializeMetadata = () => {
@@ -1225,6 +1240,42 @@
         elements.reset.addEventListener("click", resetFilters);
       };
 
+      const reconcileAutoRefresh = () => {
+        if (refreshTimeoutHandle !== null) {
+          window.clearTimeout(refreshTimeoutHandle);
+          refreshTimeoutHandle = null;
+        }
+        if (
+          !autoRefreshEnabled
+          || reloadRequested
+          || document.visibilityState !== "visible"
+        ) {
+          return;
+        }
+        const remainingMilliseconds = (
+          refreshIntervalMilliseconds
+          - (performance.now() - refreshEpochMilliseconds)
+        );
+        if (remainingMilliseconds <= 0) {
+          reloadRequested = true;
+          window.location.reload();
+          return;
+        }
+        refreshTimeoutHandle = window.setTimeout(() => {
+          refreshTimeoutHandle = null;
+          reconcileAutoRefresh();
+        }, remainingMilliseconds);
+      };
+
+      const startAutoRefresh = () => {
+        if (!autoRefreshEnabled) {
+          return;
+        }
+        refreshEpochMilliseconds = performance.now();
+        document.addEventListener("visibilitychange", reconcileAutoRefresh);
+        reconcileAutoRefresh();
+      };
+
       try {
         snapshot = decodeSnapshot();
         initializeMetadata();
@@ -1232,6 +1283,7 @@
         renderStatusSummary();
         bindFilters();
         renderTasks();
+        startAutoRefresh();
       } catch (error) {
         elements.workspace.hidden = true;
         elements.fatal.hidden = false;

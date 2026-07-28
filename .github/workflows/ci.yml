@@ -162,6 +162,7 @@ jobs:
             "$skillRoot/scripts/task_governance_tool/storage.py",
             "$skillRoot/scripts/task_governance_tool/tasks.py",
             "$skillRoot/scripts/task_governance_tool/viewer.py",
+            "$skillRoot/scripts/task_governance_tool/viewer_config.py",
             "$skillRoot/scripts/task_governance_tool/viewer_maintenance.py",
             "$skillRoot/assets/task-viewer.template.html",
             "$skillRoot/references/task_workflow.md",
@@ -171,6 +172,9 @@ jobs:
             if (-not (Test-Path $file)) {
               throw "Missing required skill package file: $file"
             }
+          }
+          if (Test-Path "$skillRoot/config/viewer.json") {
+            throw 'Optional Viewer config must not be shipped'
           }
 
           $runtimeInit = Get-Content -Raw "$skillRoot/scripts/task_governance_tool/__init__.py"

@@ -33,6 +33,7 @@ def copy_skill_to(destination: Path, *, source: Path = SKILL_ROOT) -> Path:
         source,
         copied,
         ignore=shutil.ignore_patterns(
+            "config",
             "state",
             "__pycache__",
             "*.pyc",
@@ -646,6 +647,13 @@ class SkillSelfContainmentTests(unittest.TestCase):
             generated_viewer = generated / "viewer" / "task-viewer.html"
             generated_viewer.parent.mkdir()
             generated_viewer.write_text("generated", encoding="utf-8")
+            generated_config = source / "config" / "viewer.json"
+            generated_config.parent.mkdir()
+            generated_config.write_text(
+                '{"schema_version":1,"profile":"visibility-refresh-v1",'
+                '"refresh_interval_seconds":30}',
+                encoding="utf-8",
+            )
             for name in (
                 "scratch.sqlite",
                 "scratch.sqlite3",
@@ -660,6 +668,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             copied = copy_skill_to(workspace / "release", source=source)
 
             self.assertFalse((copied / "state").exists())
+            self.assertFalse((copied / "config").exists())
             for name in (
                 "scratch.sqlite",
                 "scratch.sqlite3",
@@ -674,6 +683,14 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertTrue((copied / "assets" / "task-viewer.template.html").is_file())
             self.assertTrue(
                 (copied / "scripts" / "task_governance_tool" / "viewer.py").is_file()
+            )
+            self.assertTrue(
+                (
+                    copied
+                    / "scripts"
+                    / "task_governance_tool"
+                    / "viewer_config.py"
+                ).is_file()
             )
             self.assertTrue(
                 (
@@ -722,6 +739,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
         self.assertIn("$skillRoot/assets/task-viewer.template.html", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/viewer.py", workflow)
+        self.assertIn(
+            "$skillRoot/scripts/task_governance_tool/viewer_config.py",
+            workflow,
+        )
         self.assertIn("$skillRoot/scripts/task_governance_tool/git_snapshot.py", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/handoffs.py", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/contracts.py", workflow)
@@ -763,6 +784,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
             tracked,
         )
         self.assertIn(
+            "task-governance-tool/scripts/task_governance_tool/viewer_config.py",
+            tracked,
+        )
+        self.assertIn(
             "task-governance-tool/scripts/task_governance_tool/git_snapshot.py",
             tracked,
         )
@@ -783,7 +808,16 @@ class SkillSelfContainmentTests(unittest.TestCase):
             tracked,
         )
         self.assertIn("task-governance-tool/release-manifest.json", tracked)
+        manifest = json.loads(
+            (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertIn(
+            "scripts/task_governance_tool/viewer_config.py",
+            manifest["core_files"],
+        )
+        self.assertNotIn("config/viewer.json", manifest["core_files"])
         self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))
+        self.assertFalse(any(path.startswith("task-governance-tool/config/") for path in tracked))
         self.assertFalse(any(path.endswith("/task-viewer.html") for path in tracked))
 
     def test_git_ignores_only_project_state_not_repository_database_globs(self):

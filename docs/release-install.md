@@ -161,17 +161,37 @@ zero-wait OS advisory locks and bounded sanitized outcomes. Contention or
 failure preserves the primary command result and leaves the maintenance stage
 due for the next eligible mutation.
 
-There is no daemon, thread, timer, detached process, scheduler, queue, service,
-browser launch, custom destination, public maintenance command, or separate
-model decision. Handoff-only writes may make backup due but do not change the
-Viewer generation. Setup publishes the Viewer directly.
+Taskgov starts no daemon, thread, timer, detached process, scheduler, queue,
+service, browser, custom-destination operation, public maintenance command, or
+separate model decision. Handoff-only writes may make backup due but do not
+change the Viewer generation. Setup publishes the Viewer directly.
 
 The Viewer is a self-contained, read-only `file://` projection under the
 ignored package state. Snapshot v3 accepts source schemas v5-v13 and omits
 storage paths, maintenance internals, checkpoint content, handoffs, raw
 evidence, environment data, and secrets. It performs no network request and
-provides no database or task write control. A browser reload is the only
-refresh action outside taskgov.
+provides no database or task write control.
+
+An optional browser-only refresh profile may exist at the physical installed
+package's `config/viewer.json`. Taskgov never creates or edits it, and the file
+must not be shipped in a release artifact or listed in the core manifest.
+Absence is valid and leaves automatic refresh disabled
+with no timer. A present file must be no larger than 16,384 bytes and contain
+only strict UTF-8 JSON schema 1, profile `visibility-refresh-v1`, and an integer
+`refresh_interval_seconds` from 5 through 3,600. Links, reparse points,
+non-regular objects, replacement races, invalid encoding/JSON, and non-exact
+fields fail closed without exposing path or OS details.
+
+The resolved setting is embedded on the next Viewer-relevant publication or
+explicit setup. A valid setting schedules at most one timeout only in an
+already opened visible `file://` page and requests at most one same-document
+reload per loaded page. It does not launch a browser, watch SQLite, use a
+network or browser storage, or preserve ephemeral Viewer state. Invalid
+profile preview is no-write `repair_required`; actual setup uses
+`setup_incomplete`, while routine mutations preserve their primary success and
+last-good Viewer and append `viewer_refresh_failed` for this Viewer/config
+failure. An independently due backup attempt and its existing warning remain
+unchanged.
 
 ## Public CLI Surface
 

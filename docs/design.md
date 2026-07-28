@@ -1,7 +1,8 @@
 # task-governance-tool MVP Design
 
-Status: implemented through TG-M15.4 at release v0.8.0/schema v13 and Viewer
-snapshot v3. TG-M12.3 Issue adapter remains blocked.
+Status: implemented through TG-M15.5 at release v0.8.0/schema v13 and Viewer
+snapshot v3; TG-M15.6 is the approved ready browser-state slice. TG-M12.3
+Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -2605,6 +2606,40 @@ helper:
 
 This does not broaden the public `task.list` JSON task shape.
 
+### Viewer Presentation Profile
+
+`viewer_config.py` owns one narrow optional policy file:
+
+```text
+<installed-skill-root>/config/viewer.json
+```
+
+This is separate from backup policy in SQLite because it controls only browser
+presentation. No config file or empty `config/` directory is shipped or
+created by taskgov. Absence resolves to internal interval `0` and is a valid
+disabled state. A present file must be no larger than 16,384 bytes and contain
+exactly `schema_version=1`, `profile="visibility-refresh-v1"`, and JSON-integer
+`refresh_interval_seconds` in the inclusive range 5-3,600. The parser rejects
+booleans, floats, duplicate/unknown/missing fields, invalid UTF-8, malformed
+JSON, and trailing alternate objects.
+
+The loader is a dedicated function rather than a generic settings framework.
+It derives the canonical path from the accepted physical Skill root, checks
+every existing or link-like path component for symlink/reparse behavior,
+opens the final file read-only with no-follow semantics where supported,
+requires a regular file, reads at most the cap plus one byte, and compares
+descriptor/path identity and bounded metadata before and after reading. A
+broken link, directory, device, replacement race, or uninspectable component
+fails closed through one sanitized `ViewerConfigError` that contains no path,
+content, OS exception, or expected/actual metadata.
+
+The optional runtime file is not a release-manifest entry. The loader and every
+other changed package source remain manifest-covered core. The profile is read
+once at the start of each direct setup or routine Viewer publication attempt;
+the same resolved integer is reused by an initial and possible follow-up
+render. Doctor does not call the loader. Taskgov never creates, edits,
+migrates, or suggests a routine choice about this file.
+
 ### Snapshot Assembly
 
 Snapshot version 3 accepts source schemas 5 through 13 without adding internal
@@ -2624,9 +2659,11 @@ Do not embed the canonical repository path, database path, environment data, or
 tool events. Also exclude v13 generation/outcome state and checkpoint content.
 
 Serialize with deterministic JSON settings, UTF-8 encode the bytes, and base64
-encode those bytes before template insertion. The template must contain exactly
-one fixed placeholder. Rendering fails with `internal_error` if the template is
-missing, unreadable, or has zero or multiple placeholders.
+encode those bytes before template insertion. The template must contain
+exactly one fixed snapshot placeholder and one distinct decimal interval
+placeholder. Rendering validates the resolved interval as `0` or 5-3,600 and
+fails with `internal_error` if the template is missing, unreadable, or has zero
+or multiple occurrences of either placeholder.
 
 The browser decodes the base64 payload with standard browser APIs. Task content
 must be assigned with `textContent` or equivalent text-node APIs. Do not pass
@@ -2679,12 +2716,25 @@ short conditional write records the captured generation without lowering an
 existing rendered generation. The success outcome uses publication-completion
 time rather than capture time, so a completed catch-up supersedes contention
 recorded while it held the lock. The service rereads once and performs at most
-one follow-up render. Any later churn remains due.
+one follow-up render. Any later churn remains due. The resolved presentation
+interval is loaded before either render and reused for both, so one publication
+attempt cannot publish two policy values.
 
 Lock contention maps to `deferred`; another bounded failure maps to `failed`.
 Recording outcome metadata is best-effort so maintenance failure cannot replace
 the primary command result. The post-commit coordinator runs Viewer first and
 backup second with independent fixed warnings.
+
+Setup drift inspection renders the expected template with the current resolved
+interval before comparing it with the canonical output. A missing profile
+therefore repairs a previously auto-refreshing page back to interval `0`, and a
+changed valid profile repairs the embedded value without changing snapshot v3.
+An invalid present profile is treated as Viewer repair-required during
+`setup --read-only`; preview remains successful and no-write with
+`viewer_publish` planned. Actual setup cannot produce valid expected bytes, so
+it preserves the last-good file and returns the existing `setup_incomplete`
+result. Routine publication handles the same error through existing
+`viewer_refresh_failed` semantics after the primary mutation has committed.
 
 ### Browser Application
 
@@ -2704,12 +2754,42 @@ regions are:
 The browser defaults to active tasks and keeps done/cancelled tasks available
 through the terminal-task control. Filtering and sorting are client-side and
 ephemeral. Do not use cookies, local storage, IndexedDB, or URL query state.
+TG-M15.5 does not preserve filters, selection, focus, or scroll across reload;
+TG-M15.6 owns any later bounded state-preservation design.
 
 Use neutral surfaces plus distinct status colors; do not rely on color alone.
 Keep card radii at 8 px or less, avoid nested cards, retain visible keyboard
 focus, associate labels with controls, and ensure long IDs, titles, commit
 hashes, and descriptions wrap without overlap. Use native controls and
 semantic table/detail markup where practical.
+
+### Browser Reload Scheduler
+
+The template embeds the validated decimal interval as data, never as executable
+task content. Interval `0`, a non-`file:` protocol, or a snapshot decode/render
+failure leaves the scheduler disabled. Snapshot bytes are decoded with fatal
+UTF-8 semantics. Scheduling begins only after the initial render completes.
+
+One small reconciliation function owns all timer behavior:
+
+1. clear and null any existing timeout;
+2. return when disabled, a reload was already requested, protocol is not
+   `file:`, or visibility is not `visible`;
+3. compute elapsed time from a page-load monotonic epoch using
+   `performance.now()`;
+4. when elapsed is at least the configured interval, set a one-way
+   `reloadRequested` flag and request one same-document reload;
+5. otherwise schedule one timeout for only the remaining duration.
+
+The timeout callback nulls its own handle and calls the same reconciliation
+function, which rechecks visibility and elapsed time. The
+`visibilitychange` handler calls that function as well; entering a hidden
+state therefore leaves no owned timeout. No `setInterval`, polling loop,
+wall-clock `Date.now()`, retry, fetch, XHR, storage, service worker, database
+access, or message channel is used. Browser throttling may delay the callback;
+the monotonic remainder calculation prevents an earlier request. The reload
+loads only the current atomically published HTML and is never described as a
+live database update.
 
 ### Read-Only Snapshot Transaction
 
@@ -2904,8 +2984,18 @@ Task Viewer tests must additionally cover:
 - exact CSP directive assertions and prohibited DOM sink assertions for
   `innerHTML`, `insertAdjacentHTML`, `eval`, `Function`, inline event
   attributes, and task-derived URL attributes
+- absent-profile interval `0`, strict profile schema/range/size/UTF-8 checks,
+  path link/reparse/replacement rejection, and one profile load per publication
+- exactly one snapshot plus one interval placeholder; setup no-write
+  repair preview, setup last-good failure, routine sanitized warning, and
+  interval/template drift repair
+- structural scheduler assertions for file-only, fatal decode, monotonic
+  remainder, hidden-state timer clearing, one timeout, and one reload request,
+  while preserving the exact CSP and absence of network/storage APIs
 - isolated canonical publication from an injected/copied skill state
-- representative desktop and mobile `file://` browser checks
+- representative desktop and mobile `file://` browser checks, including a
+  real visibility-aware auto-reload forward test with a valid profile and a
+  no-reload check when the profile is absent
 
 ## Packaging And Release Design
 

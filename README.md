@@ -184,7 +184,8 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py setup --backup-int
 ```
 
 Omitted options preserve an existing policy. Supported ranges are 1-1,440
-minutes and 1-20 generations. No second configuration file is created.
+minutes and 1-20 generations. Backup policy stays in SQLite and creates no
+configuration file.
 
 After opt-in, each eligible successful state mutation closes its SQLite write
 before running bounded same-process maintenance. The canonical Viewer is
@@ -193,13 +194,37 @@ renders at most twice to absorb one concurrent change. Backup and Viewer
 failures preserve the primary command result, keep maintenance due, and are
 reported only as bounded sanitized warnings.
 
-There is no daemon, timer, background process, queue, service, browser launch,
-custom Viewer destination, or maintenance command. The generated Viewer and
-managed backups remain projections/runtime artifacts under the ignored Skill
-`state/` directory. Viewer snapshot v3 reads source schemas 5 through 13,
-contains bounded sanitized task/review history, has no write controls or
-network dependency, and requires a normal browser reload to observe a newly
-published page.
+Taskgov starts no daemon, timer, background process, queue, service, browser,
+or maintenance command. The generated Viewer and managed backups remain
+projections/runtime artifacts under the ignored Skill `state/` directory.
+Viewer snapshot v3 reads source schemas 5 through 13, contains bounded
+sanitized task/review history, and has no write controls or network
+dependency.
+
+Viewer auto-refresh is a separate opt-in browser presentation policy. Taskgov
+does not create or edit it. With no file at
+`.agents/skills/task-governance-tool/config/viewer.json`, the generated page
+creates no refresh timer and requires a normal browser reload. To opt in,
+create that exact regular project-local file with strict UTF-8 JSON:
+
+```json
+{
+  "schema_version": 1,
+  "profile": "visibility-refresh-v1",
+  "refresh_interval_seconds": 30
+}
+```
+
+The interval must be an integer from 5 through 3,600 seconds. The file is
+limited to 16,384 bytes; links, reparse points, extra or duplicate fields, and
+invalid JSON are rejected. Run explicit `setup` to apply a changed profile
+immediately, or let the next Viewer-relevant task mutation publish it. A valid
+profile reloads only an already opened visible `file://` page, using at most
+one browser timeout. It does not launch a browser, watch the database, contact
+a network service, or preserve filter/selection/focus/scroll state. If the
+profile is invalid, `setup --read-only` reports planned Viewer repair without
+writing, actual setup fails with `setup_incomplete`, and routine task mutations
+retain their success plus the existing sanitized Viewer warning.
 
 ## Public Commands
 
@@ -257,7 +282,9 @@ git diff --check
 Also validate an isolated physical project-scoped package with `doctor`, verify
 the exact 20-leaf help surface, and confirm generated `state/`, SQLite files,
 Viewer HTML, backups, logs, caches, and root copied references are absent from
-the release artifact.
+the release artifact. The optional `config/viewer.json` must also be absent
+from the release artifact and core manifest, while its loader and changed
+runtime sources remain manifest-covered.
 
 ## Project Docs
 

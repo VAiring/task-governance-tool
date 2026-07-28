@@ -9,7 +9,11 @@ from contextlib import closing, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import SOURCE_SKILL_ROOT
+from tests.m14_test_support import (
+    SOURCE_SKILL_ROOT,
+    json_payload,
+    make_physical_install,
+)
 
 from task_governance_tool import cli as cli_service
 from task_governance_tool import maintenance as maintenance_service
@@ -219,6 +223,62 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     }
                 ],
             )
+
+    def test_physical_install_invalid_viewer_config_preserves_primary_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            setup = install.run("setup", "--json")
+            self.assertEqual(setup.returncode, 0, setup.stderr)
+            last_good = install.viewer_path.read_bytes()
+            config = install.skill_root / "config" / "viewer.json"
+            config.parent.mkdir()
+            config.write_text('{"schema_version":1}', encoding="utf-8")
+
+            added = install.run(
+                "task",
+                "add",
+                "--title",
+                "Primary mutation survives invalid Viewer config",
+                "--json",
+            )
+
+            self.assertEqual(added.returncode, 0, added.stderr)
+            payload = json_payload(added)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(
+                payload["data"]["task"]["title"],
+                "Primary mutation survives invalid Viewer config",
+            )
+            self.assertEqual(
+                payload["warnings"],
+                [
+                    {
+                        "code": "viewer_refresh_failed",
+                        "message": VIEWER_WARNING_MESSAGES["failed"],
+                    }
+                ],
+            )
+            self.assertEqual(install.viewer_path.read_bytes(), last_good)
+
+            shown = install.run(
+                "task",
+                "show",
+                payload["data"]["task"]["task_id"],
+                "--read-only",
+                "--json",
+            )
+            self.assertEqual(shown.returncode, 0, shown.stderr)
+            self.assertEqual(
+                json_payload(shown)["data"]["task"]["title"],
+                "Primary mutation survives invalid Viewer config",
+            )
+            doctor = install.run("doctor", "--read-only", "--json")
+            self.assertEqual(doctor.returncode, 0, doctor.stderr)
+            viewer = json_payload(doctor)["data"]["components"]["maintenance"][
+                "viewer"
+            ]
+            self.assertTrue(viewer["due"])
+            self.assertEqual(viewer["last_outcome"]["code"], "failed")
 
     def test_backup_failure_preserves_the_viewer_warning(self):
         with tempfile.TemporaryDirectory() as tmp:

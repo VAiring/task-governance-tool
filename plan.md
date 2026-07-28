@@ -1,7 +1,8 @@
 # task-governance-tool Initial Plan
 
-Status: implemented through TG-M15.4 at v0.8.0/schema v13 with Viewer snapshot
-v3. The TG-M12.3 Issue adapter remains blocked.
+Status: implemented through TG-M15.5 at v0.8.0/schema v13 with Viewer snapshot
+v3. TG-M15.6 is its approved ready browser-state slice. The TG-M12.3 Issue
+adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -1015,6 +1016,21 @@ Confirmed decisions:
   non-Git without an ignore subprocess. Failure retains the existing sanitized
   `state_ignore_required` boundary and adds no schema, command, JSON, Viewer,
   Task-loop call, LLM judgment, or target-project write.
+- M15.5 is the approved opt-in visibility-aware Viewer reload slice. Browser
+  presentation policy is deliberately separate from backup policy and exists
+  only at `<installed-skill-root>/config/viewer.json`; taskgov never creates or
+  edits it. Absence is a valid disabled state with no timer or automatic
+  reload. A present file is strict UTF-8 JSON capped at 16,384 bytes with exact
+  schema/profile fields and a 5-3,600 second integer interval. One observation
+  is reused for both bounded renders. Invalid policy uses existing setup or
+  routine Viewer-failure boundaries and preserves the last-good artifact and
+  primary mutation.
+- M15.5 scheduling is browser-local after successful decode/render, `file:`
+  only, visibility-aware, monotonic, and limited to one timeout plus at most
+  one reload request per loaded page. It adds no taskgov background process,
+  command, normal-loop call, LLM decision, network/storage API, automatic
+  browser launch, schema, or Viewer snapshot field. M15.6 separately owns
+  browser-state preservation.
 
 Open issues:
 
@@ -1026,8 +1042,8 @@ Open issues:
   currently required for the static Viewer baseline.
 - Before implementing default-browser launch, define its command or option,
   regeneration behavior, error contract, verification gates, and execution
-  unit. TG-M14 removes `web export` and keeps browser reload manual; it does not
-  authorize default-browser launch.
+  unit. M15.5 may reload an already opened `file://` Viewer only when its
+  separate profile exists; it does not authorize default-browser launch.
 - Decide after further operational use whether long-running tasks need stale
   warnings, event-history or current/list pagination, or checklist/child
   execution units. TG-M14 adopts only the bounded optional checkpoint; the
@@ -1046,9 +1062,10 @@ Open issues:
 
 ## Implementation Execution Status
 
-All approved implementation units through TG-M15.4 and the bounded M15
-correction tasks C1 through C3 are complete. Exact verification, review, and
-completion evidence is maintained in SQLite.
+All approved implementation units through TG-M15.5 and the bounded M15
+correction tasks C1 through C3 are complete. TG-M15.6 is the ready sequential
+dependent. Exact verification, review, and completion evidence is maintained
+in SQLite.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

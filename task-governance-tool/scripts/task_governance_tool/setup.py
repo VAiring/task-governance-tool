@@ -48,6 +48,10 @@ from task_governance_tool.viewer import (
 from task_governance_tool.viewer_maintenance import (
     publish_setup_viewer,
 )
+from task_governance_tool.viewer_config import (
+    ViewerConfigError,
+    load_viewer_refresh_interval,
+)
 
 
 SETUP_WRITE_ORDER = (
@@ -166,6 +170,12 @@ def _viewer_status(
     *,
     setup_state: SetupStorageState,
 ) -> str:
+    try:
+        refresh_interval_seconds = load_viewer_refresh_interval(
+            scope.skill_root
+        )
+    except ViewerConfigError:
+        return "repair_required"
     current_snapshot: dict[str, Any] | None = None
     maintenance_viewer_succeeded = False
     try:
@@ -205,6 +215,8 @@ def _viewer_status(
         current_snapshot=current_snapshot,
         compare_snapshot=True,
         verify_template=True,
+        refresh_interval_seconds=refresh_interval_seconds,
+        skill_root=scope.skill_root,
     )
     if artifact_status == "current" and not maintenance_viewer_succeeded:
         return "repair_required"
@@ -222,7 +234,10 @@ def _failure_viewer_status(
 
 
 def _publish_viewer(scope: ProjectScope) -> None:
-    result = publish_setup_viewer(scope.target)
+    result = publish_setup_viewer(
+        scope.target,
+        skill_root=scope.skill_root,
+    )
     if result.code != "succeeded":
         raise ViewerError(
             "internal_error",

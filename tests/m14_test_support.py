@@ -57,6 +57,7 @@ def _copy_skill(destination: Path) -> Path:
         SOURCE_SKILL_ROOT,
         copied,
         ignore=shutil.ignore_patterns(
+            "config",
             "state",
             "__pycache__",
             "*.pyc",

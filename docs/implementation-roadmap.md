@@ -1,8 +1,9 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through TG-M15.6 are complete at v0.8.0/schema
-v13 with Viewer snapshot v3. TG-M12.3 remains blocked on a future Issue Skill
-intake contract.
+Status: implementation units through TG-M15.6 and the TG-M16.0 formal contract
+are complete at v0.8.0/schema v13 with Viewer snapshot v3. TG-M16.1, TG-M16.2,
+and TG-M16.4 are approved and pending; TG-M16.3 is cancelled. TG-M12.3 remains
+blocked on a future Issue Skill intake contract.
 The default-browser launch follow-up remains requirements-only pending design
 and roadmap approval.
 
@@ -3067,12 +3068,175 @@ Verification:
   `git diff --check`, exact-SHA Windows Python 3.12/3.14 Actions, and two
   exact-final-revision Tier 2 PASS reviews.
 
+## Approved Reduced Behavioral Trial: TG-M16
+
+TG-M16 is one sequential lane. It changes no version, schema, Viewer snapshot,
+public command count, setup plan, target-project mutation authority, or normal
+green-path call count. M16.0 formalizes the reduced contract before M16.1 or
+M16.2 changes runtime or active Skill guidance. M16.3 is cancelled and does
+not block the lane.
+
+### TG-M16.0 Reduced Loop Discipline Contract
+
+Kind: sequential
+Lane: `TG-M16`
+Lane order: 10
+Review tier: Tier 2
+Depends on: completed TG-M15.6
+Status: complete
+
+Intended outcome:
+
+- Promote the approved reduced Effort reconciliation, Test Repair, Scope
+  Reconciliation, and behavioral-acceptance boundaries into formal authority.
+- Leave current Python, tests, CLI behavior, active Skill, setup, schema,
+  Viewer, target project, and release package unchanged.
+
+Write scope:
+
+- `AGENTS.md`, specification, design, this roadmap, and `plan.md` only;
+- exact truth table and one-episode semantics for M16.1;
+- session-local two-attempt, test-integrity, scope, review-remediation,
+  unrelated-lane, and batched-decision rules for M16.2;
+- explicit cancellation of M16.3 and bounded M16.4 package/behavior scope.
+
+Verification:
+
+- the five authorities distinguish the approved target contract from the
+  still-M15.6 runtime without contradiction;
+- no bootstrap, instruction adoption, durable counter/latch, command, schema,
+  Viewer, setup, target mutation, network, or background behavior is added;
+- full offline suite, package doctor, `git diff --check`, and two independent
+  exact-target Tier 2 PASS reviews.
+
+### TG-M16.1 Effort Advisory Reconciliation Routing
+
+Kind: sequential
+Lane: `TG-M16`
+Lane order: 20
+Review tier: Tier 2
+Depends on: completed TG-M16.0
+Status: approved
+
+Intended outcome:
+
+- Return `reconcile_scope` when and only when a valid enabled Effort
+  observation has a nonempty `exceeded` list.
+- Keep all other paths at `continue` and keep the signal non-blocking and
+  read-only.
+
+Write scope:
+
+- centralized Effort action selection and directly coupled data/warning output;
+- table-driven focused tests and synchronized implementation-facing docs;
+- manifest digest updates only for changed covered package files.
+
+Verification:
+
+- absent, disabled, invalid, below-threshold, and unknown-only paths continue;
+  exceeded and exceeded-plus-unknown paths reconcile;
+- data and existing threshold-warning actions match when that warning is
+  emitted; warning code/key/message are stable; any number of exceeded metrics
+  creates one episode;
+- no Task, Contract, handoff, review, completion, Git, or target write; no new
+  command, profile field, metric, call, question, or stop;
+- focused and full offline tests, package doctor and self-check,
+  `git diff --check`, and two exact-target Tier 2 PASS reviews.
+
+### TG-M16.2 Reduced Test Repair And Scope Guidance
+
+Kind: sequential
+Lane: `TG-M16`
+Lane order: 30
+Review tier: Tier 2
+Depends on: completed TG-M16.1
+Status: approved
+
+Intended outcome:
+
+- Route `reconcile_scope` and repeated test or review failure into one concise
+  session-local diagnostic procedure.
+- Prevent equivalent retry loops and test weakening without adding a durable
+  workflow state.
+
+Write scope:
+
+- short durable root `AGENTS.md` invariants;
+- concise Skill trigger and one failure-only
+  `references/reconciliation.md` reference;
+- directly coupled formal summaries, behavior fixtures, self-checks, and
+  manifest hashes.
+
+Verification:
+
+- no third materially equivalent repair after two failures without new
+  evidence; superficial relabeling is not new evidence and a materially useful
+  safe diagnostic remains allowed;
+- no test weakening merely for PASS and no Contract/acceptance change without
+  explicit authority;
+- current Task ownership requires accepted scope and current authority;
+  failure alone is insufficient; existing blocker, handoff, paused, lane, and
+  review gates are reused;
+- blocking review evidence requires a meaningful fix, fresh target, and fresh
+  receipts; two equivalent failed remediation cycles bound further repair;
+- unrelated safe lanes continue and remaining decisions are batched;
+- no runtime counter, latch, command, schema, automatic mutation, mandatory
+  checkpoint, or target instruction edit;
+- focused behavior checks, full offline suite, package doctor and self-check,
+  `git diff --check`, and two exact-target Tier 2 PASS reviews.
+
+### TG-M16.3 Atomic Versioned Bootstrap Policy Ensure
+
+Kind: sequential
+Lane: `TG-M16`
+Lane order: 40
+Review tier: Tier 2
+Status: cancelled
+
+The proposed setup-owned policy Task, instruction-chain inspection, and
+consuming-project instruction adoption are withdrawn. Setup, schema v13,
+Viewer snapshot v3, the 20 command leaves, and target-project mutation
+authority remain unchanged. This cancelled row does not block M16.4.
+
+### TG-M16.4 Package Synchronization And Behavioral Acceptance
+
+Kind: sequential
+Lane: `TG-M16`
+Lane order: 50
+Review tier: Tier 2
+Depends on: completed TG-M16.1 and TG-M16.2; cancelled TG-M16.3
+Status: approved
+
+Intended outcome:
+
+- Synchronize the reduced Effort and reconciliation guidance across the active
+  Skill, one-level references, README, release guidance, formal status, tests,
+  forward evidence, and release manifest.
+- Demonstrate fresh-session behavior without bootstrap or project-instruction
+  adoption.
+
+Verification:
+
+- fresh-session pressure covers exceeded Effort, two equivalent failures
+  without test weakening, distinct diagnostic evidence, blocking review with
+  fresh target/receipts, scope/blocker/handoff classification, unrelated-lane
+  continuation, batched decisions, and durable state rediscovery with reset
+  session-local retry counts;
+- setup creates no Task and performs no instruction audit or target edit;
+- explicit `--repo` and physical project-scoped safety remain documented;
+- v0.8.0, schema v13, Viewer v3, 20 command leaves, nine/ten-call bounds,
+  privacy, offline operation, and target-mutation boundaries remain unchanged;
+- package self-check, full offline suite, `git diff --check`, and two
+  exact-target Tier 2 PASS reviews.
+
 ## Roadmap Completion Criteria
 
 The currently approved roadmap is complete when:
 
 - all approved sequential units through TG-M14.7 and approved TG-M15 units
   through TG-M15.6 are complete;
+- TG-M16.0, TG-M16.1, TG-M16.2, and TG-M16.4 are complete, with TG-M16.3
+  remaining cancelled;
 - every unit's documented verification and review gate has passed for its exact
   final revision;
 - no valid High or Medium review finding remains unresolved;

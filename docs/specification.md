@@ -1,8 +1,9 @@
 # task-governance-tool MVP Specification
 
 Status: implemented through TG-M15.6 at release v0.8.0/schema v13 and Viewer
-snapshot v3. TG-M12.3 Issue adapter remains blocked on a future intake
-contract.
+snapshot v3. TG-M16.0 fixes the approved reduced loop-discipline trial
+contract; TG-M16 runtime and active-Skill units are not yet implemented.
+TG-M12.3 Issue adapter remains blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -1088,7 +1089,7 @@ Generated fixture size, retry inference, configured test execution, and generic
 risk profiles are deferred rather than guessed or added to the initial
 implementation.
 
-Its initial contract is informational only:
+Its implemented contract through TG-M15.6 is informational only:
 
 - `suggested_action` is always `continue`;
 - it never asks the user, records a handoff, changes acceptance, pauses,
@@ -1120,7 +1121,8 @@ existing verification/review boundary rather than after every command.
 
 For implementation lineage, M14.1 added that boolean to `task show`, M14.2
 removed public `db status`, and M14.7 published the mechanically routed Skill
-flow from `task show`.
+flow from `task show`. The approved TG-M16.1 override is defined in the
+TG-M16 section below; TG-M16.0 does not change this implemented runtime.
 
 ### Consuming-Project Modification Boundary
 
@@ -1195,7 +1197,10 @@ The decision budget is:
 - Task-versus-handoff classification: the one judgment already inherent in
   scope handling, with no second Issue-presence or continuation judgment;
 - adapter delivery and due retry: zero judgments;
-- Effort Advisory: zero judgments and zero stop decisions; and
+- Effort Advisory through TG-M15.6: zero judgments and zero stop decisions;
+  TG-M16 retains zero green-path judgments and permits one bounded
+  session-local reconciliation episode only for a valid exceeded observation;
+  and
 - Local Package Self-Status: zero judgments and zero stop decisions; and
 - normal Tier 2 review: the existing two independent review judgments.
 
@@ -1232,8 +1237,9 @@ Acceptance requires automated proof that:
 - disabled Effort Advisory leaves Task output and Git reads unchanged; without
   an existing basis it also leaves advisory state unchanged, while after a
   prior basis it may advance only hidden activity counters; enabled threshold
-  or unknown results always continue and never mutate
-  Task/handoff/acceptance/review state;
+  or unknown results through TG-M15.6 always continue and never mutate
+  Task/handoff/acceptance/review state; TG-M16.1 later changes only an
+  exceeded result's action while preserving that no-mutation boundary;
 - package self-status is deterministic and read-only for clean, modified,
   missing/invalid-manifest, excluded-directory, and installed-copy cases;
   every result continues and changes no package, SQLite, Git, or target state;
@@ -2628,6 +2634,110 @@ clear failures; and prove exclusions, unchanged URL/history length, existing
 timer/visibility bounds, required/manual scroll-restoration fallback, exact
 CSP, no storage/network API, no console/UI disclosure, and no command, schema,
 snapshot, or normal-loop change.
+
+## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial
+
+TG-M16 is approved as a reduced behavioral trial. TG-M16.0 fixes this formal
+contract before any runtime or active-Skill change. TG-M16.1 owns only Effort
+action routing, TG-M16.2 owns concise Test Repair and Scope Reconciliation
+guidance, and TG-M16.4 owns final package synchronization and behavioral
+acceptance. The former TG-M16.3 setup bootstrap and consuming-project
+instruction-adoption unit is cancelled.
+
+### Effort Reconciliation Signal
+
+TG-M16.1 retains the existing profile, metrics, observation point, warning
+code `effort_advisory_threshold_exceeded`, warning key
+`effort_advisory.threshold_exceeded.v1`, and message
+`One or more configured effort thresholds were exceeded.` It changes only the
+action selected after one observation:
+
+| Profile and observation | `data.suggested_action` | Threshold-warning action |
+|---|---|---|
+| absent or valid disabled | `continue` | no threshold warning |
+| invalid present profile | `continue` | no `task effort` threshold warning; the existing `task show` invalid-profile warning remains `continue` |
+| valid enabled, `exceeded` empty, attribution known | `continue` | no threshold warning |
+| valid enabled, `exceeded` empty, attribution unknown | `continue` | no threshold warning |
+| valid enabled, `exceeded` nonempty, attribution known | `reconcile_scope` | `reconcile_scope` |
+| valid enabled, `exceeded` nonempty, attribution unknown | `reconcile_scope` | `reconcile_scope` |
+
+The nonempty `exceeded` list is the sole action predicate after valid
+enablement. Unknown attribution does not erase a deterministically observed
+threshold exceedance, but an unknown-only observation does not invent one.
+Data and warning actions must match. Any number of exceeded metrics in the
+same result creates at most one session-local reconciliation episode.
+
+`reconcile_scope` is non-blocking. The signal never asks the user, records a
+handoff, changes Task status, Contract, acceptance, review tier, review or
+completion evidence, pauses, blocks, or fails a Task. It does not add a second
+observation, command, or judgment to the green path. The default-off
+no-finding Tier 2 flow remains at nine governance calls and the enabled flow at
+ten. TG-M16.2 guidance, not the deterministic Effort result, owns any later
+scope classification.
+
+### Session-Local Test Repair And Scope Reconciliation
+
+TG-M16.2 adds concise guidance, not a persisted state machine. A reconciliation
+episode first diagnoses the evidence and repair boundary. Without new
+evidence, after two materially equivalent failed repair attempts the agent
+must not execute a third materially equivalent retry. Changing only command
+spelling, working directory, runner wrapper, Task label, or execution-unit
+label is not new evidence. A safe diagnostic result is new evidence only when
+it can materially change the causal hypothesis, authorized repair, or expected
+outcome. Diagnostic work and a genuinely different evidence-backed repair are
+not prohibited by the two-attempt bound.
+
+Tests must not be weakened merely to obtain a pass. A test may be changed when
+current governing authority shows that the test is wrong, but a Contract or
+acceptance change still requires later explicit authority; neither a failure
+nor an advisory signal supplies that authority.
+
+Classification reuses the existing Responsibility And Continue-First Rule:
+
+1. Keep work in the current Task only when resolving it is within its accepted
+   scope and can proceed under current authority. This includes work required
+   by current acceptance and regressions introduced by the current Task.
+2. A failing test alone establishes neither accepted scope nor current
+   authority. An out-of-scope discovery uses the existing immediate local
+   handoff.
+3. Record a blocker only after safe authorized work for the affected Task or
+   lane is exhausted. Reserve `paused` for an explicit temporary interruption.
+4. Continue unrelated safe ready lanes. Batch any remaining user decisions
+   after that independent work rather than returning once per discovery.
+
+Existing review gates remain authoritative. A current-generation
+`changes_requested` receipt or an unresolved high or medium finding blocks
+completion; historical receipts, PASS receipts, and low findings do not
+independently add a stop. A meaningful fix resolves applicable findings,
+advances to a fresh review target, and obtains fresh qualifying receipts.
+Without new evidence, two unsuccessful materially equivalent review
+remediation cycles prohibit a third equivalent cycle. The agent then uses one
+bounded existing decision or blocker path for the affected work while
+unrelated safe lanes continue.
+
+All attempt counting is session-local and may reset in a fresh session; durable
+Task, event, finding, and receipt records remain the only rediscovery state.
+TG-M16 adds no attempt table, counter, latch, acknowledgement, semantic failure
+parser, automatic Task/Contract/status/handoff mutation, mandatory checkpoint,
+project-specific test strategy, or workflow engine.
+
+### Setup, Adoption, And Acceptance Boundary
+
+TG-M16.3 is withdrawn. Setup creates no policy or bootstrap Task, performs no
+instruction-chain audit, and does not create or edit a consuming project's
+`AGENTS.md` or other instructions. Setup JSON, Viewer maintenance, task
+selection, schema v13, Viewer snapshot v3, release v0.8.0, and the 20 command
+leaves remain unchanged.
+
+TG-M16.4 synchronizes the concise Skill entry point, one failure-only
+one-level reference, package guidance and manifest, then pressure-tests fresh
+sessions for the exact Effort truth table, two-attempt Test Repair boundary,
+review remediation, existing scope/blocker/handoff classification,
+unrelated-lane continuation, batched decisions, and durable Task rediscovery
+with session-local retry counts reset. It installs nothing, edits no consuming
+project, and performs no instruction adoption. Any broader project-policy
+adoption requires a later separately approved design and is not a standing
+handoff from TG-M16.
 
 ## Task Ordering
 

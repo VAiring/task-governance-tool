@@ -19,7 +19,8 @@ workspace.
 
 - The intended repository root is `C:\WorkSpace\task-governance-tool`.
 - The project is implemented through TG-M15.6 at v0.8.0/schema v13 with Viewer
-  snapshot v3. The
+  snapshot v3. TG-M16.0 has fixed the reduced loop-discipline trial contract;
+  its runtime and active-Skill units remain gated in the TG-M16 lane. The
   installable package, CLI, migrations, tests, and formal documents already
   exist; inspect them before changing an established contract.
 - The workspace is Git-managed, initialized on the `main` branch. Continue to
@@ -300,6 +301,60 @@ The product must not become:
   service workers, `pushState`, URL/query/fragment state, cross-tab sync, and
   manual-reload capture remain prohibited. Interrupted automatic navigation may
   leave one bounded envelope for a later qualifying reload to consume.
+
+## Approved M16 Reduced Loop Discipline Boundary
+
+- TG-M16 is a reduced behavioral trial, not a workflow-engine expansion.
+  TG-M16.0 fixes the formal contract, TG-M16.1 implements one deterministic
+  Effort action route, TG-M16.2 adds concise session-local Test Repair and
+  Scope Reconciliation guidance, and TG-M16.4 synchronizes the package and
+  runs behavioral acceptance. The former setup/bootstrap and project
+  instruction-adoption unit TG-M16.3 is cancelled.
+- TG-M16.0 is documentation-only. The runtime retains the M15.6 `continue`
+  action until TG-M16.1; the active Skill retains its existing guidance until
+  TG-M16.2. The intermediate TG-M16.1 revision may expose the non-blocking
+  action before the Skill consumes it and is not a publication-ready M16
+  package. TG-M16.4 owns final synchronization and publication acceptance.
+  The remaining bullets define those later units' acceptance boundary, not an
+  added pre-implementation normal-loop obligation.
+- TG-M16.1 changes only a valid, enabled Effort observation whose `exceeded`
+  list is nonempty from `continue` to `reconcile_scope`. Absent, disabled,
+  invalid, below-threshold, and unknown-only observations continue. Exceeded
+  metrics still route to `reconcile_scope` when attribution is also unknown.
+  Data and warning actions match and one observation creates at most one
+  non-blocking reconciliation episode, never one episode per metric.
+- The Effort signal does not itself ask a question, stop work, fail a Task, or
+  mutate Task status, Contract, acceptance, handoff, review, or completion
+  state. It adds no observation or judgment to the default-off green path and
+  leaves the existing nine/ten-call bounds unchanged.
+- TG-M16.2 remains session-local guidance. Without new evidence, two
+  materially equivalent failed repair attempts prohibit a third equivalent
+  retry; superficial command, working-directory, or execution-unit relabeling
+  is not new evidence. Safe diagnostics that can materially change the causal
+  hypothesis or authorized repair remain allowed. Tests are not weakened
+  merely to obtain a pass, and Contract or acceptance changes still require
+  later explicit authority.
+- Reconciliation reuses the existing accepted-scope classifier. Work stays in
+  the current Task only when it is within accepted scope and can proceed under
+  current authority, including acceptance-required work and regressions
+  introduced by that Task. A failing test alone establishes neither
+  ownership condition. Other discoveries use local handoff; blockers are
+  recorded only after safe authorized work is exhausted; `paused` remains an
+  explicit temporary interruption. Unrelated ready lanes continue and user
+  decisions are batched after safe independent work.
+- A current-generation `changes_requested` receipt or an unresolved high or
+  medium finding blocks completion immediately. Historical receipts, PASS
+  receipts, and low findings do not independently add a stop. A meaningful
+  repair resolves applicable findings, advances to a fresh target, and obtains
+  fresh receipts. Two unsuccessful materially equivalent remediation cycles
+  without new evidence prohibit a third equivalent cycle and lead to one
+  bounded decision or existing blocker path, without stopping unrelated safe
+  lanes.
+- M16 adds no durable retry counter, latch, command, schema, setup stage,
+  bootstrap Task, instruction-chain audit, consuming-project `AGENTS.md` edit,
+  target-project mutation, network action, or background work. Operational
+  evidence may support a separately approved adoption design later; it is not
+  a standing follow-up in M16.
 
 ## SQLite And State Rules
 

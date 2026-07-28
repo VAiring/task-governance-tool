@@ -1,7 +1,9 @@
 # task-governance-tool MVP Design
 
 Status: implemented through TG-M15.6 at release v0.8.0/schema v13 and Viewer
-snapshot v3. TG-M12.3 Issue adapter remains blocked.
+snapshot v3. TG-M16.0 fixes the reduced loop-discipline trial design; its
+runtime and active-Skill units remain pending. TG-M12.3 Issue adapter remains
+blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -1654,11 +1656,13 @@ strictly off; invalid present configuration is disabled with a bounded
 continuation diagnostic.
 
 The public read command is `taskgov task effort <task-id>` with stable envelope
-command `task.effort`. It returns measurements, thresholds, basis, coverage,
-attribution, unknown reasons, one stable warning key, and fixed
-`suggested_action=continue`. `db status` gains an enablement projection only
-for an enabled or invalid present profile; the absent/disabled shape stays
-unchanged.
+command `task.effort`. Through TG-M15.6 it returns measurements, thresholds,
+basis, coverage, attribution, unknown reasons, one stable warning key, and
+fixed `suggested_action=continue`. `db status` historically gained an
+enablement projection only for an enabled or invalid present profile; the
+current `task show` route preserves the absent/disabled shape. TG-M16.1's
+approved deterministic action override is specified below and is not
+implemented by TG-M16.0.
 
 When enabled, first entry to `in_progress` may best-effort store a basis HEAD,
 endpoint cleanliness, capture timestamp, and activity generation in Task DB.
@@ -2935,6 +2939,99 @@ are TG-M15.6's bounded replacement and clearing of the current entry, without
 a URL argument, plus its page-local `scrollRestoration = "manual"` setting.
 Browser refresh reloads the same snapshot and is not presented as a database
 refresh.
+
+## Approved TG-M16 Reduced Loop Discipline Trial Design
+
+TG-M16 adds no subsystem. M16.1 changes one centralized value selection inside
+the existing Effort result assembly. M16.2 changes no product runtime or
+persisted state; it updates agent guidance, behavioral fixtures, and directly
+coupled summaries, self-checks, and manifest hashes. M16.4 synchronizes the
+package and validates fresh-session behavior. M16.3's proposed setup bootstrap
+and project-instruction adoption are deleted from the design.
+
+### Deterministic Effort Action Selection
+
+M16.1 derives one local `suggested_action` after profile validity and the
+ordered `exceeded` list are known:
+
+```text
+valid profile AND enabled AND len(exceeded) > 0
+    => reconcile_scope
+otherwise
+    => continue
+```
+
+The same value is placed in the result data and, when the existing threshold
+warning is emitted, in that warning. The warning code, key, and message remain
+the current fixed values. Attribution and `unknown_reasons` remain independent
+evidence fields: an unknown-only result continues, while a nonempty exceeded
+list plus unknown attribution reconciles. One result has at most one threshold
+warning and therefore at most one reconciliation episode.
+
+This selection stays in the existing `effort.py` boundary; it does not create
+a routing framework, new profile field, metric, CLI branch, database write, or
+stored acknowledgement. It is read-only and cannot call Task, Contract,
+handoff, review, or completion repositories. The existing mechanically gated
+single Effort call and nine/ten-call budgets are unchanged.
+
+### Session-Local Guidance Model
+
+M16.2 represents neither retries nor reconciliation in SQLite. The active
+Skill will add one short trigger that loads
+`references/reconciliation.md` only after `reconcile_scope` or repeated test
+or review failure. Root `AGENTS.md` will hold only the durable short
+invariants; the one-level reference will hold the bounded procedure and
+examples. Normal successful work loads no extra reference and performs no
+extra taskgov call.
+
+The procedure keeps a session-local comparison of failed attempts. Two failed
+repairs with the same material hypothesis and repair prohibit a third
+equivalent execution when no new evidence exists. Wrapper, command spelling,
+working-directory, Task-label, or execution-unit-label changes do not create
+new evidence by themselves. A safe diagnostic is allowed and is new evidence
+only if its result can materially alter the causal hypothesis, authorized
+repair, or expected result. No session-local count is serialized,
+checkpointed, or reconstructed after compaction; a fresh session resets it and
+relies only on durable Task, event, review, and handoff state.
+
+Test Repair never edits tests solely to make verification green. Governing
+authority may show that a test is incorrect, but only later explicit authority
+may revise the Task Contract or acceptance. A failure or Effort signal is
+evidence, not authority.
+
+Scope Reconciliation calls the existing three-way classifier rather than
+adding a workflow state:
+
+- current Task only when accepted scope and current authority cover the repair,
+  including acceptance-required work and regressions introduced by that Task;
+- existing local handoff for other discoveries;
+- existing blocker only after safe authorized work for the affected Task or
+  lane is exhausted.
+
+`paused` remains an explicit temporary interruption. Unrelated ready lanes
+continue. Any decisions that remain after safe independent work are returned
+in one bounded batch.
+
+Review remediation begins with the existing blocking receipt/finding state. A
+meaningful fix advances to a fresh target generation and fresh receipts. Two
+unsuccessful materially equivalent remediation cycles without new evidence
+prohibit a third equivalent cycle and use the same bounded decision or blocker
+path. There is no second review state machine or attempt record.
+
+### Removed Bootstrap And Behavioral Acceptance
+
+Setup gains no M16 stage, Task seed, policy version, JSON field, or target
+instruction write. No component inspects a consuming project's instruction
+chain for adoption and no target `AGENTS.md` is created or edited.
+
+M16.4 validates the package from fresh sessions after M16.1 and M16.2. Pressure
+fixtures cover exceeded and non-exceeded Effort routes, equivalent failure,
+new diagnostic evidence, test integrity, review findings and fresh targets,
+scope/handoff/blocker selection, unrelated-lane continuation, batched
+decisions, and rediscovery with reset session-local retry counts. These are
+repository tests and sanitized forward evidence, not persisted runtime policy.
+The package remains physical and project-scoped with explicit `--repo`; no
+test installs into or edits a real consuming project.
 
 ## Validation Rules
 

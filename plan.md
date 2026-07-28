@@ -4,6 +4,8 @@ Status: implemented through TG-M15.6 at v0.8.0/schema v13 with Viewer snapshot
 v3. The TG-M12.3 Issue adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
+Reduced TG-M16 has a fixed TG-M16.0 formal contract. Runtime and active Skill
+implementation begin only in the later approved sequential units.
 
 This document captures early ideas for a reusable task-governance-tool Codex
 skill/tooling project. Product behavior is now governed by
@@ -1050,6 +1052,34 @@ Confirmed decisions:
 - A History-state getter exception disables envelope save/restore without
   skipping the manual scroll-mode attempt on an enabled `file:` page, so the
   default `(0, 0)` fallback does not compete with user-agent reload scroll.
+- On 2026-07-29 the user approved TG-M16 as a reduced behavioral trial before
+  considering any project-wide policy adoption:
+  - M16.1 keeps the existing read-only Effort observation and changes only a
+    valid enabled observation with at least one exceeded metric from
+    `continue` to one non-blocking `reconcile_scope` signal. Exceeded plus
+    unknown attribution also reconciles; unknown-only continues. Data and
+    warning actions match, and any number of exceeded metrics creates one
+    session-local episode. The signal itself never mutates Task state.
+  - M16.2 owns concise Test Repair and Scope Reconciliation guidance. It
+    prohibits weakening tests merely to obtain a pass, stops a third
+    materially equivalent retry after two failures without new evidence,
+    requires later explicit authority for Contract change, reuses the existing
+    in-scope/blocker/handoff and unrelated-lane rules, and bounds repeated
+    review remediation. Safe diagnostics remain allowed only when their result
+    can materially change the hypothesis, authorized repair, or expected
+    result; relabeling a command, working directory, Task, or execution unit is
+    not new evidence. Attempt counts are session-local and reset in a fresh
+    session. It adds no durable attempt counter, counter/latch protocol,
+    command, schema, or automatic Task mutation.
+  - The former M16.3 setup-owned bootstrap/adoption Task is withdrawn. Setup,
+    Viewer maintenance, task selection, schema v13, Viewer snapshot v3, and the
+    20 command leaves remain unchanged.
+  - M16.4 is reduced to Skill/reference/document/package synchronization plus
+    fresh-session trigger and behavioral pressure acceptance. It performs no
+    consuming-project instruction-chain audit, target `AGENTS.md` adoption, or
+    target-project edit.
+  - Operational evidence may justify a later separately approved adoption
+    design. This decision itself creates no handoff or standing follow-up.
 
 Open issues:
 
@@ -1084,6 +1114,8 @@ Open issues:
 All approved implementation units through TG-M15.6 and the bounded M15
 correction tasks C1 through C3 are complete. Exact verification, review, and
 completion evidence is maintained in SQLite.
+The reduced TG-M16.0 formal contract is complete. TG-M16.1, TG-M16.2, and
+TG-M16.4 remain approved sequential work, while TG-M16.3 is cancelled.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

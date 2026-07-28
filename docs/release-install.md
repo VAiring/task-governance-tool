@@ -186,8 +186,15 @@ The resolved setting is embedded on the next Viewer-relevant publication or
 explicit setup. A valid setting schedules at most one timeout only in an
 already opened visible `file://` page and requests at most one same-document
 reload per loaded page. It does not launch a browser, watch SQLite, use a
-network or browser storage, or preserve ephemeral Viewer state. Invalid
-profile preview is no-write `repair_required`; actual setup uses
+network, or use Web Storage. Only immediately before that automatic reload, a
+fixed at-most-4,096-byte, five-minute envelope in the current History entry may
+preserve non-search filters, selected Task, fixed-control focus, and document
+scroll. The reloaded page clears owned state before validation, leaves
+an unrelated `history.state` payload untouched, and changes neither URL nor
+history length. Five minutes is the restore acceptance limit rather than a
+physical-erasure guarantee; browser-managed state may survive session restore
+but an owned envelope is consumed before validation. Invalid profile preview is
+no-write `repair_required`; actual setup uses
 `setup_incomplete`, while routine mutations preserve their primary success and
 last-good Viewer and append `viewer_refresh_failed` for this Viewer/config
 failure. An independently due backup attempt and its existing warning remain

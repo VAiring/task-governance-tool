@@ -114,3 +114,50 @@ startup. Together with the user-observed `file://` refresh, this satisfies the
 formal forward-test gate. The temporary profile was then removed, `setup`
 republished sentinel `0`, and the repository returned to its default
 refresh-disabled state.
+
+## TG-M15.6 One-Shot Reload State Evidence
+
+Date: 2026-07-28
+
+The focused test invokes Node.js against the shipped
+`assets/task-viewer.template.html`. Its deterministic fake-browser harness
+extracts the exact envelope constants, History functions, scheduler callback,
+and startup block rather than reimplementing the production algorithm. The
+harness passed the valid save/clear/restore path and confirmed that filter and
+selected-Task assignment precede one render, followed by fixed focus, document
+scroll, and scheduler startup.
+
+The same execution rejected wrong schema, exact-key, primitive-type,
+enumeration, age, UTF-8, character-count, coordinate, navigation,
+current-option, selected-Task visibility, and fixed-focus boundaries. Its
+positive boundaries include age 300,000 milliseconds, lane and tag values of
+1,024 UTF-8 bytes, a 128-character Task ID, and scroll coordinates
+2,147,483,647. A control-character envelope independently exercises the
+4,096-byte serialized limit while both dynamic fields remain within their
+individual limits.
+
+Failure scenarios cover History read, clear, and save exceptions;
+`scrollRestoration` absence, setter/read, and readback failures; focus and
+scroll failures; fatal snapshot decode after pre-decode clearing; hidden and
+early timers; repeated reconciliation; non-`file:` execution; and a second
+reload with default state. Unknown non-Viewer state, URL, history length,
+search exclusion, two-argument `replaceState`, one-timeout, and one-reload
+bounds remain intact. Focused renderer tests and the harness pass offline.
+The complete offline suite passed all 519 tests after the final focus/scroll
+fallback correction. The large Viewer-only fixture completed within its
+documented bound, with a 3.040-second delta and a 0.622-second maximum command.
+
+Direct automated navigation to the generated `file://` artifact remained
+disallowed by the browser-control URL policy, so no alternate browser surface
+or URL workaround was used. In the permitted user-run smoke, the user kept the
+generated page active with a 30-second temporary profile, selected the M15.6
+Task under the In-progress status filter, entered excluded search text, and
+scrolled the document. The user confirmed that the automatic reload cleared
+only search while preserving the non-search filter, selected Task, and document
+scroll, and that an immediate manual reload returned to the normal default
+display. This real `file://` observation passed.
+
+After the smoke, the temporary unshipped `config/viewer.json` was removed and
+`setup` republished the canonical Viewer with interval sentinel `0`. The
+generated page therefore returned to the release-default refresh-disabled
+state, while the optional loader remains available for a user-created profile.

@@ -1,8 +1,8 @@
 # task-governance-tool MVP Specification
 
-Status: implemented through TG-M15.5 at release v0.8.0/schema v13 and Viewer
-snapshot v3. TG-M15.6 is the approved ready browser-state slice. TG-M12.3
-Issue adapter remains blocked on a future intake contract.
+Status: implemented through TG-M15.6 at release v0.8.0/schema v13 and Viewer
+snapshot v3. TG-M12.3 Issue adapter remains blocked on a future intake
+contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -2324,8 +2324,10 @@ strategy.
 
 Overview, action aliases, result or receipt-file import, verification receipts,
 manual backup, standalone/manual restore, general export, relocation, browser
-launch, browser-state persistence, live server, search, pagination, Issue
-lifecycle, generic diagnostics, and workflow automation remain deferred.
+launch, durable or general browser-state persistence, live server, search,
+pagination, Issue lifecycle, generic diagnostics, and workflow automation
+remain deferred. TG-M15.6's exact one-shot History API handoff is the sole
+browser-state exception.
 
 ## Static Task Viewer
 
@@ -2401,10 +2403,13 @@ desktop/mobile layout, keyboard access, visible focus, associated labels, and
 readable contrast. It provides no task or database write controls.
 
 The generated page contains only bundled inline HTML, CSS, and JavaScript. It
-uses no network API, external URL, analytics, telemetry, browser persistence,
-server, direct browser-to-SQLite access, watcher, automatic browser launch, or
-browser-side mutation. Its exact content security policy and prohibited DOM
-sinks are defined and tested in `docs/design.md`.
+uses no network API, external URL, analytics, telemetry, durable or general
+browser persistence, server, direct browser-to-SQLite access, watcher,
+automatic browser launch, or task-state mutation. TG-M15.6's only browser
+history changes are one-shot replacement/clearing of the current classic state
+and its bounded manual scroll-restoration mode; neither changes the URL or
+history length. Its exact content security policy and prohibited DOM sinks are
+defined and tested in `docs/design.md`.
 
 ### Optional Visibility-Aware Reload
 
@@ -2470,11 +2475,131 @@ schedules nothing.
 
 The reload reads only the latest atomically published HTML file. It is not
 real-time database observation and may retain an older snapshot until taskgov
-successfully publishes another one. TG-M15.5 stores no filter, selection,
-focus, or scroll state; reload may reset those ephemeral values. It adds no
-public command or option, normal-loop call, LLM decision, automatic launch,
-network access, service worker, storage API, background taskgov process,
-SQLite field, or Viewer snapshot field.
+successfully publishes another one. TG-M15.5 alone stores no filter, selection,
+focus, or scroll state; TG-M15.6 defines the only bounded automatic-reload
+handoff below. M15.5 adds no public command or option, normal-loop call, LLM
+decision, automatic launch, network access, service worker, storage API,
+background taskgov process, SQLite field, or Viewer snapshot field.
+
+### One-Shot Automatic-Reload UI State
+
+TG-M15.6 applies only when the M15.5 scheduler is enabled on a `file:` page and
+is about to request its one automatic same-document reload. Immediately before
+that existing callback invokes reload, the Viewer may attempt exactly one
+`history.replaceState(envelope, "")` call with no URL argument. The reload
+continues if reading current state, encoding, validation, or replacement fails.
+If `history.state` is non-null and is not a Viewer-owned state, it is neither
+overwritten nor cleared and no preservation is attempted. A non-array object
+whose `owner` field is exactly `taskgov-viewer-auto-reload` is Viewer-owned
+even when the rest of the object is invalid.
+
+The schema-1 envelope has exactly these 13 top-level keys:
+
+```json
+{
+  "owner": "taskgov-viewer-auto-reload",
+  "schema_version": 1,
+  "captured_at_ms": 0,
+  "status": "",
+  "kind": "",
+  "lane": "",
+  "priority": "",
+  "tag": "",
+  "terminal": false,
+  "selected_task_id": "tg_task_example",
+  "scroll_x": 0,
+  "scroll_y": 0,
+  "focus_id": ""
+}
+```
+
+The deterministic JSON serialization must be no more than 4,096 UTF-8 bytes
+both before replacement and after reading `history.state`. `captured_at_ms` is
+a nonnegative safe integer from `Date.now()`. `status` is empty or one of the
+seven current statuses; `kind` is empty, `sequential`, or `optional`;
+`priority` is empty or one of the four current priorities. `lane` and `tag`
+are UTF-8 strings of at most 1,024 bytes each and must be empty or present in
+the newly loaded snapshot's corresponding options. `terminal` is Boolean.
+`selected_task_id` is a nonempty string of at most 128 Unicode characters; if
+the current filtered result has no selection, the Viewer skips envelope save
+and still reloads. Each scroll coordinate is a finite number in the inclusive
+range zero through 2,147,483,647. The fixed focus allow-list consists of the
+empty no-focus sentinel plus exactly
+`search-filter`, `status-filter`, `kind-filter`, `lane-filter`,
+`priority-filter`, `tag-filter`, `terminal-filter`, or `reset-filters`.
+Dynamic task-row or status-tile focus is captured as the empty sentinel and is
+not restored.
+
+The envelope never contains search text, task title or description, event,
+receipt, finding, snapshot data, option lists, URL, query, fragment, file or
+project path, arbitrary selector, caret or text selection, dynamic task-row
+focus, or nested-panel scroll. It uses no cookie, `localStorage`,
+`sessionStorage`, IndexedDB, Cache API, service worker, network request,
+database record, or snapshot field.
+
+At the start of a `file:` page load, before snapshot decoding, the Viewer reads
+`history.state` at most once. It performs no further M15.6 work unless
+automatic refresh is enabled or that value is Viewer-owned. An owned state is
+cleared immediately with
+`history.replaceState(null, "")`, again with no URL argument. This clear occurs
+even when the state is malformed, stale, from a non-reload navigation, or the
+snapshot later fails to decode. If clearing fails, nothing is restored.
+If reading or clearing throws, the page continues with its normal snapshot and
+default UI while the existing M15.5 scheduler remains independent. Non-`file:`
+pages neither read nor change History state for M15.6.
+
+On that same eligible `file:` load, the Viewer must successfully set
+`history.scrollRestoration` to `manual` before snapshot/UI restoration. It
+first requires `"scrollRestoration" in history`, then assigns `manual`, then
+requires a readback equal to `manual`; this prevents an unsupported expando
+property from appearing supported. The mode prevents the user agent's own
+reload scroll restoration from competing with the bounded document
+coordinates. If the property is unavailable, rejects `manual`, or throws,
+M15.6 save and restore are disabled for that loaded page; an already owned
+state is still cleared without restoration, and the M15.5 timer and reload
+remain enabled.
+
+After a successful clear and snapshot option initialization, restoration
+requires the current navigation entry to report type `reload`, exact keys,
+owner and version, valid primitive types and bounds, a capture age from zero
+through 300,000 milliseconds inclusive, current lane and tag membership, a
+selected task that still exists and is visible under the candidate filters,
+and any nonempty fixed focus target to exist. Initialization explicitly resets
+search and every filter to the Viewer defaults before optional envelope
+application, so excluded form state is not adopted from browser restoration.
+
+Valid filters are assigned before one task-list/detail render. That render
+restores selection; fixed-control focus is then restored without preserving
+caret or selection, and document scroll is restored last. Invalid, stale,
+oversized, unsupported, unavailable, or otherwise failed restoration renders
+the normal default UI and explicitly scrolls the document to `(0, 0)`. Owned
+state is consumed even when rejected, so a later reload starts from defaults
+unless the M15.5 scheduler creates a new valid envelope. The reload timer
+remains independent of every save or restore outcome. If fixed focus succeeds
+but the following scroll operation fails, fallback best-effort blurs only that
+just-restored fixed control before resetting filters and selection, rerendering
+the defaults, and attempting `(0, 0)` scroll. Blur failure is contained and
+does not prevent the remaining fallback.
+No ignored state, serialization content, browser exception, URL/path, or
+validation detail is written to the page, console, snapshot, or taskgov output.
+
+History state is browser-managed and may survive in a session-restored history
+entry; it is not guaranteed to be memory-only. TG-M15.6 therefore relies on
+one-shot owner validation, the five-minute limit, the 4,096-byte cap, and
+clear-before-restore rather than making a durability claim. It never calls
+`pushState`, never supplies a URL argument to `replaceState`, and leaves the
+current URL, classic state payload, and history length unchanged when setting
+the scroll mode. Setting `scrollRestoration` updates the current entry's
+user-agent scroll-restoration mode but does not add an entry or change its URL.
+Manual reload never creates a new envelope. If automatic navigation is
+interrupted after save, the outstanding bounded envelope may be consumed by
+the next qualifying reload within five minutes.
+
+TG-M15.6 adds no command, option, configuration choice, Task-loop call, LLM
+judgment, user-return stop, automatic browser launch, database/schema field,
+Viewer snapshot field or version, network behavior, or CSP relaxation.
+Release v0.8.0, schema v13, Viewer snapshot v3, compact JSON, and the 20-leaf
+CLI remain unchanged.
 
 Acceptance requires schema-5-to-13 snapshot compatibility, privacy allow-list
 tests, atomic/last-good path tests, zero-wait and two-render bounds, Viewer-only
@@ -2487,6 +2612,16 @@ rendering, structural scheduling/CSP/storage/network tests, and a real
 optional `config/viewer.json` is absent from the release artifact while the
 loader and changed runtime sources remain manifest-covered. Automatic browser
 launch remains deferred.
+
+TG-M15.6 acceptance additionally requires automatic `file:` reload save,
+reload-only consume, clear-before-restore, and second-reload-default browser
+tests. Tests reject wrong ownership/version/keys/types/bounds/age/navigation,
+oversized encodings, missing dynamic options, invisible or missing selection,
+and unavailable focus; preserve unknown non-Viewer state; exercise save and
+clear failures; and prove exclusions, unchanged URL/history length, existing
+timer/visibility bounds, required/manual scroll-restoration fallback, exact
+CSP, no storage/network API, no console/UI disclosure, and no command, schema,
+snapshot, or normal-loop change.
 
 ## Task Ordering
 

@@ -1,8 +1,7 @@
 # task-governance-tool Initial Plan
 
-Status: implemented through TG-M15.5 at v0.8.0/schema v13 with Viewer snapshot
-v3. TG-M15.6 is its approved ready browser-state slice. The TG-M12.3 Issue
-adapter remains blocked.
+Status: implemented through TG-M15.6 at v0.8.0/schema v13 with Viewer snapshot
+v3. The TG-M12.3 Issue adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 
@@ -1031,6 +1030,23 @@ Confirmed decisions:
   command, normal-loop call, LLM decision, network/storage API, automatic
   browser launch, schema, or Viewer snapshot field. M15.6 separately owns
   browser-state preservation.
+- M15.6 is the approved one-shot automatic-reload UI handoff. It uses only the
+  current session-history entry and exact owner/schema/time, five non-search
+  select filters plus terminal, selected Task ID, document scroll, and one
+  fixed-control focus ID. The envelope is capped at 4,096 UTF-8 bytes, expires
+  after five minutes, is accepted only on reload navigation against current
+  options/tasks, and is cleared before restoration. Non-Viewer state is never
+  overwritten or cleared.
+- M15.6 deliberately does not preserve search text, task/snapshot/evidence
+  content, URL/path data, arbitrary focus/selection, or nested scroll. It adds
+  no command, config, Web Storage, database/snapshot field, network, history
+  entry, URL change, Task-loop call, LLM decision, or stop. History state is
+  browser-managed and potentially session-restored, so the contract promises
+  bounded one-shot consumption rather than memory-only lifetime.
+- A post-render restore failure returns to default filters, first-visible
+  selection, focus, and scroll. If scroll fails after fixed focus succeeds,
+  fallback best-effort blurs only that just-restored fixed control before
+  default rerender and scroll; blur failure remains contained.
 
 Open issues:
 
@@ -1062,10 +1078,9 @@ Open issues:
 
 ## Implementation Execution Status
 
-All approved implementation units through TG-M15.5 and the bounded M15
-correction tasks C1 through C3 are complete. TG-M15.6 is the ready sequential
-dependent. Exact verification, review, and completion evidence is maintained
-in SQLite.
+All approved implementation units through TG-M15.6 and the bounded M15
+correction tasks C1 through C3 are complete. Exact verification, review, and
+completion evidence is maintained in SQLite.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

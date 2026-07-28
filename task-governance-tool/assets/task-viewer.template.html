@@ -805,6 +805,44 @@
       let laneValues = [];
       let tagValues = [];
       const taskButtons = new Map();
+      const reloadStateOwner = "taskgov-viewer-auto-reload";
+      const reloadStateKeys = [
+        "owner",
+        "schema_version",
+        "captured_at_ms",
+        "status",
+        "kind",
+        "lane",
+        "priority",
+        "tag",
+        "terminal",
+        "selected_task_id",
+        "scroll_x",
+        "scroll_y",
+        "focus_id"
+      ];
+      const reloadStateMaxBytes = 4096;
+      const reloadStateMaxAgeMilliseconds = 300000;
+      const reloadStateMaxDynamicBytes = 1024;
+      const reloadStateMaxTaskIdCharacters = 128;
+      const reloadStateMaxCoordinate = 2147483647;
+      const reloadStateFocusIds = new Set([
+        "",
+        "search-filter",
+        "status-filter",
+        "kind-filter",
+        "lane-filter",
+        "priority-filter",
+        "tag-filter",
+        "terminal-filter",
+        "reset-filters"
+      ]);
+      const reloadStateStatuses = new Set(["", ...statusOrder]);
+      const reloadStateKinds = new Set(["", ...Object.keys(kindLabels)]);
+      const reloadStatePriorities = new Set(["", ...Object.keys(priorityLabels)]);
+      let reloadStatePageManaged = false;
+      let reloadStateCapability = false;
+      let pendingReloadState = null;
 
       const asText = (value, fallback = "") => {
         if (value === null || value === undefined || value === "") {
@@ -852,6 +890,16 @@
         }
         const index = Number(select.value) - 1;
         return values[index] || "";
+      };
+
+      const setDefaultFilterValues = () => {
+        elements.search.value = "";
+        elements.status.value = "";
+        elements.kind.value = "";
+        elements.lane.value = "";
+        elements.priority.value = "";
+        elements.tag.value = "";
+        elements.terminal.checked = false;
       };
 
       const splitTags = (task) => asText(task.tags)
@@ -920,6 +968,7 @@
           .sort((left, right) => left.localeCompare(right));
         fillDynamicOptions(elements.lane, laneValues, "All lanes");
         fillDynamicOptions(elements.tag, tagValues, "All tags");
+        setDefaultFilterValues();
       };
 
       const matchesFilters = (task) => {
@@ -1217,13 +1266,7 @@
       };
 
       const resetFilters = () => {
-        elements.search.value = "";
-        elements.status.value = "";
-        elements.kind.value = "";
-        elements.lane.value = "";
-        elements.priority.value = "";
-        elements.tag.value = "";
-        elements.terminal.checked = false;
+        setDefaultFilterValues();
         renderTasks();
       };
 
@@ -1238,6 +1281,356 @@
           renderTasks();
         });
         elements.reset.addEventListener("click", resetFilters);
+      };
+
+      const isViewerOwnedState = (value) => {
+        try {
+          return (
+            value !== null
+            && typeof value === "object"
+            && !Array.isArray(value)
+            && Object.prototype.hasOwnProperty.call(value, "owner")
+            && value.owner === reloadStateOwner
+          );
+        } catch (error) {
+          return false;
+        }
+      };
+
+      const reloadStateUtf8Size = (value) => {
+        try {
+          const serialized = typeof value === "string"
+            ? value
+            : JSON.stringify(value);
+          if (typeof serialized !== "string") {
+            return null;
+          }
+          return new TextEncoder().encode(serialized).byteLength;
+        } catch (error) {
+          return null;
+        }
+      };
+
+      const hasExactReloadStateKeys = (value) => {
+        try {
+          const keys = Object.keys(value);
+          return (
+            keys.length === reloadStateKeys.length
+            && reloadStateKeys.every(
+              (key) => Object.prototype.hasOwnProperty.call(value, key)
+            )
+          );
+        } catch (error) {
+          return false;
+        }
+      };
+
+      const isValidReloadEnvelope = (value, nowMilliseconds) => {
+        const serializedSize = reloadStateUtf8Size(value);
+        if (
+          !isViewerOwnedState(value)
+          || !hasExactReloadStateKeys(value)
+          || serializedSize === null
+          || serializedSize > reloadStateMaxBytes
+          || value.schema_version !== 1
+          || !Number.isSafeInteger(value.captured_at_ms)
+          || value.captured_at_ms < 0
+          || !Number.isSafeInteger(nowMilliseconds)
+        ) {
+          return false;
+        }
+        const ageMilliseconds = nowMilliseconds - value.captured_at_ms;
+        const laneSize = reloadStateUtf8Size(value.lane);
+        const tagSize = reloadStateUtf8Size(value.tag);
+        if (
+          ageMilliseconds < 0
+          || ageMilliseconds > reloadStateMaxAgeMilliseconds
+          || typeof value.status !== "string"
+          || !reloadStateStatuses.has(value.status)
+          || typeof value.kind !== "string"
+          || !reloadStateKinds.has(value.kind)
+          || typeof value.priority !== "string"
+          || !reloadStatePriorities.has(value.priority)
+          || typeof value.lane !== "string"
+          || laneSize === null
+          || laneSize > reloadStateMaxDynamicBytes
+          || typeof value.tag !== "string"
+          || tagSize === null
+          || tagSize > reloadStateMaxDynamicBytes
+          || typeof value.terminal !== "boolean"
+          || typeof value.selected_task_id !== "string"
+          || !value.selected_task_id
+          || [...value.selected_task_id].length > reloadStateMaxTaskIdCharacters
+          || typeof value.scroll_x !== "number"
+          || !Number.isFinite(value.scroll_x)
+          || value.scroll_x < 0
+          || value.scroll_x > reloadStateMaxCoordinate
+          || typeof value.scroll_y !== "number"
+          || !Number.isFinite(value.scroll_y)
+          || value.scroll_y < 0
+          || value.scroll_y > reloadStateMaxCoordinate
+          || typeof value.focus_id !== "string"
+          || !reloadStateFocusIds.has(value.focus_id)
+        ) {
+          return false;
+        }
+        return true;
+      };
+
+      const matchesReloadStateFilters = (task, state) => {
+        if (!state.terminal && terminalStatuses.has(task.status)) {
+          return false;
+        }
+        if (state.status && task.status !== state.status) {
+          return false;
+        }
+        if (state.kind && task.kind !== state.kind) {
+          return false;
+        }
+        if (state.priority && task.priority !== state.priority) {
+          return false;
+        }
+        if (state.lane && asText(task.lane) !== state.lane) {
+          return false;
+        }
+        if (state.tag && !splitTags(task).includes(state.tag)) {
+          return false;
+        }
+        return true;
+      };
+
+      const prepareReloadState = () => {
+        if (window.location.protocol !== "file:") {
+          return;
+        }
+
+        let currentState;
+        try {
+          currentState = window.history.state;
+        } catch (error) {
+          reloadStatePageManaged = autoRefreshEnabled;
+          return;
+        }
+
+        const owned = isViewerOwnedState(currentState);
+        reloadStatePageManaged = autoRefreshEnabled || owned;
+        if (!reloadStatePageManaged) {
+          return;
+        }
+
+        let manualScrollReady = false;
+        try {
+          if ("scrollRestoration" in window.history) {
+            window.history.scrollRestoration = "manual";
+            manualScrollReady = window.history.scrollRestoration === "manual";
+          }
+        } catch (error) {
+          manualScrollReady = false;
+        }
+
+        let clearSucceeded = true;
+        if (owned) {
+          try {
+            window.history.replaceState(null, "");
+          } catch (error) {
+            clearSucceeded = false;
+          }
+        }
+
+        reloadStateCapability = manualScrollReady && clearSucceeded;
+        if (owned && reloadStateCapability) {
+          pendingReloadState = currentState;
+        }
+      };
+
+      const isReloadNavigation = () => {
+        try {
+          const entries = performance.getEntriesByType("navigation");
+          return entries.length > 0 && entries[0].type === "reload";
+        } catch (error) {
+          return false;
+        }
+      };
+
+      const validatePendingReloadState = () => {
+        const candidate = pendingReloadState;
+        pendingReloadState = null;
+        if (
+          !reloadStateCapability
+          || candidate === null
+          || !isReloadNavigation()
+        ) {
+          return null;
+        }
+
+        try {
+          const nowMilliseconds = Date.now();
+          if (
+            !isValidReloadEnvelope(candidate, nowMilliseconds)
+            || (candidate.lane && !laneValues.includes(candidate.lane))
+            || (candidate.tag && !tagValues.includes(candidate.tag))
+            || (
+              candidate.focus_id
+              && document.getElementById(candidate.focus_id) === null
+            )
+          ) {
+            return null;
+          }
+          const selectedTask = snapshot.tasks.find(
+            (task) => task.task_id === candidate.selected_task_id
+          );
+          if (
+            !selectedTask
+            || !matchesReloadStateFilters(selectedTask, candidate)
+          ) {
+            return null;
+          }
+          return candidate;
+        } catch (error) {
+          return null;
+        }
+      };
+
+      const captureAutoReloadState = () => {
+        try {
+          if (
+            typeof selectedTaskId !== "string"
+            || !selectedTaskId
+            || [...selectedTaskId].length > reloadStateMaxTaskIdCharacters
+          ) {
+            return null;
+          }
+          const scrollX = window.scrollX;
+          const scrollY = window.scrollY;
+          const capturedAtMilliseconds = Date.now();
+          const activeId = (
+            document.activeElement
+            && typeof document.activeElement.id === "string"
+          )
+            ? document.activeElement.id
+            : "";
+          const focusId = reloadStateFocusIds.has(activeId) ? activeId : "";
+          const candidate = {
+            owner: reloadStateOwner,
+            schema_version: 1,
+            captured_at_ms: capturedAtMilliseconds,
+            status: elements.status.value,
+            kind: elements.kind.value,
+            lane: selectedDynamicValue(elements.lane, laneValues),
+            priority: elements.priority.value,
+            tag: selectedDynamicValue(elements.tag, tagValues),
+            terminal: elements.terminal.checked,
+            selected_task_id: selectedTaskId,
+            scroll_x: scrollX,
+            scroll_y: scrollY,
+            focus_id: focusId
+          };
+          if (
+            !isValidReloadEnvelope(candidate, capturedAtMilliseconds)
+            || !snapshot.tasks.some(
+              (task) => (
+                task.task_id === candidate.selected_task_id
+                && matchesReloadStateFilters(task, candidate)
+              )
+            )
+          ) {
+            return null;
+          }
+          return candidate;
+        } catch (error) {
+          return null;
+        }
+      };
+
+      const saveAutoReloadState = () => {
+        if (!reloadStateCapability) {
+          return;
+        }
+        try {
+          const currentState = window.history.state;
+          if (currentState !== null && !isViewerOwnedState(currentState)) {
+            return;
+          }
+          const candidate = captureAutoReloadState();
+          if (candidate === null) {
+            return;
+          }
+          window.history.replaceState(candidate, "");
+        } catch (error) {
+          return;
+        }
+      };
+
+      const applyValidatedReloadState = (state) => {
+        if (state === null) {
+          return null;
+        }
+        try {
+          setDefaultFilterValues();
+          elements.status.value = state.status;
+          elements.kind.value = state.kind;
+          elements.lane.value = state.lane
+            ? String(laneValues.indexOf(state.lane) + 1)
+            : "";
+          elements.priority.value = state.priority;
+          elements.tag.value = state.tag
+            ? String(tagValues.indexOf(state.tag) + 1)
+            : "";
+          elements.terminal.checked = state.terminal;
+          selectedTaskId = state.selected_task_id;
+          return state;
+        } catch (error) {
+          setDefaultFilterValues();
+          selectedTaskId = null;
+          return null;
+        }
+      };
+
+      const restoreReloadEffects = (state) => {
+        if (!reloadStatePageManaged) {
+          return;
+        }
+        if (state === null) {
+          try {
+            window.scrollTo(0, 0);
+          } catch (error) {
+            return;
+          }
+          return;
+        }
+        let restoredFocusTarget = null;
+        let focusRestored = false;
+        try {
+          if (state.focus_id) {
+            restoredFocusTarget = document.getElementById(state.focus_id);
+            restoredFocusTarget.focus({ preventScroll: true });
+            focusRestored = true;
+          }
+          window.scrollTo(state.scroll_x, state.scroll_y);
+        } catch (error) {
+          if (
+            focusRestored
+            && typeof restoredFocusTarget.blur === "function"
+          ) {
+            try {
+              restoredFocusTarget.blur();
+            } catch (blurError) {
+              // Default state restoration continues even if blur is unavailable.
+            }
+          }
+          try {
+            setDefaultFilterValues();
+            selectedTaskId = null;
+            renderTasks();
+          } catch (renderError) {
+            // The outer Viewer remains usable if this bounded rollback cannot render.
+          }
+          try {
+            window.scrollTo(0, 0);
+          } catch (scrollError) {
+            return;
+          }
+        }
       };
 
       const reconcileAutoRefresh = () => {
@@ -1258,6 +1651,7 @@
         );
         if (remainingMilliseconds <= 0) {
           reloadRequested = true;
+          saveAutoReloadState();
           window.location.reload();
           return;
         }
@@ -1276,13 +1670,18 @@
         reconcileAutoRefresh();
       };
 
+      prepareReloadState();
       try {
         snapshot = decodeSnapshot();
         initializeMetadata();
         initializeFilters();
         renderStatusSummary();
         bindFilters();
+        const restoredReloadState = applyValidatedReloadState(
+          validatePendingReloadState()
+        );
         renderTasks();
+        restoreReloadEffects(restoredReloadState);
         startAutoRefresh();
       } catch (error) {
         elements.workspace.hidden = true;

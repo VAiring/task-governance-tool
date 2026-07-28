@@ -221,10 +221,19 @@ invalid JSON are rejected. Run explicit `setup` to apply a changed profile
 immediately, or let the next Viewer-relevant task mutation publish it. A valid
 profile reloads only an already opened visible `file://` page, using at most
 one browser timeout. It does not launch a browser, watch the database, contact
-a network service, or preserve filter/selection/focus/scroll state. If the
-profile is invalid, `setup --read-only` reports planned Viewer repair without
-writing, actual setup fails with `setup_incomplete`, and routine task mutations
-retain their success plus the existing sanitized Viewer warning.
+a network service, or use Web Storage. Immediately before that automatic
+reload only, the page may place one at-most-4,096-byte, five-minute envelope in
+the current History entry. It preserves status/kind/lane/priority/tag/terminal
+filters, selected Task, fixed filter-control focus, and document scroll; search
+text and task/snapshot content are never included. The page clears its owned
+envelope before restoration and never overwrites an unrelated `history.state`
+payload, changes the URL, or adds a history entry. Five minutes is the restore
+acceptance limit, not a promise that browser-managed state has been physically
+erased; a session-restored owned envelope is still consumed before validation.
+If the profile is invalid,
+`setup --read-only` reports planned Viewer repair without writing, actual setup
+fails with `setup_incomplete`, and routine task mutations retain their success
+plus the existing sanitized Viewer warning.
 
 ## Public Commands
 

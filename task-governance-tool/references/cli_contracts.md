@@ -746,6 +746,17 @@ Viewer and uses the existing `viewer_refresh_failed` warning; actual setup uses
 reports `viewer_status="repair_required"`, and includes `viewer_publish` in
 `planned_writes`. Doctor does not inspect this policy.
 
+Only the resulting visible `file://` page uses the browser timer. Immediately
+before its automatic reload, it may replace the current History state with one
+fixed, at-most-4,096-byte, five-minute envelope containing non-search filters,
+selected Task, fixed-control focus, and document scroll. Owned state is
+cleared before restoration; an unrelated `history.state` payload, URL, and
+history length are unchanged. Five minutes is the restore acceptance limit,
+not a physical-erasure guarantee; browser-managed state may survive session
+restore but an owned envelope is consumed before validation. No cookie, Web
+Storage, network, snapshot field, database field,
+command, or normal-loop decision is added.
+
 These operations add no Skill command or LLM judgment. Their artifacts and
 paths are absent from public command output. Snapshot v3 reads source schemas
 5 through 13 without exposing internal maintenance or checkpoint fields.

@@ -18,8 +18,8 @@ workspace.
 ## Current Project Shape
 
 - The intended repository root is `C:\WorkSpace\task-governance-tool`.
-- The project is implemented through TG-M15.5 at v0.8.0/schema v13 with Viewer
-  snapshot v3. TG-M15.6 is the approved ready browser-state slice. The
+- The project is implemented through TG-M15.6 at v0.8.0/schema v13 with Viewer
+  snapshot v3. The
   installable package, CLI, migrations, tests, and formal documents already
   exist; inspect them before changing an established contract.
 - The workspace is Git-managed, initialized on the `main` branch. Continue to
@@ -263,6 +263,41 @@ The product must not become:
   early.
 - M15.5 does not persist filter, selection, focus, or scroll state. That is the
   separate TG-M15.6 slice.
+
+## Approved M15.6 Boundary
+
+- TG-M15.6 adds one privacy-bounded, one-shot History API handoff only for the
+  M15.5 automatic `file:` reload. It adds no public command, configuration,
+  normal Task-loop call, LLM judgment, user-return stop, SQLite field, Viewer
+  snapshot field, URL state, history entry, network use, or CSP relaxation.
+- Immediately before the existing automatic reload, the Viewer may call
+  `history.replaceState(state, "")` with no URL argument. It never overwrites
+  or clears a non-null state that it does not own. Save failure never prevents
+  the reload.
+- The exact schema-1 envelope is capped at 4,096 UTF-8 bytes and contains only
+  its fixed owner/time fields, status/kind/lane/priority/tag/terminal filters,
+  selected Task ID, nonnegative document scroll coordinates, and a focus ID
+  from the fixed Viewer-control allow-list. Search text, task content, snapshot
+  content, arbitrary selectors, dynamic task-row focus, URLs/paths, and nested
+  panel or text-selection state are prohibited.
+- On an eligible `file:` load, the Viewer recognizes its exact owner and clears
+  owned state before snapshot decoding, including invalid, non-reload, and
+  fatal-decode cases. Only a reload navigation may then restore an exact state
+  whose age, keys, types, bounds, current options, visible selection, and fixed
+  focus target validate. If clearing fails, it restores nothing. Non-`file:`
+  and non-owned state are untouched. If a later focus or scroll operation
+  fails, it best-effort blurs only a fixed control that this restore just
+  focused, then returns filters, selection, and scroll to their defaults.
+- On an auto-refresh-enabled `file:` page, or one loading an outstanding owned
+  state, the Viewer sets
+  `history.scrollRestoration` to `manual` before UI restoration so browser
+  reload scroll does not compete with the bounded envelope. If that capability
+  is unavailable, envelope save/restore is disabled but M15.5 reload continues.
+- History state is browser-managed and may be session-restored; it is not
+  described as memory-only. Cookies, Web Storage, IndexedDB, Cache API,
+  service workers, `pushState`, URL/query/fragment state, cross-tab sync, and
+  manual-reload capture remain prohibited. Interrupted automatic navigation may
+  leave one bounded envelope for a later qualifying reload to consume.
 
 ## SQLite And State Rules
 

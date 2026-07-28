@@ -1,9 +1,8 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through TG-M15.5 are complete at v0.8.0/schema
-v13 with Viewer snapshot v3. TG-M15.6 is the separately approved ready
-browser-state slice. TG-M12.3 remains blocked on a future Issue Skill intake
-contract.
+Status: implementation units through TG-M15.6 are complete at v0.8.0/schema
+v13 with Viewer snapshot v3. TG-M12.3 remains blocked on a future Issue Skill
+intake contract.
 The default-browser launch follow-up remains requirements-only pending design
 and roadmap approval.
 
@@ -2998,6 +2997,73 @@ Verification:
 - focused and full offline tests, Skill/package validation, real `file://`
   browser forward test, `git diff --check`, exact-SHA Windows Python
   3.12/3.14 Actions, and two exact-final-revision Tier 2 PASS reviews.
+
+### TG-M15.6 One-Shot Viewer UI State Restore
+
+Kind: sequential
+Lane: `TG-M15-VIEWER`
+Review tier: Tier 2
+Depends on: completed TG-M15.5
+Status: complete
+
+Intended outcome:
+
+- Preserve only the useful, non-content Viewer UI subset across an M15.5
+  automatic local-file reload.
+- Consume the state once, without adding durable preferences, URL state,
+  browser/database synchronization, a command, or a model decision.
+
+Write scope:
+
+- Phase A updates `AGENTS.md`, specification, design, roadmap, and plan before
+  runtime work, replacing blanket browser-persistence wording with the one
+  exact History API exception;
+- Phase B changes only the bundled Viewer template, focused static/browser
+  tests, directly coupled Viewer/release guidance and forward-test evidence,
+  and required package-manifest digests;
+- no Python runtime module, configuration, command parser/handler, SQLite
+  object, snapshot field, migration, CSP value, or version metadata.
+
+Ordering:
+
+- Phase B starts only after Phase A fixes the exact envelope, ownership,
+  non-owned-state behavior, save/consume/clear order, byte and age limits,
+  field validation, navigation requirement, privacy exclusions, fallback,
+  focus/selection/scroll order, and browser-managed lifetime.
+- One final exact-revision Tier 2 gate covers the resulting privacy and browser
+  behavior; Phase A review is an implementation-order check, not an added
+  user-return stop.
+
+Verification:
+
+- only the due M15.5 `file:` reload attempts
+  `history.replaceState(envelope, "")`, never a URL argument, new history
+  entry, retry, or manual-reload save;
+- non-null non-Viewer state is neither overwritten nor cleared; every owned
+  state is cleared before possible restoration, and clear failure restores
+  nothing;
+- the exact 13-key schema-1 envelope stays at or below 4,096 UTF-8 bytes and
+  excludes search/task/evidence/snapshot/option/URL/path/selector/selection/
+  nested-scroll content;
+- reload navigation, age 0-300,000 ms, exact keys/types/bounds, current
+  lane/tag, visible selected task, and fixed focus target are all required;
+- filters and selected Task ID precede one render that restores selection and
+  detail, followed by fixed focus and document scroll; invalid or unavailable
+  state explicitly uses default filters/selection and `(0, 0)` scroll, and a
+  later reload defaults unless it creates a new envelope; if scroll fails
+  after fixed focus succeeds, fallback best-effort blurs only that just-focused
+  control before default rerender and scroll;
+- save/clear errors do not block reload or alter the M15.5 timer; URL and
+  history length, one-timeout/one-reload, visibility, fatal-decode, exact CSP,
+  no-network, and no-storage invariants remain; manual scroll-restoration
+  requires property-presence plus set/readback success, and unavailable/
+  failure fallback is deterministic;
+- ignored/invalid state, serialized content, browser exception, URL/path, and
+  validation details never reach console, UI, snapshot, or taskgov output;
+- focused deterministic template tests, automatic `file:` browser forward
+  test, full offline suite, Skill/package doctor and manifest checks,
+  `git diff --check`, exact-SHA Windows Python 3.12/3.14 Actions, and two
+  exact-final-revision Tier 2 PASS reviews.
 
 ## Roadmap Completion Criteria
 

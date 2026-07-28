@@ -1,8 +1,7 @@
 # task-governance-tool MVP Design
 
-Status: implemented through TG-M15.5 at release v0.8.0/schema v13 and Viewer
-snapshot v3; TG-M15.6 is the approved ready browser-state slice. TG-M12.3
-Issue adapter remains blocked.
+Status: implemented through TG-M15.6 at release v0.8.0/schema v13 and Viewer
+snapshot v3. TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -2758,9 +2757,10 @@ regions are:
 
 The browser defaults to active tasks and keeps done/cancelled tasks available
 through the terminal-task control. Filtering and sorting are client-side and
-ephemeral. Do not use cookies, local storage, IndexedDB, or URL query state.
-TG-M15.5 does not preserve filters, selection, focus, or scroll across reload;
-TG-M15.6 owns any later bounded state-preservation design.
+ephemeral except for TG-M15.6's exact one-shot automatic-reload handoff below.
+Do not use cookies, Web Storage, IndexedDB, Cache API, service workers, or URL
+query/fragment state. TG-M15.5 itself does not preserve filters, selection,
+focus, or scroll across reload.
 
 Use neutral surfaces plus distinct status colors; do not rely on color alone.
 Keep card radii at 8 px or less, avoid nested cards, retain visible keyboard
@@ -2790,11 +2790,103 @@ The timeout callback nulls its own handle and calls the same reconciliation
 function, which rechecks visibility and elapsed time. The
 `visibilitychange` handler calls that function as well; entering a hidden
 state therefore leaves no owned timeout. No `setInterval`, polling loop,
-wall-clock `Date.now()`, retry, fetch, XHR, storage, service worker, database
-access, or message channel is used. Browser throttling may delay the callback;
-the monotonic remainder calculation prevents an earlier request. The reload
-loads only the current atomically published HTML and is never described as a
-live database update.
+wall-clock `Date.now()` interval calculation, retry, fetch, XHR, Web Storage,
+service worker, database access, or message channel is used. TG-M15.6 uses
+`Date.now()` only to timestamp and check the five-minute one-shot envelope.
+Browser throttling may delay the callback; the monotonic remainder calculation
+prevents an earlier request. The reload loads only the current atomically
+published HTML and is never described as a live database update.
+
+### One-Shot Reload State Algorithm
+
+Keep this logic inside the fixed Viewer template; do not add a Python service,
+shared state module, config field, snapshot field, or reusable browser-state
+framework. The state object uses these exact ordered keys:
+
+```text
+owner, schema_version, captured_at_ms, status, kind, lane, priority, tag,
+terminal, selected_task_id, scroll_x, scroll_y, focus_id
+```
+
+`owner` is `taskgov-viewer-auto-reload` and `schema_version` is integer `1`.
+The remaining field types, enumerations, byte/character/numeric bounds, and
+the 4,096-byte deterministic JSON cap are the exact contract in
+`docs/specification.md`. Lane and tag store their visible text values rather
+than the template's generated numeric option values. The fixed focus map has
+only the eight filter/reset element IDs listed there; empty string means no
+focus. If there is no selected task, capture returns no envelope and the
+existing reload still proceeds.
+
+Use small template-local helpers with these boundaries:
+
+1. `isViewerOwnedState` recognizes only a non-array object with the exact
+   owner field. This deliberately distinguishes ownership from full validity.
+2. `encodedStateSize` serializes with `JSON.stringify` and measures UTF-8 bytes
+   with `TextEncoder`; any exception or size above 4,096 rejects.
+3. `captureReloadState` reads only the six allowed filter values, current
+   selected ID, finite nonnegative `window.scrollX/Y`, and the fixed active
+   element ID. It supplies `Date.now()` only for the bounded expiry check.
+4. `saveReloadState` runs only after the scheduler has decided reload is due
+   and immediately before reload. It returns without writing when current
+   state is non-null and non-owned, validates the candidate and byte cap, then
+   calls `history.replaceState(candidate, "")` with no third argument. All
+   failures are caught and never prevent reload.
+5. `consumeReloadState` first checks `location.protocol === "file:"`, then
+   reads current state once before snapshot decoding. Every owned state,
+   including malformed, stale, non-reload, and fatal-snapshot cases, attempts
+   `history.replaceState(null, "")` immediately. Only successful clearing can
+   retain a local candidate for later validation. Read or clear exceptions are
+   caught, retain no candidate, and continue to normal snapshot/default UI;
+   non-owned state is untouched, and a non-`file:` page performs no M15.6
+   History read or write.
+6. After snapshot decoding and filter-option initialization, validation uses
+   only the first current navigation entry from
+   `performance.getEntriesByType("navigation")` and requires type `reload`,
+   exact keys, current owner/version, age 0-300,000 ms, strict primitive and
+   field bounds, lane/tag membership, and selection visibility under the
+   candidate filters.
+7. Apply a valid plan by assigning the six filters, assigning selection, and
+   calling the existing `renderTasks` once. Focus the fixed target with no text
+   selection, then restore document scroll last. A rejected or failed plan
+   leaves or returns to the existing default filter, first-visible selection,
+   focus, and scroll behavior. Retain only the fixed element just focused by
+   this operation; if the following scroll throws, best-effort blur that
+   element before resetting filters/selection, rerendering defaults, and
+   attempting `(0, 0)` scroll. A blur exception is contained inside fallback.
+
+On a `file:` page that is auto-refresh enabled or begins with an owned state,
+first require `"scrollRestoration" in window.history`, then set
+`history.scrollRestoration = "manual"` before snapshot/UI restoration and
+verify that reading the property returns `manual`. Also set search, all select
+values, and terminal visibility to their explicit defaults during filter
+initialization. If manual scroll restoration cannot be established, set one
+page-local M15.6 capability flag false: do not save or restore an envelope, but
+still clear an already owned state and leave the M15.5 scheduler unchanged.
+After the one task render, a default/rejected path explicitly calls
+`window.scrollTo(0, 0)`; a valid path focuses its fixed target and then calls
+`window.scrollTo(savedX, savedY)`. The scroll-mode setter updates the current
+entry metadata but adds no entry and changes neither URL nor classic state.
+
+The scheduler due branch remains one-way: set `reloadRequested`, attempt the
+bounded save, then call the existing same-document reload once. Save failure
+does not retry. Restore and clear do not create or alter a timer. A second
+reload has defaults unless that loaded page independently reaches its own
+automatic-reload deadline and saves a new envelope. A manual reload never
+captures state, although a still-outstanding envelope from interrupted
+automatic navigation may be consumed by a qualifying reload within five
+minutes.
+
+History state is browser-managed and may be restored with a browser session.
+The implementation must not claim memory-only lifetime. It makes the state
+one-shot through ownership, five-minute age, exact validation, and
+clear-before-restore. Never call `pushState`; never pass a URL argument to
+`replaceState`; never use cookies, local/session storage, IndexedDB, Cache API,
+service workers, query/fragment state, network APIs, arbitrary selectors,
+cross-tab messaging, or task/snapshot/database persistence. Static and browser
+tests assert that `history.length` and `location.href` do not change.
+Every helper catches browser/state failures without logging the state,
+serialized bytes, exception, validation reason, URL, or path to console, DOM,
+snapshot, or taskgov output.
 
 ### Read-Only Snapshot Transaction
 
@@ -2832,8 +2924,11 @@ negative test must render script/event-handler-shaped task text without setting
 an execution sentinel or making a network request.
 
 The browser implementation contains no network API, external URL, telemetry,
-automatic browser launch, or database-write code. Browser refresh reloads the
-same snapshot and is not presented as a database refresh.
+automatic browser launch, or database-write code. Its only History API writes
+are TG-M15.6's bounded replacement and clearing of the current entry, without
+a URL argument, plus its page-local `scrollRestoration = "manual"` setting.
+Browser refresh reloads the same snapshot and is not presented as a database
+refresh.
 
 ## Validation Rules
 

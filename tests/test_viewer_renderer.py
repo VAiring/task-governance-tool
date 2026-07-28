@@ -1,6 +1,8 @@
 import base64
 import json
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -286,6 +288,146 @@ class ViewerRendererTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertNotIn(value, template)
 
+    def test_template_contains_bounded_one_shot_reload_state_contract(self):
+        template = viewer_template_path().read_text(encoding="utf-8")
+
+        expected_keys = (
+            "owner",
+            "schema_version",
+            "captured_at_ms",
+            "status",
+            "kind",
+            "lane",
+            "priority",
+            "tag",
+            "terminal",
+            "selected_task_id",
+            "scroll_x",
+            "scroll_y",
+            "focus_id",
+        )
+        keys_block = template.split(
+            "const reloadStateKeys = [",
+            1,
+        )[1].split("];", 1)[0]
+        self.assertEqual(
+            re.findall(r'"([a-z_]+)"', keys_block),
+            list(expected_keys),
+        )
+        for marker in (
+            'const reloadStateOwner = "taskgov-viewer-auto-reload";',
+            "const reloadStateMaxBytes = 4096;",
+            "const reloadStateMaxAgeMilliseconds = 300000;",
+            "const reloadStateMaxDynamicBytes = 1024;",
+            "const reloadStateMaxTaskIdCharacters = 128;",
+            "const reloadStateMaxCoordinate = 2147483647;",
+            '"scrollRestoration" in window.history',
+            'window.history.scrollRestoration = "manual";',
+            'window.history.scrollRestoration === "manual"',
+            'window.location.protocol !== "file:"',
+            'entries[0].type === "reload"',
+            "new TextEncoder().encode(serialized).byteLength",
+            "Object.keys(value)",
+            "Date.now()",
+            "window.scrollTo(0, 0)",
+            "window.scrollTo(state.scroll_x, state.scroll_y)",
+            'focus({ preventScroll: true })',
+            "restoredFocusTarget.blur()",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, template)
+
+        for focus_id in (
+            "",
+            "search-filter",
+            "status-filter",
+            "kind-filter",
+            "lane-filter",
+            "priority-filter",
+            "tag-filter",
+            "terminal-filter",
+            "reset-filters",
+        ):
+            self.assertIn(f'"{focus_id}"', template)
+
+        replace_calls = re.findall(
+            r"window\.history\.replaceState\(([^;\n]+)\);",
+            template,
+        )
+        self.assertEqual(replace_calls, ['null, ""', 'candidate, ""'])
+        self.assertEqual(template.count("window.history.state"), 2)
+        for forbidden in (
+            "pushState",
+            "popstate",
+            "beforeunload",
+            "pagehide",
+            "hashchange",
+            "console.",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, template)
+
+        capture_body = template.split(
+            "const captureAutoReloadState = () => {",
+            1,
+        )[1].split("const saveAutoReloadState", 1)[0]
+        self.assertNotIn("elements.search", capture_body)
+        self.assertNotIn("snapshot:", capture_body)
+        self.assertIn("selected_task_id: selectedTaskId", capture_body)
+        self.assertIn("focus_id: focusId", capture_body)
+
+        prepare_index = template.index("prepareReloadState();")
+        decode_index = template.index("snapshot = decodeSnapshot();")
+        self.assertLess(prepare_index, decode_index)
+        initialization = template.split(
+            "      prepareReloadState();\n      try {",
+            1,
+        )[1].split(
+            "      } catch (error) {\n        elements.workspace.hidden",
+            1,
+        )[0]
+        self.assertLess(
+            initialization.index("initializeFilters();"),
+            initialization.index("validatePendingReloadState()"),
+        )
+        self.assertLess(
+            initialization.index("applyValidatedReloadState("),
+            initialization.index("renderTasks();"),
+        )
+        self.assertLess(
+            initialization.index("renderTasks();"),
+            initialization.index("restoreReloadEffects(restoredReloadState);"),
+        )
+        self.assertLess(
+            initialization.index("restoreReloadEffects(restoredReloadState);"),
+            initialization.index("startAutoRefresh();"),
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
+    def test_exact_shipped_history_logic_in_fake_browser(self):
+        completed = subprocess.run(
+            [
+                shutil.which("node"),
+                str(ROOT / "tests" / "viewer_history_harness.mjs"),
+                str(viewer_template_path()),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stderr or completed.stdout,
+        )
+        self.assertEqual(
+            completed.stdout.strip(),
+            "M15.6 exact shipped History harness PASS",
+        )
+
     def test_template_avoids_html_execution_sinks_and_inline_handlers(self):
         template = viewer_template_path().read_text(encoding="utf-8")
 
@@ -373,6 +515,7 @@ class ViewerRendererTests(unittest.TestCase):
         self.assertIn(
             """        if (remainingMilliseconds <= 0) {
           reloadRequested = true;
+          saveAutoReloadState();
           window.location.reload();
           return;
         }""",
@@ -397,8 +540,11 @@ class ViewerRendererTests(unittest.TestCase):
                 'document.addEventListener("visibilitychange"'
             ),
         )
-        initialization = template.split("try {", 1)[1].split(
-            "} catch (error)",
+        initialization = template.split(
+            "      prepareReloadState();\n      try {",
+            1,
+        )[1].split(
+            "      } catch (error) {\n        elements.workspace.hidden",
             1,
         )[0]
         self.assertLess(

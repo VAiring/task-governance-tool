@@ -2854,6 +2854,12 @@ Use small template-local helpers with these boundaries:
    element before resetting filters/selection, rerendering defaults, and
    attempting `(0, 0)` scroll. A blur exception is contained inside fallback.
 
+A History-state getter exception sets no candidate and disables envelope
+capability for that page, but it does not return before an enabled `file:` page
+attempts the property-presence, set, and readback sequence for manual scroll
+restoration. This keeps the default `(0, 0)` fallback deterministic without
+retrying the unreadable state or enabling save.
+
 On a `file:` page that is auto-refresh enabled or begins with an owned state,
 first require `"scrollRestoration" in window.history`, then set
 `history.scrollRestoration = "manual"` before snapshot/UI restoration and

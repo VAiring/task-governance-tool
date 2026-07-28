@@ -2559,6 +2559,12 @@ M15.6 save and restore are disabled for that loaded page; an already owned
 state is still cleared without restoration, and the M15.5 timer and reload
 remain enabled.
 
+A `history.state` read exception on an auto-refresh-enabled `file:` page does
+not skip the manual scroll-mode attempt. The unreadable state disables envelope
+save and restore for that page, while a successful manual-mode readback still
+prevents user-agent reload scroll from competing with the normal default
+`(0, 0)` fallback.
+
 After a successful clear and snapshot option initialization, restoration
 requires the current navigation entry to report type `reload`, exact keys,
 owner and version, valid primitive types and bounds, a capture age from zero

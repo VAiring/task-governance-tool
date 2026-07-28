@@ -727,10 +727,24 @@ for (const [name, options] of invalidCases) {
     state: ownedState(),
     throwRead: true
   });
-  readFailure.api.prepareReloadState();
+  readFailure.runStartup();
   assert.equal(readFailure.calls.reads, 1);
   assert.equal(readFailure.calls.replaces.length, 0);
   assert.equal(readFailure.api.capability, false);
+  assert.equal(readFailure.history.scrollRestoration, "manual");
+  assert.equal(readFailure.calls.renders, 1);
+  assert.deepEqual(readFailure.calls.renderStates[0], {
+    search: "",
+    status: "",
+    kind: "",
+    lane: "",
+    priority: "",
+    tag: "",
+    terminal: false,
+    selectedTaskId: "tg_task_one"
+  });
+  assert.deepEqual(readFailure.calls.scrolls, [[0, 0]]);
+  assert.ok(readFailure.calls.events.includes("start"));
   readFailure.api.reconcileAutoRefresh();
   assert.equal(readFailure.calls.reloads, 1);
 }

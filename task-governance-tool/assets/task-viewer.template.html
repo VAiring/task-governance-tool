@@ -1404,15 +1404,15 @@
           return;
         }
 
-        let currentState;
+        let currentState = null;
+        let stateReadSucceeded = true;
         try {
           currentState = window.history.state;
         } catch (error) {
-          reloadStatePageManaged = autoRefreshEnabled;
-          return;
+          stateReadSucceeded = false;
         }
 
-        const owned = isViewerOwnedState(currentState);
+        const owned = stateReadSucceeded && isViewerOwnedState(currentState);
         reloadStatePageManaged = autoRefreshEnabled || owned;
         if (!reloadStatePageManaged) {
           return;
@@ -1426,6 +1426,11 @@
           }
         } catch (error) {
           manualScrollReady = false;
+        }
+
+        if (!stateReadSucceeded) {
+          reloadStateCapability = false;
+          return;
         }
 
         let clearSucceeded = true;

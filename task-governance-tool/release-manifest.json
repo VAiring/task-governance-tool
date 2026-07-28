@@ -2,7 +2,7 @@
   "core_files": {
     "SKILL.md": "sha256:f3d5ba7936c84b9afee51c4543c55f276b1100fe9187eaaeb594f390297c9637",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
-    "assets/task-viewer.template.html": "sha256:8e296fd9078a5c936466ad87e5af7a87796ea28511d5821b4fe2951bb8a7b329",
+    "assets/task-viewer.template.html": "sha256:08e254f9de456607cc3e582255645234c06165c33c44ad8fd572e5749e7f545a",
     "references/cli_contracts.md": "sha256:06c0fe1945cb4ab68ab2dfc4d08f60f8f4d47839b80d6c65841989d444f48381",
     "references/task_workflow.md": "sha256:68d4d3f90c1923f446d6e8d6b8d377825a208250984c860f6e3d0d5290dd4d34",
     "scripts/task_governance_tool/__init__.py": "sha256:249ddb351868380f27dd180f67d1c0fa3f2c8b02e662c07bfab58ffc29e275a5",

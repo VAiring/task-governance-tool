@@ -3057,7 +3057,9 @@ Verification:
   history length, one-timeout/one-reload, visibility, fatal-decode, exact CSP,
   no-network, and no-storage invariants remain; manual scroll-restoration
   requires property-presence plus set/readback success, and unavailable/
-  failure fallback is deterministic;
+  failure fallback is deterministic; a History-state read exception disables
+  envelope capability but does not skip that manual-mode attempt on an enabled
+  `file:` page;
 - ignored/invalid state, serialized content, browser exception, URL/path, and
   validation details never reach console, UI, snapshot, or taskgov output;
 - focused deterministic template tests, automatic `file:` browser forward

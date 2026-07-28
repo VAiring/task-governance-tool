@@ -1047,6 +1047,9 @@ Confirmed decisions:
   selection, focus, and scroll. If scroll fails after fixed focus succeeds,
   fallback best-effort blurs only that just-restored fixed control before
   default rerender and scroll; blur failure remains contained.
+- A History-state getter exception disables envelope save/restore without
+  skipping the manual scroll-mode attempt on an enabled `file:` page, so the
+  default `(0, 0)` fallback does not compete with user-agent reload scroll.
 
 Open issues:
 

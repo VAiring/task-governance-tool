@@ -293,6 +293,8 @@ The product must not become:
   `history.scrollRestoration` to `manual` before UI restoration so browser
   reload scroll does not compete with the bounded envelope. If that capability
   is unavailable, envelope save/restore is disabled but M15.5 reload continues.
+  A History-state read exception also disables envelope save/restore, but does
+  not skip the manual-mode attempt on an enabled `file:` page.
 - History state is browser-managed and may be session-restored; it is not
   described as memory-only. Cookies, Web Storage, IndexedDB, Cache API,
   service workers, `pushState`, URL/query/fragment state, cross-tab sync, and

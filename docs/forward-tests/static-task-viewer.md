@@ -143,9 +143,10 @@ early timers; repeated reconciliation; non-`file:` execution; and a second
 reload with default state. Unknown non-Viewer state, URL, history length,
 search exclusion, two-argument `replaceState`, one-timeout, and one-reload
 bounds remain intact. Focused renderer tests and the harness pass offline.
-The complete offline suite passed all 519 tests after the final focus/scroll
-fallback correction. The large Viewer-only fixture completed within its
-documented bound, with a 3.040-second delta and a 0.622-second maximum command.
+The complete offline suite passed all 519 tests after the final History-read
+and focus/scroll fallback corrections. The large Viewer-only fixture completed
+within its documented bound, with a 2.049-second delta and a 0.470-second
+maximum command.
 
 Direct automated navigation to the generated `file://` artifact remained
 disallowed by the browser-control URL policy, so no alternate browser surface

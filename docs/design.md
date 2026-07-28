@@ -2724,6 +2724,11 @@ Lock contention maps to `deferred`; another bounded failure maps to `failed`.
 Recording outcome metadata is best-effort so maintenance failure cannot replace
 the primary command result. The post-commit coordinator runs Viewer first and
 backup second with independent fixed warnings.
+Outcome timestamps have second precision. An equal-time `deferred|failed`
+attempt replaces the prior outcome only while source generation remains ahead
+of rendered generation; an equal-time successful catch-up always supersedes
+the attempt. This records an immediate due failure without allowing delayed
+contention to replace a completed publication.
 
 Setup drift inspection renders the expected template with the current resolved
 interval before comparing it with the canonical output. A missing profile

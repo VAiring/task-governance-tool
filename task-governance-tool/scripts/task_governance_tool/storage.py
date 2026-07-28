@@ -3474,12 +3474,24 @@ def record_viewer_attempt_outcome(
                 """
                 UPDATE viewer_maintenance_state
                    SET last_outcome_code = CASE
-                         WHEN last_outcome_at IS NULL OR last_outcome_at < ?
+                         WHEN last_outcome_at IS NULL
+                           OR last_outcome_at < ?
+                           OR (
+                             last_outcome_at = ?
+                             AND source_generation
+                               > COALESCE(rendered_generation, -1)
+                           )
                          THEN ?
                          ELSE last_outcome_code
                        END,
                        last_outcome_at = CASE
-                         WHEN last_outcome_at IS NULL OR last_outcome_at < ?
+                         WHEN last_outcome_at IS NULL
+                           OR last_outcome_at < ?
+                           OR (
+                             last_outcome_at = ?
+                             AND source_generation
+                               > COALESCE(rendered_generation, -1)
+                           )
                          THEN ?
                          ELSE last_outcome_at
                        END
@@ -3487,7 +3499,9 @@ def record_viewer_attempt_outcome(
                 """,
                 (
                     timestamp,
+                    timestamp,
                     code,
+                    timestamp,
                     timestamp,
                     timestamp,
                     target.project.project_id,

@@ -454,7 +454,7 @@ class ViewerMaintenanceTests(unittest.TestCase):
             self.assertEqual(output.path.read_bytes(), artifact)
             self.assertEqual(viewer_state(target), newer)
 
-    def test_same_time_attempt_cannot_replace_success_outcome(self):
+    def test_same_time_attempt_cannot_replace_current_success_outcome(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = make_target(Path(tmp), enabled=True)
             viewer_service.publish_setup_viewer(
@@ -465,13 +465,55 @@ class ViewerMaintenanceTests(unittest.TestCase):
 
             record_viewer_attempt_outcome(
                 target,
-                code="deferred",
+                code="failed",
                 occurred_at=str(succeeded.last_outcome_at),
             )
 
             current = viewer_state(target)
             self.assertEqual(current.last_outcome_code, "succeeded")
             self.assertEqual(current.last_outcome_at, succeeded.last_outcome_at)
+            self.assertFalse(current.due)
+
+    def test_same_time_due_failure_then_catch_up_records_commit_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp), enabled=True)
+            with mock.patch.object(
+                viewer_service,
+                "utc_now",
+                return_value="2026-07-27T00:00:02Z",
+            ):
+                viewer_service.publish_setup_viewer(
+                    target,
+                    observed_at="2026-07-27T00:00:02Z",
+                )
+            add_viewer_event(target, "Same-second Viewer change")
+
+            record_viewer_attempt_outcome(
+                target,
+                code="failed",
+                occurred_at="2026-07-27T00:00:02Z",
+            )
+
+            failed = viewer_state(target)
+            self.assertEqual(failed.last_outcome_code, "failed")
+            self.assertTrue(failed.due)
+
+            with mock.patch.object(
+                viewer_service,
+                "utc_now",
+                return_value="2026-07-27T00:00:02Z",
+            ):
+                refreshed = viewer_service.run_routine_viewer_refresh(
+                    target,
+                    observed_at="2026-07-27T00:00:02Z",
+                )
+
+            self.assertEqual(
+                (refreshed.code, refreshed.renders),
+                ("succeeded", 1),
+            )
+            current = viewer_state(target)
+            self.assertEqual(current.last_outcome_code, "succeeded")
             self.assertFalse(current.due)
 
     def test_canonical_target_rejects_reparse_parent_and_database_alias(self):

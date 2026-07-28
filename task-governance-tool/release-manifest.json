@@ -26,7 +26,7 @@
     "scripts/task_governance_tool/selection.py": "sha256:2e51a711aaf0725662908cb115b22a4bb8f039a7201a1b8174e8e0bd6519c426",
     "scripts/task_governance_tool/self_status.py": "sha256:55b9f59c0842ff0e230c374edbf471aa465aac1d88fc6dd6cc6ecfffe40292c9",
     "scripts/task_governance_tool/setup.py": "sha256:316da55ce7d58bbc0efc873a8dfaff68c2b85007dc864f0d1576928afc28a2f4",
-    "scripts/task_governance_tool/storage.py": "sha256:3f62a701534fca1c31362ec120779e931d9de2b56c196f845ef98b1d6901097a",
+    "scripts/task_governance_tool/storage.py": "sha256:0fa2f2556af19612b6f49a47118877af069af588a256d750a3b22d1aece6994b",
     "scripts/task_governance_tool/tasks.py": "sha256:51aa6c9d5f1b54735ac40dfa34b16252781b2fd36bcd0660464eb3ff6ae2aad2",
     "scripts/task_governance_tool/viewer.py": "sha256:60e5298c16a8ad4a5e6242a8759bf30abf4533809f3d0b42806b8f870ff5ac6c",
     "scripts/task_governance_tool/viewer_config.py": "sha256:2efcb960d52239b91ded47619a894618fc2cab6f548088bd7654484a75b7e9ec",

@@ -49,6 +49,7 @@ from task_governance_tool.storage import (  # noqa: E402
     read_project_binding_history,
     read_project_binding_state,
     required_schema_objects_missing,
+    schema_objects_inconsistent_with_version,
 )
 from tests.m14_test_support import (  # noqa: E402
     create_v12_target,
@@ -429,6 +430,14 @@ class ProjectIdentityBindingTests(unittest.TestCase):
                 create_source_version(install.target, source_version)
                 original_project_id = install.project_id
                 original_records = business_record_projection(install.db_path)
+                with closing(connect(install.db_path)) as connection:
+                    self.assertEqual(
+                        schema_objects_inconsistent_with_version(
+                            connection,
+                            source_version,
+                        ),
+                        [],
+                    )
 
                 result = initialize_database(install.target)
 

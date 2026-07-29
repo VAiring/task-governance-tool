@@ -3463,6 +3463,10 @@ Verification:
   targets cannot write or publish;
 - doctor remains one read-only diagnostic with the exact relocation/migration/
   unreadable rows, fixed `continue`, and no token or repair;
+- only a structurally complete declared v1-v13 source is migration-required;
+  an own-version required object/row gap or a later-migration marker is
+  unreadable, and setup preview/write leave the database and artifacts
+  unchanged;
 - missing primary restores only from valid matching fixed backups or the
   explicitly same-binding legacy recovery path; corrupt primary is never
   replaced; retained older backup bindings must be exact lineage prefixes;

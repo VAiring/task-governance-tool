@@ -657,7 +657,11 @@ def sqlite_sidecar_paths(db_path: Path) -> list[Path]:
 
 
 def existing_sqlite_sidecars(db_path: Path) -> list[Path]:
-    return [path for path in sqlite_sidecar_paths(db_path) if path.exists()]
+    return [
+        path
+        for path in sqlite_sidecar_paths(db_path)
+        if os.path.lexists(path)
+    ]
 
 
 def sqlite_header_uses_wal(db_path: Path) -> bool:
@@ -885,53 +889,160 @@ def empty_counts() -> dict[str, int]:
     }
 
 
-def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]:
-    required_tables = {
-        "schema_migrations",
-        "project_meta",
-        "tasks",
-        "task_events",
-        "tool_events",
-        "review_receipts",
-        "review_findings",
-        "handoff_records",
-        "task_contract_revisions",
-        "task_effort_activity",
-        "task_effort_bases",
-        "project_maintenance",
-        "managed_backup_generations",
-        "task_checkpoints",
-        "viewer_maintenance_state",
-        "project_path_binding_history",
-    }
-    required_indexes = {
-        "idx_tasks_project_status",
-        "idx_tasks_project_kind",
-        "idx_tasks_project_lane_order",
-        "idx_tasks_project_lane_order_unique",
-        "idx_task_events_task_created",
-        "idx_tasks_project_completion_commit",
-        "idx_review_receipts_task_target_verdict",
-        "idx_review_receipts_task_reviewer_generation",
-        "idx_review_findings_status_severity_receipt",
-        "idx_handoff_project_state_created",
-        "idx_handoff_project_source",
-        "idx_handoff_due_claim",
-        "idx_contract_project_task_revision",
-        "idx_effort_bases_project",
-        "idx_managed_backup_project_published",
-        "idx_checkpoints_project_task_created",
-    }
-    required_triggers = {
-        "trg_project_maintenance_enabled_at_immutable",
-        "trg_task_events_viewer_generation",
-        "trg_project_meta_identity_immutable",
-        "trg_project_meta_no_delete",
-        "trg_project_meta_cleanup_insert_valid",
-        "trg_project_meta_cleanup_update_valid",
-        "trg_project_path_binding_history_no_update",
-        "trg_project_path_binding_history_no_delete",
-    }
+_SCHEMA_TABLE_INTRODUCED_VERSION = {
+    "schema_migrations": 1,
+    "project_meta": 1,
+    "tasks": 1,
+    "task_events": 1,
+    "tool_events": 1,
+    "review_receipts": 5,
+    "review_findings": 5,
+    "handoff_records": 7,
+    "task_contract_revisions": 8,
+    "task_effort_activity": 9,
+    "task_effort_bases": 9,
+    "project_maintenance": 10,
+    "managed_backup_generations": 11,
+    "task_checkpoints": 12,
+    "viewer_maintenance_state": 13,
+    "project_path_binding_history": 14,
+}
+
+_SCHEMA_INDEX_INTRODUCED_VERSION = {
+    "idx_tasks_project_status": 1,
+    "idx_tasks_project_kind": 1,
+    "idx_tasks_project_lane_order": 1,
+    "idx_tasks_project_lane_order_unique": 1,
+    "idx_task_events_task_created": 1,
+    "idx_tasks_project_completion_commit": 2,
+    "idx_review_receipts_task_target_verdict": 5,
+    "idx_review_receipts_task_reviewer_generation": 5,
+    "idx_review_findings_status_severity_receipt": 5,
+    "idx_handoff_project_state_created": 7,
+    "idx_handoff_project_source": 7,
+    "idx_handoff_due_claim": 7,
+    "idx_contract_project_task_revision": 8,
+    "idx_effort_bases_project": 9,
+    "idx_managed_backup_project_published": 11,
+    "idx_checkpoints_project_task_created": 12,
+}
+
+_SCHEMA_TRIGGER_INTRODUCED_VERSION = {
+    "trg_project_maintenance_enabled_at_immutable": 10,
+    "trg_task_events_viewer_generation": 13,
+    "trg_project_meta_identity_immutable": 14,
+    "trg_project_meta_no_delete": 14,
+    "trg_project_meta_cleanup_insert_valid": 14,
+    "trg_project_meta_cleanup_update_valid": 14,
+    "trg_project_path_binding_history_no_update": 14,
+    "trg_project_path_binding_history_no_delete": 14,
+}
+
+_SCHEMA_COLUMN_INTRODUCED_VERSION = {
+    "column:tasks.completion_commit_required": 2,
+    "column:tasks.completion_commit_hash": 2,
+    "column:tasks.pause_reason": 3,
+    "column:tasks.completion_evidence_kind": 4,
+    "column:tasks.completion_evidence_revision": 4,
+    "column:tasks.completion_evidence_reason": 4,
+    "column:tasks.external_revision_approved": 4,
+    "column:tasks.review_target_kind": 5,
+    "column:tasks.review_target_value": 5,
+    "column:tasks.review_target_generation": 5,
+    "column:tasks.review_target_base_revision": 6,
+    "column:review_receipts.target_base_revision": 6,
+    "column:tasks.current_contract_revision": 8,
+    "column:project_meta.effort_activity_generation": 9,
+    "column:project_meta.identity_scheme": 14,
+    "column:project_meta.binding_generation": 14,
+    "column:project_meta.binding_reason": 14,
+    "column:project_meta.binding_updated_at": 14,
+    "column:project_meta.legacy_cleanup_pending": 14,
+    "column:project_meta.legacy_cleanup_inventory": 14,
+    "column:project_meta.legacy_cleanup_fingerprint": 14,
+}
+
+def _schema_requirement_introduced_version(requirement: str) -> int:
+    kind, name = requirement.split(":", 1)
+    if kind == "table":
+        return _SCHEMA_TABLE_INTRODUCED_VERSION[name]
+    if kind == "index":
+        return _SCHEMA_INDEX_INTRODUCED_VERSION[name]
+    if kind == "trigger":
+        return _SCHEMA_TRIGGER_INTRODUCED_VERSION[name]
+    if kind == "column":
+        table_name = name.split(".", 1)[0]
+        return _SCHEMA_COLUMN_INTRODUCED_VERSION.get(
+            requirement,
+            _SCHEMA_TABLE_INTRODUCED_VERSION[table_name],
+        )
+    raise AssertionError(f"unknown schema requirement kind: {kind}")
+
+
+def _schema_requirement_is_present(
+    connection: sqlite3.Connection,
+    requirement: str,
+) -> bool:
+    kind, name = requirement.split(":", 1)
+    if kind == "table":
+        return table_exists(connection, name)
+    if kind == "column":
+        table_name, column_name = name.split(".", 1)
+        return table_exists(connection, table_name) and column_exists(
+            connection,
+            table_name,
+            column_name,
+        )
+    if kind not in {"index", "trigger"}:
+        raise AssertionError(f"unknown schema requirement kind: {kind}")
+    return (
+        connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?",
+            (kind, name),
+        ).fetchone()
+        is not None
+    )
+
+
+def newer_schema_markers_present(
+    connection: sqlite3.Connection,
+    schema_version: int,
+) -> list[str]:
+    """Return known later-migration markers inconsistent with a declared version."""
+    markers = (
+        *(
+            (f"table:{name}", introduced_version)
+            for name, introduced_version in _SCHEMA_TABLE_INTRODUCED_VERSION.items()
+        ),
+        *(
+            (f"index:{name}", introduced_version)
+            for name, introduced_version in _SCHEMA_INDEX_INTRODUCED_VERSION.items()
+        ),
+        *(
+            (f"trigger:{name}", introduced_version)
+            for name, introduced_version in _SCHEMA_TRIGGER_INTRODUCED_VERSION.items()
+        ),
+        *(
+            (name, introduced_version)
+            for name, introduced_version in _SCHEMA_COLUMN_INTRODUCED_VERSION.items()
+        ),
+    )
+    return [
+        marker
+        for marker, introduced_version in markers
+        if introduced_version > schema_version
+        if _schema_requirement_is_present(connection, marker)
+    ]
+
+
+def required_schema_objects_missing(
+    connection: sqlite3.Connection,
+    *,
+    schema_version: int = SCHEMA_VERSION,
+) -> list[str]:
+    required_tables = set(_SCHEMA_TABLE_INTRODUCED_VERSION)
+    required_indexes = set(_SCHEMA_INDEX_INTRODUCED_VERSION)
+    required_triggers = set(_SCHEMA_TRIGGER_INTRODUCED_VERSION)
     table_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     index_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
     trigger_rows = connection.execute(
@@ -1235,7 +1346,25 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
             f"column:viewer_maintenance_state.{name}"
             for name in sorted(required_viewer_columns - viewer_columns)
         )
-    return missing
+    return [
+        requirement
+        for requirement in missing
+        if _schema_requirement_introduced_version(requirement) <= schema_version
+    ]
+
+
+def schema_objects_inconsistent_with_version(
+    connection: sqlite3.Connection,
+    schema_version: int,
+) -> list[str]:
+    """Reject missing own-version structure and markers from later migrations."""
+    return [
+        *required_schema_objects_missing(
+            connection,
+            schema_version=schema_version,
+        ),
+        *newer_schema_markers_present(connection, schema_version),
+    ]
 
 
 def apply_initial_schema_migration(connection: sqlite3.Connection) -> None:
@@ -3627,11 +3756,9 @@ def _validate_target_binding(
             raise _unreadable_project_state()
 
 
-def validate_current_database(
+def _validate_current_schema_structure(
     connection: sqlite3.Connection,
-    target: DatabaseTarget,
 ) -> int:
-    """Require the supported schema and matching project without migrating."""
     version = current_schema_version(connection)
     if version != SCHEMA_VERSION:
         raise StorageError(
@@ -3643,33 +3770,51 @@ def validate_current_database(
         )
 
     if missing_migration_versions(connection, version):
-        raise StorageError(
-            "migration_required",
-            (
-                "database migration history is incomplete; restore a valid "
-                "database backup or inspect the migration history"
-            ),
-        )
+        raise _unreadable_project_state()
 
     if required_schema_objects_missing(connection):
-        raise StorageError(
-            "migration_required",
-            "database schema is incomplete; run setup to migrate",
-        )
+        raise _unreadable_project_state()
+    return version
 
+
+def _validate_current_project_rows(
+    connection: sqlite3.Connection,
+    project_id: str,
+) -> None:
+    if read_project_maintenance(connection, project_id) is None:
+        raise _unreadable_project_state()
+    if read_viewer_maintenance(connection, project_id) is None:
+        raise _unreadable_project_state()
+
+
+def validate_current_database_structure(
+    connection: sqlite3.Connection,
+    project_id: str,
+) -> int:
+    """Require complete current-schema rows without checking a caller basis."""
+    version = _validate_current_schema_structure(connection)
+    _validate_current_project_rows(connection, project_id)
+    return version
+
+
+def validate_current_database_binding(
+    connection: sqlite3.Connection,
+    target: DatabaseTarget,
+) -> None:
+    """Require one current binding to match the resolver-owned caller basis."""
     binding = read_project_binding_state(connection)
     _validate_target_binding(binding, target)
-    existing_project_id = binding.project_id
-    if read_project_maintenance(connection, existing_project_id) is None:
-        raise StorageError(
-            "migration_required",
-            "database project maintenance state is missing; run setup to repair",
-        )
-    if read_viewer_maintenance(connection, existing_project_id) is None:
-        raise StorageError(
-            "migration_required",
-            "database Viewer maintenance state is missing; run setup to repair",
-        )
+
+
+def validate_current_database(
+    connection: sqlite3.Connection,
+    target: DatabaseTarget,
+) -> int:
+    """Require the supported schema and matching project without migrating."""
+    version = _validate_current_schema_structure(connection)
+    binding = read_project_binding_state(connection)
+    _validate_target_binding(binding, target)
+    _validate_current_project_rows(connection, binding.project_id)
     return version
 
 

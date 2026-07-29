@@ -34,12 +34,16 @@ from task_governance_tool.storage import (
     read_project_binding_state,
     read_doctor_state,
     read_project_maintenance,
+    read_viewer_maintenance,
     sanitize_project_display_name,
+    schema_objects_inconsistent_with_version,
     table_exists,
     validate_identity_project_id,
-    validate_current_database,
+    validate_current_database_binding,
+    validate_current_database_structure,
     validate_lower_hex_64,
     validate_migration_backup_metadata,
+    validate_operational_journal_state,
 )
 
 
@@ -515,6 +519,7 @@ def _resolve_fixed(
             fixed_recovery=None,
         )
 
+    validate_operational_journal_state(paths.database)
     backups, recognized = _inspect_backup_directory(paths.backups)
     recognized.extend(_inspect_viewer_directory(paths.viewer.parent))
     root_owned = _inspect_root_owned_entries(paths.fixed_root)
@@ -629,6 +634,8 @@ def _resolve_legacy(
     _require_contained(candidate, paths.legacy_projects)
     primary = candidate / "taskgov.sqlite"
     primary_present = _validate_optional_regular_file(primary)
+    if not primary_present:
+        validate_operational_journal_state(primary)
     backups_path = candidate / "backups"
     backups, recognized = _inspect_backup_directory(backups_path)
     viewer_path = candidate / "viewer"
@@ -800,6 +807,11 @@ def _inspect_database(
             or not table_exists(connection, "project_meta")
         ):
             raise _ResolverFailure("project_state_unreadable")
+        if (
+            version < SCHEMA_VERSION
+            and schema_objects_inconsistent_with_version(connection, version)
+        ):
+            raise _ResolverFailure("project_state_unreadable")
         quick = [
             str(row[0])
             for row in connection.execute("PRAGMA quick_check").fetchall()
@@ -811,8 +823,21 @@ def _inspect_database(
 
         if version == 14:
             stored = _read_v14_project(connection, version)
+            validate_current_database_structure(
+                connection,
+                stored.project_id,
+            )
         else:
             stored = _read_legacy_project(connection, version)
+            if (
+                version >= 13
+                and read_viewer_maintenance(
+                    connection,
+                    stored.project_id,
+                )
+                is None
+            ):
+                raise _ResolverFailure("project_state_unreadable")
         generations = _read_generation_rows(
             connection,
             stored.project_id,
@@ -823,6 +848,17 @@ def _inspect_database(
             stored.project_id,
             version,
         )
+        validation_root = consumer_current_root or doctor_current_root
+        if version == SCHEMA_VERSION and validation_root is not None:
+            validate_current_database_binding(
+                connection,
+                _database_target(
+                    stored,
+                    validation_root,
+                    path,
+                    explicit_db=False,
+                ),
+            )
         doctor_state = None
         if (
             doctor_current_root is not None
@@ -835,20 +871,6 @@ def _inspect_database(
                 _database_target(
                     stored,
                     doctor_current_root,
-                    path,
-                    explicit_db=False,
-                ),
-            )
-        if (
-            retain_connection
-            and version == SCHEMA_VERSION
-            and consumer_current_root is not None
-        ):
-            validate_current_database(
-                connection,
-                _database_target(
-                    stored,
-                    consumer_current_root,
                     path,
                     explicit_db=False,
                 ),

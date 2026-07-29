@@ -410,7 +410,7 @@ class TaskNextTests(unittest.TestCase):
             migration_payload = json.loads(migration.stdout)
             self.assertEqual(
                 migration_payload["errors"][0]["code"],
-                "migration_required",
+                "project_state_unreadable",
             )
             self.assertEqual(migration_payload["warnings"], [])
             self.assertEqual(db.read_bytes(), before_migration)

@@ -1694,6 +1694,12 @@ Doctor process results are fixed as follows:
 | missing state ignore protection | `ignore_required` | 2 / false | `state_ignore_required` error | false |
 | invalid canonical state ownership | `invalid_state_path` | 2 / false | `state_path_invalid` error | false |
 
+Here, a supported older schema means contiguous declared history with every
+object and per-project row required through that version and no recognized
+marker from a later migration. A missing required object/row or later marker
+is unreadable/invalid state; setup must not advertise or begin migration for
+it.
+
 Fatal project errors take process precedence but do not suppress a bounded
 package warning. Layout validity never changes the independently observed
 package-integrity code: for example, a clean source package with a competing

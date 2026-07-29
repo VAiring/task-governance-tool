@@ -346,7 +346,10 @@ class TaskCurrentTests(unittest.TestCase):
                 connection.commit()
             before_migration = db.read_bytes()
             migration = current(db, repo)
-            self.assertEqual(json.loads(migration.stdout)["errors"][0]["code"], "migration_required")
+            self.assertEqual(
+                json.loads(migration.stdout)["errors"][0]["code"],
+                "project_state_unreadable",
+            )
             self.assertEqual(db.read_bytes(), before_migration)
 
     def test_current_project_mismatch_does_not_mutate_database(self):

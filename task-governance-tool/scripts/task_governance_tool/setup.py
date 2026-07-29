@@ -521,6 +521,20 @@ def _unbound_target(resolution: ProjectStateResolution) -> UnboundDatabaseTarget
     )
 
 
+def _artifact_paths_at(
+    resolution: ProjectStateResolution,
+    database_path: Path,
+) -> tuple[Path, Path, bool]:
+    canonical_fixed = database_path == resolution.paths.database
+    if canonical_fixed:
+        return resolution.paths.backups, resolution.paths.viewer, True
+    return (
+        database_path.parent / "backups",
+        database_path.parent / "viewer" / "task-viewer.html",
+        False,
+    )
+
+
 def _bound_target_at(
     resolution: ProjectStateResolution,
     database_path: Path,
@@ -534,6 +548,10 @@ def _bound_target_at(
             "project_state_unreadable",
             PROJECT_STATE_MESSAGES["project_state_unreadable"],
         )
+    backups_path, viewer_path, canonical_fixed = _artifact_paths_at(
+        resolution,
+        database_path,
+    )
     return DatabaseTarget(
         project=ProjectIdentity(
             project_id=stored.project_id,
@@ -546,9 +564,9 @@ def _bound_target_at(
         binding_path_hash=binding_path_hash,
         binding_generation=binding_generation,
         skill_root=resolution.paths.skill_root,
-        backups_path=database_path.parent / "backups",
-        viewer_path=database_path.parent / "viewer" / "task-viewer.html",
-        canonical_fixed=(database_path == resolution.paths.database),
+        backups_path=backups_path,
+        viewer_path=viewer_path,
+        canonical_fixed=canonical_fixed,
     )
 
 
@@ -562,6 +580,10 @@ def _stored_target_at(
             "project_state_unreadable",
             PROJECT_STATE_MESSAGES["project_state_unreadable"],
         )
+    backups_path, viewer_path, canonical_fixed = _artifact_paths_at(
+        resolution,
+        database_path,
+    )
     return DatabaseTarget(
         project=ProjectIdentity(
             project_id=stored.project_id,
@@ -574,9 +596,9 @@ def _stored_target_at(
         binding_path_hash=stored.canonical_path_hash,
         binding_generation=stored.binding_generation,
         skill_root=resolution.paths.skill_root,
-        backups_path=database_path.parent / "backups",
-        viewer_path=database_path.parent / "viewer" / "task-viewer.html",
-        canonical_fixed=(database_path == resolution.paths.database),
+        backups_path=backups_path,
+        viewer_path=viewer_path,
+        canonical_fixed=canonical_fixed,
     )
 
 
@@ -906,7 +928,7 @@ def _copy_legacy_artifacts(
 def _legacy_managed_backup_lock(
     target: DatabaseTarget,
 ) -> Iterator[bytes]:
-    directory = target.db_path.parent / "backups"
+    directory = target.resolved_backups_path
     lock_path = directory / "taskgov-backup.lock"
     directory_existed = os.path.lexists(directory)
     lock_existed = os.path.lexists(lock_path)
@@ -1062,6 +1084,39 @@ def _same_fixed_relocation_observation(
         and before_stored.binding_lineage == after_stored.binding_lineage
         and before.current_root.canonical_path_hash
         == after.current_root.canonical_path_hash
+    )
+
+
+def _same_residue_cleanup_authority(
+    before: ProjectStateResolution,
+    after: ProjectStateResolution,
+) -> bool:
+    if (
+        before.error_code is not None
+        or after.error_code is not None
+        or before.paths != after.paths
+        or before.current_root != after.current_root
+        or before.layout != after.layout
+        or before.binding != after.binding
+    ):
+        return False
+    if before.layout == "missing":
+        return bool(
+            before.binding == "unbound"
+            and before.stored_project is None
+            and after.stored_project is None
+            and before.target is None
+            and after.target is None
+        )
+    if before.layout != "fixed_current_v1" or before.binding != "matching":
+        return False
+    return bool(
+        before.stored_project is not None
+        and before.stored_project == after.stored_project
+        and before.target is not None
+        and after.target is not None
+        and before.target == after.target
+        and before.fixed_recovery == after.fixed_recovery
     )
 
 
@@ -2181,10 +2236,21 @@ def run_setup(
         try:
             _ensure_state_root(scope, resolution)
             with state_transition_lock(resolution.paths.state_root):
-                current_residue = _inspect_setup_residue(resolution)
+                current_resolution = resolve_setup_project_state(
+                    skill_root=scope.skill_root,
+                    repo=scope.canonical_repo,
+                )
+                if not _same_residue_cleanup_authority(
+                    resolution,
+                    current_resolution,
+                ):
+                    raise StateTransitionError()
+                current_residue = _inspect_setup_residue(
+                    current_resolution
+                )
                 if current_residue is not None:
                     remove_stage_residue(
-                        resolution.paths.state_root,
+                        current_resolution.paths.state_root,
                         current_residue,
                     )
         except StateTransitionError as exc:
@@ -2785,20 +2851,22 @@ def run_setup(
                 scope,
                 expected_project_id=resolution.project_id,
             )
-            _ensure_state_root(
-                scope,
-                resolve_setup_project_state(
-                    skill_root=scope.skill_root,
-                    repo=scope.canonical_repo,
-                ),
+            cleanup_resolution = resolve_setup_project_state(
+                skill_root=scope.skill_root,
+                repo=scope.canonical_repo,
             )
-            with state_transition_lock(target.db_path.parent.parent):
+            _ensure_state_root(scope, cleanup_resolution)
+            with state_transition_lock(cleanup_resolution.paths.state_root):
                 current_resolution = resolve_setup_project_state(
                     skill_root=scope.skill_root,
                     repo=scope.canonical_repo,
                 )
                 if (
-                    current_resolution.target is None
+                    current_resolution.error_code is not None
+                    or current_resolution.layout != "fixed_current_v1"
+                    or current_resolution.binding != "matching"
+                    or current_resolution.fixed_recovery is not None
+                    or current_resolution.target is None
                     or current_resolution.project_id != resolution.project_id
                 ):
                     raise StateTransitionError()

@@ -172,6 +172,15 @@ class M17CliConsumerHardeningTests(unittest.TestCase):
 
         self.assertEqual(violations, [])
 
+    def test_setup_does_not_rebuild_resolver_artifact_or_lock_paths(self):
+        source = (
+            Path(setup_service.__file__)
+            .resolve()
+            .read_text(encoding="utf-8")
+        )
+        self.assertNotIn('target.db_path.parent / "backups"', source)
+        self.assertNotIn("target.db_path.parent.parent", source)
+
     def test_all_stateful_leaves_resolve_once_and_fail_closed_before_setup(self):
         self.assertEqual(len(STATEFUL_LEAVES), 18)
         with tempfile.TemporaryDirectory() as tmp:
@@ -363,7 +372,7 @@ class M17CliConsumerHardeningTests(unittest.TestCase):
             self.assertFalse(payload["ok"])
             self.assertEqual(
                 payload["errors"][0]["code"],
-                "migration_required",
+                "project_state_unreadable",
             )
 
 

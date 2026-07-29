@@ -3307,9 +3307,10 @@ The candidate validator:
    query-only transaction; when it is absent, selects the newest valid managed
    backup by the existing `(published_at, generation_id)` order and opens only
    that artifact;
-3. validates source schema/history, exactly one project row, scheme and
-   identity, current binding/history when v14, `quick_check`, foreign keys, and
-   directory-name equality;
+3. validates contiguous source history, every required object introduced by
+   the declared schema version, absence of any known later-migration marker,
+   exactly one project row, scheme and identity, current binding/history when
+   v14, `quick_check`, foreign keys, and directory-name equality;
 4. validates every recognized managed backup against the same identity/scheme
    and requires each older binding lineage, including implicit pre-v14
    generation 1, to be an exact prefix of the selected newest lineage; it
@@ -3592,6 +3593,12 @@ warning, `setup_eligible=true` when otherwise eligible, and unavailable
 project-backed detail without issuing a token. Same-binding legacy layout is
 `migration_required`; unsafe/ambiguous state is unreadable. Doctor remains one
 read transaction and always suggests `continue`.
+
+A structurally complete supported older schema is `migration_required`.
+Missing migration history, an object or per-project row required by the
+declared version, or a known marker introduced after the declared version is
+invalid state and therefore `project_state_unreadable`; setup must not
+advertise or begin migration for that state.
 
 Routine writes compare the target's project ID, binding hash, and generation
 under their short transaction. Post-commit Viewer and backup work receive that

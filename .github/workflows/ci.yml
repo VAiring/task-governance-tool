@@ -145,6 +145,7 @@ jobs:
             "$skillRoot/scripts/task_governance_tool/cli.py",
             "$skillRoot/scripts/task_governance_tool/compact.py",
             "$skillRoot/scripts/task_governance_tool/completion.py",
+            "$skillRoot/scripts/task_governance_tool/completion_history_projection.py",
             "$skillRoot/scripts/task_governance_tool/completion_workflow.py",
             "$skillRoot/scripts/task_governance_tool/contracts.py",
             "$skillRoot/scripts/task_governance_tool/doctor.py",
@@ -195,8 +196,8 @@ jobs:
           if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*16') {
             throw 'Runtime schema version is not 16'
           }
-          if ($viewer -notmatch 'SNAPSHOT_VERSION\s*=\s*3') {
-            throw 'Viewer snapshot version is not 3'
+          if ($viewer -notmatch 'SNAPSHOT_VERSION\s*=\s*4') {
+            throw 'Viewer snapshot version is not 4'
           }
           $publicTokens = @(
             'git_snapshot',

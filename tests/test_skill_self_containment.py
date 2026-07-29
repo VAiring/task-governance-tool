@@ -495,7 +495,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("untracked", release_normalized)
         self.assertIn('__version__ = "0.9.0"', runtime_init)
         self.assertIn("SCHEMA_VERSION = 16", storage)
-        self.assertIn("SNAPSHOT_VERSION = 3", viewer)
+        self.assertIn("SNAPSHOT_VERSION = 4", viewer)
         self.assertIn("omits", release_note)
         self.assertIn("## Result\n\nPASS", forward_note)
         self.assertIn("review_target_mismatch", forward_note)

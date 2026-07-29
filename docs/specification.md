@@ -2,12 +2,13 @@
 
 Status: the published baseline remains v0.9.0/schema v14 with Viewer snapshot
 v3 and completed TG-M17.0 through TG-M17.5 identity/storage behavior. TG-M18.0
-through TG-M18.2 are complete: the non-public staging runtime is package
-v0.9.0, schema v16, and Viewer snapshot v3 accepting sources 5-16, with atomic
-native completion capture but without public history. TG-M18.3 and TG-M18.4
-remain sequential work targeting v0.10.0/schema v16/Viewer snapshot v4. The
-completed TG-M16.4 reduced-loop behavioral acceptance is retained. TG-M12.3
-Issue adapter remains blocked on a future intake contract.
+through TG-M18.3 are complete: the non-public staging runtime is package
+v0.9.0, schema v16, and Viewer snapshot v4 accepting sources 5-16, with atomic
+native completion capture and the bounded public history read projection.
+TG-M18.4 remains the sequential package-synchronization unit targeting
+v0.10.0/schema v16/Viewer snapshot v4. The completed TG-M16.4 reduced-loop
+behavioral acceptance is retained. TG-M12.3 Issue adapter remains blocked on a
+future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`

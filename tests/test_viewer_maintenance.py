@@ -235,6 +235,41 @@ class ViewerMaintenanceTests(unittest.TestCase):
             self.assertEqual(state.last_success_at, before.last_success_at)
             self.assertEqual(state.last_outcome_code, "failed")
 
+    def test_artifact_size_failure_preserves_last_good_and_due_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp), enabled=True)
+            with mock.patch.object(
+                viewer_service,
+                "utc_now",
+                return_value=FIXED_TIME,
+            ):
+                viewer_service.publish_setup_viewer(
+                    target,
+                    observed_at=FIXED_TIME,
+                )
+            output = resolve_canonical_viewer_output_target(target)
+            last_good = output.path.read_bytes()
+            before = viewer_state(target)
+            add_viewer_event(target, "Oversized Viewer task")
+
+            with mock.patch.object(
+                viewer_module,
+                "MAX_VIEWER_ARTIFACT_BYTES",
+                1,
+            ):
+                result = viewer_service.run_routine_viewer_refresh(
+                    target,
+                    observed_at="2026-07-27T00:00:01Z",
+                )
+
+            self.assertEqual((result.code, result.renders), ("failed", 0))
+            self.assertEqual(output.path.read_bytes(), last_good)
+            state = viewer_state(target)
+            self.assertTrue(state.due)
+            self.assertEqual(state.rendered_generation, before.rendered_generation)
+            self.assertEqual(state.last_success_at, before.last_success_at)
+            self.assertEqual(state.last_outcome_code, "failed")
+
     def test_configured_interval_is_published_on_next_relevant_change(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

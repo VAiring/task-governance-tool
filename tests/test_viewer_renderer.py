@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from html.parser import HTMLParser
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +16,7 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
+from task_governance_tool import viewer as viewer_module  # noqa: E402
 from task_governance_tool.viewer import (  # noqa: E402
     REFRESH_INTERVAL_PLACEHOLDER,
     TEMPLATE_PLACEHOLDER,
@@ -55,13 +57,13 @@ class TemplateAuditParser(HTMLParser):
 
 def sample_snapshot(title="Safe task"):
     return {
-        "snapshot_version": 3,
+        "snapshot_version": 4,
         "generated_at": "2026-07-17T00:00:00Z",
         "project": {
             "project_id": "viewer-project-123456789abc",
             "display_name": "Viewer project",
         },
-        "source_schema_version": 5,
+        "source_schema_version": 16,
         "counts": {
             "total": 1,
             "ready": 1,
@@ -143,6 +145,51 @@ def sample_snapshot(title="Safe task"):
                         "reviewer_key": "reviewer-a",
                         "target_generation": 1,
                         "created_at": "2026-07-17T00:00:00Z",
+                    }],
+                },
+                "completion_history": {
+                    "total": 1,
+                    "returned_count": 1,
+                    "truncated": False,
+                    "legacy_history_incomplete": False,
+                    "cycles": [{
+                        "completion_cycle_id": "tg_completion_cycle_0123456789abcdef",
+                        "saved_cycle_ordinal": 1,
+                        "origin": "native_done",
+                        "completeness": "complete",
+                        "completed_at": "2026-07-17T00:00:00Z",
+                        "contract_revision": 0,
+                        "review_tier": 2,
+                        "verification_expectation": "specified",
+                        "verification_attestation": True,
+                        "completion_evidence": {
+                            "kind": "git_commit",
+                            "revision": "private-revision-value",
+                            "reason": "private-reason-value",
+                            "external_revision_approved": False,
+                            "completion_commit_required": True,
+                            "completion_commit_hash": "private-hash-value",
+                        },
+                        "review_target": {
+                            "kind": "git_commit",
+                            "value": "private-target-value",
+                            "base_revision": "",
+                            "generation": 1,
+                        },
+                        "gate_basis": {
+                            "version": 1,
+                            "kind": "independent_passes",
+                            "required_independent_passes": 2,
+                            "qualifying_independent_passes": 2,
+                            "changes_requested": 0,
+                            "open_high": 0,
+                            "open_medium": 0,
+                            "fresh_review_required": 0,
+                            "qualifying_receipt_ids": [
+                                "private-receipt-a",
+                                "private-receipt-b",
+                            ],
+                        },
                     }],
                 },
                 "events": [
@@ -259,12 +306,35 @@ class ViewerRendererTests(unittest.TestCase):
 
     def test_render_rejects_unsupported_snapshot_version(self):
         snapshot = sample_snapshot()
-        snapshot["snapshot_version"] = 2
+        snapshot["snapshot_version"] = 3
 
         with self.assertRaises(ViewerError) as failure:
             render_viewer_html(snapshot)
 
         self.assertEqual(failure.exception.code, "internal_error")
+
+    def test_render_rejects_artifact_above_existing_64_mib_cap(self):
+        rendered = render_viewer_html(sample_snapshot())
+        rendered_size = len(rendered.encode("utf-8"))
+        with mock.patch.object(
+            viewer_module,
+            "MAX_VIEWER_ARTIFACT_BYTES",
+            rendered_size,
+        ):
+            self.assertEqual(render_viewer_html(sample_snapshot()), rendered)
+        with mock.patch.object(
+            viewer_module,
+            "MAX_VIEWER_ARTIFACT_BYTES",
+            rendered_size - 1,
+        ):
+            with self.assertRaises(ViewerError) as failure:
+                render_viewer_html(sample_snapshot())
+
+        self.assertEqual(failure.exception.code, "internal_error")
+        self.assertEqual(
+            failure.exception.message,
+            "viewer artifact exceeds the supported size",
+        )
 
     def test_template_uses_exact_csp_and_no_external_or_persistent_apis(self):
         template = viewer_template_path().read_text(encoding="utf-8")
@@ -428,6 +498,31 @@ class ViewerRendererTests(unittest.TestCase):
             "M15.6 exact shipped History harness PASS",
         )
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
+    def test_exact_shipped_completion_history_panel_in_fake_browser(self):
+        completed = subprocess.run(
+            [
+                shutil.which("node"),
+                str(ROOT / "tests" / "viewer_completion_history_harness.mjs"),
+                str(viewer_template_path()),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stderr or completed.stdout,
+        )
+        self.assertEqual(
+            completed.stdout.strip(),
+            "M18.3 exact shipped completion-history harness PASS",
+        )
+
     def test_template_avoids_html_execution_sinks_and_inline_handlers(self):
         template = viewer_template_path().read_text(encoding="utf-8")
 
@@ -482,6 +577,62 @@ class ViewerRendererTests(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, template)
+
+    def test_template_renders_bounded_text_only_completion_history(self):
+        template = viewer_template_path().read_text(encoding="utf-8")
+        history_body = template.split(
+            "const renderCompletionHistory = (history) => {",
+            1,
+        )[1].split("const renderDetail = (task) => {", 1)[0]
+
+        for marker in (
+            '"Completion history"',
+            "history.cycles.slice(0, 10)",
+            '"legacy history incomplete"',
+            '"No completion cycles recorded."',
+            "record.saved_cycle_ordinal",
+            "record.origin",
+            "record.completeness",
+            "record.completed_at",
+            "record.completion_cycle_id",
+            "record.contract_revision",
+            "record.review_tier",
+            "record.verification_expectation",
+            "record.verification_attestation",
+            "evidence.kind",
+            "evidence.revision",
+            "evidence.reason",
+            "evidence.external_revision_approved",
+            "evidence.completion_commit_required",
+            "evidence.completion_commit_hash",
+            "target.kind",
+            "target.value",
+            "target.base_revision",
+            "target.generation",
+            "gate.version",
+            "gate.kind",
+            "gate.required_independent_passes",
+            "gate.qualifying_independent_passes",
+            "gate.changes_requested",
+            "gate.open_high",
+            "gate.open_medium",
+            "gate.fresh_review_required",
+            "gate.qualifying_receipt_ids",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, history_body)
+        detail_body = template.split(
+            "const renderDetail = (task) => {",
+            1,
+        )[1].split("const renderTasks = () => {", 1)[0]
+        self.assertLess(
+            detail_body.index(
+                "renderCompletionHistory(task.completion_history);"
+            ),
+            detail_body.index(
+                "renderBlockingReviewFindings(task.review_evidence);"
+            ),
+        )
 
     def test_template_contains_bounded_visibility_scheduler(self):
         template = viewer_template_path().read_text(encoding="utf-8")

@@ -13,11 +13,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, ContextManager
 
+from task_governance_tool.completion_history_projection import (
+    format_completion_history,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
+    CompletionHistory,
     DatabaseTarget,
     StorageError,
     operational_sqlite_error,
+    read_completion_histories_for_tasks,
     utc_now,
     validate_snapshot_database,
 )
@@ -29,8 +34,10 @@ from task_governance_tool.viewer_config import (
 )
 
 
-SNAPSHOT_VERSION = 3
+SNAPSHOT_VERSION = 4
 VIEWER_EVENT_LIMIT = 10
+VIEWER_HISTORY_SCHEMA_VERSION = 15
+VIEWER_HISTORY_BATCH_SIZE = 500
 TEMPLATE_PLACEHOLDER = "__TASKGOV_SNAPSHOT_BASE64__"
 REFRESH_INTERVAL_PLACEHOLDER = "__TASKGOV_REFRESH_INTERVAL_SECONDS__"
 TEMPLATE_RELATIVE_PATH = Path("assets") / "task-viewer.template.html"
@@ -66,13 +73,32 @@ class ViewerOutputTarget:
     state_root: Path
 
 
+def _read_viewer_completion_histories(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_ids: tuple[str, ...],
+) -> dict[str, CompletionHistory]:
+    histories: dict[str, CompletionHistory] = {}
+    for offset in range(0, len(task_ids), VIEWER_HISTORY_BATCH_SIZE):
+        batch = task_ids[offset : offset + VIEWER_HISTORY_BATCH_SIZE]
+        histories.update(
+            read_completion_histories_for_tasks(
+                connection,
+                project_id=project_id,
+                task_ids=batch,
+            )
+        )
+    return histories
+
+
 def build_viewer_snapshot(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
     *,
     generated_at: str | None = None,
 ) -> ViewerSnapshotResult:
-    """Build snapshot version 3 from one validated SQLite read transaction."""
+    """Build snapshot version 4 from one validated SQLite read transaction."""
     try:
         source_schema_version = validate_snapshot_database(connection, target)
         task_result = list_tasks_for_viewer(
@@ -80,6 +106,31 @@ def build_viewer_snapshot(
             target.project,
             event_limit=VIEWER_EVENT_LIMIT,
         )
+        if source_schema_version < VIEWER_HISTORY_SCHEMA_VERSION:
+            legacy_history = format_completion_history(
+                CompletionHistory(
+                    total=0,
+                    legacy_history_incomplete=True,
+                    cycles=(),
+                )
+            )
+            for task in task_result.tasks:
+                task["completion_history"] = {
+                    **legacy_history,
+                    "cycles": list(legacy_history["cycles"]),
+                }
+        else:
+            task_ids = tuple(str(task["task_id"]) for task in task_result.tasks)
+            histories = _read_viewer_completion_histories(
+                connection,
+                project_id=target.project.project_id,
+                task_ids=task_ids,
+            )
+            for task in task_result.tasks:
+                task_id = str(task["task_id"])
+                task["completion_history"] = format_completion_history(
+                    histories[task_id]
+                )
     except StorageError:
         raise
     except sqlite3.Error as exc:
@@ -279,7 +330,13 @@ def render_viewer_html(
         template,
         refresh_interval_seconds=refresh_interval_seconds,
     )
-    return prepared.replace(TEMPLATE_PLACEHOLDER, encode_snapshot(snapshot))
+    rendered = prepared.replace(TEMPLATE_PLACEHOLDER, encode_snapshot(snapshot))
+    if len(rendered.encode("utf-8")) > MAX_VIEWER_ARTIFACT_BYTES:
+        raise ViewerError(
+            "internal_error",
+            "viewer artifact exceeds the supported size",
+        )
+    return rendered
 
 
 def path_key(path: Path) -> str:

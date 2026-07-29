@@ -11,6 +11,7 @@ from tests.m14_test_support import (
     initialize_taskgov_internal,
     run_taskgov_internal,
 )
+from tests.review_test_helpers import seed_review_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -113,6 +114,16 @@ class TaskShowTests(unittest.TestCase):
             self.assertEqual(data["task"]["external_revision_approved"], 0)
             self.assertFalse(data["effort_advisory_enabled"])
             self.assertIsNone(data["latest_checkpoint"])
+            self.assertEqual(
+                data["completion_history"],
+                {
+                    "total": 0,
+                    "returned_count": 0,
+                    "truncated": False,
+                    "legacy_history_incomplete": False,
+                    "cycles": [],
+                },
+            )
             self.assertIn("created_at", data["task"])
             self.assertIn("updated_at", data["task"])
             self.assertEqual(len(data["events"]), 1)
@@ -121,6 +132,159 @@ class TaskShowTests(unittest.TestCase):
             self.assertIn("Start work", data["suggested_next_action"])
             self.assertNotIn("task edit", data["suggested_next_action"])
             self.assertEqual(table_count(db, "task_events"), event_count_before)
+
+    def test_task_show_projects_native_completion_history_without_event_link(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(
+                db,
+                repo,
+                "Completed history",
+                "--status",
+                "in_progress",
+                "--review-tier",
+                "0",
+            )
+            seed_review_evidence(db, task["task_id"])
+            completed = run_taskgov(
+                "task",
+                "complete",
+                task["task_id"],
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--verification-complete",
+                "--review-complete",
+                "--commit-not-required",
+                "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+
+            payload = show_task(db, repo, task["task_id"], "--read-only")
+
+            history = payload["data"]["completion_history"]
+            self.assertEqual(history["total"], 1)
+            self.assertEqual(history["returned_count"], 1)
+            self.assertFalse(history["truncated"])
+            self.assertFalse(history["legacy_history_incomplete"])
+            cycle = history["cycles"][0]
+            self.assertEqual(cycle["origin"], "native_done")
+            self.assertIs(cycle["verification_attestation"], True)
+            self.assertEqual(cycle["gate_basis"]["version"], 1)
+            self.assertEqual(cycle["gate_basis"]["kind"], "not_required")
+            self.assertEqual(
+                len(cycle["gate_basis"]["qualifying_receipt_ids"]),
+                1,
+            )
+            for event in payload["data"]["events"]:
+                self.assertEqual(
+                    set(event),
+                    {
+                        "task_event_id",
+                        "task_id",
+                        "project_id",
+                        "event_type",
+                        "summary",
+                        "created_at",
+                    },
+                )
+                self.assertNotIn("completion_cycle_id", event)
+
+    def test_task_show_text_summarizes_latest_cycle_when_json_cycle_is_oversized(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(
+                db,
+                repo,
+                "Oversized valid history",
+                "--status",
+                "in_progress",
+                "--review-tier",
+                "0",
+            )
+            max_revision = "\U0001F600" * 500
+            max_reason = "\U0001F600" * 1_000
+            seed_review_evidence(
+                db,
+                task["task_id"],
+                target_kind="external_revision",
+                target_value=max_revision,
+            )
+            completed = run_taskgov(
+                "task",
+                "complete",
+                task["task_id"],
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--verification-complete",
+                "--review-complete",
+                "--completion-evidence-kind",
+                "external_revision",
+                "--completion-revision",
+                max_revision,
+                "--completion-evidence-reason",
+                max_reason,
+                "--external-revision-approved",
+                "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+
+            json_payload = show_task(
+                db,
+                repo,
+                task["task_id"],
+                "--read-only",
+            )
+            history = json_payload["data"]["completion_history"]
+            self.assertEqual(history["total"], 1)
+            self.assertEqual(history["returned_count"], 0)
+            self.assertTrue(history["truncated"])
+            self.assertEqual(history["cycles"], [])
+            self.assertNotIn(
+                "completion_history_latest_summary",
+                json_payload["data"],
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                stored_lengths = connection.execute(
+                    """
+                    SELECT length(completion_evidence_revision),
+                           length(completion_evidence_reason),
+                           length(review_target_value),
+                           length(completion_commit_hash),
+                           completion_commit_required
+                      FROM task_completion_cycles
+                     WHERE task_id = ?
+                    """,
+                    (task["task_id"],),
+                ).fetchone()
+            self.assertEqual(stored_lengths, (500, 1_000, 500, 500, 1))
+
+            text_result = run_taskgov(
+                "task",
+                "show",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--read-only",
+            )
+            self.assertEqual(text_result.returncode, 0, text_result.stderr)
+            self.assertIn(
+                "Latest completion cycle: ordinal=1, native_done/complete",
+                text_result.stdout,
+            )
+            self.assertIn("evidence=external_revision", text_result.stdout)
+            self.assertIn(
+                "target=external_revision/generation 1",
+                text_result.stdout,
+            )
+            self.assertIn("review_basis=not_required", text_result.stdout)
 
     def test_task_show_orders_same_timestamp_events_by_insert_order(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -227,6 +391,7 @@ class TaskShowTests(unittest.TestCase):
                 "handoff_summary": None,
                 "contract": None,
                 "latest_checkpoint": None,
+                "completion_history": None,
             })
 
     def test_task_show_missing_db_does_not_create_files(self):
@@ -257,6 +422,7 @@ class TaskShowTests(unittest.TestCase):
                 "handoff_summary": None,
                 "contract": None,
                 "latest_checkpoint": None,
+                "completion_history": None,
             })
             self.assertFalse(db.exists())
             self.assertFalse(db.parent.exists())
@@ -323,10 +489,15 @@ class TaskShowTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stderr, "")
             lines = result.stdout.strip().splitlines()
-            self.assertLessEqual(len(lines), 9)
+            self.assertLessEqual(len(lines), 10)
             self.assertIn(f"Task: {task['task_id']}", result.stdout)
             self.assertIn("Title: Ready optional", result.stdout)
             self.assertIn("Completion evidence: none", result.stdout)
+            self.assertIn(
+                "Completion history: 0/0 returned, truncated=false, "
+                "legacy_history_incomplete=false",
+                result.stdout,
+            )
             self.assertIn("Latest event: task_added - Task registered", result.stdout)
 
 

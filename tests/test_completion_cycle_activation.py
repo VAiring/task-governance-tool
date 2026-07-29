@@ -446,7 +446,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 )
                 validate_completion_cycle_storage(connection)
 
-    def test_v16_reentry_marker_v15_binary_viewer_and_relocation_boundaries(
+    def test_v16_reentry_marker_v15_binary_viewer_v4_and_relocation_boundaries(
         self,
     ):
         with tempfile.TemporaryDirectory() as tmp:
@@ -473,9 +473,18 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     target,
                     generated_at="2026-07-30T05:40:00Z",
                 ).snapshot
-            self.assertEqual(snapshot["snapshot_version"], 3)
+            self.assertEqual(snapshot["snapshot_version"], 4)
             self.assertEqual(snapshot["source_schema_version"], 16)
-            self.assertNotIn("completion_history", snapshot["tasks"][0])
+            self.assertEqual(
+                snapshot["tasks"][0]["completion_history"],
+                {
+                    "total": 0,
+                    "returned_count": 0,
+                    "truncated": False,
+                    "legacy_history_incomplete": False,
+                    "cycles": [],
+                },
+            )
             self.assertNotIn(
                 "completion_history_coverage",
                 snapshot["tasks"][0],

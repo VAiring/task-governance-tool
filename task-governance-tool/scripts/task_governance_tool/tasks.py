@@ -23,6 +23,9 @@ from task_governance_tool.completion import (
     resolve_git_commit,
     validate_evidence_matrix,
 )
+from task_governance_tool.completion_history_projection import (
+    format_completion_history,
+)
 from task_governance_tool.git_snapshot import (
     GitSnapshotError,
     verify_git_snapshot_commit,
@@ -36,6 +39,7 @@ from task_governance_tool.ordering import (
     incomplete_predecessor_sql,
 )
 from task_governance_tool.storage import (
+    CompletionHistory,
     DatabaseTarget,
     ProjectIdentity,
     begin_initialized_write,
@@ -44,6 +48,7 @@ from task_governance_tool.storage import (
     insert_completion_cycle_locked,
     insert_native_completion_cycle_locked,
     match_current_done_completion_cycle_locked,
+    read_completion_history,
     utc_now,
 )
 
@@ -321,6 +326,8 @@ class TaskShowResult:
     handoff_summary: dict[str, int]
     contract: dict[str, Any]
     latest_checkpoint: dict[str, Any] | None
+    completion_history: dict[str, Any]
+    completion_history_latest_summary: dict[str, Any] | None
 
 
 @dataclass(frozen=True)
@@ -1412,6 +1419,24 @@ def suggested_next_action(task: dict[str, Any]) -> str:
     return "Inspect the task status before choosing the next action."
 
 
+def _completion_history_latest_summary(
+    history: CompletionHistory,
+) -> dict[str, Any] | None:
+    if not history.cycles:
+        return None
+    cycle = history.cycles[0]
+    return {
+        "saved_cycle_ordinal": cycle.saved_cycle_ordinal,
+        "origin": cycle.origin,
+        "completeness": cycle.completeness,
+        "completed_at": cycle.completed_at,
+        "completion_evidence_kind": cycle.completion_evidence_kind,
+        "review_target_kind": cycle.review_target_kind,
+        "review_target_generation": cycle.review_target_generation,
+        "review_basis_kind": cycle.gate_basis.kind,
+    }
+
+
 def show_task(
     connection: sqlite3.Connection,
     project: ProjectIdentity,
@@ -1449,30 +1474,43 @@ def show_task(
     from task_governance_tool.handoffs import handoff_summary_for_task
     from task_governance_tool.reviews import read_review_evidence
 
+    review_evidence = read_review_evidence(
+        connection,
+        project.project_id,
+        normalized_task_id,
+    )
+    handoff_summary = handoff_summary_for_task(
+        connection,
+        project.project_id,
+        normalized_task_id,
+    )
+    contract = read_current_contract(
+        connection,
+        project_id=project.project_id,
+        task_id=normalized_task_id,
+        current_revision=task_row["current_contract_revision"],
+    )
+    latest_checkpoint = read_latest_checkpoint(
+        connection,
+        project_id=project.project_id,
+        task_id=normalized_task_id,
+    )
+    raw_completion_history = read_completion_history(
+        connection,
+        project_id=project.project_id,
+        task_id=normalized_task_id,
+    )
     return TaskShowResult(
         task=task,
         events=[row_to_event(row) for row in event_rows],
         suggested_next_action=suggested_next_action(task),
-        review_evidence=read_review_evidence(
-            connection,
-            project.project_id,
-            normalized_task_id,
-        ),
-        handoff_summary=handoff_summary_for_task(
-            connection,
-            project.project_id,
-            normalized_task_id,
-        ),
-        contract=read_current_contract(
-            connection,
-            project_id=project.project_id,
-            task_id=normalized_task_id,
-            current_revision=task_row["current_contract_revision"],
-        ),
-        latest_checkpoint=read_latest_checkpoint(
-            connection,
-            project_id=project.project_id,
-            task_id=normalized_task_id,
+        review_evidence=review_evidence,
+        handoff_summary=handoff_summary,
+        contract=contract,
+        latest_checkpoint=latest_checkpoint,
+        completion_history=format_completion_history(raw_completion_history),
+        completion_history_latest_summary=_completion_history_latest_summary(
+            raw_completion_history
         ),
     )
 

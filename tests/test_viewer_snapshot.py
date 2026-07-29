@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +46,7 @@ from task_governance_tool.reviews import (  # noqa: E402
     add_review_receipt,
     set_review_target,
 )
+from task_governance_tool import viewer as viewer_module  # noqa: E402
 from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
 
 
@@ -65,7 +67,7 @@ def table_count(db: Path, table: str) -> int:
 
 
 class ViewerSnapshotTests(unittest.TestCase):
-    def test_snapshot_v3_reads_schema_v5_through_v16_without_internal_fields(self):
+    def test_snapshot_v4_reads_schema_v5_through_v16_with_honest_history(self):
         for source_version in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 db = Path(tmp) / "taskgov.sqlite"
@@ -154,7 +156,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                         generated_at="2026-07-26T00:00:00Z",
                     )
 
-                self.assertEqual(result.snapshot["snapshot_version"], 3)
+                self.assertEqual(result.snapshot["snapshot_version"], 4)
                 self.assertEqual(
                     result.snapshot["source_schema_version"],
                     source_version,
@@ -163,8 +165,30 @@ class ViewerSnapshotTests(unittest.TestCase):
                 projected = result.snapshot["tasks"][0]
                 self.assertEqual(
                     set(projected),
-                    set(VIEWER_TASK_FIELDS) | {"events", "review_evidence"},
+                    set(VIEWER_TASK_FIELDS)
+                    | {"events", "review_evidence", "completion_history"},
                 )
+                self.assertEqual(
+                    set(projected["completion_history"]),
+                    {
+                        "total",
+                        "returned_count",
+                        "truncated",
+                        "legacy_history_incomplete",
+                        "cycles",
+                    },
+                )
+                self.assertEqual(projected["completion_history"]["total"], 0)
+                self.assertEqual(
+                    projected["completion_history"]["returned_count"],
+                    0,
+                )
+                self.assertFalse(projected["completion_history"]["truncated"])
+                self.assertEqual(
+                    projected["completion_history"]["legacy_history_incomplete"],
+                    source_version <= 15,
+                )
+                self.assertEqual(projected["completion_history"]["cycles"], [])
                 serialized = json.dumps(result.snapshot)
                 self.assertNotIn("handoff", serialized.lower())
                 self.assertNotIn("review_target_base_revision", serialized)
@@ -178,9 +202,210 @@ class ViewerSnapshotTests(unittest.TestCase):
                 self.assertNotIn("viewer_maintenance_state", serialized)
                 self.assertNotIn("source_generation", serialized)
                 self.assertNotIn("rendered_generation", serialized)
-                self.assertNotIn("completion_history", serialized)
                 self.assertNotIn("completion_history_coverage", serialized)
                 self.assertNotIn("completion_cycle_id", serialized)
+
+    def test_snapshot_v4_projects_stored_cycle_with_exact_public_allow_lists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            target = resolve_database_target(
+                repo=Path(tmp) / "repo",
+                db=db,
+                script_path=SCRIPT_PATH,
+            )
+            with closing(connect(db)) as connection:
+                apply_initial_schema_migration(connection)
+                apply_completion_commit_migration(connection)
+                connection.commit()
+                apply_paused_state_migration(connection)
+                apply_completion_evidence_migration(connection)
+                apply_review_evidence_migration(connection)
+                apply_git_snapshot_schema_migration(connection)
+                apply_handoff_outbox_migration(connection)
+                apply_task_contract_migration(connection)
+                apply_effort_advisory_migration(connection)
+                apply_project_maintenance_migration(connection)
+                apply_managed_backup_generations_migration(connection)
+                apply_task_checkpoints_migration(connection)
+                apply_viewer_maintenance_migration(connection)
+                apply_project_identity_bindings_migration(connection)
+                with connection:
+                    ensure_project_meta(connection, target.project)
+                    ensure_viewer_maintenance_row(
+                        connection,
+                        target.project.project_id,
+                    )
+                    task = add_task(
+                        connection,
+                        target.project,
+                        title="Legacy completed Viewer task",
+                    ).task
+                    connection.execute(
+                        """
+                        UPDATE tasks
+                           SET status = 'done',
+                               completed_at = '2026-07-27T00:00:00Z'
+                         WHERE task_id = ?
+                        """,
+                        (task["task_id"],),
+                    )
+                apply_completion_cycle_history_migration(connection)
+                apply_completion_cycle_capture_activation_migration(connection)
+
+            with closing(connect_snapshot_readonly(db)) as connection:
+                snapshot = build_viewer_snapshot(connection, target).snapshot
+
+            history = snapshot["tasks"][0]["completion_history"]
+            self.assertEqual(
+                {
+                    key: history[key]
+                    for key in (
+                        "total",
+                        "returned_count",
+                        "truncated",
+                        "legacy_history_incomplete",
+                    )
+                },
+                {
+                    "total": 1,
+                    "returned_count": 1,
+                    "truncated": False,
+                    "legacy_history_incomplete": True,
+                },
+            )
+            self.assertEqual(len(history["cycles"]), 1)
+            cycle = history["cycles"][0]
+            self.assertEqual(
+                set(cycle),
+                {
+                    "completion_cycle_id",
+                    "saved_cycle_ordinal",
+                    "origin",
+                    "completeness",
+                    "completed_at",
+                    "contract_revision",
+                    "review_tier",
+                    "verification_expectation",
+                    "verification_attestation",
+                    "completion_evidence",
+                    "review_target",
+                    "gate_basis",
+                },
+            )
+            self.assertEqual(cycle["origin"], "legacy_current_done")
+            self.assertEqual(cycle["completeness"], "partial")
+            self.assertIsNone(cycle["verification_attestation"])
+            self.assertEqual(
+                set(cycle["completion_evidence"]),
+                {
+                    "kind",
+                    "revision",
+                    "reason",
+                    "external_revision_approved",
+                    "completion_commit_required",
+                    "completion_commit_hash",
+                },
+            )
+            self.assertEqual(
+                set(cycle["review_target"]),
+                {"kind", "value", "base_revision", "generation"},
+            )
+            self.assertEqual(
+                set(cycle["gate_basis"]),
+                {
+                    "version",
+                    "kind",
+                    "required_independent_passes",
+                    "qualifying_independent_passes",
+                    "changes_requested",
+                    "open_high",
+                    "open_medium",
+                    "fresh_review_required",
+                    "qualifying_receipt_ids",
+                },
+            )
+            self.assertEqual(cycle["gate_basis"]["version"], 0)
+            self.assertEqual(cycle["gate_basis"]["qualifying_receipt_ids"], [])
+            for field in (
+                "required_independent_passes",
+                "qualifying_independent_passes",
+                "changes_requested",
+                "open_high",
+                "open_medium",
+                "fresh_review_required",
+            ):
+                self.assertIsNone(cycle["gate_basis"][field])
+            serialized = json.dumps(history, ensure_ascii=False)
+            self.assertNotIn("recorded_at", serialized)
+            self.assertNotIn("project_id", serialized)
+            self.assertNotIn("task_id", serialized)
+
+    def test_snapshot_v4_uses_one_bounded_batch_history_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = initialized_target(tmp)
+            with closing(connect(target.db_path)) as connection:
+                with connection:
+                    first = add_task(
+                        connection,
+                        target.project,
+                        title="First Viewer task",
+                    ).task
+                    second = add_task(
+                        connection,
+                        target.project,
+                        title="Second Viewer task",
+                    ).task
+
+            real_reader = viewer_module.read_completion_histories_for_tasks
+            with mock.patch.object(
+                viewer_module,
+                "read_completion_histories_for_tasks",
+                wraps=real_reader,
+            ) as reader:
+                with closing(connect_snapshot_readonly(target.db_path)) as connection:
+                    snapshot = build_viewer_snapshot(connection, target).snapshot
+
+            self.assertEqual(reader.call_count, 1)
+            self.assertEqual(
+                set(reader.call_args.kwargs["task_ids"]),
+                {first["task_id"], second["task_id"]},
+            )
+            self.assertEqual(len(snapshot["tasks"]), 2)
+            self.assertTrue(
+                all("completion_history" in task for task in snapshot["tasks"])
+            )
+
+    def test_history_batch_preserves_task_501_without_n_plus_one_reads(self):
+        task_ids = tuple(f"tg_task_{index:04d}" for index in range(501))
+
+        def fake_reader(
+            connection,
+            *,
+            project_id,
+            task_ids,
+        ):
+            self.assertEqual(connection, "connection")
+            self.assertEqual(project_id, "project")
+            return {task_id: task_id for task_id in task_ids}
+
+        with mock.patch.object(
+            viewer_module,
+            "read_completion_histories_for_tasks",
+            side_effect=fake_reader,
+        ) as reader:
+            histories = viewer_module._read_viewer_completion_histories(
+                "connection",
+                project_id="project",
+                task_ids=task_ids,
+            )
+
+        self.assertEqual(tuple(histories), task_ids)
+        self.assertEqual(histories[task_ids[-1]], task_ids[-1])
+        self.assertEqual(reader.call_count, 2)
+        self.assertEqual(
+            [len(call.kwargs["task_ids"]) for call in reader.call_args_list],
+            [500, 1],
+        )
 
     def test_snapshot_projects_all_statuses_show_fields_and_bounded_events(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -302,7 +527,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 )
 
             snapshot = result.snapshot
-            self.assertEqual(snapshot["snapshot_version"], 3)
+            self.assertEqual(snapshot["snapshot_version"], 4)
             self.assertEqual(snapshot["source_schema_version"], 16)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
@@ -318,7 +543,18 @@ class ViewerSnapshotTests(unittest.TestCase):
             ready = next(task for task in snapshot["tasks"] if task["status"] == "ready")
             self.assertEqual(
                 set(ready),
-                set(VIEWER_TASK_FIELDS) | {"events", "review_evidence"},
+                set(VIEWER_TASK_FIELDS)
+                | {"events", "review_evidence", "completion_history"},
+            )
+            self.assertEqual(
+                ready["completion_history"],
+                {
+                    "total": 0,
+                    "returned_count": 0,
+                    "truncated": False,
+                    "legacy_history_incomplete": False,
+                    "cycles": [],
+                },
             )
             self.assertEqual(ready["completion_commit_required"], 1)
             self.assertEqual(ready["completion_commit_hash"], "abc123viewer")

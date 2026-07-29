@@ -7901,7 +7901,7 @@ def validate_snapshot_database(
             "migration_required",
             (
                 f"database schema version {version} is not supported by "
-                "Viewer snapshot version 3"
+                "Viewer snapshot version 4"
             ),
         )
     if missing_migration_versions(connection, version):
@@ -7916,7 +7916,7 @@ def validate_snapshot_database(
         ):
             raise StorageError(
                 "migration_required",
-                "database schema is incomplete for Viewer snapshot version 3",
+                "database schema is incomplete for Viewer snapshot version 4",
             )
         try:
             _validate_completion_history_structure(connection)
@@ -7938,7 +7938,7 @@ def validate_snapshot_database(
     if required_tables - tables:
         raise StorageError(
             "migration_required",
-            "database schema is incomplete for Viewer snapshot version 3",
+            "database schema is incomplete for Viewer snapshot version 4",
         )
 
     from task_governance_tool.tasks import VIEWER_TASK_FIELDS
@@ -7950,7 +7950,7 @@ def validate_snapshot_database(
     if set(VIEWER_TASK_FIELDS) - task_columns:
         raise StorageError(
             "migration_required",
-            "database task schema is incomplete for Viewer snapshot version 3",
+            "database task schema is incomplete for Viewer snapshot version 4",
         )
     receipt_columns = {
         str(row["name"])
@@ -7975,7 +7975,7 @@ def validate_snapshot_database(
     if required_receipt_columns - receipt_columns:
         raise StorageError(
             "migration_required",
-            "database review schema is incomplete for Viewer snapshot version 3",
+            "database review schema is incomplete for Viewer snapshot version 4",
         )
 
     if version >= 14:

@@ -300,7 +300,7 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         )
         self.assertEqual(manifest["package_version"], __version__)
         self.assertEqual(SCHEMA_VERSION, 16)
-        self.assertEqual(SNAPSHOT_VERSION, 3)
+        self.assertEqual(SNAPSHOT_VERSION, 4)
         self.assertIn(
             "scripts/task_governance_tool/viewer_maintenance.py",
             manifest["core_files"],

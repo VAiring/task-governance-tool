@@ -1181,6 +1181,140 @@
         elements.detail.append(list);
       };
 
+      const renderCompletionHistory = (history) => {
+        elements.detail.append(makeElement("h3", "events-heading", "Completion history"));
+        const total = history && Number.isInteger(history.total)
+          ? history.total
+          : 0;
+        const returned = history && Number.isInteger(history.returned_count)
+          ? history.returned_count
+          : 0;
+        const truncated = Boolean(history && history.truncated);
+        const incomplete = Boolean(
+          history && history.legacy_history_incomplete
+        );
+        const qualifiers = [];
+        if (truncated) {
+          qualifiers.push("truncated");
+        }
+        if (incomplete) {
+          qualifiers.push("legacy history incomplete");
+        }
+        const suffix = qualifiers.length ? `; ${qualifiers.join("; ")}` : "";
+        elements.detail.append(
+          makeElement(
+            "p",
+            "event-summary",
+            `${returned} of ${total} completion cycles${suffix}.`
+          )
+        );
+
+        const cycles = history && Array.isArray(history.cycles)
+          ? history.cycles.slice(0, 10)
+          : [];
+        const list = makeElement("ol", "event-list");
+        if (!cycles.length) {
+          list.append(makeElement("li", "event-item", "No completion cycles recorded."));
+        } else {
+          cycles.forEach((cycle) => {
+            const record = cycle && typeof cycle === "object" ? cycle : {};
+            const evidence = record.completion_evidence
+              ? record.completion_evidence
+              : {};
+            const target = record.review_target
+              ? record.review_target
+              : {};
+            const gate = record.gate_basis
+              ? record.gate_basis
+              : {};
+            const item = makeElement("li", "event-item");
+            const meta = makeElement("div", "event-meta");
+            meta.append(
+              makeElement(
+                "span",
+                "",
+                `Cycle ${asText(record.saved_cycle_ordinal, "unknown")}`
+              ),
+              makeElement(
+                "span",
+                "",
+                `${asText(record.origin, "unknown")} / ${asText(record.completeness, "unknown")}`
+              ),
+              makeElement(
+                "span",
+                "",
+                asText(record.completed_at, "completion time unavailable")
+              )
+            );
+            const values = makeElement("dl", "detail-grid");
+            addDetailValue(
+              values,
+              "Cycle ID",
+              asText(record.completion_cycle_id, "Not recorded")
+            );
+            addDetailValue(
+              values,
+              "Authority",
+              `Contract revision ${asText(record.contract_revision, "unknown")}; review tier ${asText(record.review_tier, "unknown")}`
+            );
+            addDetailValue(
+              values,
+              "Verification",
+              `${asText(record.verification_expectation, "unknown")}; attestation ${asText(record.verification_attestation, "unknown")}`
+            );
+            addDetailValue(
+              values,
+              "Completion evidence",
+              [
+                `kind ${asText(evidence.kind, "none")}`,
+                `revision ${asText(evidence.revision, "Not recorded")}`,
+                `reason ${asText(evidence.reason, "Not recorded")}`,
+                `external revision approved ${asText(evidence.external_revision_approved, "unknown")}`,
+                `commit required ${asText(evidence.completion_commit_required, "unknown")}`,
+                `commit hash ${asText(evidence.completion_commit_hash, "Not recorded")}`
+              ].join("; ")
+            );
+            addDetailValue(
+              values,
+              "Review target",
+              [
+                `kind ${asText(target.kind, "none")}`,
+                `value ${asText(target.value, "Not recorded")}`,
+                `base revision ${asText(target.base_revision, "Not recorded")}`,
+                `generation ${asText(target.generation, "unknown")}`
+              ].join("; ")
+            );
+            addDetailValue(
+              values,
+              "Gate basis",
+              [
+                `version ${asText(gate.version, "unknown")}`,
+                `kind ${asText(gate.kind, "unknown")}`,
+                `required independent PASS ${asText(gate.required_independent_passes, "unknown")}`,
+                `qualifying independent PASS ${asText(gate.qualifying_independent_passes, "unknown")}`,
+                `changes requested ${asText(gate.changes_requested, "unknown")}`,
+                `open high ${asText(gate.open_high, "unknown")}`,
+                `open medium ${asText(gate.open_medium, "unknown")}`,
+                `fresh review required ${asText(gate.fresh_review_required, "unknown")}`
+              ].join("; ")
+            );
+            const receiptIds = Array.isArray(gate.qualifying_receipt_ids)
+              ? gate.qualifying_receipt_ids.filter(
+                (receiptId) => typeof receiptId === "string"
+              )
+              : [];
+            addDetailValue(
+              values,
+              "Qualifying receipt IDs",
+              receiptIds.length ? receiptIds.join(", ") : "None"
+            );
+            item.append(meta, values);
+            list.append(item);
+          });
+        }
+        elements.detail.append(list);
+      };
+
       const renderDetail = (task) => {
         elements.detail.replaceChildren();
         if (!task) {
@@ -1223,6 +1357,7 @@
         addDetailValue(values, "Tags", task.tags);
         elements.detail.append(values);
 
+        renderCompletionHistory(task.completion_history);
         renderBlockingReviewFindings(task.review_evidence);
         renderReviewReceipts(task.review_evidence);
         renderReviewFindings(task.review_evidence);

@@ -1,12 +1,13 @@
 # task-governance-tool Initial Plan
 
 Status: the published baseline is implemented through TG-M17.5 at
-v0.9.0/schema v14 with Viewer snapshot v3. TG-M18.0 through TG-M18.2 are
+v0.9.0/schema v14 with Viewer snapshot v3. TG-M18.0 through TG-M18.3 are
 complete; the non-public staging runtime is package v0.9.0/schema v16 with
-Viewer snapshot v3 accepting sources 5-16 and atomic native completion
-capture. TG-M18.3 and TG-M18.4 remain sequential work targeting
-v0.10.0/schema v16/Viewer snapshot v4. The completed TG-M16.4 reduced-loop
-behavioral acceptance is retained. The TG-M12.3 Issue adapter remains blocked.
+Viewer snapshot v4 accepting sources 5-16, atomic native completion capture,
+and the bounded public history read projection. TG-M18.4 remains the sequential
+package-synchronization unit targeting v0.10.0/schema v16/Viewer snapshot v4.
+The completed TG-M16.4 reduced-loop behavioral acceptance is retained. The
+TG-M12.3 Issue adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 Reduced TG-M16 has a fixed formal contract, the TG-M16.1 runtime route, active
@@ -1201,10 +1202,10 @@ acceptance are also complete. Their stored Task Contracts were corrected from
 the cancelled M16.3 reference to the completed reduced-loop/reconciliation
 authority before execution; root `AGENTS.md` retains only durable routing
 rather than milestone status.
-TG-M18.0 through TG-M18.2 are complete. The non-public staging runtime is
-package v0.9.0/schema v16/Viewer v3 with source-schema compatibility through
-16 and atomic native completion capture; public history remains inactive.
-TG-M18.3 and TG-M18.4 remain stored ready in their sequential lane, while the
+TG-M18.0 through TG-M18.3 are complete. The non-public staging runtime is
+package v0.9.0/schema v16/Viewer v4 with source-schema compatibility through
+16, atomic native completion capture, and the bounded public history read
+projection. TG-M18.4 remains stored ready in its sequential lane, while the
 published baseline remains v0.9.0/schema v14/Viewer v3 until M18.4. M19.0
 remains blocked until M18.4 is done and its completion SHA is fixed.
 The stored M18.1, M18.2, and M18.4 Contracts were mechanically synchronized

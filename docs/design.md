@@ -1,13 +1,13 @@
 # task-governance-tool MVP Design
 
 Status: the published baseline remains v0.9.0/schema v14 with Viewer snapshot
-v3 and completed TG-M17 identity/storage behavior. TG-M18.0 through TG-M18.2
+v3 and completed TG-M17 identity/storage behavior. TG-M18.0 through TG-M18.3
 are complete: the non-public staging runtime is package v0.9.0, schema v16,
-and Viewer snapshot v3 accepting sources 5-16, with atomic native completion
-capture but without public history. TG-M18.3 and TG-M18.4 remain sequential
-work targeting v0.10.0/schema v16/Viewer snapshot v4. The completed TG-M16.4
-reduced-loop behavioral acceptance is retained. TG-M12.3 Issue adapter remains
-blocked.
+and Viewer snapshot v4 accepting sources 5-16, with atomic native completion
+capture and the bounded public history read projection. TG-M18.4 remains the
+sequential package-synchronization unit targeting v0.10.0/schema v16/Viewer
+snapshot v4. The completed TG-M16.4 reduced-loop behavioral acceptance is
+retained. TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -18,10 +18,10 @@ implementation lineage, including headings labeled `Implemented` or
 applicable only where TG-M14 does not supersede it. Sections labeled
 `Historical` preserve additional pre-M14 implementation detail. The
 implemented TG-M14 section and later component designs are the current v0.8.0
-lineage; implemented TG-M17 design is the current v0.9.0
-identity/storage authority when those older boundaries differ. The approved
-TG-M18 section is implemented through M18.2 and remains future implementation
-authority for its sequential M18.3 and M18.4 units.
+lineage; implemented TG-M17 design is the current v0.9.0 identity/storage
+authority when those older boundaries differ. The approved TG-M18 section is
+implemented through M18.3 and remains future implementation authority for its
+sequential M18.4 package-synchronization unit.
 
 ## Design Summary
 

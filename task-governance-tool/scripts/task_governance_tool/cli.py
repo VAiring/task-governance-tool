@@ -1624,6 +1624,8 @@ def task_show_text(
     review_evidence: dict[str, Any],
     handoff_summary: dict[str, int],
     contract: dict[str, Any],
+    completion_history: dict[str, Any],
+    completion_history_latest_summary: dict[str, Any] | None,
 ) -> str:
     lines = [
         f"Task: {task['task_id']}",
@@ -1669,6 +1671,26 @@ def task_show_text(
             f"handed_off={handoff_summary['handed_off']} "
             f"withdrawn={handoff_summary['handoff_withdrawn_by_user']}"
         )
+    lines.append(
+        "Completion history: "
+        f"{completion_history['returned_count']}/{completion_history['total']} returned, "
+        f"truncated={str(completion_history['truncated']).lower()}, "
+        "legacy_history_incomplete="
+        f"{str(completion_history['legacy_history_incomplete']).lower()}"
+    )
+    if completion_history_latest_summary is not None:
+        latest_cycle = completion_history_latest_summary
+        completed_at = latest_cycle["completed_at"] or "unknown"
+        lines.append(
+            "Latest completion cycle: "
+            f"ordinal={latest_cycle['saved_cycle_ordinal']}, "
+            f"{latest_cycle['origin']}/{latest_cycle['completeness']}, "
+            f"completed_at={completed_at}, "
+            f"evidence={latest_cycle['completion_evidence_kind']}, "
+            f"target={latest_cycle['review_target_kind']}/generation "
+            f"{latest_cycle['review_target_generation']}, "
+            f"review_basis={latest_cycle['review_basis_kind']}"
+        )
     lines.append(f"Suggested next action: {suggested_next_action}")
     if events:
         latest = events[0]
@@ -1685,6 +1707,7 @@ def task_show_empty_data() -> dict[str, Any]:
         "handoff_summary": None,
         "contract": None,
         "latest_checkpoint": None,
+        "completion_history": None,
     }
 
 
@@ -1769,6 +1792,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         "handoff_summary": result.handoff_summary,
         "contract": result.contract,
         "latest_checkpoint": result.latest_checkpoint,
+        "completion_history": result.completion_history,
     }
     effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
     data["effort_advisory_enabled"] = bool(
@@ -1796,6 +1820,8 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             result.review_evidence,
             result.handoff_summary,
             result.contract,
+            result.completion_history,
+            result.completion_history_latest_summary,
         ),
         exit_code=EXIT_SUCCESS,
     )

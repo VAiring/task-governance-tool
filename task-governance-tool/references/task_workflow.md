@@ -70,11 +70,16 @@ local-continuity opt-in and repairs the canonical offline projection. It is
 noninteractive and idempotent. The normal Skill workflow supplies no
 maintenance-policy choice.
 
-When the canonical DB is missing, that same explicit setup call checks only
-the project's canonical managed generations. It restores the newest valid
-same-project generation before migration and Viewer repair. If managed
-recovery material exists but none is valid, setup fails without creating empty
-state. Do not ask the model to select a generation, path, or recovery command.
+When the fixed canonical DB is missing, setup first checks fixed-layout
+managed generations. If no fixed source exists, it may select exactly one
+eligible legacy source. A same-binding legacy primary or legacy backup-only
+source is staged into the fixed layout; backup-only recovery runs
+`database_restore` inside that private stage before `legacy_state_publish` and
+never recreates the old legacy primary. A moved legacy backup-only source is
+not eligible for relocation and fails no-write as
+`project_state_unreadable`. If recognized fixed-layout managed recovery
+material exists but none is valid, setup fails without creating empty state.
+Do not ask the model to select a generation, path, or recovery command.
 
 Use `doctor` only when the user asks for diagnosis or install/release
 validation, or when a command returns a setup, migration, package, layout, or

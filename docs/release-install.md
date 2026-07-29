@@ -96,15 +96,21 @@ without changing any existing project, Task, event, Contract, handoff, review,
 completion, or maintenance identity. Same-binding migration is mechanical and
 adds no user choice.
 
-If the canonical DB is missing but canonical managed generations remain,
-setup validates only same-project artifacts, selects the newest valid
-generation deterministically, restores it without overwriting any existing
-canonical DB, and continues normal migration/configuration/Viewer repair.
-Invalid, foreign, linked, and unrecognized artifacts are unchanged. If no
-valid same-project managed candidate exists, setup fails instead of creating
-empty task state. An orphan rollback journal for the missing canonical DB also
-fails closed and remains untouched. There is no public recovery command or
-recovery path option.
+If the fixed canonical DB is missing, setup first validates fixed-layout
+managed generations. If no fixed source exists, the shared resolver may select
+exactly one eligible legacy-layout source. A same-binding legacy primary or
+legacy backup-only source is staged and published into the fixed layout;
+backup-only recovery performs `database_restore` inside that private stage
+before `legacy_state_publish` and never recreates the old legacy primary.
+Setup then continues normal
+migration/configuration/Viewer repair without overwriting an existing
+canonical DB. Invalid, foreign, linked, unrecognized, and ambiguous artifacts
+are unchanged. If no valid matching managed candidate exists, setup fails
+instead of creating empty task state. An orphan rollback journal for a missing
+fixed primary also fails closed and remains untouched. A moved legacy
+backup-only source is not a relocation candidate and fails no-write as
+`project_state_unreadable`. There is no public recovery command or recovery
+path option.
 
 If the stored binding differs from the current governed directory, neither a
 normal command nor `doctor` rebinding state is permitted. A write setup without

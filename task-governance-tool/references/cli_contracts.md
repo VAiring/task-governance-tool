@@ -95,7 +95,7 @@ Every JSON result has exactly these top-level keys:
 {
   "ok": true,
   "command": "task.next",
-  "project_id": "tg_project_0123456789abcdef0123456789abcdef",
+  "project_id": "tg_project_550e8400e29b41d4a716446655440000",
   "data": {},
   "warnings": [],
   "errors": []
@@ -152,16 +152,23 @@ successful managed copy and three retained generations. Once configured,
 omitted options preserve stored values; values equal to stored policy are a
 write-free replay.
 
-When the canonical database is absent, setup checks only canonical managed
-generations for the same project. It mechanically restores the newest valid
-generation, then performs any required normal migration/configuration and
-Viewer publication. It never overwrites an existing database or accepts a
-caller path. Invalid, foreign, linked, and unrecognized artifacts are
-unchanged. Canonical managed names with no valid same-project generation fail
-with `setup_restore_failed` and message
-`managed backup could not be restored`; setup does not initialize empty state.
-The same fixed failure applies when a rollback-journal entry remains for the
-missing canonical DB; setup neither applies nor changes that journal.
+When the fixed canonical database is absent, the shared resolver first
+validates fixed-layout managed generations. If no fixed source exists, it may
+select exactly one eligible legacy-layout source under the compatibility
+rules below. A same-binding legacy primary or legacy backup-only source is
+staged and published into the fixed layout; backup-only recovery performs
+`database_restore` inside that private fixed-layout stage before
+`legacy_state_publish` and never recreates the old legacy primary. Setup then
+performs any required normal
+migration/configuration/Viewer publication. It never overwrites an existing
+database or accepts a caller path. Invalid, foreign, linked, unrecognized, and
+ambiguous artifacts are unchanged and fail closed. Recognized managed names
+in the fixed-layout recovery set with no valid matching generation fail with
+`setup_restore_failed` and message `managed backup could not be restored`;
+setup does not initialize empty state. The same fixed failure applies when a
+rollback-journal entry remains for the missing fixed primary; setup neither
+applies nor changes that journal. A moved legacy backup-only source is not a
+relocation candidate and fails no-write as `project_state_unreadable`.
 
 Release 0.9.0 stores the database in the fixed package-local
 `state/current/` layout. Fresh write-mode setup creates one UUID-backed

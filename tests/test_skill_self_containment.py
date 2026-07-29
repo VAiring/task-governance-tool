@@ -18,6 +18,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool.cli import build_parser  # noqa: E402
+from task_governance_tool.storage import validate_identity_project_id  # noqa: E402
 try:  # noqa: E402
     from m14_test_support import canonical_test_path, make_physical_install
 except ModuleNotFoundError:  # noqa: E402
@@ -168,6 +169,33 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("source schemas 5 through 14", readme.lower())
         self.assertIn("source schemas v5-v14", release_note.lower())
         self.assertEqual(manifest["package_version"], "0.9.0")
+        documented_uuid = re.search(
+            r'"project_id": "(tg_project_[0-9a-f]{32})"',
+            contracts,
+        )
+        self.assertIsNotNone(documented_uuid)
+        self.assertEqual(
+            validate_identity_project_id(
+                documented_uuid.group(1),
+                "uuid_v1",
+            ),
+            documented_uuid.group(1),
+        )
+        for text in (contracts, workflow, readme, release_note):
+            normalized = " ".join(text.lower().split())
+            self.assertIn("fixed-layout managed", normalized)
+            self.assertIn("legacy backup-only", normalized)
+            self.assertIn("never recreates the old legacy primary", normalized)
+            self.assertIn("moved legacy backup-only", normalized)
+            self.assertIn("project_state_unreadable", normalized)
+        self.assertIn(
+            "`database_restore` inside that private stage before "
+            "`legacy_state_publish`",
+            workflow,
+        )
+        for text in (contracts, workflow, release_note):
+            self.assertIn("`database_restore`", text)
+            self.assertIn("`legacy_state_publish`", text)
 
         setup_section = contracts.split("## `setup`", 1)[1].split(
             "## `doctor`",

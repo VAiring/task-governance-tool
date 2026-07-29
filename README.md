@@ -45,9 +45,13 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
 `setup` is the only initializer and migrator. It also performs the one-way
 opt-in to project-local maintenance and publishes or repairs the canonical
 offline Viewer. It is noninteractive and idempotent. If the canonical DB is
-missing while a valid managed generation remains, setup recovers the newest
-valid same-project generation before normal migration and Viewer repair. It
-does not add a recovery command or accept a recovery path.
+missing while a valid fixed-layout managed generation remains, setup recovers
+the newest valid same-project generation before normal migration and Viewer
+repair. It also supports one unambiguous same-binding legacy backup-only
+source: recovery occurs in the private fixed-layout stage and never recreates
+the old legacy primary. A moved legacy backup-only source is not a relocation
+candidate and fails no-write as `project_state_unreadable`. It does not add a
+recovery command or accept a recovery path.
 
 Release 0.9.0 stores one immutable project identity in the fixed package-local
 `state/current/` layout and keeps the governed-directory binding separately.

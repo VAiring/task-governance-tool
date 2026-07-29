@@ -24,9 +24,11 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_managed_backup_generations_migration,
     apply_paused_state_migration,
     apply_project_maintenance_migration,
+    apply_project_identity_bindings_migration,
     apply_review_evidence_migration,
     apply_task_checkpoints_migration,
     apply_task_contract_migration,
+    apply_viewer_maintenance_migration,
     connect,
     ensure_project_meta,
     project_identity,
@@ -122,8 +124,8 @@ def create_realistic_review_database(
     *,
     schema_version: int,
 ):
-    if schema_version not in {5, 6, 12}:
-        raise ValueError("schema_version must be 5, 6, or 12")
+    if schema_version not in {5, 6, 12, 13}:
+        raise ValueError("schema_version must be 5, 6, 12, or 13")
     project = create_realistic_v2_database(db_path, repo, fixture)
     with closing(connect(db_path)) as connection:
         apply_paused_state_migration(connection)
@@ -185,13 +187,15 @@ def create_realistic_review_database(
         connection.commit()
         if schema_version >= 6:
             apply_git_snapshot_schema_migration(connection)
-        if schema_version == 12:
+        if schema_version >= 12:
             apply_handoff_outbox_migration(connection)
             apply_task_contract_migration(connection)
             apply_effort_advisory_migration(connection)
             apply_project_maintenance_migration(connection)
             apply_managed_backup_generations_migration(connection)
             apply_task_checkpoints_migration(connection)
+        if schema_version >= 13:
+            apply_viewer_maintenance_migration(connection)
     return project
 
 
@@ -287,6 +291,41 @@ def durable_projection(connection: sqlite3.Connection) -> dict:
     }
 
 
+def nonidentity_table_projection(connection: sqlite3.Connection) -> dict:
+    excluded = {
+        "project_meta",
+        "project_path_binding_history",
+        "schema_migrations",
+    }
+    tables = [
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT name
+              FROM sqlite_master
+             WHERE type = 'table'
+               AND name NOT LIKE 'sqlite_%'
+             ORDER BY name
+            """
+        ).fetchall()
+        if str(row[0]) not in excluded
+    ]
+    return {
+        table: tuple(
+            sorted(
+                (
+                    tuple(row)
+                    for row in connection.execute(
+                        f'SELECT * FROM "{table}"'
+                    ).fetchall()
+                ),
+                key=repr,
+            )
+        )
+        for table in tables
+    }
+
+
 def legacy_v2_projection(connection: sqlite3.Connection) -> dict:
     """Return v2 durable content, excluding db-init's operational meta timestamp."""
     return {
@@ -340,7 +379,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             connection.execute(
                 "SELECT MAX(version) FROM schema_migrations"
             ).fetchone()[0],
-            13,
+            14,
         )
         generations = connection.execute(
             """
@@ -391,7 +430,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             artifacts[0].name,
         )
 
-    def test_v2_fixture_setup_migrates_to_v13_without_losing_observed_state(self):
+    def test_v2_fixture_setup_migrates_to_v14_without_losing_observed_state(self):
         fixture = load_fixture()
         self.assertEqual(fixture["schema_version"], 2)
         self.assertEqual(len(fixture["tasks"]), 12)
@@ -421,7 +460,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(migrated)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 2)
-            self.assertEqual(payload["data"]["schema_to"], 13)
+            self.assertEqual(payload["data"]["schema_to"], 14)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 [
@@ -522,9 +561,9 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 self.assertEqual(durable_projection(connection), before_second_init)
                 self.assert_single_seeded_managed_backup(connection, db_path)
 
-    def test_v5_v6_and_v12_setup_migrate_to_v13_with_review_evidence_intact(self):
+    def test_v5_v6_v12_and_v13_setup_migrate_to_v14_with_review_evidence_intact(self):
         fixture = load_fixture()
-        for source_version in (5, 6, 12):
+        for source_version in (5, 6, 12, 13):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 install = make_physical_install(root)
@@ -545,7 +584,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 payload = json_payload(migrated)
                 self.assertEqual(payload["data"]["schema_from"], source_version)
-                self.assertEqual(payload["data"]["schema_to"], 13)
+                self.assertEqual(payload["data"]["schema_to"], 14)
                 self.assertEqual(
                     payload["data"]["completed_writes"],
                     [
@@ -617,6 +656,68 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                         [],
                     )
                     self.assert_single_seeded_managed_backup(connection, db_path)
+
+    def test_realistic_v13_direct_migration_preserves_every_business_table(self):
+        fixture = load_fixture()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install = make_physical_install(root)
+            install.db_path.parent.mkdir(parents=True)
+            project = create_realistic_review_database(
+                install.db_path,
+                install.project_root,
+                fixture,
+                schema_version=13,
+            )
+            with closing(connect(install.db_path)) as connection:
+                before = nonidentity_table_projection(connection)
+                apply_project_identity_bindings_migration(connection)
+                after = nonidentity_table_projection(connection)
+
+                self.assertEqual(after, before)
+                self.assertEqual(
+                    connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0],
+                    12,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM task_events"
+                    ).fetchone()[0],
+                    191,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM tasks
+                         WHERE completion_commit_hash != ''
+                        """
+                    ).fetchone()[0],
+                    9,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM review_receipts"
+                    ).fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM review_findings"
+                    ).fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM project_path_binding_history
+                         WHERE project_id = ?
+                           AND binding_generation = 1
+                           AND reason = 'legacy_migration'
+                        """,
+                        (project.project_id,),
+                    ).fetchone()[0],
+                    1,
+                )
 
     def test_setup_recovers_realistic_v12_backup_with_completion_and_review_trace(self):
         fixture = load_fixture()
@@ -696,7 +797,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(recovered)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 12)
-            self.assertEqual(payload["data"]["schema_to"], 13)
+            self.assertEqual(payload["data"]["schema_to"], 14)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 [

@@ -3,20 +3,52 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import sqlite3
+import uuid
+from collections.abc import Callable
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
+SQLITE_INT64_MAX = (1 << 63) - 1
+IDENTITY_SCHEMES = {"legacy_path_v1", "uuid_v1"}
+BINDING_REASONS = {
+    "legacy_migration",
+    "fresh_setup",
+    "confirmed_relocation",
+}
+LOWER_HEX_64_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+LEGACY_PROJECT_ID_PATTERN = re.compile(
+    rf"^[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{{{PROJECT_ID_HASH_LENGTH}}}$"
+)
+UUID_PROJECT_ID_PATTERN = re.compile(r"^tg_project_([0-9a-f]{32})$")
+MANAGED_BACKUP_FILENAME_PATTERN = re.compile(
+    r"^backups/taskgov-backup-v1_\d{8}T\d{6}Z_"
+    r"[0-9a-f]{32}_r(?:[1-9]|1[0-9]|20)\.sqlite$"
+)
+CLEANUP_TEMP_ENTRY_PATTERNS = (
+    re.compile(r"^\.taskgov-restore-[a-z0-9_]{8}\.tmp$"),
+    re.compile(r"^backups/\.taskgov-backup-[a-z0-9_]{8}\.tmp$"),
+    re.compile(r"^viewer/\.task-viewer-[a-z0-9_]{8}\.tmp$"),
+)
+CLEANUP_FIXED_ENTRIES = {
+    "taskgov.sqlite",
+    "backups/taskgov-backup.lock",
+    "viewer/task-viewer.html",
+    "viewer/taskgov-viewer.lock",
+}
+CLEANUP_INVENTORY_MAX_ENTRIES = 32
+CLEANUP_INVENTORY_MAX_BYTES = 16_384
 MIN_BACKUP_INTERVAL_MINUTES = 1
 MAX_BACKUP_INTERVAL_MINUTES = 1_440
 MIN_BACKUP_GENERATIONS = 1
@@ -131,6 +163,32 @@ class DoctorStorageState:
     viewer: ViewerMaintenanceState
 
 
+@dataclass(frozen=True)
+class ProjectBindingState:
+    project_id: str
+    identity_scheme: str
+    binding_generation: int
+    canonical_path_hash: str
+    display_name: str
+    binding_reason: str
+    binding_updated_at: str
+    legacy_cleanup_pending: bool
+    legacy_cleanup_inventory: str | None
+    legacy_cleanup_fingerprint: str | None
+
+
+@dataclass(frozen=True)
+class ProjectPathBinding:
+    project_id: str
+    binding_generation: int
+    previous_path_hash: str | None
+    canonical_path_hash: str
+    display_name: str
+    reason: str
+    confirmation_token_digest: str | None
+    bound_at: str
+
+
 def skill_root_from_script(script_path: str | os.PathLike[str]) -> Path:
     script = Path(script_path).resolve()
     return script.parent.parent
@@ -190,12 +248,30 @@ def sanitize_project_basename(name: str) -> str:
     return sanitized or "project"
 
 
+def sanitize_project_display_name(name: str) -> str:
+    """Return the bounded, non-authoritative display form used by schema v14."""
+    if not isinstance(name, str):
+        name = ""
+    sanitized = "".join(
+        "\ufffd"
+        if (
+            ord(character) < 0x20
+            or 0x7F <= ord(character) <= 0x9F
+            or character in {"\u2028", "\u2029"}
+        )
+        else character
+        for character in name
+    )
+    return (sanitized or "project")[:200]
+
+
 def project_identity(repo: str | os.PathLike[str]) -> ProjectIdentity:
     canonical = canonicalize_repo(repo)
     hash_input = normalized_path_for_hash(canonical)
     digest = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
-    display_name = canonical.name or "project"
-    prefix = sanitize_project_basename(display_name)
+    raw_display_name = canonical.name or "project"
+    display_name = sanitize_project_display_name(raw_display_name)
+    prefix = sanitize_project_basename(raw_display_name)
     project_id = f"{prefix}-{digest[:PROJECT_ID_HASH_LENGTH]}"
     return ProjectIdentity(
         project_id=project_id,
@@ -257,6 +333,175 @@ def validate_utc_timestamp(value: str, *, field: str) -> str:
             f"{field} is not a canonical UTC timestamp",
         ) from exc
     return value
+
+
+def _unreadable_project_state() -> StorageError:
+    return StorageError(
+        "project_state_unreadable",
+        "project state could not be read safely",
+    )
+
+
+def validate_lower_hex_64(value: str, *, field: str) -> str:
+    if not isinstance(value, str) or not LOWER_HEX_64_PATTERN.fullmatch(value):
+        raise StorageError("internal_error", f"{field} is invalid")
+    return value
+
+
+def validate_project_display_name(value: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not 1 <= len(value) <= 200
+        or sanitize_project_display_name(value) != value
+        or PurePosixPath(value).is_absolute()
+        or PureWindowsPath(value).is_absolute()
+    ):
+        raise StorageError("internal_error", "project display name is invalid")
+    return value
+
+
+def validate_identity_project_id(project_id: str, identity_scheme: str) -> str:
+    if identity_scheme not in IDENTITY_SCHEMES:
+        raise StorageError("internal_error", "project identity scheme is invalid")
+    if identity_scheme == "legacy_path_v1":
+        if not isinstance(project_id, str) or not LEGACY_PROJECT_ID_PATTERN.fullmatch(
+            project_id
+        ):
+            raise StorageError("internal_error", "legacy project identity is invalid")
+        return project_id
+    if not isinstance(project_id, str):
+        raise StorageError("internal_error", "UUID project identity is invalid")
+    match = UUID_PROJECT_ID_PATTERN.fullmatch(project_id)
+    if match is None:
+        raise StorageError("internal_error", "UUID project identity is invalid")
+    raw_uuid = match.group(1)
+    if raw_uuid[12] != "4" or raw_uuid[16] not in {"8", "9", "a", "b"}:
+        raise StorageError("internal_error", "UUID project identity is invalid")
+    return project_id
+
+
+def validate_binding_generation(value: object) -> int:
+    if (
+        type(value) is not int
+        or not 1 <= value <= SQLITE_INT64_MAX
+    ):
+        raise StorageError("internal_error", "project binding generation is invalid")
+    return value
+
+
+def validate_viewer_generation(value: object, *, field: str) -> int:
+    if (
+        type(value) is not int
+        or not 0 <= value <= SQLITE_INT64_MAX
+    ):
+        raise StorageError("internal_error", f"{field} is invalid")
+    return value
+
+
+def _recognized_cleanup_entry(value: str) -> bool:
+    return (
+        value in CLEANUP_FIXED_ENTRIES
+        or MANAGED_BACKUP_FILENAME_PATTERN.fullmatch(value) is not None
+        or any(pattern.fullmatch(value) is not None for pattern in CLEANUP_TEMP_ENTRY_PATTERNS)
+    )
+
+
+def validate_cleanup_inventory(
+    inventory: str,
+    fingerprint: str,
+) -> tuple[str, str]:
+    if (
+        not isinstance(inventory, str)
+        or not 1 <= len(inventory.encode("utf-8")) <= CLEANUP_INVENTORY_MAX_BYTES
+        or not inventory.isascii()
+    ):
+        raise StorageError("internal_error", "legacy cleanup inventory is invalid")
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON key")
+            result[key] = value
+        return result
+
+    try:
+        payload = json.loads(
+            inventory,
+            object_pairs_hook=reject_duplicate_keys,
+        )
+    except (UnicodeError, ValueError) as exc:
+        raise StorageError(
+            "internal_error",
+            "legacy cleanup inventory is invalid",
+        ) from exc
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"entries", "v"}
+        or type(payload.get("v")) is not int
+        or payload.get("v") != 1
+    ):
+        raise StorageError("internal_error", "legacy cleanup inventory is invalid")
+    entries = payload.get("entries")
+    if (
+        not isinstance(entries, list)
+        or not 1 <= len(entries) <= CLEANUP_INVENTORY_MAX_ENTRIES
+    ):
+        raise StorageError("internal_error", "legacy cleanup inventory is invalid")
+    names: list[str] = []
+    backup_count = 0
+    temporary_counts = [0, 0, 0]
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {
+            "kind",
+            "name",
+            "sha256",
+            "size",
+        }:
+            raise StorageError(
+                "internal_error",
+                "legacy cleanup inventory is invalid",
+            )
+        name = entry.get("name")
+        size = entry.get("size")
+        if (
+            entry.get("kind") != "file"
+            or not isinstance(name, str)
+            or not _recognized_cleanup_entry(name)
+            or not isinstance(entry.get("sha256"), str)
+            or LOWER_HEX_64_PATTERN.fullmatch(entry["sha256"]) is None
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 0
+        ):
+            raise StorageError(
+                "internal_error",
+                "legacy cleanup inventory is invalid",
+            )
+        names.append(name)
+        if MANAGED_BACKUP_FILENAME_PATTERN.fullmatch(name) is not None:
+            backup_count += 1
+        for index, pattern in enumerate(CLEANUP_TEMP_ENTRY_PATTERNS):
+            if pattern.fullmatch(name) is not None:
+                temporary_counts[index] += 1
+    if (
+        len(set(names)) != len(names)
+        or names != sorted(names, key=lambda value: value.encode("utf-8"))
+        or backup_count > 21
+        or any(count > 1 for count in temporary_counts)
+    ):
+        raise StorageError("internal_error", "legacy cleanup inventory is invalid")
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if inventory != canonical:
+        raise StorageError("internal_error", "legacy cleanup inventory is invalid")
+    validate_lower_hex_64(fingerprint, field="legacy cleanup fingerprint")
+    if hashlib.sha256(inventory.encode("ascii")).hexdigest() != fingerprint:
+        raise StorageError("internal_error", "legacy cleanup fingerprint is invalid")
+    return inventory, fingerprint
 
 
 def validate_migration_backup_metadata(
@@ -628,6 +873,7 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
         "managed_backup_generations",
         "task_checkpoints",
         "viewer_maintenance_state",
+        "project_path_binding_history",
     }
     required_indexes = {
         "idx_tasks_project_status",
@@ -650,6 +896,12 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
     required_triggers = {
         "trg_project_maintenance_enabled_at_immutable",
         "trg_task_events_viewer_generation",
+        "trg_project_meta_identity_immutable",
+        "trg_project_meta_no_delete",
+        "trg_project_meta_cleanup_insert_valid",
+        "trg_project_meta_cleanup_update_valid",
+        "trg_project_path_binding_history_no_update",
+        "trg_project_path_binding_history_no_delete",
     }
     table_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     index_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
@@ -716,8 +968,46 @@ def required_schema_objects_missing(connection: sqlite3.Connection) -> list[str]
     if "project_meta" in tables:
         project_column_rows = connection.execute("PRAGMA table_info(project_meta)").fetchall()
         project_columns = {str(row["name"]) for row in project_column_rows}
-        if "effort_activity_generation" not in project_columns:
-            missing.append("column:project_meta.effort_activity_generation")
+        required_project_columns = {
+            "project_id",
+            "canonical_path_hash",
+            "display_name",
+            "created_at",
+            "updated_at",
+            "effort_activity_generation",
+            "identity_scheme",
+            "binding_generation",
+            "binding_reason",
+            "binding_updated_at",
+            "legacy_cleanup_pending",
+            "legacy_cleanup_inventory",
+            "legacy_cleanup_fingerprint",
+        }
+        missing.extend(
+            f"column:project_meta.{name}"
+            for name in sorted(required_project_columns - project_columns)
+        )
+    if "project_path_binding_history" in tables:
+        history_columns = {
+            str(row["name"])
+            for row in connection.execute(
+                "PRAGMA table_info(project_path_binding_history)"
+            ).fetchall()
+        }
+        required_history_columns = {
+            "project_id",
+            "binding_generation",
+            "previous_path_hash",
+            "canonical_path_hash",
+            "display_name",
+            "reason",
+            "confirmation_token_digest",
+            "bound_at",
+        }
+        missing.extend(
+            f"column:project_path_binding_history.{name}"
+            for name in sorted(required_history_columns - history_columns)
+        )
     required_review_columns = {
         "review_receipts": {
             "review_receipt_id",
@@ -2295,6 +2585,326 @@ def apply_viewer_maintenance_migration(
         raise
 
 
+def apply_project_identity_bindings_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Add stable identity and append-only path-binding metadata."""
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "project-identity migration requires no active transaction",
+        )
+    existing_version = current_schema_version(connection)
+    if existing_version >= 14:
+        if missing_migration_versions(connection, existing_version) or (
+            required_schema_objects_missing(connection)
+        ):
+            raise StorageError(
+                "migration_required",
+                "project-identity migration is incomplete",
+            )
+        return
+    if existing_version != 13:
+        raise StorageError(
+            "migration_required",
+            "project-identity migration requires schema version 13",
+        )
+    if missing_migration_versions(connection, existing_version):
+        raise StorageError(
+            "migration_required",
+            "project-identity migration requires complete schema version 13 history",
+        )
+
+    migration_time = utc_now()
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        project_rows = connection.execute(
+            """
+            SELECT project_id, canonical_path_hash, display_name, created_at,
+                   updated_at
+              FROM project_meta
+             ORDER BY project_id
+            """
+        ).fetchall()
+        if len(project_rows) > 1:
+            raise _unreadable_project_state()
+
+        new_columns = (
+            (
+                "identity_scheme",
+                """
+                ALTER TABLE project_meta
+                  ADD COLUMN identity_scheme TEXT NOT NULL DEFAULT 'legacy_path_v1'
+                  CHECK (identity_scheme IN ('legacy_path_v1', 'uuid_v1'))
+                """,
+            ),
+            (
+                "binding_generation",
+                """
+                ALTER TABLE project_meta
+                  ADD COLUMN binding_generation INTEGER NOT NULL DEFAULT 1
+                  CHECK (binding_generation >= 1)
+                """,
+            ),
+            (
+                "binding_reason",
+                """
+                ALTER TABLE project_meta
+                  ADD COLUMN binding_reason TEXT NOT NULL DEFAULT 'legacy_migration'
+                  CHECK (
+                    binding_reason IN (
+                      'legacy_migration', 'fresh_setup', 'confirmed_relocation'
+                    )
+                  )
+                """,
+            ),
+            (
+                "binding_updated_at",
+                """
+                ALTER TABLE project_meta
+                  ADD COLUMN binding_updated_at TEXT NOT NULL
+                  DEFAULT '1970-01-01T00:00:00Z'
+                """,
+            ),
+            (
+                "legacy_cleanup_pending",
+                """
+                ALTER TABLE project_meta
+                  ADD COLUMN legacy_cleanup_pending INTEGER NOT NULL DEFAULT 0
+                  CHECK (legacy_cleanup_pending IN (0, 1))
+                """,
+            ),
+            (
+                "legacy_cleanup_inventory",
+                """
+                ALTER TABLE project_meta
+                  ADD COLUMN legacy_cleanup_inventory TEXT
+                  CHECK (
+                    legacy_cleanup_inventory IS NULL
+                    OR length(legacy_cleanup_inventory) BETWEEN 1 AND 16384
+                  )
+                """,
+            ),
+            (
+                "legacy_cleanup_fingerprint",
+                """
+                ALTER TABLE project_meta
+                  ADD COLUMN legacy_cleanup_fingerprint TEXT
+                  CHECK (
+                    legacy_cleanup_fingerprint IS NULL
+                    OR (
+                      length(legacy_cleanup_fingerprint) = 64
+                      AND legacy_cleanup_fingerprint NOT GLOB '*[^0-9a-f]*'
+                    )
+                  )
+                """,
+            ),
+        )
+        for column_name, statement in new_columns:
+            if column_exists(connection, "project_meta", column_name):
+                raise StorageError(
+                    "migration_required",
+                    "project-identity migration is incomplete",
+                )
+            connection.execute(statement)
+
+        if fail_stage == "after_columns":
+            raise StorageError(
+                "internal_error",
+                "injected project-identity migration failure",
+            )
+
+        connection.execute(
+            """
+            CREATE TABLE project_path_binding_history (
+              project_id TEXT NOT NULL,
+              binding_generation INTEGER NOT NULL
+                CHECK (binding_generation >= 1),
+              previous_path_hash TEXT,
+              canonical_path_hash TEXT NOT NULL,
+              display_name TEXT NOT NULL
+                CHECK (length(display_name) BETWEEN 1 AND 200),
+              reason TEXT NOT NULL
+                CHECK (
+                  reason IN (
+                    'legacy_migration', 'fresh_setup', 'confirmed_relocation'
+                  )
+                ),
+              confirmation_token_digest TEXT,
+              bound_at TEXT NOT NULL,
+              PRIMARY KEY (project_id, binding_generation),
+              FOREIGN KEY (project_id) REFERENCES project_meta(project_id),
+              CHECK (
+                length(canonical_path_hash) = 64
+                AND canonical_path_hash NOT GLOB '*[^0-9a-f]*'
+              ),
+              CHECK (
+                previous_path_hash IS NULL
+                OR (
+                  length(previous_path_hash) = 64
+                  AND previous_path_hash NOT GLOB '*[^0-9a-f]*'
+                )
+              ),
+              CHECK (
+                confirmation_token_digest IS NULL
+                OR (
+                  length(confirmation_token_digest) = 64
+                  AND confirmation_token_digest NOT GLOB '*[^0-9a-f]*'
+                )
+              ),
+              CHECK (
+                (binding_generation = 1 AND previous_path_hash IS NULL)
+                OR
+                (binding_generation > 1 AND previous_path_hash IS NOT NULL)
+              ),
+              CHECK (
+                (
+                  reason = 'confirmed_relocation'
+                  AND binding_generation > 1
+                  AND confirmation_token_digest IS NOT NULL
+                )
+                OR
+                (
+                  reason != 'confirmed_relocation'
+                  AND confirmation_token_digest IS NULL
+                )
+              )
+            )
+            """
+        )
+
+        trigger_statements = (
+            """
+            CREATE TRIGGER trg_project_meta_identity_immutable
+            BEFORE UPDATE ON project_meta
+            WHEN NEW.project_id != OLD.project_id
+              OR NEW.identity_scheme != OLD.identity_scheme
+              OR NEW.created_at != OLD.created_at
+            BEGIN
+              SELECT RAISE(ABORT, 'project identity metadata is immutable');
+            END
+            """,
+            """
+            CREATE TRIGGER trg_project_meta_no_delete
+            BEFORE DELETE ON project_meta
+            BEGIN
+              SELECT RAISE(ABORT, 'project metadata cannot be deleted');
+            END
+            """,
+            """
+            CREATE TRIGGER trg_project_meta_cleanup_insert_valid
+            BEFORE INSERT ON project_meta
+            WHEN NOT (
+              (
+                NEW.legacy_cleanup_pending = 0
+                AND NEW.legacy_cleanup_inventory IS NULL
+                AND NEW.legacy_cleanup_fingerprint IS NULL
+              )
+              OR
+              (
+                NEW.legacy_cleanup_pending = 1
+                AND NEW.legacy_cleanup_inventory IS NOT NULL
+                AND NEW.legacy_cleanup_fingerprint IS NOT NULL
+                AND length(NEW.legacy_cleanup_fingerprint) = 64
+                AND NEW.legacy_cleanup_fingerprint NOT GLOB '*[^0-9a-f]*'
+              )
+            )
+            BEGIN
+              SELECT RAISE(ABORT, 'legacy cleanup metadata is invalid');
+            END
+            """,
+            """
+            CREATE TRIGGER trg_project_meta_cleanup_update_valid
+            BEFORE UPDATE ON project_meta
+            WHEN NOT (
+              (
+                NEW.legacy_cleanup_pending = 0
+                AND NEW.legacy_cleanup_inventory IS NULL
+                AND NEW.legacy_cleanup_fingerprint IS NULL
+              )
+              OR
+              (
+                NEW.legacy_cleanup_pending = 1
+                AND NEW.legacy_cleanup_inventory IS NOT NULL
+                AND NEW.legacy_cleanup_fingerprint IS NOT NULL
+                AND length(NEW.legacy_cleanup_fingerprint) = 64
+                AND NEW.legacy_cleanup_fingerprint NOT GLOB '*[^0-9a-f]*'
+              )
+            )
+            BEGIN
+              SELECT RAISE(ABORT, 'legacy cleanup metadata is invalid');
+            END
+            """,
+            """
+            CREATE TRIGGER trg_project_path_binding_history_no_update
+            BEFORE UPDATE ON project_path_binding_history
+            BEGIN
+              SELECT RAISE(ABORT, 'project binding history is append-only');
+            END
+            """,
+            """
+            CREATE TRIGGER trg_project_path_binding_history_no_delete
+            BEFORE DELETE ON project_path_binding_history
+            BEGIN
+              SELECT RAISE(ABORT, 'project binding history is append-only');
+            END
+            """,
+        )
+        for statement in trigger_statements:
+            connection.execute(statement)
+
+        for row in project_rows:
+            project_id = str(row["project_id"])
+            canonical_hash = str(row["canonical_path_hash"])
+            display_name = sanitize_project_display_name(str(row["display_name"]))
+            validate_identity_project_id(project_id, "legacy_path_v1")
+            validate_lower_hex_64(canonical_hash, field="canonical path hash")
+            validate_project_display_name(display_name)
+            validate_utc_timestamp(str(row["created_at"]), field="project creation time")
+            validate_utc_timestamp(str(row["updated_at"]), field="project update time")
+            connection.execute(
+                """
+                UPDATE project_meta
+                   SET display_name = ?,
+                       binding_updated_at = ?
+                 WHERE project_id = ?
+                """,
+                (display_name, migration_time, project_id),
+            )
+            connection.execute(
+                """
+                INSERT INTO project_path_binding_history(
+                  project_id, binding_generation, previous_path_hash,
+                  canonical_path_hash, display_name, reason,
+                  confirmation_token_digest, bound_at
+                ) VALUES (?, 1, NULL, ?, ?, 'legacy_migration', NULL, ?)
+                """,
+                (project_id, canonical_hash, display_name, migration_time),
+            )
+
+        if fail_stage == "after_history":
+            raise StorageError(
+                "internal_error",
+                "injected project-identity migration failure",
+            )
+
+        connection.execute(
+            "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+            (14, "project_identity_bindings", migration_time),
+        )
+        if fail_stage == "before_commit":
+            raise StorageError(
+                "internal_error",
+                "injected project-identity migration failure",
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def apply_migrations(
     connection: sqlite3.Connection,
     *,
@@ -2387,36 +2997,349 @@ def apply_migrations(
     if version < 13:
         apply_viewer_maintenance_migration(connection)
         applied.append(13)
+        version = 13
+    if version < 14:
+        apply_project_identity_bindings_migration(connection)
+        applied.append(14)
     return applied, warnings
 
 
-def ensure_project_meta(connection: sqlite3.Connection, project: ProjectIdentity) -> None:
-    now = utc_now()
-    rows = connection.execute("SELECT project_id FROM project_meta").fetchall()
-    if rows:
-        existing_project_id = str(rows[0]["project_id"])
-        if existing_project_id != project.project_id:
+def read_project_binding_state(
+    connection: sqlite3.Connection,
+    *,
+    expected_project_id: str | None = None,
+) -> ProjectBindingState:
+    """Validate and return the one schema-v14 current binding and its lineage."""
+    try:
+        rows = connection.execute(
+            """
+            SELECT project_id, canonical_path_hash, display_name, created_at,
+                   updated_at, identity_scheme, binding_generation,
+                   binding_reason, binding_updated_at, legacy_cleanup_pending,
+                   legacy_cleanup_inventory, legacy_cleanup_fingerprint
+              FROM project_meta
+             ORDER BY project_id
+            """
+        ).fetchall()
+        if len(rows) != 1:
+            raise _unreadable_project_state()
+        row = rows[0]
+        project_id = str(row["project_id"])
+        identity_scheme = str(row["identity_scheme"])
+        validate_identity_project_id(project_id, identity_scheme)
+        if expected_project_id is not None and project_id != expected_project_id:
             raise StorageError(
                 "project_mismatch",
-                f"database belongs to project {existing_project_id}, not {project.project_id}",
+                "task database belongs to a different project",
             )
+        canonical_hash = validate_lower_hex_64(
+            str(row["canonical_path_hash"]),
+            field="canonical path hash",
+        )
+        display_name = validate_project_display_name(str(row["display_name"]))
+        validate_utc_timestamp(str(row["created_at"]), field="project creation time")
+        validate_utc_timestamp(str(row["updated_at"]), field="project update time")
+        binding_generation = validate_binding_generation(row["binding_generation"])
+        binding_reason = str(row["binding_reason"])
+        if binding_reason not in BINDING_REASONS:
+            raise StorageError("internal_error", "project binding reason is invalid")
+        binding_updated_at = validate_utc_timestamp(
+            str(row["binding_updated_at"]),
+            field="project binding time",
+        )
+
+        cleanup_pending = int(row["legacy_cleanup_pending"])
+        cleanup_inventory = (
+            str(row["legacy_cleanup_inventory"])
+            if row["legacy_cleanup_inventory"] is not None
+            else None
+        )
+        cleanup_fingerprint = (
+            str(row["legacy_cleanup_fingerprint"])
+            if row["legacy_cleanup_fingerprint"] is not None
+            else None
+        )
+        if cleanup_pending == 0:
+            if cleanup_inventory is not None or cleanup_fingerprint is not None:
+                raise StorageError(
+                    "internal_error",
+                    "legacy cleanup metadata is invalid",
+                )
+        elif cleanup_pending == 1:
+            if cleanup_inventory is None or cleanup_fingerprint is None:
+                raise StorageError(
+                    "internal_error",
+                    "legacy cleanup metadata is invalid",
+                )
+            validate_cleanup_inventory(cleanup_inventory, cleanup_fingerprint)
+        else:
+            raise StorageError(
+                "internal_error",
+                "legacy cleanup metadata is invalid",
+            )
+
+        history_rows = connection.execute(
+            """
+            SELECT project_id, binding_generation, previous_path_hash,
+                   canonical_path_hash, display_name, reason,
+                   confirmation_token_digest, bound_at
+              FROM project_path_binding_history
+             WHERE project_id = ?
+             ORDER BY binding_generation
+            """,
+            (project_id,),
+        ).fetchall()
+        history_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM project_path_binding_history"
+            ).fetchone()[0]
+        )
+        if (
+            len(history_rows) != binding_generation
+            or history_count != len(history_rows)
+        ):
+            raise StorageError("internal_error", "project binding history is invalid")
+
+        previous_hash: str | None = None
+        history_head: ProjectPathBinding | None = None
+        for expected_generation, history_row in enumerate(history_rows, start=1):
+            history_project_id = str(history_row["project_id"])
+            generation = validate_binding_generation(
+                history_row["binding_generation"]
+            )
+            history_previous_hash = (
+                validate_lower_hex_64(
+                    str(history_row["previous_path_hash"]),
+                    field="previous canonical path hash",
+                )
+                if history_row["previous_path_hash"] is not None
+                else None
+            )
+            history_hash = validate_lower_hex_64(
+                str(history_row["canonical_path_hash"]),
+                field="canonical path hash",
+            )
+            history_display = validate_project_display_name(
+                str(history_row["display_name"])
+            )
+            reason = str(history_row["reason"])
+            token_digest = (
+                validate_lower_hex_64(
+                    str(history_row["confirmation_token_digest"]),
+                    field="confirmation token digest",
+                )
+                if history_row["confirmation_token_digest"] is not None
+                else None
+            )
+            bound_at = validate_utc_timestamp(
+                str(history_row["bound_at"]),
+                field="project binding time",
+            )
+            if (
+                history_project_id != project_id
+                or generation != expected_generation
+                or history_previous_hash != previous_hash
+            ):
+                raise StorageError(
+                    "internal_error",
+                    "project binding history is invalid",
+                )
+            expected_reason = (
+                "legacy_migration"
+                if identity_scheme == "legacy_path_v1"
+                else "fresh_setup"
+            )
+            if generation == 1:
+                if reason != expected_reason or token_digest is not None:
+                    raise StorageError(
+                        "internal_error",
+                        "project binding history is invalid",
+                    )
+            elif reason != "confirmed_relocation" or token_digest is None:
+                raise StorageError(
+                    "internal_error",
+                    "project binding history is invalid",
+                )
+            history_head = ProjectPathBinding(
+                project_id=history_project_id,
+                binding_generation=generation,
+                previous_path_hash=history_previous_hash,
+                canonical_path_hash=history_hash,
+                display_name=history_display,
+                reason=reason,
+                confirmation_token_digest=token_digest,
+                bound_at=bound_at,
+            )
+            previous_hash = history_hash
+
+        if history_head is None or (
+            history_head.binding_generation != binding_generation
+            or history_head.canonical_path_hash != canonical_hash
+            or history_head.display_name != display_name
+            or history_head.reason != binding_reason
+            or history_head.bound_at != binding_updated_at
+        ):
+            raise StorageError("internal_error", "project binding history is invalid")
+        return ProjectBindingState(
+            project_id=project_id,
+            identity_scheme=identity_scheme,
+            binding_generation=binding_generation,
+            canonical_path_hash=canonical_hash,
+            display_name=display_name,
+            binding_reason=binding_reason,
+            binding_updated_at=binding_updated_at,
+            legacy_cleanup_pending=bool(cleanup_pending),
+            legacy_cleanup_inventory=cleanup_inventory,
+            legacy_cleanup_fingerprint=cleanup_fingerprint,
+        )
+    except StorageError as exc:
+        if exc.code == "project_mismatch":
+            raise
+        raise _unreadable_project_state() from exc
+    except (TypeError, ValueError, sqlite3.Error) as exc:
+        raise _unreadable_project_state() from exc
+
+
+def ensure_project_meta(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    *,
+    identity_scheme: str = "legacy_path_v1",
+    binding_reason: str = "legacy_migration",
+    timestamp: str | None = None,
+    fail_stage: str | None = None,
+) -> None:
+    now = validate_utc_timestamp(
+        timestamp or utc_now(),
+        field="project binding time",
+    )
+    display_name = validate_project_display_name(
+        sanitize_project_display_name(project.display_name)
+    )
+    validate_lower_hex_64(project.canonical_path_hash, field="canonical path hash")
+    validate_identity_project_id(project.project_id, identity_scheme)
+    expected_reason = (
+        "legacy_migration" if identity_scheme == "legacy_path_v1" else "fresh_setup"
+    )
+    if binding_reason != expected_reason:
+        raise StorageError("internal_error", "initial project binding reason is invalid")
+
+    version = current_schema_version(connection)
+    rows = connection.execute(
+        "SELECT project_id FROM project_meta ORDER BY project_id"
+    ).fetchall()
+    if version < 14:
+        if identity_scheme != "legacy_path_v1":
+            raise StorageError(
+                "internal_error",
+                "UUID project identity requires schema version 14",
+            )
+        if rows:
+            existing_project_id = str(rows[0]["project_id"])
+            if len(rows) != 1:
+                raise _unreadable_project_state()
+            try:
+                validate_identity_project_id(
+                    existing_project_id,
+                    "legacy_path_v1",
+                )
+            except StorageError as exc:
+                raise _unreadable_project_state() from exc
+            if existing_project_id != project.project_id:
+                raise StorageError(
+                    "project_mismatch",
+                    "task database belongs to a different project",
+                )
+            connection.execute(
+                """
+                UPDATE project_meta
+                   SET canonical_path_hash = ?, display_name = ?, updated_at = ?
+                 WHERE project_id = ?
+                """,
+                (
+                    project.canonical_path_hash,
+                    display_name,
+                    now,
+                    project.project_id,
+                ),
+            )
+            return
         connection.execute(
             """
-            UPDATE project_meta
-               SET canonical_path_hash = ?, display_name = ?, updated_at = ?
-             WHERE project_id = ?
+            INSERT INTO project_meta(
+              project_id, canonical_path_hash, display_name, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?)
             """,
-            (project.canonical_path_hash, project.display_name, now, project.project_id),
+            (
+                project.project_id,
+                project.canonical_path_hash,
+                display_name,
+                now,
+                now,
+            ),
         )
+        return
+
+    if rows:
+        binding = read_project_binding_state(connection)
+        if binding.project_id != project.project_id:
+            raise StorageError(
+                "project_mismatch",
+                "task database belongs to a different project",
+            )
+        if (
+            binding.identity_scheme != identity_scheme
+            or binding.canonical_path_hash != project.canonical_path_hash
+        ):
+            raise _unreadable_project_state()
         return
 
     connection.execute(
         """
-        INSERT INTO project_meta(project_id, canonical_path_hash, display_name, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO project_meta(
+          project_id, canonical_path_hash, display_name, created_at, updated_at,
+          identity_scheme, binding_generation, binding_reason,
+          binding_updated_at, legacy_cleanup_pending,
+          legacy_cleanup_inventory, legacy_cleanup_fingerprint
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0, NULL, NULL)
         """,
-        (project.project_id, project.canonical_path_hash, project.display_name, now, now),
+        (
+            project.project_id,
+            project.canonical_path_hash,
+            display_name,
+            now,
+            now,
+            identity_scheme,
+            binding_reason,
+            now,
+        ),
     )
+    if fail_stage == "after_project_row":
+        raise StorageError(
+            "internal_error",
+            "injected project metadata initialization failure",
+        )
+    connection.execute(
+        """
+        INSERT INTO project_path_binding_history(
+          project_id, binding_generation, previous_path_hash,
+          canonical_path_hash, display_name, reason,
+          confirmation_token_digest, bound_at
+        ) VALUES (?, 1, NULL, ?, ?, ?, NULL, ?)
+        """,
+        (
+            project.project_id,
+            project.canonical_path_hash,
+            display_name,
+            binding_reason,
+            now,
+        ),
+    )
+    if fail_stage == "after_history_row":
+        raise StorageError(
+            "internal_error",
+            "injected project metadata initialization failure",
+        )
 
 
 def read_project_meta_id(connection: sqlite3.Connection) -> str | None:
@@ -2528,9 +3451,15 @@ def read_viewer_maintenance(
     ).fetchone()
     if row is None:
         return None
-    source_generation = int(row["source_generation"])
+    source_generation = validate_viewer_generation(
+        row["source_generation"],
+        field="Viewer source generation",
+    )
     rendered_generation = (
-        int(row["rendered_generation"])
+        validate_viewer_generation(
+            row["rendered_generation"],
+            field="Viewer rendered generation",
+        )
         if row["rendered_generation"] is not None
         else None
     )
@@ -2632,19 +3561,12 @@ def validate_current_database(
             "database schema is incomplete; run setup to migrate",
         )
 
-    existing_project_id = read_project_meta_id(connection)
-    if existing_project_id is None:
-        raise StorageError(
-            "migration_required",
-            "database project metadata is missing; run setup to repair",
-        )
+    binding = read_project_binding_state(connection)
+    existing_project_id = binding.project_id
     if existing_project_id != target.project.project_id:
         raise StorageError(
             "project_mismatch",
-            (
-                f"database belongs to project {existing_project_id}, "
-                f"not {target.project.project_id}"
-            ),
+            "task database belongs to a different project",
         )
     if read_project_maintenance(connection, existing_project_id) is None:
         raise StorageError(
@@ -2686,10 +3608,7 @@ def validate_managed_backup_source_database(
     if existing_project_id != target.project.project_id:
         raise StorageError(
             "project_mismatch",
-            (
-                f"database belongs to project {existing_project_id}, "
-                f"not {target.project.project_id}"
-            ),
+            "task database belongs to a different project",
         )
     if read_project_maintenance(connection, existing_project_id) is None:
         raise StorageError(
@@ -3518,6 +4437,192 @@ def record_viewer_attempt_outcome(
             raise
 
 
+def compare_and_swap_project_binding(
+    target: DatabaseTarget,
+    *,
+    project_id: str,
+    identity_scheme: str,
+    expected_generation: int,
+    expected_old_hash: str,
+    new_hash: str,
+    new_display_name: str,
+    reason: str,
+    confirmation_token_digest: str,
+    bound_at: str,
+    fail_stage: str | None = None,
+) -> ProjectBindingState:
+    """Append one confirmed binding and advance Viewer source state atomically."""
+    validate_identity_project_id(project_id, identity_scheme)
+    validate_binding_generation(expected_generation)
+    validate_lower_hex_64(expected_old_hash, field="previous canonical path hash")
+    validate_lower_hex_64(new_hash, field="canonical path hash")
+    display_name = validate_project_display_name(new_display_name)
+    if expected_old_hash == new_hash:
+        raise StorageError("internal_error", "project binding did not change")
+    if reason != "confirmed_relocation":
+        raise StorageError("internal_error", "project binding reason is invalid")
+    token_digest = validate_lower_hex_64(
+        confirmation_token_digest,
+        field="confirmation token digest",
+    )
+    timestamp = validate_utc_timestamp(bound_at, field="project binding time")
+    if (
+        target.project.project_id != project_id
+        or target.project.canonical_path_hash != new_hash
+        or sanitize_project_display_name(target.project.display_name) != display_name
+    ):
+        raise StorageError("internal_error", "project binding target is invalid")
+
+    try:
+        opened_connection = connect_initialized(target)
+    except StorageError as exc:
+        if exc.code in {"internal_error", "migration_required"}:
+            raise _unreadable_project_state() from exc
+        raise
+    with closing(opened_connection) as connection:
+        try:
+            begin_initialized_write(connection, target)
+            current = read_project_binding_state(
+                connection,
+                expected_project_id=project_id,
+            )
+            if (
+                current.identity_scheme != identity_scheme
+                or current.binding_generation != expected_generation
+                or current.canonical_path_hash != expected_old_hash
+            ):
+                raise StorageError(
+                    "project_binding_stale",
+                    "project binding state changed",
+                )
+            if current.binding_generation >= SQLITE_INT64_MAX:
+                raise _unreadable_project_state()
+            viewer_row = connection.execute(
+                """
+                SELECT source_generation
+                  FROM viewer_maintenance_state
+                 WHERE project_id = ?
+                """,
+                (project_id,),
+            ).fetchone()
+            if viewer_row is None:
+                raise _unreadable_project_state()
+            try:
+                viewer_generation = validate_viewer_generation(
+                    viewer_row["source_generation"],
+                    field="Viewer source generation",
+                )
+            except StorageError as exc:
+                raise _unreadable_project_state() from exc
+            if viewer_generation >= SQLITE_INT64_MAX:
+                raise _unreadable_project_state()
+
+            next_generation = current.binding_generation + 1
+            connection.execute(
+                """
+                INSERT INTO project_path_binding_history(
+                  project_id, binding_generation, previous_path_hash,
+                  canonical_path_hash, display_name, reason,
+                  confirmation_token_digest, bound_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    next_generation,
+                    expected_old_hash,
+                    new_hash,
+                    display_name,
+                    reason,
+                    token_digest,
+                    timestamp,
+                ),
+            )
+            if fail_stage == "after_history":
+                raise StorageError(
+                    "internal_error",
+                    "injected project binding failure",
+                )
+
+            cursor = connection.execute(
+                """
+                UPDATE project_meta
+                   SET canonical_path_hash = ?,
+                       display_name = ?,
+                       binding_generation = ?,
+                       binding_reason = ?,
+                       binding_updated_at = ?,
+                       updated_at = ?
+                 WHERE project_id = ?
+                   AND identity_scheme = ?
+                   AND binding_generation = ?
+                   AND canonical_path_hash = ?
+                """,
+                (
+                    new_hash,
+                    display_name,
+                    next_generation,
+                    reason,
+                    timestamp,
+                    timestamp,
+                    project_id,
+                    identity_scheme,
+                    expected_generation,
+                    expected_old_hash,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise StorageError(
+                    "project_binding_stale",
+                    "project binding state changed",
+                )
+            if fail_stage == "after_current":
+                raise StorageError(
+                    "internal_error",
+                    "injected project binding failure",
+                )
+
+            cursor = connection.execute(
+                """
+                UPDATE viewer_maintenance_state
+                   SET source_generation = source_generation + 1
+                 WHERE project_id = ?
+                   AND source_generation < ?
+                """,
+                (project_id, SQLITE_INT64_MAX),
+            )
+            if cursor.rowcount != 1:
+                raise _unreadable_project_state()
+            if fail_stage == "after_viewer":
+                raise StorageError(
+                    "internal_error",
+                    "injected project binding failure",
+                )
+
+            updated = read_project_binding_state(
+                connection,
+                expected_project_id=project_id,
+            )
+            if fail_stage == "before_commit":
+                raise StorageError(
+                    "internal_error",
+                    "injected project binding failure",
+                )
+            connection.commit()
+            return updated
+        except StorageError:
+            connection.rollback()
+            raise
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise operational_sqlite_error(
+                exc,
+                fallback_message="project state could not be updated safely",
+            ) from exc
+        except Exception:
+            connection.rollback()
+            raise
+
+
 def validate_snapshot_database(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
@@ -3600,19 +4705,19 @@ def validate_snapshot_database(
             "database review schema is incomplete for Viewer snapshot version 3",
         )
 
-    existing_project_id = read_project_meta_id(connection)
-    if existing_project_id is None:
-        raise StorageError(
-            "migration_required",
-            "database project metadata is missing",
-        )
+    if version >= 14:
+        existing_project_id = read_project_binding_state(connection).project_id
+    else:
+        existing_project_id = read_project_meta_id(connection)
+        if existing_project_id is None:
+            raise StorageError(
+                "migration_required",
+                "database project metadata is missing",
+            )
     if existing_project_id != target.project.project_id:
         raise StorageError(
             "project_mismatch",
-            (
-                f"database belongs to project {existing_project_id}, "
-                f"not {target.project.project_id}"
-            ),
+            "task database belongs to a different project",
         )
     return version
 
@@ -3689,12 +4794,15 @@ def read_setup_state(
                 "project_state_unreadable",
                 "project state could not be read safely",
             )
-        existing_project_id = read_project_meta_id(connection)
-        if existing_project_id is None:
-            raise StorageError(
-                "project_state_unreadable",
-                "project state could not be read safely",
-            )
+        if version >= 14:
+            existing_project_id = read_project_binding_state(connection).project_id
+        else:
+            existing_project_id = read_project_meta_id(connection)
+            if existing_project_id is None:
+                raise StorageError(
+                    "project_state_unreadable",
+                    "project state could not be read safely",
+                )
         if existing_project_id != target.project.project_id:
             raise StorageError(
                 "project_mismatch",
@@ -3839,11 +4947,81 @@ def read_doctor_state(
     )
 
 
-def initialize_database(
+def _is_exact_empty_v14_database(db_path: Path) -> bool:
+    """Recognize only the exact unbound schema-construction interval."""
+    if db_path.is_symlink() or not db_path.is_file():
+        return False
+    try:
+        with closing(connect_readonly(db_path)) as connection:
+            if (
+                current_schema_version(connection) != 14
+                or missing_migration_versions(connection, 14)
+                or required_schema_objects_missing(connection)
+            ):
+                return False
+            object_counts = {
+                str(row["type"]): int(row["count"])
+                for row in connection.execute(
+                    """
+                    SELECT type, COUNT(*) AS count
+                      FROM sqlite_master
+                     WHERE name NOT LIKE 'sqlite_%'
+                     GROUP BY type
+                    """
+                ).fetchall()
+            }
+            if object_counts != {
+                "index": 16,
+                "table": 16,
+                "trigger": 8,
+            }:
+                return False
+            if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                return False
+            if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                return False
+            tables = [
+                str(row["name"])
+                for row in connection.execute(
+                    """
+                    SELECT name
+                      FROM sqlite_master
+                     WHERE type = 'table'
+                       AND name NOT LIKE 'sqlite_%'
+                     ORDER BY name
+                    """
+                ).fetchall()
+            ]
+            for table_name in tables:
+                if table_name == "schema_migrations":
+                    continue
+                if int(
+                    connection.execute(
+                        f'SELECT COUNT(*) FROM "{table_name}"'
+                    ).fetchone()[0]
+                ):
+                    return False
+            return (
+                int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM schema_migrations"
+                    ).fetchone()[0]
+                )
+                == 14
+            )
+    except (OSError, sqlite3.Error, StorageError):
+        return False
+
+
+def _initialize_database_with_identity(
     target: DatabaseTarget,
     *,
+    identity_scheme: str,
+    binding_reason: str,
+    binding_timestamp: str | None = None,
     setup_backup: MigrationBackupMetadata | None = None,
     managed_backups: tuple[MigrationBackupMetadata, ...] = (),
+    fail_stage: str | None = None,
 ) -> InitResult:
     created = not target.db_path.exists()
     project_identity_preexisting = False
@@ -3853,22 +5031,50 @@ def initialize_database(
         with closing(connect(target.db_path)) as connection:
             with connection:
                 if table_exists(connection, "project_meta"):
-                    existing_project_id = read_project_meta_id(connection)
+                    project_rows = connection.execute(
+                        "SELECT project_id FROM project_meta ORDER BY project_id"
+                    ).fetchall()
+                    if len(project_rows) > 1:
+                        raise _unreadable_project_state()
+                    existing_project_id = (
+                        str(project_rows[0]["project_id"])
+                        if project_rows
+                        else None
+                    )
                     project_identity_preexisting = existing_project_id is not None
-                    if (
-                        existing_project_id is not None
-                        and existing_project_id != target.project.project_id
+                    if existing_project_id is not None:
+                        if current_schema_version(connection) >= 14:
+                            existing_project_id = read_project_binding_state(
+                                connection
+                            ).project_id
+                        else:
+                            try:
+                                validate_identity_project_id(
+                                    existing_project_id,
+                                    "legacy_path_v1",
+                                )
+                            except StorageError as exc:
+                                raise _unreadable_project_state() from exc
+                    if existing_project_id is not None and (
+                        existing_project_id != target.project.project_id
                     ):
                         raise StorageError(
                             "project_mismatch",
-                            f"database belongs to project {existing_project_id}, not {target.project.project_id}",
+                            "task database belongs to a different project",
                         )
                 migrations_applied, warnings = apply_migrations(
                     connection,
                     setup_backup=setup_backup,
                     managed_backups=managed_backups,
                 )
-                ensure_project_meta(connection, target.project)
+                ensure_project_meta(
+                    connection,
+                    target.project,
+                    identity_scheme=identity_scheme,
+                    binding_reason=binding_reason,
+                    timestamp=binding_timestamp,
+                    fail_stage=fail_stage,
+                )
                 ensure_project_maintenance_row(
                     connection,
                     target.project.project_id,
@@ -3895,6 +5101,124 @@ def initialize_database(
         schema_version=version,
         warnings=warnings,
     )
+
+
+def initialize_database(
+    target: DatabaseTarget,
+    *,
+    setup_backup: MigrationBackupMetadata | None = None,
+    managed_backups: tuple[MigrationBackupMetadata, ...] = (),
+) -> InitResult:
+    """Initialize the still-active M17.1 legacy production target."""
+    return _initialize_database_with_identity(
+        target,
+        identity_scheme="legacy_path_v1",
+        binding_reason="legacy_migration",
+        setup_backup=setup_backup,
+        managed_backups=managed_backups,
+    )
+
+
+def initialize_uuid_database(
+    target: DatabaseTarget,
+    *,
+    project_id_factory: Callable[[], str] | None = None,
+    clock: Callable[[], str] | None = None,
+    fail_stage: str | None = None,
+) -> InitResult:
+    """Initialize UUID identity only for an explicitly injected fixed target."""
+    db_path = Path(target.db_path)
+    sidecar_paths = tuple(
+        Path(f"{db_path}{suffix}") for suffix in ("-journal", "-wal", "-shm")
+    )
+    current_directory_existed = db_path.parent.exists()
+    state_directory_existed = db_path.parent.parent.exists()
+    if (
+        target.explicit_db is not True
+        or not db_path.is_absolute()
+        or db_path.name.casefold() != "taskgov.sqlite"
+        or db_path.parent.name.casefold() != "current"
+        or db_path.parent.parent.name.casefold() != "state"
+    ):
+        raise StorageError("internal_error", "fixed database target is invalid")
+    try:
+        db_path.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise StorageError(
+            "internal_error",
+            "fixed database target could not be inspected",
+        ) from exc
+    else:
+        raise StorageError(
+            "internal_error",
+            "fixed database target is already initialized",
+        )
+    if any(os.path.lexists(path) for path in sidecar_paths):
+        raise StorageError(
+            "internal_error",
+            "fixed database target is already initialized",
+        )
+
+    factory = project_id_factory or (lambda: uuid.uuid4().hex)
+    raw_project_id = factory()
+    if not isinstance(raw_project_id, str) or not re.fullmatch(
+        r"[0-9a-f]{32}",
+        raw_project_id,
+    ):
+        raise StorageError("internal_error", "UUID project identity is invalid")
+    project_id = f"tg_project_{raw_project_id}"
+    validate_identity_project_id(project_id, "uuid_v1")
+    binding_time = validate_utc_timestamp(
+        (clock or utc_now)(),
+        field="project binding time",
+    )
+    validate_lower_hex_64(
+        target.project.canonical_path_hash,
+        field="canonical path hash",
+    )
+    display_name = validate_project_display_name(
+        sanitize_project_display_name(target.project.display_name)
+    )
+    uuid_project = ProjectIdentity(
+        project_id=project_id,
+        canonical_repo=target.project.canonical_repo,
+        canonical_path_hash=target.project.canonical_path_hash,
+        display_name=display_name,
+    )
+    uuid_target = DatabaseTarget(
+        project=uuid_project,
+        db_path=db_path,
+        explicit_db=target.explicit_db,
+    )
+    try:
+        return _initialize_database_with_identity(
+            uuid_target,
+            identity_scheme="uuid_v1",
+            binding_reason="fresh_setup",
+            binding_timestamp=binding_time,
+            fail_stage=fail_stage,
+        )
+    except Exception:
+        if (
+            not any(os.path.lexists(path) for path in sidecar_paths)
+            and _is_exact_empty_v14_database(db_path)
+        ):
+            try:
+                db_path.unlink()
+            except OSError as exc:
+                raise _unreadable_project_state() from exc
+            for directory, existed_before in (
+                (db_path.parent, current_directory_existed),
+                (db_path.parent.parent, state_directory_existed),
+            ):
+                if not existed_before:
+                    try:
+                        directory.rmdir()
+                    except OSError:
+                        pass
+        raise
 
 
 def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:

@@ -3,7 +3,8 @@
 Status: implementation units through the TG-M16.4 reduced loop-discipline
 behavioral acceptance are complete at v0.8.0/schema v13 with Viewer snapshot
 v3. TG-M17.0 has fixed the approved v0.9.0/schema-v14 stable-identity and
-relocation contract; TG-M17.1 through TG-M17.5 remain sequential
+relocation contract, and TG-M17.1 has completed its non-public schema and
+repository staging slice. TG-M17.2 through TG-M17.5 remain sequential
 implementation units. TG-M16.3 is cancelled. TG-M12.3 remains blocked on a
 future Issue Skill intake contract.
 The default-browser launch follow-up remains requirements-only pending design
@@ -3288,7 +3289,7 @@ Lane: `TG-M17-IDENTITY`
 Lane order: 20
 Review tier: Tier 2
 Depends on: completed TG-M17.0
-Status: ready
+Status: complete
 
 Intended outcome:
 

@@ -3,9 +3,10 @@
 Status: implemented through the TG-M16.4 reduced loop-discipline behavioral
 acceptance at release v0.8.0/schema v13 and Viewer snapshot v3. TG-M17.0 fixes
 the approved stable-identity and relocation target for release v0.9.0/schema
-v14 without activating it; TG-M17.1 through TG-M17.5 own staged
-implementation and synchronization. Viewer snapshot v3 is retained. TG-M12.3
-Issue adapter remains blocked.
+v14 without activating it. TG-M17.1's schema and repository primitives are
+implemented as a non-public staging slice; TG-M17.2 through TG-M17.5 retain
+ownership of production activation, integration, and synchronization. Viewer
+snapshot v3 is retained. TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.

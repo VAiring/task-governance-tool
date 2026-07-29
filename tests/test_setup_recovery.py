@@ -103,7 +103,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 RECOVERY_WRITES,
             )
             self.assertEqual(preview_data["completed_writes"], [])
-            self.assertEqual(preview_data["schema_from"], 13)
+            self.assertEqual(preview_data["schema_from"], 14)
             self.assertFalse(preview_data["maintenance_enabled"])
             self.assertEqual(
                 {
@@ -208,7 +208,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     "planned_writes": [],
                     "completed_writes": [],
                     "schema_from": None,
-                    "schema_to": 13,
+                    "schema_to": 14,
                     "maintenance_enabled": None,
                     "backup_interval_minutes": None,
                     "backup_generations": None,
@@ -288,7 +288,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    13,
+                    14,
                 )
                 self.assertEqual(
                     (
@@ -397,7 +397,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                         connection.execute(
                             "SELECT MAX(version) FROM schema_migrations"
                         ).fetchone()[0],
-                        13,
+                        14,
                     )
                     self.assertEqual(
                         connection.execute(

@@ -396,7 +396,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("unstaged", release_normalized)
         self.assertIn("untracked", release_normalized)
         self.assertIn('__version__ = "0.8.0"', runtime_init)
-        self.assertIn("SCHEMA_VERSION = 13", storage)
+        self.assertIn("SCHEMA_VERSION = 14", storage)
         self.assertIn("SNAPSHOT_VERSION = 3", viewer)
         self.assertIn("omits", release_note)
         self.assertIn("## Result\n\nPASS", forward_note)
@@ -461,7 +461,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
             initialized = run("setup")
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
-            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 13)
+            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 14)
             added = run(
                 "task",
                 "add",
@@ -721,7 +721,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                     canonical_test_path(install.skill_root / "state")
                 )
             )
-            self.assertEqual(payload["data"]["schema_to"], 13)
+            self.assertEqual(payload["data"]["schema_to"], 14)
 
             from_skill_root = install.run(
                 "doctor",

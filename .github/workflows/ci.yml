@@ -188,8 +188,8 @@ jobs:
           if ($runtimeInit -notmatch '__version__\s*=\s*"0\.8\.0"') {
             throw 'Runtime package version is not 0.8.0'
           }
-          if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*13') {
-            throw 'Runtime schema version is not 13'
+          if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*14') {
+            throw 'Runtime schema version is not 14'
           }
           if ($viewer -notmatch 'SNAPSHOT_VERSION\s*=\s*3') {
             throw 'Viewer snapshot version is not 3'

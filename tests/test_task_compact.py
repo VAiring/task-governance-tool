@@ -618,10 +618,7 @@ class CompactTaskCliTests(unittest.TestCase):
                     )
                     self.assertEqual(
                         payload["errors"][0]["message"],
-                        (
-                            "diagnostic details omitted to satisfy the "
-                            "bounded output limit"
-                        ),
+                        "task database belongs to a different project",
                     )
                     normalized = mismatch.stdout.replace(b"\r\n", b"\n")
                     portable = normalized.replace(b"\n", b"\r\n")

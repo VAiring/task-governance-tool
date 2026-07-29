@@ -2,9 +2,10 @@
 
 Status: implemented through the TG-M16.4 reduced loop-discipline behavioral
 acceptance at v0.8.0/schema v13 with Viewer snapshot v3. TG-M17.0 has fixed the
-approved v0.9.0/schema-v14 stable-identity and relocation target, while
-TG-M17.1 through TG-M17.5 remain implementation work. The TG-M12.3 Issue
-adapter remains blocked.
+approved v0.9.0/schema-v14 stable-identity and relocation target, and TG-M17.1
+has completed its non-public schema and repository staging slice. TG-M17.2
+through TG-M17.5 remain implementation work. The TG-M12.3 Issue adapter
+remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 Reduced TG-M16 has a fixed formal contract, the TG-M16.1 runtime route, active
@@ -1162,11 +1163,12 @@ completion evidence is maintained in SQLite.
 The reduced TG-M16.0 formal contract, TG-M16.1 runtime route, TG-M16.2 active
 guidance, and TG-M16.4 package/behavioral acceptance are complete. TG-M16.3 is
 cancelled.
-TG-M17.0's five-document stable-identity/relocation contract is complete.
-TG-M17.1 through TG-M17.5 remain the sequential implementation lane. Before
-M17.4 and M17.5 start, their stored Task Contracts require explicit authority
-to replace two stale references to cancelled M16.3 behavior; M17.5 must also
-limit root `AGENTS.md` to durable routing rather than milestone status.
+TG-M17.0's five-document stable-identity/relocation contract and TG-M17.1's
+schema-v14 identity/binding repository slice are complete. TG-M17.2 through
+TG-M17.5 remain the sequential implementation lane. Before M17.4 and M17.5
+start, their stored Task Contracts require explicit authority to replace two
+stale references to cancelled M16.3 behavior; M17.5 must also limit root
+`AGENTS.md` to durable routing rather than milestone status.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

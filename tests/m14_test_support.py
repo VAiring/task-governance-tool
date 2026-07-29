@@ -383,7 +383,29 @@ def initialize_taskgov_internal(
 def remove_v10_maintenance_for_test(connection) -> None:
     """Downgrade a current test database before exercising an older migration."""
 
-    connection.execute("DELETE FROM schema_migrations WHERE version IN (10, 11, 12, 13)")
+    connection.execute(
+        "DELETE FROM schema_migrations WHERE version IN (10, 11, 12, 13, 14)"
+    )
+    for trigger in (
+        "trg_project_meta_identity_immutable",
+        "trg_project_meta_no_delete",
+        "trg_project_meta_cleanup_insert_valid",
+        "trg_project_meta_cleanup_update_valid",
+        "trg_project_path_binding_history_no_update",
+        "trg_project_path_binding_history_no_delete",
+    ):
+        connection.execute(f"DROP TRIGGER {trigger}")
+    connection.execute("DROP TABLE project_path_binding_history")
+    for column in (
+        "legacy_cleanup_fingerprint",
+        "legacy_cleanup_inventory",
+        "legacy_cleanup_pending",
+        "binding_updated_at",
+        "binding_reason",
+        "binding_generation",
+        "identity_scheme",
+    ):
+        connection.execute(f"ALTER TABLE project_meta DROP COLUMN {column}")
     connection.execute("DROP TRIGGER trg_task_events_viewer_generation")
     connection.execute("DROP TABLE viewer_maintenance_state")
     connection.execute("DROP TABLE task_checkpoints")

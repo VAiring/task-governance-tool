@@ -319,10 +319,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                 payload = json.loads(result.stdout.decode("utf-8"))
                 self.assertEqual(
                     payload["errors"][0]["message"],
-                    (
-                        "diagnostic details omitted to satisfy the "
-                        "bounded output limit"
-                    ),
+                    "task database belongs to a different project",
                 )
             for result in (rejected, abbreviated_parse):
                 payload = json.loads(result.stdout.decode("utf-8"))

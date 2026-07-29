@@ -3,10 +3,12 @@
 Status: implemented through the TG-M16.4 reduced loop-discipline behavioral
 acceptance at release v0.8.0/schema v13 and Viewer snapshot v3. The TG-M17.0
 stable-identity and relocation contract is complete as an approved target for
-release v0.9.0/schema v14; it is not active runtime behavior until its owning
-TG-M17 implementation and synchronization units complete. Viewer snapshot v3
-is retained. TG-M12.3 Issue adapter remains blocked on a future intake
-contract.
+release v0.9.0/schema v14. TG-M17.1's schema-v14 identity and binding
+repository primitives are implemented as a non-public staging slice; fixed
+production resolution, fresh UUID setup, and relocation remain inactive until
+their owning TG-M17 implementation and synchronization units complete. Viewer
+snapshot v3 is retained. TG-M12.3 Issue adapter remains blocked on a future
+intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`

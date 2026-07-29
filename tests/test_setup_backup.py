@@ -431,12 +431,12 @@ class SetupBackupTests(unittest.TestCase):
 
             self.assertEqual(len(canonical_files(target)), 2)
             with (
-                mock.patch.object(storage_service, "SCHEMA_VERSION", 14),
-                mock.patch.object(backup_service, "SCHEMA_VERSION", 14),
+                mock.patch.object(storage_service, "SCHEMA_VERSION", 15),
+                mock.patch.object(backup_service, "SCHEMA_VERSION", 15),
             ):
                 with self.assertRaisesRegex(
                     StorageError,
-                    "does not match supported version 14",
+                    "does not match supported version 15",
                 ):
                     read_managed_backup_repository(target)
                 third = publish(target, 2, 3)

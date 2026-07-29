@@ -379,7 +379,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             connection.execute(
                 "SELECT MAX(version) FROM schema_migrations"
             ).fetchone()[0],
-            14,
+            15,
         )
         generations = connection.execute(
             """
@@ -430,7 +430,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             artifacts[0].name,
         )
 
-    def test_v2_fixture_setup_migrates_to_v14_without_losing_observed_state(self):
+    def test_v2_fixture_setup_migrates_to_v15_without_losing_observed_state(self):
         fixture = load_fixture()
         self.assertEqual(fixture["schema_version"], 2)
         self.assertEqual(len(fixture["tasks"]), 12)
@@ -460,7 +460,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(migrated)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 2)
-            self.assertEqual(payload["data"]["schema_to"], 14)
+            self.assertEqual(payload["data"]["schema_to"], 15)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 [
@@ -536,6 +536,63 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                     self.assertEqual(row["review_target_base_revision"], "")
                     self.assertEqual(row["review_target_generation"], 0)
                     self.assertEqual(row["current_contract_revision"], 0)
+                    self.assertEqual(
+                        row["completion_history_coverage"],
+                        "legacy_unknown",
+                    )
+                cycle_rows = connection.execute(
+                    """
+                    SELECT completion_cycle_id, task_id,
+                           saved_cycle_ordinal, origin, completeness,
+                           completion_evidence_kind,
+                           completion_evidence_revision,
+                           completion_commit_hash,
+                           verification_expectation,
+                           verification_attestation,
+                           gate_basis_version, review_basis_kind
+                      FROM task_completion_cycles
+                     ORDER BY task_id
+                    """
+                ).fetchall()
+                self.assertEqual(len(cycle_rows), 9)
+                self.assertEqual(
+                    [row["task_id"] for row in cycle_rows],
+                    sorted(expected_hashes),
+                )
+                for row in cycle_rows:
+                    expected_hash = expected_hashes[row["task_id"]]
+                    self.assertEqual(row["saved_cycle_ordinal"], 1)
+                    self.assertEqual(row["origin"], "legacy_current_done")
+                    self.assertEqual(row["completeness"], "partial")
+                    self.assertEqual(
+                        row["completion_evidence_kind"],
+                        "legacy_unverified",
+                    )
+                    self.assertEqual(
+                        row["completion_evidence_revision"],
+                        expected_hash,
+                    )
+                    self.assertEqual(
+                        row["completion_commit_hash"],
+                        expected_hash,
+                    )
+                    self.assertEqual(
+                        row["verification_expectation"],
+                        "specified",
+                    )
+                    self.assertIsNone(row["verification_attestation"])
+                    self.assertEqual(row["gate_basis_version"], 0)
+                    self.assertEqual(row["review_basis_kind"], "unknown")
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*)
+                          FROM task_events
+                         WHERE completion_cycle_id IS NULL
+                        """
+                    ).fetchone()[0],
+                    191,
+                )
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
                 self.assertEqual(
@@ -550,6 +607,16 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 )
                 self.assert_single_seeded_managed_backup(connection, db_path)
                 before_second_init = durable_projection(connection)
+                before_second_cycles = [
+                    tuple(row)
+                    for row in connection.execute(
+                        """
+                        SELECT *
+                          FROM task_completion_cycles
+                         ORDER BY task_id, saved_cycle_ordinal
+                        """
+                    )
+                ]
 
             repeated = install.run("setup", "--json")
             self.assertEqual(repeated.returncode, 0, repeated.stderr)
@@ -559,9 +626,22 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             self.assertEqual(repeated_data["completed_writes"], [])
             with closing(sqlite3.connect(db_path)) as connection:
                 self.assertEqual(durable_projection(connection), before_second_init)
+                self.assertEqual(
+                    [
+                        tuple(row)
+                        for row in connection.execute(
+                            """
+                            SELECT *
+                              FROM task_completion_cycles
+                             ORDER BY task_id, saved_cycle_ordinal
+                            """
+                        )
+                    ],
+                    before_second_cycles,
+                )
                 self.assert_single_seeded_managed_backup(connection, db_path)
 
-    def test_v5_v6_v12_and_v13_setup_migrate_to_v14_with_review_evidence_intact(self):
+    def test_v5_v6_v12_and_v13_setup_migrate_to_v15_with_review_evidence_intact(self):
         fixture = load_fixture()
         for source_version in (5, 6, 12, 13):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
@@ -584,7 +664,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 payload = json_payload(migrated)
                 self.assertEqual(payload["data"]["schema_from"], source_version)
-                self.assertEqual(payload["data"]["schema_to"], 14)
+                self.assertEqual(payload["data"]["schema_to"], 15)
                 self.assertEqual(
                     payload["data"]["completed_writes"],
                     [
@@ -797,7 +877,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(recovered)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 12)
-            self.assertEqual(payload["data"]["schema_to"], 14)
+            self.assertEqual(payload["data"]["schema_to"], 15)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 [

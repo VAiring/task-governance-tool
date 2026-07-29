@@ -70,6 +70,15 @@ PUBLIC_TASK_FIELDS = (
     "completed_at",
 )
 
+PUBLIC_EVENT_FIELDS = (
+    "task_event_id",
+    "task_id",
+    "project_id",
+    "event_type",
+    "summary",
+    "created_at",
+)
+
 TASK_SHOW_FIELDS = PUBLIC_TASK_FIELDS + (
     "completion_commit_required",
     "completion_commit_hash",
@@ -649,8 +658,10 @@ def row_to_internal_task(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 
 
-def row_to_event(row: sqlite3.Row) -> dict[str, Any]:
-    return dict(row)
+def row_to_event(
+    row: dict[str, Any] | sqlite3.Row,
+) -> dict[str, Any]:
+    return {field: row[field] for field in PUBLIC_EVENT_FIELDS}
 
 
 def find_task_ids_by_completion_commit_hash(
@@ -709,7 +720,7 @@ def create_task_event(
         """,
         event,
     )
-    return event
+    return row_to_event(event)
 
 
 def begin_task_write(
@@ -1478,14 +1489,14 @@ def list_current_tasks(
         if row["latest_event_id"] is None:
             task["latest_event"] = {}
         else:
-            task["latest_event"] = {
+            task["latest_event"] = row_to_event({
                 "task_event_id": row["latest_event_id"],
                 "task_id": task["task_id"],
                 "project_id": task["project_id"],
                 "event_type": row["latest_event_type"],
                 "summary": row["latest_event_summary"],
                 "created_at": row["latest_event_created_at"],
-            }
+            })
         task["latest_checkpoint"] = read_latest_checkpoint(
             connection,
             project_id=project.project_id,

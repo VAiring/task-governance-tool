@@ -25,7 +25,8 @@ TOKEN_TTL_SECONDS = 900
 TOKEN_MAX_ASCII_BYTES = 2_048
 MAX_BINDING_GENERATION = 9_223_372_036_854_775_806
 SUPPORTED_SOURCE_SCHEMA_MIN = 1
-SUPPORTED_SOURCE_SCHEMA_MAX = 14
+SUPPORTED_SOURCE_SCHEMA_MAX = 15
+LEGACY_PROJECTS_SOURCE_SCHEMA_MAX = 14
 
 IDENTITY_SCHEMES = frozenset({"legacy_path_v1", "uuid_v1"})
 SOURCE_LAYOUTS = frozenset({"fixed_current_v1", "legacy_projects_v1"})
@@ -166,6 +167,11 @@ class RelocationContext:
             or not SUPPORTED_SOURCE_SCHEMA_MIN
             <= self.source_schema_version
             <= SUPPORTED_SOURCE_SCHEMA_MAX
+            or (
+                self.source_layout == "legacy_projects_v1"
+                and self.source_schema_version
+                > LEGACY_PROJECTS_SOURCE_SCHEMA_MAX
+            )
         ):
             raise _invalid()
 

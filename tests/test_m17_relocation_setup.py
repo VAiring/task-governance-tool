@@ -15,12 +15,14 @@ from unittest import mock
 try:
     from m14_test_support import (
         PhysicalInstall,
+        create_v14_target,
         json_payload,
         make_physical_install,
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
         PhysicalInstall,
+        create_v14_target,
         json_payload,
         make_physical_install,
     )
@@ -36,7 +38,6 @@ from task_governance_tool.relocation import (
 from task_governance_tool.state_resolver import resolve_setup_project_state
 from task_governance_tool.state_transition import cleanup_roots
 from task_governance_tool.storage import (
-    initialize_database,
     initialize_uuid_database,
     project_identity,
 )
@@ -61,6 +62,8 @@ FIXED_WRITES = [
 ]
 LEGACY_WRITES = [
     "legacy_state_publish",
+    "migration_backup",
+    "database_migrate",
     "maintenance_configure",
     "project_binding_update",
     "viewer_publish",
@@ -158,7 +161,7 @@ def make_moved_unconfigured_fixed_install(root: Path) -> PhysicalInstall:
 
 def make_moved_legacy_install(root: Path) -> PhysicalInstall:
     install = make_physical_install(root)
-    initialize_database(install.legacy_target)
+    create_v14_target(install.legacy_target)
     return relocate_install(
         install,
         destination=root / "moved-project",
@@ -282,8 +285,8 @@ class M17RelocationSetupTests(unittest.TestCase):
         self.assertEqual(result.data["planned_writes"], [])
         self.assertEqual(result.data["completed_writes"], [])
         self.assertIsNone(result.data["status"])
-        self.assertEqual(result.data["schema_from"], 14)
-        self.assertEqual(result.data["schema_to"], 14)
+        self.assertEqual(result.data["schema_from"], 15)
+        self.assertEqual(result.data["schema_to"], 15)
         self.assertTrue(result.data["maintenance_enabled"])
         self.assertEqual(result.data["backup_interval_minutes"], 30)
         self.assertEqual(result.data["backup_generations"], 3)
@@ -360,7 +363,7 @@ class M17RelocationSetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             install = make_physical_install(Path(temporary))
             configure_viewer_refresh(install)
-            initialize_database(install.legacy_target)
+            create_v14_target(install.legacy_target)
 
             migrated = run_service_setup(
                 install,
@@ -373,6 +376,8 @@ class M17RelocationSetupTests(unittest.TestCase):
                 migrated.data["completed_writes"],
                 [
                     "legacy_state_publish",
+                    "migration_backup",
+                    "database_migrate",
                     "maintenance_configure",
                     "viewer_publish",
                     "legacy_state_cleanup",
@@ -405,8 +410,8 @@ class M17RelocationSetupTests(unittest.TestCase):
                     "status": "relocation_preview",
                     "planned_writes": FIXED_WRITES,
                     "completed_writes": [],
-                    "schema_from": 14,
-                    "schema_to": 14,
+                    "schema_from": 15,
+                    "schema_to": 15,
                     "maintenance_enabled": True,
                     "backup_interval_minutes": 30,
                     "backup_generations": 3,

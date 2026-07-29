@@ -13,6 +13,7 @@ from tests.m14_test_support import (
     create_v11_database,
     create_v12_database,
     create_v12_target,
+    create_v14_target,
     create_v9_database,
     file_snapshot,
     make_physical_install,
@@ -35,7 +36,6 @@ from task_governance_tool.storage import (
     compare_and_swap_project_binding,
     connect,
     connect_initialized,
-    initialize_database,
     apply_viewer_maintenance_migration,
     project_identity,
 )
@@ -177,7 +177,7 @@ class M17ConsumerHardeningTests(unittest.TestCase):
             install = make_physical_install(Path(tmp))
             if legacy:
                 target = install.legacy_target
-                initialize_database(target)
+                create_v14_target(target)
                 database = install.legacy_db_path
                 if with_backup:
                     with backup_service.managed_backup_lock(target):
@@ -289,7 +289,7 @@ class M17ConsumerHardeningTests(unittest.TestCase):
                 {
                     "code": "unreadable",
                     "schema_version": None,
-                    "required_schema_version": 14,
+                    "required_schema_version": 15,
                 },
             )
             self.assertEqual(
@@ -407,7 +407,7 @@ class M17ConsumerHardeningTests(unittest.TestCase):
                         install.db_path.unlink()
                     else:
                         install = make_physical_install(Path(tmp))
-                        initialize_database(install.legacy_target)
+                        create_v14_target(install.legacy_target)
                         candidate = install.legacy_db_path
                     with closing(connect(candidate)) as connection:
                         connection.execute("DROP TABLE task_checkpoints")

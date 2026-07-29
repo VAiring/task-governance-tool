@@ -6,8 +6,15 @@ from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
-from tests.m14_test_support import file_snapshot, make_physical_install
-from tests.test_state_resolver import create_backup_artifact
+from tests.m14_test_support import (
+    create_v14_target,
+    file_snapshot,
+    make_physical_install,
+)
+from tests.test_state_resolver import (
+    create_backup_artifact,
+    insert_generation_rows,
+)
 
 from task_governance_tool import setup as setup_service
 from task_governance_tool.state_resolver import resolve_project_state
@@ -16,8 +23,6 @@ from task_governance_tool.storage import (
     SCHEMA_VERSION,
     connect_readonly,
     current_schema_version,
-    initialize_database,
-    record_managed_backup,
 )
 
 
@@ -83,17 +88,17 @@ def _run_setup(install):
 
 def _build_positive_source(install, shape: _PositiveShape):
     target = install.legacy_target
-    initialize_database(target)
+    create_v14_target(target)
     old_artifacts: list[Path] = []
     for index in range(1, 21):
         metadata = _metadata(index, retention=20)
         old_artifacts.append(create_backup_artifact(target, metadata))
-        record_managed_backup(target, metadata)
+        insert_generation_rows(target, (metadata,))
 
     newest = _metadata(21, retention=1)
     create_backup_artifact(target, newest)
     if shape.newest_row_present:
-        record_managed_backup(target, newest)
+        insert_generation_rows(target, (newest,))
 
     if shape.row_only_oldest:
         old_artifacts[0].unlink()
@@ -110,7 +115,7 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
         for shape in POSITIVE_SHAPES:
             with self.subTest(shape=shape.name), tempfile.TemporaryDirectory() as tmp:
                 install = make_physical_install(Path(tmp))
-                legacy_target, newest = _build_positive_source(install, shape)
+                legacy_target, _ = _build_positive_source(install, shape)
                 legacy_project_id = legacy_target.project.project_id
 
                 result = _run_setup(install)
@@ -167,13 +172,13 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
                     )
 
                 self.assertEqual(project_id, legacy_project_id)
-                self.assertEqual(
-                    generations,
-                    [(newest.generation_id, 1)],
-                )
+                self.assertEqual(len(generations), 1)
+                generation_id, retention = generations[0]
+                self.assertRegex(generation_id, r"^tg_backup_[0-9a-f]{32}$")
+                self.assertEqual(retention, 1)
                 self.assertEqual(
                     maintenance,
-                    (newest.generation_id, 1, 1),
+                    (generation_id, 1, 1),
                 )
                 backup_files = sorted(
                     resolution.target.resolved_backups_path.glob(
@@ -183,7 +188,7 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
                 )
                 self.assertEqual(len(backup_files), 1)
                 self.assertIn(
-                    newest.generation_id[10:],
+                    generation_id[10:],
                     backup_files[0].name,
                 )
 
@@ -192,7 +197,7 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
             with self.subTest(shape=shape), tempfile.TemporaryDirectory() as tmp:
                 install = make_physical_install(Path(tmp))
                 target = install.legacy_target
-                initialize_database(target)
+                create_v14_target(target)
 
                 if shape == "two_file_only":
                     create_backup_artifact(
@@ -204,11 +209,13 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
                         _metadata(2, retention=1),
                     )
                 else:
-                    for index in range(1, 22):
-                        record_managed_backup(
-                            target,
-                            _metadata(index, retention=20),
-                        )
+                    insert_generation_rows(
+                        target,
+                        tuple(
+                            _metadata(index, retention=20)
+                            for index in range(1, 22)
+                        ),
+                    )
                     create_backup_artifact(
                         target,
                         _metadata(22, retention=1),

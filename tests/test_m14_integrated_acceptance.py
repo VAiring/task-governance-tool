@@ -299,7 +299,7 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
         self.assertEqual(manifest["package_version"], __version__)
-        self.assertEqual(SCHEMA_VERSION, 14)
+        self.assertEqual(SCHEMA_VERSION, 15)
         self.assertEqual(SNAPSHOT_VERSION, 3)
         self.assertIn(
             "scripts/task_governance_tool/viewer_maintenance.py",
@@ -361,7 +361,7 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         self.assertIn("unittest discover -s tests", workflow)
         self.assertIn("doctor --repo . --read-only --json", workflow)
         self.assertIn(__version__, workflow)
-        self.assertRegex(workflow, r"SCHEMA_VERSION[^\r\n]*14")
+        self.assertRegex(workflow, r"SCHEMA_VERSION[^\r\n]*15")
         self.assertNotIn("web export --help", workflow)
 
     def test_m16_setup_does_not_seed_tasks_or_adopt_project_instructions(self):

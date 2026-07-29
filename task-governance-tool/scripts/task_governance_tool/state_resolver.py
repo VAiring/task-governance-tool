@@ -41,6 +41,7 @@ from task_governance_tool.storage import (
     validate_identity_project_id,
     validate_current_database_binding,
     validate_current_database_structure,
+    validate_completion_cycle_storage,
     validate_lower_hex_64,
     validate_migration_backup_metadata,
     validate_operational_journal_state,
@@ -51,6 +52,7 @@ LayoutState = Literal["missing", "fixed_current_v1", "legacy_projects_v1"]
 BindingState = Literal["unbound", "matching", "relocation_required"]
 
 MAX_LEGACY_PROJECT_ENTRIES = 64
+LEGACY_PROJECTS_SCHEMA_MAX = 14
 MAX_MANAGED_BACKUP_ARTIFACTS = 21
 MAX_EXTRA_ARTIFACT_BYTES = 16_777_216
 
@@ -682,6 +684,8 @@ def _resolve_legacy(
     )
 
     stored = database.stored_project
+    if stored.source_schema_version > LEGACY_PROJECTS_SCHEMA_MAX:
+        raise _ResolverFailure("project_state_unreadable")
     if candidate.name != stored.project_id:
         raise _ResolverFailure("project_mismatch")
     if stored.identity_scheme != "legacy_path_v1":
@@ -821,12 +825,18 @@ def _inspect_database(
         ).fetchall():
             raise _ResolverFailure("project_state_unreadable")
 
-        if version == 14:
-            stored = _read_v14_project(connection, version)
-            validate_current_database_structure(
+        if version >= 14:
+            stored = _read_bound_project(connection, version)
+            if version == SCHEMA_VERSION:
+                validate_current_database_structure(
+                    connection,
+                    stored.project_id,
+                )
+            elif read_viewer_maintenance(
                 connection,
                 stored.project_id,
-            )
+            ) is None:
+                raise _ResolverFailure("project_state_unreadable")
         else:
             stored = _read_legacy_project(connection, version)
             if (
@@ -866,6 +876,7 @@ def _inspect_database(
             and stored.canonical_path_hash
             == doctor_current_root.canonical_path_hash
         ):
+            validate_completion_cycle_storage(connection)
             doctor_state = read_doctor_state(
                 connection,
                 _database_target(
@@ -953,7 +964,7 @@ def _read_legacy_project(
     )
 
 
-def _read_v14_project(
+def _read_bound_project(
     connection: sqlite3.Connection,
     version: int,
 ) -> StoredProjectObservation:

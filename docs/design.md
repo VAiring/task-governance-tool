@@ -1,13 +1,12 @@
 # task-governance-tool MVP Design
 
-Status: release v0.9.0/schema v14 with Viewer snapshot v3 implements
-TG-M17.0 through TG-M17.5: stable identity/binding primitives, fixed
-production resolution, fresh UUID setup, same-binding staged publication,
-explicit confirmed relocation, consumer hardening, and package acceptance are
-complete. The completed TG-M16.4 reduced-loop behavioral acceptance is
-retained. The completed TG-M18.0 completion-cycle-history design targets
-v0.10.0 but is inactive until its owning implementation units complete.
-TG-M12.3 Issue adapter remains blocked.
+Status: the published baseline remains v0.9.0/schema v14 with Viewer snapshot
+v3 and completed TG-M17 identity/storage behavior. TG-M18.0 and TG-M18.1 are
+complete: the non-public staging runtime is package v0.9.0, schema v15, and
+Viewer snapshot v3 accepting sources 5-15, without native completion capture
+or public history. TG-M18.2 through TG-M18.4 remain sequential work targeting
+v0.10.0/schema v16/Viewer snapshot v4. The completed TG-M16.4 reduced-loop
+behavioral acceptance is retained. TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -20,8 +19,8 @@ applicable only where TG-M14 does not supersede it. Sections labeled
 implemented TG-M14 section and later component designs are the current v0.8.0
 lineage; implemented TG-M17 design is the current v0.9.0
 identity/storage authority when those older boundaries differ. The approved
-TG-M18 section is future implementation authority only for its sequential
-M18.1 through M18.4 units.
+TG-M18 section is implemented through M18.1 and remains future implementation
+authority for its sequential M18.2 through M18.4 units.
 
 ## Design Summary
 

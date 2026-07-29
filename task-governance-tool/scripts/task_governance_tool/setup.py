@@ -65,6 +65,7 @@ from task_governance_tool.storage import (
     set_legacy_cleanup_pending,
     utc_now,
     validate_backup_policy,
+    validate_completion_cycle_storage,
 )
 from task_governance_tool.state_paths import (
     StatePathError,
@@ -1868,6 +1869,14 @@ def run_setup(
             if target is not None
             else _empty_setup_state()
         )
+        if (
+            target is not None
+            and state.schema_version == SCHEMA_VERSION
+        ):
+            with closing(
+                connect_snapshot_readonly(target.db_path)
+            ) as connection:
+                validate_completion_cycle_storage(connection)
     except Exception as exc:
         code, message = _storage_preflight_code(exc)
         return _preflight_failure(

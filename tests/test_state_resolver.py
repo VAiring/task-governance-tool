@@ -8,7 +8,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from tests.m14_test_support import SOURCE_SCRIPTS_ROOT
+from tests.m14_test_support import SOURCE_SCRIPTS_ROOT, create_v14_target
 
 
 if str(SOURCE_SCRIPTS_ROOT) not in sys.path:
@@ -33,7 +33,6 @@ from task_governance_tool.storage import (  # noqa: E402
     initialize_database,
     initialize_uuid_database,
     project_identity,
-    record_managed_backup,
 )
 
 
@@ -200,7 +199,7 @@ class ResolverFixture:
         repo: Path | None = None,
     ) -> DatabaseTarget:
         target = self.legacy_target(repo=repo)
-        initialize_database(target)
+        create_v14_target(target)
         return target
 
     def initialize_legacy_v1(self) -> DatabaseTarget:
@@ -271,7 +270,7 @@ class StateResolverTests(unittest.TestCase):
             self.assertEqual(resolution.binding, "matching")
             self.assertEqual(resolution.project_id, UUID_PROJECT_ID)
             self.assertEqual(resolution.stored_project.identity_scheme, "uuid_v1")
-            self.assertEqual(resolution.source_schema_version, 14)
+            self.assertEqual(resolution.source_schema_version, 15)
             self.assertIsNone(consumer_error_code(resolution))
             self.assertEqual(before, tree_snapshot(fixture.skill_root))
 
@@ -770,7 +769,7 @@ class StateResolverTests(unittest.TestCase):
                     if artifact_present:
                         create_backup_artifact(target, metadata)
                     if row_present:
-                        record_managed_backup(target, metadata)
+                        insert_generation_rows(target, (metadata,))
                     before = tree_snapshot(fixture.skill_root)
 
                     resolution = resolve_project_state(
@@ -802,7 +801,7 @@ class StateResolverTests(unittest.TestCase):
             target = fixture.initialize_legacy_v14()
             for metadata in map(backup_metadata, range(1, 21)):
                 create_backup_artifact(target, metadata)
-                record_managed_backup(target, metadata)
+                insert_generation_rows(target, (metadata,))
             in_flight = backup_metadata(21)
             create_backup_artifact(target, in_flight)
             before_pre_row = tree_snapshot(fixture.skill_root)
@@ -822,7 +821,7 @@ class StateResolverTests(unittest.TestCase):
                 tree_snapshot(fixture.skill_root),
             )
 
-            record_managed_backup(target, in_flight)
+            insert_generation_rows(target, (in_flight,))
             before_post_row = tree_snapshot(fixture.skill_root)
             post_row = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -844,7 +843,7 @@ class StateResolverTests(unittest.TestCase):
             fixture = ResolverFixture(Path(temporary))
             target = fixture.initialize_legacy_v14()
             for metadata in map(backup_metadata, range(1, 21)):
-                record_managed_backup(target, metadata)
+                insert_generation_rows(target, (metadata,))
             newest = backup_metadata(21)
             newest_path = create_backup_artifact(target, newest)
             target.db_path.unlink()
@@ -891,8 +890,10 @@ class StateResolverTests(unittest.TestCase):
                         create_backup_artifact(target, backup_metadata(1))
                         create_backup_artifact(target, backup_metadata(2))
                     elif shape == "second row-only":
-                        record_managed_backup(target, backup_metadata(1))
-                        record_managed_backup(target, backup_metadata(2))
+                        insert_generation_rows(
+                            target,
+                            (backup_metadata(1), backup_metadata(2)),
+                        )
                     elif shape == "twenty-two rows":
                         insert_generation_rows(
                             target,

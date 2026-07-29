@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import sqlite3
 import uuid
 from collections.abc import Callable
@@ -19,7 +20,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 SQLITE_INT64_MAX = (1 << 63) - 1
 IDENTITY_SCHEMES = {"legacy_path_v1", "uuid_v1"}
 BINDING_REASONS = {
@@ -32,6 +33,10 @@ LEGACY_PROJECT_ID_PATTERN = re.compile(
     rf"^[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{{{PROJECT_ID_HASH_LENGTH}}}$"
 )
 UUID_PROJECT_ID_PATTERN = re.compile(r"^tg_project_([0-9a-f]{32})$")
+COMPLETION_CYCLE_ID_PATTERN = re.compile(
+    r"^tg_completion_cycle_[0-9a-f]{16}$"
+)
+COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE = 400
 MANAGED_BACKUP_FILENAME_PATTERN = re.compile(
     r"^backups/taskgov-backup-v1_\d{8}T\d{6}Z_"
     r"[0-9a-f]{32}_r(?:[1-9]|1[0-9]|20)\.sqlite$"
@@ -216,6 +221,61 @@ class ProjectPathBinding:
     reason: str
     confirmation_token_digest: str | None
     bound_at: str
+
+
+@dataclass(frozen=True)
+class CompletionGateBasis:
+    version: int
+    kind: str
+    required_independent_passes: int | None
+    qualifying_independent_passes: int | None
+    changes_requested_count: int | None
+    open_high_count: int | None
+    open_medium_count: int | None
+    fresh_review_required_count: int | None
+    qualifying_receipt_ids: tuple[str, ...] = field(repr=False)
+
+
+@dataclass(frozen=True)
+class CompletionCycle:
+    completion_cycle_id: str
+    project_id: str
+    task_id: str
+    saved_cycle_ordinal: int
+    origin: str
+    completeness: str
+    completed_at: str | None
+    recorded_at: str
+    contract_revision: int
+    review_tier: int
+    verification_expectation: str
+    verification_attestation: bool | None
+    completion_evidence_kind: str
+    completion_evidence_revision: str = field(repr=False)
+    completion_evidence_reason: str = field(repr=False)
+    external_revision_approved: bool
+    completion_commit_required: bool
+    completion_commit_hash: str = field(repr=False)
+    review_target_kind: str
+    review_target_value: str = field(repr=False)
+    review_target_base_revision: str = field(repr=False)
+    review_target_generation: int
+    gate_basis: CompletionGateBasis
+
+
+@dataclass(frozen=True)
+class CompletionHistory:
+    total: int
+    legacy_history_incomplete: bool
+    cycles: tuple[CompletionCycle, ...]
+
+    @property
+    def returned_count(self) -> int:
+        return len(self.cycles)
+
+    @property
+    def truncated(self) -> bool:
+        return self.returned_count < self.total
 
 
 def skill_root_from_script(script_path: str | os.PathLike[str]) -> Path:
@@ -906,6 +966,7 @@ _SCHEMA_TABLE_INTRODUCED_VERSION = {
     "task_checkpoints": 12,
     "viewer_maintenance_state": 13,
     "project_path_binding_history": 14,
+    "task_completion_cycles": 15,
 }
 
 _SCHEMA_INDEX_INTRODUCED_VERSION = {
@@ -925,6 +986,10 @@ _SCHEMA_INDEX_INTRODUCED_VERSION = {
     "idx_effort_bases_project": 9,
     "idx_managed_backup_project_published": 11,
     "idx_checkpoints_project_task_created": 12,
+    "idx_tasks_project_task_identity": 15,
+    "idx_review_receipts_completion_cycle_reference": 15,
+    "idx_task_completion_cycles_task_ordinal": 15,
+    "idx_task_events_completion_cycle": 15,
 }
 
 _SCHEMA_TRIGGER_INTRODUCED_VERSION = {
@@ -936,6 +1001,10 @@ _SCHEMA_TRIGGER_INTRODUCED_VERSION = {
     "trg_project_meta_cleanup_update_valid": 14,
     "trg_project_path_binding_history_no_update": 14,
     "trg_project_path_binding_history_no_delete": 14,
+    "trg_task_completion_cycles_no_update": 15,
+    "trg_task_completion_cycles_no_delete": 15,
+    "trg_tasks_completion_history_coverage_immutable": 15,
+    "trg_task_events_completion_cycle_link_immutable": 15,
 }
 
 _SCHEMA_COLUMN_INTRODUCED_VERSION = {
@@ -960,6 +1029,8 @@ _SCHEMA_COLUMN_INTRODUCED_VERSION = {
     "column:project_meta.legacy_cleanup_pending": 14,
     "column:project_meta.legacy_cleanup_inventory": 14,
     "column:project_meta.legacy_cleanup_fingerprint": 14,
+    "column:tasks.completion_history_coverage": 15,
+    "column:task_events.completion_cycle_id": 15,
 }
 
 def _schema_requirement_introduced_version(requirement: str) -> int:
@@ -1086,6 +1157,7 @@ def required_schema_objects_missing(
             "review_target_generation",
             "review_target_base_revision",
             "current_contract_revision",
+            "completion_history_coverage",
         }
         missing.extend(
             f"column:tasks.{name}" for name in sorted(required_task_columns - task_columns)
@@ -1100,10 +1172,56 @@ def required_schema_objects_missing(
             "event_type",
             "summary",
             "created_at",
+            "completion_cycle_id",
         }
         missing.extend(
             f"column:task_events.{name}"
             for name in sorted(required_event_columns - event_columns)
+        )
+    if "task_completion_cycles" in tables:
+        cycle_columns = {
+            str(row["name"])
+            for row in connection.execute(
+                "PRAGMA table_info(task_completion_cycles)"
+            ).fetchall()
+        }
+        required_cycle_columns = {
+            "completion_cycle_id",
+            "project_id",
+            "task_id",
+            "saved_cycle_ordinal",
+            "origin",
+            "completeness",
+            "completed_at",
+            "recorded_at",
+            "contract_revision",
+            "review_tier",
+            "verification_expectation",
+            "verification_attestation",
+            "completion_evidence_kind",
+            "completion_evidence_revision",
+            "completion_evidence_reason",
+            "external_revision_approved",
+            "completion_commit_required",
+            "completion_commit_hash",
+            "review_target_kind",
+            "review_target_value",
+            "review_target_base_revision",
+            "review_target_generation",
+            "gate_basis_version",
+            "review_basis_kind",
+            "required_independent_passes",
+            "qualifying_independent_passes",
+            "changes_requested_count",
+            "open_high_count",
+            "open_medium_count",
+            "fresh_review_required_count",
+            "qualifying_receipt_id_1",
+            "qualifying_receipt_id_2",
+        }
+        missing.extend(
+            f"column:task_completion_cycles.{name}"
+            for name in sorted(required_cycle_columns - cycle_columns)
         )
     if "project_meta" in tables:
         project_column_rows = connection.execute("PRAGMA table_info(project_meta)").fetchall()
@@ -2757,7 +2875,10 @@ def apply_project_identity_bindings_migration(
     existing_version = current_schema_version(connection)
     if existing_version >= 14:
         if missing_migration_versions(connection, existing_version) or (
-            required_schema_objects_missing(connection)
+            required_schema_objects_missing(
+                connection,
+                schema_version=existing_version,
+            )
         ):
             raise StorageError(
                 "migration_required",
@@ -3063,6 +3184,2140 @@ def apply_project_identity_bindings_migration(
         raise
 
 
+def completion_cycle_history_schema_statements() -> tuple[str, ...]:
+    """Return the exact schema-v15 objects in their migration order."""
+
+    return (
+        """
+        ALTER TABLE tasks
+          ADD COLUMN completion_history_coverage TEXT NOT NULL
+            DEFAULT 'legacy_unknown'
+            CHECK (completion_history_coverage IN ('legacy_unknown', 'complete'))
+        """,
+        """
+        CREATE UNIQUE INDEX idx_tasks_project_task_identity
+          ON tasks(project_id, task_id)
+        """,
+        """
+        CREATE UNIQUE INDEX idx_review_receipts_completion_cycle_reference
+          ON review_receipts(
+            project_id, task_id, target_kind, target_value,
+            target_base_revision, target_generation, review_receipt_id
+          )
+        """,
+        """
+        CREATE TABLE task_completion_cycles (
+          completion_cycle_id TEXT PRIMARY KEY
+            CHECK (
+              length(completion_cycle_id) = 36
+              AND substr(completion_cycle_id, 1, 20) = 'tg_completion_cycle_'
+              AND substr(completion_cycle_id, 21) NOT GLOB '*[^0-9a-f]*'
+            ),
+          project_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          saved_cycle_ordinal INTEGER NOT NULL
+            CHECK (saved_cycle_ordinal >= 1),
+
+          origin TEXT NOT NULL
+            CHECK (origin IN ('native_done', 'legacy_current_done')),
+          completeness TEXT NOT NULL
+            CHECK (completeness IN ('complete', 'partial')),
+          completed_at TEXT,
+          recorded_at TEXT NOT NULL,
+
+          contract_revision INTEGER NOT NULL CHECK (contract_revision >= 0),
+          review_tier INTEGER NOT NULL CHECK (review_tier IN (0, 1, 2)),
+          verification_expectation TEXT NOT NULL
+            CHECK (verification_expectation IN ('specified', 'unspecified')),
+          verification_attestation INTEGER
+            CHECK (
+              verification_attestation IS NULL
+              OR verification_attestation IN (0, 1)
+            ),
+
+          completion_evidence_kind TEXT NOT NULL
+            CHECK (completion_evidence_kind IN (
+              'none', 'git_commit', 'external_revision',
+              'commit_not_required', 'legacy_unverified'
+            )),
+          completion_evidence_revision TEXT NOT NULL
+            CHECK (length(completion_evidence_revision) <= 500),
+          completion_evidence_reason TEXT NOT NULL
+            CHECK (length(completion_evidence_reason) <= 1000),
+          external_revision_approved INTEGER NOT NULL
+            CHECK (external_revision_approved IN (0, 1)),
+          completion_commit_required INTEGER NOT NULL
+            CHECK (completion_commit_required IN (0, 1)),
+          completion_commit_hash TEXT NOT NULL
+            CHECK (length(completion_commit_hash) <= 500),
+
+          review_target_kind TEXT NOT NULL
+            CHECK (review_target_kind IN (
+              '', 'git_commit', 'diff_fingerprint',
+              'external_revision', 'git_snapshot'
+            )),
+          review_target_value TEXT NOT NULL
+            CHECK (length(review_target_value) <= 500),
+          review_target_base_revision TEXT NOT NULL
+            CHECK (length(review_target_base_revision) <= 500),
+          review_target_generation INTEGER NOT NULL
+            CHECK (review_target_generation >= 0),
+
+          gate_basis_version INTEGER NOT NULL
+            CHECK (gate_basis_version IN (0, 1)),
+          review_basis_kind TEXT NOT NULL
+            CHECK (review_basis_kind IN (
+              'unknown', 'independent_passes',
+              'self_review_fallback', 'not_required'
+            )),
+          required_independent_passes INTEGER
+            CHECK (
+              required_independent_passes IS NULL
+              OR required_independent_passes BETWEEN 0 AND 2
+            ),
+          qualifying_independent_passes INTEGER
+            CHECK (
+              qualifying_independent_passes IS NULL
+              OR qualifying_independent_passes >= 0
+            ),
+          changes_requested_count INTEGER
+            CHECK (changes_requested_count IS NULL OR changes_requested_count >= 0),
+          open_high_count INTEGER
+            CHECK (open_high_count IS NULL OR open_high_count >= 0),
+          open_medium_count INTEGER
+            CHECK (open_medium_count IS NULL OR open_medium_count >= 0),
+          fresh_review_required_count INTEGER
+            CHECK (
+              fresh_review_required_count IS NULL
+              OR fresh_review_required_count >= 0
+            ),
+          qualifying_receipt_id_1 TEXT,
+          qualifying_receipt_id_2 TEXT,
+
+          FOREIGN KEY (project_id, task_id)
+            REFERENCES tasks(project_id, task_id),
+          FOREIGN KEY (
+            project_id, task_id, review_target_kind, review_target_value,
+            review_target_base_revision, review_target_generation,
+            qualifying_receipt_id_1
+          ) REFERENCES review_receipts(
+            project_id, task_id, target_kind, target_value,
+            target_base_revision, target_generation, review_receipt_id
+          ),
+          FOREIGN KEY (
+            project_id, task_id, review_target_kind, review_target_value,
+            review_target_base_revision, review_target_generation,
+            qualifying_receipt_id_2
+          ) REFERENCES review_receipts(
+            project_id, task_id, target_kind, target_value,
+            target_base_revision, target_generation, review_receipt_id
+          ),
+
+          CHECK (
+            (review_target_kind = ''
+              AND review_target_value = ''
+              AND review_target_base_revision = ''
+              AND review_target_generation = 0)
+            OR
+            (review_target_kind = 'git_snapshot'
+              AND review_target_value != ''
+              AND review_target_base_revision != ''
+              AND review_target_generation > 0)
+            OR
+            (review_target_kind IN (
+                'git_commit', 'diff_fingerprint', 'external_revision'
+              )
+              AND review_target_value != ''
+              AND review_target_base_revision = ''
+              AND review_target_generation > 0)
+          ),
+          CHECK (
+            (completion_evidence_kind = 'none'
+              AND completeness = 'partial'
+              AND completion_evidence_revision = ''
+              AND completion_evidence_reason = ''
+              AND external_revision_approved = 0
+              AND completion_commit_required = 1
+              AND completion_commit_hash = '')
+            OR
+            (completion_evidence_kind = 'git_commit'
+              AND completion_evidence_revision != ''
+              AND completion_evidence_reason = ''
+              AND external_revision_approved = 0
+              AND completion_commit_required = 1
+              AND completion_commit_hash = completion_evidence_revision)
+            OR
+            (completion_evidence_kind = 'external_revision'
+              AND completion_evidence_revision != ''
+              AND completion_evidence_reason != ''
+              AND external_revision_approved = 1
+              AND completion_commit_required = 1
+              AND completion_commit_hash = completion_evidence_revision)
+            OR
+            (completion_evidence_kind = 'commit_not_required'
+              AND completion_evidence_revision = ''
+              AND completion_evidence_reason = ''
+              AND external_revision_approved = 0
+              AND completion_commit_required = 0
+              AND completion_commit_hash = '')
+            OR
+            (completion_evidence_kind = 'legacy_unverified'
+              AND completeness = 'partial'
+              AND completion_evidence_revision != ''
+              AND completion_evidence_reason = ''
+              AND external_revision_approved = 0
+              AND completion_commit_hash = completion_evidence_revision)
+          ),
+          CHECK (
+            (origin = 'native_done'
+              AND completeness = 'complete'
+              AND completed_at IS NOT NULL
+              AND verification_attestation = 1
+              AND review_target_kind != ''
+              AND gate_basis_version = 1)
+            OR
+            (origin = 'legacy_current_done'
+              AND completeness = 'partial'
+              AND verification_attestation IS NULL
+              AND gate_basis_version = 0)
+          ),
+          CHECK (
+            (gate_basis_version = 0
+              AND review_basis_kind = 'unknown'
+              AND required_independent_passes IS NULL
+              AND qualifying_independent_passes IS NULL
+              AND changes_requested_count IS NULL
+              AND open_high_count IS NULL
+              AND open_medium_count IS NULL
+              AND fresh_review_required_count IS NULL
+              AND qualifying_receipt_id_1 IS NULL
+              AND qualifying_receipt_id_2 IS NULL)
+            OR
+            (gate_basis_version = 1
+              AND required_independent_passes =
+                CASE review_tier WHEN 0 THEN 0 WHEN 1 THEN 1 ELSE 2 END
+              AND qualifying_independent_passes IS NOT NULL
+              AND changes_requested_count = 0
+              AND open_high_count = 0
+              AND open_medium_count = 0
+              AND fresh_review_required_count = 0
+              AND (
+                (review_basis_kind = 'independent_passes'
+                  AND review_tier IN (1, 2)
+                  AND qualifying_independent_passes >= required_independent_passes
+                  AND qualifying_receipt_id_1 IS NOT NULL
+                  AND (
+                    (review_tier = 1 AND qualifying_receipt_id_2 IS NULL)
+                    OR
+                    (review_tier = 2 AND qualifying_receipt_id_2 IS NOT NULL)
+                  ))
+                OR
+                (review_basis_kind = 'self_review_fallback'
+                  AND review_tier IN (1, 2)
+                  AND qualifying_independent_passes < required_independent_passes
+                  AND qualifying_receipt_id_1 IS NOT NULL
+                  AND qualifying_receipt_id_2 IS NULL)
+                OR
+                (review_basis_kind = 'not_required'
+                  AND review_tier = 0
+                  AND qualifying_receipt_id_1 IS NOT NULL
+                  AND qualifying_receipt_id_2 IS NULL)
+              ))
+          )
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX idx_task_completion_cycles_task_ordinal
+          ON task_completion_cycles(project_id, task_id, saved_cycle_ordinal)
+        """,
+        """
+        ALTER TABLE task_events
+          ADD COLUMN completion_cycle_id TEXT
+            REFERENCES task_completion_cycles(completion_cycle_id)
+        """,
+        """
+        CREATE INDEX idx_task_events_completion_cycle
+          ON task_events(completion_cycle_id)
+          WHERE completion_cycle_id IS NOT NULL
+        """,
+        """
+        CREATE TRIGGER trg_task_completion_cycles_no_update
+        BEFORE UPDATE ON task_completion_cycles
+        BEGIN
+          SELECT RAISE(ABORT, 'immutable_completion_cycle');
+        END
+        """,
+        """
+        CREATE TRIGGER trg_task_completion_cycles_no_delete
+        BEFORE DELETE ON task_completion_cycles
+        BEGIN
+          SELECT RAISE(ABORT, 'immutable_completion_cycle');
+        END
+        """,
+        """
+        CREATE TRIGGER trg_tasks_completion_history_coverage_immutable
+        BEFORE UPDATE OF completion_history_coverage ON tasks
+        WHEN NEW.completion_history_coverage IS NOT OLD.completion_history_coverage
+        BEGIN
+          SELECT RAISE(ABORT, 'immutable_completion_history_coverage');
+        END
+        """,
+        """
+        CREATE TRIGGER trg_task_events_completion_cycle_link_immutable
+        BEFORE UPDATE OF completion_cycle_id ON task_events
+        WHEN NEW.completion_cycle_id IS NOT OLD.completion_cycle_id
+        BEGIN
+          SELECT RAISE(ABORT, 'immutable_completion_cycle_link');
+        END
+        """,
+    )
+
+
+_MIGRATION_PRESERVATION_TABLES = (
+    "project_meta",
+    "tasks",
+    "task_events",
+    "tool_events",
+    "review_receipts",
+    "review_findings",
+    "handoff_records",
+    "task_contract_revisions",
+    "task_effort_activity",
+    "task_effort_bases",
+    "project_maintenance",
+    "managed_backup_generations",
+    "task_checkpoints",
+    "viewer_maintenance_state",
+    "project_path_binding_history",
+)
+
+
+def _quoted_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def _migration_preservation_snapshot(
+    connection: sqlite3.Connection,
+    *,
+    column_basis: dict[str, tuple[str, ...]] | None = None,
+) -> dict[str, tuple[tuple[str, ...], int, str]]:
+    result: dict[str, tuple[tuple[str, ...], int, str]] = {}
+    for table_name in _MIGRATION_PRESERVATION_TABLES:
+        columns = (
+            column_basis[table_name]
+            if column_basis is not None
+            else tuple(
+                str(row["name"])
+                for row in connection.execute(
+                    f"PRAGMA table_info({_quoted_identifier(table_name)})"
+                ).fetchall()
+            )
+        )
+        if not columns:
+            raise StorageError(
+                "migration_required",
+                "completion-history migration requires complete schema version 14",
+            )
+        projection = ", ".join(_quoted_identifier(column) for column in columns)
+        rows = [
+            list(row)
+            for row in connection.execute(
+                f"SELECT {projection} FROM {_quoted_identifier(table_name)} "
+                "ORDER BY rowid"
+            ).fetchall()
+        ]
+        payload = json.dumps(
+            rows,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        result[table_name] = (
+            columns,
+            len(rows),
+            hashlib.sha256(payload).hexdigest(),
+        )
+    return result
+
+
+def completion_history_inconsistent() -> StorageError:
+    return StorageError(
+        "completion_history_inconsistent",
+        "stored completion history is inconsistent",
+    )
+
+
+def _completion_int(
+    value: object,
+    *,
+    minimum: int = 0,
+    maximum: int = SQLITE_INT64_MAX,
+) -> int:
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise completion_history_inconsistent()
+    return value
+
+
+def _completion_bool(value: object) -> bool:
+    numeric = _completion_int(value, maximum=1)
+    return bool(numeric)
+
+
+def _validate_completion_target(
+    *,
+    kind: str,
+    value: str,
+    base_revision: str,
+    generation: int,
+) -> None:
+    from task_governance_tool.completion import FULL_GIT_OBJECT_ID
+    from task_governance_tool.reviews import DIFF_FINGERPRINT
+
+    if len(value) > 500 or len(base_revision) > 500:
+        raise completion_history_inconsistent()
+    _completion_int(generation)
+    if kind == "":
+        if value or base_revision or generation != 0:
+            raise completion_history_inconsistent()
+        return
+    if generation <= 0 or not value or value != value.strip():
+        raise completion_history_inconsistent()
+    if kind == "git_snapshot":
+        if (
+            DIFF_FINGERPRINT.fullmatch(value) is None
+            or FULL_GIT_OBJECT_ID.fullmatch(base_revision) is None
+            or set(base_revision) == {"0"}
+        ):
+            raise completion_history_inconsistent()
+        return
+    if base_revision:
+        raise completion_history_inconsistent()
+    if kind == "git_commit":
+        if FULL_GIT_OBJECT_ID.fullmatch(value) is None or set(value) == {"0"}:
+            raise completion_history_inconsistent()
+    elif kind == "diff_fingerprint":
+        if DIFF_FINGERPRINT.fullmatch(value) is None:
+            raise completion_history_inconsistent()
+    elif kind != "external_revision":
+        raise completion_history_inconsistent()
+
+
+def _validate_completion_evidence(
+    cycle: CompletionCycle,
+) -> None:
+    from task_governance_tool.completion import (
+        CompletionEvidenceError,
+        WRITABLE_EVIDENCE_KINDS,
+        validate_evidence_matrix,
+    )
+
+    if (
+        len(cycle.completion_evidence_revision) > 500
+        or len(cycle.completion_evidence_reason) > 1000
+        or len(cycle.completion_commit_hash) > 500
+    ):
+        raise completion_history_inconsistent()
+    evidence = {
+        "completion_evidence_kind": cycle.completion_evidence_kind,
+        "completion_evidence_revision": cycle.completion_evidence_revision,
+        "completion_evidence_reason": cycle.completion_evidence_reason,
+        "external_revision_approved": int(cycle.external_revision_approved),
+        "completion_commit_required": int(cycle.completion_commit_required),
+        "completion_commit_hash": cycle.completion_commit_hash,
+    }
+    try:
+        validate_evidence_matrix(
+            evidence,
+            allow_legacy=cycle.completeness == "partial",
+        )
+    except (CompletionEvidenceError, TypeError, ValueError) as exc:
+        raise completion_history_inconsistent() from exc
+    if cycle.origin == "native_done" and (
+        cycle.completion_evidence_kind not in WRITABLE_EVIDENCE_KINDS
+    ):
+        raise completion_history_inconsistent()
+    if cycle.completion_evidence_kind in {
+        "external_revision",
+        "legacy_unverified",
+    } and (
+        not cycle.completion_evidence_revision
+        or cycle.completion_evidence_revision
+        != cycle.completion_evidence_revision.strip()
+    ):
+        raise completion_history_inconsistent()
+
+
+def _validate_completion_gate_basis(
+    basis: CompletionGateBasis,
+    *,
+    review_tier: int,
+) -> None:
+    _completion_int(basis.version, maximum=1)
+    if basis.version == 0:
+        if (
+            basis.kind != "unknown"
+            or basis.required_independent_passes is not None
+            or basis.qualifying_independent_passes is not None
+            or basis.changes_requested_count is not None
+            or basis.open_high_count is not None
+            or basis.open_medium_count is not None
+            or basis.fresh_review_required_count is not None
+            or basis.qualifying_receipt_ids
+        ):
+            raise completion_history_inconsistent()
+        return
+
+    required = {0: 0, 1: 1, 2: 2}[review_tier]
+    if basis.required_independent_passes != required:
+        raise completion_history_inconsistent()
+    counts = (
+        basis.qualifying_independent_passes,
+        basis.changes_requested_count,
+        basis.open_high_count,
+        basis.open_medium_count,
+        basis.fresh_review_required_count,
+    )
+    if any(value is None for value in counts):
+        raise completion_history_inconsistent()
+    for value in counts:
+        _completion_int(value)
+    if (
+        basis.changes_requested_count != 0
+        or basis.open_high_count != 0
+        or basis.open_medium_count != 0
+        or basis.fresh_review_required_count != 0
+    ):
+        raise completion_history_inconsistent()
+    if any(
+        not isinstance(receipt_id, str) or not receipt_id
+        for receipt_id in basis.qualifying_receipt_ids
+    ):
+        raise completion_history_inconsistent()
+    if basis.kind == "independent_passes":
+        if (
+            review_tier not in {1, 2}
+            or basis.qualifying_independent_passes < required
+            or len(basis.qualifying_receipt_ids) != required
+        ):
+            raise completion_history_inconsistent()
+    elif basis.kind == "self_review_fallback":
+        if (
+            review_tier not in {1, 2}
+            or basis.qualifying_independent_passes >= required
+            or len(basis.qualifying_receipt_ids) != 1
+        ):
+            raise completion_history_inconsistent()
+    elif basis.kind == "not_required":
+        if review_tier != 0 or len(basis.qualifying_receipt_ids) != 1:
+            raise completion_history_inconsistent()
+    else:
+        raise completion_history_inconsistent()
+
+
+def _cycle_from_row(row: sqlite3.Row) -> CompletionCycle:
+    receipt_ids = tuple(
+        str(row[field_name])
+        for field_name in (
+            "qualifying_receipt_id_1",
+            "qualifying_receipt_id_2",
+        )
+        if row[field_name] is not None
+    )
+    attestation_value = row["verification_attestation"]
+    if attestation_value is None:
+        attestation: bool | None = None
+    else:
+        attestation = _completion_bool(attestation_value)
+    basis = CompletionGateBasis(
+        version=_completion_int(row["gate_basis_version"], maximum=1),
+        kind=str(row["review_basis_kind"]),
+        required_independent_passes=(
+            _completion_int(row["required_independent_passes"], maximum=2)
+            if row["required_independent_passes"] is not None
+            else None
+        ),
+        qualifying_independent_passes=(
+            _completion_int(row["qualifying_independent_passes"])
+            if row["qualifying_independent_passes"] is not None
+            else None
+        ),
+        changes_requested_count=(
+            _completion_int(row["changes_requested_count"])
+            if row["changes_requested_count"] is not None
+            else None
+        ),
+        open_high_count=(
+            _completion_int(row["open_high_count"])
+            if row["open_high_count"] is not None
+            else None
+        ),
+        open_medium_count=(
+            _completion_int(row["open_medium_count"])
+            if row["open_medium_count"] is not None
+            else None
+        ),
+        fresh_review_required_count=(
+            _completion_int(row["fresh_review_required_count"])
+            if row["fresh_review_required_count"] is not None
+            else None
+        ),
+        qualifying_receipt_ids=receipt_ids,
+    )
+    cycle = CompletionCycle(
+        completion_cycle_id=str(row["completion_cycle_id"]),
+        project_id=str(row["project_id"]),
+        task_id=str(row["task_id"]),
+        saved_cycle_ordinal=_completion_int(
+            row["saved_cycle_ordinal"],
+            minimum=1,
+        ),
+        origin=str(row["origin"]),
+        completeness=str(row["completeness"]),
+        completed_at=(
+            str(row["completed_at"])
+            if row["completed_at"] is not None
+            else None
+        ),
+        recorded_at=str(row["recorded_at"]),
+        contract_revision=_completion_int(row["contract_revision"]),
+        review_tier=_completion_int(row["review_tier"], maximum=2),
+        verification_expectation=str(row["verification_expectation"]),
+        verification_attestation=attestation,
+        completion_evidence_kind=str(row["completion_evidence_kind"]),
+        completion_evidence_revision=str(row["completion_evidence_revision"]),
+        completion_evidence_reason=str(row["completion_evidence_reason"]),
+        external_revision_approved=_completion_bool(
+            row["external_revision_approved"]
+        ),
+        completion_commit_required=_completion_bool(
+            row["completion_commit_required"]
+        ),
+        completion_commit_hash=str(row["completion_commit_hash"]),
+        review_target_kind=str(row["review_target_kind"]),
+        review_target_value=str(row["review_target_value"]),
+        review_target_base_revision=str(row["review_target_base_revision"]),
+        review_target_generation=_completion_int(
+            row["review_target_generation"]
+        ),
+        gate_basis=basis,
+    )
+    _validate_completion_cycle(cycle)
+    return cycle
+
+
+def _validate_completion_cycle(cycle: CompletionCycle) -> None:
+    if COMPLETION_CYCLE_ID_PATTERN.fullmatch(cycle.completion_cycle_id) is None:
+        raise completion_history_inconsistent()
+    if not cycle.project_id or not cycle.task_id:
+        raise completion_history_inconsistent()
+    _completion_int(cycle.saved_cycle_ordinal, minimum=1)
+    _completion_int(cycle.contract_revision)
+    _completion_int(cycle.review_tier, maximum=2)
+    try:
+        validate_utc_timestamp(
+            cycle.recorded_at,
+            field="completion cycle record time",
+        )
+        if cycle.completed_at is not None:
+            validate_utc_timestamp(
+                cycle.completed_at,
+                field="completion cycle completion time",
+            )
+    except StorageError as exc:
+        raise completion_history_inconsistent() from exc
+    if cycle.verification_expectation not in {"specified", "unspecified"}:
+        raise completion_history_inconsistent()
+    _validate_completion_evidence(cycle)
+    _validate_completion_target(
+        kind=cycle.review_target_kind,
+        value=cycle.review_target_value,
+        base_revision=cycle.review_target_base_revision,
+        generation=cycle.review_target_generation,
+    )
+    _validate_completion_gate_basis(
+        cycle.gate_basis,
+        review_tier=cycle.review_tier,
+    )
+    if cycle.origin == "native_done":
+        _validate_completion_projection_relationship(cycle)
+        if (
+            cycle.completeness != "complete"
+            or cycle.completed_at is None
+            or cycle.verification_attestation is not True
+            or not cycle.review_target_kind
+            or cycle.gate_basis.version != 1
+        ):
+            raise completion_history_inconsistent()
+    elif cycle.origin == "legacy_current_done":
+        if (
+            cycle.completeness != "partial"
+            or cycle.verification_attestation is not None
+            or cycle.gate_basis.version != 0
+        ):
+            raise completion_history_inconsistent()
+    else:
+        raise completion_history_inconsistent()
+
+
+def _validate_cycle_receipts(
+    connection: sqlite3.Connection,
+    cycle: CompletionCycle,
+) -> None:
+    basis = cycle.gate_basis
+    if basis.version == 0:
+        return
+    target_parameters = (
+        cycle.project_id,
+        cycle.task_id,
+        cycle.review_target_kind,
+        cycle.review_target_value,
+        cycle.review_target_base_revision,
+        cycle.review_target_generation,
+    )
+    independent_rows = connection.execute(
+        """
+        SELECT review_receipt_id, reviewer_key
+          FROM review_receipts
+         WHERE project_id = ?
+           AND task_id = ?
+           AND target_kind = ?
+           AND target_value = ?
+           AND target_base_revision = ?
+           AND target_generation = ?
+           AND receipt_kind = 'independent'
+           AND verdict = 'pass'
+           AND user_approved = 0
+         ORDER BY reviewer_key COLLATE BINARY ASC,
+                  review_receipt_id COLLATE BINARY ASC
+        """,
+        target_parameters,
+    ).fetchall()
+    reviewer_keys = [str(row["reviewer_key"]) for row in independent_rows]
+    changes_requested = int(
+        connection.execute(
+            """
+            SELECT COUNT(*)
+              FROM review_receipts
+             WHERE project_id = ?
+               AND task_id = ?
+               AND target_kind = ?
+               AND target_value = ?
+               AND target_base_revision = ?
+               AND target_generation = ?
+               AND verdict = 'changes_requested'
+            """,
+            target_parameters,
+        ).fetchone()[0]
+    )
+
+    fallback_receipt_id: str | None = None
+    not_required_receipt_id: str | None = None
+    if basis.kind == "self_review_fallback":
+        expected_approval = 1 if cycle.review_tier == 2 else 0
+        fallback = connection.execute(
+            """
+            SELECT review_receipt_id
+              FROM review_receipts
+             WHERE project_id = ?
+               AND task_id = ?
+               AND target_kind = ?
+               AND target_value = ?
+               AND target_base_revision = ?
+               AND target_generation = ?
+               AND receipt_kind = 'self_review_fallback'
+               AND verdict = 'pass'
+               AND user_approved = ?
+             ORDER BY review_receipt_id COLLATE BINARY ASC
+             LIMIT 1
+            """,
+            (*target_parameters, expected_approval),
+        ).fetchone()
+        fallback_receipt_id = (
+            str(fallback["review_receipt_id"]) if fallback is not None else None
+        )
+    elif basis.kind == "not_required":
+        not_required = connection.execute(
+            """
+            SELECT review_receipt_id
+              FROM review_receipts
+             WHERE project_id = ?
+               AND task_id = ?
+               AND target_kind = ?
+               AND target_value = ?
+               AND target_base_revision = ?
+               AND target_generation = ?
+               AND receipt_kind = 'not_required'
+               AND verdict = 'not_required'
+               AND user_approved = 0
+               AND summary != ''
+             ORDER BY review_receipt_id COLLATE BINARY ASC
+             LIMIT 1
+            """,
+            target_parameters,
+        ).fetchone()
+        not_required_receipt_id = (
+            str(not_required["review_receipt_id"])
+            if not_required is not None
+            else None
+        )
+    _validate_cycle_receipt_projection(
+        cycle,
+        independent_count=len(independent_rows),
+        distinct_independent_reviewers=len(set(reviewer_keys)),
+        independent_receipt_ids=tuple(
+            str(row["review_receipt_id"]) for row in independent_rows[:2]
+        ),
+        changes_requested_count=changes_requested,
+        fallback_receipt_id=fallback_receipt_id,
+        not_required_receipt_id=not_required_receipt_id,
+    )
+
+
+def _validate_cycle_receipt_projection(
+    cycle: CompletionCycle,
+    *,
+    independent_count: int,
+    distinct_independent_reviewers: int,
+    independent_receipt_ids: tuple[str, ...],
+    changes_requested_count: int,
+    fallback_receipt_id: str | None,
+    not_required_receipt_id: str | None,
+) -> None:
+    basis = cycle.gate_basis
+    if (
+        basis.version != 1
+        or independent_count != distinct_independent_reviewers
+        or independent_count != basis.qualifying_independent_passes
+        or changes_requested_count != basis.changes_requested_count
+    ):
+        raise completion_history_inconsistent()
+
+    if basis.kind == "independent_passes":
+        expected = independent_receipt_ids[
+            : basis.required_independent_passes
+        ]
+    elif basis.kind == "self_review_fallback":
+        expected = (
+            (fallback_receipt_id,)
+            if fallback_receipt_id is not None
+            else ()
+        )
+    else:
+        expected = (
+            (not_required_receipt_id,)
+            if not_required_receipt_id is not None
+            else ()
+        )
+    if expected != basis.qualifying_receipt_ids:
+        raise completion_history_inconsistent()
+
+
+def _validate_cycle_receipts_batch(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    cycles: tuple[CompletionCycle, ...],
+) -> None:
+    native_cycles = tuple(
+        cycle for cycle in cycles if cycle.gate_basis.version == 1
+    )
+    for offset in range(
+        0,
+        len(native_cycles),
+        COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE,
+    ):
+        chunk = native_cycles[
+            offset : offset + COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE
+        ]
+        placeholders = ", ".join("?" for _ in chunk)
+        cycle_ids = tuple(cycle.completion_cycle_id for cycle in chunk)
+        aggregate_rows = connection.execute(
+            f"""
+            SELECT cycle.completion_cycle_id,
+                   COUNT(
+                     CASE
+                       WHEN receipt.receipt_kind = 'independent'
+                        AND receipt.verdict = 'pass'
+                        AND receipt.user_approved = 0
+                       THEN 1
+                     END
+                   ) AS independent_count,
+                   COUNT(
+                     DISTINCT CASE
+                       WHEN receipt.receipt_kind = 'independent'
+                        AND receipt.verdict = 'pass'
+                        AND receipt.user_approved = 0
+                       THEN receipt.reviewer_key
+                     END
+                   ) AS distinct_independent_reviewers,
+                   COUNT(
+                     CASE
+                       WHEN receipt.verdict = 'changes_requested' THEN 1
+                     END
+                   ) AS changes_requested_count
+              FROM task_completion_cycles AS cycle
+              LEFT JOIN review_receipts AS receipt
+                ON receipt.project_id = cycle.project_id
+               AND receipt.task_id = cycle.task_id
+               AND receipt.target_kind = cycle.review_target_kind
+               AND receipt.target_value = cycle.review_target_value
+               AND receipt.target_base_revision =
+                     cycle.review_target_base_revision
+               AND receipt.target_generation =
+                     cycle.review_target_generation
+             WHERE cycle.project_id = ?
+               AND cycle.completion_cycle_id IN ({placeholders})
+             GROUP BY cycle.completion_cycle_id
+            """,
+            (project_id, *cycle_ids),
+        ).fetchall()
+        aggregate_by_cycle = {
+            str(row["completion_cycle_id"]): row for row in aggregate_rows
+        }
+
+        ranked_rows = connection.execute(
+            f"""
+            WITH qualifying_receipts AS (
+              SELECT
+                cycle.completion_cycle_id,
+                receipt.review_receipt_id,
+                CASE
+                  WHEN receipt.receipt_kind = 'independent'
+                  THEN 'independent'
+                  WHEN receipt.receipt_kind = 'self_review_fallback'
+                  THEN 'self_review_fallback'
+                  ELSE 'not_required'
+                END AS receipt_class,
+                CASE
+                  WHEN receipt.receipt_kind = 'independent'
+                  THEN receipt.reviewer_key
+                  ELSE ''
+                END AS reviewer_sort_key
+                FROM task_completion_cycles AS cycle
+                JOIN review_receipts AS receipt
+                  ON receipt.project_id = cycle.project_id
+                 AND receipt.task_id = cycle.task_id
+                 AND receipt.target_kind = cycle.review_target_kind
+                 AND receipt.target_value = cycle.review_target_value
+                 AND receipt.target_base_revision =
+                       cycle.review_target_base_revision
+                 AND receipt.target_generation =
+                       cycle.review_target_generation
+               WHERE cycle.project_id = ?
+                 AND cycle.completion_cycle_id IN ({placeholders})
+                 AND (
+                   (
+                     receipt.receipt_kind = 'independent'
+                     AND receipt.verdict = 'pass'
+                     AND receipt.user_approved = 0
+                   )
+                   OR (
+                     receipt.receipt_kind = 'self_review_fallback'
+                     AND receipt.verdict = 'pass'
+                     AND receipt.user_approved = CASE
+                       WHEN cycle.review_tier = 2 THEN 1 ELSE 0
+                     END
+                   )
+                   OR (
+                     receipt.receipt_kind = 'not_required'
+                     AND receipt.verdict = 'not_required'
+                     AND receipt.user_approved = 0
+                     AND receipt.summary != ''
+                   )
+                 )
+            ),
+            ranked_receipts AS (
+              SELECT
+                completion_cycle_id,
+                receipt_class,
+                review_receipt_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY completion_cycle_id, receipt_class
+                  ORDER BY reviewer_sort_key COLLATE BINARY ASC,
+                           review_receipt_id COLLATE BINARY ASC
+                ) AS receipt_rank
+                FROM qualifying_receipts
+            )
+            SELECT
+              completion_cycle_id,
+              receipt_class,
+              review_receipt_id
+              FROM ranked_receipts
+             WHERE (
+               receipt_class = 'independent' AND receipt_rank <= 2
+             ) OR (
+               receipt_class != 'independent' AND receipt_rank = 1
+             )
+             ORDER BY completion_cycle_id COLLATE BINARY,
+                      receipt_class COLLATE BINARY,
+                      receipt_rank
+            """,
+            (project_id, *cycle_ids),
+        ).fetchall()
+        selections_by_cycle: dict[str, dict[str, list[str]]] = {}
+        for row in ranked_rows:
+            cycle_selections = selections_by_cycle.setdefault(
+                str(row["completion_cycle_id"]),
+                {},
+            )
+            cycle_selections.setdefault(str(row["receipt_class"]), []).append(
+                str(row["review_receipt_id"])
+            )
+
+        for cycle in chunk:
+            aggregate = aggregate_by_cycle.get(cycle.completion_cycle_id)
+            if aggregate is None or cycle.project_id != project_id:
+                raise completion_history_inconsistent()
+            selections = selections_by_cycle.get(
+                cycle.completion_cycle_id,
+                {},
+            )
+            fallback_ids = selections.get("self_review_fallback", ())
+            not_required_ids = selections.get("not_required", ())
+            _validate_cycle_receipt_projection(
+                cycle,
+                independent_count=_completion_int(
+                    aggregate["independent_count"]
+                ),
+                distinct_independent_reviewers=_completion_int(
+                    aggregate["distinct_independent_reviewers"]
+                ),
+                independent_receipt_ids=tuple(
+                    selections.get("independent", ())
+                ),
+                changes_requested_count=_completion_int(
+                    aggregate["changes_requested_count"]
+                ),
+                fallback_receipt_id=(
+                    fallback_ids[0] if fallback_ids else None
+                ),
+                not_required_receipt_id=(
+                    not_required_ids[0] if not_required_ids else None
+                ),
+            )
+
+
+def _validate_completion_history_marker(
+    connection: sqlite3.Connection,
+) -> None:
+    row = connection.execute(
+        "SELECT name FROM schema_migrations WHERE version = 15"
+    ).fetchone()
+    if row is None or str(row["name"]) != "completion_cycle_history":
+        raise completion_history_inconsistent()
+
+
+def _foreign_key_signatures(
+    connection: sqlite3.Connection,
+    table_name: str,
+) -> list[tuple[str, tuple[tuple[str, str], ...], str, str, str]]:
+    groups: dict[int, list[sqlite3.Row]] = {}
+    for row in connection.execute(
+        f"PRAGMA foreign_key_list({_quoted_identifier(table_name)})"
+    ).fetchall():
+        groups.setdefault(int(row["id"]), []).append(row)
+    signatures = []
+    for rows in groups.values():
+        ordered = sorted(rows, key=lambda row: int(row["seq"]))
+        first = ordered[0]
+        signatures.append(
+            (
+                str(first["table"]),
+                tuple(
+                    (str(row["from"]), str(row["to"]))
+                    for row in ordered
+                ),
+                str(first["on_update"]),
+                str(first["on_delete"]),
+                str(first["match"]),
+            )
+        )
+    return sorted(signatures, key=repr)
+
+
+def _validate_completion_history_schema_contract(
+    connection: sqlite3.Connection,
+) -> None:
+    receipt_prefix = (
+        ("project_id", "project_id"),
+        ("task_id", "task_id"),
+        ("review_target_kind", "target_kind"),
+        ("review_target_value", "target_value"),
+        ("review_target_base_revision", "target_base_revision"),
+        ("review_target_generation", "target_generation"),
+    )
+    expected_cycle_foreign_keys = sorted(
+        [
+            (
+                "tasks",
+                (
+                    ("project_id", "project_id"),
+                    ("task_id", "task_id"),
+                ),
+                "NO ACTION",
+                "NO ACTION",
+                "NONE",
+            ),
+            (
+                "review_receipts",
+                (*receipt_prefix, ("qualifying_receipt_id_1", "review_receipt_id")),
+                "NO ACTION",
+                "NO ACTION",
+                "NONE",
+            ),
+            (
+                "review_receipts",
+                (*receipt_prefix, ("qualifying_receipt_id_2", "review_receipt_id")),
+                "NO ACTION",
+                "NO ACTION",
+                "NONE",
+            ),
+        ],
+        key=repr,
+    )
+    expected_event_foreign_keys = sorted(
+        [
+            (
+                "tasks",
+                (("task_id", "task_id"),),
+                "NO ACTION",
+                "NO ACTION",
+                "NONE",
+            ),
+            (
+                "task_completion_cycles",
+                (("completion_cycle_id", "completion_cycle_id"),),
+                "NO ACTION",
+                "NO ACTION",
+                "NONE",
+            ),
+        ],
+        key=repr,
+    )
+    if (
+        _foreign_key_signatures(connection, "task_completion_cycles")
+        != expected_cycle_foreign_keys
+        or _foreign_key_signatures(connection, "task_events")
+        != expected_event_foreign_keys
+    ):
+        raise completion_history_inconsistent()
+
+    expected_indexes = {
+        "idx_tasks_project_task_identity": (
+            "tasks",
+            1,
+            0,
+            ("project_id", "task_id"),
+        ),
+        "idx_review_receipts_completion_cycle_reference": (
+            "review_receipts",
+            1,
+            0,
+            (
+                "project_id",
+                "task_id",
+                "target_kind",
+                "target_value",
+                "target_base_revision",
+                "target_generation",
+                "review_receipt_id",
+            ),
+        ),
+        "idx_task_completion_cycles_task_ordinal": (
+            "task_completion_cycles",
+            1,
+            0,
+            ("project_id", "task_id", "saved_cycle_ordinal"),
+        ),
+        "idx_task_events_completion_cycle": (
+            "task_events",
+            0,
+            1,
+            ("completion_cycle_id",),
+        ),
+    }
+    for index_name, (
+        table_name,
+        expected_unique,
+        expected_partial,
+        expected_columns,
+    ) in expected_indexes.items():
+        index_row = next(
+            (
+                row
+                for row in connection.execute(
+                    f"PRAGMA index_list({_quoted_identifier(table_name)})"
+                ).fetchall()
+                if str(row["name"]) == index_name
+            ),
+            None,
+        )
+        columns = tuple(
+            str(row["name"])
+            for row in connection.execute(
+                f"PRAGMA index_info({_quoted_identifier(index_name)})"
+            ).fetchall()
+        )
+        if (
+            index_row is None
+            or int(index_row["unique"]) != expected_unique
+            or int(index_row["partial"]) != expected_partial
+            or columns != expected_columns
+        ):
+            raise completion_history_inconsistent()
+
+
+def _validate_completion_history_structure(
+    connection: sqlite3.Connection,
+) -> None:
+    """Validate the bounded schema-v15 marker, foreign keys, and indexes."""
+
+    _validate_completion_history_marker(connection)
+    _validate_completion_history_schema_contract(connection)
+
+
+def validate_completion_cycle_storage(
+    connection: sqlite3.Connection,
+) -> None:
+    """Validate immutable-cycle matrices without replaying migration assertions."""
+
+    _validate_completion_history_structure(connection)
+    task_rows = connection.execute(
+        """
+        SELECT project_id, task_id, completion_history_coverage
+          FROM tasks
+         ORDER BY project_id COLLATE BINARY, task_id COLLATE BINARY
+        """
+    ).fetchall()
+    task_owners: dict[str, str] = {}
+    for row in task_rows:
+        project_id = str(row["project_id"])
+        task_id = str(row["task_id"])
+        if (
+            not project_id
+            or not task_id
+            or str(row["completion_history_coverage"])
+            not in {"legacy_unknown", "complete"}
+            or task_id in task_owners
+        ):
+            raise completion_history_inconsistent()
+        task_owners[task_id] = project_id
+
+    rows = connection.execute(
+        """
+        SELECT *
+          FROM task_completion_cycles
+         ORDER BY project_id COLLATE BINARY,
+                  task_id COLLATE BINARY,
+                  saved_cycle_ordinal
+        """
+    ).fetchall()
+    expected_ordinals: dict[tuple[str, str], int] = {}
+    cycle_owners: dict[str, tuple[str, str, str]] = {}
+    for row in rows:
+        cycle = _cycle_from_row(row)
+        if task_owners.get(cycle.task_id) != cycle.project_id:
+            raise completion_history_inconsistent()
+        owner = (cycle.project_id, cycle.task_id)
+        expected = expected_ordinals.get(owner, 1)
+        if cycle.saved_cycle_ordinal != expected:
+            raise completion_history_inconsistent()
+        expected_ordinals[owner] = expected + 1
+        _validate_cycle_receipts(connection, cycle)
+        cycle_owners[cycle.completion_cycle_id] = (
+            cycle.project_id,
+            cycle.task_id,
+            cycle.origin,
+        )
+
+    event_rows = connection.execute(
+        """
+        SELECT task_event_id, project_id, task_id, event_type,
+               completion_cycle_id
+          FROM task_events
+         WHERE completion_cycle_id IS NOT NULL
+         ORDER BY completion_cycle_id COLLATE BINARY,
+                  event_type COLLATE BINARY,
+                  task_event_id COLLATE BINARY
+        """
+    ).fetchall()
+    linked_counts: dict[tuple[str, str], int] = {}
+    for row in event_rows:
+        cycle_id = str(row["completion_cycle_id"])
+        owner = cycle_owners.get(cycle_id)
+        event_type = str(row["event_type"])
+        if (
+            owner is None
+            or owner[:2] != (
+                str(row["project_id"]),
+                str(row["task_id"]),
+            )
+            or event_type not in {"task_updated", "task_reopened"}
+            or (event_type == "task_updated" and owner[2] != "native_done")
+        ):
+            raise completion_history_inconsistent()
+        key = (cycle_id, event_type)
+        linked_counts[key] = linked_counts.get(key, 0) + 1
+        if linked_counts[key] > 1:
+            raise completion_history_inconsistent()
+    for cycle_id, (_, _, origin) in cycle_owners.items():
+        completion_links = linked_counts.get((cycle_id, "task_updated"), 0)
+        if (
+            origin == "native_done"
+            and completion_links != 1
+            or origin == "legacy_current_done"
+            and completion_links != 0
+        ):
+            raise completion_history_inconsistent()
+
+    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+        raise completion_history_inconsistent()
+
+
+def select_completion_gate_basis_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+) -> CompletionGateBasis:
+    """Select one deterministic current review basis inside a writer."""
+
+    if not connection.in_transaction or int(
+        connection.execute("PRAGMA query_only").fetchone()[0]
+    ):
+        raise StorageError(
+            "internal_error",
+            "completion gate basis requires an active writer transaction",
+        )
+    task = connection.execute(
+        """
+        SELECT review_tier, review_target_kind, review_target_value,
+               review_target_base_revision, review_target_generation
+          FROM tasks
+         WHERE project_id = ? AND task_id = ?
+        """,
+        (project_id, task_id),
+    ).fetchone()
+    if task is None:
+        raise completion_history_inconsistent()
+    tier = _completion_int(task["review_tier"], maximum=2)
+    target_kind = str(task["review_target_kind"])
+    target_value = str(task["review_target_value"])
+    target_base = str(task["review_target_base_revision"])
+    target_generation = _completion_int(task["review_target_generation"])
+    _validate_completion_target(
+        kind=target_kind,
+        value=target_value,
+        base_revision=target_base,
+        generation=target_generation,
+    )
+    if not target_kind:
+        raise completion_history_inconsistent()
+    parameters = (
+        project_id,
+        task_id,
+        target_kind,
+        target_value,
+        target_base,
+        target_generation,
+    )
+    independent_rows = connection.execute(
+        """
+        SELECT review_receipt_id, reviewer_key
+          FROM review_receipts
+         WHERE project_id = ?
+           AND task_id = ?
+           AND target_kind = ?
+           AND target_value = ?
+           AND target_base_revision = ?
+           AND target_generation = ?
+           AND receipt_kind = 'independent'
+           AND verdict = 'pass'
+           AND user_approved = 0
+         ORDER BY reviewer_key COLLATE BINARY ASC,
+                  review_receipt_id COLLATE BINARY ASC
+        """,
+        parameters,
+    ).fetchall()
+    reviewers = [str(row["reviewer_key"]) for row in independent_rows]
+    if len(reviewers) != len(set(reviewers)):
+        raise completion_history_inconsistent()
+    qualifying = len(independent_rows)
+    changes_requested = int(
+        connection.execute(
+            """
+            SELECT COUNT(*)
+              FROM review_receipts
+             WHERE project_id = ?
+               AND task_id = ?
+               AND target_kind = ?
+               AND target_value = ?
+               AND target_base_revision = ?
+               AND target_generation = ?
+               AND verdict = 'changes_requested'
+            """,
+            parameters,
+        ).fetchone()[0]
+    )
+    finding_counts = {
+        str(row["kind"]): int(row["count"])
+        for row in connection.execute(
+            """
+            SELECT
+              CASE
+                WHEN finding.status = 'open' THEN finding.severity
+                ELSE 'fresh_review_required'
+              END AS kind,
+              COUNT(*) AS count
+              FROM review_findings AS finding
+              JOIN review_receipts AS receipt
+                ON receipt.review_receipt_id = finding.review_receipt_id
+             WHERE receipt.project_id = ?
+               AND receipt.task_id = ?
+               AND finding.severity IN ('high', 'medium')
+               AND (
+                 finding.status = 'open'
+                 OR (
+                   finding.status = 'resolved'
+                   AND receipt.target_generation >= ?
+                 )
+               )
+             GROUP BY kind
+            """,
+            (project_id, task_id, target_generation),
+        ).fetchall()
+    }
+    open_high = finding_counts.get("high", 0)
+    open_medium = finding_counts.get("medium", 0)
+    fresh_review_required = finding_counts.get("fresh_review_required", 0)
+    if (
+        changes_requested
+        or open_high
+        or open_medium
+        or fresh_review_required
+    ):
+        raise completion_history_inconsistent()
+
+    required = {0: 0, 1: 1, 2: 2}[tier]
+    if tier in {1, 2} and qualifying >= required:
+        kind = "independent_passes"
+        receipt_ids = tuple(
+            str(row["review_receipt_id"])
+            for row in independent_rows[:required]
+        )
+    elif tier in {1, 2}:
+        expected_approval = 1 if tier == 2 else 0
+        fallback = connection.execute(
+            """
+            SELECT review_receipt_id
+              FROM review_receipts
+             WHERE project_id = ?
+               AND task_id = ?
+               AND target_kind = ?
+               AND target_value = ?
+               AND target_base_revision = ?
+               AND target_generation = ?
+               AND receipt_kind = 'self_review_fallback'
+               AND verdict = 'pass'
+               AND user_approved = ?
+             ORDER BY review_receipt_id COLLATE BINARY ASC
+             LIMIT 1
+            """,
+            (*parameters, expected_approval),
+        ).fetchone()
+        if fallback is None:
+            raise completion_history_inconsistent()
+        kind = "self_review_fallback"
+        receipt_ids = (str(fallback["review_receipt_id"]),)
+    else:
+        not_required = connection.execute(
+            """
+            SELECT review_receipt_id
+              FROM review_receipts
+             WHERE project_id = ?
+               AND task_id = ?
+               AND target_kind = ?
+               AND target_value = ?
+               AND target_base_revision = ?
+               AND target_generation = ?
+               AND receipt_kind = 'not_required'
+               AND verdict = 'not_required'
+               AND user_approved = 0
+               AND summary != ''
+             ORDER BY review_receipt_id COLLATE BINARY ASC
+             LIMIT 1
+            """,
+            parameters,
+        ).fetchone()
+        if not_required is None:
+            raise completion_history_inconsistent()
+        kind = "not_required"
+        receipt_ids = (str(not_required["review_receipt_id"]),)
+
+    basis = CompletionGateBasis(
+        version=1,
+        kind=kind,
+        required_independent_passes=required,
+        qualifying_independent_passes=qualifying,
+        changes_requested_count=changes_requested,
+        open_high_count=open_high,
+        open_medium_count=open_medium,
+        fresh_review_required_count=fresh_review_required,
+        qualifying_receipt_ids=receipt_ids,
+    )
+    _validate_completion_gate_basis(basis, review_tier=tier)
+    return basis
+
+
+def _validate_completion_projection_relationship(cycle: CompletionCycle) -> None:
+    if not cycle.review_target_kind:
+        return
+    kind = cycle.completion_evidence_kind
+    revision = cycle.completion_evidence_revision
+    if cycle.review_target_kind == "git_commit":
+        valid = kind == "git_commit" and revision == cycle.review_target_value
+    elif cycle.review_target_kind == "git_snapshot":
+        valid = kind == "git_commit"
+    elif cycle.review_target_kind == "external_revision":
+        valid = (
+            kind == "external_revision"
+            and revision == cycle.review_target_value
+        )
+    else:
+        valid = kind == "commit_not_required"
+    if not valid:
+        raise completion_history_inconsistent()
+
+
+def insert_completion_cycle_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    recorded_at: str,
+) -> CompletionCycle:
+    """Archive the locked current-done projection without caller-owned content."""
+
+    if not connection.in_transaction or int(
+        connection.execute("PRAGMA query_only").fetchone()[0]
+    ):
+        raise StorageError(
+            "internal_error",
+            "completion cycle insertion requires an active writer transaction",
+        )
+    current = connection.execute(
+        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
+        (project_id, task_id),
+    ).fetchone()
+    if current is None:
+        raise completion_history_inconsistent()
+    task_projection = dict(current)
+    if str(task_projection.get("status", "")) != "done":
+        raise completion_history_inconsistent()
+
+    ordinal_row = connection.execute(
+        """
+        SELECT MAX(saved_cycle_ordinal)
+          FROM task_completion_cycles
+         WHERE project_id = ? AND task_id = ?
+        """,
+        (project_id, task_id),
+    ).fetchone()
+    previous_ordinal = (
+        _completion_int(ordinal_row[0], minimum=1)
+        if ordinal_row is not None and ordinal_row[0] is not None
+        else 0
+    )
+    if previous_ordinal == SQLITE_INT64_MAX:
+        raise completion_history_inconsistent()
+    ordinal = previous_ordinal + 1
+    origin = "legacy_current_done"
+    completeness = "partial"
+    attestation = None
+    actual_basis = CompletionGateBasis(
+        version=0,
+        kind="unknown",
+        required_independent_passes=None,
+        qualifying_independent_passes=None,
+        changes_requested_count=None,
+        open_high_count=None,
+        open_medium_count=None,
+        fresh_review_required_count=None,
+        qualifying_receipt_ids=(),
+    )
+
+    completed_at = task_projection.get("completed_at")
+    cycle = CompletionCycle(
+        completion_cycle_id=(
+            f"tg_completion_cycle_{secrets.token_hex(8)}"
+        ),
+        project_id=project_id,
+        task_id=task_id,
+        saved_cycle_ordinal=ordinal,
+        origin=origin,
+        completeness=completeness,
+        completed_at=(
+            str(completed_at) if completed_at is not None else None
+        ),
+        recorded_at=recorded_at,
+        contract_revision=_completion_int(
+            task_projection.get("current_contract_revision")
+        ),
+        review_tier=_completion_int(
+            task_projection.get("review_tier"),
+            maximum=2,
+        ),
+        verification_expectation=(
+            "specified"
+            if str(task_projection.get("verification", "")).strip()
+            else "unspecified"
+        ),
+        verification_attestation=attestation,
+        completion_evidence_kind=str(
+            task_projection.get("completion_evidence_kind", "")
+        ),
+        completion_evidence_revision=str(
+            task_projection.get("completion_evidence_revision", "")
+        ),
+        completion_evidence_reason=str(
+            task_projection.get("completion_evidence_reason", "")
+        ),
+        external_revision_approved=_completion_bool(
+            task_projection.get("external_revision_approved")
+        ),
+        completion_commit_required=_completion_bool(
+            task_projection.get("completion_commit_required")
+        ),
+        completion_commit_hash=str(
+            task_projection.get("completion_commit_hash", "")
+        ),
+        review_target_kind=str(
+            task_projection.get("review_target_kind", "")
+        ),
+        review_target_value=str(
+            task_projection.get("review_target_value", "")
+        ),
+        review_target_base_revision=str(
+            task_projection.get("review_target_base_revision", "")
+        ),
+        review_target_generation=_completion_int(
+            task_projection.get("review_target_generation")
+        ),
+        gate_basis=actual_basis,
+    )
+    _validate_completion_cycle(cycle)
+    _validate_cycle_receipts(connection, cycle)
+    receipt_ids = (*actual_basis.qualifying_receipt_ids, None, None)
+    parameters = {
+        "completion_cycle_id": cycle.completion_cycle_id,
+        "project_id": cycle.project_id,
+        "task_id": cycle.task_id,
+        "saved_cycle_ordinal": cycle.saved_cycle_ordinal,
+        "origin": cycle.origin,
+        "completeness": cycle.completeness,
+        "completed_at": cycle.completed_at,
+        "recorded_at": cycle.recorded_at,
+        "contract_revision": cycle.contract_revision,
+        "review_tier": cycle.review_tier,
+        "verification_expectation": cycle.verification_expectation,
+        "verification_attestation": (
+            int(cycle.verification_attestation)
+            if cycle.verification_attestation is not None
+            else None
+        ),
+        "completion_evidence_kind": cycle.completion_evidence_kind,
+        "completion_evidence_revision": cycle.completion_evidence_revision,
+        "completion_evidence_reason": cycle.completion_evidence_reason,
+        "external_revision_approved": int(
+            cycle.external_revision_approved
+        ),
+        "completion_commit_required": int(
+            cycle.completion_commit_required
+        ),
+        "completion_commit_hash": cycle.completion_commit_hash,
+        "review_target_kind": cycle.review_target_kind,
+        "review_target_value": cycle.review_target_value,
+        "review_target_base_revision": cycle.review_target_base_revision,
+        "review_target_generation": cycle.review_target_generation,
+        "gate_basis_version": actual_basis.version,
+        "review_basis_kind": actual_basis.kind,
+        "required_independent_passes": (
+            actual_basis.required_independent_passes
+        ),
+        "qualifying_independent_passes": (
+            actual_basis.qualifying_independent_passes
+        ),
+        "changes_requested_count": actual_basis.changes_requested_count,
+        "open_high_count": actual_basis.open_high_count,
+        "open_medium_count": actual_basis.open_medium_count,
+        "fresh_review_required_count": (
+            actual_basis.fresh_review_required_count
+        ),
+        "qualifying_receipt_id_1": receipt_ids[0],
+        "qualifying_receipt_id_2": receipt_ids[1],
+    }
+    try:
+        connection.execute(
+            """
+            INSERT INTO task_completion_cycles(
+              completion_cycle_id, project_id, task_id, saved_cycle_ordinal,
+              origin, completeness, completed_at, recorded_at,
+              contract_revision, review_tier, verification_expectation,
+              verification_attestation, completion_evidence_kind,
+              completion_evidence_revision, completion_evidence_reason,
+              external_revision_approved, completion_commit_required,
+              completion_commit_hash, review_target_kind, review_target_value,
+              review_target_base_revision, review_target_generation,
+              gate_basis_version, review_basis_kind,
+              required_independent_passes, qualifying_independent_passes,
+              changes_requested_count, open_high_count, open_medium_count,
+              fresh_review_required_count, qualifying_receipt_id_1,
+              qualifying_receipt_id_2
+            ) VALUES (
+              :completion_cycle_id, :project_id, :task_id,
+              :saved_cycle_ordinal, :origin, :completeness, :completed_at,
+              :recorded_at, :contract_revision, :review_tier,
+              :verification_expectation, :verification_attestation,
+              :completion_evidence_kind, :completion_evidence_revision,
+              :completion_evidence_reason, :external_revision_approved,
+              :completion_commit_required, :completion_commit_hash,
+              :review_target_kind, :review_target_value,
+              :review_target_base_revision, :review_target_generation,
+              :gate_basis_version, :review_basis_kind,
+              :required_independent_passes, :qualifying_independent_passes,
+              :changes_requested_count, :open_high_count, :open_medium_count,
+              :fresh_review_required_count, :qualifying_receipt_id_1,
+              :qualifying_receipt_id_2
+            )
+            """,
+            parameters,
+        )
+    except sqlite3.IntegrityError as exc:
+        raise completion_history_inconsistent() from exc
+    stored = connection.execute(
+        "SELECT * FROM task_completion_cycles WHERE completion_cycle_id = ?",
+        (cycle.completion_cycle_id,),
+    ).fetchone()
+    if stored is None:
+        raise completion_history_inconsistent()
+    persisted = _cycle_from_row(stored)
+    _validate_cycle_receipts(connection, persisted)
+    if persisted != cycle:
+        raise completion_history_inconsistent()
+    return persisted
+
+
+def read_latest_completion_cycle(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+) -> CompletionCycle | None:
+    row = connection.execute(
+        """
+        SELECT *
+          FROM task_completion_cycles
+         WHERE project_id = ? AND task_id = ?
+         ORDER BY saved_cycle_ordinal DESC
+         LIMIT 1
+        """,
+        (project_id, task_id),
+    ).fetchone()
+    if row is None:
+        return None
+    cycle = _cycle_from_row(row)
+    _validate_cycle_receipts(connection, cycle)
+    return cycle
+
+
+def _completion_history_metadata(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_ids: tuple[str, ...],
+) -> dict[str, tuple[int, bool]]:
+    if not task_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in task_ids)
+    task_rows = connection.execute(
+        f"""
+        SELECT task_id, completion_history_coverage
+          FROM tasks
+         WHERE project_id = ?
+           AND task_id IN ({placeholders})
+        """,
+        (project_id, *task_ids),
+    ).fetchall()
+    if len(task_rows) != len(task_ids):
+        raise completion_history_inconsistent()
+    metadata = {
+        str(row["task_id"]): [
+            0,
+            str(row["completion_history_coverage"]) != "complete",
+        ]
+        for row in task_rows
+    }
+    cycle_rows = connection.execute(
+        f"""
+        SELECT task_id, COUNT(*) AS total,
+               MAX(CASE WHEN completeness = 'partial' THEN 1 ELSE 0 END)
+                 AS has_partial
+          FROM task_completion_cycles
+         WHERE project_id = ?
+           AND task_id IN ({placeholders})
+         GROUP BY task_id
+        """,
+        (project_id, *task_ids),
+    ).fetchall()
+    for row in cycle_rows:
+        item = metadata[str(row["task_id"])]
+        item[0] = _completion_int(row["total"])
+        item[1] = bool(item[1]) or bool(
+            _completion_int(row["has_partial"], maximum=1)
+        )
+    reopen_rows = connection.execute(
+        f"""
+        SELECT task_id, COUNT(*) AS total
+          FROM task_events
+         WHERE project_id = ?
+           AND task_id IN ({placeholders})
+           AND event_type = 'task_reopened'
+           AND completion_cycle_id IS NULL
+         GROUP BY task_id
+        """,
+        (project_id, *task_ids),
+    ).fetchall()
+    for row in reopen_rows:
+        if _completion_int(row["total"]):
+            metadata[str(row["task_id"])][1] = True
+    return {
+        task_id: (int(values[0]), bool(values[1]))
+        for task_id, values in metadata.items()
+    }
+
+
+def read_completion_history(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    limit: int = 10,
+) -> CompletionHistory:
+    if type(limit) is not int or not 1 <= limit <= 10:
+        raise StorageError(
+            "internal_error",
+            "completion history limit must be between 1 and 10",
+        )
+    metadata = _completion_history_metadata(
+        connection,
+        project_id=project_id,
+        task_ids=(task_id,),
+    )
+    total, incomplete = metadata[task_id]
+    rows = connection.execute(
+        """
+        SELECT *
+          FROM task_completion_cycles
+         WHERE project_id = ? AND task_id = ?
+         ORDER BY saved_cycle_ordinal DESC
+         LIMIT ?
+        """,
+        (project_id, task_id, limit),
+    ).fetchall()
+    cycles = tuple(_cycle_from_row(row) for row in rows)
+    for cycle in cycles:
+        _validate_cycle_receipts(connection, cycle)
+    return CompletionHistory(
+        total=total,
+        legacy_history_incomplete=incomplete,
+        cycles=cycles,
+    )
+
+
+def read_completion_histories_for_tasks(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_ids: tuple[str, ...],
+    limit: int = 10,
+) -> dict[str, CompletionHistory]:
+    """Read bounded histories for at most the Viewer's existing 500 Tasks."""
+
+    if (
+        type(limit) is not int
+        or not 1 <= limit <= 10
+        or len(task_ids) > 500
+        or len(task_ids) != len(set(task_ids))
+        or any(not isinstance(task_id, str) or not task_id for task_id in task_ids)
+    ):
+        raise StorageError(
+            "internal_error",
+            "completion history batch request is invalid",
+        )
+    if not task_ids:
+        return {}
+    metadata = _completion_history_metadata(
+        connection,
+        project_id=project_id,
+        task_ids=task_ids,
+    )
+    placeholders = ", ".join("?" for _ in task_ids)
+    rows = connection.execute(
+        f"""
+        SELECT *
+          FROM (
+            SELECT cycle.*,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY task_id
+                     ORDER BY saved_cycle_ordinal DESC
+                   ) AS bounded_row_number
+              FROM task_completion_cycles AS cycle
+             WHERE project_id = ?
+               AND task_id IN ({placeholders})
+          )
+         WHERE bounded_row_number <= ?
+         ORDER BY task_id COLLATE BINARY, saved_cycle_ordinal DESC
+        """,
+        (project_id, *task_ids, limit),
+    ).fetchall()
+    grouped: dict[str, list[CompletionCycle]] = {
+        task_id: [] for task_id in task_ids
+    }
+    cycles = tuple(_cycle_from_row(row) for row in rows)
+    _validate_cycle_receipts_batch(
+        connection,
+        project_id=project_id,
+        cycles=cycles,
+    )
+    for cycle in cycles:
+        grouped[cycle.task_id].append(cycle)
+    return {
+        task_id: CompletionHistory(
+            total=metadata[task_id][0],
+            legacy_history_incomplete=metadata[task_id][1],
+            cycles=tuple(grouped[task_id]),
+        )
+        for task_id in task_ids
+    }
+
+
+def apply_completion_cycle_history_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Add schema-v15 immutable completion history and current-done backfill."""
+
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "completion-history migration requires no active transaction",
+        )
+    version = current_schema_version(connection)
+    if version >= 15:
+        connection.execute("BEGIN")
+        try:
+            if (
+                version != 15
+                or missing_migration_versions(connection, version)
+                or required_schema_objects_missing(
+                    connection,
+                    schema_version=15,
+                )
+            ):
+                raise StorageError(
+                    "migration_required",
+                    "completion-history migration is incomplete",
+                )
+            validate_completion_cycle_storage(connection)
+            connection.commit()
+        except StorageError as exc:
+            connection.rollback()
+            if exc.code == "completion_history_inconsistent":
+                raise _unreadable_project_state() from exc
+            raise
+        except Exception:
+            connection.rollback()
+            raise
+        return
+    if (
+        version != 14
+        or missing_migration_versions(connection, 14)
+        or schema_objects_inconsistent_with_version(connection, 14)
+    ):
+        raise StorageError(
+            "migration_required",
+            "completion-history migration requires complete schema version 14",
+        )
+    connection.execute("PRAGMA foreign_keys = ON")
+    if int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 1:
+        raise StorageError(
+            "internal_error",
+            "completion-history migration requires foreign key enforcement",
+        )
+
+    before = _migration_preservation_snapshot(connection)
+    column_basis = {
+        table_name: snapshot[0]
+        for table_name, snapshot in before.items()
+    }
+    migration_time = utc_now()
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        statements = completion_cycle_history_schema_statements()
+        connection.execute(statements[0])
+        if fail_stage == "after_columns":
+            raise StorageError(
+                "internal_error",
+                "injected completion-history migration failure",
+            )
+        for statement in statements[1:5]:
+            connection.execute(statement)
+        if fail_stage == "after_cycle_schema":
+            raise StorageError(
+                "internal_error",
+                "injected completion-history migration failure",
+            )
+        for statement in statements[5:7]:
+            connection.execute(statement)
+        if fail_stage == "after_event_link":
+            raise StorageError(
+                "internal_error",
+                "injected completion-history migration failure",
+            )
+        for statement in statements[7:]:
+            connection.execute(statement)
+        if fail_stage == "after_schema":
+            raise StorageError(
+                "internal_error",
+                "injected completion-history migration failure",
+            )
+
+        done_rows = connection.execute(
+            """
+            SELECT *
+              FROM tasks
+             WHERE status = 'done'
+             ORDER BY task_id COLLATE BINARY ASC
+            """
+        ).fetchall()
+        for row in done_rows:
+            task = dict(row)
+            completed_at = task.get("completed_at")
+            if completed_at is None:
+                raise completion_history_inconsistent()
+            try:
+                validate_utc_timestamp(
+                    str(completed_at),
+                    field="legacy completion time",
+                )
+            except StorageError as exc:
+                raise completion_history_inconsistent() from exc
+            insert_completion_cycle_locked(
+                connection,
+                project_id=str(task["project_id"]),
+                task_id=str(task["task_id"]),
+                recorded_at=migration_time,
+            )
+        if fail_stage == "after_backfill":
+            raise StorageError(
+                "internal_error",
+                "injected completion-history migration failure",
+            )
+
+        task_count = int(
+            connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        )
+        unknown_count = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                  FROM tasks
+                 WHERE completion_history_coverage = 'legacy_unknown'
+                """
+            ).fetchone()[0]
+        )
+        done_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM tasks WHERE status = 'done'"
+            ).fetchone()[0]
+        )
+        cycle_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM task_completion_cycles"
+            ).fetchone()[0]
+        )
+        invalid_cycle_count = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                  FROM task_completion_cycles AS cycle
+                  JOIN tasks AS task
+                    ON task.project_id = cycle.project_id
+                   AND task.task_id = cycle.task_id
+                 WHERE task.status != 'done'
+                    OR cycle.saved_cycle_ordinal != 1
+                    OR cycle.origin != 'legacy_current_done'
+                    OR cycle.completeness != 'partial'
+                """
+            ).fetchone()[0]
+        )
+        linked_event_count = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                  FROM task_events
+                 WHERE completion_cycle_id IS NOT NULL
+                """
+            ).fetchone()[0]
+        )
+        after = _migration_preservation_snapshot(
+            connection,
+            column_basis=column_basis,
+        )
+        if (
+            task_count != unknown_count
+            or done_count != cycle_count
+            or invalid_cycle_count
+            or linked_event_count
+            or after != before
+        ):
+            raise completion_history_inconsistent()
+
+        connection.execute(
+            """
+            INSERT INTO schema_migrations(version, name, applied_at)
+            VALUES (15, 'completion_cycle_history', ?)
+            """,
+            (migration_time,),
+        )
+        validate_completion_cycle_storage(connection)
+        quick_rows = [
+            str(row[0])
+            for row in connection.execute("PRAGMA quick_check").fetchall()
+        ]
+        if quick_rows != ["ok"]:
+            raise completion_history_inconsistent()
+        if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            raise completion_history_inconsistent()
+        if fail_stage == "before_commit":
+            raise StorageError(
+                "internal_error",
+                "injected completion-history migration failure",
+            )
+        connection.commit()
+    except StorageError as exc:
+        connection.rollback()
+        if exc.code == "completion_history_inconsistent":
+            raise _unreadable_project_state() from exc
+        raise
+    except sqlite3.IntegrityError as exc:
+        connection.rollback()
+        raise _unreadable_project_state() from exc
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def apply_migrations(
     connection: sqlite3.Connection,
     *,
@@ -3159,6 +5414,12 @@ def apply_migrations(
     if version < 14:
         apply_project_identity_bindings_migration(connection)
         applied.append(14)
+        version = 14
+    if version < 15:
+        apply_completion_cycle_history_migration(connection)
+        applied.append(15)
+    else:
+        apply_completion_cycle_history_migration(connection)
     return applied, warnings
 
 
@@ -3774,6 +6035,10 @@ def _validate_current_schema_structure(
 
     if required_schema_objects_missing(connection):
         raise _unreadable_project_state()
+    try:
+        _validate_completion_history_structure(connection)
+    except StorageError as exc:
+        raise _unreadable_project_state() from exc
     return version
 
 
@@ -5061,6 +7326,19 @@ def validate_snapshot_database(
             "migration_required",
             "database migration history is incomplete",
         )
+    if version >= 15:
+        if required_schema_objects_missing(
+            connection,
+            schema_version=15,
+        ):
+            raise StorageError(
+                "migration_required",
+                "database schema is incomplete for Viewer snapshot version 3",
+            )
+        try:
+            _validate_completion_history_structure(connection)
+        except StorageError as exc:
+            raise _unreadable_project_state() from exc
 
     required_tables = {
         "schema_migrations",
@@ -5363,15 +7641,15 @@ def read_doctor_state(
     )
 
 
-def _is_exact_empty_v14_database(db_path: Path) -> bool:
+def _is_exact_empty_v15_database(db_path: Path) -> bool:
     """Recognize only the exact unbound schema-construction interval."""
     if db_path.is_symlink() or not db_path.is_file():
         return False
     try:
         with closing(connect_readonly(db_path)) as connection:
             if (
-                current_schema_version(connection) != 14
-                or missing_migration_versions(connection, 14)
+                current_schema_version(connection) != 15
+                or missing_migration_versions(connection, 15)
                 or required_schema_objects_missing(connection)
             ):
                 return False
@@ -5387,9 +7665,9 @@ def _is_exact_empty_v14_database(db_path: Path) -> bool:
                 ).fetchall()
             }
             if object_counts != {
-                "index": 16,
-                "table": 16,
-                "trigger": 8,
+                "index": 20,
+                "table": 17,
+                "trigger": 12,
             }:
                 return False
             if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
@@ -5423,7 +7701,7 @@ def _is_exact_empty_v14_database(db_path: Path) -> bool:
                         "SELECT COUNT(*) FROM schema_migrations"
                     ).fetchone()[0]
                 )
-                == 14
+                == 15
             )
     except (OSError, sqlite3.Error, StorageError):
         return False
@@ -5637,7 +7915,7 @@ def initialize_uuid_database(
     except Exception:
         if (
             not any(os.path.lexists(path) for path in sidecar_paths)
-            and _is_exact_empty_v14_database(db_path)
+            and _is_exact_empty_v15_database(db_path)
         ):
             try:
                 db_path.unlink()

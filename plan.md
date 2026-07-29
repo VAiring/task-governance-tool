@@ -1202,11 +1202,12 @@ acceptance are also complete. Their stored Task Contracts were corrected from
 the cancelled M16.3 reference to the completed reduced-loop/reconciliation
 authority before execution; root `AGENTS.md` retains only durable routing
 rather than milestone status.
-TG-M18.0 is complete as the exact five-document contract. TG-M18.1 through
-TG-M18.4 are stored ready in their sequential lane but remain inactive behind
-their predecessors; the implemented runtime therefore remains
-v0.9.0/schema v14/Viewer v3 until those units complete. M19.0 remains blocked
-until M18.4 is done and its completion SHA is fixed.
+TG-M18.0 and TG-M18.1 are complete. The non-public staging runtime is package
+v0.9.0/schema v15/Viewer v3 with source-schema compatibility through 15;
+native capture and public history remain inactive. TG-M18.2 through TG-M18.4
+remain stored ready in their sequential lane, while the published baseline
+remains v0.9.0/schema v14/Viewer v3 until M18.4. M19.0 remains blocked until
+M18.4 is done and its completion SHA is fixed.
 Immediately after M18.0 completes and before M18.1 starts, the stored M18.1,
 M18.2, and M18.4 Contracts will be mechanically synchronized to the final
 five-document authority for historical `none`, the 500-character stored

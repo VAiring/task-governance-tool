@@ -1,12 +1,12 @@
 # task-governance-tool MVP Specification
 
-Status: release v0.9.0/schema v14 with Viewer snapshot v3 implements
-TG-M17.0 through TG-M17.5: stable project identity, fixed project-local state,
-same-binding legacy publication, explicit confirmed relocation, consumer
-hardening, and synchronized package acceptance are complete. The completed
-TG-M16.4 reduced-loop behavioral acceptance is retained. The completed TG-M18.0
-completion-cycle-history contract targets v0.10.0 but does not activate runtime
-behavior until its owning implementation units complete. TG-M12.3 Issue
+Status: the published baseline remains v0.9.0/schema v14 with Viewer snapshot
+v3 and completed TG-M17.0 through TG-M17.5 identity/storage behavior. TG-M18.0
+and TG-M18.1 are complete: the non-public staging runtime is package v0.9.0,
+schema v15, and Viewer snapshot v3 accepting sources 5-15, without native
+completion capture or public history. TG-M18.2 through TG-M18.4 remain
+sequential work targeting v0.10.0/schema v16/Viewer snapshot v4. The completed
+TG-M16.4 reduced-loop behavioral acceptance is retained. TG-M12.3 Issue
 adapter remains blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.

@@ -91,6 +91,7 @@ MIGRATION_STEPS = (
     (11, apply_managed_backup_generations_migration),
     (12, apply_task_checkpoints_migration),
     (13, apply_viewer_maintenance_migration),
+    (14, apply_project_identity_bindings_migration),
 )
 
 
@@ -329,7 +330,7 @@ class ProjectIdentityBindingTests(unittest.TestCase):
             migrate_to_v14(install.target)
 
             with closing(connect(install.db_path)) as connection:
-                self.assertEqual(SCHEMA_VERSION, 14)
+                self.assertEqual(SCHEMA_VERSION, 15)
                 self.assertEqual(current_schema_version(connection), 14)
                 migration = tuple(
                     connection.execute(
@@ -361,7 +362,13 @@ class ProjectIdentityBindingTests(unittest.TestCase):
                     ).fetchall()
                 }
                 self.assertTrue(EXPECTED_TRIGGERS <= triggers)
-                self.assertEqual(required_schema_objects_missing(connection), [])
+                self.assertEqual(
+                    required_schema_objects_missing(
+                        connection,
+                        schema_version=14,
+                    ),
+                    [],
+                )
                 after_project = tuple(
                     connection.execute(
                         """
@@ -420,8 +427,8 @@ class ProjectIdentityBindingTests(unittest.TestCase):
             migrate_to_v14(install.target)
             self.assertEqual(logical_database_state(install.db_path), before_replay)
 
-    def test_every_v1_through_v13_source_preserves_legacy_identity_at_v14(self):
-        for source_version in range(1, 14):
+    def test_every_v1_through_v14_source_preserves_legacy_identity_at_v15(self):
+        for source_version in range(1, 15):
             with (
                 self.subTest(source_version=source_version),
                 tempfile.TemporaryDirectory() as tmp,
@@ -443,9 +450,9 @@ class ProjectIdentityBindingTests(unittest.TestCase):
 
                 self.assertEqual(
                     result.migrations_applied,
-                    list(range(source_version + 1, 15)),
+                    list(range(source_version + 1, 16)),
                 )
-                self.assertEqual(result.schema_version, 14)
+                self.assertEqual(result.schema_version, 15)
                 self.assertEqual(
                     business_record_projection(install.db_path),
                     original_records,
@@ -463,7 +470,7 @@ class ProjectIdentityBindingTests(unittest.TestCase):
                                 "SELECT version FROM schema_migrations ORDER BY version"
                             ).fetchall()
                         ],
-                        list(range(1, 15)),
+                        list(range(1, 16)),
                     )
 
     def test_v14_migration_normalizes_only_the_bounded_display_name(self):
@@ -813,7 +820,7 @@ class ProjectIdentityBindingTests(unittest.TestCase):
             )
 
             expected_id = f"tg_project_{UUID_HEX}"
-            self.assertEqual(result.schema_version, 14)
+            self.assertEqual(result.schema_version, 15)
             self.assertEqual(result.target.project.project_id, expected_id)
             self.assertEqual(result.target.db_path, target.db_path)
             id_factory.assert_called_once_with()
@@ -1129,7 +1136,7 @@ class ProjectIdentityBindingTests(unittest.TestCase):
             ):
                 result = initialize_database(install.target)
 
-            self.assertEqual(result.schema_version, 14)
+            self.assertEqual(result.schema_version, 15)
             self.assertRegex(result.target.project.project_id, r"-[0-9a-f]{12}$")
             self.assertTrue(install.db_path.is_file())
             self.assertIn("projects", install.db_path.parts)

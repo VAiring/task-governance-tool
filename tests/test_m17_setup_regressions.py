@@ -12,12 +12,14 @@ from unittest import mock
 try:
     from m14_test_support import (
         create_v12_database,
+        create_v14_target,
         json_payload,
         make_physical_install,
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
         create_v12_database,
+        create_v14_target,
         json_payload,
         make_physical_install,
     )
@@ -38,12 +40,13 @@ from task_governance_tool.storage import (
     compare_and_swap_project_binding,
     connect,
     current_schema_version,
-    initialize_database,
 )
 
 
 LEGACY_CURRENT_WRITES = [
     "legacy_state_publish",
+    "migration_backup",
+    "database_migrate",
     "maintenance_configure",
     "viewer_publish",
     "legacy_state_cleanup",
@@ -55,6 +58,11 @@ LEGACY_RECOVERY_WRITES = [
     "database_migrate",
     "viewer_publish",
     "legacy_state_cleanup",
+]
+LEGACY_RECOVERY_CONFIGURE_WRITES = [
+    *LEGACY_RECOVERY_WRITES[:4],
+    "maintenance_configure",
+    *LEGACY_RECOVERY_WRITES[4:],
 ]
 MAX_EXTRA_ARTIFACT_BYTES = 16_777_216
 
@@ -188,7 +196,7 @@ class M17SetupRegressionTests(unittest.TestCase):
 
     def make_pending_cleanup_install(self, root: Path):
         install = make_physical_install(root)
-        initialize_database(install.legacy_target)
+        create_v14_target(install.legacy_target)
         with mock.patch.object(
             setup_service,
             "_complete_pending_cleanup",
@@ -232,7 +240,7 @@ class M17SetupRegressionTests(unittest.TestCase):
     def test_legacy_backup_only_journal_is_unreadable_before_any_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            initialize_database(install.legacy_target)
+            create_v14_target(install.legacy_target)
             with backup_service.managed_backup_lock(
                 install.legacy_target
             ):
@@ -252,7 +260,7 @@ class M17SetupRegressionTests(unittest.TestCase):
     def test_oversized_legacy_viewer_is_unreadable_without_transition(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            initialize_database(install.legacy_target)
+            create_v14_target(install.legacy_target)
             viewer = (
                 install.legacy_root
                 / "viewer"
@@ -274,7 +282,7 @@ class M17SetupRegressionTests(unittest.TestCase):
     def test_two_byte_legacy_backup_lock_is_unreadable_without_transition(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            initialize_database(install.legacy_target)
+            create_v14_target(install.legacy_target)
             backup_lock = (
                 install.legacy_root
                 / "backups"
@@ -332,7 +340,7 @@ class M17SetupRegressionTests(unittest.TestCase):
     def test_missing_primary_uses_canonical_legacy_backup_lock(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            initialize_database(install.legacy_target)
+            create_v14_target(install.legacy_target)
             with backup_service.managed_backup_lock(
                 install.legacy_target
             ):
@@ -364,13 +372,7 @@ class M17SetupRegressionTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     payload["data"]["planned_writes"],
-                    [
-                        "database_restore",
-                        "legacy_state_publish",
-                        "maintenance_configure",
-                        "viewer_publish",
-                        "legacy_state_cleanup",
-                    ],
+                    LEGACY_RECOVERY_CONFIGURE_WRITES,
                 )
                 self.assertEqual(
                     payload["data"]["completed_writes"],
@@ -536,7 +538,7 @@ class M17SetupRegressionTests(unittest.TestCase):
             self.assertTrue(install.db_path.is_file())
             self.assertFalse(install.legacy_root.exists())
             with closing(connect(install.db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 14)
+                self.assertEqual(current_schema_version(connection), 15)
                 maintenance = connection.execute(
                     """
                     SELECT enabled_at, backup_interval_minutes,
@@ -561,7 +563,7 @@ class M17SetupRegressionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             legacy_target = install.legacy_target
-            initialize_database(legacy_target)
+            create_v14_target(legacy_target)
             with backup_service.managed_backup_lock(legacy_target):
                 backup_service.publish_setup_backup(legacy_target, 3)
 
@@ -645,7 +647,7 @@ class M17SetupRegressionTests(unittest.TestCase):
     def test_non_nul_backup_lock_is_inventoried_and_cleaned_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            initialize_database(install.legacy_target)
+            create_v14_target(install.legacy_target)
             backup_lock = (
                 install.legacy_root
                 / "backups"

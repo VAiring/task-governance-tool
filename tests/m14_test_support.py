@@ -33,10 +33,12 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_initial_schema_migration,
     apply_managed_backup_generations_migration,
     apply_paused_state_migration,
+    apply_project_identity_bindings_migration,
     apply_project_maintenance_migration,
     apply_review_evidence_migration,
     apply_task_checkpoints_migration,
     apply_task_contract_migration,
+    apply_viewer_maintenance_migration,
     connect,
     connect_readonly,
     default_db_path,
@@ -469,7 +471,28 @@ def remove_v10_maintenance_for_test(connection) -> None:
     """Downgrade a current test database before exercising an older migration."""
 
     connection.execute(
-        "DELETE FROM schema_migrations WHERE version IN (10, 11, 12, 13, 14)"
+        "DELETE FROM schema_migrations WHERE version IN (10, 11, 12, 13, 14, 15)"
+    )
+    for trigger in (
+        "trg_task_events_completion_cycle_link_immutable",
+        "trg_tasks_completion_history_coverage_immutable",
+        "trg_task_completion_cycles_no_delete",
+        "trg_task_completion_cycles_no_update",
+    ):
+        connection.execute(f"DROP TRIGGER {trigger}")
+    for index in (
+        "idx_task_events_completion_cycle",
+        "idx_task_completion_cycles_task_ordinal",
+        "idx_review_receipts_completion_cycle_reference",
+        "idx_tasks_project_task_identity",
+    ):
+        connection.execute(f"DROP INDEX {index}")
+    connection.execute(
+        "ALTER TABLE task_events DROP COLUMN completion_cycle_id"
+    )
+    connection.execute("DROP TABLE task_completion_cycles")
+    connection.execute(
+        "ALTER TABLE tasks DROP COLUMN completion_history_coverage"
     )
     for trigger in (
         "trg_project_meta_identity_immutable",
@@ -680,3 +703,12 @@ def create_v12_database(
         interval_minutes=interval_minutes,
         generations=generations,
     )
+
+
+def create_v14_target(target: DatabaseTarget) -> None:
+    """Create a complete legacy-layout schema-v14 fixture."""
+
+    create_v12_target(target)
+    with closing(connect(target.db_path)) as connection:
+        apply_viewer_maintenance_migration(connection)
+        apply_project_identity_bindings_migration(connection)

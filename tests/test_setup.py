@@ -151,7 +151,7 @@ class SetupCommandTests(unittest.TestCase):
                     "planned_writes": FRESH_WRITES,
                     "completed_writes": [],
                     "schema_from": None,
-                    "schema_to": 15,
+                    "schema_to": 16,
                     "maintenance_enabled": False,
                     "backup_interval_minutes": 30,
                     "backup_generations": 3,
@@ -177,7 +177,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(completed_data["planned_writes"], FRESH_WRITES)
             self.assertEqual(completed_data["completed_writes"], FRESH_WRITES)
             self.assertEqual(completed_data["schema_from"], None)
-            self.assertEqual(completed_data["schema_to"], 15)
+            self.assertEqual(completed_data["schema_to"], 16)
             self.assertTrue(completed_data["maintenance_enabled"])
             self.assertEqual(completed_data["backup_interval_minutes"], 30)
             self.assertEqual(completed_data["backup_generations"], 3)
@@ -252,7 +252,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": [],
                         "completed_writes": [],
                         "schema_from": None,
-                        "schema_to": 15,
+                        "schema_to": 16,
                         "maintenance_enabled": None,
                         "backup_interval_minutes": None,
                         "backup_generations": None,
@@ -631,7 +631,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": planned,
                         "completed_writes": completed,
                         "schema_from": schema_from,
-                        "schema_to": 15,
+                        "schema_to": 16,
                         "maintenance_enabled": maintenance_enabled,
                         "backup_interval_minutes": 30,
                         "backup_generations": 3,
@@ -684,7 +684,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": [],
                         "completed_writes": [],
                         "schema_from": None,
-                        "schema_to": 15,
+                        "schema_to": 16,
                         "maintenance_enabled": None,
                         "backup_interval_minutes": None,
                         "backup_generations": None,
@@ -995,7 +995,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             data = self.assert_setup_shape(json_payload(migrated))
             self.assertEqual(data["schema_from"], 9)
-            self.assertEqual(data["schema_to"], 15)
+            self.assertEqual(data["schema_to"], 16)
             self.assertEqual(
                 data["planned_writes"],
                 LEGACY_MIGRATION_WRITES,
@@ -1025,7 +1025,7 @@ class SetupCommandTests(unittest.TestCase):
             with closing(sqlite3.connect(install.db_path)) as connection:
                 self.assertEqual(
                     connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0],
-                    15,
+                    16,
                 )
                 row = connection.execute(
                     """
@@ -1063,7 +1063,7 @@ class SetupCommandTests(unittest.TestCase):
                 "legacy_state_cleanup",
             ]
             self.assertEqual(data["schema_from"], 10)
-            self.assertEqual(data["schema_to"], 15)
+            self.assertEqual(data["schema_to"], 16)
             self.assertEqual(data["planned_writes"], expected_writes)
             self.assertEqual(data["completed_writes"], expected_writes)
             self.assertFalse(install.legacy_db_path.exists())
@@ -1132,7 +1132,7 @@ class SetupCommandTests(unittest.TestCase):
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 data = self.assert_setup_shape(json_payload(migrated))
                 self.assertEqual(data["schema_from"], 12)
-                self.assertEqual(data["schema_to"], 15)
+                self.assertEqual(data["schema_to"], 16)
                 self.assertEqual(
                     data["planned_writes"],
                     [
@@ -1163,7 +1163,7 @@ class SetupCommandTests(unittest.TestCase):
                         connection.execute(
                             "SELECT MAX(version) FROM schema_migrations"
                         ).fetchone()[0],
-                        15,
+                        16,
                     )
                     self.assertIsNotNone(
                         connection.execute(

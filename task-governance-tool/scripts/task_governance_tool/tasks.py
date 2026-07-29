@@ -39,6 +39,11 @@ from task_governance_tool.storage import (
     DatabaseTarget,
     ProjectIdentity,
     begin_initialized_write,
+    completion_history_inconsistent,
+    current_schema_version,
+    insert_completion_cycle_locked,
+    insert_native_completion_cycle_locked,
+    match_current_done_completion_cycle_locked,
     utc_now,
 )
 
@@ -704,7 +709,55 @@ def create_task_event(
     event_type: str,
     summary: str,
     created_at: str,
+    completion_cycle_id: str | None = None,
 ) -> dict[str, Any]:
+    if completion_cycle_id is not None:
+        cycle = connection.execute(
+            """
+            SELECT project_id, task_id, origin
+              FROM task_completion_cycles
+             WHERE completion_cycle_id = ?
+            """,
+            (completion_cycle_id,),
+        ).fetchone()
+        completion_event = event_type in {
+            "task_updated",
+            "review_tier_changed",
+        }
+        reopen_event = event_type == "task_reopened"
+        if (
+            cycle is None
+            or str(cycle["project_id"]) != project_id
+            or str(cycle["task_id"]) != task_id
+            or (
+                completion_event
+                and str(cycle["origin"]) != "native_done"
+            )
+            or not (completion_event or reopen_event)
+        ):
+            raise completion_history_inconsistent()
+        linked = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                  FROM task_events
+                 WHERE completion_cycle_id = ?
+                   AND (
+                     (? = 1 AND event_type IN (
+                       'task_updated', 'review_tier_changed'
+                     ))
+                     OR (? = 1 AND event_type = 'task_reopened')
+                   )
+                """,
+                (
+                    completion_cycle_id,
+                    int(completion_event),
+                    int(reopen_event),
+                ),
+            ).fetchone()[0]
+        )
+        if linked:
+            raise completion_history_inconsistent()
     event = {
         "task_event_id": generate_id("tg_event"),
         "task_id": task_id,
@@ -712,11 +765,21 @@ def create_task_event(
         "event_type": event_type,
         "summary": validate_event_summary(summary),
         "created_at": created_at,
+        "completion_cycle_id": completion_cycle_id,
     }
+    link_column = ", completion_cycle_id" if completion_cycle_id else ""
+    link_value = ", :completion_cycle_id" if completion_cycle_id else ""
     connection.execute(
-        """
-        INSERT INTO task_events(task_event_id, task_id, project_id, event_type, summary, created_at)
-        VALUES (:task_event_id, :task_id, :project_id, :event_type, :summary, :created_at)
+        f"""
+        INSERT INTO task_events(
+          task_event_id, task_id, project_id, event_type, summary, created_at
+          {link_column}
+        )
+        VALUES (
+          :task_event_id, :task_id, :project_id, :event_type, :summary,
+          :created_at
+          {link_value}
+        )
         """,
         event,
     )
@@ -798,6 +861,7 @@ def add_task(
 
     now = utc_now()
     completed_at = now if normalized["status"] == "done" else None
+    schema_version = current_schema_version(connection)
     row = {
         "task_id": task_id,
         "project_id": project.project_id,
@@ -817,12 +881,20 @@ def add_task(
         "updated_at": now,
         "completed_at": completed_at,
     }
+    completion_history_column = ""
+    completion_history_value = ""
+    if schema_version >= 15:
+        row["completion_history_coverage"] = (
+            "complete" if schema_version >= 16 else "legacy_unknown"
+        )
+        completion_history_column = ", completion_history_coverage"
+        completion_history_value = ", :completion_history_coverage"
     savepoint = f"taskgov_ordering_{secrets.token_hex(4)}"
     contract_write: dict[str, Any] | None = None
     connection.execute(f"SAVEPOINT {savepoint}")
     try:
         connection.execute(
-            """
+            f"""
             INSERT INTO tasks(
               task_id,
               project_id,
@@ -841,6 +913,7 @@ def add_task(
               created_at,
               updated_at,
               completed_at
+              {completion_history_column}
             )
             VALUES (
               :task_id,
@@ -860,6 +933,7 @@ def add_task(
               :created_at,
               :updated_at,
               :completed_at
+              {completion_history_value}
             )
             """,
             row,
@@ -1088,6 +1162,75 @@ def bounded_transition_summary(
     if note is None:
         return summary
     return bounded_event_summary(summary, "", f"; Note: {note}")
+
+
+def task_edit_event_details(
+    *,
+    existing: dict[str, Any],
+    updated: dict[str, Any],
+    changed_fields: list[str],
+    status_was_provided: bool,
+    pause_changed: bool,
+    review_tier_changed: bool,
+    review_tier_change_reason: str | None,
+    add_note: str | None,
+    recorded_markers: list[str],
+) -> tuple[str, str]:
+    if review_tier_changed and review_tier_change_reason is not None:
+        return (
+            "review_tier_changed",
+            bounded_transition_summary(
+                (
+                    f"Review tier changed: {existing['review_tier']} -> "
+                    f"{updated['review_tier']}; Reason: "
+                ),
+                review_tier_change_reason,
+                recorded_markers=recorded_markers,
+                note=add_note,
+            ),
+        )
+    if status_was_provided and updated["status"] == "paused":
+        return (
+            "task_updated",
+            bounded_transition_summary(
+                "Paused: ",
+                str(updated["pause_reason"]),
+                recorded_markers=recorded_markers,
+                note=add_note,
+            ),
+        )
+    if status_was_provided and existing["status"] == "paused":
+        return (
+            "task_updated",
+            bounded_transition_summary(
+                "Resumed from paused; Previous reason: ",
+                str(existing["pause_reason"]),
+                recorded_markers=recorded_markers,
+                note=add_note,
+            ),
+        )
+    if pause_changed:
+        return (
+            "task_updated",
+            bounded_transition_summary(
+                "Pause reason updated: ",
+                str(updated["pause_reason"]),
+                recorded_markers=recorded_markers,
+                note=add_note,
+            ),
+        )
+    if add_note is not None:
+        return (
+            (
+                "note_added"
+                if not changed_fields and not recorded_markers
+                else "task_updated"
+            ),
+            note_event_summary(add_note, recorded_markers),
+        )
+    if recorded_markers:
+        return "task_updated", f"Recorded: {', '.join(recorded_markers)}"
+    return "task_updated", f"Updated fields: {', '.join(changed_fields)}"
 
 
 def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
@@ -2021,6 +2164,8 @@ def reopen_done_task(
     existing: dict[str, Any],
     *,
     reopen_reason: str,
+    effort_profile: Any | None = None,
+    effort_preflight: Any | None = None,
     database_target: DatabaseTarget | None = None,
 ) -> EditTaskResult:
     locked_existing = lock_and_reread_edit_owner(
@@ -2035,6 +2180,22 @@ def reopen_done_task(
             "task changed concurrently; retry the reopen against current state",
         )
     existing = locked_existing
+    (
+        history_coverage,
+        latest_cycle,
+        projection_matches,
+        latest_cycle_has_reopen_link,
+    ) = match_current_done_completion_cycle_locked(
+        connection,
+        project_id=project.project_id,
+        task_id=str(existing["task_id"]),
+    )
+    if latest_cycle is not None and (
+        not projection_matches or latest_cycle_has_reopen_link
+    ):
+        raise completion_history_inconsistent()
+    if latest_cycle is None and history_coverage != "legacy_unknown":
+        raise completion_history_inconsistent()
     generation = validate_sqlite_int64(
         int(existing["review_target_generation"]) + 1,
         field="review_target_generation",
@@ -2112,6 +2273,13 @@ def reopen_done_task(
     savepoint = f"taskgov_reopen_{secrets.token_hex(4)}"
     connection.execute(f"SAVEPOINT {savepoint}")
     try:
+        if latest_cycle is None:
+            latest_cycle = insert_completion_cycle_locked(
+                connection,
+                project_id=project.project_id,
+                task_id=str(existing["task_id"]),
+                recorded_at=now,
+            )
         update_task_row(
             connection,
             task_id=str(existing["task_id"]),
@@ -2135,6 +2303,7 @@ def reopen_done_task(
             event_type="task_reopened",
             summary=summary,
             created_at=now,
+            completion_cycle_id=latest_cycle.completion_cycle_id,
         )
         task = read_task(connection, project.project_id, str(existing["task_id"]))
         if task is None:
@@ -2142,6 +2311,18 @@ def reopen_done_task(
                 "internal_error",
                 "task was not readable after reopen",
             )
+        from task_governance_tool.effort import record_task_transition
+
+        record_task_transition(
+            connection,
+            project,
+            task_id=str(existing["task_id"]),
+            previous_status=str(existing["status"]),
+            current_status=str(task["status"]),
+            profile=effort_profile,
+            occurred_at=now,
+            preflight=effort_preflight,
+        )
     except sqlite3.IntegrityError as exc:
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
@@ -2204,17 +2385,9 @@ def edit_task(
                 project,
                 existing,
                 reopen_reason=str(reopen_input["reopen_reason"]),
+                effort_profile=effort_profile,
+                effort_preflight=effort_preflight,
                 database_target=database_target,
-            )
-            record_task_transition(
-                connection,
-                project,
-                task_id=normalized_task_id,
-                previous_status=str(existing["status"]),
-                current_status=str(reopened.task["status"]),
-                profile=effort_profile,
-                occurred_at=str(reopened.event["created_at"]),
-                preflight=effort_preflight,
             )
             return reopened
         reject_done_task_write(existing)
@@ -2553,6 +2726,19 @@ def edit_task(
     if not changed_fields and add_note is None and not recorded_markers:
         raise validation_error("invalid_argument", "task edit did not change any fields")
 
+    completing = status_was_provided and updated["status"] == "done"
+    pause_changed = updated["pause_reason"] != existing["pause_reason"]
+    event_type, summary = task_edit_event_details(
+        existing=existing,
+        updated=updated,
+        changed_fields=changed_fields,
+        status_was_provided=status_was_provided,
+        pause_changed=pause_changed,
+        review_tier_changed=review_tier_changed,
+        review_tier_change_reason=review_tier_change_reason,
+        add_note=add_note,
+        recorded_markers=recorded_markers,
+    )
     update_values = {field: updated[field] for field in changed_fields}
     update_values["updated_at"] = now
     ordering_changed = any(
@@ -2574,9 +2760,69 @@ def edit_task(
         and updated["status"] != existing["status"]
     )
 
+    event: dict[str, Any] | None = None
+    task: dict[str, Any] | None = None
     savepoint = f"taskgov_ordering_{secrets.token_hex(4)}"
     connection.execute(f"SAVEPOINT {savepoint}")
     try:
+        completion_cycle_id: str | None = None
+        if completing:
+            proposed_done = dict(updated)
+            proposed_done["updated_at"] = now
+            if (
+                proposed_done["kind"] == "sequential"
+                and (lane_metadata_changed or advanced_transition)
+                and canonical_lane_order_conflict(
+                    connection,
+                    project_id=project.project_id,
+                    task_id=normalized_task_id,
+                    lane=str(proposed_done["lane"]),
+                    lane_order=int(proposed_done["lane_order"]),
+                )
+            ):
+                raise TaskRepositoryError(
+                    "invalid_argument",
+                    "task conflicts with an existing canonical sequential lane order",
+                )
+            if proposed_done["kind"] == "sequential":
+                predecessor = connection.execute(
+                    f"""
+                    SELECT 1
+                      FROM tasks AS earlier
+                     WHERE earlier.project_id = ?
+                       AND earlier.task_id != ?
+                       AND earlier.kind = 'sequential'
+                       AND {canonical_lane_sql("earlier.lane")} = ?
+                       AND earlier.lane_order < ?
+                       AND earlier.status NOT IN ('done', 'cancelled')
+                     LIMIT 1
+                    """,
+                    (
+                        project.project_id,
+                        normalized_task_id,
+                        canonical_lane(proposed_done["lane"]),
+                        int(proposed_done["lane_order"]),
+                    ),
+                ).fetchone()
+                if predecessor is not None:
+                    raise TaskRepositoryError(
+                        "sequential_predecessor_incomplete",
+                        "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
+                    )
+            enforce_done_review_gate(
+                connection,
+                proposed_done,
+                status_was_provided=True,
+            )
+            cycle = insert_native_completion_cycle_locked(
+                connection,
+                project_id=project.project_id,
+                task_id=normalized_task_id,
+                task_projection=proposed_done,
+                recorded_at=now,
+            )
+            completion_cycle_id = cycle.completion_cycle_id
+
         update_task_row(
             connection,
             task_id=normalized_task_id,
@@ -2608,21 +2854,36 @@ def edit_task(
                 "sequential_predecessor_incomplete",
                 "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
             )
-        locked_task = read_internal_task(
-            connection,
-            project.project_id,
-            normalized_task_id,
-        )
-        if locked_task is None:
-            raise TaskRepositoryError(
-                "internal_error",
-                "task was not readable during completion binding",
+        if completing:
+            event = create_task_event(
+                connection,
+                project_id=project.project_id,
+                task_id=normalized_task_id,
+                event_type=event_type,
+                summary=summary,
+                created_at=now,
+                completion_cycle_id=completion_cycle_id,
             )
-        enforce_done_review_gate(
-            connection,
-            locked_task,
-            status_was_provided=status_was_provided,
-        )
+            task = read_task(
+                connection,
+                project.project_id,
+                normalized_task_id,
+            )
+            if task is None:
+                raise TaskRepositoryError(
+                    "internal_error",
+                    "task was not readable after update",
+                )
+            record_task_transition(
+                connection,
+                project,
+                task_id=normalized_task_id,
+                previous_status=str(existing["status"]),
+                current_status=str(task["status"]),
+                profile=effort_profile,
+                occurred_at=now,
+                preflight=effort_preflight,
+            )
     except sqlite3.IntegrityError as exc:
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
@@ -2637,72 +2898,36 @@ def edit_task(
     else:
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
 
-    pause_changed = updated["pause_reason"] != existing["pause_reason"]
-    if review_tier_changed and review_tier_change_reason is not None:
-        event_type = "review_tier_changed"
-        summary = bounded_transition_summary(
-            (
-                f"Review tier changed: {existing['review_tier']} -> "
-                f"{updated['review_tier']}; Reason: "
-            ),
-            review_tier_change_reason,
-            recorded_markers=recorded_markers,
-            note=add_note,
+    if not completing:
+        event = create_task_event(
+            connection,
+            project_id=project.project_id,
+            task_id=normalized_task_id,
+            event_type=event_type,
+            summary=summary,
+            created_at=now,
         )
-    elif status_was_provided and updated["status"] == "paused":
-        event_type = "task_updated"
-        summary = bounded_transition_summary(
-            "Paused: ",
-            str(updated["pause_reason"]),
-            recorded_markers=recorded_markers,
-            note=add_note,
+        task = read_task(connection, project.project_id, normalized_task_id)
+        if task is None:
+            raise TaskRepositoryError(
+                "internal_error",
+                "task was not readable after update",
+            )
+        record_task_transition(
+            connection,
+            project,
+            task_id=normalized_task_id,
+            previous_status=str(existing["status"]),
+            current_status=str(task["status"]),
+            profile=effort_profile,
+            occurred_at=now,
+            preflight=effort_preflight,
         )
-    elif status_was_provided and existing["status"] == "paused":
-        event_type = "task_updated"
-        summary = bounded_transition_summary(
-            "Resumed from paused; Previous reason: ",
-            str(existing["pause_reason"]),
-            recorded_markers=recorded_markers,
-            note=add_note,
+    if event is None or task is None:
+        raise TaskRepositoryError(
+            "internal_error",
+            "task completion write did not produce an event and task",
         )
-    elif pause_changed:
-        event_type = "task_updated"
-        summary = bounded_transition_summary(
-            "Pause reason updated: ",
-            str(updated["pause_reason"]),
-            recorded_markers=recorded_markers,
-            note=add_note,
-        )
-    elif add_note is not None:
-        event_type = "note_added" if not changed_fields and not recorded_markers else "task_updated"
-        summary = note_event_summary(add_note, recorded_markers)
-    elif recorded_markers:
-        event_type = "task_updated"
-        summary = f"Recorded: {', '.join(recorded_markers)}"
-    else:
-        event_type = "task_updated"
-        summary = f"Updated fields: {', '.join(changed_fields)}"
-    event = create_task_event(
-        connection,
-        project_id=project.project_id,
-        task_id=normalized_task_id,
-        event_type=event_type,
-        summary=summary,
-        created_at=now,
-    )
-    task = read_task(connection, project.project_id, normalized_task_id)
-    if task is None:
-        raise TaskRepositoryError("internal_error", "task was not readable after update")
-    record_task_transition(
-        connection,
-        project,
-        task_id=normalized_task_id,
-        previous_status=str(existing["status"]),
-        current_status=str(task["status"]),
-        profile=effort_profile,
-        occurred_at=now,
-        preflight=effort_preflight,
-    )
     return EditTaskResult(task=task, changed_fields=changed_fields, event=event)
 
 

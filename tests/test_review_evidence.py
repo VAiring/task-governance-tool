@@ -1389,13 +1389,36 @@ class ReviewEvidenceTests(unittest.TestCase):
             old_generation = internal_git_snapshot_target(
                 db, repo, task_id
             ).task["review_target_generation"]
-            with closing(sqlite3.connect(db)) as connection:
-                connection.execute(
-                    "UPDATE tasks SET status = 'done', completed_at = ? "
-                    "WHERE task_id = ?",
-                    ("2026-07-26T00:00:00Z", task_id),
-                )
-                connection.commit()
+            self.assertEqual(
+                receipt_add(db, repo, task_id, "reviewer-a").returncode,
+                0,
+            )
+            self.assertEqual(
+                receipt_add(db, repo, task_id, "reviewer-b").returncode,
+                0,
+            )
+            subprocess.run(
+                [
+                    "git", "-C", str(repo), "-c", "user.name=TaskGov Test",
+                    "-c", "user.email=taskgov@example.invalid", "commit",
+                    "--quiet", "--allow-empty", "-m", "completed snapshot",
+                ],
+                check=True,
+            )
+            completion_commit = subprocess.run(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"],
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+            ).stdout.strip()
+            completed = run_taskgov(
+                "task", "edit", "--repo", str(repo), "--db", str(db),
+                task_id, "--status", "done", "--verification-complete",
+                "--review-complete", "--completion-evidence-kind",
+                "git_commit", "--completion-revision", completion_commit,
+                "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
 
             reopened = run_taskgov(
                 "task", "edit", "--repo", str(repo), "--db", str(db), task_id,

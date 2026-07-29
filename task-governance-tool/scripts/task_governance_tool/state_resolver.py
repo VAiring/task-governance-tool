@@ -41,7 +41,6 @@ from task_governance_tool.storage import (
     validate_identity_project_id,
     validate_current_database_binding,
     validate_current_database_structure,
-    validate_completion_cycle_storage,
     validate_lower_hex_64,
     validate_migration_backup_metadata,
     validate_operational_journal_state,
@@ -876,7 +875,6 @@ def _inspect_database(
             and stored.canonical_path_hash
             == doctor_current_root.canonical_path_hash
         ):
-            validate_completion_cycle_storage(connection)
             doctor_state = read_doctor_state(
                 connection,
                 _database_target(

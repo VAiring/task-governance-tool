@@ -870,7 +870,7 @@ class TaskEditTests(unittest.TestCase):
             )
             self.assertEqual(recompleted.returncode, 0, recompleted.stdout)
 
-    def test_reopen_reason_privacy_historical_redaction_and_overflow_are_bounded(self):
+    def test_reopen_reason_privacy_overflow_and_history_mismatch_are_bounded(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
@@ -941,7 +941,7 @@ class TaskEditTests(unittest.TestCase):
             )
             self.assertEqual(
                 json.loads(overflow.stdout)["errors"][0]["code"],
-                "invalid_argument",
+                "completion_history_inconsistent",
             )
             self.assertEqual(db.read_bytes(), before_overflow)
 
@@ -951,19 +951,32 @@ class TaskEditTests(unittest.TestCase):
                     (task["task_id"],),
                 )
                 connection.commit()
-            redacted = edit_task(
-                db,
-                repo,
+            before_mismatch = db.read_bytes()
+            mismatched = run_taskgov(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
                 task["task_id"],
                 "--status",
                 "in_progress",
                 "--reopen-reason",
                 "Safe retry",
+                "--json",
             )
-            summary = redacted["data"]["event"]["summary"]
-            self.assertNotIn("historical-secret", summary)
-            self.assertIn("sha256:", summary)
-            self.assertIn("redacted historical revision", summary)
+            mismatch_payload = json.loads(mismatched.stdout)
+            self.assertEqual(mismatched.returncode, 2)
+            self.assertEqual(
+                mismatch_payload["errors"],
+                [{
+                    "code": "completion_history_inconsistent",
+                    "message": "stored completion history is inconsistent",
+                }],
+            )
+            self.assertNotIn("historical-secret", mismatched.stdout)
+            self.assertEqual(db.read_bytes(), before_mismatch)
 
     def test_review_tier_downgrade_boundary_and_upgrade_remain_deterministic(self):
         with tempfile.TemporaryDirectory() as tmp:

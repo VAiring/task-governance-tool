@@ -18,6 +18,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from task_governance_tool.storage import (  # noqa: E402
     DatabaseTarget,
     StorageError,
+    apply_completion_cycle_capture_activation_migration,
     apply_completion_cycle_history_migration,
     connect,
     connect_initialized_readonly,
@@ -744,7 +745,6 @@ class CompletionCycleHistoryTests(unittest.TestCase):
 
     def test_full_history_scan_is_limited_to_setup_reentry_and_doctor(self):
         from task_governance_tool import doctor as doctor_service
-        from task_governance_tool import state_resolver as state_resolver_module
         from task_governance_tool import storage as storage_module
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -772,7 +772,7 @@ class CompletionCycleHistoryTests(unittest.TestCase):
                         target,
                         generated_at="2026-07-30T03:10:00Z",
                     )
-                self.assertEqual(snapshot.snapshot["source_schema_version"], 15)
+                self.assertEqual(snapshot.snapshot["source_schema_version"], 16)
                 full_validator.assert_not_called()
 
             full_validator = storage_module.validate_completion_cycle_storage
@@ -788,14 +788,16 @@ class CompletionCycleHistoryTests(unittest.TestCase):
             ) as setup_validator:
                 with closing(connect(target.db_path)) as connection:
                     self.assertFalse(connection.in_transaction)
-                    apply_completion_cycle_history_migration(connection)
+                    apply_completion_cycle_capture_activation_migration(
+                        connection
+                    )
                     self.assertFalse(connection.in_transaction)
                 self.assertGreaterEqual(setup_validator.call_count, 1)
 
             with mock.patch.object(
-                state_resolver_module,
+                storage_module,
                 "validate_completion_cycle_storage",
-                wraps=state_resolver_module.validate_completion_cycle_storage,
+                wraps=storage_module.validate_completion_cycle_storage,
             ) as doctor_validator:
                 result = doctor_service.run_doctor(
                     repo=str(install.project_root),
@@ -900,7 +902,9 @@ class CompletionCycleHistoryTests(unittest.TestCase):
             with closing(connect(target.db_path)) as connection:
                 self.assertFalse(connection.in_transaction)
                 with self.assertRaises(StorageError) as reentry_error:
-                    apply_completion_cycle_history_migration(connection)
+                    apply_completion_cycle_capture_activation_migration(
+                        connection
+                    )
                 self.assertEqual(
                     reentry_error.exception.code,
                     "project_state_unreadable",

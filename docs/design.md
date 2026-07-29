@@ -1,12 +1,13 @@
 # task-governance-tool MVP Design
 
 Status: the published baseline remains v0.9.0/schema v14 with Viewer snapshot
-v3 and completed TG-M17 identity/storage behavior. TG-M18.0 and TG-M18.1 are
-complete: the non-public staging runtime is package v0.9.0, schema v15, and
-Viewer snapshot v3 accepting sources 5-15, without native completion capture
-or public history. TG-M18.2 through TG-M18.4 remain sequential work targeting
-v0.10.0/schema v16/Viewer snapshot v4. The completed TG-M16.4 reduced-loop
-behavioral acceptance is retained. TG-M12.3 Issue adapter remains blocked.
+v3 and completed TG-M17 identity/storage behavior. TG-M18.0 through TG-M18.2
+are complete: the non-public staging runtime is package v0.9.0, schema v16,
+and Viewer snapshot v3 accepting sources 5-16, with atomic native completion
+capture but without public history. TG-M18.3 and TG-M18.4 remain sequential
+work targeting v0.10.0/schema v16/Viewer snapshot v4. The completed TG-M16.4
+reduced-loop behavioral acceptance is retained. TG-M12.3 Issue adapter remains
+blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -19,8 +20,8 @@ applicable only where TG-M14 does not supersede it. Sections labeled
 implemented TG-M14 section and later component designs are the current v0.8.0
 lineage; implemented TG-M17 design is the current v0.9.0
 identity/storage authority when those older boundaries differ. The approved
-TG-M18 section is implemented through M18.1 and remains future implementation
-authority for its sequential M18.2 through M18.4 units.
+TG-M18 section is implemented through M18.2 and remains future implementation
+authority for its sequential M18.3 and M18.4 units.
 
 ## Design Summary
 
@@ -4091,9 +4092,11 @@ anomalies rather than normalizing them.
 
 ### Native Done Transaction
 
-Both done paths produce one existing `CompletionPlan`. Git resolution and
-snapshot validation finish outside the writer. The exact writer/savepoint
-order is:
+The thin `task complete` path produces the existing `CompletionPlan`.
+Compatibility `task edit --status done` retains its full combined-edit input
+and existing Git preflight, then both paths converge on the same locked native
+capture block in `edit_task`. Git resolution and snapshot validation finish
+outside the writer. The exact writer/savepoint order is:
 
 1. `BEGIN IMMEDIATE` through the existing initialized writer and revalidate
    schema v16, project identity/binding, Task optimistic basis, Contract

@@ -20,7 +20,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 SQLITE_INT64_MAX = (1 << 63) - 1
 IDENTITY_SCHEMES = {"legacy_path_v1", "uuid_v1"}
 BINDING_REASONS = {
@@ -4231,6 +4231,20 @@ def _validate_completion_history_marker(
         raise completion_history_inconsistent()
 
 
+def _validate_completion_capture_activation_marker(
+    connection: sqlite3.Connection,
+) -> None:
+    row = connection.execute(
+        "SELECT name FROM schema_migrations WHERE version = 16"
+    ).fetchone()
+    if (
+        row is None
+        or str(row["name"])
+        != "completion_cycle_capture_activation"
+    ):
+        raise completion_history_inconsistent()
+
+
 def _foreign_key_signatures(
     connection: sqlite3.Connection,
     table_name: str,
@@ -4405,9 +4419,11 @@ def _validate_completion_history_schema_contract(
 def _validate_completion_history_structure(
     connection: sqlite3.Connection,
 ) -> None:
-    """Validate the bounded schema-v15 marker, foreign keys, and indexes."""
+    """Validate completion-history markers, foreign keys, and indexes."""
 
     _validate_completion_history_marker(connection)
+    if current_schema_version(connection) >= 16:
+        _validate_completion_capture_activation_marker(connection)
     _validate_completion_history_schema_contract(connection)
 
 
@@ -4484,6 +4500,7 @@ def validate_completion_cycle_storage(
         """
     ).fetchall()
     linked_counts: dict[tuple[str, str], int] = {}
+    completion_event_types = {"task_updated", "review_tier_changed"}
     for row in event_rows:
         cycle_id = str(row["completion_cycle_id"])
         owner = cycle_owners.get(cycle_id)
@@ -4494,16 +4511,25 @@ def validate_completion_cycle_storage(
                 str(row["project_id"]),
                 str(row["task_id"]),
             )
-            or event_type not in {"task_updated", "task_reopened"}
-            or (event_type == "task_updated" and owner[2] != "native_done")
+            or event_type
+            not in {*completion_event_types, "task_reopened"}
+            or (
+                event_type in completion_event_types
+                and owner[2] != "native_done"
+            )
         ):
             raise completion_history_inconsistent()
-        key = (cycle_id, event_type)
+        link_kind = (
+            "completion"
+            if event_type in completion_event_types
+            else "task_reopened"
+        )
+        key = (cycle_id, link_kind)
         linked_counts[key] = linked_counts.get(key, 0) + 1
         if linked_counts[key] > 1:
             raise completion_history_inconsistent()
     for cycle_id, (_, _, origin) in cycle_owners.items():
-        completion_links = linked_counts.get((cycle_id, "task_updated"), 0)
+        completion_links = linked_counts.get((cycle_id, "completion"), 0)
         if (
             origin == "native_done"
             and completion_links != 1
@@ -4516,13 +4542,14 @@ def validate_completion_cycle_storage(
         raise completion_history_inconsistent()
 
 
-def select_completion_gate_basis_locked(
+def _select_completion_gate_basis_for_projection_locked(
     connection: sqlite3.Connection,
     *,
     project_id: str,
     task_id: str,
+    task_projection: dict[str, Any],
 ) -> CompletionGateBasis:
-    """Select one deterministic current review basis inside a writer."""
+    """Select one deterministic review basis for a validated Task projection."""
 
     if not connection.in_transaction or int(
         connection.execute("PRAGMA query_only").fetchone()[0]
@@ -4531,17 +4558,7 @@ def select_completion_gate_basis_locked(
             "internal_error",
             "completion gate basis requires an active writer transaction",
         )
-    task = connection.execute(
-        """
-        SELECT review_tier, review_target_kind, review_target_value,
-               review_target_base_revision, review_target_generation
-          FROM tasks
-         WHERE project_id = ? AND task_id = ?
-        """,
-        (project_id, task_id),
-    ).fetchone()
-    if task is None:
-        raise completion_history_inconsistent()
+    task = task_projection
     tier = _completion_int(task["review_tier"], maximum=2)
     target_kind = str(task["review_target_kind"])
     target_value = str(task["review_target_value"])
@@ -4711,6 +4728,33 @@ def select_completion_gate_basis_locked(
     return basis
 
 
+def select_completion_gate_basis_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+) -> CompletionGateBasis:
+    """Select one deterministic current review basis inside a writer."""
+
+    task = connection.execute(
+        """
+        SELECT review_tier, review_target_kind, review_target_value,
+               review_target_base_revision, review_target_generation
+          FROM tasks
+         WHERE project_id = ? AND task_id = ?
+        """,
+        (project_id, task_id),
+    ).fetchone()
+    if task is None:
+        raise completion_history_inconsistent()
+    return _select_completion_gate_basis_for_projection_locked(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+        task_projection=dict(task),
+    )
+
+
 def _validate_completion_projection_relationship(cycle: CompletionCycle) -> None:
     if not cycle.review_target_kind:
         return
@@ -4731,15 +4775,7 @@ def _validate_completion_projection_relationship(cycle: CompletionCycle) -> None
         raise completion_history_inconsistent()
 
 
-def insert_completion_cycle_locked(
-    connection: sqlite3.Connection,
-    *,
-    project_id: str,
-    task_id: str,
-    recorded_at: str,
-) -> CompletionCycle:
-    """Archive the locked current-done projection without caller-owned content."""
-
+def _require_completion_cycle_writer(connection: sqlite3.Connection) -> None:
     if not connection.in_transaction or int(
         connection.execute("PRAGMA query_only").fetchone()[0]
     ):
@@ -4747,16 +4783,14 @@ def insert_completion_cycle_locked(
             "internal_error",
             "completion cycle insertion requires an active writer transaction",
         )
-    current = connection.execute(
-        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
-        (project_id, task_id),
-    ).fetchone()
-    if current is None:
-        raise completion_history_inconsistent()
-    task_projection = dict(current)
-    if str(task_projection.get("status", "")) != "done":
-        raise completion_history_inconsistent()
 
+
+def _next_completion_cycle_ordinal_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+) -> int:
     ordinal_row = connection.execute(
         """
         SELECT MAX(saved_cycle_ordinal)
@@ -4772,11 +4806,24 @@ def insert_completion_cycle_locked(
     )
     if previous_ordinal == SQLITE_INT64_MAX:
         raise completion_history_inconsistent()
-    ordinal = previous_ordinal + 1
-    origin = "legacy_current_done"
-    completeness = "partial"
-    attestation = None
-    actual_basis = CompletionGateBasis(
+    return previous_ordinal + 1
+
+
+def _legacy_completion_cycle_from_task_projection(
+    task_projection: dict[str, Any],
+    *,
+    project_id: str,
+    task_id: str,
+    ordinal: int,
+    recorded_at: str,
+    completion_cycle_id: str | None = None,
+) -> CompletionCycle:
+    if str(task_projection.get("status", "")) != "done":
+        raise completion_history_inconsistent()
+    completed_at = task_projection.get("completed_at")
+    if completed_at is None:
+        raise completion_history_inconsistent()
+    basis = CompletionGateBasis(
         version=0,
         kind="unknown",
         required_independent_passes=None,
@@ -4787,20 +4834,17 @@ def insert_completion_cycle_locked(
         fresh_review_required_count=None,
         qualifying_receipt_ids=(),
     )
-
-    completed_at = task_projection.get("completed_at")
     cycle = CompletionCycle(
         completion_cycle_id=(
-            f"tg_completion_cycle_{secrets.token_hex(8)}"
+            completion_cycle_id
+            or f"tg_completion_cycle_{secrets.token_hex(8)}"
         ),
         project_id=project_id,
         task_id=task_id,
         saved_cycle_ordinal=ordinal,
-        origin=origin,
-        completeness=completeness,
-        completed_at=(
-            str(completed_at) if completed_at is not None else None
-        ),
+        origin="legacy_current_done",
+        completeness="partial",
+        completed_at=str(completed_at),
         recorded_at=recorded_at,
         contract_revision=_completion_int(
             task_projection.get("current_contract_revision")
@@ -4814,7 +4858,7 @@ def insert_completion_cycle_locked(
             if str(task_projection.get("verification", "")).strip()
             else "unspecified"
         ),
-        verification_attestation=attestation,
+        verification_attestation=None,
         completion_evidence_kind=str(
             task_projection.get("completion_evidence_kind", "")
         ),
@@ -4845,11 +4889,21 @@ def insert_completion_cycle_locked(
         review_target_generation=_completion_int(
             task_projection.get("review_target_generation")
         ),
-        gate_basis=actual_basis,
+        gate_basis=basis,
     )
     _validate_completion_cycle(cycle)
+    return cycle
+
+
+def _persist_completion_cycle_locked(
+    connection: sqlite3.Connection,
+    cycle: CompletionCycle,
+) -> CompletionCycle:
+    _require_completion_cycle_writer(connection)
+    _validate_completion_cycle(cycle)
     _validate_cycle_receipts(connection, cycle)
-    receipt_ids = (*actual_basis.qualifying_receipt_ids, None, None)
+    basis = cycle.gate_basis
+    receipt_ids = (*basis.qualifying_receipt_ids, None, None)
     parameters = {
         "completion_cycle_id": cycle.completion_cycle_id,
         "project_id": cycle.project_id,
@@ -4881,19 +4935,19 @@ def insert_completion_cycle_locked(
         "review_target_value": cycle.review_target_value,
         "review_target_base_revision": cycle.review_target_base_revision,
         "review_target_generation": cycle.review_target_generation,
-        "gate_basis_version": actual_basis.version,
-        "review_basis_kind": actual_basis.kind,
+        "gate_basis_version": basis.version,
+        "review_basis_kind": basis.kind,
         "required_independent_passes": (
-            actual_basis.required_independent_passes
+            basis.required_independent_passes
         ),
         "qualifying_independent_passes": (
-            actual_basis.qualifying_independent_passes
+            basis.qualifying_independent_passes
         ),
-        "changes_requested_count": actual_basis.changes_requested_count,
-        "open_high_count": actual_basis.open_high_count,
-        "open_medium_count": actual_basis.open_medium_count,
+        "changes_requested_count": basis.changes_requested_count,
+        "open_high_count": basis.open_high_count,
+        "open_medium_count": basis.open_medium_count,
         "fresh_review_required_count": (
-            actual_basis.fresh_review_required_count
+            basis.fresh_review_required_count
         ),
         "qualifying_receipt_id_1": receipt_ids[0],
         "qualifying_receipt_id_2": receipt_ids[1],
@@ -4947,6 +5001,305 @@ def insert_completion_cycle_locked(
     if persisted != cycle:
         raise completion_history_inconsistent()
     return persisted
+
+
+def insert_completion_cycle_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    recorded_at: str,
+) -> CompletionCycle:
+    """Archive the locked current-done projection without caller-owned content."""
+
+    _require_completion_cycle_writer(connection)
+    current = connection.execute(
+        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
+        (project_id, task_id),
+    ).fetchone()
+    if current is None:
+        raise completion_history_inconsistent()
+    cycle = _legacy_completion_cycle_from_task_projection(
+        dict(current),
+        project_id=project_id,
+        task_id=task_id,
+        ordinal=_next_completion_cycle_ordinal_locked(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+        ),
+        recorded_at=recorded_at,
+    )
+    return _persist_completion_cycle_locked(connection, cycle)
+
+
+def _require_completion_capture_activation_locked(
+    connection: sqlite3.Connection,
+) -> None:
+    if (
+        current_schema_version(connection) != 16
+        or missing_migration_versions(connection, 16)
+    ):
+        raise StorageError(
+            "migration_required",
+            "completion capture requires schema version 16",
+        )
+    if required_schema_objects_missing(connection, schema_version=15):
+        raise completion_history_inconsistent()
+    _validate_completion_history_structure(connection)
+
+
+def insert_native_completion_cycle_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    task_projection: dict[str, Any],
+    recorded_at: str,
+) -> CompletionCycle:
+    """Capture one service-validated proposed completion under the Task writer."""
+
+    _require_completion_cycle_writer(connection)
+    _require_completion_capture_activation_locked(connection)
+    locked = connection.execute(
+        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
+        (project_id, task_id),
+    ).fetchone()
+    if locked is None:
+        raise completion_history_inconsistent()
+    locked_task = dict(locked)
+    proposed = dict(task_projection)
+    if (
+        str(locked_task.get("status", "")) == "done"
+        or str(proposed.get("status", "")) != "done"
+        or str(proposed.get("project_id", "")) != project_id
+        or str(proposed.get("task_id", "")) != task_id
+    ):
+        raise completion_history_inconsistent()
+    protected_fields = (
+        "current_contract_revision",
+        "review_target_kind",
+        "review_target_value",
+        "review_target_base_revision",
+        "review_target_generation",
+    )
+    if any(
+        proposed.get(field_name) != locked_task.get(field_name)
+        for field_name in protected_fields
+    ):
+        raise completion_history_inconsistent()
+
+    basis = _select_completion_gate_basis_for_projection_locked(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+        task_projection=proposed,
+    )
+    completed_at = proposed.get("completed_at")
+    if completed_at is None:
+        raise completion_history_inconsistent()
+    cycle = CompletionCycle(
+        completion_cycle_id=(
+            f"tg_completion_cycle_{secrets.token_hex(8)}"
+        ),
+        project_id=project_id,
+        task_id=task_id,
+        saved_cycle_ordinal=_next_completion_cycle_ordinal_locked(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+        ),
+        origin="native_done",
+        completeness="complete",
+        completed_at=str(completed_at),
+        recorded_at=recorded_at,
+        contract_revision=_completion_int(
+            proposed.get("current_contract_revision")
+        ),
+        review_tier=_completion_int(
+            proposed.get("review_tier"),
+            maximum=2,
+        ),
+        verification_expectation=(
+            "specified"
+            if str(proposed.get("verification", "")).strip()
+            else "unspecified"
+        ),
+        verification_attestation=True,
+        completion_evidence_kind=str(
+            proposed.get("completion_evidence_kind", "")
+        ),
+        completion_evidence_revision=str(
+            proposed.get("completion_evidence_revision", "")
+        ),
+        completion_evidence_reason=str(
+            proposed.get("completion_evidence_reason", "")
+        ),
+        external_revision_approved=_completion_bool(
+            proposed.get("external_revision_approved")
+        ),
+        completion_commit_required=_completion_bool(
+            proposed.get("completion_commit_required")
+        ),
+        completion_commit_hash=str(
+            proposed.get("completion_commit_hash", "")
+        ),
+        review_target_kind=str(
+            proposed.get("review_target_kind", "")
+        ),
+        review_target_value=str(
+            proposed.get("review_target_value", "")
+        ),
+        review_target_base_revision=str(
+            proposed.get("review_target_base_revision", "")
+        ),
+        review_target_generation=_completion_int(
+            proposed.get("review_target_generation")
+        ),
+        gate_basis=basis,
+    )
+    return _persist_completion_cycle_locked(connection, cycle)
+
+
+def _completion_projection_signature(
+    cycle: CompletionCycle,
+) -> tuple[object, ...]:
+    return (
+        cycle.completed_at,
+        cycle.contract_revision,
+        cycle.review_tier,
+        cycle.verification_expectation,
+        cycle.completion_evidence_kind,
+        cycle.completion_evidence_revision,
+        cycle.completion_evidence_reason,
+        cycle.external_revision_approved,
+        cycle.completion_commit_required,
+        cycle.completion_commit_hash,
+        cycle.review_target_kind,
+        cycle.review_target_value,
+        cycle.review_target_base_revision,
+        cycle.review_target_generation,
+    )
+
+
+def _match_current_done_completion_cycle_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    validate_structure: bool,
+) -> tuple[str, CompletionCycle | None, bool, bool]:
+    _require_completion_cycle_writer(connection)
+    if validate_structure:
+        version = current_schema_version(connection)
+        if (
+            version not in {15, 16}
+            or missing_migration_versions(connection, version)
+            or required_schema_objects_missing(
+                connection,
+                schema_version=15,
+            )
+        ):
+            raise completion_history_inconsistent()
+        _validate_completion_history_structure(connection)
+    current = connection.execute(
+        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
+        (project_id, task_id),
+    ).fetchone()
+    if current is None:
+        raise completion_history_inconsistent()
+    task_projection = dict(current)
+    coverage = str(
+        task_projection.get("completion_history_coverage", "")
+    )
+    if coverage not in {"legacy_unknown", "complete"}:
+        raise completion_history_inconsistent()
+
+    latest = read_latest_completion_cycle(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+    )
+    completed_at = task_projection.get("completed_at")
+    projection = _legacy_completion_cycle_from_task_projection(
+        task_projection,
+        project_id=project_id,
+        task_id=task_id,
+        ordinal=(latest.saved_cycle_ordinal if latest is not None else 1),
+        recorded_at=(
+            latest.recorded_at
+            if latest is not None
+            else str(completed_at)
+        ),
+        completion_cycle_id=(
+            latest.completion_cycle_id
+            if latest is not None
+            else "tg_completion_cycle_0000000000000000"
+        ),
+    )
+    projection_matches = (
+        latest is not None
+        and _completion_projection_signature(projection)
+        == _completion_projection_signature(latest)
+    )
+    reopen_linked = False
+    if latest is not None:
+        completion_event_types = {"task_updated", "review_tier_changed"}
+        completion_links = 0
+        reopen_links = 0
+        for row in connection.execute(
+            """
+            SELECT project_id, task_id, event_type
+              FROM task_events
+             WHERE completion_cycle_id = ?
+            """,
+            (latest.completion_cycle_id,),
+        ).fetchall():
+            event_type = str(row["event_type"])
+            if (
+                str(row["project_id"]) != project_id
+                or str(row["task_id"]) != task_id
+            ):
+                raise completion_history_inconsistent()
+            if event_type in completion_event_types:
+                if latest.origin != "native_done":
+                    raise completion_history_inconsistent()
+                completion_links += 1
+            elif event_type == "task_reopened":
+                reopen_links += 1
+            else:
+                raise completion_history_inconsistent()
+        if (
+            completion_links > 1
+            or reopen_links > 1
+            or (
+                latest.origin == "native_done"
+                and completion_links != 1
+            )
+            or (
+                latest.origin == "legacy_current_done"
+                and completion_links != 0
+            )
+        ):
+            raise completion_history_inconsistent()
+        reopen_linked = reopen_links == 1
+    return coverage, latest, projection_matches, reopen_linked
+
+
+def match_current_done_completion_cycle_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+) -> tuple[str, CompletionCycle | None, bool, bool]:
+    """Compare the locked done projection with its latest saved cycle."""
+
+    return _match_current_done_completion_cycle_locked(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+        validate_structure=True,
+    )
 
 
 def read_latest_completion_cycle(
@@ -5361,6 +5714,189 @@ def apply_completion_cycle_history_migration(
         raise
 
 
+def apply_completion_cycle_capture_activation_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Atomically reconcile v15 current completions and record marker 16."""
+
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "completion-capture activation requires no active transaction",
+        )
+    version = current_schema_version(connection)
+    if version >= 16:
+        connection.execute("BEGIN")
+        try:
+            if (
+                version != 16
+                or missing_migration_versions(connection, version)
+                or required_schema_objects_missing(
+                    connection,
+                    schema_version=15,
+                )
+            ):
+                raise StorageError(
+                    "migration_required",
+                    "completion-capture activation is incomplete",
+                )
+            validate_completion_cycle_storage(connection)
+            quick_rows = [
+                str(row[0])
+                for row in connection.execute("PRAGMA quick_check").fetchall()
+            ]
+            if quick_rows != ["ok"]:
+                raise completion_history_inconsistent()
+            connection.commit()
+        except StorageError as exc:
+            connection.rollback()
+            if exc.code == "completion_history_inconsistent":
+                raise _unreadable_project_state() from exc
+            raise
+        except Exception:
+            connection.rollback()
+            raise
+        return
+    if (
+        version != 15
+        or missing_migration_versions(connection, 15)
+        or schema_objects_inconsistent_with_version(connection, 15)
+    ):
+        raise StorageError(
+            "migration_required",
+            "completion-capture activation requires complete schema version 15",
+        )
+    connection.execute("PRAGMA foreign_keys = ON")
+    if int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 1:
+        raise StorageError(
+            "internal_error",
+            "completion-capture activation requires foreign key enforcement",
+        )
+
+    activation_time = utc_now()
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        validate_completion_cycle_storage(connection)
+        nonlegacy_count = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                  FROM tasks
+                 WHERE completion_history_coverage != 'legacy_unknown'
+                """
+            ).fetchone()[0]
+        )
+        if nonlegacy_count:
+            raise completion_history_inconsistent()
+
+        before = _migration_preservation_snapshot(connection)
+        cycle_count_before = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM task_completion_cycles"
+            ).fetchone()[0]
+        )
+        inserted_count = 0
+        done_rows = connection.execute(
+            """
+            SELECT project_id, task_id
+              FROM tasks
+             WHERE status = 'done'
+             ORDER BY task_id COLLATE BINARY ASC
+            """
+        ).fetchall()
+        for row in done_rows:
+            project_id = str(row["project_id"])
+            task_id = str(row["task_id"])
+            (
+                coverage,
+                latest,
+                projection_matches,
+                reopen_linked,
+            ) = _match_current_done_completion_cycle_locked(
+                connection,
+                project_id=project_id,
+                task_id=task_id,
+                validate_structure=False,
+            )
+            if coverage != "legacy_unknown":
+                raise completion_history_inconsistent()
+            if (
+                latest is None
+                or not projection_matches
+                or reopen_linked
+            ):
+                insert_completion_cycle_locked(
+                    connection,
+                    project_id=project_id,
+                    task_id=task_id,
+                    recorded_at=activation_time,
+                )
+                inserted_count += 1
+                if fail_stage == "after_first_reconciliation":
+                    raise StorageError(
+                        "internal_error",
+                        "injected completion-capture activation failure",
+                    )
+        if fail_stage == "after_reconciliation":
+            raise StorageError(
+                "internal_error",
+                "injected completion-capture activation failure",
+            )
+
+        after = _migration_preservation_snapshot(connection)
+        cycle_count_after = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM task_completion_cycles"
+            ).fetchone()[0]
+        )
+        if (
+            after != before
+            or cycle_count_after - cycle_count_before != inserted_count
+        ):
+            raise completion_history_inconsistent()
+
+        connection.execute(
+            """
+            INSERT INTO schema_migrations(version, name, applied_at)
+            VALUES (16, 'completion_cycle_capture_activation', ?)
+            """,
+            (activation_time,),
+        )
+        if fail_stage == "after_marker":
+            raise StorageError(
+                "internal_error",
+                "injected completion-capture activation failure",
+            )
+        validate_completion_cycle_storage(connection)
+        quick_rows = [
+            str(row[0])
+            for row in connection.execute("PRAGMA quick_check").fetchall()
+        ]
+        if quick_rows != ["ok"]:
+            raise completion_history_inconsistent()
+        if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            raise completion_history_inconsistent()
+        if fail_stage == "before_commit":
+            raise StorageError(
+                "internal_error",
+                "injected completion-capture activation failure",
+            )
+        connection.commit()
+    except StorageError as exc:
+        connection.rollback()
+        if exc.code == "completion_history_inconsistent":
+            raise _unreadable_project_state() from exc
+        raise
+    except sqlite3.IntegrityError as exc:
+        connection.rollback()
+        raise _unreadable_project_state() from exc
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def apply_migrations(
     connection: sqlite3.Connection,
     *,
@@ -5461,8 +5997,12 @@ def apply_migrations(
     if version < 15:
         apply_completion_cycle_history_migration(connection)
         applied.append(15)
+        version = 15
+    if version < 16:
+        apply_completion_cycle_capture_activation_migration(connection)
+        applied.append(16)
     else:
-        apply_completion_cycle_history_migration(connection)
+        apply_completion_cycle_capture_activation_migration(connection)
     return applied, warnings
 
 
@@ -7545,6 +8085,11 @@ def read_setup_state(
                 "project_mismatch",
                 "task database belongs to a different project",
             )
+        if version == SCHEMA_VERSION:
+            try:
+                validate_completion_cycle_storage(connection)
+            except StorageError as exc:
+                raise _unreadable_project_state() from exc
         maintenance = None
         if version >= 10:
             maintenance_missing = {
@@ -7684,18 +8229,20 @@ def read_doctor_state(
     )
 
 
-def _is_exact_empty_v15_database(db_path: Path) -> bool:
+def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
     """Recognize only the exact unbound schema-construction interval."""
     if db_path.is_symlink() or not db_path.is_file():
         return False
     try:
         with closing(connect_readonly(db_path)) as connection:
+            version = current_schema_version(connection)
             if (
-                current_schema_version(connection) != 15
-                or missing_migration_versions(connection, 15)
+                version not in {15, 16}
+                or missing_migration_versions(connection, version)
                 or required_schema_objects_missing(connection)
             ):
                 return False
+            _validate_completion_history_structure(connection)
             object_counts = {
                 str(row["type"]): int(row["count"])
                 for row in connection.execute(
@@ -7744,7 +8291,7 @@ def _is_exact_empty_v15_database(db_path: Path) -> bool:
                         "SELECT COUNT(*) FROM schema_migrations"
                     ).fetchone()[0]
                 )
-                == 15
+                == version
             )
     except (OSError, sqlite3.Error, StorageError):
         return False
@@ -7958,7 +8505,7 @@ def initialize_uuid_database(
     except Exception:
         if (
             not any(os.path.lexists(path) for path in sidecar_paths)
-            and _is_exact_empty_v15_database(db_path)
+            and _is_exact_empty_completion_history_database(db_path)
         ):
             try:
                 db_path.unlink()

@@ -1,0 +1,931 @@
+import json
+import sqlite3
+import sys
+import tempfile
+import unittest
+from contextlib import closing
+from pathlib import Path
+from unittest import mock
+
+from tests.m14_test_support import (
+    initialize_taskgov_internal,
+    run_taskgov_internal,
+)
+from tests.review_test_helpers import FINGERPRINT, seed_review_evidence
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = ROOT / "task-governance-tool"
+SCRIPTS_ROOT = SKILL_ROOT / "scripts"
+SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"
+if str(SCRIPTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_ROOT))
+
+from task_governance_tool import completion_workflow  # noqa: E402
+from task_governance_tool import tasks as task_service  # noqa: E402
+from task_governance_tool.completion import CompletionRequest  # noqa: E402
+from task_governance_tool.storage import resolve_database_target  # noqa: E402
+
+
+def run_json(*args):
+    result = run_taskgov_internal(*args)
+    payload = json.loads(result.stdout)
+    return result, payload
+
+
+def add_task(db: Path, repo: Path, title: str, *, tier: int = 1):
+    result, payload = run_json(
+        "task",
+        "add",
+        "--repo",
+        str(repo),
+        "--db",
+        str(db),
+        "--title",
+        title,
+        "--status",
+        "in_progress",
+        "--review-tier",
+        str(tier),
+        "--json",
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stderr or result.stdout)
+    return payload["data"]["task"]
+
+
+def completion_args(
+    db: Path,
+    repo: Path,
+    task_id: str,
+    *,
+    command: str,
+    kind: str = "commit_not_required",
+    revision: str = "",
+    reason: str = "",
+):
+    if command == "task.complete":
+        args = [
+            "task",
+            "complete",
+            task_id,
+            "--repo",
+            str(repo),
+            "--db",
+            str(db),
+        ]
+    else:
+        args = [
+            "task",
+            "edit",
+            "--repo",
+            str(repo),
+            "--db",
+            str(db),
+            task_id,
+            "--status",
+            "done",
+        ]
+    args.extend(["--verification-complete", "--review-complete"])
+    if kind == "commit_not_required":
+        args.append("--commit-not-required")
+    else:
+        args.extend(["--completion-evidence-kind", kind])
+        args.extend(["--completion-revision", revision])
+        if reason:
+            args.extend(["--completion-evidence-reason", reason])
+        if kind == "external_revision":
+            args.append("--external-revision-approved")
+    args.append("--json")
+    return args
+
+
+def task_target(connection, task_id: str):
+    return connection.execute(
+        """
+        SELECT project_id, review_target_kind, review_target_value,
+               review_target_base_revision, review_target_generation
+          FROM tasks
+         WHERE task_id = ?
+        """,
+        (task_id,),
+    ).fetchone()
+
+
+def insert_receipt(
+    db: Path,
+    task_id: str,
+    receipt_id: str,
+    *,
+    reviewer: str,
+    kind: str,
+    verdict: str,
+    user_approved: int,
+    summary: str = "",
+):
+    with closing(sqlite3.connect(db)) as connection:
+        target = task_target(connection, task_id)
+        if target is None:
+            raise AssertionError("missing test task")
+        connection.execute(
+            """
+            INSERT INTO review_receipts(
+              review_receipt_id, task_id, project_id, reviewer_key,
+              receipt_kind, verdict, target_kind, target_value,
+              target_base_revision, target_generation, summary,
+              user_approved, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                receipt_id,
+                task_id,
+                target[0],
+                reviewer,
+                kind,
+                verdict,
+                target[1],
+                target[2],
+                target[3],
+                target[4],
+                summary,
+                user_approved,
+                "2026-07-30T08:00:00Z",
+            ),
+        )
+        connection.commit()
+
+
+def set_diff_target_with_fallback(db: Path, task_id: str):
+    with closing(sqlite3.connect(db)) as connection:
+        row = connection.execute(
+            """
+            SELECT project_id, review_target_generation
+              FROM tasks
+             WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+        generation = int(row[1]) + 1
+        connection.execute(
+            """
+            UPDATE tasks
+               SET review_target_kind = 'diff_fingerprint',
+                   review_target_value = ?,
+                   review_target_base_revision = '',
+                   review_target_generation = ?
+             WHERE task_id = ?
+            """,
+            (FINGERPRINT, generation, task_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO review_receipts(
+              review_receipt_id, task_id, project_id, reviewer_key,
+              receipt_kind, verdict, target_kind, target_value,
+              target_base_revision, target_generation, summary,
+              user_approved, created_at
+            ) VALUES (
+              'tg_review_receipt_00000000000000f0', ?, ?, 'self',
+              'self_review_fallback', 'pass', 'diff_fingerprint', ?, '',
+              ?, 'approved fallback', 1, '2026-07-30T08:00:00Z'
+            )
+            """,
+            (task_id, row[0], FINGERPRINT, generation),
+        )
+        connection.commit()
+
+
+class CompletionCycleLifecycleTests(unittest.TestCase):
+    def test_both_done_paths_capture_and_combined_edit_keeps_event_shape(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "taskgov.sqlite"
+            repo.mkdir()
+            initialize_taskgov_internal(repo=repo, db=db)
+
+            thin = add_task(db, repo, "Thin completion", tier=0)
+            seed_review_evidence(db, thin["task_id"])
+            thin_result, thin_payload = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    thin["task_id"],
+                    command="task.complete",
+                )
+            )
+            self.assertEqual(thin_result.returncode, 0, thin_result.stdout)
+
+            combined = add_task(db, repo, "Combined completion", tier=1)
+            seed_review_evidence(db, combined["task_id"])
+            insert_receipt(
+                db,
+                combined["task_id"],
+                "tg_review_receipt_0000000000000002",
+                reviewer="test-reviewer-b",
+                kind="independent",
+                verdict="pass",
+                user_approved=0,
+            )
+            combined_args = completion_args(
+                db,
+                repo,
+                combined["task_id"],
+                command="task.edit",
+            )
+            combined_args[-1:-1] = [
+                "--title",
+                "Combined final title",
+                "--verification",
+                "focused lifecycle verification",
+                "--review-tier",
+                "2",
+                "--review-tier-change-reason",
+                "Scope reached Tier 2",
+            ]
+            edit_result, edit_payload = run_json(*combined_args)
+            self.assertEqual(edit_result.returncode, 0, edit_result.stdout)
+
+            self.assertNotIn(
+                "completion_cycle_id",
+                thin_payload["data"]["event"],
+            )
+            self.assertNotIn(
+                "completion_cycle_id",
+                edit_payload["data"]["event"],
+            )
+            self.assertEqual(
+                edit_payload["data"]["event"]["event_type"],
+                "review_tier_changed",
+            )
+            self.assertEqual(
+                edit_payload["data"]["task"]["title"],
+                "Combined final title",
+            )
+            self.assertEqual(
+                edit_payload["data"]["task"]["verification"],
+                "focused lifecycle verification",
+            )
+
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                tasks = {
+                    row["task_id"]: row
+                    for row in connection.execute(
+                        """
+                        SELECT task_id, completion_history_coverage
+                          FROM tasks
+                         WHERE task_id IN (?, ?)
+                        """,
+                        (thin["task_id"], combined["task_id"]),
+                    )
+                }
+                cycles = {
+                    row["task_id"]: row
+                    for row in connection.execute(
+                        "SELECT * FROM task_completion_cycles"
+                    )
+                }
+                links = {
+                    row["task_id"]: row
+                    for row in connection.execute(
+                        """
+                        SELECT task_id, event_type, completion_cycle_id
+                          FROM task_events
+                         WHERE completion_cycle_id IS NOT NULL
+                        """
+                    )
+                }
+            self.assertTrue(
+                all(
+                    row["completion_history_coverage"] == "complete"
+                    for row in tasks.values()
+                )
+            )
+            self.assertEqual(cycles[thin["task_id"]]["origin"], "native_done")
+            self.assertEqual(cycles[thin["task_id"]]["completeness"], "complete")
+            self.assertEqual(cycles[thin["task_id"]]["review_basis_kind"], "not_required")
+            self.assertEqual(cycles[combined["task_id"]]["review_tier"], 2)
+            self.assertEqual(
+                cycles[combined["task_id"]]["review_basis_kind"],
+                "independent_passes",
+            )
+            self.assertEqual(
+                cycles[combined["task_id"]]["verification_expectation"],
+                "specified",
+            )
+            self.assertEqual(links[thin["task_id"]]["event_type"], "task_updated")
+            self.assertEqual(
+                links[combined["task_id"]]["event_type"],
+                "review_tier_changed",
+            )
+            self.assertEqual(
+                links[combined["task_id"]]["completion_cycle_id"],
+                cycles[combined["task_id"]]["completion_cycle_id"],
+            )
+
+    def test_independent_basis_beats_fallback_and_tier2_can_use_fallback(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "taskgov.sqlite"
+            repo.mkdir()
+            initialize_taskgov_internal(repo=repo, db=db)
+
+            independent = add_task(db, repo, "External independent", tier=1)
+            seed_review_evidence(
+                db,
+                independent["task_id"],
+                target_kind="external_revision",
+                target_value="release-A",
+            )
+            insert_receipt(
+                db,
+                independent["task_id"],
+                "tg_review_receipt_0000000000000001",
+                reviewer="self",
+                kind="self_review_fallback",
+                verdict="pass",
+                user_approved=0,
+                summary="documented fallback",
+            )
+            result, _ = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    independent["task_id"],
+                    command="task.complete",
+                    kind="external_revision",
+                    revision="release-A",
+                    reason="User-approved durable revision",
+                )
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+
+            fallback = add_task(db, repo, "Tier 2 fallback", tier=2)
+            set_diff_target_with_fallback(db, fallback["task_id"])
+            result, _ = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    fallback["task_id"],
+                    command="task.complete",
+                )
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                first = connection.execute(
+                    """
+                    SELECT cycle.*, receipt.receipt_kind
+                      FROM task_completion_cycles AS cycle
+                      JOIN review_receipts AS receipt
+                        ON receipt.review_receipt_id =
+                           cycle.qualifying_receipt_id_1
+                     WHERE cycle.task_id = ?
+                    """,
+                    (independent["task_id"],),
+                ).fetchone()
+                second = connection.execute(
+                    """
+                    SELECT *
+                      FROM task_completion_cycles
+                     WHERE task_id = ?
+                    """,
+                    (fallback["task_id"],),
+                ).fetchone()
+            self.assertEqual(first["review_basis_kind"], "independent_passes")
+            self.assertEqual(first["receipt_kind"], "independent")
+            self.assertEqual(first["completion_evidence_kind"], "external_revision")
+            self.assertEqual(second["review_basis_kind"], "self_review_fallback")
+            self.assertEqual(second["qualifying_independent_passes"], 0)
+
+    def test_done_reopen_done_requires_fresh_target_and_links_each_cycle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "taskgov.sqlite"
+            repo.mkdir()
+            initialize_taskgov_internal(repo=repo, db=db)
+            task = add_task(db, repo, "Repeated lifecycle", tier=1)
+            seed_review_evidence(
+                db,
+                task["task_id"],
+                target_kind="external_revision",
+                target_value="release-A",
+            )
+            first, _ = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    task["task_id"],
+                    command="task.complete",
+                    kind="external_revision",
+                    revision="release-A",
+                    reason="First accepted revision",
+                )
+            )
+            self.assertEqual(first.returncode, 0, first.stdout)
+
+            reopened, reopen_payload = run_json(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--status",
+                "in_progress",
+                "--reopen-reason",
+                "Acceptance changed",
+                "--json",
+            )
+            self.assertEqual(reopened.returncode, 0, reopened.stdout)
+            self.assertNotIn(
+                "completion_cycle_id",
+                reopen_payload["data"]["event"],
+            )
+
+            stale, stale_payload = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    task["task_id"],
+                    command="task.complete",
+                    kind="external_revision",
+                    revision="release-A",
+                    reason="Historical evidence must not count",
+                )
+            )
+            self.assertNotEqual(stale.returncode, 0)
+            self.assertEqual(
+                stale_payload["errors"][0]["code"],
+                "review_target_required",
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM task_completion_cycles
+                         WHERE task_id = ?
+                        """,
+                        (task["task_id"],),
+                    ).fetchone()[0],
+                    1,
+                )
+
+            seed_review_evidence(
+                db,
+                task["task_id"],
+                target_kind="external_revision",
+                target_value="release-B",
+            )
+            second, _ = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    task["task_id"],
+                    command="task.edit",
+                    kind="external_revision",
+                    revision="release-B",
+                    reason="Second accepted revision",
+                )
+            )
+            self.assertEqual(second.returncode, 0, second.stdout)
+
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                cycles = connection.execute(
+                    """
+                    SELECT completion_cycle_id, saved_cycle_ordinal,
+                           completion_evidence_revision,
+                           review_target_generation
+                      FROM task_completion_cycles
+                     WHERE task_id = ?
+                     ORDER BY saved_cycle_ordinal
+                    """,
+                    (task["task_id"],),
+                ).fetchall()
+                links = connection.execute(
+                    """
+                    SELECT event_type, completion_cycle_id
+                      FROM task_events
+                     WHERE task_id = ?
+                       AND completion_cycle_id IS NOT NULL
+                     ORDER BY rowid
+                    """,
+                    (task["task_id"],),
+                ).fetchall()
+            self.assertEqual(
+                [row["saved_cycle_ordinal"] for row in cycles],
+                [1, 2],
+            )
+            self.assertEqual(
+                [row["completion_evidence_revision"] for row in cycles],
+                ["release-A", "release-B"],
+            )
+            self.assertGreater(
+                cycles[1]["review_target_generation"],
+                cycles[0]["review_target_generation"],
+            )
+            self.assertEqual(
+                [(row["event_type"], row["completion_cycle_id"]) for row in links],
+                [
+                    ("task_updated", cycles[0]["completion_cycle_id"]),
+                    ("task_reopened", cycles[0]["completion_cycle_id"]),
+                    ("task_updated", cycles[1]["completion_cycle_id"]),
+                ],
+            )
+
+    def test_reopen_rejects_missing_reused_and_generation_overflow(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "taskgov.sqlite"
+            repo.mkdir()
+            initialize_taskgov_internal(repo=repo, db=db)
+
+            missing = add_task(db, repo, "Missing cycle", tier=0)
+            seed_review_evidence(db, missing["task_id"])
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    """
+                    UPDATE tasks
+                       SET status = 'done',
+                           completed_at = '2026-07-30T09:00:00Z',
+                           updated_at = '2026-07-30T09:00:00Z',
+                           completion_evidence_kind = 'commit_not_required',
+                           completion_evidence_revision = '',
+                           completion_evidence_reason = '',
+                           external_revision_approved = 0,
+                           completion_commit_required = 0,
+                           completion_commit_hash = ''
+                     WHERE task_id = ?
+                    """,
+                    (missing["task_id"],),
+                )
+                connection.commit()
+            result, payload = run_json(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                missing["task_id"],
+                "--status",
+                "in_progress",
+                "--reopen-reason",
+                "Must fail closed",
+                "--json",
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(
+                payload["errors"],
+                [{
+                    "code": "completion_history_inconsistent",
+                    "message": "stored completion history is inconsistent",
+                }],
+            )
+
+            overflow = add_task(db, repo, "Generation overflow", tier=0)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    """
+                    UPDATE tasks
+                       SET review_target_kind = 'diff_fingerprint',
+                           review_target_value = ?,
+                           review_target_base_revision = '',
+                           review_target_generation = ?
+                     WHERE task_id = ?
+                    """,
+                    (FINGERPRINT, (1 << 63) - 1, overflow["task_id"]),
+                )
+                connection.commit()
+            insert_receipt(
+                db,
+                overflow["task_id"],
+                "tg_review_receipt_00000000000000ee",
+                reviewer="mechanical-review",
+                kind="not_required",
+                verdict="not_required",
+                user_approved=0,
+                summary="Mechanical test setup",
+            )
+            completed, _ = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    overflow["task_id"],
+                    command="task.complete",
+                )
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            before_overflow = db.read_bytes()
+            result, payload = run_json(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                overflow["task_id"],
+                "--status",
+                "in_progress",
+                "--reopen-reason",
+                "Generation cannot advance",
+                "--json",
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(payload["errors"][0]["code"], "invalid_argument")
+            self.assertEqual(db.read_bytes(), before_overflow)
+
+            reused = add_task(db, repo, "Reused cycle", tier=0)
+            seed_review_evidence(db, reused["task_id"])
+            completed, _ = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    reused["task_id"],
+                    command="task.complete",
+                )
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            reopened, _ = run_json(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                reused["task_id"],
+                "--status",
+                "in_progress",
+                "--reopen-reason",
+                "First reopen",
+                "--json",
+            )
+            self.assertEqual(reopened.returncode, 0, reopened.stdout)
+            with closing(sqlite3.connect(db)) as connection:
+                cycle = connection.execute(
+                    """
+                    SELECT * FROM task_completion_cycles
+                     WHERE task_id = ?
+                    """,
+                    (reused["task_id"],),
+                ).fetchone()
+                connection.execute(
+                    """
+                    UPDATE tasks
+                       SET status = 'done', completed_at = ?,
+                           updated_at = ?, review_tier = ?,
+                           completion_evidence_kind = ?,
+                           completion_evidence_revision = ?,
+                           completion_evidence_reason = ?,
+                           external_revision_approved = ?,
+                           completion_commit_required = ?,
+                           completion_commit_hash = ?,
+                           review_target_kind = ?,
+                           review_target_value = ?,
+                           review_target_base_revision = ?,
+                           review_target_generation = ?
+                     WHERE task_id = ?
+                    """,
+                    (
+                        cycle[6],
+                        "2026-07-30T09:30:00Z",
+                        cycle[9],
+                        cycle[12],
+                        cycle[13],
+                        cycle[14],
+                        cycle[15],
+                        cycle[16],
+                        cycle[17],
+                        cycle[18],
+                        cycle[19],
+                        cycle[20],
+                        cycle[21],
+                        reused["task_id"],
+                    ),
+                )
+                before_events = connection.execute(
+                    "SELECT COUNT(*) FROM task_events WHERE task_id = ?",
+                    (reused["task_id"],),
+                ).fetchone()[0]
+                connection.commit()
+            result, payload = run_json(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                reused["task_id"],
+                "--status",
+                "in_progress",
+                "--reopen-reason",
+                "Second link is forbidden",
+                "--json",
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(
+                payload["errors"][0]["code"],
+                "completion_history_inconsistent",
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM task_events WHERE task_id = ?",
+                        (reused["task_id"],),
+                    ).fetchone()[0],
+                    before_events,
+                )
+
+    def test_reopen_rejects_native_cycle_missing_completion_event_without_write(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "taskgov.sqlite"
+            repo.mkdir()
+            initialize_taskgov_internal(repo=repo, db=db)
+            task = add_task(db, repo, "Missing completion event", tier=0)
+            seed_review_evidence(db, task["task_id"])
+            completed, _ = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    task["task_id"],
+                    command="task.complete",
+                )
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    """
+                    DELETE FROM task_events
+                     WHERE task_id = ?
+                       AND completion_cycle_id IS NOT NULL
+                       AND event_type IN (
+                         'task_updated', 'review_tier_changed'
+                       )
+                    """,
+                    (task["task_id"],),
+                )
+                connection.commit()
+                before = (
+                    connection.execute(
+                        "SELECT * FROM tasks WHERE task_id = ?",
+                        (task["task_id"],),
+                    ).fetchone(),
+                    connection.execute(
+                        """
+                        SELECT * FROM task_completion_cycles
+                         WHERE task_id = ? ORDER BY saved_cycle_ordinal
+                        """,
+                        (task["task_id"],),
+                    ).fetchall(),
+                    connection.execute(
+                        """
+                        SELECT * FROM task_events
+                         WHERE task_id = ? ORDER BY rowid
+                        """,
+                        (task["task_id"],),
+                    ).fetchall(),
+                )
+
+            reopened, payload = run_json(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--status",
+                "in_progress",
+                "--reopen-reason",
+                "Missing completion event must fail closed",
+                "--json",
+            )
+            self.assertEqual(reopened.returncode, 2)
+            self.assertEqual(
+                payload["errors"],
+                [{
+                    "code": "completion_history_inconsistent",
+                    "message": "stored completion history is inconsistent",
+                }],
+            )
+
+            with closing(sqlite3.connect(db)) as connection:
+                after = (
+                    connection.execute(
+                        "SELECT * FROM tasks WHERE task_id = ?",
+                        (task["task_id"],),
+                    ).fetchone(),
+                    connection.execute(
+                        """
+                        SELECT * FROM task_completion_cycles
+                         WHERE task_id = ? ORDER BY saved_cycle_ordinal
+                        """,
+                        (task["task_id"],),
+                    ).fetchall(),
+                    connection.execute(
+                        """
+                        SELECT * FROM task_events
+                         WHERE task_id = ? ORDER BY rowid
+                        """,
+                        (task["task_id"],),
+                    ).fetchall(),
+                )
+            self.assertEqual(after, before)
+
+    def test_check_privacy_and_injected_event_failure_write_no_cycle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "taskgov.sqlite"
+            repo.mkdir()
+            initialize_taskgov_internal(repo=repo, db=db)
+            task = add_task(db, repo, "No failed cycle", tier=0)
+            seed_review_evidence(db, task["task_id"])
+
+            checked, check_payload = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    task["task_id"],
+                    command="task.complete",
+                )[:-1],
+                "--check",
+                "--read-only",
+                "--json",
+            )
+            self.assertEqual(checked.returncode, 0, checked.stdout)
+            self.assertTrue(check_payload["data"]["ready"])
+            with closing(sqlite3.connect(db)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM task_completion_cycles"
+                    ).fetchone()[0],
+                    0,
+                )
+
+            private_args = completion_args(
+                db,
+                repo,
+                task["task_id"],
+                command="task.complete",
+                kind="external_revision",
+                revision="release-private",
+                reason="token=secret",
+            )
+            private, private_payload = run_json(*private_args)
+            self.assertNotEqual(private.returncode, 0)
+            self.assertEqual(
+                private_payload["errors"][0]["code"],
+                "privacy_rejected",
+            )
+
+            target = resolve_database_target(
+                repo=repo,
+                db=db,
+                script_path=SCRIPT_PATH,
+            )
+            request = CompletionRequest(
+                task_id=task["task_id"],
+                verification_complete=True,
+                review_complete=True,
+                completion_evidence_kind="commit_not_required",
+            )
+            with mock.patch.object(
+                task_service,
+                "create_task_event",
+                side_effect=RuntimeError("injected event failure"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "injected event failure",
+                ):
+                    completion_workflow.execute_completion_request(
+                        target,
+                        request,
+                    )
+
+            with closing(sqlite3.connect(db)) as connection:
+                task_row = connection.execute(
+                    "SELECT status FROM tasks WHERE task_id = ?",
+                    (task["task_id"],),
+                ).fetchone()
+                cycle_count = connection.execute(
+                    "SELECT COUNT(*) FROM task_completion_cycles"
+                ).fetchone()[0]
+                linked_count = connection.execute(
+                    """
+                    SELECT COUNT(*) FROM task_events
+                     WHERE completion_cycle_id IS NOT NULL
+                    """
+                ).fetchone()[0]
+            self.assertEqual(task_row[0], "in_progress")
+            self.assertEqual(cycle_count, 0)
+            self.assertEqual(linked_count, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

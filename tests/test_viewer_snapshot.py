@@ -15,6 +15,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from task_governance_tool.storage import (  # noqa: E402
     SCHEMA_VERSION,
     StorageError,
+    apply_completion_cycle_capture_activation_migration,
     apply_completion_cycle_history_migration,
     apply_completion_commit_migration,
     apply_completion_evidence_migration,
@@ -64,8 +65,8 @@ def table_count(db: Path, table: str) -> int:
 
 
 class ViewerSnapshotTests(unittest.TestCase):
-    def test_snapshot_v3_reads_schema_v5_through_v15_without_internal_fields(self):
-        for source_version in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
+    def test_snapshot_v3_reads_schema_v5_through_v16_without_internal_fields(self):
+        for source_version in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 db = Path(tmp) / "taskgov.sqlite"
                 repo = Path(tmp) / "repo"
@@ -101,6 +102,10 @@ class ViewerSnapshotTests(unittest.TestCase):
                         apply_project_identity_bindings_migration(connection)
                     if source_version >= 15:
                         apply_completion_cycle_history_migration(connection)
+                    if source_version >= 16:
+                        apply_completion_cycle_capture_activation_migration(
+                            connection
+                        )
                     with connection:
                         ensure_project_meta(connection, target.project)
                         if source_version >= 13:
@@ -298,7 +303,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
             snapshot = result.snapshot
             self.assertEqual(snapshot["snapshot_version"], 3)
-            self.assertEqual(snapshot["source_schema_version"], 15)
+            self.assertEqual(snapshot["source_schema_version"], 16)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {

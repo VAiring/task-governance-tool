@@ -1,13 +1,12 @@
 # task-governance-tool Initial Plan
 
-Status: implemented through TG-M17.5 at v0.9.0/schema v14 with Viewer
-snapshot v3. Stable identity, fixed project-local state, same-binding
-migration, explicit confirmed relocation, consumer hardening, and synchronized
-package acceptance are complete. The completed TG-M16.4 reduced-loop
-behavioral acceptance is retained. TG-M18.0 is the completed
-completion-cycle-history contract; its runtime units target v0.10.0 and remain
-inactive until their sequential gates complete. The TG-M12.3 Issue adapter
-remains blocked.
+Status: the published baseline is implemented through TG-M17.5 at
+v0.9.0/schema v14 with Viewer snapshot v3. TG-M18.0 through TG-M18.2 are
+complete; the non-public staging runtime is package v0.9.0/schema v16 with
+Viewer snapshot v3 accepting sources 5-16 and atomic native completion
+capture. TG-M18.3 and TG-M18.4 remain sequential work targeting
+v0.10.0/schema v16/Viewer snapshot v4. The completed TG-M16.4 reduced-loop
+behavioral acceptance is retained. The TG-M12.3 Issue adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 Reduced TG-M16 has a fixed formal contract, the TG-M16.1 runtime route, active
@@ -1202,18 +1201,17 @@ acceptance are also complete. Their stored Task Contracts were corrected from
 the cancelled M16.3 reference to the completed reduced-loop/reconciliation
 authority before execution; root `AGENTS.md` retains only durable routing
 rather than milestone status.
-TG-M18.0 and TG-M18.1 are complete. The non-public staging runtime is package
-v0.9.0/schema v15/Viewer v3 with source-schema compatibility through 15;
-native capture and public history remain inactive. TG-M18.2 through TG-M18.4
-remain stored ready in their sequential lane, while the published baseline
-remains v0.9.0/schema v14/Viewer v3 until M18.4. M19.0 remains blocked until
-M18.4 is done and its completion SHA is fixed.
-Immediately after M18.0 completes and before M18.1 starts, the stored M18.1,
-M18.2, and M18.4 Contracts will be mechanically synchronized to the final
-five-document authority for historical `none`, the 500-character stored
-compatibility projection, activation reconciliation, v15 reentry, and the
-v14/v3 baseline; this is governance metadata correction, not added product
-scope.
+TG-M18.0 through TG-M18.2 are complete. The non-public staging runtime is
+package v0.9.0/schema v16/Viewer v3 with source-schema compatibility through
+16 and atomic native completion capture; public history remains inactive.
+TG-M18.3 and TG-M18.4 remain stored ready in their sequential lane, while the
+published baseline remains v0.9.0/schema v14/Viewer v3 until M18.4. M19.0
+remains blocked until M18.4 is done and its completion SHA is fixed.
+The stored M18.1, M18.2, and M18.4 Contracts were mechanically synchronized
+after M18.0 to the final five-document authority for historical `none`, the
+500-character stored compatibility projection, activation reconciliation,
+v15 reentry, and the v14/v3 baseline; this was governance metadata correction,
+not added product scope.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

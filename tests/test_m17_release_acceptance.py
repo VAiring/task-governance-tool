@@ -135,7 +135,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             )
             self.assertEqual(preview["data"]["completed_writes"], [])
             self.assertEqual(preview["data"]["schema_from"], 2)
-            self.assertEqual(preview["data"]["schema_to"], 15)
+            self.assertEqual(preview["data"]["schema_to"], 16)
             self.assertEqual(
                 preview["data"]["relocation"],
                 {
@@ -163,7 +163,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             migrated = json_payload(migrated_process)
             self.assertEqual(migrated["project_id"], project.project_id)
             self.assertEqual(migrated["data"]["schema_from"], 2)
-            self.assertEqual(migrated["data"]["schema_to"], 15)
+            self.assertEqual(migrated["data"]["schema_to"], 16)
             self.assertEqual(
                 migrated["data"]["completed_writes"],
                 PRE_V9_WRITES,
@@ -181,7 +181,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    15,
+                    16,
                 )
                 self.assertEqual(
                     connection.execute(
@@ -266,7 +266,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             self.assertEqual(preview["project_id"], project.project_id)
             self.assertEqual(preview["data"]["status"], "relocation_preview")
             self.assertEqual(preview["data"]["schema_from"], 13)
-            self.assertEqual(preview["data"]["schema_to"], 15)
+            self.assertEqual(preview["data"]["schema_to"], 16)
             self.assertEqual(
                 preview["data"]["planned_writes"],
                 MOVED_V13_WRITES,
@@ -325,7 +325,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    15,
+                    16,
                 )
                 self.assertEqual(
                     connection.execute(

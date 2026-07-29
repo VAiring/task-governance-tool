@@ -285,8 +285,8 @@ class M17RelocationSetupTests(unittest.TestCase):
         self.assertEqual(result.data["planned_writes"], [])
         self.assertEqual(result.data["completed_writes"], [])
         self.assertIsNone(result.data["status"])
-        self.assertEqual(result.data["schema_from"], 15)
-        self.assertEqual(result.data["schema_to"], 15)
+        self.assertEqual(result.data["schema_from"], 16)
+        self.assertEqual(result.data["schema_to"], 16)
         self.assertTrue(result.data["maintenance_enabled"])
         self.assertEqual(result.data["backup_interval_minutes"], 30)
         self.assertEqual(result.data["backup_generations"], 3)
@@ -410,8 +410,8 @@ class M17RelocationSetupTests(unittest.TestCase):
                     "status": "relocation_preview",
                     "planned_writes": FIXED_WRITES,
                     "completed_writes": [],
-                    "schema_from": 15,
-                    "schema_to": 15,
+                    "schema_from": 16,
+                    "schema_to": 16,
                     "maintenance_enabled": True,
                     "backup_interval_minutes": 30,
                     "backup_generations": 3,

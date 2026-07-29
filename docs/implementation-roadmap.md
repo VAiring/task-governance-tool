@@ -3,11 +3,15 @@
 Status: TG-M18.0 through TG-M18.4 are complete. The synchronized repository
 release candidate is v0.10.0/schema v16 with Viewer snapshot v4 accepting
 sources 5-16, atomic native completion capture, and the bounded public history
-read projection. M19.0 remains blocked until the exact M18.4 completion SHA is
-frozen. The completed TG-M16.4 reduced-loop behavioral acceptance is retained;
-TG-M16.3 is cancelled. TG-M12.3 remains blocked on a future Issue Skill intake
-contract. The default-browser launch follow-up remains requirements-only
-pending design and roadmap approval.
+read projection. TG-M19.0 is complete with the exact M18.4 completion SHA
+frozen as `b0df647d9caf693afc0ff46aecf71a2c4739c864`; TG-M19.1 is the next ready
+Release Correctness unit. TG-M19.3 still requires the user's licensing-holder
+and employer/IP confirmation, and TG-M19.7, TG-M19.8, and TG-M19.10 remain
+blocked on their separate fresh exact-value approvals. The completed TG-M16.4
+reduced-loop behavioral acceptance is retained; TG-M16.3 is cancelled.
+TG-M12.3 remains blocked on a future Issue Skill intake contract. The
+default-browser launch follow-up remains requirements-only pending design and
+roadmap approval.
 
 Completed unit descriptions before TG-M14 are explicitly historical execution
 lineage. Their legacy commands, options, and intermediate release surfaces do
@@ -3829,8 +3833,626 @@ Completion criteria:
   surface where v16/v4 supersedes it;
 - no valid High or Medium finding remains;
 - the exact release-candidate commit is stored on M18.4; and
-- M19.0 remains blocked until that completion SHA is frozen. M19.0, not M18,
+- M19.0 was held blocked until that completion SHA was frozen. M19.0, not M18,
   owns formalization of later M19 units and their still-required user decisions.
+
+## TG-M19 Release Correctness
+
+TG-M19 is one sequential lane, `TG-M19-RELEASE-CORRECTNESS`. It converts the
+completed v0.10.0 candidate into concise active authority, licensed and
+rehearsed release material, and a deliberately staged remote publication. It
+does not add product behavior, a public command, a schema change, or another
+normal-loop judgment.
+
+The immutable M18 baseline for this lane is:
+
+- M18.4 completion SHA:
+  `b0df647d9caf693afc0ff46aecf71a2c4739c864`;
+- legacy `main` reference:
+  `f017ee228d435d892fb7136c5e79b3063320fac5`;
+- authoritative development lineage:
+  `codex/project-scoped-install-guidance`, which is a descendant of that
+  legacy `main`;
+- package version `0.10.0`, SQLite schema v16, Viewer snapshot v4 accepting
+  source schemas v5-v16;
+- proposed immutable-by-policy lightweight tag `v0.10.0`;
+- publication remote `origin` and repository identity
+  `VAiring/task-governance-tool`;
+- installable asset name `task-governance-tool-0.10.0.zip`, containing exactly
+  one `task-governance-tool/` root; and
+- checksum asset name `task-governance-tool-0.10.0.zip.sha256`, whose exact
+  UTF-8-without-BOM content is the lowercase 64-character archive SHA-256,
+  two ASCII spaces, the archive basename, and one LF.
+
+The M18.4 SHA is a fixed prerequisite, not the later Release Candidate SHA.
+TG-M19.0 through TG-M19.5 may add reviewed documentation, licensing, package,
+tests, fixtures, or release-process commits. TG-M19.6 alone freezes the later
+exact Release Candidate and its asset bytes. Any tracked change after that
+freeze invalidates TG-M19.6 and every downstream candidate gate.
+
+Remote-tracking references are observations, not publication authority.
+TG-M19.6 and every remote gate must freshly resolve exactly one fetch endpoint
+and exactly one push endpoint, require both to normalize to the approved
+repository identity, then read the remote and freeze or revalidate the
+expected `origin/main` and candidate-branch heads. Missing, additional, or
+duplicate endpoints stop even when their normalized identities match. A stale
+local `origin/*` reference never satisfies a remote gate. Normal non-force
+pushes are the only permitted ref updates.
+
+The three external mutation approvals are separate and cannot be inferred from
+one another:
+
+1. TG-M19.7: publish the exact accepted candidate to the named candidate
+   branch and run the named exact-SHA candidate CI route;
+2. TG-M19.8: fast-forward `main` from the separately approved expected remote
+   head to that unchanged candidate; and
+3. TG-M19.10: create the approved tag and GitHub Release with the already
+   accepted assets.
+
+TG-M19.3 has its own non-publication user decision for licensing authority.
+No earlier approval authorizes a later gate.
+
+The pre-created M19.1-M19.10 Task rows remain planning records at Contract
+revision zero until their own start. First correct any verification or
+review-tier drift by a separate metadata-only edit while status is unchanged.
+Then use the specification's exact roadmap-bullet mapping in a second
+Contract-options-plus-`in_progress` edit to activate revision 1. Do not
+bulk-edit them in M19.0, infer a new requirement, combine metadata with
+Contract activation, or begin work with an empty Review Packet. A named
+user-decision or external-write blocker must be satisfied first. The Contract
+labels the roadmap status only as the satisfied activation-source status; it
+must not copy `blocked` or `ready` as if that were the current Task status.
+Before requesting approval for M19.8 or M19.10, a read-only upstream
+run-ID/attempt preflight may avoid a stale question but persists no approval.
+After approval, first activate the later Task and thereby persist its Approval
+object, then repeat the check before the first external write. A mismatch
+returns the later Task to `blocked` before reopening the prior gate so lane
+invariants remain valid. When that gate is reaccepted, unchanged mutation
+values resume under the stored Contract; changed values require a fresh
+approval and Contract revision.
+
+### TG-M19.0 Release Authority And Cutover Contract
+
+Task: `tg_task_2b95de205e3f92e3`
+Kind: sequential
+Lane: `TG-M19-RELEASE-CORRECTNESS`
+Lane order: 10
+Review tier: Tier 2
+Depends on: completed TG-M18.4
+Status: complete
+
+Intended outcome:
+
+- Define one implementation-ready authority, history, licensing, upgrade,
+  rollback, exact-SHA acceptance, CI, cutover, and publication contract for
+  TG-M19.1 through TG-M19.10.
+- Freeze the M18.4 completion SHA and distinguish the legacy `main` reference,
+  current authoritative lineage, and later Release Candidate.
+
+Write scope:
+
+- only root `AGENTS.md`, `docs/specification.md`, `docs/design.md`, this
+  roadmap, and `plan.md`;
+- no product code, tests, fixture, package content, LICENSE or NOTICE file,
+  document reorganization, generated product artifact, archive creation, Git
+  ref change, push, PR, workflow dispatch, tag, or GitHub Release. Existing
+  local Task status, review, and completion evidence remains the only
+  governance-state write.
+
+Verification:
+
+- all five governing documents agree on authority routing, the frozen M18 SHA,
+  legacy-main boundary, fast-forward-only cutover, version/schema/Viewer/tag
+  and asset identities, supported migration and paired rollback, licensing
+  decision boundary, review-trust wording, and every local/remote gate;
+- M19.1-M19.10 have exact Task IDs, order, dependencies, allowed writes,
+  required approvals, invalidation rules, and failure semantics;
+- root `AGENTS.md` retains only durable authority and safety routing rather
+  than duplicating the release matrix;
+- no runtime, package, LICENSE, archive, generated product artifact, or
+  external Git change is present; only this unit's bounded Task/review evidence
+  may change in ignored local state;
+- full offline checks, documentation consistency, `git diff --check`, and two
+  exact-target Tier 2 reviews pass.
+
+Completion criteria:
+
+- no implementation-affecting release choice remains implicit;
+- the five-document revision contains no product-code diff and no valid High
+  or Medium finding; and
+- TG-M19.1 does not start until the verified M19.0 completion commit is stored.
+
+### TG-M19.1 Active Contract Consolidation
+
+Task: `tg_task_ba59e260cc2c58a6`
+Kind: sequential
+Lane: `TG-M19-RELEASE-CORRECTNESS`
+Lane order: 20
+Review tier: Tier 2
+Depends on: completed TG-M19.0
+Status: ready
+
+Intended outcome:
+
+- Create an indexed, explicitly non-authoritative history destination, then
+  replace the active specification and design with concise current-product
+  authority.
+- Retain every supported migration, compatibility, privacy, state-transition,
+  setup, Viewer, and safety fact needed to understand v0.10.0.
+
+Write scope:
+
+- the active `docs/specification.md` and `docs/design.md`;
+- an indexed `docs/history/v0.10.0/` destination containing immutable
+  specification/design lineage with a prominent non-authority banner;
+- root `AGENTS.md` only for the durable routing switch;
+- no product behavior, schema, CLI, Skill, package, licensing, or external
+  operation.
+
+Verification:
+
+- stage the history files and index before replacing active authority, then
+  switch AGENTS/specification/design together in one internally valid reviewed
+  revision;
+- compare every retained active contract with runtime, migrations, schema,
+  CLI help, JSON, Viewer, and tests;
+- archived content is unchanged after capture; later additions update only the
+  index and add new immutable files;
+- all history links resolve, every archive banner denies authority, and the
+  required reread route reaches the concise active documents;
+- documentation checks, focused contract tests, full offline suite,
+  `git diff --check`, and two exact-target Tier 2 reviews pass.
+
+### TG-M19.2 Roadmap Plan And Evidence Split
+
+Task: `tg_task_20fd398141755a65`
+Kind: sequential
+Lane: `TG-M19-RELEASE-CORRECTNESS`
+Lane order: 30
+Review tier: Tier 2
+Depends on: completed TG-M19.1
+Status: ready, dependency-gated
+
+Intended outcome:
+
+- Reduce the active roadmap to approved unfinished work plus a concise
+  completion index, and reduce `plan.md` to current decisions and open issues.
+- Move historical milestone narratives and superseded forward-test evidence
+  behind the same indexed non-authority boundary.
+
+Write scope:
+
+- root `AGENTS.md` only for the durable roadmap/plan routing switch;
+- active `docs/implementation-roadmap.md` and `plan.md`;
+- immutable roadmap/plan lineage and superseded forward evidence under
+  `docs/history/v0.10.0/`, its append-only index, and path-sensitive tests;
+- no runtime, schema, CLI, package behavior, LICENSE, or external operation.
+
+Verification:
+
+- switch AGENTS/roadmap/plan authority together in one internally valid
+  reviewed revision;
+- preserve exact unfinished Task IDs, dependencies, blockers, decisions, open
+  issues, completion SHAs, and reusable evidence without reviving removed
+  commands as guidance;
+- retain the full unstarted TG-M19.3-TG-M19.10 sections verbatim so later
+  Contract activation has a stable deterministic source;
+- history banners, index entries, links, content retention, and required
+  rereads are complete and unambiguous;
+- docs consistency, focused path/authority tests, full offline suite,
+  `git diff --check`, and two exact-target Tier 2 reviews pass.
+
+### TG-M19.3 Apache-2.0 License And Attribution Boundary
+
+Task: `tg_task_b71ac20177aae41a`
+Kind: sequential
+Lane: `TG-M19-RELEASE-CORRECTNESS`
+Lane order: 40
+Review tier: Tier 2
+Depends on: completed TG-M19.2 and the licensing decision below
+Status: ready, dependency- and user-decision-gated
+
+Required user decision:
+
+- explicitly confirm authority to license all included personal work;
+- provide the exact copyright-holder text and covered tracked/shipped scope;
+- identify any employer, contractor, contributor, copied-reference, or
+  third-party restriction or applicable open-source policy; and
+- approve Apache License 2.0 for the resolved scope. Git author identity alone
+  is never proof of ownership or authority.
+
+Intended outcome:
+
+- Apply the official unmodified Apache License 2.0 text to the licensable
+  repository and installable package only after the required authority is
+  recorded.
+- Make attribution and exclusions honest without manufacturing NOTICE duties.
+
+Write scope:
+
+- matching root and `task-governance-tool/LICENSE` files;
+- a NOTICE only when a concrete attribution duty requires it;
+- attribution/public guidance, package required-file inventory, manifest,
+  CI/release checks, and focused licensing tests;
+- ignored root references remain excluded unless the user deliberately brings
+  them into the tracked/shipped scope;
+- no runtime behavior, schema, command, generated state, or external operation.
+
+Verification:
+
+- audit all tracked code, docs, HTML, tests, fixtures, workflow files, and
+  shipped package files against the user's authority statement;
+- resolve or exclude anything that is not licensable under the approved scope;
+- root/package LICENSE bytes match the official text, package LICENSE is
+  shipped and manifest-covered, and NOTICE exists only for concrete duties;
+- presence/equality/inventory checks, full offline suite, package isolation,
+  `git diff --check`, and two exact-target Tier 2 reviews pass.
+
+### TG-M19.4 Public Package And Review Trust Synchronization
+
+Task: `tg_task_7cc967fc224440cb`
+Kind: sequential
+Lane: `TG-M19-RELEASE-CORRECTNESS`
+Lane order: 50
+Review tier: Tier 2
+Depends on: completed TG-M19.3
+Status: ready, dependency-gated
+
+Intended outcome:
+
+- Synchronize README, release guidance, active Skill metadata, one-level
+  references, CLI help, release notes, and manifest with the consolidated
+  v0.10.0 authority and licensing boundary.
+- State the actual trust provided by stored review evidence without implying
+  provenance that the tool does not prove.
+
+Write scope:
+
+- README, release/install and release-note guidance, active Skill metadata and
+  one-level references, help text, manifest/integrity inventory, CI, and
+  directly coupled tests;
+- canonical UTF-8/LF Release body `docs/releases/v0.10.0.md`, exact Release
+  title `task-governance-tool v0.10.0`, and the documented
+  `git-archive-v1` recipe used later without a tracked builder;
+- no new command, option, schema, review kind, identity proof, external
+  operation, or target-project mutation.
+
+Verification:
+
+- public and packaged guidance agrees with runtime on 20 command leaves,
+  v0.10.0/schema v16/Viewer v4 sources v5-v16, supported install layout,
+  licensing, upgrade/rollback, and release identity;
+- wording says only that current-target/current-generation recorded receipts
+  and findings deterministically satisfy the configured gate;
+- distinct reviewer keys prove distinct stored strings only, not a distinct
+  person, LLM, machine, independent process, or authenticated provenance;
+- the canonical Release body bytes, workflow path/name/job/runtime matrix, and
+  archive recipe agree with `Release Candidate Evidence v1`;
+- isolated package, help, doctor, manifest, full offline/forward suites,
+  `git diff --check`, and two exact-target Tier 2 reviews pass.
+
+### TG-M19.5 Legacy Upgrade And Paired Rollback Rehearsal
+
+Task: `tg_task_bd93525dc71f4dcd`
+Kind: sequential
+Lane: `TG-M19-RELEASE-CORRECTNESS`
+Lane order: 60
+Review tier: Tier 2
+Depends on: completed TG-M19.4
+Status: ready, dependency-gated
+
+Intended outcome:
+
+- Rehearse clean installation and the supported transition from the exact
+  legacy-main package/schema-v2 baseline into the later candidate.
+- Prove an honest rollback that restores package, pre-migration database, and
+  managed artifacts as one compatibility point.
+
+Write scope:
+
+- isolated fixtures, acceptance harnesses, release rehearsal evidence, and
+  directly coupled documentation/tests;
+- all package/state copies live outside canonical project state;
+- no canonical database, target project, remote ref, tag, or Release change,
+  and no product behavior. A discovered behavior defect blocks this unit or
+  becomes a separately authorized Task rather than expanding rehearsal scope.
+
+Verification:
+
+- use legacy commit `f017ee228d435d892fb7136c5e79b3063320fac5`
+  with its v0.1.0 package and schema-v2 state, then upgrade isolated copies to
+  the exact candidate package and schema v16;
+- preserve supported layouts, Task/event/completion evidence, IDs, privacy,
+  migration recovery, and package integrity;
+- restore the legacy package, pre-migration DB, and managed artifacts together
+  and prove restart; never run old code against the migrated schema;
+- user-wide and custom-`--db` layouts remain explicitly unsupported, are
+  refused without mutation, and are not converted into a migration path;
+- Git rollback remains a new forward-fix candidate, never force, reset,
+  history replacement, or tag rewrite;
+- full migration/recovery/package checks, offline suite, `git diff --check`,
+  and two exact-target Tier 2 reviews pass.
+
+### TG-M19.6 Exact-SHA Local Release Candidate Acceptance
+
+Task: `tg_task_67a3f3e73b913bfb`
+Kind: sequential
+Lane: `TG-M19-RELEASE-CORRECTNESS`
+Lane order: 70
+Review tier: Tier 2
+Depends on: completed TG-M19.5
+Status: ready, dependency-gated
+
+Intended outcome:
+
+- Accept one clean exact commit and deterministic installable archive locally,
+  without changing a managed file or any remote Git state.
+- Freeze every value needed for the three later exact-value approvals.
+
+Write scope:
+
+- an isolated clean checkout of the exact candidate and the three accepted
+  files under ignored repository-root
+  `dist/task-governance-tool-0.10.0/<RC_SHA>/<EVIDENCE_SHA256>/`;
+- ignored Task governance evidence may record the accepted values;
+- no tracked-file edit, canonical-state rehearsal, push, PR, workflow
+  dispatch, `main` change, tag, or GitHub Release.
+
+Verification:
+
+- run the exact `git-archive-v1` recipe twice from the repository root with the
+  full `RC_SHA` as tree-ish and `task-governance-tool` as the sole pathspec;
+  record the exact Git version and require byte-identical results;
+- require ignored physical `dist/` staging, exact archive/checksum/
+  `release-candidate-v1.json` bytes, evidence-generation isolation, bounded
+  partial recovery, atomic final-directory rename, deterministic rediscovery,
+  no conflicting accepted entry, and retention through M19.10; loss or
+  mismatch returns to M19.6 with a new `gen` and evidence directory;
+- verify exact inventory/exclusions, matching official root/package LICENSE
+  files, manifest coverage/hashes, 20 leaves, doctor, and an isolated install;
+- run Python 3.12/3.14-equivalent offline and forward suites, migration/
+  rollback acceptance, `git diff --check`, and two exact-target Tier 2 reviews;
+- freshly normalize the `origin` fetch/push repository identity, then read
+  remote heads and tag namespace without changing them or retaining raw URLs;
+- record and read back the specification's complete canonical
+  `Release Candidate Evidence v1` object in the M19.6 Task checkpoint,
+  including a fresh mechanical `gen`, TG-M19.5's canonical Git completion
+  revision as `legacy`, and the CI workflow/check set; prove `legacy` resolves
+  as a commit, equals the stored TG-M19.5 completion revision, and is an
+  ancestor of `rc`, and retain the accepted local asset bytes;
+- set `git_commit` review target `rc`, supply the exact checkpoint plus matching
+  commit/assets/evidence to both Tier 2 reviewers, and complete with the same
+  canonical `git_commit`; any record or asset change re-sets the target,
+  advances its generation, and repeats acceptance;
+- require the proposed tag to be absent. Any tracked or accepted-asset byte
+  change invalidates this acceptance and returns the lane to a new M19.6 SHA.
+
+### TG-M19.7 Release Candidate Remote CI Gate
+
+Task: `tg_task_5b8796de20a32d39`
+Kind: sequential
+Lane: `TG-M19-RELEASE-CORRECTNESS`
+Lane order: 80
+Review tier: Tier 2
+Depends on: completed TG-M19.6 and the approval below
+Status: blocked on fresh exact-value approval
+
+Required user approval:
+
+- name remote `origin`, repository `VAiring/task-governance-tool`, the accepted
+  Release Candidate SHA, expected candidate-branch SHA, candidate branch,
+  expected `origin/main` SHA, proposed tag, archive and checksum names/hashes,
+  the exact CI workflow/dispatch boundary, and acknowledge the exact resulting
+  GitHub Actions run as the durable external completion source. The initial
+  approval names `dispatch_authorization=1`; every later fresh dispatch
+  approval increments it by exactly one.
+
+Intended outcome:
+
+- Publish only the accepted commit to the approved candidate branch and prove
+  Windows Python 3.12/3.14 CI on that unchanged SHA before any `main` update.
+
+Write scope:
+
+- one normal non-force push of the accepted SHA to the approved candidate
+  branch, the approved exact-ref workflow dispatch, read-only remote evidence,
+  and local Task/review evidence;
+- no PR creation; ambient PR checks are read-only non-gating context only;
+- no `main` update, tag, Release, accepted-asset replacement, or managed-file
+  change.
+
+Verification:
+
+- freshly normalize both remote endpoints and require canonical repository
+  identity without retaining or printing raw URLs or credentials;
+- fresh remote read has exactly three outcomes: the accepted SHA means the
+  branch stage is already complete and needs no push; the approved expected
+  pre-write SHA permits the one normal non-force push; any other value stops;
+- after a performed or already-complete branch stage, confirm the remote
+  candidate head equals the accepted SHA; a rejected push stops the gate;
+- because feature-branch push is not a CI trigger and pull-request CI may test
+  a synthetic merge SHA, dispatch the existing CI workflow at the exact remote
+  candidate ref and require the run's `head_sha` to equal the accepted SHA;
+- before dispatch, select only runs matching the exact workflow,
+  `workflow_dispatch` event, candidate ref, and accepted SHA. Reuse the
+  greatest integer run ID and then greatest attempt when it succeeded, wait
+  when that attempt is queued or running, stop when it completed
+  non-successfully, and dispatch only when no exact run exists;
+- immediately before that one dispatch, append and read back the canonical
+  `m19.7-dispatch-intent-v1` checkpoint with the approved
+  `dispatch_authorization`. Reuse its `gen` and authorization value in final
+  evidence and never dispatch again for that generation after success, timeout,
+  ambiguous response, or process loss; if no exact run becomes observable,
+  stop until the incremented fresh approval is stored in a new Contract
+  revision with the specified change reason, authority reference, and new
+  `gen`;
+- require both Windows Python 3.12 and 3.14 jobs and all required checks to
+  pass; an ambient PR check never replaces exact-SHA evidence;
+- after an ambiguous push result, read back: the accepted SHA is success, the
+  approved old head permits only the identical normal non-force retry, and any
+  other head stops the gate;
+- any code, document, manifest, LICENSE, or artifact change invalidates the
+  candidate and returns to TG-M19.6;
+- record and read back the canonical `m19.7-evidence-v1` checkpoint, form the
+  specified matching `external_revision` target from its exact selected
+  run/attempt rather than a URL or local fingerprint, supply the sanitized
+  remote/run/asset evidence to two current-generation
+  Tier 2 reviews, and complete with the identical approved external revision
+  and exact specified reason.
+
+### TG-M19.8 Main Fast-Forward Cutover
+
+Task: `tg_task_79791addafcf0e00`
+Kind: sequential
+Lane: `TG-M19-RELEASE-CORRECTNESS`
+Lane order: 90
+Review tier: Tier 2
+Depends on: completed TG-M19.7 and the approval below
+Status: blocked on fresh exact-value approval
+
+Required user approval:
+
+- name remote `origin`, repository `VAiring/task-governance-tool`, the unchanged
+  accepted candidate SHA and expected current `origin/main` SHA, and explicitly
+  authorize the one direct fast-forward update of `refs/heads/main`.
+
+Intended outcome:
+
+- Move remote `main` only by fast-forward from the approved legacy head to the
+  CI-accepted candidate.
+
+Write scope:
+
+- fresh fetch/readback, ancestor proof, one normal non-force direct push of the
+  accepted SHA to `refs/heads/main`, and local Task/review evidence;
+- no merge commit, squash, rebase, force, history replacement, additional
+  commit, tag, Release, or asset change.
+
+Verification:
+
+- freshly normalize both remote endpoints to the approved repository identity;
+- immediately before changing `main`, reselect the latest exact M19.7
+  workflow-dispatch run and require its run ID/attempt still equals the
+  M19.7 checkpoint and remains successful; any change returns to fresh M19.7
+  acceptance rather than cutting over;
+- fresh remote `main` has exactly three outcomes: the accepted candidate means
+  the cutover stage is already complete and needs no push; the separately
+  approved expected SHA permits the one normal non-force push after proving
+  that SHA is an ancestor of the candidate; any other SHA stops;
+- branch-protection or permission refusal stops the lane; do not route through
+  a PR merge mode that changes or adds commits;
+- after the push, require remote `main` to equal the accepted SHA exactly;
+- after an uncertain transport result, read back first: accepted SHA is
+  success, approved old SHA permits only the same non-force retry, and any
+  other SHA stops the lane;
+- record and read back the canonical `m19.8-evidence-v1` checkpoint, including
+  the exact selected M19.7 run ID and attempt, set `git_commit` target `rc`,
+  pass two matching Tier 2 reviews, and complete with the same canonical
+  `git_commit`. No tag or Release is created.
+
+### TG-M19.9 Remote Main Exact-SHA Release Gate
+
+Task: `tg_task_418792bf98f211af`
+Kind: sequential
+Lane: `TG-M19-RELEASE-CORRECTNESS`
+Lane order: 100
+Review tier: Tier 2
+Depends on: completed TG-M19.8
+Status: ready, dependency-gated
+
+Intended outcome:
+
+- Verify the updated remote `main`, its automatically triggered required CI,
+  and the unchanged accepted release assets before allowing publication.
+
+Write scope:
+
+- read-only remote/ref/Actions/asset inspection and local Task/review evidence;
+- no managed-file, branch, ref, tag, Release, or asset mutation.
+
+Verification:
+
+- freshly normalize both remote endpoints to the frozen repository identity;
+- remote `main` equals the accepted candidate SHA exactly;
+- required Windows Python 3.12/3.14 and release checks passed for that exact
+  `main` SHA, not another branch, merge, or rerun revision;
+- select only exact `push` runs for the named workflow, `main` ref, and
+  candidate SHA; the greatest integer run ID and then greatest attempt is
+  authoritative and must be successful;
+- version, tag proposal, archive bytes/name/hash, checksum bytes/name/hash,
+  release title/notes digest, and legacy-reference evidence still equal the
+  M19.6 freeze;
+- on failure, publication stops and correction uses a newly accepted
+  forward-fix candidate through M19.6 onward; never force `main`, retag, or
+  delete history as routine rollback;
+- record and read back the canonical `m19.9-evidence-v1` checkpoint with
+  `legacy` byte-equal to `rc-v1.legacy`, hash its summary into the current
+  `diff_fingerprint`, pass two matching Tier 2 reviews, and complete with
+  `commit_not_required`.
+
+### TG-M19.10 Tag And GitHub Release Publication
+
+Task: `tg_task_9807bdc4ddc5ba37`
+Kind: sequential
+Lane: `TG-M19-RELEASE-CORRECTNESS`
+Lane order: 110
+Review tier: Tier 2
+Depends on: completed TG-M19.9 and the approval below
+Status: blocked on fresh exact-value approval
+
+Required user approval:
+
+- name remote `origin`, repository `VAiring/task-governance-tool`, the exact
+  accepted `main` SHA, version, lightweight tag, final Release visibility,
+  whether temporary draft staging is permitted, Release title and notes
+  digest, both accepted asset names and hashes, and acknowledge the exact
+  resulting GitHub Release as the durable external completion source.
+
+Intended outcome:
+
+- Create the immutable-by-policy release tag and GitHub Release at the accepted
+  `main` SHA and publish only the already accepted archive/checksum bytes.
+
+Write scope:
+
+- the approved tag ref, approved GitHub Release metadata/visibility, the two
+  accepted assets, readback/install smoke evidence, and local Task evidence;
+- no managed-file or branch change, asset rebuild/replacement, retag, Release
+  deletion, or history rewrite.
+
+Verification:
+
+- freshly normalize both remote endpoints to the approved repository identity;
+- immediately revalidate remote `main`, release identity, local accepted asset
+  hashes, and tag state;
+- before the first tag or Release write, reselect the latest exact M19.9 main
+  push run and require its run ID/attempt still equals the M19.9 checkpoint and
+  remains successful; any change returns to fresh M19.9 acceptance;
+- when `v0.10.0` is absent, create and normally push that lightweight tag at
+  the exact accepted `main` SHA; when it exists, require the unpeeled tag ref
+  to identify the commit object directly and its object type to be `commit`,
+  then reuse it only at that exact SHA. An annotated tag is a conflict even
+  when its peeled SHA matches; any other target or type stops;
+- when approved, use a temporary draft to upload and hash-readback both assets
+  before changing to the approved final visibility; otherwise accept the
+  explicitly approved partial-publication risk;
+- an exact pre-existing stage from an interrupted approved attempt may be
+  resumed idempotently: accept an exact tag/metadata/asset, upload only a
+  missing accepted asset, and stop on any conflicting target, metadata, name,
+  or byte hash;
+- verify tag, remote `main`, Release metadata, archive, and checksum all bind
+  the same candidate, then run default-branch, tag, and published-archive
+  isolated install smokes;
+- record and read back the canonical `m19.10-evidence-v1` checkpoint, form the
+  specified matching `external_revision` target from its exact Release ID
+  rather than a URL or local fingerprint, and include the unchanged M19.9 run
+  ID/attempt in the checkpoint; supply the exact sanitized
+  ref/Release/asset/smoke evidence to two current-generation Tier 2 reviews,
+  and complete with the identical approved external revision and exact
+  specified reason;
+- never move/delete the tag, replace an asset, delete the Release, or rewrite
+  history on mismatch. Stop and report; a published correction requires a new
+  version, candidate, tag, and Release.
 
 ## Roadmap Completion Criteria
 
@@ -3845,10 +4467,20 @@ The currently approved roadmap is complete when:
 - TG-M18.0 through TG-M18.4 complete in lane order with history remaining
   audit-only and the final v0.10.0/schema-v16/Viewer-v4 lifecycle matrix
   accepted;
-- M19.0 remains blocked until the exact M18.4 completion SHA is frozen;
+- TG-M19.0 is complete against frozen M18.4 SHA
+  `b0df647d9caf693afc0ff46aecf71a2c4739c864`;
+- TG-M19.1 and TG-M19.2 complete their active/history authority switch before
+  the user is asked for TG-M19.3 licensing authority;
+- TG-M19.3 through TG-M19.6 complete in lane order, including exact licensing,
+  paired legacy rollback, and one frozen clean local Release Candidate;
+- TG-M19.7, TG-M19.8, and TG-M19.10 each receive their own fresh exact-value
+  approval, while TG-M19.9 proves the unchanged remote-main SHA between
+  cutover and publication;
+- publication leaves remote `main`, lightweight tag `v0.10.0`, GitHub Release,
+  installable archive, and checksum bound to the same accepted candidate;
 - every unit's documented verification and review gate has passed for its exact
   final revision;
 - no valid High or Medium review finding remains unresolved;
 - deferred items remain outside the active product contract; and
-- publication, push, PR, or external CI actions occur only after separate
-  explicit user authorization.
+- no external mutation occurs before its exact gate and separate explicit user
+  authorization.

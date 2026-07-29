@@ -1,17 +1,16 @@
 # task-governance-tool Initial Plan
 
-Status: TG-M18.0 through TG-M18.4 are complete. The synchronized repository
-release candidate is v0.10.0/schema v16 with Viewer snapshot v4 accepting
-sources 5-16, atomic native completion capture, and the bounded public history
-read projection. The completed TG-M17 identity/storage behavior and TG-M16.4
-reduced-loop behavioral acceptance are retained. M19.0 remains blocked until
-the exact M18.4 completion SHA is frozen. The TG-M12.3 Issue adapter remains
-blocked.
+Status: TG-M18.0 through TG-M18.4 are complete at
+`b0df647d9caf693afc0ff46aecf71a2c4739c864`. The synchronized repository
+candidate is v0.10.0/schema v16 with Viewer snapshot v4 accepting sources 5-16.
+TG-M19.0 has fixed the Release Correctness contract; TG-M19.1 is the next
+sequential unit. The first remaining user decision is the licensing-authority
+confirmation required before TG-M19.3. TG-M12.3 remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
-Reduced TG-M16 has a fixed formal contract, the TG-M16.1 runtime route, active
-session-local guidance, synchronized package, and fresh-session behavioral
-evidence.
+Reduced TG-M16 through TG-M16.4 has a fixed formal contract, the TG-M16.1
+runtime route, active session-local guidance, synchronized package, and
+fresh-session behavioral acceptance evidence.
 
 This document captures early ideas for a reusable task-governance-tool Codex
 skill/tooling project. Product behavior is now governed by
@@ -1154,8 +1153,78 @@ Confirmed decisions:
   - handoff `tg_handoff_696a19cba075d56e` remains pending as rationale until
     separately withdrawn; general event-history pagination remains a distinct
     future candidate; and
-  - M19.0 remains blocked until the exact M18.4 completion SHA is frozen and
+  - M19.0 was held blocked until the exact M18.4 completion SHA was frozen and
     owns later M19 formalization and still-required user decisions.
+- On 2026-07-30 the user-approved TG-M19 Release Correctness direction was
+  fixed as an implementation-ready contract:
+  - TG-M18.4 completed at
+    `b0df647d9caf693afc0ff46aecf71a2c4739c864`; the committed
+    `codex/project-scoped-install-guidance` lineage is current product
+    authority, while local `main` and the observed `origin/main` at
+    `f017ee228d435d892fb7136c5e79b3063320fac5` are the legacy v0.1.0/schema-v2
+    reference until an explicitly approved fast-forward cutover;
+  - active authority remains in the five governing documents. M19.1 and M19.2
+    may create indexed `docs/history/` lineage and concise active documents
+    only through atomic reviewed authority switches; archived material is
+    non-authoritative;
+  - Apache-2.0 is selected but not yet applied. Before M19.3, the user must
+    confirm the exact holder text, authority over the included tracked and
+    shipped material, covered and excluded scope, and any employer,
+    contractor, or third-party restrictions. Git identity and sole-maintainer
+    status are not proof of licensing authority;
+  - the release identity remains package v0.10.0, schema v16, Viewer v4 with
+    sources 5-16, proposed immutable-by-policy lightweight tag `v0.10.0`, and
+    proposed installable
+    asset `task-governance-tool-0.10.0.zip` rooted at
+    `task-governance-tool/`, with checksum
+    `task-governance-tool-0.10.0.zip.sha256`, Release title
+    `task-governance-tool v0.10.0`, and canonical notes
+    `docs/releases/v0.10.0.md`; M19.6 uses the fixed commit-based
+    `git-archive-v1` recipe and stores one bounded canonical `rc-v1` checkpoint
+    containing every later comparison value, including TG-M19.5's canonical
+    Git completion revision as the rehearsal evidence anchor. The exact
+    archive, checksum, and record copy remain under ignored
+    `dist/task-governance-tool-0.10.0/<RC_SHA>/<EVIDENCE_SHA256>/` until
+    publication; a same-commit refreeze gets a new evidence generation and a
+    partial generation is finalized by bounded atomic rename. A fresh
+    mechanical `gen` prevents full reacceptance from overwriting an old final.
+  - every external gate freezes and revalidates remote `origin` plus repository
+    identity `VAiring/task-governance-tool` without storing raw endpoint URLs;
+    exactly one fetch endpoint and one push endpoint are required, with
+    duplicate endpoints rejected even when they normalize identically;
+  - upgrade acceptance uses isolated copies of the legacy
+    `f017ee228d435d892fb7136c5e79b3063320fac5` package and schema-v2 state.
+    Rollback restores the matching pre-upgrade package, database, and managed
+    artifacts as one point; an old binary is never run against schema v16 and
+    no reverse migration is supported;
+  - review gates count sanitized rows for the exact current target and
+    generation. Distinct reviewer keys prove only distinct strings, not a
+    person, model, machine, process, provenance, or actual independence; the
+    trusted caller remains responsible for truthful recording;
+  - local acceptance, candidate-branch CI, main fast-forward, remote-main
+    verification, and tag/GitHub Release publication are separate gates.
+    M19.7, M19.8, and M19.10 require separate fresh approvals naming their
+    exact values. M19.7 requires exact-ref `workflow_dispatch` with
+    `head_sha` equal to the candidate; it creates no PR and ambient PR checks
+    are non-gating. A bounded pre-dispatch checkpoint makes each approved
+    generation at most once; ambiguous or interrupted dispatch never retries
+    without an incremented `dispatch_authorization`, fresh approval, Contract
+    revision, and generation. M19.8 and M19.10 revalidate the exact latest
+    upstream CI run ID/attempt immediately before their first remote write.
+    Exact readback may resume an interrupted approved operation, but conflicting
+    remote state stops. No squash, rebase, force, retag, history replacement,
+    asset replacement, or routine Release deletion is an accepted rollback.
+    M19.7-M19.10 each record one bounded canonical gate checkpoint after exact
+    readback and pass two matching Tier 2 reviews. M19.7 uses its Actions
+    run/attempt as `external_revision`, M19.8 uses candidate `git_commit`,
+    read-only M19.9 uses checkpoint `diff_fingerprint` plus
+    `commit_not_required`, and M19.10 uses its GitHub Release ID as
+    `external_revision`; this adds no evidence kind, command, schema, release
+    table, URL, or raw provider-body retention.
+  - pre-created M19.1-M19.10 rows remain Contract revision zero until their
+    actual start; each start separately corrects deterministic metadata drift,
+    then records revision 1 through the fixed roadmap-bullet mapping without
+    adding a requirement choice or bulk-changing future Task state.
 
 Open issues:
 
@@ -1180,6 +1249,10 @@ Open issues:
   local intake contract and transport plus Task Skill's governing permission
   update. Until then, the adapter remains disabled and Task Skill never opens
   or modifies Issue storage.
+- Before TG-M19.3, obtain the exact copyright-holder text and explicit
+  confirmation of authority to license the intended tracked and shipped scope,
+  including employer, contractor, and third-party restrictions. Do not infer
+  these facts from Git metadata or repository activity.
 - Keep semantic duplicate/recurrence handling, handoff paging/retention,
   multiple receivers, Issue import/sync/priority/triage, resulting-task
   creation, advanced risk/fixture analysis, signed evidence, and child-task
@@ -1204,13 +1277,18 @@ rather than milestone status.
 TG-M18.0 through TG-M18.4 are complete. The synchronized repository release
 candidate is v0.10.0/schema v16/Viewer v4 with source-schema compatibility
 through 16, atomic native completion capture, and the bounded public history
-read projection. M19.0 remains blocked until the exact M18.4 completion SHA is
-fixed.
+read projection. TG-M18.4 is fixed at
+`b0df647d9caf693afc0ff46aecf71a2c4739c864`.
 The stored M18.1, M18.2, and M18.4 Contracts were mechanically synchronized
 after M18.0 to the final five-document authority for historical `none`, the
 500-character stored compatibility projection, activation reconciliation,
 v15 reentry, and the v14/v3 baseline; this was governance metadata correction,
 not added product scope.
+TG-M19.0 has fixed the five-document Release Correctness contract and the
+ordered M19.1-M19.10 gates without changing product code, licensing files,
+document layout, or external Git state. TG-M19.1 is next. M19.3 retains the
+first required user licensing-authority decision, and M19.7, M19.8, and M19.10
+retain their separate exact-value approval blockers.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

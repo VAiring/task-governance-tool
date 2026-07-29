@@ -24,9 +24,11 @@ workspace.
   milestone history are maintained in `docs/implementation-roadmap.md` and
   `plan.md`. Consult those authorities instead of mirroring volatile status
   here.
-- The workspace is Git-managed, initialized on the `main` branch. Continue to
-  verify Git state before workflow steps because clones or copied workspaces may
-  differ.
+- The workspace is Git-managed. The checked-out committed lineage determines
+  which revision of the active governing documents applies locally; a default
+  or legacy branch name is not authority by itself. Continue to verify Git
+  state and ancestry before workflow steps because clones or copied workspaces
+  may differ.
 - Root `references/` and copied task-status material are external examples only;
   they are not authority or current project status.
 - Installable skill package references, such as
@@ -227,6 +229,11 @@ The product must not become:
 - Historical and audit projections never satisfy a current verification,
   review, or completion gate. Use current Task state and evidence bound to the
   current review-target generation; preserve older evidence only as history.
+- An indexed historical document is non-authoritative even when its preserved
+  wording says `current`, `approved`, or `implemented`. Every contract required
+  for supported current behavior must remain in the active governing
+  documents; history may preserve lineage, rationale, and old evidence but
+  never fills a gap in current authority.
 
 ## SQLite And State Rules
 
@@ -313,6 +320,11 @@ The product must not become:
 - Prefer replacement or relocation over additive growth. Any temporary
   milestone note must identify its owner and retirement condition and must be
   removed or reduced to a durable invariant when that condition is met.
+- An authority-layout transition must add and index its historical destination
+  before switching affected active documents and routing, and the complete
+  switch must land in one reviewed revision. Do not commit an intermediate
+  state with mixed authority, an ambiguous active document, or a dangling
+  governing link.
 - Update this file only when durable agent behavior, safety, authority routing,
   or workflow discipline changes. Product changes still update their owning
   formal documents and directly coupled artifacts in the same task.

@@ -46,6 +46,7 @@ from task_governance_tool.storage import (  # noqa: E402
     initialize_database,
     initialize_uuid_database,
     project_identity,
+    read_project_binding_history,
     read_project_binding_state,
     required_schema_objects_missing,
 )
@@ -1209,6 +1210,143 @@ class ProjectIdentityBindingTests(unittest.TestCase):
                 )
             self.assertEqual(unchanged.exception.code, "internal_error")
             self.assertEqual(logical_database_state(install.db_path), before_rejections)
+
+    def test_binding_history_reader_returns_exact_lineage_and_replay_digests_readonly(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            with mock.patch(
+                "task_governance_tool.storage.utc_now",
+                return_value=MIGRATION_TIME,
+            ):
+                initialize_database(install.target)
+            destination = rebound_target(install.target)
+            apply_rebind(install.target, destination)
+            second_destination = rebound_target(
+                destination,
+                name="moved-project-again",
+            )
+            second_digest = "e" * 64
+            second_rebind_time = "2026-07-29T03:04:05Z"
+            compare_and_swap_project_binding(
+                second_destination,
+                project_id=install.project_id,
+                identity_scheme="legacy_path_v1",
+                expected_generation=2,
+                expected_old_hash=destination.project.canonical_path_hash,
+                new_hash=second_destination.project.canonical_path_hash,
+                new_display_name=second_destination.project.display_name,
+                reason="confirmed_relocation",
+                confirmation_token_digest=second_digest,
+                bound_at=second_rebind_time,
+            )
+            before = logical_database_state(install.db_path)
+
+            with closing(connect(install.db_path)) as connection:
+                self.assertEqual(connection.total_changes, 0)
+                history = read_project_binding_history(
+                    connection,
+                    expected_project_id=install.project_id,
+                )
+                self.assertEqual(connection.total_changes, 0)
+
+            self.assertEqual(
+                tuple(
+                    (
+                        item.project_id,
+                        item.binding_generation,
+                        item.previous_path_hash,
+                        item.canonical_path_hash,
+                        item.display_name,
+                        item.reason,
+                        item.confirmation_token_digest,
+                        item.bound_at,
+                    )
+                    for item in history
+                ),
+                (
+                    (
+                        install.project_id,
+                        1,
+                        None,
+                        install.target.project.canonical_path_hash,
+                        install.target.project.display_name,
+                        "legacy_migration",
+                        None,
+                        MIGRATION_TIME,
+                    ),
+                    (
+                        install.project_id,
+                        2,
+                        install.target.project.canonical_path_hash,
+                        destination.project.canonical_path_hash,
+                        destination.project.display_name,
+                        "confirmed_relocation",
+                        TOKEN_DIGEST,
+                        REBIND_TIME,
+                    ),
+                    (
+                        install.project_id,
+                        3,
+                        destination.project.canonical_path_hash,
+                        second_destination.project.canonical_path_hash,
+                        second_destination.project.display_name,
+                        "confirmed_relocation",
+                        second_digest,
+                        second_rebind_time,
+                    ),
+                ),
+            )
+            self.assertEqual(
+                tuple(item.confirmation_token_digest for item in history),
+                (None, TOKEN_DIGEST, second_digest),
+            )
+            self.assertEqual(logical_database_state(install.db_path), before)
+
+    def test_binding_history_reader_rejects_corruption_without_writing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            initialize_database(install.target)
+            with closing(connect(install.db_path)) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO project_path_binding_history(
+                      project_id, binding_generation, previous_path_hash,
+                      canonical_path_hash, display_name, reason,
+                      confirmation_token_digest, bound_at
+                    ) VALUES (?, 2, ?, ?, ?, 'confirmed_relocation', ?, ?)
+                    """,
+                    (
+                        install.project_id,
+                        install.target.project.canonical_path_hash,
+                        "b" * 64,
+                        install.target.project.display_name,
+                        "c" * 64,
+                        REBIND_TIME,
+                    ),
+                )
+                connection.commit()
+            before = logical_database_state(install.db_path)
+
+            with closing(connect(install.db_path)) as connection:
+                self.assertEqual(connection.total_changes, 0)
+                with self.assertRaises(StorageError) as raised:
+                    read_project_binding_history(
+                        connection,
+                        expected_project_id=install.project_id,
+                    )
+                self.assertEqual(connection.total_changes, 0)
+
+            self.assertEqual(
+                (raised.exception.code, raised.exception.message),
+                (
+                    "project_state_unreadable",
+                    "project state could not be read safely",
+                ),
+            )
+            self.assertNotIn("c" * 64, raised.exception.message)
+            self.assertEqual(logical_database_state(install.db_path), before)
 
     def test_binding_cas_rejects_invalid_fields_before_writing(self):
         cases = (

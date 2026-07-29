@@ -509,15 +509,34 @@ class DoctorCommandTests(unittest.TestCase):
                 }],
             )
 
-    def test_storage_failure_rows_are_exact_and_unavailable(self):
+    def test_project_state_rows_are_exact_and_unavailable(self):
         cases = (
-            ("unsupported_journal_mode", "unsupported_journal", None, "connect"),
-            ("database_busy", "busy", None, "connect"),
-            ("project_state_unreadable", "unreadable", None, "connect"),
-            ("project_mismatch", "foreign", 11, "resolver"),
-            ("schema_too_new", "newer", SCHEMA_VERSION + 1, "resolver"),
+            (
+                "unsupported_journal_mode",
+                "unsupported_journal",
+                None,
+                "connect",
+                False,
+            ),
+            ("database_busy", "busy", None, "connect", False),
+            (
+                "project_state_unreadable",
+                "unreadable",
+                None,
+                "connect",
+                False,
+            ),
+            ("project_mismatch", "foreign", 11, "resolver", False),
+            (
+                "project_relocation_required",
+                "relocation_required",
+                SCHEMA_VERSION,
+                "binding",
+                True,
+            ),
+            ("schema_too_new", "newer", SCHEMA_VERSION + 1, "resolver", False),
         )
-        for source_code, projected_code, schema_version, phase in cases:
+        for source_code, projected_code, schema_version, phase, advisory in cases:
             with self.subTest(code=source_code), tempfile.TemporaryDirectory() as tmp:
                 install = make_physical_install(Path(tmp))
                 inspection = project_scope_service.inspect_project_scope(
@@ -552,21 +571,22 @@ class DoctorCommandTests(unittest.TestCase):
                         explicit_db=False,
                     ),
                 )
-                if source_code == "project_mismatch":
+                if phase == "resolver":
+                    resolved = replace(
+                        resolved,
+                        target=None,
+                        error_code=source_code,
+                    )
+                elif phase == "binding":
+                    old_hash = "f" * 64
                     resolved = replace(
                         resolved,
                         binding="relocation_required",
                         stored_project=replace(
                             stored,
-                            canonical_path_hash="f" * 64,
-                            binding_lineage=("f" * 64,),
+                            canonical_path_hash=old_hash,
+                            binding_lineage=(old_hash,),
                         ),
-                    )
-                elif phase == "resolver":
-                    resolved = replace(
-                        resolved,
-                        target=None,
-                        error_code=source_code,
                     )
                 with ExitStack() as stack:
                     stack.enter_context(
@@ -597,7 +617,7 @@ class DoctorCommandTests(unittest.TestCase):
                                 doctor_service,
                                 "connect_readonly",
                                 side_effect=AssertionError(
-                                    "resolver failures must not reopen storage"
+                                    "resolver outcomes must not reopen storage"
                                 ),
                             )
                         )
@@ -607,17 +627,19 @@ class DoctorCommandTests(unittest.TestCase):
                         script_path=install.entrypoint,
                     )
 
-                self.assertFalse(result.ok)
-                self.assertEqual(
-                    result.errors,
-                    [{
-                        "code": source_code,
-                        "message": doctor_service.DOCTOR_MESSAGES[source_code],
-                    }],
-                )
-                self.assertEqual(result.warnings, [])
+                issue = {
+                    "code": source_code,
+                    "message": doctor_service.DOCTOR_MESSAGES[source_code],
+                }
+                self.assertEqual(result.ok, advisory)
+                self.assertEqual(result.errors, [] if advisory else [issue])
+                self.assertEqual(result.warnings, [issue] if advisory else [])
                 self.assertEqual(result.data["suggested_action"], "continue")
-                self.assertFalse(result.data["setup_eligible"])
+                self.assertEqual(result.data["setup_eligible"], advisory)
+                self.assertEqual(
+                    result.project_id,
+                    install.legacy_project_id if advisory else None,
+                )
                 self.assertEqual(
                     result.data["components"]["project_state"],
                     {
@@ -631,6 +653,9 @@ class DoctorCommandTests(unittest.TestCase):
                         result.data["components"][component],
                         {"code": "unavailable"},
                     )
+                serialized = json.dumps(result.data)
+                self.assertNotIn("confirmation_token", serialized)
+                self.assertNotIn("tgr1.", serialized)
 
     def test_scope_and_package_advisories_use_fixed_rows(self):
         structural_cases = (

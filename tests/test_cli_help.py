@@ -96,6 +96,7 @@ class CliHelpTests(unittest.TestCase):
             for option in (
                 "--backup-interval-minutes",
                 "--backup-generations",
+                "--confirm-relocation",
                 "--repo",
                 "--json",
                 "--read-only",

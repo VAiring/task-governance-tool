@@ -223,12 +223,12 @@ def observe_current_root(repo: Path) -> CurrentRootObservation:
 
 
 def consumer_error_code(resolution: ProjectStateResolution) -> str | None:
-    """Map internal resolver state to the non-M17.3 consumer boundary."""
+    """Map internal resolver state to the public consumer boundary."""
 
     if resolution.error_code is not None:
         return resolution.error_code
     if resolution.binding == "relocation_required":
-        return "project_mismatch"
+        return "project_relocation_required"
     if resolution.layout == "legacy_projects_v1":
         return "migration_required"
     if resolution.layout == "missing" or resolution.fixed_recovery is not None:

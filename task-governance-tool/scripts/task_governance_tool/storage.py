@@ -3013,11 +3013,11 @@ def apply_migrations(
     return applied, warnings
 
 
-def read_project_binding_state(
+def _read_project_binding_snapshot(
     connection: sqlite3.Connection,
     *,
     expected_project_id: str | None = None,
-) -> ProjectBindingState:
+) -> tuple[ProjectBindingState, tuple[ProjectPathBinding, ...]]:
     """Validate and return the one schema-v14 current binding and its lineage."""
     try:
         rows = connection.execute(
@@ -3110,7 +3110,7 @@ def read_project_binding_state(
             raise StorageError("internal_error", "project binding history is invalid")
 
         previous_hash: str | None = None
-        history_head: ProjectPathBinding | None = None
+        history: list[ProjectPathBinding] = []
         for expected_generation, history_row in enumerate(history_rows, start=1):
             history_project_id = str(history_row["project_id"])
             generation = validate_binding_generation(
@@ -3169,7 +3169,7 @@ def read_project_binding_state(
                     "internal_error",
                     "project binding history is invalid",
                 )
-            history_head = ProjectPathBinding(
+            history.append(ProjectPathBinding(
                 project_id=history_project_id,
                 binding_generation=generation,
                 previous_path_hash=history_previous_hash,
@@ -3178,9 +3178,10 @@ def read_project_binding_state(
                 reason=reason,
                 confirmation_token_digest=token_digest,
                 bound_at=bound_at,
-            )
+            ))
             previous_hash = history_hash
 
+        history_head = history[-1] if history else None
         if history_head is None or (
             history_head.binding_generation != binding_generation
             or history_head.canonical_path_hash != canonical_hash
@@ -3189,7 +3190,7 @@ def read_project_binding_state(
             or history_head.bound_at != binding_updated_at
         ):
             raise StorageError("internal_error", "project binding history is invalid")
-        return ProjectBindingState(
+        state = ProjectBindingState(
             project_id=project_id,
             identity_scheme=identity_scheme,
             binding_generation=binding_generation,
@@ -3201,12 +3202,39 @@ def read_project_binding_state(
             legacy_cleanup_inventory=cleanup_inventory,
             legacy_cleanup_fingerprint=cleanup_fingerprint,
         )
+        return state, tuple(history)
     except StorageError as exc:
         if exc.code == "project_mismatch":
             raise
         raise _unreadable_project_state() from exc
     except (TypeError, ValueError, sqlite3.Error) as exc:
         raise _unreadable_project_state() from exc
+
+
+def read_project_binding_state(
+    connection: sqlite3.Connection,
+    *,
+    expected_project_id: str | None = None,
+) -> ProjectBindingState:
+    """Validate and return the one schema-v14 current binding."""
+
+    return _read_project_binding_snapshot(
+        connection,
+        expected_project_id=expected_project_id,
+    )[0]
+
+
+def read_project_binding_history(
+    connection: sqlite3.Connection,
+    *,
+    expected_project_id: str | None = None,
+) -> tuple[ProjectPathBinding, ...]:
+    """Validate and return the complete schema-v14 binding lineage."""
+
+    return _read_project_binding_snapshot(
+        connection,
+        expected_project_id=expected_project_id,
+    )[1]
 
 
 def ensure_project_meta(

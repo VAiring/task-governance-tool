@@ -22,6 +22,7 @@ from task_governance_tool.state_resolver import (  # noqa: E402
     resolve_setup_project_state,
     resolve_staged_project_state,
 )
+from task_governance_tool.project_scope import PROJECT_STATE_MESSAGES  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
     DatabaseTarget,
     MigrationBackupMetadata,
@@ -562,7 +563,17 @@ class StateResolverTests(unittest.TestCase):
             self.assertEqual(resolution.layout, "fixed_current_v1")
             self.assertEqual(resolution.binding, "relocation_required")
             self.assertEqual(resolution.project_id, UUID_PROJECT_ID)
-            self.assertEqual(consumer_error_code(resolution), "project_mismatch")
+            self.assertEqual(
+                consumer_error_code(resolution),
+                "project_relocation_required",
+            )
+            self.assertEqual(
+                PROJECT_STATE_MESSAGES["project_relocation_required"],
+                (
+                    "project state is bound to a different project location; "
+                    "run setup --read-only"
+                ),
+            )
             self.assertEqual(before, tree_snapshot(fixture.skill_root))
 
     def test_invalid_fixed_primary_never_falls_back_to_valid_legacy(self):
@@ -704,7 +715,10 @@ class StateResolverTests(unittest.TestCase):
             self.assertEqual(primary.layout, "legacy_projects_v1")
             self.assertEqual(primary.binding, "relocation_required")
             self.assertEqual(primary.project_id, target.project.project_id)
-            self.assertEqual(consumer_error_code(primary), "project_mismatch")
+            self.assertEqual(
+                consumer_error_code(primary),
+                "project_relocation_required",
+            )
             self.assertEqual(before, tree_snapshot(fixture.skill_root))
 
             backup = target.db_path.parent / "backups" / backup_name()

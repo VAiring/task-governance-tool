@@ -226,6 +226,14 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     "backup_interval_minutes": None,
                     "backup_generations": None,
                     "viewer_status": None,
+                    "relocation": {
+                        "required": False,
+                        "source_layout": None,
+                        "identity_scheme": None,
+                        "binding_generation": None,
+                        "confirmation_token": None,
+                        "expires_at": None,
+                    },
                 },
             )
             self.assertEqual(install.db_path.read_bytes(), before_primary)

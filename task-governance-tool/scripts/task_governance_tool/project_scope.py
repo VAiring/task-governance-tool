@@ -50,6 +50,10 @@ PROJECT_STATE_MESSAGES = {
     "database_busy": DATABASE_BUSY_MESSAGE,
     "project_state_unreadable": "project state could not be read safely",
     "project_mismatch": "task database belongs to a different project",
+    "project_relocation_required": (
+        "project state is bound to a different project location; "
+        "run setup --read-only"
+    ),
     "schema_too_new": "task database schema is newer than this taskgov version",
     "migration_required": "task database requires setup migration",
     "setup_required": "project state is not set up",

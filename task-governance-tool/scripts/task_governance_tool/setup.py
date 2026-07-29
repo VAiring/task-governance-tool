@@ -29,26 +29,41 @@ from task_governance_tool.project_scope import (
     ProjectScopeInspection,
     inspect_project_scope,
 )
+from task_governance_tool.relocation import (
+    RelocationContext,
+    RelocationTokenClaims,
+    RelocationTokenError,
+    context_matches,
+    decode_relocation_token,
+    encode_relocation_token,
+    relocation_token_digest,
+    relocation_token_expiry,
+    require_unexpired,
+)
 from task_governance_tool.storage import (
     DEFAULT_BACKUP_GENERATIONS,
     DEFAULT_BACKUP_INTERVAL_MINUTES,
     DatabaseTarget,
     MigrationBackupMetadata,
+    ProjectPathBinding,
     ProjectIdentity,
     SCHEMA_VERSION,
     SetupStorageState,
     StorageError,
     UnboundDatabaseTarget,
     clear_legacy_cleanup_pending,
+    compare_and_swap_project_binding,
     connect_snapshot_readonly,
     configure_project_maintenance,
     initialize_database,
     initialize_uuid_database,
     inspect_setup_state,
     is_sqlite_busy_or_locked,
+    read_project_binding_history,
     read_project_binding_state,
     read_viewer_maintenance,
     set_legacy_cleanup_pending,
+    utc_now,
     validate_backup_policy,
 )
 from task_governance_tool.state_paths import (
@@ -103,6 +118,7 @@ SETUP_WRITE_ORDER = (
     "migration_backup",
     "database_migrate",
     "maintenance_configure",
+    "project_binding_update",
     "viewer_publish",
     "legacy_state_cleanup",
 )
@@ -115,6 +131,20 @@ SETUP_ERROR_MESSAGES = {
     "setup_initialization_failed": "project state could not be initialized",
     "setup_migration_failed": "project state could not be migrated",
     "setup_incomplete": "setup completed only partially; rerun setup",
+    "project_relocation_required": PROJECT_STATE_MESSAGES[
+        "project_relocation_required"
+    ],
+    "relocation_token_invalid": "relocation confirmation is invalid",
+    "relocation_token_expired": (
+        "relocation confirmation has expired; run setup --read-only again"
+    ),
+    "relocation_token_stale": (
+        "project relocation state changed; run setup --read-only again"
+    ),
+    "relocation_token_used": (
+        "relocation confirmation has already been used"
+    ),
+    "relocation_not_required": "project relocation is not required",
 }
 
 @dataclass(frozen=True)
@@ -125,6 +155,7 @@ class SetupPlan:
     backup: bool
     migrate: bool
     configure: bool
+    rebind: bool
     publish_viewer: bool
     legacy_cleanup: bool
     interval_minutes: int
@@ -140,6 +171,7 @@ class SetupPlan:
             "migration_backup": self.backup,
             "database_migrate": self.migrate,
             "maintenance_configure": self.configure,
+            "project_binding_update": self.rebind,
             "viewer_publish": self.publish_viewer,
             "legacy_state_cleanup": self.legacy_cleanup,
         }
@@ -161,6 +193,46 @@ class _LegacySetupFailure(Exception):
     code: str
     completed_writes: tuple[str, ...] = ()
     target: DatabaseTarget | None = None
+    resolution: ProjectStateResolution | None = None
+
+
+@dataclass
+class _RelocationConfirmationFailure(Exception):
+    code: str
+
+
+@dataclass
+class _FixedRelocationFailure(Exception):
+    code: str
+    completed_writes: tuple[str, ...] = ()
+    target: DatabaseTarget | None = None
+    resolution: ProjectStateResolution | None = None
+
+
+@dataclass(frozen=True)
+class _AcceptedRelocation:
+    claims: RelocationTokenClaims
+    digest: str
+    checked_at: str
+
+
+def _relocation_data(
+    *,
+    required: bool = False,
+    source_layout: str | None = None,
+    identity_scheme: str | None = None,
+    binding_generation: int | None = None,
+    confirmation_token: str | None = None,
+    expires_at: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "required": bool(required),
+        "source_layout": source_layout,
+        "identity_scheme": identity_scheme,
+        "binding_generation": binding_generation,
+        "confirmation_token": confirmation_token,
+        "expires_at": expires_at,
+    }
 
 
 def _setup_data(
@@ -173,6 +245,7 @@ def _setup_data(
     interval_minutes: int | None = None,
     generations: int | None = None,
     viewer_status: str | None = None,
+    relocation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "status": status,
@@ -184,6 +257,11 @@ def _setup_data(
         "backup_interval_minutes": interval_minutes,
         "backup_generations": generations,
         "viewer_status": viewer_status,
+        "relocation": (
+            _relocation_data()
+            if relocation is None
+            else dict(relocation)
+        ),
     }
 
 
@@ -349,6 +427,7 @@ def _build_plan(
     restore: bool,
     legacy_publish: bool,
     legacy_cleanup: bool,
+    rebind: bool,
     requested_interval: int | None,
     requested_generations: int | None,
     viewer_status: str,
@@ -398,11 +477,13 @@ def _build_plan(
         backup=migrate,
         migrate=migrate,
         configure=configure,
+        rebind=rebind,
         publish_viewer=(
             restore
             or legacy_publish
             or initialize
             or migrate
+            or rebind
             or viewer_status != "current"
         ),
         legacy_cleanup=legacy_cleanup or legacy_publish,
@@ -455,6 +536,208 @@ def _bound_target_at(
         db_path=database_path,
         explicit_db=True,
     )
+
+
+def _stored_target_at(
+    resolution: ProjectStateResolution,
+    database_path: Path,
+) -> DatabaseTarget:
+    stored = resolution.stored_project
+    if stored is None:
+        raise StorageError(
+            "project_state_unreadable",
+            PROJECT_STATE_MESSAGES["project_state_unreadable"],
+        )
+    return DatabaseTarget(
+        project=ProjectIdentity(
+            project_id=stored.project_id,
+            canonical_repo=resolution.current_root.canonical_repo,
+            canonical_path_hash=stored.canonical_path_hash,
+            display_name=stored.display_name,
+        ),
+        db_path=database_path,
+        explicit_db=True,
+    )
+
+
+def _relocation_projection(
+    resolution: ProjectStateResolution | None,
+    *,
+    confirmation_token: str | None = None,
+    expires_at: str | None = None,
+) -> dict[str, Any]:
+    stored = resolution.stored_project if resolution is not None else None
+    source_layout = (
+        resolution.layout
+        if resolution is not None
+        and resolution.layout in {"fixed_current_v1", "legacy_projects_v1"}
+        and stored is not None
+        else None
+    )
+    return _relocation_data(
+        required=bool(
+            resolution is not None
+            and resolution.binding == "relocation_required"
+        ),
+        source_layout=source_layout,
+        identity_scheme=(
+            stored.identity_scheme if source_layout is not None else None
+        ),
+        binding_generation=(
+            stored.binding_generation if source_layout is not None else None
+        ),
+        confirmation_token=confirmation_token,
+        expires_at=expires_at,
+    )
+
+
+def _relocation_context(
+    resolution: ProjectStateResolution,
+) -> RelocationContext:
+    stored = resolution.stored_project
+    if (
+        stored is None
+        or resolution.layout
+        not in {"fixed_current_v1", "legacy_projects_v1"}
+        or resolution.binding != "relocation_required"
+    ):
+        raise _RelocationConfirmationFailure("relocation_token_stale")
+    try:
+        return RelocationContext(
+            project_id=stored.project_id,
+            identity_scheme=stored.identity_scheme,
+            binding_generation=stored.binding_generation,
+            old_path_hash=stored.canonical_path_hash,
+            new_path_hash=resolution.current_root.canonical_path_hash,
+            source_layout=resolution.layout,
+            source_schema_version=stored.source_schema_version,
+        )
+    except RelocationTokenError as exc:
+        raise _RelocationConfirmationFailure(
+            "relocation_token_stale"
+        ) from exc
+
+
+def _binding_history(
+    resolution: ProjectStateResolution,
+    target: DatabaseTarget | None,
+) -> tuple[ProjectPathBinding, ...]:
+    if (
+        target is None
+        or resolution.source_schema_version != SCHEMA_VERSION
+        or resolution.project_id is None
+    ):
+        return ()
+    with closing(connect_snapshot_readonly(target.db_path)) as connection:
+        return read_project_binding_history(
+            connection,
+            expected_project_id=resolution.project_id,
+        )
+
+
+def _confirmation_target(
+    resolution: ProjectStateResolution,
+) -> DatabaseTarget | None:
+    if resolution.layout == "fixed_current_v1":
+        return resolution.target
+    if (
+        resolution.layout == "legacy_projects_v1"
+        and resolution.legacy_source is not None
+    ):
+        return resolution.legacy_source.source_target
+    return None
+
+
+def _already_applied_relocation(
+    claims: RelocationTokenClaims,
+    resolution: ProjectStateResolution,
+    history: tuple[ProjectPathBinding, ...],
+) -> bool:
+    stored = resolution.stored_project
+    context = claims.context
+    if (
+        stored is None
+        or resolution.binding != "matching"
+        or resolution.layout != "fixed_current_v1"
+        or stored.source_schema_version != SCHEMA_VERSION
+        or stored.project_id != context.project_id
+        or stored.identity_scheme != context.identity_scheme
+        or stored.binding_generation != context.binding_generation + 1
+        or stored.canonical_path_hash != context.new_path_hash
+        or resolution.current_root.canonical_path_hash
+        != context.new_path_hash
+        or len(history) != stored.binding_generation
+        or context.binding_generation < 1
+    ):
+        return False
+    previous = history[context.binding_generation - 1]
+    current = history[context.binding_generation]
+    return bool(
+        previous.binding_generation == context.binding_generation
+        and previous.canonical_path_hash == context.old_path_hash
+        and current.binding_generation == context.binding_generation + 1
+        and current.previous_path_hash == context.old_path_hash
+        and current.canonical_path_hash == context.new_path_hash
+        and current.reason == "confirmed_relocation"
+    )
+
+
+def _validate_confirmation(
+    token: str,
+    *,
+    resolution: ProjectStateResolution,
+    target: DatabaseTarget | None,
+    checked_at: str,
+) -> _AcceptedRelocation:
+    try:
+        claims = decode_relocation_token(token, now=checked_at)
+        digest = relocation_token_digest(token)
+    except RelocationTokenError as exc:
+        raise _RelocationConfirmationFailure(exc.code) from exc
+
+    history = _binding_history(resolution, target)
+    if any(
+        row.confirmation_token_digest == digest
+        for row in history
+    ):
+        raise _RelocationConfirmationFailure("relocation_token_used")
+
+    try:
+        require_unexpired(claims, now=checked_at)
+    except RelocationTokenError as exc:
+        raise _RelocationConfirmationFailure(exc.code) from exc
+
+    if resolution.binding == "relocation_required":
+        expected = _relocation_context(resolution)
+        if context_matches(claims, expected):
+            return _AcceptedRelocation(
+                claims=claims,
+                digest=digest,
+                checked_at=checked_at,
+            )
+        raise _RelocationConfirmationFailure("relocation_token_stale")
+    if _already_applied_relocation(claims, resolution, history):
+        raise _RelocationConfirmationFailure("relocation_not_required")
+    raise _RelocationConfirmationFailure("relocation_token_stale")
+
+
+def _raise_if_used_confirmation(
+    token: str,
+    *,
+    resolution: ProjectStateResolution,
+    target: DatabaseTarget | None,
+    checked_at: str,
+) -> None:
+    """Expose a successful replay before setup-owned cleanup validation."""
+
+    try:
+        decode_relocation_token(token, now=checked_at)
+        digest = relocation_token_digest(token)
+    except RelocationTokenError:
+        return
+    history = _binding_history(resolution, target)
+    if any(row.confirmation_token_digest == digest for row in history):
+        raise _RelocationConfirmationFailure("relocation_token_used")
 
 
 def _ensure_state_root(scope: ProjectScope, resolution: ProjectStateResolution) -> None:
@@ -704,17 +987,61 @@ def _validate_pending_cleanup_readonly(
 def _same_legacy_observation(
     before: ProjectStateResolution,
     after: ProjectStateResolution,
+    *,
+    expected_binding: str,
 ) -> bool:
+    before_stored = before.stored_project
+    after_stored = after.stored_project
     return bool(
         before.layout == after.layout == "legacy_projects_v1"
-        and before.binding == after.binding == "matching"
+        and before.binding == after.binding == expected_binding
         and before.project_id is not None
         and before.project_id == after.project_id
         and before.source_schema_version == after.source_schema_version
+        and before_stored is not None
+        and after_stored is not None
+        and before_stored.identity_scheme == after_stored.identity_scheme
+        and before_stored.binding_generation
+        == after_stored.binding_generation
+        and before_stored.canonical_path_hash
+        == after_stored.canonical_path_hash
+        and before_stored.binding_lineage == after_stored.binding_lineage
+        and before.current_root.canonical_path_hash
+        == after.current_root.canonical_path_hash
         and before.legacy_source is not None
         and after.legacy_source is not None
         and before.legacy_source.primary_present
         == after.legacy_source.primary_present
+    )
+
+
+def _same_fixed_relocation_observation(
+    before: ProjectStateResolution,
+    after: ProjectStateResolution,
+) -> bool:
+    before_stored = before.stored_project
+    after_stored = after.stored_project
+    return bool(
+        before.layout == after.layout == "fixed_current_v1"
+        and before.binding == after.binding == "relocation_required"
+        and before.fixed_recovery is None
+        and after.fixed_recovery is None
+        and before.target is not None
+        and after.target is not None
+        and before.target.db_path == after.target.db_path
+        and before_stored is not None
+        and after_stored is not None
+        and before_stored.project_id == after_stored.project_id
+        and before_stored.identity_scheme == after_stored.identity_scheme
+        and before_stored.binding_generation
+        == after_stored.binding_generation
+        and before_stored.canonical_path_hash
+        == after_stored.canonical_path_hash
+        and before_stored.source_schema_version
+        == after_stored.source_schema_version
+        and before_stored.binding_lineage == after_stored.binding_lineage
+        and before.current_root.canonical_path_hash
+        == after.current_root.canonical_path_hash
     )
 
 
@@ -741,7 +1068,7 @@ def _matching_fixed_target(
     return resolution.target
 
 
-def _publish_same_binding_legacy(
+def _publish_legacy(
     *,
     scope: ProjectScope,
     initial_resolution: ProjectStateResolution,
@@ -749,13 +1076,19 @@ def _publish_same_binding_legacy(
     repo: str,
     repo_explicit: bool,
     script_path: Path,
+    confirmation_token: str | None,
 ) -> tuple[DatabaseTarget, list[str]]:
     source = initial_resolution.legacy_source
     stored = initial_resolution.stored_project
+    expected_binding = (
+        "relocation_required"
+        if confirmation_token is not None
+        else "matching"
+    )
     if (
         source is None
         or stored is None
-        or initial_resolution.binding != "matching"
+        or initial_resolution.binding != expected_binding
     ):
         raise _LegacySetupFailure("setup_incomplete")
 
@@ -769,11 +1102,6 @@ def _publish_same_binding_legacy(
     try:
         with state_transition_lock(initial_resolution.paths.state_root):
             residue = _inspect_setup_residue(initial_resolution)
-            if residue is not None:
-                remove_stage_residue(
-                    initial_resolution.paths.state_root,
-                    residue,
-                )
             refreshed_scope = _revalidate_scope(
                 repo=repo,
                 repo_explicit=repo_explicit,
@@ -783,8 +1111,41 @@ def _publish_same_binding_legacy(
                 skill_root=refreshed_scope.skill_root,
                 repo=refreshed_scope.canonical_repo,
             )
-            if not _same_legacy_observation(initial_resolution, refreshed):
-                raise StateTransitionError()
+            if refreshed.error_code is not None:
+                raise _LegacySetupFailure(
+                    refreshed.error_code,
+                    resolution=refreshed,
+                )
+            accepted_relocation: _AcceptedRelocation | None = None
+            if confirmation_token is not None:
+                try:
+                    accepted_relocation = _validate_confirmation(
+                        confirmation_token,
+                        resolution=refreshed,
+                        target=_confirmation_target(refreshed),
+                        checked_at=utc_now(),
+                    )
+                except _RelocationConfirmationFailure as exc:
+                    raise _LegacySetupFailure(
+                        exc.code,
+                        resolution=refreshed,
+                    ) from exc
+            if not _same_legacy_observation(
+                initial_resolution,
+                refreshed,
+                expected_binding=expected_binding,
+            ):
+                raise _LegacySetupFailure(
+                    "relocation_token_stale"
+                    if confirmation_token is not None
+                    else "setup_incomplete",
+                    resolution=refreshed,
+                )
+            if residue is not None:
+                remove_stage_residue(
+                    initial_resolution.paths.state_root,
+                    residue,
+                )
 
             assert refreshed.legacy_source is not None
             with _legacy_managed_backup_lock(
@@ -794,8 +1155,21 @@ def _publish_same_binding_legacy(
                     skill_root=refreshed_scope.skill_root,
                     repo=refreshed_scope.canonical_repo,
                 )
-                if not _same_legacy_observation(refreshed, locked):
-                    raise StateTransitionError()
+                if locked.error_code is not None:
+                    raise _LegacySetupFailure(
+                        locked.error_code,
+                        resolution=locked,
+                    )
+                if not _same_legacy_observation(
+                    refreshed,
+                    locked,
+                    expected_binding=expected_binding,
+                ):
+                    raise _LegacySetupFailure(
+                        "relocation_token_stale"
+                        if confirmation_token is not None
+                        else "setup_incomplete"
+                    )
                 assert locked.legacy_source is not None
                 assert locked.stored_project is not None
                 inventory = _build_legacy_cleanup_inventory(
@@ -814,7 +1188,7 @@ def _publish_same_binding_legacy(
                 if owned.stage_directory is None:
                     raise StateTransitionError()
                 stage_root = owned.stage_directory.path
-                stage_target = _bound_target_at(
+                stage_target = _stored_target_at(
                     locked,
                     stage_root / "taskgov.sqlite",
                 )
@@ -864,6 +1238,44 @@ def _publish_same_binding_legacy(
                         raise _LegacySetupFailure(
                             "setup_incomplete"
                         ) from exc
+                if accepted_relocation is not None:
+                    try:
+                        stage_target = _bound_target_at(
+                            locked,
+                            stage_root / "taskgov.sqlite",
+                        )
+                        compare_and_swap_project_binding(
+                            stage_target,
+                            project_id=accepted_relocation.claims.context.project_id,
+                            identity_scheme=(
+                                accepted_relocation.claims.context.identity_scheme
+                            ),
+                            expected_generation=(
+                                accepted_relocation.claims.context.binding_generation
+                            ),
+                            expected_old_hash=(
+                                accepted_relocation.claims.context.old_path_hash
+                            ),
+                            new_hash=(
+                                accepted_relocation.claims.context.new_path_hash
+                            ),
+                            new_display_name=(
+                                locked.current_root.display_name
+                            ),
+                            reason="confirmed_relocation",
+                            confirmation_token_digest=(
+                                accepted_relocation.digest
+                            ),
+                            bound_at=accepted_relocation.checked_at,
+                        )
+                    except StorageError as exc:
+                        raise _LegacySetupFailure(
+                            (
+                                "relocation_token_stale"
+                                if exc.code == "project_binding_stale"
+                                else "setup_incomplete"
+                            )
+                        ) from exc
                 binding = _pending_cleanup_binding(stage_target)
                 set_legacy_cleanup_pending(
                     stage_target,
@@ -906,6 +1318,32 @@ def _publish_same_binding_legacy(
                 )
                 expected = locked.stored_project
                 observed = staged_resolution.stored_project
+                expected_generation = (
+                    expected.binding_generation
+                    + (1 if accepted_relocation is not None else 0)
+                    if expected is not None
+                    else None
+                )
+                expected_hash = (
+                    locked.current_root.canonical_path_hash
+                    if accepted_relocation is not None
+                    else (
+                        expected.canonical_path_hash
+                        if expected is not None
+                        else None
+                    )
+                )
+                expected_lineage = (
+                    expected.binding_lineage
+                    + (locked.current_root.canonical_path_hash,)
+                    if accepted_relocation is not None
+                    and expected is not None
+                    else (
+                        expected.binding_lineage
+                        if expected is not None
+                        else ()
+                    )
+                )
                 if (
                     staged_resolution.error_code is not None
                     or staged_resolution.layout != "fixed_current_v1"
@@ -917,10 +1355,10 @@ def _publish_same_binding_legacy(
                     or observed.project_id != expected.project_id
                     or observed.identity_scheme != expected.identity_scheme
                     or observed.binding_generation
-                    != expected.binding_generation
+                    != expected_generation
                     or observed.canonical_path_hash
-                    != expected.canonical_path_hash
-                    or observed.binding_lineage != expected.binding_lineage
+                    != expected_hash
+                    or observed.binding_lineage != expected_lineage
                     or not observed.legacy_cleanup_pending
                     or _viewer_status(
                         refreshed_scope.skill_root,
@@ -952,6 +1390,8 @@ def _publish_same_binding_legacy(
                     completed.append("database_migrate")
                 if plan.configure:
                     completed.append("maintenance_configure")
+                if accepted_relocation is not None:
+                    completed.append("project_binding_update")
                 completed.append("viewer_publish")
                 unlink_validated_file(
                     residue.owner_file,
@@ -1019,6 +1459,186 @@ def _publish_same_binding_legacy(
                         )
 
 
+def _execute_fixed_relocation(
+    *,
+    scope: ProjectScope,
+    initial_resolution: ProjectStateResolution,
+    plan: SetupPlan,
+    repo: str,
+    repo_explicit: bool,
+    script_path: Path,
+    confirmation_token: str,
+) -> tuple[DatabaseTarget, list[str], str]:
+    if (
+        initial_resolution.layout != "fixed_current_v1"
+        or initial_resolution.binding != "relocation_required"
+        or initial_resolution.target is None
+        or initial_resolution.stored_project is None
+    ):
+        raise _FixedRelocationFailure("setup_incomplete")
+
+    completed: list[str] = []
+    current_target: DatabaseTarget | None = None
+    stage = "preflight"
+    _ensure_state_root(scope, initial_resolution)
+    try:
+        with state_transition_lock(initial_resolution.paths.state_root):
+            refreshed_scope = _revalidate_scope(
+                repo=repo,
+                repo_explicit=repo_explicit,
+                script_path=script_path,
+            )
+            refreshed = resolve_setup_project_state(
+                skill_root=refreshed_scope.skill_root,
+                repo=refreshed_scope.canonical_repo,
+            )
+            if refreshed.error_code is not None:
+                raise _FixedRelocationFailure(
+                    refreshed.error_code,
+                    resolution=refreshed,
+                )
+            try:
+                accepted = _validate_confirmation(
+                    confirmation_token,
+                    resolution=refreshed,
+                    target=_confirmation_target(refreshed),
+                    checked_at=utc_now(),
+                )
+            except _RelocationConfirmationFailure as exc:
+                raise _FixedRelocationFailure(
+                    exc.code,
+                    resolution=refreshed,
+                ) from exc
+            if not _same_fixed_relocation_observation(
+                initial_resolution,
+                refreshed,
+            ):
+                raise _FixedRelocationFailure(
+                    "relocation_token_stale",
+                    resolution=refreshed,
+                )
+            old_target = _stored_target_at(
+                refreshed,
+                refreshed.paths.database,
+            )
+
+            residue = _inspect_setup_residue(refreshed)
+            if residue is not None:
+                remove_stage_residue(
+                    refreshed.paths.state_root,
+                    residue,
+                )
+
+            backup_metadata: MigrationBackupMetadata | None = None
+            if plan.backup:
+                stage = "backup"
+                with managed_backup_lock(old_target):
+                    backup_metadata = publish_setup_backup(
+                        old_target,
+                        plan.publication_retention,
+                    )
+                    completed.append("migration_backup")
+                    stage = "migrate"
+                    initialize_database(
+                        old_target,
+                        setup_backup=(
+                            backup_metadata
+                            if refreshed.source_schema_version is not None
+                            and refreshed.source_schema_version < 10
+                            else None
+                        ),
+                        managed_backups=discover_managed_backup_metadata(
+                            old_target
+                        ),
+                    )
+                    completed.append("database_migrate")
+
+            if plan.configure:
+                stage = "configure"
+                configure_project_maintenance(
+                    old_target,
+                    requested_interval_minutes=plan.interval_minutes,
+                    requested_generations=plan.generations,
+                )
+                completed.append("maintenance_configure")
+
+            stage = "binding"
+            current_target = _bound_target_at(
+                refreshed,
+                refreshed.paths.database,
+            )
+            compare_and_swap_project_binding(
+                current_target,
+                project_id=accepted.claims.context.project_id,
+                identity_scheme=accepted.claims.context.identity_scheme,
+                expected_generation=(
+                    accepted.claims.context.binding_generation
+                ),
+                expected_old_hash=accepted.claims.context.old_path_hash,
+                new_hash=accepted.claims.context.new_path_hash,
+                new_display_name=refreshed.current_root.display_name,
+                reason="confirmed_relocation",
+                confirmation_token_digest=accepted.digest,
+                bound_at=accepted.checked_at,
+            )
+            completed.append("project_binding_update")
+
+            stage = "viewer"
+            _publish_viewer(refreshed_scope.skill_root, current_target)
+            completed.append("viewer_publish")
+
+            if plan.legacy_cleanup:
+                stage = "cleanup"
+                if _complete_pending_cleanup(refreshed, current_target):
+                    completed.append("legacy_state_cleanup")
+            return current_target, completed, "published"
+    except _FixedRelocationFailure:
+        raise
+    except StateTransitionError as exc:
+        raise _FixedRelocationFailure(
+            (
+                "database_busy"
+                if exc.code == "database_busy"
+                else "setup_incomplete"
+            ),
+            tuple(completed),
+            current_target,
+        ) from exc
+    except StorageError as exc:
+        if stage == "binding" and exc.code == "project_binding_stale":
+            code = "relocation_token_stale"
+        elif exc.code == "database_busy":
+            code = "database_busy"
+        elif stage == "backup":
+            code = "setup_backup_failed"
+        elif stage == "migrate":
+            code = "setup_migration_failed"
+        elif stage == "binding":
+            code = "project_state_unreadable"
+        else:
+            code = "setup_incomplete"
+        raise _FixedRelocationFailure(
+            code,
+            tuple(completed),
+            current_target,
+        ) from exc
+    except Exception as exc:
+        code = (
+            "setup_backup_failed"
+            if stage == "backup"
+            else (
+                "setup_migration_failed"
+                if stage == "migrate"
+                else "setup_incomplete"
+            )
+        )
+        raise _FixedRelocationFailure(
+            code,
+            tuple(completed),
+            current_target,
+        ) from exc
+
+
 def run_setup(
     *,
     repo: str,
@@ -1027,6 +1647,7 @@ def run_setup(
     read_only: bool,
     backup_interval_minutes: int | None,
     backup_generations: int | None,
+    confirmation_token: str | None = None,
 ) -> SetupServiceResult:
     """Plan or execute setup using only fixed, local stages."""
 
@@ -1097,13 +1718,6 @@ def run_setup(
             code="setup_incomplete",
             message=SETUP_ERROR_MESSAGES["setup_incomplete"],
         )
-    if resolution.binding == "relocation_required":
-        return _preflight_failure(
-            inspection,
-            code="project_mismatch",
-            message=PROJECT_STATE_MESSAGES["project_mismatch"],
-        )
-
     target: DatabaseTarget | None = None
     legacy_publish = resolution.layout == "legacy_projects_v1"
     if legacy_publish:
@@ -1113,9 +1727,20 @@ def run_setup(
                 code="project_state_unreadable",
                 message=PROJECT_STATE_MESSAGES["project_state_unreadable"],
             )
-        target = resolution.legacy_source.source_target
+        target = (
+            _stored_target_at(
+                resolution,
+                resolution.legacy_source.source_database,
+            )
+            if resolution.binding == "relocation_required"
+            else resolution.legacy_source.source_target
+        )
     elif resolution.layout == "fixed_current_v1":
-        target = resolution.target
+        target = (
+            _stored_target_at(resolution, resolution.paths.database)
+            if resolution.binding == "relocation_required"
+            else resolution.target
+        )
         if target is None:
             return _preflight_failure(
                 inspection,
@@ -1201,6 +1826,7 @@ def run_setup(
                 resolution.stored_project is not None
                 and resolution.stored_project.legacy_cleanup_pending
             ),
+            rebind=resolution.binding == "relocation_required",
             requested_interval=backup_interval_minutes,
             requested_generations=backup_generations,
             viewer_status=observed_viewer_status,
@@ -1219,6 +1845,7 @@ def run_setup(
         else state.schema_version
     )
     current_maintenance = bool(state.maintenance_enabled)
+    relocation_projection = _relocation_projection(resolution)
     data = _setup_data(
         status=(
             "setup_preview"
@@ -1231,7 +1858,138 @@ def run_setup(
         interval_minutes=plan.interval_minutes,
         generations=plan.generations,
         viewer_status=observed_viewer_status,
+        relocation=relocation_projection,
     )
+
+    def current_relocation_resolution() -> ProjectStateResolution:
+        try:
+            refreshed = resolve_setup_project_state(
+                skill_root=scope.skill_root,
+                repo=scope.canonical_repo,
+            )
+        except Exception:
+            return resolution
+        return refreshed if refreshed.error_code is None else resolution
+
+    def relocation_failure(
+        code: str,
+        *,
+        retain_plan: bool = False,
+        observed_resolution: ProjectStateResolution | None = None,
+    ) -> SetupServiceResult:
+        effective_resolution = observed_resolution or resolution
+        effective_maintenance = current_maintenance
+        effective_viewer_status = observed_viewer_status
+        initial_stored = resolution.stored_project
+        observed_stored = (
+            observed_resolution.stored_project
+            if observed_resolution is not None
+            else None
+        )
+        binding_changed = bool(
+            observed_resolution is not None
+            and (
+                observed_resolution.layout != resolution.layout
+                or observed_resolution.binding != resolution.binding
+                or initial_stored is None
+                or observed_stored is None
+                or observed_stored.project_id != initial_stored.project_id
+                or observed_stored.identity_scheme
+                != initial_stored.identity_scheme
+                or observed_stored.binding_generation
+                != initial_stored.binding_generation
+                or observed_stored.canonical_path_hash
+                != initial_stored.canonical_path_hash
+            )
+        )
+        if (
+            binding_changed
+            and observed_resolution is not None
+            and observed_resolution.layout == "fixed_current_v1"
+            and observed_resolution.target is not None
+        ):
+            try:
+                observed_state = inspect_setup_state(
+                    observed_resolution.target
+                )
+                effective_maintenance = bool(
+                    observed_state.maintenance_enabled
+                )
+                effective_viewer_status = _viewer_status(
+                    scope.skill_root,
+                    observed_resolution.target,
+                    setup_state=observed_state,
+                )
+            except Exception:
+                pass
+        return SetupServiceResult(
+            ok=False,
+            project_id=effective_resolution.project_id,
+            data=_setup_data(
+                planned_writes=(
+                    planned_writes if retain_plan else []
+                ),
+                schema_from=schema_from,
+                maintenance_enabled=effective_maintenance,
+                interval_minutes=plan.interval_minutes,
+                generations=plan.generations,
+                viewer_status=effective_viewer_status,
+                relocation=_relocation_projection(effective_resolution),
+            ),
+            error_code=code,
+            error_message=SETUP_ERROR_MESSAGES[code],
+        )
+
+    confirmation_resolution = resolution
+    confirmation_target = target
+    if confirmation_token is not None:
+        early_checked_at = utc_now()
+        try:
+            _raise_if_used_confirmation(
+                confirmation_token,
+                resolution=confirmation_resolution,
+                target=confirmation_target,
+                checked_at=early_checked_at,
+            )
+        except _RelocationConfirmationFailure:
+            return relocation_failure(
+                "relocation_token_used",
+                observed_resolution=current_relocation_resolution(),
+            )
+        except Exception as exc:
+            confirmation_resolution = current_relocation_resolution()
+            confirmation_target = _confirmation_target(
+                confirmation_resolution
+            )
+            try:
+                _raise_if_used_confirmation(
+                    confirmation_token,
+                    resolution=confirmation_resolution,
+                    target=confirmation_target,
+                    checked_at=early_checked_at,
+                )
+            except _RelocationConfirmationFailure:
+                return relocation_failure(
+                    "relocation_token_used",
+                    observed_resolution=confirmation_resolution,
+                )
+            except Exception:
+                code, message = _storage_preflight_code(exc)
+                return _preflight_failure(
+                    inspection,
+                    code=code,
+                    message=message,
+                    project_id=resolution.project_id,
+                    data=_setup_data(
+                        schema_from=schema_from,
+                        maintenance_enabled=current_maintenance,
+                        interval_minutes=plan.interval_minutes,
+                        generations=plan.generations,
+                        viewer_status=observed_viewer_status,
+                        relocation=relocation_projection,
+                    ),
+                )
+
     if target is not None and resolution.layout == "fixed_current_v1":
         try:
             _validate_pending_cleanup_readonly(resolution, target)
@@ -1248,6 +2006,7 @@ def run_setup(
                     interval_minutes=plan.interval_minutes,
                     generations=plan.generations,
                     viewer_status=observed_viewer_status,
+                    relocation=relocation_projection,
                 ),
             )
         except Exception as exc:
@@ -1258,7 +2017,102 @@ def run_setup(
                 message=message,
                 project_id=resolution.project_id,
             )
-    if not read_only and residue is not None and not legacy_publish:
+
+    accepted_relocation: _AcceptedRelocation | None = None
+    if confirmation_token is not None:
+        confirmation_resolution = current_relocation_resolution()
+        confirmation_target = _confirmation_target(
+            confirmation_resolution
+        )
+        checked_at = utc_now()
+        first_observation_error: Exception | None = None
+        for attempt in range(2):
+            try:
+                accepted_relocation = _validate_confirmation(
+                    confirmation_token,
+                    resolution=confirmation_resolution,
+                    target=confirmation_target,
+                    checked_at=checked_at,
+                )
+                break
+            except _RelocationConfirmationFailure as exc:
+                return relocation_failure(
+                    exc.code,
+                    observed_resolution=current_relocation_resolution(),
+                )
+            except Exception as exc:
+                if attempt == 0:
+                    first_observation_error = exc
+                    confirmation_resolution = (
+                        current_relocation_resolution()
+                    )
+                    confirmation_target = _confirmation_target(
+                        confirmation_resolution
+                    )
+                    continue
+                observed_error = first_observation_error or exc
+                code, message = _storage_preflight_code(observed_error)
+                return _preflight_failure(
+                    inspection,
+                    code=code,
+                    message=message,
+                    project_id=resolution.project_id,
+                    data=_setup_data(
+                        schema_from=schema_from,
+                        maintenance_enabled=current_maintenance,
+                        interval_minutes=plan.interval_minutes,
+                        generations=plan.generations,
+                        viewer_status=observed_viewer_status,
+                        relocation=relocation_projection,
+                    ),
+                )
+    elif resolution.binding == "relocation_required":
+        if not read_only:
+            return relocation_failure(
+                "project_relocation_required",
+                retain_plan=True,
+            )
+        try:
+            issued_at = utc_now()
+            preview_token = encode_relocation_token(
+                _relocation_context(resolution),
+                issued_at=issued_at,
+            )
+            preview_expires_at = relocation_token_expiry(issued_at)
+        except (RelocationTokenError, _RelocationConfirmationFailure):
+            return _preflight_failure(
+                inspection,
+                code="project_state_unreadable",
+                message=PROJECT_STATE_MESSAGES["project_state_unreadable"],
+                project_id=resolution.project_id,
+            )
+        preview_relocation = _relocation_projection(
+            resolution,
+            confirmation_token=preview_token,
+            expires_at=preview_expires_at,
+        )
+        return SetupServiceResult(
+            ok=True,
+            project_id=resolution.project_id,
+            data=_setup_data(
+                status="relocation_preview",
+                planned_writes=planned_writes,
+                schema_from=schema_from,
+                maintenance_enabled=current_maintenance,
+                interval_minutes=plan.interval_minutes,
+                generations=plan.generations,
+                viewer_status=observed_viewer_status,
+                relocation=preview_relocation,
+            ),
+            text="Relocation preview complete",
+        )
+
+    if (
+        not read_only
+        and confirmation_token is None
+        and residue is not None
+        and not legacy_publish
+    ):
         try:
             _ensure_state_root(scope, resolution)
             with state_transition_lock(resolution.paths.state_root):
@@ -1310,6 +2164,47 @@ def run_setup(
 
     def failure_after_write(code: str) -> SetupServiceResult:
         failure_target = target
+        failure_relocation = relocation_projection
+        failure_maintenance = (
+            current_maintenance
+            or "maintenance_configure" in completed
+        )
+        failure_viewer_status = (
+            "published"
+            if "viewer_publish" in completed
+            else (
+                _failure_viewer_status(
+                    scope.skill_root,
+                    failure_target,
+                    state,
+                )
+                if failure_target is not None
+                and failure_target.db_path.exists()
+                else observed_viewer_status
+            )
+        )
+        if (
+            resolution.stored_project is not None
+            and (
+                "legacy_state_publish" in completed
+                or "project_binding_update" in completed
+            )
+        ):
+            failure_relocation = _relocation_data(
+                required=False,
+                source_layout="fixed_current_v1",
+                identity_scheme=(
+                    resolution.stored_project.identity_scheme
+                ),
+                binding_generation=(
+                    resolution.stored_project.binding_generation
+                    + (
+                        1
+                        if "project_binding_update" in completed
+                        else 0
+                    )
+                ),
+            )
         return SetupServiceResult(
             ok=False,
             project_id=(
@@ -1321,42 +2216,128 @@ def run_setup(
                 planned_writes=planned_writes,
                 completed_writes=completed,
                 schema_from=schema_from,
-                maintenance_enabled=current_maintenance,
+                maintenance_enabled=failure_maintenance,
                 interval_minutes=reported_interval,
                 generations=reported_generations,
-                viewer_status=(
-                    _failure_viewer_status(
-                        scope.skill_root,
-                        failure_target,
-                        state,
-                    )
-                    if failure_target is not None
-                    and failure_target.db_path.exists()
-                    else observed_viewer_status
-                ),
+                viewer_status=failure_viewer_status,
+                relocation=failure_relocation,
             ),
             error_code=code,
-            error_message=SETUP_ERROR_MESSAGES[code],
+            error_message=(
+                SETUP_ERROR_MESSAGES.get(code)
+                or PROJECT_STATE_MESSAGES.get(
+                    code,
+                    SETUP_ERROR_MESSAGES["setup_incomplete"],
+                )
+            ),
+        )
+
+    if (
+        accepted_relocation is not None
+        and resolution.layout == "fixed_current_v1"
+    ):
+        try:
+            target, completed, final_viewer_status = (
+                _execute_fixed_relocation(
+                    scope=scope,
+                    initial_resolution=resolution,
+                    plan=plan,
+                    repo=repo,
+                    repo_explicit=repo_explicit,
+                    script_path=script_path,
+                    confirmation_token=confirmation_token or "",
+                )
+            )
+        except _FixedRelocationFailure as exc:
+            completed = list(exc.completed_writes)
+            if exc.target is not None:
+                target = exc.target
+            if not completed and exc.code in PROJECT_STATE_MESSAGES:
+                return _preflight_failure(
+                    inspection,
+                    code=exc.code,
+                    message=PROJECT_STATE_MESSAGES[exc.code],
+                    project_id=resolution.project_id,
+                )
+            if exc.code.startswith("relocation_") and not completed:
+                return relocation_failure(
+                    exc.code,
+                    observed_resolution=exc.resolution,
+                )
+            return failure_after_write(
+                (
+                    "setup_incomplete"
+                    if exc.code.startswith("relocation_")
+                    else exc.code
+                )
+            )
+        final_state = inspect_setup_state(target)
+        assert resolution.stored_project is not None
+        return SetupServiceResult(
+            ok=True,
+            project_id=target.project.project_id,
+            data=_setup_data(
+                status="setup_complete",
+                planned_writes=planned_writes,
+                completed_writes=completed,
+                schema_from=schema_from,
+                maintenance_enabled=final_state.maintenance_enabled,
+                interval_minutes=plan.interval_minutes,
+                generations=plan.generations,
+                viewer_status=final_viewer_status,
+                relocation=_relocation_data(
+                    required=False,
+                    source_layout="fixed_current_v1",
+                    identity_scheme=(
+                        resolution.stored_project.identity_scheme
+                    ),
+                    binding_generation=(
+                        resolution.stored_project.binding_generation + 1
+                    ),
+                ),
+            ),
+            text="Project setup complete",
         )
 
     if plan.legacy_publish:
         try:
-            target, completed = _publish_same_binding_legacy(
+            target, completed = _publish_legacy(
                 scope=scope,
                 initial_resolution=resolution,
                 plan=plan,
                 repo=repo,
                 repo_explicit=repo_explicit,
                 script_path=script_path,
+                confirmation_token=(
+                    confirmation_token
+                    if accepted_relocation is not None
+                    else None
+                ),
             )
         except _LegacySetupFailure as exc:
             completed = list(exc.completed_writes)
             if exc.target is not None:
                 target = exc.target
+            if not completed and exc.code in PROJECT_STATE_MESSAGES:
+                return _preflight_failure(
+                    inspection,
+                    code=exc.code,
+                    message=PROJECT_STATE_MESSAGES[exc.code],
+                    project_id=resolution.project_id,
+                )
+            if exc.code.startswith("relocation_") and not completed:
+                return relocation_failure(
+                    exc.code,
+                    observed_resolution=exc.resolution,
+                )
             code = (
-                exc.code
-                if exc.code in SETUP_ERROR_MESSAGES
-                else "setup_incomplete"
+                "setup_incomplete"
+                if exc.code.startswith("relocation_")
+                else (
+                    exc.code
+                    if exc.code in SETUP_ERROR_MESSAGES
+                    else "setup_incomplete"
+                )
             )
             return failure_after_write(code)
         final_state = inspect_setup_state(target)
@@ -1372,6 +2353,29 @@ def run_setup(
                 interval_minutes=plan.interval_minutes,
                 generations=plan.generations,
                 viewer_status="published",
+                relocation=(
+                    _relocation_data(
+                        required=False,
+                        source_layout="fixed_current_v1",
+                        identity_scheme=(
+                            resolution.stored_project.identity_scheme
+                            if resolution.stored_project is not None
+                            else None
+                        ),
+                        binding_generation=(
+                            resolution.stored_project.binding_generation + 1
+                            if accepted_relocation is not None
+                            and resolution.stored_project is not None
+                            else (
+                                resolution.stored_project.binding_generation
+                                if resolution.stored_project is not None
+                                else None
+                            )
+                        ),
+                    )
+                    if resolution.stored_project is not None
+                    else _relocation_data()
+                ),
             ),
             text="Project setup complete",
         )
@@ -1487,6 +2491,7 @@ def run_setup(
                 interval_minutes=reported_interval,
                 generations=reported_generations,
                 viewer_status="published",
+                relocation=relocation_projection,
             ),
             text="Project setup complete",
         )
@@ -1742,6 +2747,7 @@ def run_setup(
             interval_minutes=reported_interval,
             generations=reported_generations,
             viewer_status=final_viewer_status,
+            relocation=relocation_projection,
         ),
         text="Project setup complete",
     )

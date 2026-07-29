@@ -49,6 +49,7 @@ PROJECT_COMPONENT_CODES = {
     "database_busy": "busy",
     "project_state_unreadable": "unreadable",
     "project_mismatch": "foreign",
+    "project_relocation_required": "relocation_required",
     "schema_too_new": "newer",
     "migration_required": "migration_required",
     "setup_required": "setup_required",
@@ -58,7 +59,13 @@ PACKAGE_WARNING_CODES = frozenset(
     {"package_core_modified", "package_status_unknown"}
 )
 SCOPE_FATAL_CODES = STRUCTURAL_CODES | {"state_ignore_required"}
-READINESS_WARNING_CODES = frozenset({"migration_required", "setup_required"})
+READINESS_WARNING_CODES = frozenset(
+    {
+        "migration_required",
+        "project_relocation_required",
+        "setup_required",
+    }
+)
 
 
 @dataclass(frozen=True)

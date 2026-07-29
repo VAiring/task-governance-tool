@@ -3,12 +3,15 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 try:
+    from task_governance_tool import cli as cli_service
     from task_governance_tool.cli import build_parser, make_context, success_result
 finally:
     sys.path.pop(0)
@@ -219,6 +222,87 @@ class CliEnvelopeTests(unittest.TestCase):
         self.assertEqual(context.command, "setup")
         self.assertTrue(context.read_only)
         self.assertFalse(hasattr(context, "db") and context.db is not None)
+
+    def test_setup_confirmation_token_reaches_service_without_echo(self):
+        token = "tgr1.payload.checksum"
+        parser = build_parser()
+        context = make_context(
+            parser.parse_args(["setup", "--confirm-relocation", token])
+        )
+        service_result = SimpleNamespace(
+            ok=True,
+            project_id="tg_project_test",
+            data={"status": "setup_complete"},
+            error_code=None,
+            error_message=None,
+            text="Setup complete",
+        )
+
+        with mock.patch.object(
+            cli_service,
+            "run_setup",
+            return_value=service_result,
+        ) as run_setup:
+            result = cli_service.handle_setup(context)
+
+        self.assertTrue(result.ok)
+        self.assertNotIn(token, result.text)
+        run_setup.assert_called_once_with(
+            repo=".",
+            repo_explicit=False,
+            script_path=cli_service.cli_script_path(),
+            read_only=False,
+            backup_interval_minutes=None,
+            backup_generations=None,
+            confirmation_token=token,
+        )
+
+    def test_read_only_relocation_confirmation_is_pre_resolution_usage_error(self):
+        secret_token = "tgr1.PRIVATE_PAYLOAD.PRIVATE_CHECKSUM"
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            missing_repo = install.project_root / "missing-project"
+            before = file_snapshot(install.project_root)
+            cases = (
+                (
+                    "setup",
+                    "--repo",
+                    str(missing_repo),
+                    "--read-only",
+                    "--confirm-relocation",
+                    secret_token,
+                    "--json",
+                ),
+                (
+                    "--repo",
+                    str(missing_repo),
+                    "--read-only",
+                    "--json",
+                    "setup",
+                    "--confirm-relocation",
+                    secret_token,
+                ),
+            )
+
+            for arguments in cases:
+                with self.subTest(arguments=arguments):
+                    result = install.run(*arguments)
+
+                    self.assertEqual(result.returncode, 1)
+                    self.assertEqual(result.stderr, "")
+                    self.assertNotIn(secret_token, result.stdout)
+                    self.assertEqual(
+                        json.loads(result.stdout)["errors"],
+                        [{
+                            "code": "invalid_option_combination",
+                            "message": (
+                                "--confirm-relocation cannot be used with "
+                                "--read-only"
+                            ),
+                        }],
+                    )
+            self.assertEqual(file_snapshot(install.project_root), before)
+            self.assertFalse(missing_repo.exists())
 
 
 if __name__ == "__main__":

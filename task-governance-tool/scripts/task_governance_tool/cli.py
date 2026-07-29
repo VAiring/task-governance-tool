@@ -380,6 +380,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
     )
+    setup_parser.add_argument(
+        "--confirm-relocation",
+        default=None,
+    )
 
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -795,6 +799,11 @@ def handle_setup(context: CommandContext) -> CommandResult:
         backup_generations=getattr(
             context.args,
             "backup_generations",
+            None,
+        ),
+        confirmation_token=getattr(
+            context.args,
+            "confirm_relocation",
             None,
         ),
     )
@@ -2900,6 +2909,16 @@ def main(
         if args.command is None:
             parser.print_help()
             return EXIT_SUCCESS
+        if (
+            args.command == "setup"
+            and bool(getattr(args, "read_only", False))
+            and getattr(args, "confirm_relocation", None) is not None
+        ):
+            raise CommandLineError(
+                "invalid_option_combination",
+                "--confirm-relocation cannot be used with --read-only",
+                exit_code=EXIT_USAGE,
+            )
         if args.command == "task" and args.task_command is None:
             raise CommandLineError(
                 "invalid_argument",

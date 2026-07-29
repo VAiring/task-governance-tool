@@ -2,13 +2,13 @@
 
 Status: release acceptance remains at v0.8.0/schema v13 with Viewer snapshot
 v3 through the completed TG-M16.4 reduced-loop behavioral acceptance. TG-M17.0 fixes the
-approved v0.9.0/schema-v14 stable-identity and relocation target. TG-M17.1 and
-TG-M17.2 are implemented as non-public staging slices: schema-v14
-identity/binding primitives, fixed production resolution, fresh UUID setup,
-and same-binding staged publication are active on this branch. TG-M17.3
-through TG-M17.5 retain ownership of relocation, consumer-hardening
-acceptance, and release synchronization. Viewer snapshot v3 is retained.
-TG-M12.3 Issue adapter remains blocked.
+approved v0.9.0/schema-v14 stable-identity and relocation target. TG-M17.1
+through TG-M17.3 are implemented: schema-v14 identity/binding primitives,
+fixed production resolution, fresh UUID setup, same-binding staged
+publication, and explicit confirmed relocation are active on this branch.
+TG-M17.4 and TG-M17.5 retain ownership of consumer-hardening acceptance and
+release synchronization. Viewer snapshot v3 is retained. TG-M12.3 Issue
+adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.

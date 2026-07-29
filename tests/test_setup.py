@@ -56,6 +56,43 @@ SETUP_DATA_KEYS = {
     "backup_interval_minutes",
     "backup_generations",
     "viewer_status",
+    "relocation",
+}
+RELOCATION_KEYS = {
+    "required",
+    "source_layout",
+    "identity_scheme",
+    "binding_generation",
+    "confirmation_token",
+    "expires_at",
+}
+EMPTY_RELOCATION = {
+    "required": False,
+    "source_layout": None,
+    "identity_scheme": None,
+    "binding_generation": None,
+    "confirmation_token": None,
+    "expires_at": None,
+}
+LEGACY_SOURCE_RELOCATION = {
+    "required": False,
+    "source_layout": "legacy_projects_v1",
+    "identity_scheme": "legacy_path_v1",
+    "binding_generation": 1,
+    "confirmation_token": None,
+    "expires_at": None,
+}
+FIXED_UUID_RELOCATION = {
+    **EMPTY_RELOCATION,
+    "source_layout": "fixed_current_v1",
+    "identity_scheme": "uuid_v1",
+    "binding_generation": 1,
+}
+FIXED_LEGACY_RELOCATION = {
+    **EMPTY_RELOCATION,
+    "source_layout": "fixed_current_v1",
+    "identity_scheme": "legacy_path_v1",
+    "binding_generation": 1,
 }
 FRESH_WRITES = [
     "database_initialize",
@@ -86,6 +123,10 @@ class SetupCommandTests(unittest.TestCase):
     def assert_setup_shape(self, payload: dict) -> dict:
         self.assertEqual(payload["command"], "setup")
         self.assertEqual(set(payload["data"]), SETUP_DATA_KEYS)
+        self.assertEqual(
+            set(payload["data"]["relocation"]),
+            RELOCATION_KEYS,
+        )
         self.assertNotIn("db_path", payload)
         serialized = json.dumps(payload)
         self.assertNotIn("viewer_path", serialized)
@@ -115,6 +156,7 @@ class SetupCommandTests(unittest.TestCase):
                     "backup_interval_minutes": 30,
                     "backup_generations": 3,
                     "viewer_status": "not_present",
+                    "relocation": EMPTY_RELOCATION,
                 },
             )
             self.assertEqual(file_snapshot(install.project_root), before)
@@ -140,6 +182,10 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(completed_data["backup_interval_minutes"], 30)
             self.assertEqual(completed_data["backup_generations"], 3)
             self.assertEqual(completed_data["viewer_status"], "published")
+            self.assertEqual(
+                completed_data["relocation"],
+                EMPTY_RELOCATION,
+            )
             self.assertTrue(install.db_path.is_file())
             self.assertTrue(install.viewer_path.is_file())
             with closing(sqlite3.connect(install.db_path)) as connection:
@@ -176,6 +222,10 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(replay_data["planned_writes"], [])
             self.assertEqual(replay_data["completed_writes"], [])
             self.assertEqual(replay_data["viewer_status"], "current")
+            self.assertEqual(
+                replay_data["relocation"],
+                FIXED_UUID_RELOCATION,
+            )
 
     def test_policy_validation_change_and_equal_replay_are_bounded(self):
         invalid_cases = (
@@ -207,6 +257,7 @@ class SetupCommandTests(unittest.TestCase):
                         "backup_interval_minutes": None,
                         "backup_generations": None,
                         "viewer_status": None,
+                        "relocation": EMPTY_RELOCATION,
                     },
                 )
                 self.assertFalse((install.skill_root / "state").exists())
@@ -228,6 +279,10 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(changed_data["completed_writes"], ["maintenance_configure"])
             self.assertEqual(changed_data["backup_interval_minutes"], 45)
             self.assertEqual(changed_data["backup_generations"], 5)
+            self.assertEqual(
+                changed_data["relocation"],
+                FIXED_UUID_RELOCATION,
+            )
             with closing(sqlite3.connect(install.db_path)) as connection:
                 before = connection.execute(
                     """
@@ -251,6 +306,10 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(equal_data["status"], "already_setup")
             self.assertEqual(equal_data["planned_writes"], [])
             self.assertEqual(equal_data["completed_writes"], [])
+            self.assertEqual(
+                equal_data["relocation"],
+                changed_data["relocation"],
+            )
 
     def test_setup_repairs_only_the_missing_canonical_viewer(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -577,6 +636,11 @@ class SetupCommandTests(unittest.TestCase):
                         "backup_interval_minutes": 30,
                         "backup_generations": 3,
                         "viewer_status": viewer_status,
+                        "relocation": (
+                            EMPTY_RELOCATION
+                            if starting_state == "fresh"
+                            else LEGACY_SOURCE_RELOCATION
+                        ),
                     },
                 )
 
@@ -625,6 +689,7 @@ class SetupCommandTests(unittest.TestCase):
                         "backup_interval_minutes": None,
                         "backup_generations": None,
                         "viewer_status": None,
+                        "relocation": EMPTY_RELOCATION,
                     },
                 )
                 self.assertEqual(file_snapshot(install.project_root), before)
@@ -941,6 +1006,10 @@ class SetupCommandTests(unittest.TestCase):
             )
             self.assertFalse(install.legacy_db_path.exists())
             self.assertEqual(data["backup_generations"], 2)
+            self.assertEqual(
+                data["relocation"],
+                FIXED_LEGACY_RELOCATION,
+            )
             backups = canonical_managed_sqlite_files(
                 install,
                 exclude=(install.db_path,),

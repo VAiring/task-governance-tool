@@ -5,7 +5,9 @@ TG-M17.0 through TG-M17.5: stable identity/binding primitives, fixed
 production resolution, fresh UUID setup, same-binding staged publication,
 explicit confirmed relocation, consumer hardening, and package acceptance are
 complete. The completed TG-M16.4 reduced-loop behavioral acceptance is
-retained. TG-M12.3 Issue adapter remains blocked.
+retained. The completed TG-M18.0 completion-cycle-history design targets
+v0.10.0 but is inactive until its owning implementation units complete.
+TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -17,7 +19,9 @@ applicable only where TG-M14 does not supersede it. Sections labeled
 `Historical` preserve additional pre-M14 implementation detail. The
 implemented TG-M14 section and later component designs are the current v0.8.0
 lineage; implemented TG-M17 design is the current v0.9.0
-identity/storage authority when those older boundaries differ.
+identity/storage authority when those older boundaries differ. The approved
+TG-M18 section is future implementation authority only for its sequential
+M18.1 through M18.4 units.
 
 ## Design Summary
 
@@ -3643,6 +3647,614 @@ self-host flow, fresh UUID, same-binding migration, moved preview/confirm,
 fixed rebind, explicit user-approval Skill routing, replay, token-free rerun,
 corrupt/unsafe refusal, package self-check, and two exact-final-target Tier 2
 reviews.
+
+## Approved TG-M18 Completion Cycle History Design
+
+This design implements the approved completion-history contract without adding
+a public workflow step. M18.1 through M18.3 are non-public staging revisions;
+M18.4 is the sole version/package synchronization point.
+
+### Version And Activation Design
+
+The allocation is final:
+
+- M18.1: package 0.9.0, schema v15 `completion_cycle_history`, Viewer snapshot
+  v3 accepting sources 5-15;
+- M18.2: package 0.9.0, marker-only schema v16
+  `completion_cycle_capture_activation`, Viewer v3 accepting sources 5-16;
+- M18.3: package 0.9.0, schema v16, Viewer snapshot v4 accepting sources 5-16;
+- M18.4: release 0.10.0, schema v16, Viewer snapshot v4.
+
+The marker migration separates repository availability from writer activation.
+All schema-v15 task inserts use the column default `legacy_unknown`. Schema v16
+is recorded only after the runtime contains capture in both done paths, reopen
+linkage, and explicit `complete` assignment for new Tasks. A schema-v15 binary
+therefore rejects the v16 database before it can perform a capture-less write.
+
+### Schema V15
+
+Migration 15 adds one table, two columns, four supporting indexes, and four
+immutability triggers. The normative DDL shape is:
+
+```sql
+ALTER TABLE tasks
+  ADD COLUMN completion_history_coverage TEXT NOT NULL
+    DEFAULT 'legacy_unknown'
+    CHECK (completion_history_coverage IN ('legacy_unknown', 'complete'));
+
+CREATE UNIQUE INDEX idx_tasks_project_task_identity
+  ON tasks(project_id, task_id);
+
+CREATE UNIQUE INDEX idx_review_receipts_completion_cycle_reference
+  ON review_receipts(
+    project_id, task_id, target_kind, target_value,
+    target_base_revision, target_generation, review_receipt_id
+  );
+
+CREATE TABLE task_completion_cycles (
+  completion_cycle_id TEXT PRIMARY KEY
+    CHECK (
+      length(completion_cycle_id) = 36
+      AND substr(completion_cycle_id, 1, 20) = 'tg_completion_cycle_'
+      AND substr(completion_cycle_id, 21) NOT GLOB '*[^0-9a-f]*'
+    ),
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  saved_cycle_ordinal INTEGER NOT NULL
+    CHECK (saved_cycle_ordinal >= 1),
+
+  origin TEXT NOT NULL
+    CHECK (origin IN ('native_done', 'legacy_current_done')),
+  completeness TEXT NOT NULL
+    CHECK (completeness IN ('complete', 'partial')),
+  completed_at TEXT,
+  recorded_at TEXT NOT NULL,
+
+  contract_revision INTEGER NOT NULL CHECK (contract_revision >= 0),
+  review_tier INTEGER NOT NULL CHECK (review_tier IN (0, 1, 2)),
+  verification_expectation TEXT NOT NULL
+    CHECK (verification_expectation IN ('specified', 'unspecified')),
+  verification_attestation INTEGER
+    CHECK (
+      verification_attestation IS NULL
+      OR verification_attestation IN (0, 1)
+    ),
+
+  completion_evidence_kind TEXT NOT NULL
+    CHECK (completion_evidence_kind IN (
+      'none', 'git_commit', 'external_revision',
+      'commit_not_required', 'legacy_unverified'
+    )),
+  completion_evidence_revision TEXT NOT NULL
+    CHECK (length(completion_evidence_revision) <= 500),
+  completion_evidence_reason TEXT NOT NULL
+    CHECK (length(completion_evidence_reason) <= 1000),
+  external_revision_approved INTEGER NOT NULL
+    CHECK (external_revision_approved IN (0, 1)),
+  completion_commit_required INTEGER NOT NULL
+    CHECK (completion_commit_required IN (0, 1)),
+  completion_commit_hash TEXT NOT NULL
+    CHECK (length(completion_commit_hash) <= 500),
+
+  review_target_kind TEXT NOT NULL
+    CHECK (review_target_kind IN (
+      '', 'git_commit', 'diff_fingerprint',
+      'external_revision', 'git_snapshot'
+    )),
+  review_target_value TEXT NOT NULL
+    CHECK (length(review_target_value) <= 500),
+  review_target_base_revision TEXT NOT NULL
+    CHECK (length(review_target_base_revision) <= 500),
+  review_target_generation INTEGER NOT NULL
+    CHECK (review_target_generation >= 0),
+
+  gate_basis_version INTEGER NOT NULL
+    CHECK (gate_basis_version IN (0, 1)),
+  review_basis_kind TEXT NOT NULL
+    CHECK (review_basis_kind IN (
+      'unknown', 'independent_passes',
+      'self_review_fallback', 'not_required'
+    )),
+  required_independent_passes INTEGER
+    CHECK (
+      required_independent_passes IS NULL
+      OR required_independent_passes BETWEEN 0 AND 2
+    ),
+  qualifying_independent_passes INTEGER
+    CHECK (
+      qualifying_independent_passes IS NULL
+      OR qualifying_independent_passes >= 0
+    ),
+  changes_requested_count INTEGER
+    CHECK (changes_requested_count IS NULL OR changes_requested_count >= 0),
+  open_high_count INTEGER
+    CHECK (open_high_count IS NULL OR open_high_count >= 0),
+  open_medium_count INTEGER
+    CHECK (open_medium_count IS NULL OR open_medium_count >= 0),
+  fresh_review_required_count INTEGER
+    CHECK (
+      fresh_review_required_count IS NULL
+      OR fresh_review_required_count >= 0
+    ),
+  qualifying_receipt_id_1 TEXT,
+  qualifying_receipt_id_2 TEXT,
+
+  FOREIGN KEY (project_id, task_id)
+    REFERENCES tasks(project_id, task_id),
+  FOREIGN KEY (
+    project_id, task_id, review_target_kind, review_target_value,
+    review_target_base_revision, review_target_generation,
+    qualifying_receipt_id_1
+  ) REFERENCES review_receipts(
+    project_id, task_id, target_kind, target_value,
+    target_base_revision, target_generation, review_receipt_id
+  ),
+  FOREIGN KEY (
+    project_id, task_id, review_target_kind, review_target_value,
+    review_target_base_revision, review_target_generation,
+    qualifying_receipt_id_2
+  ) REFERENCES review_receipts(
+    project_id, task_id, target_kind, target_value,
+    target_base_revision, target_generation, review_receipt_id
+  ),
+
+  CHECK (
+    (review_target_kind = ''
+      AND review_target_value = ''
+      AND review_target_base_revision = ''
+      AND review_target_generation = 0)
+    OR
+    (review_target_kind = 'git_snapshot'
+      AND review_target_value != ''
+      AND review_target_base_revision != ''
+      AND review_target_generation > 0)
+    OR
+    (review_target_kind IN (
+        'git_commit', 'diff_fingerprint', 'external_revision'
+      )
+      AND review_target_value != ''
+      AND review_target_base_revision = ''
+      AND review_target_generation > 0)
+  ),
+  CHECK (
+    (completion_evidence_kind = 'none'
+      AND completeness = 'partial'
+      AND completion_evidence_revision = ''
+      AND completion_evidence_reason = ''
+      AND external_revision_approved = 0
+      AND completion_commit_required = 1
+      AND completion_commit_hash = '')
+    OR
+    (completion_evidence_kind = 'git_commit'
+      AND completion_evidence_revision != ''
+      AND completion_evidence_reason = ''
+      AND external_revision_approved = 0
+      AND completion_commit_required = 1
+      AND completion_commit_hash = completion_evidence_revision)
+    OR
+    (completion_evidence_kind = 'external_revision'
+      AND completion_evidence_revision != ''
+      AND completion_evidence_reason != ''
+      AND external_revision_approved = 1
+      AND completion_commit_required = 1
+      AND completion_commit_hash = completion_evidence_revision)
+    OR
+    (completion_evidence_kind = 'commit_not_required'
+      AND completion_evidence_revision = ''
+      AND completion_evidence_reason = ''
+      AND external_revision_approved = 0
+      AND completion_commit_required = 0
+      AND completion_commit_hash = '')
+    OR
+    (completion_evidence_kind = 'legacy_unverified'
+      AND completeness = 'partial'
+      AND completion_evidence_revision != ''
+      AND completion_evidence_reason = ''
+      AND external_revision_approved = 0
+      AND completion_commit_hash = completion_evidence_revision)
+  ),
+  CHECK (
+    (origin = 'native_done'
+      AND completeness = 'complete'
+      AND completed_at IS NOT NULL
+      AND verification_attestation = 1
+      AND review_target_kind != ''
+      AND gate_basis_version = 1)
+    OR
+    (origin = 'legacy_current_done'
+      AND completeness = 'partial'
+      AND verification_attestation IS NULL
+      AND gate_basis_version = 0)
+  ),
+  CHECK (
+    (gate_basis_version = 0
+      AND review_basis_kind = 'unknown'
+      AND required_independent_passes IS NULL
+      AND qualifying_independent_passes IS NULL
+      AND changes_requested_count IS NULL
+      AND open_high_count IS NULL
+      AND open_medium_count IS NULL
+      AND fresh_review_required_count IS NULL
+      AND qualifying_receipt_id_1 IS NULL
+      AND qualifying_receipt_id_2 IS NULL)
+    OR
+    (gate_basis_version = 1
+      AND required_independent_passes =
+        CASE review_tier WHEN 0 THEN 0 WHEN 1 THEN 1 ELSE 2 END
+      AND qualifying_independent_passes IS NOT NULL
+      AND changes_requested_count = 0
+      AND open_high_count = 0
+      AND open_medium_count = 0
+      AND fresh_review_required_count = 0
+      AND (
+        (review_basis_kind = 'independent_passes'
+          AND review_tier IN (1, 2)
+          AND qualifying_independent_passes >= required_independent_passes
+          AND qualifying_receipt_id_1 IS NOT NULL
+          AND (
+            (review_tier = 1 AND qualifying_receipt_id_2 IS NULL)
+            OR
+            (review_tier = 2 AND qualifying_receipt_id_2 IS NOT NULL)
+          ))
+        OR
+        (review_basis_kind = 'self_review_fallback'
+          AND review_tier IN (1, 2)
+          AND qualifying_independent_passes < required_independent_passes
+          AND qualifying_receipt_id_1 IS NOT NULL
+          AND qualifying_receipt_id_2 IS NULL)
+        OR
+        (review_basis_kind = 'not_required'
+          AND review_tier = 0
+          AND qualifying_receipt_id_1 IS NOT NULL
+          AND qualifying_receipt_id_2 IS NULL)
+      ))
+  )
+);
+
+CREATE UNIQUE INDEX idx_task_completion_cycles_task_ordinal
+  ON task_completion_cycles(project_id, task_id, saved_cycle_ordinal);
+
+ALTER TABLE task_events
+  ADD COLUMN completion_cycle_id TEXT
+    REFERENCES task_completion_cycles(completion_cycle_id);
+
+CREATE INDEX idx_task_events_completion_cycle
+  ON task_events(completion_cycle_id)
+  WHERE completion_cycle_id IS NOT NULL;
+
+CREATE TRIGGER trg_task_completion_cycles_no_update
+BEFORE UPDATE ON task_completion_cycles
+BEGIN
+  SELECT RAISE(ABORT, 'immutable_completion_cycle');
+END;
+
+CREATE TRIGGER trg_task_completion_cycles_no_delete
+BEFORE DELETE ON task_completion_cycles
+BEGIN
+  SELECT RAISE(ABORT, 'immutable_completion_cycle');
+END;
+
+CREATE TRIGGER trg_tasks_completion_history_coverage_immutable
+BEFORE UPDATE OF completion_history_coverage ON tasks
+WHEN NEW.completion_history_coverage IS NOT OLD.completion_history_coverage
+BEGIN
+  SELECT RAISE(ABORT, 'immutable_completion_history_coverage');
+END;
+
+CREATE TRIGGER trg_task_events_completion_cycle_link_immutable
+BEFORE UPDATE OF completion_cycle_id ON task_events
+WHEN NEW.completion_cycle_id IS NOT OLD.completion_cycle_id
+BEGIN
+  SELECT RAISE(ABORT, 'immutable_completion_cycle_link');
+END;
+```
+
+The required-object inventory includes the table, all four named indexes,
+`trg_task_completion_cycles_no_update`,
+`trg_task_completion_cycles_no_delete`,
+`trg_tasks_completion_history_coverage_immutable`, and
+`trg_task_events_completion_cycle_link_immutable`. The first two abort every
+cycle update/delete. The coverage trigger aborts a value change after insert.
+The event-link trigger aborts an update from null or a saved ID to a different
+value. M18 inserts links only with new events; it never retrofits an old event.
+
+SQLite checks enforce structural matrices. Repository validation additionally
+applies the existing canonical full-Git-hash, fingerprint, external-text,
+timestamp, and signed-64-bit validators. A receipt-slot insert must reread the
+referenced row and confirm the required kind, verdict, approval, reviewer
+ordering, and exact target before the composite foreign key is allowed to
+persist.
+
+### Migration 15 And Marker Migration 16
+
+`apply_completion_cycle_history_migration()` requires complete schema v14 and
+no active transaction. Its exact order is:
+
+1. Record task, event, Contract, checkpoint, handoff, review, maintenance,
+   backup, identity, and binding identity/count fingerprints for verification.
+2. Start `BEGIN IMMEDIATE` with foreign keys enabled.
+3. Add coverage and the two parent-key indexes.
+4. Create `task_completion_cycles`, its ordinal index, and immutable-cycle
+   triggers.
+5. Add the nullable event link, its index, and the coverage/link triggers.
+6. Read current done Tasks by `task_id COLLATE BINARY ASC`. Validate their
+   current completion projection with the existing legacy-allowed matrix.
+7. Insert one generated ordinal-1 `legacy_current_done`/`partial` row per
+   current done Task. Copy completion time, Contract revision, review tier,
+   `specified` versus `unspecified`, all six completion fields, and all four
+   target fields. Use one migration timestamp as `recorded_at`; use null
+   attestation, gate-basis version 0, null counts, and null receipt slots.
+8. Assert every Task still has `legacy_unknown`, current done count equals
+   cycle count, every non-done Task has zero cycles, every old event link is
+   null, and all recorded identity/count fingerprints are unchanged.
+9. Insert migration row `(15, 'completion_cycle_history', applied_at)`, run
+   quick and foreign-key checks, and commit.
+
+Any failure rolls back DDL, backfill, and migration history. Reentry at v15
+validates required columns/objects, foreign keys, coverage values, and each
+stored cycle's matrix/ownership without reapplying migration-time
+status/cardinality assertions or inserting a row. This matters because a
+legitimate M18.1 capture-less completion may be done with no cycle and a
+staging reopen may leave a migrated partial cycle unmatched by the current
+Task. No old event text is parsed or changed.
+
+`apply_completion_cycle_capture_activation_migration()` requires structurally
+complete v15 and confirms that every Task still has `legacy_unknown`. It then:
+
+1. starts one `BEGIN IMMEDIATE` transaction;
+2. reads current done Tasks by `task_id COLLATE BINARY ASC` and validates each
+   current completion projection;
+3. loads each Task's latest ordinal cycle and compares completion time,
+   Contract revision, review tier, derived verification expectation, all six
+   completion fields, and all four target fields, and checks whether any
+   `task_reopened` event already links that cycle;
+4. when no cycle exists, that exact projection differs, or a reopen event
+   already links the latest cycle, inserts one next-ordinal
+   `legacy_current_done`/`partial` row copied from the current projection with
+   the activation timestamp, null attestation, gate-basis version 0, null
+   counts, and null receipt slots;
+5. leaves an exact matching and un-reopened latest cycle unchanged;
+6. inserts `(16, 'completion_cycle_capture_activation', applied_at)`, validates
+   required objects, row matrices, identity/ownership, quick check, and foreign
+   keys, then commits.
+
+Any invalid current projection, ordinal overflow, duplicate, or validation
+failure rolls back both the partial rows and marker. Existing unlinked reopen
+events are not edited or inferred.
+Schema v16 is marker-only structurally; it adds no schema object, but activation
+may conservatively reconcile the current done projections created during the
+capture-less v15 window. Schema-v16 `add_task()` explicitly writes `complete`;
+the database default stays `legacy_unknown`. Reentry with marker 16 already
+present validates its exact name, the v15 objects, foreign keys, coverage, and
+stored cycle/link matrices; it never repeats reconciliation or inserts a row.
+
+All setup paths apply the ordinary pre-migration backup before v14-to-v15/v16
+work. Existing fixed managed backups may contain v14, v15, or v16. A restored
+v15 fixed backup is migrated to v16 before normal writes. Legacy-layout source
+discovery remains limited to schemas 1-13 plus the explicit schema-v14
+transition.
+
+### Repository Boundaries
+
+The storage layer adds narrow immutable models for `CompletionCycle`,
+`CompletionGateBasis`, and `CompletionHistory`. It exposes only:
+
+- `select_completion_gate_basis_locked()` for current exact-target rows;
+- `insert_completion_cycle_locked()` from service-constructed validated data;
+- `read_latest_completion_cycle()` for reopen/current-projection matching;
+- `read_completion_history()` for one Task; and
+- one bounded batch history reader for the Viewer.
+
+No public or generic API accepts a caller-supplied cycle, ordinal, gate basis,
+receipt list, activation-reconciliation input, or compatibility-bridge
+payload. IDs use the established
+cryptographic-token generator with prefix `tg_completion_cycle`. Ordinal
+allocation reads the locked Task's maximum and rejects
+`9,223,372,036,854,775,807` before addition.
+
+`PUBLIC_EVENT_FIELDS` is exactly:
+
+```python
+(
+    "task_event_id",
+    "task_id",
+    "project_id",
+    "event_type",
+    "summary",
+    "created_at",
+)
+```
+
+Every event-return path constructs from that allow-list. `SELECT *` may remain
+internal, but no `dict(row)` from a row containing the link crosses a service
+or formatter boundary.
+
+### Gate-Basis Capture
+
+Under the same writer that commits completion, the selector uses exact
+`project_id`, `task_id`, target kind/value/base/generation and computes:
+
+- distinct independent PASS reviewer count;
+- current-target `changes_requested` receipt count;
+- open high and medium finding counts across that Task;
+- resolved high/medium findings whose receipt generation is greater than or
+  equal to the current target generation; and
+- deterministic qualifying receipt IDs.
+
+Tier 1/2 independent PASS rows order by
+`reviewer_key COLLATE BINARY ASC, review_receipt_id COLLATE BINARY ASC`.
+When the distinct count meets the tier requirement, the selector retains only
+the first one or two rows and never considers a fallback. Otherwise it selects
+the first valid fallback by `review_receipt_id COLLATE BINARY ASC`, with the
+existing Tier-2 approval rule. Tier 0 selects the first valid not-required row
+by that same receipt-ID order. The selector rejects duplicate reviewer/basis
+anomalies rather than normalizing them.
+
+### Native Done Transaction
+
+Both done paths produce one existing `CompletionPlan`. Git resolution and
+snapshot validation finish outside the writer. The exact writer/savepoint
+order is:
+
+1. `BEGIN IMMEDIATE` through the existing initialized writer and revalidate
+   schema v16, project identity/binding, Task optimistic basis, Contract
+   revision, sequential order, evidence, and target.
+2. Reread receipts/findings, run the existing gate, and build the gate basis
+   with independent-over-fallback precedence.
+3. Choose the canonical completion time and allocate the next ordinal.
+4. Insert one `native_done` complete cycle from only that locked basis.
+5. Update the current Task to done with the same completion/evidence values.
+6. Run the existing affected-lane invariant and reread the Task.
+7. Insert the existing successful completion event with the internal cycle ID.
+8. Record the existing Effort transition and Viewer source-generation business
+   mutation, release the savepoint, and commit the outer writer.
+
+The event type and sanitized summary remain the existing task-edit result; no
+new event type is introduced. A failure at any numbered step rolls back cycle,
+Task, event, Effort, and Viewer-generation changes. Backup/Viewer publication
+starts only after commit and preserves its existing last-good/failure contract.
+Concurrent completions serialize; one commits and the loser receives the
+existing done/concurrent-state error without another cycle.
+
+Read-only `task complete --check` performs no insert. It may diagnose current
+gates but `completion_history_inconsistent` remains a command/state error,
+not a new blocker item in the bounded check payload.
+
+### Reopen Transaction
+
+The reopen savepoint order is:
+
+1. Lock and reread the exact done Task and coverage.
+2. Load the highest ordinal cycle and any linked reopen event.
+3. When a latest cycle exists, compare completion time, Contract revision,
+   review tier, derived verification expectation, all six completion fields,
+   and all four target fields, and determine whether a reopen event already
+   links it.
+4. If no cycle exists and coverage is `legacy_unknown`, validate the locked
+   current projection and insert the exact ordinal-1 partial compatibility
+   bridge. Reject `complete` coverage with no cycle, any existing-cycle/current
+   projection mismatch, or an already-linked reopen as
+   `completion_history_inconsistent`. Normal activation makes the no-cycle
+   bridge unreachable for its then-current done Tasks, but the stored exact
+   compatibility path remains fail-closed for any other unknown-coverage
+   state.
+5. Compute the next review generation, update the Task to `in_progress`,
+   clear current completion/target values, and keep coverage unchanged.
+6. Run the existing sequential-lane invariant.
+7. Insert the existing `task_reopened` event linked to the validated latest or
+   newly bridged cycle.
+8. Record the existing Effort/Viewer-generation transition, release the
+   savepoint, and commit.
+
+Reopen does not query historical receipts as eligibility, revalidate the
+accepted Git object, alter a cycle, or synthesize a bridge when any cycle
+already exists. The next done transition uses `MAX(ordinal)+1` and all fresh
+current gates.
+
+### Bounded Read Model And Viewer
+
+`read_completion_history()` performs counts, the incomplete-legacy aggregate,
+and rows in the same query-only transaction as the rest of task show.
+`legacy_history_incomplete` uses all cycles/events, not only returned rows.
+Rows order by ordinal descending.
+
+The formatter constructs the exact five-key object:
+
+```json
+{
+  "total": 2,
+  "returned_count": 2,
+  "truncated": false,
+  "legacy_history_incomplete": false,
+  "cycles": []
+}
+```
+
+Each public cycle is first validated against the exact nested allow-list in the
+specification. The exact measurement serializer for both a cycle and the
+complete wrapper is
+`json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")`.
+A cycle may be appended only if that serialization is at most 8,192 bytes.
+Beginning with an empty wrapper, rows are considered newest first. For each
+candidate the formatter constructs and measures the final five-key wrapper
+using the transaction's actual total and legacy flag, the candidate array and
+returned count, and `truncated = returned_count < total`. It accepts the row
+only while both the 10-row and 32,768-byte complete-wrapper limits hold. The
+first non-fitting row stops collection; older rows are not substituted. This
+candidate-final measurement covers non-ASCII UTF-8 and integer digit growth.
+
+The public gate-basis projection maps version-0 nullable counts to JSON `null`
+and both receipt slots to `[]`. Version 1 maps counts to JSON integers and
+filters the two slots in stored order into a string array with no null
+placeholder: one element for Tier-0 not-required, Tier-1 independent, or
+Tier-1/2 fallback, and two for Tier-2 independent. Attestation maps to JSON
+`true` for native cycles and `null` for legacy partial cycles; `false` is
+rejected before formatting.
+
+Text output is one bounded summary containing returned/total, truncation,
+legacy flag, and the newest cycle's non-content fields. It never prints
+revision/reason/receipt values.
+
+The Viewer batch reader accepts at most the existing 500 selected Tasks and
+uses windowed/grouped queries to fetch at most 10 cycles per Task plus exact
+totals/incomplete aggregates; it does not issue one query per cycle. Snapshot
+v4 includes the identical five-key object. Source schemas 5-14 synthesize only
+an empty/incomplete projection; v15/v16 use stored rows. Snapshot v3 accepts
+v15/v16 during its staging owners but omits coverage, cycles, and internal event
+links.
+
+Snapshot v4 keeps the existing 64 MiB artifact bound, atomic replacement,
+generation comparison, last-good behavior, CSP, text-only DOM construction,
+M15.5 single visibility-aware timer, and M15.6 allow-listed one-shot History
+state. The browser never reads SQLite and saves no completion history.
+
+### Failures, Concurrency, Privacy, And Verification
+
+The sole new stable error is:
+
+```text
+code: completion_history_inconsistent
+exit: 2
+message: stored completion history is inconsistent
+```
+
+It includes no IDs, values, counts, paths, SQL, exception details, or hashes.
+Migration structural failures remain the existing sanitized setup/unreadable
+errors. Busy/journal, stale completion plan, Git, review, lane, and project
+binding errors retain their current precedence.
+
+No SQLite writer is held during Git, backup copying, Viewer rendering,
+subprocesses, or browser work. Cycle insertion occurs only in the already short
+business writer. The one-table/two-column design adds no service, worker,
+timer, queue, watcher, network, or target-project mutation.
+
+Cycles contain only bounded values already accepted into the current Task and
+stable receipt IDs. They exclude verification-run records, raw command output,
+review/finding bodies, diffs, prompts, reasoning, transcripts, environment
+data, paths, secrets, tokens, and authorization material.
+
+M18 tests must cover:
+
+- v1-v14 through v15/v16 migration, exact current-done backfill, all other
+  statuses, historical done-`none`, a 500-character external revision,
+  M18.1-window Task creation/completion/reopen followed by idempotent setup,
+  rollback, quick/FK checks, and unchanged
+  12-Task/191-event/completion/review traces;
+- every evidence kind, target kind, tier, fallback, independent-plus-fallback
+  precedence, Contract revision, same-second ordering, and both done paths;
+- exact activation reconciliation for matching, absent, and mismatching latest
+  cycles; the exclusive unknown/no-cycle reopen bridge and complete/no-cycle
+  refusal; done A/reopen/done B ordinals and event links; fresh gates;
+  mismatch/reuse/overflow/concurrency and injected failures;
+- exact JSON/text allow-lists and byte/count bounds, event-link non-disclosure,
+  single-transaction reads, list/current/next/compact/Review Packet stability;
+- Viewer v3 staging compatibility, v4 sources 5-16, 500-Task/64-MiB behavior,
+  last-good publication, M15.5 reload, M15.6 restore, CSP, no storage/network;
+- fixed backup/restore, v15-to-v16 recovery, corruption refusal, M17 identity/
+  binding/relocation, self-host and installed layouts; and
+- exactly 20 command leaves, nine/ten normal calls, full offline suite,
+  `doctor`, manifest/package integrity, `git diff --check`, and two exact-target
+  Tier 2 reviews per unit.
 
 ## Validation Rules
 

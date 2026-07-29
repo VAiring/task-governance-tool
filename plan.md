@@ -4,7 +4,10 @@ Status: implemented through TG-M17.5 at v0.9.0/schema v14 with Viewer
 snapshot v3. Stable identity, fixed project-local state, same-binding
 migration, explicit confirmed relocation, consumer hardening, and synchronized
 package acceptance are complete. The completed TG-M16.4 reduced-loop
-behavioral acceptance is retained. The TG-M12.3 Issue adapter remains blocked.
+behavioral acceptance is retained. TG-M18.0 is the completed
+completion-cycle-history contract; its runtime units target v0.10.0 and remain
+inactive until their sequential gates complete. The TG-M12.3 Issue adapter
+remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 Reduced TG-M16 has a fixed formal contract, the TG-M16.1 runtime route, active
@@ -1124,6 +1127,36 @@ Confirmed decisions:
     integration, and M17.5 v0.9.0 package synchronization;
   - no signature service, fork registry, daemon, network, normal-loop call,
     LLM judgment, question, or new stopping rule is introduced.
+- On 2026-07-29 the user approved TG-M18 completion-cycle history:
+  - preserve each accepted completion as append-only local audit history when a
+    Task is reopened, while keeping current Task fields as the current
+    projection and requiring entirely fresh gates after reopen;
+  - add exactly one completion-cycle table, Task coverage, and an internal
+    event link; reuse existing receipt/finding rows instead of copying bodies or
+    adding another history/join table;
+  - mark every pre-activation Task `legacy_unknown`, backfill only the current
+    done projection as partial, never infer older reopened completions, and
+    expose legacy incompleteness honestly;
+  - use schema v15 for history storage and marker-only schema v16 for atomic
+    native-capture activation, Viewer snapshot v4 for the bounded read
+    projection, and v0.10.0 for final package synchronization;
+  - keep schema-v15 completion/reopen unchanged, then use the one schema-v16
+    activation transaction to append a partial row for a current done
+    projection unless its latest cycle both matches and remains unlinked to a
+    reopen event, before recording the marker;
+  - use one exact compact UTF-8 serializer and candidate-final five-key wrapper
+    measurement for deterministic per-cycle and per-component byte bounds;
+  - add history only to the already mandatory task show and static Viewer, with
+    no command, option, normal call, LLM judgment, user-return stop, target
+    mutation, network, or background process;
+  - M18.1 owns schema/repository, M18.2 done/reopen activation, M18.3 task-show/
+    Viewer projection, and M18.4 package/lifecycle acceptance; all are one
+    sequential Tier 2 lane after the five-document M18.0 contract;
+  - handoff `tg_handoff_696a19cba075d56e` remains pending as rationale until
+    separately withdrawn; general event-history pagination remains a distinct
+    future candidate; and
+  - M19.0 remains blocked until the exact M18.4 completion SHA is frozen and
+    owns later M19 formalization and still-required user decisions.
 
 Open issues:
 
@@ -1169,6 +1202,17 @@ acceptance are also complete. Their stored Task Contracts were corrected from
 the cancelled M16.3 reference to the completed reduced-loop/reconciliation
 authority before execution; root `AGENTS.md` retains only durable routing
 rather than milestone status.
+TG-M18.0 is complete as the exact five-document contract. TG-M18.1 through
+TG-M18.4 are stored ready in their sequential lane but remain inactive behind
+their predecessors; the implemented runtime therefore remains
+v0.9.0/schema v14/Viewer v3 until those units complete. M19.0 remains blocked
+until M18.4 is done and its completion SHA is fixed.
+Immediately after M18.0 completes and before M18.1 starts, the stored M18.1,
+M18.2, and M18.4 Contracts will be mechanically synchronized to the final
+five-document authority for historical `none`, the 500-character stored
+compatibility projection, activation reconciliation, v15 reentry, and the
+v14/v3 baseline; this is governance metadata correction, not added product
+scope.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

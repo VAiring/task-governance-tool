@@ -224,6 +224,9 @@ The product must not become:
   not an active normal-loop instruction. Follow the current Skill until the
   owning execution unit and synchronization gate are complete; a runtime
   advisory does not itself expand authority or activate later guidance.
+- Historical and audit projections never satisfy a current verification,
+  review, or completion gate. Use current Task state and evidence bound to the
+  current review-target generation; preserve older evidence only as history.
 
 ## SQLite And State Rules
 

@@ -4,8 +4,10 @@ Status: release v0.9.0/schema v14 with Viewer snapshot v3 implements
 TG-M17.0 through TG-M17.5: stable project identity, fixed project-local state,
 same-binding legacy publication, explicit confirmed relocation, consumer
 hardening, and synchronized package acceptance are complete. The completed
-TG-M16.4 reduced-loop behavioral acceptance is retained. TG-M12.3 Issue adapter remains
-blocked on a future intake contract.
+TG-M16.4 reduced-loop behavioral acceptance is retained. The completed TG-M18.0
+completion-cycle-history contract targets v0.10.0 but does not activate runtime
+behavior until its owning implementation units complete. TG-M12.3 Issue
+adapter remains blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -3381,6 +3383,362 @@ Each unit is Tier 2 and requires its focused and full offline verification,
 `git diff --check`, and two independent PASS receipts for the exact final
 target. TG-M17.1 cannot start before M17.0 completes those gates. M18 cannot
 start before M17.5 is done.
+
+## Approved Post-MVP Extension: TG-M18 Completion Cycle History
+
+TG-M18 preserves accepted completion evidence when a Task is reopened without
+allowing old evidence to satisfy a later completion. It is an audit extension
+to the existing Task lifecycle, not Issue management, general event history,
+verification-run storage, or a workflow engine.
+
+The current implemented release remains v0.9.0/schema v14/Viewer snapshot v3
+until TG-M18.4 completes. The approved final allocation is:
+
+| Stage | Package | SQLite | Viewer | Publication state |
+|---|---:|---:|---:|---|
+| M18.1 schema/repository | 0.9.0 | 15 | 3, source 5-15 | non-public staging |
+| M18.2 native capture activation | 0.9.0 | 16 | 3, source 5-16 | non-public staging |
+| M18.3 read model/Viewer | 0.9.0 | 16 | 4, source 5-16 | non-public staging |
+| M18.4 synchronized release | 0.10.0 | 16 | 4, source 5-16 | release candidate |
+
+Schema v15 is named `completion_cycle_history`. Schema v16 is the marker-only
+`completion_cycle_capture_activation` migration. It adds no table or column;
+it exists so a schema-v15 binary cannot write a database after native capture
+and `complete` coverage have become active. A v14 binary rejects v15 or v16,
+and a v15 binary rejects v16 through the existing too-new-schema boundary.
+
+The public CLI remains exactly 20 command leaves. TG-M18 adds no command,
+option, setup choice, normal-loop call, LLM judgment, question, or stopping
+rule. The default-off Task loop remains at most nine governance calls and an
+enabled Effort Advisory flow remains at most ten. History is supplied by the
+already mandatory `task show` only after M18.3.
+
+### Schema And Immutable Cycle Contract
+
+Schema v15 adds exactly:
+
+- one `tasks.completion_history_coverage` column with values
+  `legacy_unknown` or `complete` and default `legacy_unknown`;
+- one nullable internal `task_events.completion_cycle_id` foreign-key column;
+  and
+- one append-only `task_completion_cycles` table.
+
+No second history, join, reopen, verification-receipt, or generic event-payload
+table is authorized. `tasks` remains the current mutable projection.
+`review_receipts` and `review_findings` remain the detailed review ledger.
+
+Each cycle has a stable
+`tg_completion_cycle_<16-lowercase-hex>` ID and one positive signed-64-bit
+`saved_cycle_ordinal` unique within its project and Task. Ordinals begin at 1
+and increase by exactly one. The stored fields are:
+
+| Group | Exact stored fields and values |
+|---|---|
+| ownership | `completion_cycle_id`, `project_id`, `task_id`, `saved_cycle_ordinal` |
+| provenance | `origin` = `native_done` or `legacy_current_done`; `completeness` = `complete` or `partial`; nullable `completed_at`; internal `recorded_at` |
+| authority | nonnegative `contract_revision`; `review_tier` 0, 1, or 2 |
+| verification | `verification_expectation` = `specified` or `unspecified`; nullable Boolean `verification_attestation` |
+| completion evidence | `completion_evidence_kind`, `completion_evidence_revision`, `completion_evidence_reason`, `external_revision_approved`, `completion_commit_required`, and `completion_commit_hash` |
+| exact target | `review_target_kind`, `review_target_value`, `review_target_base_revision`, and `review_target_generation` |
+| gate basis | `gate_basis_version`, `review_basis_kind`, required and qualifying independent-PASS counts, changes-requested count, open-high count, open-medium count, fresh-review-required count, and two nullable qualifying receipt-ID slots |
+
+The completion-evidence fields preserve the existing typed/legacy projection
+and bounds: revision at most 500 characters, reason at most 1,000, and the
+stored compatibility commit-hash projection at most 500. The legacy direct
+`completion_commit_hash` input alias retains its existing 128-character input
+limit. Native rows allow `git_commit`, `external_revision`, or
+`commit_not_required` with the existing exact matrix. Partial migrated rows
+additionally allow `none` with the exact empty/required matrix and
+`legacy_unverified`; they never convert either into stronger evidence. Target
+value and base revision are each at most 500 characters and retain the existing
+target-kind matrix.
+
+`native_done` always pairs with `complete`, a non-null completion time,
+verification attestation `true`, and gate-basis version 1.
+`legacy_current_done` always pairs with `partial`, verification attestation
+`null`, review basis `unknown`, and gate-basis version 0. The storage type is a
+nullable Boolean, but the current exact origin matrix admits only `true` for a
+native row and `null` for a legacy row; stored `false` is rejected.
+`verification_expectation` records only whether the locked Task's bounded
+verification field was non-empty; it does not copy command output.
+
+Gate-basis version 0 has null counts and no receipt IDs. Version 1 has
+nonnegative signed-64-bit counts, exactly the tier-derived required count
+(0, 1, or 2), and one of:
+
+- `independent_passes`: Tier 1 or 2, enough independent PASS reviewers, one
+  receipt ID for Tier 1 and two for Tier 2;
+- `self_review_fallback`: Tier 1 or 2, insufficient independent PASS reviewers,
+  one valid fallback receipt ID; or
+- `not_required`: Tier 0, one valid not-required receipt ID.
+
+Because a native cycle is written only after the current gate succeeds, its
+changes-requested, open-high, open-medium, and fresh-review-required counts are
+all zero. The counts remain stored so the accepted basis cannot be changed by
+later review-row resolution. Receipt slots reference existing exact-target
+rows; review bodies and finding summaries are not copied.
+
+Cycles cannot be updated or deleted. Coverage cannot be heuristically upgraded.
+The event link is internal and immutable after insertion. Only the event
+created by an actual successful native done transition and the later native
+`task_reopened` event may reference the corresponding cycle. No event type is
+added.
+
+### Migration And Honest Legacy Coverage
+
+Migration 15 runs only after a structurally complete schema v14 and is one
+transaction. It sets `legacy_unknown` for every existing Task, leaves every
+existing event field and value unchanged with a null cycle link, and inserts
+exactly one ordinal-1 partial cycle for each Task that is currently `done`.
+Every other status receives zero cycles.
+
+The partial cycle copies only the current done projection: completion time,
+Contract revision, review tier, verification expectation, existing typed or
+legacy completion fields, and current review target. Its verification and
+review attestations remain unknown. The migration does not parse event
+summaries, associate old receipts by inference, update an event, or synthesize
+a completion that was reopened before migration. An invalid current-done
+projection fails the whole migration as unreadable state rather than inventing
+values.
+
+M18.1 retains schema default `legacy_unknown` for all task additions and does
+not activate production done/reopen capture or alter either path. Migration 16
+is applied only by the M18.2 runtime after both native done paths and reopen
+integration exist. Its one activation transaction rereads every current done
+`legacy_unknown` Task in `task_id` binary order, validates the current
+projection, and compares it with the latest saved cycle using the exact normal
+reopen projection fields. When no cycle exists, the latest cycle does not
+match, or a `task_reopened` event already links the latest cycle, activation
+appends one next-ordinal `legacy_current_done` partial cycle from the current
+projection. An exact un-reopened latest cycle is reused without another row.
+Invalid projection, ordinal overflow, or inconsistent ownership fails the
+whole activation without the marker or any partial insert. Once schema v16 is
+recorded, setup reentry validates the marker, objects, and stored rows but
+never reruns this reconciliation.
+
+This bounded reconciliation is needed because schema-v15 capture-less
+completion and reopen remain legal and may change the current projection after
+the migration-15 backfill. It neither infers nor recreates an older completion:
+only the current done projection is saved, coverage remains `legacy_unknown`,
+and any unlinked reopen event continues to report incomplete history. Schema
+v16 remains marker-only in schema shape: it adds no table, column, index, or
+trigger, although its activation transaction may add these conservative
+partial rows before inserting the marker.
+
+From activation onward, `task add` explicitly assigns `complete`; the schema
+default remains `legacy_unknown` so an incomplete writer fails
+conservatively. Tasks created before activation remain `legacy_unknown`
+permanently, including after a later native completion.
+
+For every status, `legacy_history_incomplete` is true if any of these is true:
+
+- `completion_history_coverage` is not `complete`;
+- any saved cycle is `partial`; or
+- the Task has an explicit `task_reopened` event whose internal cycle link is
+  null.
+
+It is false only for a fully covered Task with no partial cycle and no unlinked
+reopen event. A fresh, never-completed Task created after activation therefore
+has zero cycles and `legacy_history_incomplete=false`. No text parsing is used.
+
+### Native Completion And Deterministic Review Basis
+
+Both public done paths, `task complete` and compatibility
+`task edit --status done`, use the same capture service. Existing parsing,
+verification confirmation, Git validation, sequential ordering, Contract,
+review-target, receipt, finding, and concurrency gates run unchanged. Git and
+other subprocess work remains outside the SQLite writer.
+
+Under one short writer transaction, the service rereads the Task, current
+Contract revision, target, exact-target receipts, findings, and lane basis. It
+rejects a stale preflight, computes the next ordinal without overflow, selects
+the review basis, inserts one complete cycle, updates the current Task, creates
+the existing completion event with the internal cycle link, records the
+existing effort transition, and commits. Cycle, Task, event, effort state,
+Viewer source generation, and post-commit-maintenance due state either commit
+coherently or remain unchanged. Backup and Viewer work still occurs only after
+the business transaction commits.
+
+Review-basis selection is independent of the existing diagnostic
+`fallback_kind` field:
+
+1. Count distinct independent PASS reviewers for the exact project, Task,
+   target kind/value/base/generation.
+2. If that count meets the tier requirement, select exactly the required one
+   or two receipts ordered by `reviewer_key ASC, review_receipt_id ASC`.
+3. Only if independent PASS is insufficient may Tier 1 or 2 select the first
+   otherwise-valid fallback ordered by `review_receipt_id ASC`, including the
+   existing Tier-2 user-approval requirement.
+4. Tier 0 selects the first valid not-required receipt ordered by
+   `review_receipt_id ASC`.
+
+A valid fallback is never stored when enough independent PASS receipts exist.
+Historical cycles and their receipt IDs are audit-only and are never queried
+to satisfy a current gate.
+
+### Reopen, Linkage, And Fresh Gates
+
+An exact `done` to `in_progress` reopen locks and rereads the Task and its
+latest ordinal cycle. The current done projection must match that cycle's
+completion time, Contract revision, review tier, derived verification
+expectation, six completion-evidence fields, and four review-target fields, and
+that cycle must not already have a linked reopen event. Reopen does not
+revalidate Git or reinterpret review rows merely to archive values already
+accepted.
+
+The same transaction links the new `task_reopened` event to that cycle, clears
+only the existing current completion and review-target fields, advances review
+generation with the existing overflow guard, applies the sequential-lane
+guard, records the effort transition, and commits. The saved cycle remains
+unchanged.
+
+Normal activation ensures every then-current done `legacy_unknown` Task has a
+latest cycle that matches its current projection. The stored compatibility
+bridge nevertheless remains exact and exclusive: if a locked done Task has
+`legacy_unknown` coverage and no cycle, reopen first inserts one ordinal-1
+`legacy_current_done` partial cycle from that locked projection, then links the
+reopen event and performs the normal reset in the same transaction. A
+`complete`-coverage Task with no cycle, an unknown-coverage Task with a
+mismatching existing cycle, or caller-supplied bridge data returns
+`completion_history_inconsistent` with no write. A schema-v15 Task that was not
+done at activation simply receives its first native complete cycle on a later
+done transition.
+
+A later completion always creates the next ordinal and requires a new
+verification confirmation, post-reopen target, current-generation review
+evidence, review confirmation, and completion evidence. Reopen history never
+weakens current completion eligibility.
+
+### Bounded Task Show And Viewer Projection
+
+M18.3 adds exactly one `completion_history` sibling to default `task show`
+data. The object has exactly:
+
+```text
+total, returned_count, truncated, legacy_history_incomplete, cycles
+```
+
+Cycles are a newest-first complete-row prefix ordered by
+`saved_cycle_ordinal DESC`. At most 10 are returned. Byte measurement for one
+cycle and for the complete `completion_history` component uses exactly
+`json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")`.
+One measured cycle is limited to 8,192 bytes and the measured complete
+component is limited to 32,768 bytes. For every candidate, the formatter
+measures the final five-key wrapper with the actual `total`, candidate
+`returned_count`, resulting `truncated`, actual
+`legacy_history_incomplete`, and candidate `cycles` array. This includes
+non-ASCII UTF-8 and count-digit growth in the decision. Rows are never
+partially serialized or skipped to fit an older row: collection stops before
+the first row that would exceed either bound. `returned_count` is the actual
+array length and `truncated` is `returned_count < total`.
+
+The public cycle allow-list is exactly:
+
+```text
+completion_cycle_id, saved_cycle_ordinal, origin, completeness, completed_at,
+contract_revision, review_tier, verification_expectation,
+verification_attestation, completion_evidence, review_target, gate_basis
+```
+
+`completion_evidence` contains exactly `kind`, `revision`, `reason`,
+`external_revision_approved`, `completion_commit_required`, and
+`completion_commit_hash`. `review_target` contains exactly `kind`, `value`,
+`base_revision`, and `generation`. `gate_basis` contains exactly `version`,
+`kind`, `required_independent_passes`, `qualifying_independent_passes`,
+`changes_requested`, `open_high`, `open_medium`,
+`fresh_review_required`, and `qualifying_receipt_ids`.
+
+For a gate-basis version-0 cycle, all six public count fields are JSON `null`
+and `qualifying_receipt_ids` is exactly `[]`. For version 1, every count is a
+JSON integer and `qualifying_receipt_ids` is an ordered JSON string array made
+by filtering the two stored slots in slot order; null placeholders are never
+emitted. Its length is exactly 1 for Tier-0 not-required, Tier-1 independent,
+or Tier-1/2 fallback basis, and exactly 2 for a Tier-2 independent basis.
+Public `verification_attestation` is JSON `true` for a native cycle and JSON
+`null` for a legacy partial cycle; JSON `false` is never emitted.
+
+The six existing public event fields remain the only event projection:
+
+```text
+task_event_id, task_id, project_id, event_type, summary, created_at
+```
+
+An explicit `PUBLIC_EVENT_FIELDS` boundary applies to event reads and every
+write receipt. `task_events.completion_cycle_id` never appears there.
+`completion_cycle_id` is public only as the stable ID of a returned cycle.
+
+Text `task show` reports returned/total, truncation, legacy incompleteness, and
+only the latest cycle's ordinal, origin/completeness, completion time,
+evidence kind, target kind/generation, and review-basis kind. It does not print
+revision values, reasons, receipt IDs, or review bodies. Task show reads Task,
+events, current review evidence, handoff summary, Contract, counts, and cycles
+in one query-only transaction.
+
+`task list`, `task current`, `task next`, their compact forms, `task effort`,
+and Review Packet output remain byte-contract compatible. No history option or
+pagination path is added.
+
+Viewer snapshot v4 includes the same five-key, 10-row/32,768-byte history
+object per Task. For source schemas 5-14 it derives zero cycles and
+`legacy_history_incomplete=true`; for schemas 15-16 it uses stored coverage,
+cycles, and event links. The existing 500-Task selection and 64 MiB artifact
+cap remain. Snapshot v3 accepts source 15 during M18.1 and source 16 during
+M18.2 but omits all history fields; only M18.3 activates snapshot v4.
+
+The Viewer remains static, offline, text-only, and database-independent in the
+browser. TG-M18 adds no additional timer and preserves M15.5's existing single
+visibility-aware timer. M15.6 stores no completion-history field, and filter,
+selection, focus, scroll, CSP, no-storage/no-network, atomic publication, and
+last-good behavior remain unchanged.
+
+### Errors, Privacy, Recovery, And Ownership
+
+`completion_history_inconsistent` is the only new stable public error. It uses
+exit 2 and the sanitized message `stored completion history is inconsistent`.
+It covers a missing required cycle, latest-cycle/current-projection mismatch,
+reused reopen link, ordinal overflow, invalid gate-basis relationship, and
+cycle/event ownership conflict. It is a command error, not a new
+`task complete --check` blocker code. Existing stale-plan, review, Git,
+sequential, busy, journal, migration, project mismatch, and unreadable-state
+errors retain their precedence and messages.
+
+No cycle stores raw stdout/stderr, verification-run details, stack traces,
+environment data, diffs, review bodies or reasoning, prompts, conversations,
+path lists, secrets, tokens, or authorization headers. Existing bounded,
+validated completion values are copied once; current review rows remain their
+own detailed history. Reads, failed checks, failed writes, and replay create no
+cycle.
+
+Schema v15/v16 state participates in the existing setup-only migration backup,
+managed backup, restore, quick-check, foreign-key, fixed-state, and last-good
+rules. A fixed schema-v15 backup restored by the schema-v16 runtime is migrated
+before normal writes. Legacy `state/projects` eligibility remains schemas 1-13
+plus the explicit schema-v14 transition; it is not broadened to v15/v16.
+Fixed-state relocation tokens and backup validators accept the current schema
+through 16. No new backup, restore, alternate path, target-project mutation,
+network behavior, worker, queue, watcher, daemon, or service is introduced.
+
+TG-M18 ownership is exclusive:
+
+- M18.1 owns schema v15, migrations from the complete M17 schema lineage,
+  partial current-done backfill, storage models/repository primitives,
+  immutable/public-event boundaries, and snapshot-v3 source-15 compatibility.
+- M18.2 owns marker-only schema v16, activation of `complete` task additions,
+  activation-time partial reconciliation, both native done paths, exact reopen
+  and compatibility-bridge behavior, deterministic gate selection, and
+  snapshot-v3 source-16 compatibility.
+- M18.3 owns the bounded `task show` JSON/text read model and Viewer snapshot
+  v4. It changes no history writer or current gate.
+- M18.4 synchronizes the active Skill, references, help, README/release package,
+  manifest, versions, formal status, and full lifecycle acceptance at
+  v0.10.0/schema v16/Viewer v4. It adds no behavior.
+
+Every unit is sequential Tier 2 and requires focused and full offline tests,
+schema/quick/foreign-key and compatibility checks, `doctor`, package/manifest
+checks where covered files change, `git diff --check`, and two independent
+PASS receipts for the exact final target. Handoff
+`tg_handoff_696a19cba075d56e` remains pending as rationale until the user
+separately directs its disposition.
 
 ## Task Ordering
 

@@ -4,6 +4,8 @@ Status: implementation units through TG-M17.5 are complete at
 v0.9.0/schema v14 with Viewer snapshot v3. TG-M17 completed stable identity,
 fixed project-local state, same-binding migration, explicit confirmed
 relocation, consumer hardening, and package acceptance in lane order.
+TG-M18.0 is the completed five-document contract; TG-M18.1 through
+TG-M18.4 remain inactive sequential units targeting v0.10.0.
 The completed TG-M16.4 reduced-loop behavioral acceptance is retained;
 TG-M16.3 is cancelled. TG-M12.3 remains blocked on a future Issue Skill
 intake contract. The default-browser launch follow-up remains
@@ -3534,6 +3536,304 @@ TG-M16.3 policy/bootstrap reference and constrain root `AGENTS.md` to durable
 routing rather than milestone status. These are Task-record authority
 corrections, not behavior additions.
 
+## TG-M18 Append-Only Completion Cycle History
+
+TG-M18 is one sequential lane, `TG-M18-COMPLETION-HISTORY`. It preserves each
+accepted completion as bounded local audit history while keeping all historical
+cycles and receipt references outside current completion eligibility.
+
+The approved final allocation is v0.10.0/schema v16/Viewer snapshot v4. M18.1
+owns schema-v15 history storage; M18.2 owns marker-only schema v16 and native
+capture activation; M18.3 owns the bounded read projection; M18.4 alone
+synchronizes the release package. The public inventory remains 20 leaves and
+the normal loop remains nine calls with Effort Advisory disabled or ten when
+enabled.
+
+### TG-M18.0 Completion Cycle History Contract
+
+Task: `tg_task_275f611acb9af4c5`
+Kind: sequential
+Lane: `TG-M18-COMPLETION-HISTORY`
+Lane order: 10
+Review tier: Tier 2
+Depends on: completed TG-M17.5
+Status: complete
+
+Intended outcome:
+
+- Convert approved handoff `tg_handoff_696a19cba075d56e` and the user decision
+  into one implementation-ready completion-history contract.
+- Fix exact versions, one-table/two-column schema, coverage/legacy truth,
+  done/reopen transaction order, review-basis precedence, JSON/Viewer bounds,
+  privacy, compatibility, errors, and M18.1-M18.4 ownership.
+
+Write scope:
+
+- root `AGENTS.md` only for the durable rule that audit history cannot satisfy
+  a current gate;
+- `docs/specification.md`, `docs/design.md`,
+  `docs/implementation-roadmap.md`, and `plan.md`;
+- no Python, tests, templates, active Skill/references, README, release
+  package, manifest, generated state, handoff state, or target-project file.
+
+Verification:
+
+- the five documents agree on v0.10.0, schema v15 plus marker-only v16, Viewer
+  v4, one table, two columns, exact DDL/matrices/four indexes/four triggers,
+  transaction order, exact JSON measurement, 10-row/32-KiB history, public
+  allow-lists, and one stable error;
+- migration and activation remain fail-closed, legacy gaps remain honest, and
+  historical cycles never satisfy fresh verification/review/completion;
+- exactly 20 leaves, nine/ten normal calls, no new LLM choice/stop, and no
+  implementation or package diff;
+- full offline suite, `doctor`, package self-check, `git diff --check`, and two
+  independent exact-target Tier 2 PASS receipts.
+
+Completion criteria:
+
+- the exact five-document contract has no unresolved implementation choice;
+- no valid High or Medium review finding remains; and
+- the verified documentation commit is stored on this Task before M18.1
+  starts.
+
+After M18.0 is complete and before M18.1 changes status, mechanically revise
+the already-stored M18.1, M18.2, and M18.4 Task Contracts to this final
+authority. That governance-only synchronization must include the valid
+historical `none` case, 500-character stored compatibility projection,
+capture-less-v15 activation reconciliation, mutate-then-idempotent setup, and
+the v14/v3 release baseline. It does not change the approved product scope and
+is deliberately outside M18.0's five-document write set.
+
+### TG-M18.1 Completion Cycle Schema And Repository
+
+Task: `tg_task_771ead81b9abae50`
+Kind: sequential
+Lane: `TG-M18-COMPLETION-HISTORY`
+Lane order: 20
+Review tier: Tier 2
+Depends on: completed TG-M18.0
+Status: ready
+
+Intended outcome:
+
+- Implement schema v15 `completion_cycle_history`: exactly one immutable
+  `task_completion_cycles` table, Task coverage, internal event link, required
+  indexes/triggers, migration/backfill, and narrow repository models.
+- Preserve production done/reopen behavior and public history output until
+  their later owners.
+
+Write scope:
+
+- storage schema/migration/inventory and repository/model primitives;
+- an exact six-field public event allow-list applied to every event projection;
+- schema-v3 Viewer compatibility through source schema 15 without history;
+- focused migration, repository, privacy, concurrency, failure, compatibility,
+  and required manifest/integrity changes;
+- directly coupled implementation-status documentation only.
+
+Verification:
+
+- v1-v14 sources migrate transactionally and idempotently to v15; every
+  pre-existing Task remains `legacy_unknown`, every current done Task receives
+  exactly one ordinal-1 partial cycle, every other Task receives zero, and all
+  old event links remain null;
+- historical current-done `none`, `legacy_unverified`, and the full existing
+  external-revision/hash bound migrate without strengthening or truncation;
+- the 12-Task/191-event fixture, nine completion traces, Contracts, reviews,
+  checkpoints, handoffs, maintenance, backups, identity, and binding survive;
+- stable IDs, ordinal/target/evidence/gate matrices, exact ownership/FKs,
+  all four indexes and four triggers, false-attestation rejection, rollback,
+  quick/foreign-key checks, and concurrent repository insertion pass;
+- no Task added in this slice receives `complete`; no production done/reopen
+  path or public completion-history shape is activated;
+- after legitimate capture-less v15 completion, reopen, and recompletion
+  states, rerunning setup remains idempotent without reasserting the original
+  migration-time done/non-done cardinality;
+- snapshot v3 omits coverage/cycles/link while accepting source schema 15;
+- focused/full offline tests, doctor, manifest/diff checks, and two exact-target
+  Tier 2 PASS reviews.
+
+Completion criteria:
+
+- schema/repository behavior matches M18.0 without activating a partial writer;
+- no event-link disclosure or data-loss finding remains; and
+- the verified implementation commit is stored before M18.2 starts.
+
+### TG-M18.2 Atomic Completion And Reopen History
+
+Task: `tg_task_8e41decef32ab46b`
+Kind: sequential
+Lane: `TG-M18-COMPLETION-HISTORY`
+Lane order: 30
+Review tier: Tier 2
+Depends on: completed TG-M18.1
+Status: ready
+
+Intended outcome:
+
+- Add marker-only schema v16 and atomically activate cycle capture in
+  `task complete`, compatibility `task edit --status done`, exact reopen, and
+  post-activation Task addition.
+- Preserve every current gate and make saved cycles audit-only.
+
+Write scope:
+
+- schema-v16 activation marker, bounded current-done partial reconciliation,
+  and schema-v16-required writer wiring;
+- current-gate selector with independent-over-fallback precedence;
+- native done cycle/task/event transaction and exact reopen
+  match/link/compatibility-bridge transaction;
+- explicit `complete` coverage only for schema-v16 Task additions;
+- focused service/CLI/transaction/Git/privacy/concurrency/rollback/lifecycle
+  tests, directly coupled status, and integrity hashes.
+
+Verification:
+
+- both done paths and every evidence/target/tier combination insert exactly one
+  complete cycle and link only the actual successful completion event;
+- sufficient independent PASS receipts always win over a coexisting fallback;
+  fallback is used only when independent PASS is insufficient, and Tier 0
+  chooses deterministic not-required evidence;
+- current target changes-requested and high/medium unresolved or
+  fresh-review-required findings still block before capture;
+- done A/reopen/done B produces ordinals 1/2, immutable cycles, exact event
+  links, fresh verification/target/review/completion gates, and no historical
+  gate reuse;
+- activation leaves an exactly matching current-done/latest-cycle pair
+  unchanged only when no reopen event links that cycle, and otherwise appends
+  exactly one partial current-done cycle for the capture-less v15 window,
+  including zero-cycle and reopen/recomplete mismatch states, in the same
+  transaction as the marker;
+- after activation, complete coverage with a missing cycle and any
+  existing-cycle/current-projection mismatch fail reopen without writes;
+- the exact stored compatibility path remains limited to a locked
+  `legacy_unknown` done Task with no cycle: it inserts one ordinal-1 partial
+  row and links the same reopen transaction; complete/no-cycle, any existing
+  mismatch, and caller-supplied bridge data still fail without writes;
+- task addition changes to `complete` only after v16 activation; older Tasks
+  remain unknown; a v15 binary rejects v16;
+- restored v15 backups run the same bounded reconciliation before writes, and
+  activation failure or ordinal overflow leaves neither partial cycles nor a
+  marker;
+- schema-v16 setup reentry validates but never repeats reconciliation or
+  inserts another row;
+- stale plans, Git mismatch/no-mutation, Contract changes, overflow,
+  sequential conflict, concurrency, and every injected failure leave no
+  partial cycle/task/event/Effort/Viewer-generation state;
+- snapshot v3 accepts v16 but still exposes no history/link;
+- focused/full tests, doctor, manifest/diff checks, and two exact-target Tier 2
+  PASS reviews.
+
+Completion criteria:
+
+- native capture and reopen linkage are atomic and downgrade-fail-closed;
+- current completion safety is unchanged; and
+- the verified implementation commit is stored before M18.3 starts.
+
+### TG-M18.3 Completion History Read Model And Viewer
+
+Task: `tg_task_2e1150c77de2daf6`
+Kind: sequential
+Lane: `TG-M18-COMPLETION-HISTORY`
+Lane order: 40
+Review tier: Tier 2
+Depends on: completed TG-M18.2
+Status: ready
+
+Intended outcome:
+
+- Add the exact bounded `task show.completion_history` sibling and concise text
+  summary without adding a command, option, or normal call.
+- Advance the static offline Viewer to snapshot v4 with the same bounded
+  per-Task projection.
+
+Write scope:
+
+- one-Task and bounded Viewer batch history read models;
+- task-show JSON/text formatter and Viewer snapshot/template rendering;
+- snapshot-v4 compatibility for sources 5-16;
+- focused read-only, byte/count, privacy, performance, browser, CSP,
+  M15.5/M15.6, last-good, and compatibility tests;
+- directly coupled status and integrity hashes.
+
+Verification:
+
+- task show returns exactly `total`, `returned_count`, `truncated`,
+  `legacy_history_incomplete`, and newest-first `cycles`, with at most 10
+  complete rows, 8-KiB per row, and 32-KiB per component;
+- row/component fitting uses the exact compact UTF-8 serializer and measures
+  the candidate final wrapper, including non-ASCII values and count-digit
+  growth;
+- gate-basis v0 emits null counts and an empty receipt array; v1 emits integer
+  counts and a one- or two-string slot-ordered array with no null placeholders,
+  while attestation emits only JSON true or null;
+- every cycle uses only the exact nested allow-list, internal event links never
+  appear, and text output omits content values;
+- totals/incomplete state include unreturned rows/events and are read in the
+  same query-only transaction as Task context;
+- list/current/next/compact, task effort, Review Packet, write receipts, and
+  all errors remain compatible;
+- Viewer v4 maps sources 5-14 to honest empty/incomplete history and v15-v16
+  to stored history, while keeping 500 Tasks, 64 MiB, atomic/last-good
+  publication, sorting/filtering/selection, CSP, no storage/network, M15.5
+  timing, and M15.6 state unchanged;
+- full offline/browser/performance tests, doctor, manifest/diff checks, and two
+  exact-target Tier 2 PASS reviews.
+
+Completion criteria:
+
+- the read projection is bounded, coherent, private, and adds no LLM choice;
+- Viewer behavior outside the history panel is unchanged; and
+- the verified implementation commit is stored before M18.4 starts.
+
+### TG-M18.4 Package Synchronization And Lifecycle Acceptance
+
+Task: `tg_task_fa3a57ae3089e3fc`
+Kind: sequential
+Lane: `TG-M18-COMPLETION-HISTORY`
+Lane order: 50
+Review tier: Tier 2
+Depends on: completed TG-M18.3
+Status: ready
+
+Intended outcome:
+
+- Synchronize only the reviewed M18.1-M18.3 behavior into the active Skill,
+  one-level references, help, README/release package, manifest, formal status,
+  versions, and forward acceptance.
+- Publish the repository state as v0.10.0/schema v16/Viewer snapshot v4 without
+  performing any external push, tag, PR, workflow dispatch, or release action.
+
+Write scope:
+
+- active/package guidance and examples, release metadata, manifest/hashes,
+  final formal/status synchronization, and integrated forward fixtures;
+- no new product behavior or handoff-state change.
+
+Verification:
+
+- all source/package/help/docs metadata agree on v0.10.0/schema v16/Viewer v4
+  source 5-16, exactly 20 leaves, no history command/option, and nine/ten calls;
+- v1-v14 migration, v15 activation-window state, current-done backfill, fresh
+  complete Tasks, historical done-`none`, maximum bounded external revision,
+  v15 mutate-then-idempotent setup, all evidence/target/tier/fallback bases,
+  done/reopen cycles, Contract changes, concurrent/failure paths, and proof of
+  no history gate reuse;
+- exact task-show/Viewer bounds and privacy, M15.5/M15.6, M16 guidance, M17
+  identity/binding/relocation, backup/restore/corruption, self-host/installed
+  layouts, nested-Git safety, quick/FK, performance, and last-good behavior;
+- package self-check, full offline and forward suites, doctor, manifest/release
+  artifact/diff checks, and two exact-final-target Tier 2 PASS reviews.
+
+Completion criteria:
+
+- no stale v14/v3 or intermediate M18 contract remains in an active publication
+  surface where v16/v4 supersedes it;
+- no valid High or Medium finding remains;
+- the exact release-candidate commit is stored on M18.4; and
+- M19.0 remains blocked until that completion SHA is frozen. M19.0, not M18,
+  owns formalization of later M19 units and their still-required user decisions.
+
 ## Roadmap Completion Criteria
 
 The currently approved roadmap is complete when:
@@ -3544,6 +3844,10 @@ The currently approved roadmap is complete when:
   remaining cancelled;
 - TG-M17.0 through TG-M17.5 are complete in lane order, including correction of
   the two stale future Task-record references before M17.4 and M17.5 begin;
+- TG-M18.0 through TG-M18.4 complete in lane order with history remaining
+  audit-only and the final v0.10.0/schema-v16/Viewer-v4 lifecycle matrix
+  accepted;
+- M19.0 remains blocked until the exact M18.4 completion SHA is frozen;
 - every unit's documented verification and review gate has passed for its exact
   final revision;
 - no valid High or Medium review finding remains unresolved;

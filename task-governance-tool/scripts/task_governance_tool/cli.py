@@ -474,7 +474,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common_options(task_effort_parser)
     task_effort_parser.add_argument("task_id")
-    task_show_parser = task_subparsers.add_parser("show", help="show one task and recent events")
+    task_show_parser = task_subparsers.add_parser(
+        "show",
+        help="show one task, current context, and completion history",
+    )
     add_common_options(task_show_parser)
     task_show_parser.add_argument("task_id")
     task_checkpoint_parser = task_subparsers.add_parser(

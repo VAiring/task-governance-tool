@@ -128,9 +128,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "only command that initializes or migrates",
             " ".join(skill_md.lower().split()),
         )
-        self.assertIn("snapshot v3", contracts.lower())
-        self.assertIn("schema v14", release_note.lower())
-        self.assertIn("0.9.0", release_note)
+        self.assertIn("snapshot v4", contracts.lower())
+        self.assertIn("schema v16", release_note.lower())
+        self.assertIn("0.10.0", release_note)
         self.assertIn("verification and review gates", skill_md.lower())
         self.assertIn("current governed task", openai_yaml.lower())
 
@@ -165,10 +165,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "fresh user approval",
             ):
                 self.assertIn(phrase, normalized)
-        self.assertIn("schema v14", contracts.lower())
-        self.assertIn("source schemas 5 through 14", readme.lower())
-        self.assertIn("source schemas v5-v14", release_note.lower())
-        self.assertEqual(manifest["package_version"], "0.9.0")
+        self.assertIn("schema v16", contracts.lower())
+        self.assertIn("source schemas 5 through 16", readme.lower())
+        self.assertIn("source schemas v5-v16", release_note.lower())
+        self.assertEqual(manifest["package_version"], "0.10.0")
         documented_uuid = re.search(
             r'"project_id": "(tg_project_[0-9a-f]{32})"',
             contracts,
@@ -230,6 +230,29 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "--confirm-relocation cannot be used with --read-only",
         ):
             self.assertIn(message, contracts)
+
+    def test_m18_release_and_forward_evidence_are_synchronized(self):
+        forward_note = (
+            ROOT
+            / "docs"
+            / "forward-tests"
+            / "tg-m18-completion-history.md"
+        ).read_text(encoding="utf-8")
+        normalized = " ".join(forward_note.split())
+
+        for phrase in (
+            "Runtime: task-governance-tool v0.10.0",
+            "schema v16",
+            "Viewer snapshot v4",
+            "Result: PASS",
+            "task show",
+            "exactly 20 command leaves",
+            "no history command or option",
+            "adds no LLM judgment",
+            "quick_check",
+            "foreign_key_check",
+        ):
+            self.assertIn(phrase, normalized)
 
     def test_m16_reconciliation_guidance_is_conditional_and_bounded(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -493,7 +516,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("--kind git_snapshot", release_note)
         self.assertIn("unstaged", release_normalized)
         self.assertIn("untracked", release_normalized)
-        self.assertIn('__version__ = "0.9.0"', runtime_init)
+        self.assertIn('__version__ = "0.10.0"', runtime_init)
         self.assertIn("SCHEMA_VERSION = 16", storage)
         self.assertIn("SNAPSHOT_VERSION = 4", viewer)
         self.assertIn("omits", release_note)
@@ -510,7 +533,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertIn("0.9.0", version.stdout)
+        self.assertIn("0.10.0", version.stdout)
 
     def test_tg_m12_local_handoff_guidance_and_isolated_flow_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -537,8 +560,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("rejected raw", text.lower())
         for text in (workflow, contracts):
             self.assertIn("handoff_not_persisted", text)
-        self.assertIn("schema v14", release_note.lower())
-        self.assertIn("0.9.0", release_note)
+        self.assertIn("schema v16", release_note.lower())
+        self.assertIn("0.10.0", release_note)
         for text in (workflow, contracts, readme, release_note):
             self.assertIn("Effort Advisory", text)
         self.assertIn("effort_advisory_enabled", skill_md)
@@ -718,7 +741,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             )
 
         self.assertIn("bundled Viewer template", release_note)
-        self.assertIn("Viewer snapshot v3", release_note)
+        self.assertIn("Viewer snapshot v4", release_note)
         self.assertNotIn("explicit `--output`", release_note)
         self.assertNotIn("export", openai_yaml.lower())
         self.assertIn("## Final Result\n\nPASS", forward_note)
@@ -1093,7 +1116,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("@('self', 'status')", workflow)
         self.assertIn("invalid_command", workflow)
         self.assertIn("SCHEMA_VERSION", workflow)
-        self.assertIn("0\\.9\\.0", workflow)
+        self.assertIn("0\\.10\\.0", workflow)
         self.assertIn("task-viewer\\.html$", workflow)
         self.assertIn('Windows skill checks (Python ${{ matrix.python-version }})', workflow)
         matrix_block = workflow.split("matrix:", 1)[1].split("\n\n    steps:", 1)[0]

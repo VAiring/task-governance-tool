@@ -1,15 +1,13 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: the published baseline remains v0.9.0/schema v14 with Viewer snapshot
-v3. TG-M18.0 through TG-M18.3 are complete; the non-public staging runtime is
-package v0.9.0/schema v16 with Viewer snapshot v4 accepting sources 5-16,
-atomic native completion capture, and the bounded public history read
-projection. TG-M18.4 remains the sequential package-synchronization unit
-targeting v0.10.0/schema v16/Viewer snapshot v4.
-The completed TG-M16.4 reduced-loop behavioral acceptance is retained;
-TG-M16.3 is cancelled. TG-M12.3 remains blocked on a future Issue Skill
-intake contract. The default-browser launch follow-up remains
-requirements-only pending design and roadmap approval.
+Status: TG-M18.0 through TG-M18.4 are complete. The synchronized repository
+release candidate is v0.10.0/schema v16 with Viewer snapshot v4 accepting
+sources 5-16, atomic native completion capture, and the bounded public history
+read projection. M19.0 remains blocked until the exact M18.4 completion SHA is
+frozen. The completed TG-M16.4 reduced-loop behavioral acceptance is retained;
+TG-M16.3 is cancelled. TG-M12.3 remains blocked on a future Issue Skill intake
+contract. The default-browser launch follow-up remains requirements-only
+pending design and roadmap approval.
 
 Completed unit descriptions before TG-M14 are explicitly historical execution
 lineage. Their legacy commands, options, and intermediate release surfaces do
@@ -3794,7 +3792,7 @@ Lane: `TG-M18-COMPLETION-HISTORY`
 Lane order: 50
 Review tier: Tier 2
 Depends on: completed TG-M18.3
-Status: ready
+Status: complete
 
 Intended outcome:
 

@@ -1,14 +1,12 @@
 # task-governance-tool MVP Specification
 
-Status: the published baseline remains v0.9.0/schema v14 with Viewer snapshot
-v3 and completed TG-M17.0 through TG-M17.5 identity/storage behavior. TG-M18.0
-through TG-M18.3 are complete: the non-public staging runtime is package
-v0.9.0, schema v16, and Viewer snapshot v4 accepting sources 5-16, with atomic
-native completion capture and the bounded public history read projection.
-TG-M18.4 remains the sequential package-synchronization unit targeting
-v0.10.0/schema v16/Viewer snapshot v4. The completed TG-M16.4 reduced-loop
-behavioral acceptance is retained. TG-M12.3 Issue adapter remains blocked on a
-future intake contract.
+Status: TG-M18.0 through TG-M18.4 are complete. The synchronized repository
+release candidate is v0.10.0/schema v16 with Viewer snapshot v4 accepting
+sources 5-16, atomic native completion capture, and the bounded public history
+read projection. The completed TG-M17 identity/storage behavior and TG-M16.4
+reduced-loop behavioral acceptance are retained. M19.0 remains blocked until
+the exact M18.4 completion SHA is frozen. TG-M12.3 Issue adapter remains
+blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -3392,8 +3390,9 @@ allowing old evidence to satisfy a later completion. It is an audit extension
 to the existing Task lifecycle, not Issue management, general event history,
 verification-run storage, or a workflow engine.
 
-The current implemented release remains v0.9.0/schema v14/Viewer snapshot v3
-until TG-M18.4 completes. The approved final allocation is:
+The synchronized repository release candidate is v0.10.0/schema v16/Viewer
+snapshot v4. The completed allocation, including its non-public staging
+revisions, is:
 
 | Stage | Package | SQLite | Viewer | Publication state |
 |---|---:|---:|---:|---|

@@ -190,8 +190,8 @@ jobs:
           $contracts = Get-Content -Raw "$skillRoot/references/cli_contracts.md"
           $readme = Get-Content -Raw 'README.md'
           $release = Get-Content -Raw 'docs/release-install.md'
-          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.9\.0"') {
-            throw 'Runtime package version is not 0.9.0'
+          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.10\.0"') {
+            throw 'Runtime package version is not 0.10.0'
           }
           if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*16') {
             throw 'Runtime schema version is not 16'
@@ -226,8 +226,11 @@ jobs:
               $skillMd -notmatch 'reopen') {
             throw 'Skill guidance is missing deterministic effort, Contract, or reopen routing'
           }
-          if ($release -notmatch 'schema v14' -or $release -notmatch '0\.9\.0') {
-            throw 'Release guidance is inconsistent with version 0.9.0/schema v14'
+          if ($release -notmatch 'schema v16' -or
+              $release -notmatch '0\.10\.0' -or
+              $release -notmatch 'Viewer snapshot: v4' -or
+              $release -notmatch 'v5 through v16') {
+            throw 'Release guidance is inconsistent with version 0.10.0/schema v16/Viewer v4 source v5-v16'
           }
           foreach ($document in @($skillMd, $workflow, $contracts, $readme, $release)) {
             foreach ($token in @(

@@ -88,7 +88,8 @@ Use this normal flow:
    `task next --compact --json`; returned `paused` and `blocked` rows remain
    recalled but do not suppress unrelated ready work.
 3. Always read the resumed or selected task with
-   `task show <task-id> --json`.
+   `task show <task-id> --json`. Its bounded completion history is audit
+   context only and never satisfies a current gate.
 4. If selecting ready work, start it with
    `task edit <task-id> --status in_progress --json`.
 5. Execute and verify against current authority. Record out-of-scope
@@ -110,7 +111,7 @@ Neither trigger adds a green-path command, question, or stop.
 For a no-finding Tier 2 task that must select new work, this graph uses at most
 nine governance subprocess calls with the advisory disabled and ten when an
 existing valid profile enables it. `doctor`, completion `--check`, and
-`task checkpoint` are absent from the default success path. M14 adds no
+`task checkpoint` are absent from the default success path. This flow adds no
 mandatory question, judgment, or user-return stop.
 
 ## Operating Rules
@@ -149,8 +150,9 @@ mandatory question, judgment, or user-return stop.
 - If a local handoff cannot be persisted, stop only that execution unit until
   the same record is durable or the user explicitly accepts forgetting risk.
 - Treat `done` as write-locked. Reopen only with an isolated transition to
-  `in_progress` and `--reopen-reason`; fresh verification, target, and review
-  evidence are then required.
+  `in_progress` and `--reopen-reason`; saved completion cycles remain
+  audit-only, while fresh verification, target, and review evidence are
+  required.
 
 ## Review And Completion
 

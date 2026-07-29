@@ -3,7 +3,8 @@
 Use this reference when exact public commands, arguments, JSON fields, bounds,
 or error behavior matter.
 
-Release `0.9.0` uses task schema v14 and offline snapshot v3.
+Release `0.10.0` uses task schema v16 and offline snapshot v4 with source
+schemas v5 through v16.
 
 ## Contents
 
@@ -170,7 +171,7 @@ rollback-journal entry remains for the missing fixed primary; setup neither
 applies nor changes that journal. A moved legacy backup-only source is not a
 relocation candidate and fails no-write as `project_state_unreadable`.
 
-Release 0.9.0 stores the database in the fixed package-local
+Release 0.10.0 stores the database in the fixed package-local
 `state/current/` layout. Fresh write-mode setup creates one UUID-backed
 immutable project identity; same-binding schema-v1-through-v13 legacy state is
 published into the fixed layout by explicit setup without an LLM choice.
@@ -202,7 +203,7 @@ Expired or stale context requires a fresh preview and fresh user approval.
     "viewer_publish"
   ],
   "schema_from": null,
-  "schema_to": 14,
+  "schema_to": 16,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -237,7 +238,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=14`. A later-stage failure reports only
+null observed values except `schema_to=16`. A later-stage failure reports only
 the durable ordered prefix.
 
 Setup is noninteractive and idempotent. It does not create a second
@@ -278,7 +279,7 @@ A ready result has this structure:
   "components": {
     "package": {
       "package_name": "task-governance-tool",
-      "package_version": "0.9.0",
+      "package_version": "0.10.0",
       "release_origin": "github:VAiring/task-governance-tool",
       "manifest_version": 1,
       "status": "clean",
@@ -290,8 +291,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 14,
-      "required_schema_version": 14
+      "schema_version": 16,
+      "required_schema_version": 16
     },
     "task_summary": {
       "code": "ready",
@@ -476,8 +477,9 @@ python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 ```
 
 Data keys are exactly `task`, `events`, `suggested_next_action`,
-`review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`, and
-`effort_advisory_enabled`.
+`review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`,
+`effort_advisory_enabled`, and `completion_history`.
+A task-show failure uses `completion_history=null` in its bounded empty data.
 
 `effort_advisory_enabled` is a deterministic boolean routing field. Invalid
 profile content returns `false` plus
@@ -488,6 +490,41 @@ The task contains typed completion evidence and current review-target fields.
 counts, blocking findings, and recent structured receipts/findings; it omits
 raw reviews and private reasoning. `handoff_summary` contains exact
 `pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user` counts.
+
+`completion_history` has exactly:
+
+```text
+total, returned_count, truncated, legacy_history_incomplete, cycles
+```
+
+Cycles are a newest-first complete-row prefix with at most 10 rows, 8,192
+UTF-8 bytes per row, and 32,768 UTF-8 bytes for the complete five-key
+component. Both limits use compact sorted-key UTF-8 JSON, and each candidate is
+measured in its final wrapper with the actual counts and flags. The first
+non-fitting row stops collection; older rows are not substituted. A cycle has
+exactly:
+
+```text
+completion_cycle_id, saved_cycle_ordinal, origin, completeness, completed_at,
+contract_revision, review_tier, verification_expectation,
+verification_attestation, completion_evidence, review_target, gate_basis
+```
+
+Nested keys are exact: `completion_evidence` contains `kind`, `revision`,
+`reason`, `external_revision_approved`, `completion_commit_required`, and
+`completion_commit_hash`; `review_target` contains `kind`, `value`,
+`base_revision`, and `generation`; `gate_basis` contains `version`, `kind`,
+`required_independent_passes`, `qualifying_independent_passes`,
+`changes_requested`, `open_high`, `open_medium`, `fresh_review_required`, and
+`qualifying_receipt_ids`.
+
+Gate-basis version 0 emits null counts and `qualifying_receipt_ids=[]`.
+Version 1 emits integer counts and one or two slot-ordered receipt-ID strings.
+`verification_attestation` is only `true` or `null`. Internal event links,
+review bodies, and raw verification content never appear. Saved cycles are
+audit-only and never satisfy the current verification, review, or completion
+gate. Text output reports only bounded counts and the latest cycle's
+non-content fields.
 
 Revision-zero Contract data is:
 
@@ -572,7 +609,8 @@ to active, review-pending, or done use the same predecessor rule as
 Lower a review tier only before any target has been set and provide
 `--review-tier-change-reason`. A done task rejects every write except an
 isolated `--status in_progress --reopen-reason <summary>` transition. Reopen
-clears current completion/review eligibility and requires fresh gates.
+preserves saved completion cycles as audit history, clears current
+completion/review eligibility, and requires fresh gates.
 
 The existing done transition remains accepted through `task edit` and enforces
 the same validator as thin `task complete`. Prefer the thin command for normal
@@ -814,8 +852,11 @@ Storage, network, snapshot field, database field,
 command, or normal-loop decision is added.
 
 These operations add no Skill command or LLM judgment. Their artifacts and
-paths are absent from public command output. Snapshot v3 reads source schemas
-5 through 14 without exposing internal maintenance or checkpoint fields.
+paths are absent from public command output. Snapshot v4 reads source schemas
+5 through 16. Sources 5-14 receive an empty, legacy-incomplete completion
+history; sources 15-16 use stored cycles. Every Task receives the same bounded
+five-key projection as `task show` without exposing internal event links,
+maintenance data, or checkpoint content.
 
 If post-commit maintenance cannot complete, the primary business mutation
 remains successful and only a bounded warning is appended:
@@ -888,6 +929,7 @@ Important task/review/handoff errors include:
 - `initial_done_forbidden`, `initial_paused_forbidden`
 - `blocked_reason_required`, `pause_reason_required`
 - `sequential_predecessor_incomplete`, `done_task_requires_reopen`
+- `completion_history_inconsistent`
 - `contract_activation_forbidden`, `contract_authority_required`,
   `contract_write_conflict`
 - `verification_required`, `review_required`, `commit_required`
@@ -900,6 +942,9 @@ Important task/review/handoff errors include:
 - `handoff_not_persisted`, `handoff_not_withdrawable`,
   `handoff_occurrence_invalid`
 - `privacy_rejected`, `not_found`, `internal_error`
+
+`completion_history_inconsistent` uses exit 2 and the fixed sanitized message
+`stored completion history is inconsistent`.
 
 Privacy validation is deny-by-default for stored free-form input. Never submit
 secrets, tokens, authorization headers, raw stdout/stderr, stack traces,

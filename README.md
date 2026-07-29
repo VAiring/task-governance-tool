@@ -5,7 +5,8 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.9.0` uses SQLite schema v14 and Viewer snapshot v3.
+Release `0.10.0` uses SQLite schema v16 and Viewer snapshot v4 with source
+schemas 5 through 16.
 
 ## Install
 
@@ -53,11 +54,16 @@ the old legacy primary. A moved legacy backup-only source is not a relocation
 candidate and fails no-write as `project_state_unreadable`. It does not add a
 recovery command or accept a recovery path.
 
-Release 0.9.0 stores one immutable project identity in the fixed package-local
-`state/current/` layout and keeps the governed-directory binding separately.
+Release 0.10.0 retains one immutable project identity in the fixed
+package-local `state/current/` layout and keeps the governed-directory binding
+separately.
 Fresh setup creates a UUID-backed identity. Explicit setup mechanically moves
 a supported schema-v1-through-v13 legacy database to the fixed layout when its
 stored binding still matches the current project.
+
+Existing fixed state migrates transactionally through append-only completion
+cycle storage in schema v15 and marker-only native-capture activation in schema
+v16. Legacy gaps remain marked incomplete rather than being inferred.
 
 A binding mismatch is an exceptional relocation flow, not a normal Task-loop
 step. Normal commands and `doctor` never rebind state. Run
@@ -132,10 +138,13 @@ Only when a ready task was selected, start it:
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --json
 ```
 
-`task show` is the mandatory detailed read before work. It also exposes whether
-the optional Effort Advisory is enabled, so the default-off flow needs no extra
-LLM choice or command. `task current` rediscovers paused, blocked,
-review-pending, and in-progress work.
+`task show` is the mandatory detailed read before work. The same call supplies
+bounded completion-cycle audit history and exposes whether the optional
+Effort Advisory is enabled. Historical cycles never satisfy a current gate.
+The default-off flow needs no extra LLM choice or command. The normal no-finding
+Tier 2 graph remains bounded to nine governance subprocess calls, or ten when
+the existing boolean enables `task effort`. `task current` rediscovers paused,
+blocked, review-pending, and in-progress work.
 
 When that deterministic flag is enabled, run `task effort` once at the existing
 verification/review boundary. `suggested_action=continue` proceeds normally;
@@ -205,9 +214,9 @@ completion while a high or medium finding remains unresolved. Use
 `task complete --check` only when an explicit read-only completion check is
 useful; it is not part of the normal success path.
 
-A completed task is locked. Reopen requires an explicit reason, preserves
-historical events, and requires fresh verification, target, receipts, and
-completion evidence:
+A completed task is locked. Reopen requires an explicit reason and preserves
+historical events and saved completion cycles. Those records remain audit-only;
+fresh verification, target, receipts, and completion evidence are required:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --reopen-reason "<sanitized reason>" --json
@@ -237,9 +246,10 @@ reported only as bounded sanitized warnings.
 Taskgov starts no daemon, timer, background process, queue, service, browser,
 or maintenance command. The generated Viewer and managed backups remain
 projections/runtime artifacts under the ignored Skill `state/` directory.
-Viewer snapshot v3 reads source schemas 5 through 14, contains bounded
-sanitized task/review history, and has no write controls or network
-dependency.
+Viewer snapshot v4 reads source schemas 5 through 16 and includes the same
+bounded newest-first completion history as `task show`. Sources 5-14 are shown
+honestly as empty legacy-incomplete history. The Viewer contains only sanitized
+task/review/audit projections and has no write controls or network dependency.
 
 Viewer auto-refresh is a separate opt-in browser presentation policy. Taskgov
 does not create or edit it. With no file at
@@ -277,7 +287,7 @@ plus the existing sanitized Viewer warning.
 
 ## Public Commands
 
-Release 0.9.0 exposes exactly these 20 command leaves:
+Release 0.10.0 exposes exactly these 20 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -302,15 +312,16 @@ Release 0.9.0 exposes exactly these 20 command leaves:
 
 Applicable commands accept `--repo`, `--json`, and `--read-only`; the root also
 accepts `--version`. Storage paths and maintenance internals are not public CLI
-choices.
+choices. There is no history command or option; the existing `task show` and
+automatically maintained Viewer supply the bounded projection.
 
 ## Privacy And Scope
 
 The Skill stores sanitized task metadata, compact events, completion evidence,
-review evidence, handoffs, optional Contracts, checkpoints, and bounded
-maintenance facts. It does not store raw stdout/stderr, stack traces,
-environment dumps, full prompts or conversations, authorization material,
-large raw diffs, or raw review transcripts.
+bounded completion-cycle audit rows, review evidence, handoffs, optional
+Contracts, checkpoints, and bounded maintenance facts. It does not store raw
+stdout/stderr, stack traces, environment dumps, full prompts or conversations,
+authorization material, large raw diffs, or raw review transcripts.
 
 It is local-first and uses no network service. It does not mutate target-project
 files or Git state, run project-specific verification automatically, or create

@@ -1,13 +1,12 @@
 # task-governance-tool MVP Design
 
-Status: the published baseline remains v0.9.0/schema v14 with Viewer snapshot
-v3 and completed TG-M17 identity/storage behavior. TG-M18.0 through TG-M18.3
-are complete: the non-public staging runtime is package v0.9.0, schema v16,
-and Viewer snapshot v4 accepting sources 5-16, with atomic native completion
-capture and the bounded public history read projection. TG-M18.4 remains the
-sequential package-synchronization unit targeting v0.10.0/schema v16/Viewer
-snapshot v4. The completed TG-M16.4 reduced-loop behavioral acceptance is
-retained. TG-M12.3 Issue adapter remains blocked.
+Status: TG-M18.0 through TG-M18.4 are complete. The synchronized repository
+release candidate is v0.10.0/schema v16 with Viewer snapshot v4 accepting
+sources 5-16, atomic native completion capture, and the bounded public history
+read projection. The completed TG-M17 identity/storage design and TG-M16.4
+reduced-loop behavioral acceptance are retained. M19.0 remains blocked until
+the exact M18.4 completion SHA is frozen. TG-M12.3 Issue adapter remains
+blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -18,10 +17,9 @@ implementation lineage, including headings labeled `Implemented` or
 applicable only where TG-M14 does not supersede it. Sections labeled
 `Historical` preserve additional pre-M14 implementation detail. The
 implemented TG-M14 section and later component designs are the current v0.8.0
-lineage; implemented TG-M17 design is the current v0.9.0 identity/storage
-authority when those older boundaries differ. The approved TG-M18 section is
-implemented through M18.3 and remains future implementation authority for its
-sequential M18.4 package-synchronization unit.
+lineage; implemented TG-M17 design is the v0.9.0 identity/storage lineage when
+those older boundaries differ. The implemented TG-M18 section is the current
+v0.10.0 completion-history and package-synchronization authority.
 
 ## Design Summary
 
@@ -3651,8 +3649,8 @@ reviews.
 ## Approved TG-M18 Completion Cycle History Design
 
 This design implements the approved completion-history contract without adding
-a public workflow step. M18.1 through M18.3 are non-public staging revisions;
-M18.4 is the sole version/package synchronization point.
+a public workflow step. M18.1 through M18.3 were non-public staging revisions;
+M18.4 was the sole version/package synchronization point.
 
 ### Version And Activation Design
 

@@ -414,92 +414,161 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             repo, db = root / "repo", root / "taskgov.sqlite"
             repo.mkdir()
             initialize_taskgov_internal(repo=repo, db=db)
-            task = add_task(db, repo, "Repeated lifecycle", tier=1)
-            seed_review_evidence(
-                db,
-                task["task_id"],
-                target_kind="external_revision",
-                target_value="release-A",
-            )
-            first, _ = run_json(
-                *completion_args(
-                    db,
-                    repo,
-                    task["task_id"],
-                    command="task.complete",
-                    kind="external_revision",
-                    revision="release-A",
-                    reason="First accepted revision",
+            same_second = "2026-07-30T08:30:00Z"
+            with mock.patch(
+                "task_governance_tool.tasks.utc_now",
+                return_value=same_second,
+            ):
+                added, added_payload = run_json(
+                    "task",
+                    "add",
+                    "--repo",
+                    str(repo),
+                    "--db",
+                    str(db),
+                    "--title",
+                    "Repeated lifecycle",
+                    "--status",
+                    "in_progress",
+                    "--review-tier",
+                    "1",
+                    "--contract-scope",
+                    "First bounded scope",
+                    "--contract-acceptance",
+                    "First acceptance passes",
+                    "--contract-constraints",
+                    "No network",
+                    "--contract-authority-ref",
+                    "roadmap:TG-M18.4",
+                    "--json",
                 )
-            )
-            self.assertEqual(first.returncode, 0, first.stdout)
-
-            reopened, reopen_payload = run_json(
-                "task",
-                "edit",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
-                task["task_id"],
-                "--status",
-                "in_progress",
-                "--reopen-reason",
-                "Acceptance changed",
-                "--json",
-            )
-            self.assertEqual(reopened.returncode, 0, reopened.stdout)
-            self.assertNotIn(
-                "completion_cycle_id",
-                reopen_payload["data"]["event"],
-            )
-
-            stale, stale_payload = run_json(
-                *completion_args(
+                self.assertEqual(added.returncode, 0, added.stdout)
+                task = added_payload["data"]["task"]
+                seed_review_evidence(
                     db,
-                    repo,
                     task["task_id"],
-                    command="task.complete",
-                    kind="external_revision",
-                    revision="release-A",
-                    reason="Historical evidence must not count",
+                    target_kind="external_revision",
+                    target_value="release-A",
                 )
-            )
-            self.assertNotEqual(stale.returncode, 0)
-            self.assertEqual(
-                stale_payload["errors"][0]["code"],
-                "review_target_required",
-            )
-            with closing(sqlite3.connect(db)) as connection:
+                first, _ = run_json(
+                    *completion_args(
+                        db,
+                        repo,
+                        task["task_id"],
+                        command="task.complete",
+                        kind="external_revision",
+                        revision="release-A",
+                        reason="First accepted revision",
+                    )
+                )
+                self.assertEqual(first.returncode, 0, first.stdout)
+
+                reopened, reopen_payload = run_json(
+                    "task",
+                    "edit",
+                    "--repo",
+                    str(repo),
+                    "--db",
+                    str(db),
+                    task["task_id"],
+                    "--status",
+                    "in_progress",
+                    "--reopen-reason",
+                    "Acceptance changed",
+                    "--json",
+                )
+                self.assertEqual(reopened.returncode, 0, reopened.stdout)
+                self.assertNotIn(
+                    "completion_cycle_id",
+                    reopen_payload["data"]["event"],
+                )
+
+                stale, stale_payload = run_json(
+                    *completion_args(
+                        db,
+                        repo,
+                        task["task_id"],
+                        command="task.complete",
+                        kind="external_revision",
+                        revision="release-A",
+                        reason="Historical evidence must not count",
+                    )
+                )
+                self.assertNotEqual(stale.returncode, 0)
                 self.assertEqual(
-                    connection.execute(
-                        """
-                        SELECT COUNT(*) FROM task_completion_cycles
-                         WHERE task_id = ?
-                        """,
-                        (task["task_id"],),
-                    ).fetchone()[0],
-                    1,
+                    stale_payload["errors"][0]["code"],
+                    "review_target_required",
                 )
 
-            seed_review_evidence(
-                db,
-                task["task_id"],
-                target_kind="external_revision",
-                target_value="release-B",
-            )
-            second, _ = run_json(
-                *completion_args(
-                    db,
-                    repo,
+                revised, revised_payload = run_json(
+                    "task",
+                    "edit",
+                    "--repo",
+                    str(repo),
+                    "--db",
+                    str(db),
                     task["task_id"],
-                    command="task.edit",
-                    kind="external_revision",
-                    revision="release-B",
-                    reason="Second accepted revision",
+                    "--contract-scope",
+                    "Second bounded scope",
+                    "--contract-acceptance",
+                    "Second acceptance passes",
+                    "--contract-constraints",
+                    "No network",
+                    "--contract-authority-ref",
+                    "roadmap:TG-M18.4",
+                    "--contract-change-reason",
+                    "Acceptance changed after reopen",
+                    "--json",
                 )
-            )
-            self.assertEqual(second.returncode, 0, second.stdout)
+                self.assertEqual(revised.returncode, 0, revised.stdout)
+                self.assertEqual(
+                    revised_payload["data"]["contract_write"],
+                    {"recorded": True, "revision": 2},
+                )
+
+                seed_review_evidence(
+                    db,
+                    task["task_id"],
+                    target_kind="external_revision",
+                    target_value="release-B",
+                )
+                second_args = list(
+                    completion_args(
+                        db,
+                        repo,
+                        task["task_id"],
+                        command="task.edit",
+                        kind="external_revision",
+                        revision="release-B",
+                        reason="Second accepted revision",
+                    )
+                )
+                missing_verification, missing_verification_payload = run_json(
+                    *(
+                        item
+                        for item in second_args
+                        if item != "--verification-complete"
+                    )
+                )
+                self.assertNotEqual(missing_verification.returncode, 0)
+                self.assertEqual(
+                    missing_verification_payload["errors"][0]["code"],
+                    "verification_required",
+                )
+                missing_review, missing_review_payload = run_json(
+                    *(
+                        item
+                        for item in second_args
+                        if item != "--review-complete"
+                    )
+                )
+                self.assertNotEqual(missing_review.returncode, 0)
+                self.assertEqual(
+                    missing_review_payload["errors"][0]["code"],
+                    "review_required",
+                )
+                second, _ = run_json(*second_args)
+                self.assertEqual(second.returncode, 0, second.stdout)
 
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
@@ -507,7 +576,8 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     """
                     SELECT completion_cycle_id, saved_cycle_ordinal,
                            completion_evidence_revision,
-                           review_target_generation
+                           review_target_generation, contract_revision,
+                           completed_at
                       FROM task_completion_cycles
                      WHERE task_id = ?
                      ORDER BY saved_cycle_ordinal
@@ -531,6 +601,14 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             self.assertEqual(
                 [row["completion_evidence_revision"] for row in cycles],
                 ["release-A", "release-B"],
+            )
+            self.assertEqual(
+                [row["contract_revision"] for row in cycles],
+                [1, 2],
+            )
+            self.assertEqual(
+                [row["completed_at"] for row in cycles],
+                [same_second, same_second],
             )
             self.assertGreater(
                 cycles[1]["review_target_generation"],

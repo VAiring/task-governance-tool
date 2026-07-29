@@ -122,6 +122,10 @@ Use this deterministic graph for a normal no-finding Tier 2 task:
    python .agents/skills/task-governance-tool/scripts/taskgov.py task show <task-id> --json
    ```
 
+   The same read returns bounded completion history. Treat saved cycles only
+   as audit context; they never satisfy the current verification, review, or
+   completion gate.
+
 4. When a ready task was selected, start it:
 
    ```powershell
@@ -413,7 +417,8 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <
 ```
 
 Do not combine reopen with another edit. Reopening preserves historical events
-but requires fresh verification, target, receipts, and completion evidence.
+and saved completion cycles, but those records remain audit-only and the Task
+requires fresh verification, target, receipts, and completion evidence.
 
 ## Register Tasks
 

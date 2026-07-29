@@ -1540,6 +1540,31 @@ class ReviewEvidenceTests(unittest.TestCase):
                 1,
             )
             self.assertTrue(shown["review_evidence"]["gate"]["satisfied"])
+            history = shown["completion_history"]
+            self.assertEqual(
+                (
+                    history["total"],
+                    history["returned_count"],
+                    history["truncated"],
+                    history["legacy_history_incomplete"],
+                ),
+                (1, 1, False, False),
+            )
+            cycle = history["cycles"][0]
+            self.assertEqual(
+                cycle["completion_evidence"]["kind"],
+                "git_commit",
+            )
+            self.assertEqual(cycle["review_target"]["kind"], "git_snapshot")
+            self.assertEqual(cycle["review_tier"], 2)
+            self.assertEqual(
+                cycle["gate_basis"]["kind"],
+                "independent_passes",
+            )
+            self.assertEqual(
+                len(cycle["gate_basis"]["qualifying_receipt_ids"]),
+                2,
+            )
             self.assertEqual(git_status(repo), before_git)
 
     def test_snapshot_completion_rejects_a_commit_changed_after_review(self):
@@ -1647,6 +1672,39 @@ class ReviewEvidenceTests(unittest.TestCase):
                 self.assertEqual(
                     shown["review_evidence"]["target"]["generation"],
                     1,
+                )
+                history = shown["completion_history"]
+                self.assertEqual(
+                    (
+                        history["total"],
+                        history["returned_count"],
+                        history["truncated"],
+                        history["legacy_history_incomplete"],
+                    ),
+                    (1, 1, False, False),
+                )
+                cycle = history["cycles"][0]
+                expected_target_kind = {
+                    "git_commit": "git_commit",
+                    "external_revision": "external_revision",
+                    "commit_not_required": "diff_fingerprint",
+                }[completion_kind]
+                self.assertEqual(
+                    cycle["completion_evidence"]["kind"],
+                    completion_kind,
+                )
+                self.assertEqual(
+                    cycle["review_target"]["kind"],
+                    expected_target_kind,
+                )
+                self.assertEqual(cycle["review_tier"], 2)
+                self.assertEqual(
+                    cycle["gate_basis"]["kind"],
+                    "independent_passes",
+                )
+                self.assertEqual(
+                    len(cycle["gate_basis"]["qualifying_receipt_ids"]),
+                    2,
                 )
 
     def test_public_completion_binding_rejects_non_snapshot_mismatches(self):

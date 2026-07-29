@@ -3,7 +3,7 @@
 Date: 2026-07-26 JST
 
 Historical execution record: commands reflect the tested release on this date
-and are superseded by the current v0.9.0 active guidance.
+and are superseded by the current v0.10.0 active guidance.
 
 ## Scope
 

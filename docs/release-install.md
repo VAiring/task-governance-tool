@@ -1,14 +1,14 @@
 # Release And Install Decision
 
 This note defines the release artifact and supported installation boundary for
-`task-governance-tool` 0.9.0. It does not authorize installing or overwriting a
+`task-governance-tool` 0.10.0. It does not authorize installing or overwriting a
 Skill in any project.
 
 ## Release Identity
 
-- Package version: `0.9.0`
-- SQLite schema: v14
-- Viewer snapshot: v3, with source-schema compatibility from v5 through v14
+- Package version: `0.10.0`
+- SQLite schema: v16
+- Viewer snapshot: v4, accepting source schemas v5-v16 (v5 through v16)
 - Supported runtime: Python 3.12 or newer on Windows
 - Verified platform: Windows
 
@@ -88,7 +88,7 @@ one-way opt-in to bounded local maintenance and directly publishes or repairs
 the canonical Viewer. It is explicit, noninteractive, idempotent, and limited
 to the supported physical project-scoped package.
 
-Version 0.9.0 uses the fixed package-local `state/current/` layout. Fresh
+Version 0.10.0 retains the fixed package-local `state/current/` layout. Fresh
 write-mode setup creates one UUIDv4-backed immutable project identity and
 stores the mutable governed-directory binding separately. Explicit setup
 publishes supported schema-v1-through-v13 legacy state into the fixed layout
@@ -159,11 +159,14 @@ public disable surface.
 Before migration, setup creates one validated managed backup while holding the
 shared fail-fast artifact lock. Migration from supported older schemas is
 transactional, ordered, idempotent, and never a downgrade. It preserves task
-and event identity, completion/review history, handoffs, Contracts, effort
-metadata, and checkpoints from every supported source. An older runtime
-rejects a newer schema. Schema v14 adds only stable identity, binding,
-relocation history, and bounded legacy-cleanup metadata; migration from every
-supported source schema v1 through v13 is ordered and repeatable.
+and event identity, current completion/review records, completion-cycle
+history, handoffs, Contracts, effort metadata, and checkpoints from every
+supported source. An older runtime rejects a newer schema. Schema v14 adds
+stable identity, binding, relocation history, and bounded legacy-cleanup
+metadata. Schema v15 adds append-only completion-cycle storage and conservative
+partial rows only for then-current done Tasks; schema v16 is the marker-only
+activation boundary for atomic native capture. Migration from v1-v14 and
+schema-v15 activation/reentry is ordered and repeatable.
 
 Installation alone and ordinary task commands never migrate. After replacing
 packaged core files while preserving local state, run `setup`; it performs any
@@ -210,7 +213,9 @@ separate model decision. Handoff-only writes may make backup due but do not
 change the Viewer generation. Setup publishes the Viewer directly.
 
 The Viewer is a self-contained, read-only `file://` projection under the
-ignored package state. Snapshot v3 accepts source schemas v5-v14 and omits
+ignored package state. Snapshot v4 accepts source schemas v5-v16 and includes
+the same bounded newest-first completion history as `task show`; sources v5-v14
+receive an empty, legacy-incomplete history. It omits internal event links,
 storage paths, maintenance internals, checkpoint content, handoffs, raw
 evidence, environment data, and secrets. It performs no network request and
 provides no database or task write control.
@@ -272,6 +277,8 @@ Applicable leaves retain `--repo`, `--json`, and `--read-only`; the root retains
 `--version`. Storage and generated-artifact paths are internal implementation
 details, not public CLI choices. Unknown or removed commands/options fail at
 the parser boundary before package, project, Git, or SQLite resolution.
+There is no history command or option; the mandatory `task show` read and
+automatically maintained Viewer supply the bounded audit projection.
 
 The normal no-finding Tier 2 Task flow uses at most nine governance subprocess
 calls with the default-off Effort Advisory, or ten when an enabled valid
@@ -311,24 +318,26 @@ use the network.
 Default retention excludes raw stdout/stderr, stack traces, environment dumps,
 full prompts or conversations, authorization material, raw provider bodies,
 large diffs, raw review transcripts, and secrets. The Viewer and diagnostic
-envelopes expose bounded allow-listed projections only.
+envelopes expose bounded allow-listed projections only. Completion cycles copy
+only already accepted bounded fields and receipt IDs and never satisfy a
+current gate.
 
 SQLite is helper state, not authority over project decisions. The target
 project's governing documents and current user decisions remain authoritative.
 
 ## Pre-Release Checks
 
-Before creating the 0.9.0 artifact:
+Before creating the 0.10.0 artifact:
 
-1. Confirm all M14.1-M14.7, TG-M15.5-TG-M15.6, reduced TG-M16, and
-   TG-M17.0-TG-M17.5 acceptance and required Tier 2 reviews passed on their
-   exact revisions.
+1. Confirm all M14.1-M14.7, TG-M15.5-TG-M15.6, reduced TG-M16,
+   TG-M17.0-TG-M17.5, and TG-M18.0-TG-M18.4 acceptance and required Tier 2
+   reviews passed on their exact revisions.
 2. Run the complete offline test suite and `git diff --check`.
 3. Verify root and group help expose exactly the 20 leaves above.
 4. Verify unknown removed surfaces and raw path options fail before any
    project, Git, or SQLite observation.
-5. Confirm `taskgov --version` reports `0.9.0`, runtime schema is v14, and
-   Viewer snapshot v3 accepts source schemas v5-v14.
+5. Confirm `taskgov --version` reports `0.10.0`, runtime schema is v16, and
+   Viewer snapshot v4 accepts source schemas v5-v16.
 6. Validate an isolated physical project-scoped install: package status is
    clean in `doctor`, setup preview is no-write, setup succeeds, and a repeated
    setup is idempotent.
@@ -337,9 +346,12 @@ Before creating the 0.9.0 artifact:
    the TG-M17 matrix: full pre-v9 and v13 legacy records, transition-v14
    self-host state, fresh UUID, same-binding publication, moved-state
    preview/explicit-confirmation, fixed rebind, corrupt refusal, replay, and
-   token-free idempotency.
+   token-free idempotency. Also run the TG-M18 matrix across v1-v14 migration,
+   schema-v15 activation/reentry, native completion/reopen cycles, exact
+   task-show/Viewer bounds, privacy, and proof that history never satisfies a
+   current gate.
 8. Confirm the archive manifest includes every packaged core file with current
-   digests and package version `0.9.0`.
+   digests and package version `0.10.0`.
 9. Confirm generated state, SQLite files and sidecars, backups, locks, Viewer
    HTML, root references, logs, caches, and scratch output are absent from the
    artifact.
@@ -352,13 +364,12 @@ separate explicit authorization.
 
 ## Release Summary
 
-Version 0.9.0 replaces path-derived state lookup with one immutable stored
-project identity, a mutable binding, and the fixed `state/current/` layout.
-It migrates supported schema-v1-through-v13 state to schema v14, preserves
-durable task and review history, and permits relocation only through a
-read-only preview followed by explicit current user approval of one exact
-token. Viewer snapshot v3 is unchanged while its accepted source schemas
-expand through v14. The public inventory remains exactly 20 leaves; the sole
-relocation option is `setup --confirm-relocation`. Reduced loop discipline,
-the nine/ten-call normal flow, privacy boundaries, offline operation, and
-target-project/Git no-mutation remain unchanged.
+Version 0.10.0 builds on the stable identity, mutable binding, explicit
+relocation, and fixed `state/current/` layout from 0.9.0. Schema v16 preserves
+each accepted completion as append-only audit history across reopen while
+requiring fresh current verification, target, review, and completion evidence.
+Viewer snapshot v4 accepts source schemas v5-v16 and displays the same bounded
+history already returned by `task show`. The public inventory remains exactly
+20 leaves with no history command or option; the nine/ten-call normal flow,
+privacy boundaries, offline operation, and target-project/Git no-mutation
+remain unchanged.

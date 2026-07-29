@@ -24,7 +24,16 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from task_governance_tool import completion_workflow  # noqa: E402
 from task_governance_tool import tasks as task_service  # noqa: E402
 from task_governance_tool.completion import CompletionRequest  # noqa: E402
-from task_governance_tool.storage import resolve_database_target  # noqa: E402
+from task_governance_tool.storage import (  # noqa: E402
+    apply_completion_cycle_capture_activation_migration,
+    connect,
+    resolve_database_target,
+)
+from tests.test_completion_cycle_activation import make_captureless_done  # noqa: E402
+from tests.test_completion_cycle_history import (  # noqa: E402
+    make_v14_target,
+    migrate_to_v15,
+)
 
 
 def run_json(*args):
@@ -836,6 +845,144 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     ).fetchall(),
                 )
             self.assertEqual(after, before)
+
+    def test_legacy_no_cycle_reopen_bridges_and_post_link_failure_rolls_back(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = make_v14_target(Path(temp))
+            migrate_to_v15(target)
+            repo, db = target.project.canonical_repo, target.db_path
+            with closing(connect(db)) as connection:
+                tasks = [
+                    task_service.add_task(
+                        connection,
+                        target.project,
+                        title=f"Legacy bridge {case}",
+                        kind="optional",
+                    ).task
+                    for case in ("success", "rollback")
+                ]
+                connection.commit()
+            successful, rolled_back = tasks
+
+            with closing(connect(db)) as connection:
+                apply_completion_cycle_capture_activation_migration(connection)
+
+            completed_at = {
+                successful["task_id"]: "2026-07-30T09:40:00Z",
+                rolled_back["task_id"]: "2026-07-30T09:41:00Z",
+            }
+            with closing(connect(db)) as connection:
+                for task_id, completion_time in completed_at.items():
+                    make_captureless_done(
+                        connection,
+                        project_id=target.project.project_id,
+                        task_id=task_id,
+                        completed_at=completion_time,
+                    )
+                connection.commit()
+                eligible_count = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                      FROM tasks AS task
+                     WHERE task.task_id IN (?, ?)
+                       AND task.status = 'done'
+                       AND task.completion_history_coverage = 'legacy_unknown'
+                       AND NOT EXISTS (
+                         SELECT 1
+                           FROM task_completion_cycles AS cycle
+                          WHERE cycle.task_id = task.task_id
+                       )
+                    """,
+                    (successful["task_id"], rolled_back["task_id"]),
+                ).fetchone()[0]
+                self.assertEqual(eligible_count, 2)
+
+            def reopen_args(task, reason):
+                return (
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    task["task_id"], "--status", "in_progress",
+                    "--reopen-reason", reason, "--json",
+                )
+
+            reopened, reopen_payload = run_json(
+                *reopen_args(
+                    successful,
+                    "Exercise the legacy compatibility bridge",
+                )
+            )
+            self.assertEqual(reopened.returncode, 0, reopened.stdout)
+            self.assertNotIn(
+                "completion_cycle_id",
+                reopen_payload["data"]["event"],
+            )
+
+            with closing(connect(db)) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT task.status, task.completed_at,
+                           task.completion_history_coverage,
+                           task.review_target_generation,
+                           cycle.completion_cycle_id,
+                           cycle.saved_cycle_ordinal, cycle.origin,
+                           cycle.completeness, cycle.completed_at,
+                           event.task_event_id, event.event_type,
+                           event.completion_cycle_id
+                      FROM tasks AS task
+                      JOIN task_completion_cycles AS cycle
+                        ON cycle.task_id = task.task_id
+                      JOIN task_events AS event
+                        ON event.task_id = task.task_id
+                       AND event.event_type = 'task_reopened'
+                     WHERE task.task_id = ?
+                    """,
+                    (successful["task_id"],),
+                ).fetchall()
+            self.assertEqual(len(rows), 1)
+            row = rows[0]
+            self.assertEqual(
+                tuple(row[:4]),
+                ("in_progress", None, "legacy_unknown", 1),
+            )
+            self.assertEqual(
+                tuple(row[5:9]),
+                (
+                    1,
+                    "legacy_current_done",
+                    "partial",
+                    completed_at[successful["task_id"]],
+                ),
+            )
+            self.assertEqual(
+                tuple(row[9:11]),
+                (
+                    reopen_payload["data"]["event"]["task_event_id"],
+                    "task_reopened",
+                ),
+            )
+            self.assertEqual(row[11], row[4])
+
+            def database_dump():
+                with closing(sqlite3.connect(db)) as connection:
+                    return "\n".join(connection.iterdump())
+
+            before_failure = database_dump()
+            with mock.patch(
+                "task_governance_tool.effort.record_task_transition",
+                side_effect=RuntimeError("injected post-link effort failure"),
+            ) as record_effort:
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "injected post-link effort failure",
+                ):
+                    run_taskgov_internal(
+                        *reopen_args(
+                            rolled_back,
+                            "Roll back the whole compatibility bridge",
+                        )
+                    )
+
+            record_effort.assert_called_once()
+            self.assertEqual(database_dump(), before_failure)
 
     def test_check_privacy_and_injected_event_failure_write_no_cycle(self):
         with tempfile.TemporaryDirectory() as temp:

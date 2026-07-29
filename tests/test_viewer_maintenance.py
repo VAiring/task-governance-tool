@@ -331,9 +331,9 @@ class ViewerMaintenanceTests(unittest.TestCase):
             real_write = viewer_service.write_viewer_html
             write_count = 0
 
-            def write_and_advance(output, html):
+            def write_and_advance(output, html, *, replace_guard=None):
                 nonlocal write_count
-                real_write(output, html)
+                real_write(output, html, replace_guard=replace_guard)
                 write_count += 1
                 add_viewer_event(target, f"Viewer churn {write_count}")
                 return False
@@ -383,9 +383,9 @@ class ViewerMaintenanceTests(unittest.TestCase):
             real_write = viewer_service.write_viewer_html
             write_count = 0
 
-            def write_and_contend(output, html):
+            def write_and_contend(output, html, *, replace_guard=None):
                 nonlocal write_count
-                real_write(output, html)
+                real_write(output, html, replace_guard=replace_guard)
                 write_count += 1
                 if write_count == 1:
                     add_viewer_event(target, "Concurrent Viewer change")

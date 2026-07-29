@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import unicodedata
-from contextlib import closing
+from contextlib import closing, nullcontext
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -129,11 +130,17 @@ def _read_basis(
     task_id: str,
     *,
     revalidation: bool,
+    connection: sqlite3.Connection | None = None,
 ) -> ReviewPacketBasis:
     try:
-        with closing(connect_initialized_readonly(target)) as connection:
+        manager = (
+            nullcontext(connection)
+            if connection is not None
+            else closing(connect_initialized_readonly(target))
+        )
+        with manager as active_connection:
             stored = read_internal_task(
-                connection,
+                active_connection,
                 target.project.project_id,
                 task_id,
             )
@@ -187,7 +194,7 @@ def _read_basis(
                 raise ValueError("stored task identity mismatch")
 
             current_contract = read_current_contract(
-                connection,
+                active_connection,
                 project_id=target.project.project_id,
                 task_id=task_id,
                 current_revision=stored["current_contract_revision"],
@@ -454,13 +461,18 @@ def project_changed_paths(
 def prepare_review_packet(
     target: DatabaseTarget,
     task_id: Any,
+    *,
+    initial_connection: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
     normalized_task_id = validate_task_id(task_id)
     basis = _read_basis(
         target,
         normalized_task_id,
         revalidation=False,
+        connection=initial_connection,
     )
+    if initial_connection is not None:
+        initial_connection.close()
 
     observation_error: ReviewPacketError | None = None
     changed_paths_available = False

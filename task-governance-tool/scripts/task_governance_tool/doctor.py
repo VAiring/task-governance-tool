@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
-from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -19,12 +17,7 @@ from task_governance_tool.project_scope import (
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     ProjectMaintenanceState,
-    StorageError,
     ViewerMaintenanceState,
-    connect_readonly,
-    current_schema_version,
-    is_sqlite_busy_or_locked,
-    read_doctor_state,
     utc_now,
 )
 from task_governance_tool.state_resolver import (
@@ -251,17 +244,6 @@ def _unavailable_result(
     )
 
 
-def _storage_error_code(exc: Exception) -> str:
-    if isinstance(exc, StorageError):
-        if exc.code == "db_not_initialized":
-            return "setup_required"
-        if exc.code in DOCTOR_MESSAGES:
-            return exc.code
-    if isinstance(exc, sqlite3.Error) and is_sqlite_busy_or_locked(exc):
-        return "database_busy"
-    return "project_state_unreadable"
-
-
 def run_doctor(
     *,
     repo: str,
@@ -296,6 +278,7 @@ def run_doctor(
     resolution = resolve_project_state(
         skill_root=scope.skill_root,
         repo=scope.canonical_repo,
+        include_doctor_state=True,
     )
     resolver_code = consumer_error_code(resolution)
     if resolver_code is not None:
@@ -324,26 +307,12 @@ def run_doctor(
             package_warning=package_warning,
             advisory=False,
         )
-    target = resolution.target
-    schema_version: int | None = None
-    try:
-        with closing(connect_readonly(target.db_path)) as connection:
-            schema_version = current_schema_version(connection)
-            storage_state = read_doctor_state(connection, target)
-    except (StorageError, sqlite3.Error) as exc:
-        code = _storage_error_code(exc)
-        if code in READINESS_WARNING_CODES:
-            return _unavailable_result(
-                inspection,
-                code=code,
-                schema_version=schema_version,
-                package_warning=package_warning,
-                advisory=True,
-            )
+    storage_state = resolution.doctor_state
+    if storage_state is None:
         return _unavailable_result(
             inspection,
-            code=code,
-            schema_version=schema_version,
+            code="project_state_unreadable",
+            schema_version=resolution.source_schema_version,
             package_warning=package_warning,
             advisory=False,
         )
@@ -398,7 +367,7 @@ def run_doctor(
     )
     return DoctorServiceResult(
         ok=True,
-        project_id=target.project.project_id,
+        project_id=resolution.target.project.project_id,
         data=data,
         warnings=warnings,
         errors=[],

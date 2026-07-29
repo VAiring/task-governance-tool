@@ -13,6 +13,7 @@ from typing import Iterable
 from task_governance_tool import __version__
 from task_governance_tool.completion import safe_git_command, safe_git_environment
 from task_governance_tool.self_status import PackageSelfStatus, inspect_local_package
+from task_governance_tool.state_resolver import canonical_state_paths
 from task_governance_tool.storage import (
     DATABASE_BUSY_MESSAGE,
     lexical_skill_root_from_script,
@@ -208,9 +209,10 @@ def _required_files_are_regular(root: Path, relative_paths: Iterable[Path]) -> b
 
 
 def _state_path_is_valid(skill_root: Path) -> bool:
-    state_root = skill_root / "state"
-    current_root = state_root / "current"
-    database_path = current_root / "taskgov.sqlite"
+    paths = canonical_state_paths(skill_root)
+    state_root = paths.state_root
+    current_root = paths.fixed_root
+    database_path = paths.database
     try:
         resolved_state = state_root.resolve(strict=False)
         resolved_current = current_root.resolve(strict=False)
@@ -221,8 +223,8 @@ def _state_path_is_valid(skill_root: Path) -> bool:
     directory_candidates = (
         state_root,
         current_root,
-        current_root / "viewer",
-        current_root / "backups",
+        paths.viewer.parent,
+        paths.backups,
     )
     for candidate in directory_candidates:
         try:
@@ -237,7 +239,7 @@ def _state_path_is_valid(skill_root: Path) -> bool:
             database_path.exists() and not database_path.is_file()
         ):
             return False
-        transition_lock = state_root / "taskgov-state.lock"
+        transition_lock = paths.transition_lock
         if _is_linklike(transition_lock) or (
             transition_lock.exists() and not transition_lock.is_file()
         ):

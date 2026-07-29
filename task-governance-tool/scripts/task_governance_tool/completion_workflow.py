@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import closing
+import sqlite3
+from contextlib import closing, nullcontext
 from dataclasses import dataclass, field
 
 from task_governance_tool.completion import CompletionRequest
@@ -75,14 +76,22 @@ def check_completion_request(
     request: CompletionRequest,
     *,
     input_error: TaskValidationError | TaskRepositoryError | None = None,
+    initial_connection: sqlite3.Connection | None = None,
 ) -> CompletionCheckOutcome:
     """Check one request with read/close/Git/read and no stored authority."""
-    with closing(connect_initialized_readonly(target)) as connection:
+    manager = (
+        nullcontext(initial_connection)
+        if initial_connection is not None
+        else closing(connect_initialized_readonly(target))
+    )
+    with manager as connection:
         first_basis = capture_completion_basis(
             connection,
             target.project,
             request.task_id,
         )
+    if initial_connection is not None:
+        initial_connection.close()
 
     plan: CompletionPlan | None = None
     preflight_error: TaskValidationError | TaskRepositoryError | None = None

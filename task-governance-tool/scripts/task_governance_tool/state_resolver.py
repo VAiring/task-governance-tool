@@ -21,6 +21,7 @@ from typing import Literal
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget,
+    DoctorStorageState,
     MigrationBackupMetadata,
     ProjectIdentity,
     StorageError,
@@ -31,10 +32,12 @@ from task_governance_tool.storage import (
     missing_migration_versions,
     normalized_path_for_hash,
     read_project_binding_state,
+    read_doctor_state,
     read_project_maintenance,
     sanitize_project_display_name,
     table_exists,
     validate_identity_project_id,
+    validate_current_database,
     validate_lower_hex_64,
     validate_migration_backup_metadata,
 )
@@ -57,6 +60,7 @@ _VIEWER_TEMP = re.compile(r"^\.task-viewer-[a-z0-9_]{8}\.tmp$")
 _KNOWN_RESOLVER_ERRORS = frozenset(
     {
         "database_busy",
+        "migration_required",
         "project_mismatch",
         "project_state_unreadable",
         "schema_too_new",
@@ -149,6 +153,12 @@ class ProjectStateResolution:
         default=None,
         repr=False,
     )
+    doctor_state: DoctorStorageState | None = field(default=None, repr=False)
+    read_connection: sqlite3.Connection | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     error_code: str | None = None
 
     @property
@@ -182,6 +192,12 @@ class _DatabaseObservation:
     generation_rows: tuple[MigrationBackupMetadata, ...]
     maintenance_pointer: MigrationBackupMetadata | None
     stamp: _FileStamp = field(repr=False)
+    doctor_state: DoctorStorageState | None = field(default=None, repr=False)
+    read_connection: sqlite3.Connection | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
 
 @dataclass
@@ -229,6 +245,11 @@ def consumer_error_code(resolution: ProjectStateResolution) -> str | None:
         return resolution.error_code
     if resolution.binding == "relocation_required":
         return "project_relocation_required"
+    if (
+        resolution.layout == "fixed_current_v1"
+        and resolution.source_schema_version != SCHEMA_VERSION
+    ):
+        return "migration_required"
     if resolution.layout == "legacy_projects_v1":
         return "migration_required"
     if resolution.layout == "missing" or resolution.fixed_recovery is not None:
@@ -240,6 +261,8 @@ def resolve_project_state(
     *,
     skill_root: Path,
     repo: Path,
+    include_doctor_state: bool = False,
+    retain_read_connection: bool = False,
 ) -> ProjectStateResolution:
     """Resolve fixed, fixed-recovery, legacy, or missing state without writes."""
 
@@ -250,6 +273,8 @@ def resolve_project_state(
         current_root,
         include_legacy=True,
         validate_fixed_artifacts=False,
+        include_doctor_state=include_doctor_state,
+        retain_read_connection=retain_read_connection,
     )
 
 
@@ -267,6 +292,8 @@ def resolve_setup_project_state(
         current_root,
         include_legacy=True,
         validate_fixed_artifacts=True,
+        include_doctor_state=False,
+        retain_read_connection=False,
     )
 
 
@@ -294,6 +321,8 @@ def resolve_staged_project_state(
         observe_current_root(repo),
         include_legacy=False,
         validate_fixed_artifacts=True,
+        include_doctor_state=False,
+        retain_read_connection=False,
     )
 
 
@@ -303,6 +332,8 @@ def _resolve_with_paths(
     *,
     include_legacy: bool,
     validate_fixed_artifacts: bool,
+    include_doctor_state: bool,
+    retain_read_connection: bool,
 ) -> ProjectStateResolution:
     try:
         _validate_optional_directory(paths.state_root)
@@ -311,6 +342,8 @@ def _resolve_with_paths(
             paths,
             current_root,
             validate_artifacts=validate_fixed_artifacts,
+            include_doctor_state=include_doctor_state,
+            retain_read_connection=retain_read_connection,
         )
         if fixed is not None:
             return fixed
@@ -360,6 +393,7 @@ def _error_resolution(
 def _storage_error_code(exc: StorageError) -> str:
     if exc.code in {
         "database_busy",
+        "migration_required",
         "unsupported_journal_mode",
         "schema_too_new",
     }:
@@ -429,6 +463,8 @@ def _resolve_fixed(
     current_root: CurrentRootObservation,
     *,
     validate_artifacts: bool,
+    include_doctor_state: bool,
+    retain_read_connection: bool,
 ) -> ProjectStateResolution | None:
     fixed_exists = _validate_optional_directory(paths.fixed_root)
     if not fixed_exists:
@@ -437,7 +473,17 @@ def _resolve_fixed(
     primary_exists = _validate_optional_regular_file(paths.database)
 
     if primary_exists:
-        database = _inspect_database(paths.database)
+        database = _inspect_database(
+            paths.database,
+            doctor_current_root=(
+                current_root if include_doctor_state else None
+            ),
+            mutable=True,
+            retain_connection=retain_read_connection,
+            consumer_current_root=(
+                current_root if retain_read_connection else None
+            ),
+        )
         if not validate_artifacts:
             return _fixed_resolution(
                 paths,
@@ -501,6 +547,7 @@ def _resolve_fixed(
             current_root,
             paths.database,
             explicit_db=False,
+            paths=paths,
         )
         return ProjectStateResolution(
             paths=paths,
@@ -533,6 +580,10 @@ def _fixed_resolution(
         if stored.canonical_path_hash == current_root.canonical_path_hash
         else "relocation_required"
     )
+    read_connection = database.read_connection
+    if binding != "matching" and read_connection is not None:
+        read_connection.close()
+        read_connection = None
     return ProjectStateResolution(
         paths=paths,
         current_root=current_root,
@@ -544,8 +595,11 @@ def _fixed_resolution(
             current_root,
             paths.database,
             explicit_db=False,
+            paths=paths,
         ),
         fixed_recovery=fixed_recovery,
+        doctor_state=database.doctor_state,
+        read_connection=read_connection,
     )
 
 
@@ -580,7 +634,7 @@ def _resolve_legacy(
     viewer_path = candidate / "viewer"
     recognized.extend(_inspect_viewer_directory(viewer_path))
     if primary_present:
-        database = _inspect_database(primary)
+        database = _inspect_database(primary, mutable=True)
     elif backups:
         database = backups[-1]._database
     else:
@@ -644,12 +698,18 @@ def _resolve_legacy(
         current_root,
         source_database,
         explicit_db=True,
+        skill_root=paths.skill_root,
+        backups_path=backups_path,
+        viewer_path=viewer_path / "task-viewer.html",
     )
     lock_target = _database_target(
         stored,
         current_root,
         primary,
         explicit_db=True,
+        skill_root=paths.skill_root,
+        backups_path=backups_path,
+        viewer_path=viewer_path / "task-viewer.html",
     )
     if primary_present:
         recognized.append("taskgov.sqlite")
@@ -692,7 +752,15 @@ def _database_target(
     database: Path,
     *,
     explicit_db: bool,
+    paths: CanonicalStatePaths | None = None,
+    skill_root: Path | None = None,
+    backups_path: Path | None = None,
+    viewer_path: Path | None = None,
 ) -> DatabaseTarget:
+    if paths is not None:
+        skill_root = paths.skill_root
+        backups_path = paths.backups
+        viewer_path = paths.viewer
     return DatabaseTarget(
         project=ProjectIdentity(
             project_id=stored.project_id,
@@ -702,63 +770,131 @@ def _database_target(
         ),
         db_path=database,
         explicit_db=explicit_db,
+        binding_path_hash=stored.canonical_path_hash,
+        binding_generation=stored.binding_generation,
+        skill_root=skill_root,
+        backups_path=backups_path,
+        viewer_path=viewer_path,
+        canonical_fixed=(paths is not None),
     )
 
 
-def _inspect_database(path: Path) -> _DatabaseObservation:
+def _inspect_database(
+    path: Path,
+    *,
+    doctor_current_root: CurrentRootObservation | None = None,
+    mutable: bool = False,
+    retain_connection: bool = False,
+    consumer_current_root: CurrentRootObservation | None = None,
+) -> _DatabaseObservation:
     before = _stamp(path)
+    connection: sqlite3.Connection | None = None
     try:
-        with closing(connect_readonly(path)) as connection:
-            version = current_schema_version(connection)
-            if version > SCHEMA_VERSION:
-                raise _ResolverFailure("schema_too_new")
-            if (
-                version < 1
-                or missing_migration_versions(connection, version)
-                or not table_exists(connection, "project_meta")
-            ):
-                raise _ResolverFailure("project_state_unreadable")
-            quick = [
-                str(row[0])
-                for row in connection.execute("PRAGMA quick_check").fetchall()
-            ]
-            if quick != ["ok"] or connection.execute(
-                "PRAGMA foreign_key_check"
-            ).fetchall():
-                raise _ResolverFailure("project_state_unreadable")
+        connection = connect_readonly(path)
+        version = current_schema_version(connection)
+        if version > SCHEMA_VERSION:
+            raise _ResolverFailure("schema_too_new")
+        if (
+            version < 1
+            or missing_migration_versions(connection, version)
+            or not table_exists(connection, "project_meta")
+        ):
+            raise _ResolverFailure("project_state_unreadable")
+        quick = [
+            str(row[0])
+            for row in connection.execute("PRAGMA quick_check").fetchall()
+        ]
+        if quick != ["ok"] or connection.execute(
+            "PRAGMA foreign_key_check"
+        ).fetchall():
+            raise _ResolverFailure("project_state_unreadable")
 
-            if version == 14:
-                stored = _read_v14_project(connection, version)
-            else:
-                stored = _read_legacy_project(connection, version)
-            generations = _read_generation_rows(
+        if version == 14:
+            stored = _read_v14_project(connection, version)
+        else:
+            stored = _read_legacy_project(connection, version)
+        generations = _read_generation_rows(
+            connection,
+            stored.project_id,
+            version,
+        )
+        pointer = _read_maintenance_pointer(
+            connection,
+            stored.project_id,
+            version,
+        )
+        doctor_state = None
+        if (
+            doctor_current_root is not None
+            and version == SCHEMA_VERSION
+            and stored.canonical_path_hash
+            == doctor_current_root.canonical_path_hash
+        ):
+            doctor_state = read_doctor_state(
                 connection,
-                stored.project_id,
-                version,
+                _database_target(
+                    stored,
+                    doctor_current_root,
+                    path,
+                    explicit_db=False,
+                ),
             )
-            pointer = _read_maintenance_pointer(
+        if (
+            retain_connection
+            and version == SCHEMA_VERSION
+            and consumer_current_root is not None
+        ):
+            validate_current_database(
                 connection,
-                stored.project_id,
-                version,
+                _database_target(
+                    stored,
+                    consumer_current_root,
+                    path,
+                    explicit_db=False,
+                ),
             )
     except _ResolverFailure:
+        if connection is not None:
+            connection.close()
         raise
     except StorageError as exc:
+        if connection is not None:
+            connection.close()
         raise _ResolverFailure(_storage_error_code(exc)) from exc
     except sqlite3.Error as exc:
+        if connection is not None:
+            connection.close()
         raise _ResolverFailure(
             "database_busy"
             if is_sqlite_busy_or_locked(exc)
             else "project_state_unreadable"
         ) from exc
-    after = _stamp(path)
-    if after != before:
+    except Exception:
+        if connection is not None:
+            connection.close()
+        raise
+    try:
+        after = _stamp(path)
+    except Exception:
+        connection.close()
+        raise
+    if (
+        (before.device, before.inode) != (after.device, after.inode)
+        or (not mutable and after != before)
+    ):
+        connection.close()
         raise _ResolverFailure("project_state_unreadable")
+    keep_connection = retain_connection and version == SCHEMA_VERSION
+    retained_connection = connection if keep_connection else None
+    if not keep_connection:
+        connection.close()
     return _DatabaseObservation(
         stored_project=stored,
         generation_rows=generations,
         maintenance_pointer=pointer,
+        doctor_state=doctor_state,
         stamp=after,
+        read_connection=retained_connection,
     )
 
 

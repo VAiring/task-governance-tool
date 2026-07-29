@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import closing, suppress
+from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,6 +36,14 @@ from task_governance_tool.viewer_config import load_viewer_refresh_interval
 
 VIEWER_LOCK_FILENAME = "taskgov-viewer.lock"
 MAX_RENDERS_PER_ATTEMPT = 2
+
+
+class _ViewerSourceChanged(RuntimeError):
+    pass
+
+
+class _ViewerOptedOut(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -171,7 +179,52 @@ def _refresh(
                     snapshot.snapshot,
                     refresh_interval_seconds=refresh_interval_seconds,
                 )
-                write_viewer_html(output, rendered)
+                @contextmanager
+                def replace_guard():
+                    with closing(
+                        connect_initialized_readonly(target)
+                    ) as guard:
+                        current_maintenance = read_project_maintenance(
+                            guard,
+                            target.project.project_id,
+                        )
+                        current_viewer = read_viewer_maintenance(
+                            guard,
+                            target.project.project_id,
+                        )
+                        if (
+                            current_maintenance is None
+                            or current_viewer is None
+                        ):
+                            raise RuntimeError(
+                                "Viewer maintenance state is unavailable"
+                            )
+                        if not current_maintenance.enabled:
+                            raise _ViewerOptedOut()
+                        if (
+                            current_viewer.source_generation
+                            != capture.viewer.source_generation
+                        ):
+                            raise _ViewerSourceChanged()
+                        yield
+
+                try:
+                    write_viewer_html(
+                        output,
+                        rendered,
+                        replace_guard=replace_guard,
+                    )
+                except _ViewerOptedOut:
+                    return ViewerRefreshResult(
+                        code="not_opted_in",
+                        renders=renders,
+                    )
+                except _ViewerSourceChanged:
+                    if attempt + 1 >= MAX_RENDERS_PER_ATTEMPT:
+                        raise RuntimeError(
+                            "Viewer source changed during publication"
+                        )
+                    continue
                 record_viewer_publication(
                     target,
                     source_generation=capture.viewer.source_generation,

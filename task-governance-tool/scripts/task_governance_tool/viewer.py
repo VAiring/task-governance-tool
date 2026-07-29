@@ -8,10 +8,10 @@ import os
 import sqlite3
 import stat
 import tempfile
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, ContextManager
 
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
@@ -387,7 +387,7 @@ def resolve_canonical_viewer_output_target(
     """Resolve the one DB-owned Viewer artifact; no custom output exists."""
 
     state_root = database_target.db_path.parent
-    path = state_root / "viewer" / "task-viewer.html"
+    path = database_target.resolved_viewer_path
     validate_existing_output(path)
     validate_default_output_parent(path, state_root)
     validate_output_database_separation(path, database_target.db_path)
@@ -401,6 +401,8 @@ def resolve_canonical_viewer_output_target(
 def write_viewer_html(
     target: ViewerOutputTarget,
     html: str,
+    *,
+    replace_guard: Callable[[], ContextManager[None]] | None = None,
 ) -> bool:
     temporary_path: Path | None = None
     descriptor: int | None = None
@@ -424,7 +426,8 @@ def write_viewer_html(
         validate_existing_output(target.path)
         validate_output_database_separation(target.path, target.database_path)
         replaced = target.path.exists()
-        os.replace(temporary_path, target.path)
+        with replace_guard() if replace_guard is not None else nullcontext():
+            os.replace(temporary_path, target.path)
         temporary_path = None
         return replaced
     except OSError as exc:

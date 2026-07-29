@@ -42,6 +42,7 @@ from task_governance_tool.storage import (
     record_managed_backup,
     record_setup_backup,
     utc_now,
+    validate_current_database,
     validate_migration_backup_metadata,
     validate_utc_timestamp,
 )
@@ -247,7 +248,7 @@ def _directory_identity(path: Path) -> tuple[int, int]:
 
 
 def _directory(target: DatabaseTarget, *, create: bool) -> Path:
-    path = target.db_path.parent / "backups"
+    path = target.resolved_backups_path
     try:
         if create:
             path.mkdir(parents=True, exist_ok=True)
@@ -317,9 +318,20 @@ def _validate_database(
         raise _failure() from exc
 
 
+def _validate_publication_source(
+    connection: sqlite3.Connection,
+    target: DatabaseTarget,
+    expected_version: int | None = None,
+) -> int:
+    version = _validate_database(connection, target, expected_version)
+    if version == SCHEMA_VERSION:
+        validate_current_database(connection, target)
+    return version
+
+
 def _source_version(target: DatabaseTarget) -> int:
     with closing(connect_readonly(target.db_path)) as connection:
-        return _validate_database(connection, target)
+        return _validate_publication_source(connection, target)
 
 
 def _valid_artifact(
@@ -543,6 +555,12 @@ def restore_managed_backup(
             project=target.project,
             db_path=temporary,
             explicit_db=target.explicit_db,
+            binding_path_hash=target.binding_path_hash,
+            binding_generation=target.binding_generation,
+            skill_root=target.skill_root,
+            backups_path=target.backups_path,
+            viewer_path=target.viewer_path,
+            canonical_fixed=False,
         )
         _prepare_recovered_repository(
             temporary_target,
@@ -905,7 +923,7 @@ def _copy(target: DatabaseTarget, metadata: MigrationBackupMetadata) -> int:
     descriptor: int | None = None
     try:
         with closing(connect_readonly(target.db_path)) as source:
-            source_version = _validate_database(source, target)
+            source_version = _validate_publication_source(source, target)
             directory = _directory(target, create=True)
             directory_identity = _directory_identity(directory)
             final = directory / _filename(metadata)
@@ -923,7 +941,11 @@ def _copy(target: DatabaseTarget, metadata: MigrationBackupMetadata) -> int:
                 configure_connection(sqlite3.connect(temporary))
             ) as destination:
                 source.backup(destination)
-                _validate_database(destination, target, source_version)
+                _validate_publication_source(
+                    destination,
+                    target,
+                    source_version,
+                )
 
         if (
             _directory_identity(directory) != directory_identity
@@ -935,7 +957,9 @@ def _copy(target: DatabaseTarget, metadata: MigrationBackupMetadata) -> int:
             raise _failure()
         with temporary.open("r+b") as stream:
             os.fsync(stream.fileno())
-        os.replace(temporary, final)
+        with closing(connect_readonly(target.db_path)) as current:
+            _validate_publication_source(current, target, source_version)
+            os.replace(temporary, final)
         temporary = None
         return source_version
     except (OSError, sqlite3.Error) as exc:
@@ -966,6 +990,47 @@ def _record_attempt_outcome(
         )
 
 
+def _validate_canonical_artifact_set(
+    target: DatabaseTarget,
+    *,
+    allow_relocation: bool = False,
+) -> None:
+    if not target.canonical_fixed:
+        return
+    if target.skill_root is None:
+        raise _failure()
+    from task_governance_tool.state_resolver import (
+        resolve_setup_project_state,
+    )
+
+    resolution = resolve_setup_project_state(
+        skill_root=target.skill_root,
+        repo=target.project.canonical_repo,
+    )
+    resolved = resolution.target
+    if (
+        resolution.error_code is not None
+        or resolution.layout != "fixed_current_v1"
+        or resolution.binding
+        not in (
+            {"matching", "relocation_required"}
+            if allow_relocation
+            else {"matching"}
+        )
+        or resolution.fixed_recovery is not None
+        or resolved is None
+        or not resolved.canonical_fixed
+        or resolved.db_path != target.db_path
+        or resolved.skill_root != target.skill_root
+        or resolved.backups_path != target.backups_path
+        or resolved.viewer_path != target.viewer_path
+        or resolved.project.project_id != target.project.project_id
+        or resolved.binding_path_hash != target.binding_path_hash
+        or resolved.binding_generation != target.binding_generation
+    ):
+        raise _failure()
+
+
 def run_routine_backup(
     target: DatabaseTarget,
     *,
@@ -988,6 +1053,7 @@ def run_routine_backup(
 
     try:
         with managed_backup_lock(target):
+            _validate_canonical_artifact_set(target)
             if not _reconcile_v11(target, observed_at=timestamp):
                 _record_attempt_outcome(
                     target,
@@ -1040,6 +1106,10 @@ def publish_setup_backup(
 ) -> MigrationBackupMetadata:
     """Publish one validated copy, commit v10 metadata, then prune."""
     observed_at = utc_now()
+    _validate_canonical_artifact_set(
+        target,
+        allow_relocation=True,
+    )
     source_version = _source_version(target)
     if source_version >= 11:
         if not _reconcile_v11(

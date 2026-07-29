@@ -38,7 +38,6 @@ from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget,
     ProjectMaintenanceState,
-    StorageError,
     ViewerMaintenanceState,
 )
 
@@ -544,10 +543,6 @@ class DoctorCommandTests(unittest.TestCase):
                     repo_explicit=True,
                     script_path=install.entrypoint,
                 )
-                failure = StorageError(
-                    source_code,
-                    doctor_service.DOCTOR_MESSAGES[source_code],
-                )
                 current_root = observe_current_root(install.project_root)
                 paths = canonical_state_paths(install.skill_root)
                 stored = StoredProjectObservation(
@@ -571,10 +566,13 @@ class DoctorCommandTests(unittest.TestCase):
                         explicit_db=False,
                     ),
                 )
-                if phase == "resolver":
+                if phase in {"resolver", "connect"}:
                     resolved = replace(
                         resolved,
                         target=None,
+                        stored_project=(
+                            None if phase == "connect" else stored
+                        ),
                         error_code=source_code,
                     )
                 elif phase == "binding":
@@ -603,24 +601,6 @@ class DoctorCommandTests(unittest.TestCase):
                             return_value=resolved,
                         )
                     )
-                    if phase == "connect":
-                        stack.enter_context(
-                            mock.patch.object(
-                                doctor_service,
-                                "connect_readonly",
-                                side_effect=failure,
-                            )
-                        )
-                    else:
-                        stack.enter_context(
-                            mock.patch.object(
-                                doctor_service,
-                                "connect_readonly",
-                                side_effect=AssertionError(
-                                    "resolver outcomes must not reopen storage"
-                                ),
-                            )
-                        )
                     result = doctor_service.run_doctor(
                         repo=str(install.project_root),
                         repo_explicit=True,

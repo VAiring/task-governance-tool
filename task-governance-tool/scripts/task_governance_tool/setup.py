@@ -393,6 +393,7 @@ def _revalidate_scope(
         repo=repo,
         repo_explicit=repo_explicit,
         script_path=script_path,
+        include_ignore=False,
     )
     issue = inspection.first_issue()
     if issue is not None or inspection.scope is None:
@@ -513,12 +514,19 @@ def _unbound_target(resolution: ProjectStateResolution) -> UnboundDatabaseTarget
         display_name=resolution.current_root.display_name,
         db_path=resolution.paths.database,
         explicit_db=True,
+        skill_root=resolution.paths.skill_root,
+        backups_path=resolution.paths.backups,
+        viewer_path=resolution.paths.viewer,
+        canonical_fixed=True,
     )
 
 
 def _bound_target_at(
     resolution: ProjectStateResolution,
     database_path: Path,
+    *,
+    binding_path_hash: str,
+    binding_generation: int,
 ) -> DatabaseTarget:
     stored = resolution.stored_project
     if stored is None:
@@ -535,6 +543,12 @@ def _bound_target_at(
         ),
         db_path=database_path,
         explicit_db=True,
+        binding_path_hash=binding_path_hash,
+        binding_generation=binding_generation,
+        skill_root=resolution.paths.skill_root,
+        backups_path=database_path.parent / "backups",
+        viewer_path=database_path.parent / "viewer" / "task-viewer.html",
+        canonical_fixed=(database_path == resolution.paths.database),
     )
 
 
@@ -557,6 +571,12 @@ def _stored_target_at(
         ),
         db_path=database_path,
         explicit_db=True,
+        binding_path_hash=stored.canonical_path_hash,
+        binding_generation=stored.binding_generation,
+        skill_root=resolution.paths.skill_root,
+        backups_path=database_path.parent / "backups",
+        viewer_path=database_path.parent / "viewer" / "task-viewer.html",
+        canonical_fixed=(database_path == resolution.paths.database),
     )
 
 
@@ -1243,6 +1263,12 @@ def _publish_legacy(
                         stage_target = _bound_target_at(
                             locked,
                             stage_root / "taskgov.sqlite",
+                            binding_path_hash=(
+                                locked.stored_project.canonical_path_hash
+                            ),
+                            binding_generation=(
+                                locked.stored_project.binding_generation
+                            ),
                         )
                         compare_and_swap_project_binding(
                             stage_target,
@@ -1267,6 +1293,16 @@ def _publish_legacy(
                                 accepted_relocation.digest
                             ),
                             bound_at=accepted_relocation.checked_at,
+                        )
+                        stage_target = _bound_target_at(
+                            locked,
+                            stage_root / "taskgov.sqlite",
+                            binding_path_hash=(
+                                locked.current_root.canonical_path_hash
+                            ),
+                            binding_generation=(
+                                locked.stored_project.binding_generation + 1
+                            ),
                         )
                     except StorageError as exc:
                         raise _LegacySetupFailure(
@@ -1377,6 +1413,15 @@ def _publish_legacy(
                 published_target = _bound_target_at(
                     locked,
                     locked.paths.database,
+                    binding_path_hash=(
+                        locked.current_root.canonical_path_hash
+                        if accepted_relocation is not None
+                        else locked.stored_project.canonical_path_hash
+                    ),
+                    binding_generation=(
+                        locked.stored_project.binding_generation
+                        + (1 if accepted_relocation is not None else 0)
+                    ),
                 )
                 source_prefix = (
                     ["database_restore", "legacy_state_publish"]
@@ -1566,6 +1611,12 @@ def _execute_fixed_relocation(
             current_target = _bound_target_at(
                 refreshed,
                 refreshed.paths.database,
+                binding_path_hash=(
+                    refreshed.stored_project.canonical_path_hash
+                ),
+                binding_generation=(
+                    refreshed.stored_project.binding_generation
+                ),
             )
             compare_and_swap_project_binding(
                 current_target,
@@ -1580,6 +1631,14 @@ def _execute_fixed_relocation(
                 reason="confirmed_relocation",
                 confirmation_token_digest=accepted.digest,
                 bound_at=accepted.checked_at,
+            )
+            current_target = _bound_target_at(
+                refreshed,
+                refreshed.paths.database,
+                binding_path_hash=refreshed.current_root.canonical_path_hash,
+                binding_generation=(
+                    refreshed.stored_project.binding_generation + 1
+                ),
             )
             completed.append("project_binding_update")
 
@@ -1779,6 +1838,12 @@ def run_setup(
                         project=target.project,
                         db_path=recovery_candidate.path,
                         explicit_db=target.explicit_db,
+                        binding_path_hash=target.binding_path_hash,
+                        binding_generation=target.binding_generation,
+                        skill_root=target.skill_root,
+                        backups_path=target.backups_path,
+                        viewer_path=target.viewer_path,
+                        canonical_fixed=False,
                     )
                 )
         except Exception as exc:
@@ -2514,6 +2579,25 @@ def run_setup(
                 expected_project_id=resolution.project_id,
             )
             with managed_backup_lock(target):
+                locked_resolution = resolve_setup_project_state(
+                    skill_root=scope.skill_root,
+                    repo=scope.canonical_repo,
+                )
+                if (
+                    locked_resolution.error_code is not None
+                    or locked_resolution.layout != "fixed_current_v1"
+                    or locked_resolution.binding != "matching"
+                    or locked_resolution.target is None
+                    or locked_resolution.project_id != resolution.project_id
+                    or resolution.fixed_recovery is None
+                    or locked_resolution.fixed_recovery
+                    != resolution.fixed_recovery
+                ):
+                    raise StorageError(
+                        "setup_restore_failed",
+                        SETUP_ERROR_MESSAGES["setup_restore_failed"],
+                    )
+                target = locked_resolution.target
                 if (
                     not _canonical_database_is_lexically_absent(target)
                     or not inspect_setup_state(target).needs_initialize

@@ -10,7 +10,7 @@ import sqlite3
 import uuid
 from collections.abc import Callable
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
@@ -82,6 +82,22 @@ class DatabaseTarget:
     project: ProjectIdentity
     db_path: Path
     explicit_db: bool
+    binding_path_hash: str | None = None
+    binding_generation: int | None = None
+    skill_root: Path | None = field(default=None, repr=False, compare=False)
+    backups_path: Path | None = field(default=None, repr=False, compare=False)
+    viewer_path: Path | None = field(default=None, repr=False, compare=False)
+    canonical_fixed: bool = False
+
+    @property
+    def resolved_backups_path(self) -> Path:
+        return self.backups_path or (self.db_path.parent / "backups")
+
+    @property
+    def resolved_viewer_path(self) -> Path:
+        return self.viewer_path or (
+            self.db_path.parent / "viewer" / "task-viewer.html"
+        )
 
 
 @dataclass(frozen=True)
@@ -91,6 +107,10 @@ class UnboundDatabaseTarget:
     display_name: str
     db_path: Path
     explicit_db: bool = True
+    skill_root: Path | None = field(default=None, repr=False, compare=False)
+    backups_path: Path | None = field(default=None, repr=False, compare=False)
+    viewer_path: Path | None = field(default=None, repr=False, compare=False)
+    canonical_fixed: bool = False
 
 
 @dataclass(frozen=True)
@@ -3568,6 +3588,45 @@ def ensure_viewer_maintenance_row(
     )
 
 
+def _validate_target_binding(
+    binding: ProjectBindingState,
+    target: DatabaseTarget,
+) -> None:
+    existing_project_id = binding.project_id
+    if existing_project_id != target.project.project_id:
+        raise StorageError(
+            "project_mismatch",
+            "task database belongs to a different project",
+        )
+    if (
+        (target.binding_path_hash is None)
+        != (target.binding_generation is None)
+    ):
+        raise StorageError(
+            "internal_error",
+            "database target binding basis is incomplete",
+        )
+    if target.binding_path_hash is not None:
+        try:
+            expected_hash = validate_lower_hex_64(
+                target.binding_path_hash,
+                field="database target binding hash",
+            )
+            expected_generation = validate_binding_generation(
+                target.binding_generation
+            )
+        except StorageError as exc:
+            raise StorageError(
+                "internal_error",
+                "database target binding basis is invalid",
+            ) from exc
+        if (
+            binding.canonical_path_hash != expected_hash
+            or binding.binding_generation != expected_generation
+        ):
+            raise _unreadable_project_state()
+
+
 def validate_current_database(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
@@ -3599,12 +3658,8 @@ def validate_current_database(
         )
 
     binding = read_project_binding_state(connection)
+    _validate_target_binding(binding, target)
     existing_project_id = binding.project_id
-    if existing_project_id != target.project.project_id:
-        raise StorageError(
-            "project_mismatch",
-            "task database belongs to a different project",
-        )
     if read_project_maintenance(connection, existing_project_id) is None:
         raise StorageError(
             "migration_required",
@@ -4918,7 +4973,9 @@ def validate_snapshot_database(
         )
 
     if version >= 14:
-        existing_project_id = read_project_binding_state(connection).project_id
+        binding = read_project_binding_state(connection)
+        _validate_target_binding(binding, target)
+        existing_project_id = binding.project_id
     else:
         existing_project_id = read_project_meta_id(connection)
         if existing_project_id is None:
@@ -5007,7 +5064,9 @@ def read_setup_state(
                 "project state could not be read safely",
             )
         if version >= 14:
-            existing_project_id = read_project_binding_state(connection).project_id
+            binding = read_project_binding_state(connection)
+            _validate_target_binding(binding, target)
+            existing_project_id = binding.project_id
         else:
             existing_project_id = read_project_meta_id(connection)
             if existing_project_id is None:
@@ -5015,7 +5074,7 @@ def read_setup_state(
                     "project_state_unreadable",
                     "project state could not be read safely",
                 )
-        if existing_project_id != target.project.project_id:
+        if version < 14 and existing_project_id != target.project.project_id:
             raise StorageError(
                 "project_mismatch",
                 "task database belongs to a different project",
@@ -5415,6 +5474,12 @@ def initialize_uuid_database(
         project=uuid_project,
         db_path=db_path,
         explicit_db=target.explicit_db,
+        binding_path_hash=canonical_path_hash,
+        binding_generation=1,
+        skill_root=target.skill_root,
+        backups_path=target.backups_path,
+        viewer_path=target.viewer_path,
+        canonical_fixed=target.canonical_fixed,
     )
     try:
         return _initialize_database_with_identity(

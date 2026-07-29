@@ -7,7 +7,7 @@ import json
 import sqlite3
 import sys
 from collections.abc import Sequence
-from contextlib import closing
+from contextlib import closing, nullcontext
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -121,6 +121,11 @@ class CommandContext:
     read_only: bool
     args: argparse.Namespace
     target_override: DatabaseTarget | None = None
+    read_connection_override: sqlite3.Connection | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -134,6 +139,11 @@ class CommandResult:
     text: str = ""
     exit_code: int = EXIT_SUCCESS
     mutation_outcome: MutationOutcome | None = field(
+        default=None,
+        compare=False,
+        repr=False,
+    )
+    maintenance_target: DatabaseTarget | None = field(
         default=None,
         compare=False,
         repr=False,
@@ -680,27 +690,69 @@ def make_context(
 def resolve_context_target(context: CommandContext) -> DatabaseTarget:
     if context.target_override is not None:
         return context.target_override
-    resolution = resolve_project_state(
-        skill_root=skill_root_from_script(cli_script_path()),
-        repo=Path(context.repo),
+    raise StorageError(
+        "internal_error",
+        "database target basis is unavailable",
     )
-    error_code = consumer_error_code(resolution)
-    if error_code is not None:
-        message = (
-            "project state is not set up; run setup first"
-            if error_code == "db_not_initialized"
-            else PROJECT_STATE_MESSAGES.get(
-                error_code,
-                "project state could not be read safely",
+
+
+def context_read_connection(
+    context: CommandContext,
+    target: DatabaseTarget,
+) -> Any:
+    if context.read_connection_override is not None:
+        return nullcontext(context.read_connection_override)
+    return closing(connect_initialized_readonly(target))
+
+
+def state_resolution_failure_result(
+    context: CommandContext,
+    *,
+    code: str,
+    message: str,
+    project_id: str | None,
+) -> CommandResult:
+    command = context.command
+    if command == "task.list":
+        data: dict[str, Any] = {"tasks": [], "count": 0, "limit": 0}
+    elif command == "task.next":
+        data = (
+            compact_next_empty_data()
+            if bool(getattr(context.args, "compact", False))
+            else task_next_empty_data()
+        )
+    elif command == "task.current":
+        data = task_current_result_data(context)
+    elif command == "task.effort":
+        data = task_effort_empty_data()
+    elif command == "task.show":
+        data = task_show_empty_data()
+    elif command == "task.checkpoint":
+        data = task_checkpoint_empty_data()
+    elif command == "task.edit":
+        data = task_edit_empty_data()
+    elif command == "task.complete":
+        data = (
+            task_completion_check_empty_data(
+                None
             )
+            if bool(getattr(context.args, "check", False))
+            else task_edit_empty_data()
         )
-        raise StorageError(error_code, message)
-    if resolution.target is None:
-        raise StorageError(
-            "project_state_unreadable",
-            PROJECT_STATE_MESSAGES["project_state_unreadable"],
-        )
-    return resolution.target
+    elif command.startswith("handoff."):
+        data = handoff_empty_data(command)
+    elif command.startswith("review."):
+        data = review_empty_data(command)
+    else:
+        data = {}
+    return CommandResult(
+        ok=False,
+        command=command,
+        project_id=project_id,
+        data=data,
+        errors=[{"code": code, "message": message}],
+        exit_code=EXIT_TOOL_ERROR,
+    )
 
 
 def handle_command(context: CommandContext) -> CommandResult:
@@ -720,47 +772,89 @@ def handle_command(context: CommandContext) -> CommandResult:
         )
         scope_issue = scope_inspection.first_issue(allowed_codes=STRUCTURAL_CODES)
         if scope_issue is not None:
-            return error_result(
-                context.command,
-                scope_issue.code,
-                scope_issue.message,
-                EXIT_TOOL_ERROR,
+            return state_resolution_failure_result(
+                context,
+                code=scope_issue.code,
+                message=scope_issue.message,
                 project_id=None,
             )
-        try:
-            resolved_target = resolve_context_target(context)
-        except StorageError as exc:
-            return error_result(
-                context.command,
-                exc.code,
-                exc.message,
-                EXIT_TOOL_ERROR,
-                project_id=None,
+        resolution = resolve_project_state(
+            skill_root=skill_root_from_script(cli_script_path()),
+            repo=Path(context.repo),
+            retain_read_connection=(
+                context.command
+                in {
+                    "task.list",
+                    "task.next",
+                    "task.current",
+                    "task.effort",
+                    "task.show",
+                    "handoff.list",
+                    "handoff.show",
+                    "review.prepare",
+                }
+                or (
+                    context.command == "task.complete"
+                    and bool(getattr(context.args, "check", False))
+                )
+            ),
+        )
+        error_code = consumer_error_code(resolution)
+        if error_code is not None or resolution.target is None:
+            if resolution.read_connection is not None:
+                resolution.read_connection.close()
+            code = error_code or "project_state_unreadable"
+            message = (
+                "project state is not set up; run setup first"
+                if code == "db_not_initialized"
+                else PROJECT_STATE_MESSAGES.get(
+                    code,
+                    "project state could not be read safely",
+                )
             )
-        context = replace(context, target_override=resolved_target)
+            return state_resolution_failure_result(
+                context,
+                code=code,
+                message=message,
+                project_id=resolution.project_id,
+            )
+        context = replace(
+            context,
+            target_override=resolution.target,
+            read_connection_override=resolution.read_connection,
+        )
+    try:
+        result = dispatch_stateful_command(context)
+    finally:
+        if context.read_connection_override is not None:
+            context.read_connection_override.close()
+    return replace(result, maintenance_target=context.target_override)
+
+
+def dispatch_stateful_command(context: CommandContext) -> CommandResult:
     if context.command == "task.add":
         return handle_task_add(context)
-    if context.command == "task.list":
+    elif context.command == "task.list":
         return handle_task_list(context)
-    if context.command == "task.next":
+    elif context.command == "task.next":
         return handle_task_next(context)
-    if context.command == "task.current":
+    elif context.command == "task.current":
         return handle_task_current(context)
-    if context.command == "task.effort":
+    elif context.command == "task.effort":
         return handle_task_effort(context)
-    if context.command == "task.show":
+    elif context.command == "task.show":
         return handle_task_show(context)
-    if context.command == "task.checkpoint":
+    elif context.command == "task.checkpoint":
         return handle_task_checkpoint(context)
-    if context.command == "task.edit":
+    elif context.command == "task.edit":
         return handle_task_edit(context)
-    if context.command == "task.complete":
+    elif context.command == "task.complete":
         return handle_task_complete(context)
-    if context.command.startswith("handoff."):
+    elif context.command.startswith("handoff."):
         return handle_handoff_command(context)
-    if context.command == "review.prepare":
+    elif context.command == "review.prepare":
         return handle_review_prepare(context)
-    if context.command.startswith("review."):
+    elif context.command.startswith("review."):
         return handle_review_command(context)
     return error_result(
         context.command,
@@ -1022,7 +1116,7 @@ def task_list_text(tasks: list[dict[str, Any]], count: int, limit: int) -> str:
 def handle_task_list(context: CommandContext) -> CommandResult:
     target = resolve_context_target(context)
     try:
-        with closing(connect_initialized_readonly(target)) as connection:
+        with context_read_connection(context, target) as connection:
             result = list_tasks(connection, target.project, **task_list_input(context.args))
     except TaskValidationError as exc:
         return validation_failure_result(
@@ -1125,7 +1219,7 @@ def task_next_text(
 def handle_task_next(context: CommandContext) -> CommandResult:
     target = resolve_context_target(context)
     try:
-        with closing(connect_initialized_readonly(target)) as connection:
+        with context_read_connection(context, target) as connection:
             result = select_next_tasks(connection, target.project, **task_next_input(context.args))
             paused_count = count_tasks(
                 connection,
@@ -1274,7 +1368,7 @@ def handle_task_current(context: CommandContext) -> CommandResult:
         CURRENT_STATUSES if status_filter is None else (status_filter,)
     )
     try:
-        with closing(connect_initialized_readonly(target)) as connection:
+        with context_read_connection(context, target) as connection:
             result = list_current_tasks(
                 connection,
                 target.project,
@@ -1444,7 +1538,7 @@ def handle_task_effort(context: CommandContext) -> CommandResult:
     try:
         task_id = validate_task_id(raw_task_id)
         profile = load_effort_profile(skill_root_from_script(cli_script_path()))
-        with closing(connect_initialized_readonly(target)) as connection:
+        with context_read_connection(context, target) as connection:
             result = build_effort_advisory(
                 connection,
                 target.project,
@@ -1599,7 +1693,7 @@ def task_show_failure_result(
 def handle_task_show(context: CommandContext) -> CommandResult:
     target = resolve_context_target(context)
     try:
-        with closing(connect_initialized_readonly(target)) as connection:
+        with context_read_connection(context, target) as connection:
             result = show_task(connection, target.project, getattr(context.args, "task_id", ""))
     except TaskValidationError as exc:
         return validation_failure_result(
@@ -2162,6 +2256,7 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
                 target,
                 request,
                 input_error=input_preflight_error,
+                initial_connection=context.read_connection_override,
             )
             data = task_completion_check_data(
                 request=request,
@@ -2457,7 +2552,7 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
 
     if context.command in {"handoff.list", "handoff.show"}:
         try:
-            with closing(connect_initialized_readonly(target)) as connection:
+            with context_read_connection(context, target) as connection:
                 if context.command == "handoff.list":
                     result = list_handoffs(
                         connection,
@@ -2582,6 +2677,7 @@ def handle_review_prepare(context: CommandContext) -> CommandResult:
         data = prepare_review_packet(
             target,
             getattr(context.args, "task_id", ""),
+            initial_connection=context.read_connection_override,
         )
         text = format_review_packet_text(data)
         result = CommandResult(
@@ -2857,8 +2953,10 @@ def apply_post_commit_maintenance(
     if not result.ok or outcome is None or not outcome.state_changed:
         return result
     try:
+        if result.maintenance_target is None:
+            raise RuntimeError("post-commit target basis is unavailable")
         warnings = run_post_commit_maintenance(
-            resolve_context_target(context),
+            result.maintenance_target,
             outcome,
         )
     except Exception:

@@ -289,7 +289,7 @@ class ProjectScopeIgnoreTests(unittest.TestCase):
                 )
             )
 
-    def test_setup_write_rechecks_ignore_once_under_transition_lock(self):
+    def test_setup_preview_write_and_doctor_each_check_ignore_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             preview_install = make_physical_install(
                 Path(tmp) / "preview",
@@ -327,7 +327,7 @@ class ProjectScopeIgnoreTests(unittest.TestCase):
                     backup_generations=None,
                 )
                 self.assertTrue(setup.ok)
-                self.assertEqual(check.call_count, 2)
+                self.assertEqual(check.call_count, 1)
 
             with mock.patch.object(
                 project_scope_service,

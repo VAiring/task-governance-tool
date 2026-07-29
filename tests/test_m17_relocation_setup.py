@@ -207,6 +207,51 @@ def run_service_setup(
         )
 
 
+def configure_viewer_refresh(
+    install: PhysicalInstall,
+    *,
+    interval_seconds: int = 7,
+) -> None:
+    config_root = install.skill_root / "config"
+    config_root.mkdir(exist_ok=True)
+    (config_root / "viewer.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "profile": "visibility-refresh-v1",
+                "refresh_interval_seconds": interval_seconds,
+            },
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+
+
+def assert_viewer_presentation_contract(
+    case: unittest.TestCase,
+    install: PhysicalInstall,
+    *,
+    interval_seconds: int = 7,
+) -> None:
+    html = install.viewer_path.read_text(encoding="utf-8")
+    case.assertIn(
+        (
+            "data-taskgov-refresh-interval-seconds="
+            f'"{interval_seconds}"'
+        ),
+        html,
+    )
+    case.assertIn(
+        'const reloadStateOwner = "taskgov-viewer-auto-reload";',
+        html,
+    )
+    case.assertIn('window.history.replaceState(candidate, "");', html)
+    case.assertIn(
+        'window.history.scrollRestoration = "manual";',
+        html,
+    )
+
+
 class M17RelocationSetupTests(unittest.TestCase):
     def assert_cli_error(
         self,
@@ -268,6 +313,72 @@ class M17RelocationSetupTests(unittest.TestCase):
         )
         self.assertNotIn(rejected_token, serialized)
         self.assertNotIn(str(Path("C:/private/moved-project")), serialized)
+
+    def test_viewer_refresh_and_history_contract_survive_rebind_and_repair(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            install = make_physical_install(root)
+            configure_viewer_refresh(install)
+            initialized = run_service_setup(
+                install,
+                read_only=False,
+                now=ISSUED_AT,
+            )
+            self.assertTrue(initialized.ok, initialized)
+            assert_viewer_presentation_contract(self, install)
+
+            moved = relocate_install(
+                install,
+                destination=root / "moved-project",
+            )
+            preview = run_service_setup(
+                moved,
+                read_only=True,
+                now=ISSUED_AT,
+            )
+            token = preview.data["relocation"]["confirmation_token"]
+            self.assertIsInstance(token, str)
+            confirmed = run_service_setup(
+                moved,
+                read_only=False,
+                confirmation_token=token,
+                now=CONFIRMED_AT,
+            )
+            self.assertTrue(confirmed.ok, confirmed)
+            assert_viewer_presentation_contract(self, moved)
+
+            moved.viewer_path.unlink()
+            repaired = run_service_setup(
+                moved,
+                read_only=False,
+                now=SECOND_CHECKED_AT,
+            )
+            self.assertTrue(repaired.ok, repaired)
+            assert_viewer_presentation_contract(self, moved)
+
+    def test_viewer_refresh_and_history_contract_survive_legacy_publication(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            install = make_physical_install(Path(temporary))
+            configure_viewer_refresh(install)
+            initialize_database(install.legacy_target)
+
+            migrated = run_service_setup(
+                install,
+                read_only=False,
+                now=ISSUED_AT,
+            )
+
+            self.assertTrue(migrated.ok, migrated)
+            self.assertEqual(
+                migrated.data["completed_writes"],
+                [
+                    "legacy_state_publish",
+                    "maintenance_configure",
+                    "viewer_publish",
+                    "legacy_state_cleanup",
+                ],
+            )
+            assert_viewer_presentation_contract(self, install)
 
     def test_fixed_preview_and_no_token_error_are_exact_and_read_only(self):
         with tempfile.TemporaryDirectory() as temporary:

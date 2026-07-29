@@ -3473,6 +3473,31 @@ def completion_cycle_history_schema_statements() -> tuple[str, ...]:
     )
 
 
+def _normalized_schema_sql(statement: str) -> str:
+    return " ".join(statement.strip().removesuffix(";").split())
+
+
+def _completion_history_trigger_definitions() -> dict[str, str]:
+    expected_names = {
+        "trg_task_completion_cycles_no_update",
+        "trg_task_completion_cycles_no_delete",
+        "trg_tasks_completion_history_coverage_immutable",
+        "trg_task_events_completion_cycle_link_immutable",
+    }
+    definitions: dict[str, str] = {}
+    for statement in completion_cycle_history_schema_statements():
+        match = re.match(
+            r"\s*CREATE\s+TRIGGER\s+([a-z0-9_]+)\b",
+            statement,
+            flags=re.IGNORECASE,
+        )
+        if match is not None and match.group(1) in expected_names:
+            definitions[match.group(1)] = _normalized_schema_sql(statement)
+    if set(definitions) != expected_names:
+        raise AssertionError("completion history trigger inventory is incomplete")
+    return definitions
+
+
 _MIGRATION_PRESERVATION_TABLES = (
     "project_meta",
     "tasks",
@@ -4365,6 +4390,17 @@ def _validate_completion_history_schema_contract(
         ):
             raise completion_history_inconsistent()
 
+    expected_triggers = _completion_history_trigger_definitions()
+    actual_triggers = {
+        str(row["name"]): _normalized_schema_sql(str(row["sql"]))
+        for row in connection.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'trigger'"
+        ).fetchall()
+        if str(row["name"]) in expected_triggers and row["sql"] is not None
+    }
+    if actual_triggers != expected_triggers:
+        raise completion_history_inconsistent()
+
 
 def _validate_completion_history_structure(
     connection: sqlite3.Connection,
@@ -4413,6 +4449,7 @@ def validate_completion_cycle_storage(
     ).fetchall()
     expected_ordinals: dict[tuple[str, str], int] = {}
     cycle_owners: dict[str, tuple[str, str, str]] = {}
+    cycles_by_project: dict[str, list[CompletionCycle]] = {}
     for row in rows:
         cycle = _cycle_from_row(row)
         if task_owners.get(cycle.task_id) != cycle.project_id:
@@ -4422,11 +4459,17 @@ def validate_completion_cycle_storage(
         if cycle.saved_cycle_ordinal != expected:
             raise completion_history_inconsistent()
         expected_ordinals[owner] = expected + 1
-        _validate_cycle_receipts(connection, cycle)
+        cycles_by_project.setdefault(cycle.project_id, []).append(cycle)
         cycle_owners[cycle.completion_cycle_id] = (
             cycle.project_id,
             cycle.task_id,
             cycle.origin,
+        )
+    for project_id, cycles in cycles_by_project.items():
+        _validate_cycle_receipts_batch(
+            connection,
+            project_id=project_id,
+            cycles=tuple(cycles),
         )
 
     event_rows = connection.execute(

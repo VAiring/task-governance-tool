@@ -706,7 +706,8 @@ class CompletionCycleRepositoryTests(unittest.TestCase):
                 connection.rollback()
 
     def test_batch_reader_receipt_validation_does_not_scale_per_cycle(self):
-        query_counts = []
+        reader_query_counts = []
+        full_validation_query_counts = []
         for task_count in (1, 3):
             with (
                 self.subTest(task_count=task_count),
@@ -740,13 +741,30 @@ class CompletionCycleRepositoryTests(unittest.TestCase):
                         [histories[task_id].total for task_id in task_ids],
                         [1] * task_count,
                     )
-                    query_counts.append(
+                    reader_query_counts.append(
                         sum(
                             statement.lstrip().upper().startswith("SELECT")
                             for statement in traced
                         )
                     )
-        self.assertLessEqual(query_counts[1], query_counts[0] + 1)
+                    traced.clear()
+                    connection.set_trace_callback(traced.append)
+                    validate_completion_cycle_storage(connection)
+                    connection.set_trace_callback(None)
+                    full_validation_query_counts.append(
+                        sum(
+                            statement.lstrip().upper().startswith("SELECT")
+                            for statement in traced
+                        )
+                    )
+        self.assertLessEqual(
+            reader_query_counts[1],
+            reader_query_counts[0] + 1,
+        )
+        self.assertLessEqual(
+            full_validation_query_counts[1],
+            full_validation_query_counts[0] + 1,
+        )
 
     def test_batch_reader_validates_fallback_and_not_required_receipts(self):
         with tempfile.TemporaryDirectory() as tmp:

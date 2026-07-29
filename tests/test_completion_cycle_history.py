@@ -26,6 +26,7 @@ from task_governance_tool.storage import (  # noqa: E402
     insert_completion_cycle_locked,
     read_completion_history,
     resolve_database_target,
+    validate_completion_cycle_storage,
 )
 from task_governance_tool.tasks import (  # noqa: E402
     PUBLIC_EVENT_FIELDS,
@@ -942,6 +943,40 @@ class CompletionCycleHistoryTests(unittest.TestCase):
                 logical_database_state(target.db_path),
                 before_doctor,
             )
+
+    def test_v15_validation_rejects_same_named_replacement_trigger(self):
+        for trigger_name in sorted(EXPECTED_NEW_TRIGGERS):
+            with (
+                self.subTest(trigger_name=trigger_name),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                target = make_v14_target(Path(tmp))
+                migrate_to_v15(target)
+                with closing(connect(target.db_path)) as connection:
+                    connection.execute(f'DROP TRIGGER "{trigger_name}"')
+                    connection.execute(
+                        f"""
+                        CREATE TRIGGER "{trigger_name}"
+                        AFTER INSERT ON tasks
+                        BEGIN
+                          SELECT 1;
+                        END
+                        """
+                    )
+                    connection.commit()
+                    with self.assertRaises(StorageError) as validation_error:
+                        validate_completion_cycle_storage(connection)
+                    self.assertEqual(
+                        validation_error.exception.code,
+                        "completion_history_inconsistent",
+                    )
+                    with self.assertRaises(StorageError) as reentry_error:
+                        apply_completion_cycle_history_migration(connection)
+                    self.assertEqual(
+                        reentry_error.exception.code,
+                        "project_state_unreadable",
+                    )
+                    self.assertFalse(connection.in_transaction)
 
     def test_v15_reentry_does_not_reassert_migration_time_cardinality(self):
         with tempfile.TemporaryDirectory() as tmp:

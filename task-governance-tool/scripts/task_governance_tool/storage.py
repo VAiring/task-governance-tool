@@ -85,6 +85,15 @@ class DatabaseTarget:
 
 
 @dataclass(frozen=True)
+class UnboundDatabaseTarget:
+    canonical_repo: Path
+    canonical_path_hash: str
+    display_name: str
+    db_path: Path
+    explicit_db: bool = True
+
+
+@dataclass(frozen=True)
 class InitResult:
     target: DatabaseTarget
     created: bool
@@ -4623,6 +4632,181 @@ def compare_and_swap_project_binding(
             raise
 
 
+def set_legacy_cleanup_pending(
+    target: DatabaseTarget,
+    *,
+    project_id: str,
+    expected_identity_scheme: str,
+    expected_generation: int,
+    expected_path_hash: str,
+    inventory: str,
+    fingerprint: str,
+) -> ProjectBindingState:
+    """Persist one canonical cleanup plan against an exact binding basis."""
+
+    validate_identity_project_id(project_id, expected_identity_scheme)
+    validate_binding_generation(expected_generation)
+    validate_lower_hex_64(expected_path_hash, field="canonical path hash")
+    validate_cleanup_inventory(inventory, fingerprint)
+    if target.project.project_id != project_id:
+        raise StorageError("internal_error", "project binding target is invalid")
+    with closing(connect_initialized(target)) as connection:
+        try:
+            begin_initialized_write(connection, target)
+            current = read_project_binding_state(
+                connection,
+                expected_project_id=project_id,
+            )
+            if (
+                current.identity_scheme != expected_identity_scheme
+                or current.binding_generation != expected_generation
+                or current.canonical_path_hash != expected_path_hash
+            ):
+                raise StorageError(
+                    "project_binding_stale",
+                    "project binding state changed",
+                )
+            if current.legacy_cleanup_pending:
+                if (
+                    current.legacy_cleanup_inventory != inventory
+                    or current.legacy_cleanup_fingerprint != fingerprint
+                ):
+                    raise StorageError(
+                        "project_binding_stale",
+                        "project binding state changed",
+                    )
+                connection.rollback()
+                return current
+            cursor = connection.execute(
+                """
+                UPDATE project_meta
+                   SET legacy_cleanup_pending = 1,
+                       legacy_cleanup_inventory = ?,
+                       legacy_cleanup_fingerprint = ?
+                 WHERE project_id = ?
+                   AND identity_scheme = ?
+                   AND binding_generation = ?
+                   AND canonical_path_hash = ?
+                   AND legacy_cleanup_pending = 0
+                """,
+                (
+                    inventory,
+                    fingerprint,
+                    project_id,
+                    expected_identity_scheme,
+                    expected_generation,
+                    expected_path_hash,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise StorageError(
+                    "project_binding_stale",
+                    "project binding state changed",
+                )
+            updated = read_project_binding_state(
+                connection,
+                expected_project_id=project_id,
+            )
+            connection.commit()
+            return updated
+        except StorageError:
+            connection.rollback()
+            raise
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise operational_sqlite_error(
+                exc,
+                fallback_message="project state could not be updated safely",
+            ) from exc
+
+
+def clear_legacy_cleanup_pending(
+    target: DatabaseTarget,
+    *,
+    project_id: str,
+    expected_identity_scheme: str,
+    expected_generation: int,
+    expected_path_hash: str,
+    expected_inventory_fingerprint: str,
+) -> ProjectBindingState:
+    """Clear only the persisted cleanup plan proven complete by setup."""
+
+    validate_identity_project_id(project_id, expected_identity_scheme)
+    validate_binding_generation(expected_generation)
+    validate_lower_hex_64(expected_path_hash, field="canonical path hash")
+    validate_lower_hex_64(
+        expected_inventory_fingerprint,
+        field="legacy cleanup fingerprint",
+    )
+    if target.project.project_id != project_id:
+        raise StorageError("internal_error", "project binding target is invalid")
+    with closing(connect_initialized(target)) as connection:
+        try:
+            begin_initialized_write(connection, target)
+            current = read_project_binding_state(
+                connection,
+                expected_project_id=project_id,
+            )
+            if (
+                current.identity_scheme != expected_identity_scheme
+                or current.binding_generation != expected_generation
+                or current.canonical_path_hash != expected_path_hash
+                or not current.legacy_cleanup_pending
+                or current.legacy_cleanup_inventory is None
+                or current.legacy_cleanup_fingerprint
+                != expected_inventory_fingerprint
+            ):
+                raise StorageError(
+                    "project_binding_stale",
+                    "project binding state changed",
+                )
+            validate_cleanup_inventory(
+                current.legacy_cleanup_inventory,
+                expected_inventory_fingerprint,
+            )
+            cursor = connection.execute(
+                """
+                UPDATE project_meta
+                   SET legacy_cleanup_pending = 0,
+                       legacy_cleanup_inventory = NULL,
+                       legacy_cleanup_fingerprint = NULL
+                 WHERE project_id = ?
+                   AND identity_scheme = ?
+                   AND binding_generation = ?
+                   AND canonical_path_hash = ?
+                   AND legacy_cleanup_pending = 1
+                   AND legacy_cleanup_fingerprint = ?
+                """,
+                (
+                    project_id,
+                    expected_identity_scheme,
+                    expected_generation,
+                    expected_path_hash,
+                    expected_inventory_fingerprint,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise StorageError(
+                    "project_binding_stale",
+                    "project binding state changed",
+                )
+            updated = read_project_binding_state(
+                connection,
+                expected_project_id=project_id,
+            )
+            connection.commit()
+            return updated
+        except StorageError:
+            connection.rollback()
+            raise
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise operational_sqlite_error(
+                exc,
+                fallback_message="project state could not be updated safely",
+            ) from exc
+
+
 def validate_snapshot_database(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
@@ -5120,13 +5304,25 @@ def initialize_database(
 
 
 def initialize_uuid_database(
-    target: DatabaseTarget,
+    target: DatabaseTarget | UnboundDatabaseTarget,
     *,
     project_id_factory: Callable[[], str] | None = None,
     clock: Callable[[], str] | None = None,
     fail_stage: str | None = None,
 ) -> InitResult:
-    """Initialize UUID identity only for an explicitly injected fixed target."""
+    """Bind and initialize one explicitly selected, previously unbound fixed DB."""
+    if isinstance(target, UnboundDatabaseTarget):
+        canonical_repo = target.canonical_repo
+        canonical_path_hash = target.canonical_path_hash
+        display_name = target.display_name
+    elif isinstance(target, DatabaseTarget):
+        # Retain the M17.1 explicitly injected repository/test seam.
+        canonical_repo = target.project.canonical_repo
+        canonical_path_hash = target.project.canonical_path_hash
+        display_name = target.project.display_name
+    else:
+        raise StorageError("internal_error", "fixed database target is invalid")
+
     db_path = Path(target.db_path)
     sidecar_paths = tuple(
         Path(f"{db_path}{suffix}") for suffix in ("-journal", "-wal", "-shm")
@@ -5175,16 +5371,16 @@ def initialize_uuid_database(
         field="project binding time",
     )
     validate_lower_hex_64(
-        target.project.canonical_path_hash,
+        canonical_path_hash,
         field="canonical path hash",
     )
     display_name = validate_project_display_name(
-        sanitize_project_display_name(target.project.display_name)
+        sanitize_project_display_name(display_name)
     )
     uuid_project = ProjectIdentity(
         project_id=project_id,
-        canonical_repo=target.project.canonical_repo,
-        canonical_path_hash=target.project.canonical_path_hash,
+        canonical_repo=canonical_repo,
+        canonical_path_hash=canonical_path_hash,
         display_name=display_name,
     )
     uuid_target = DatabaseTarget(

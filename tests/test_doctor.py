@@ -28,8 +28,15 @@ except ModuleNotFoundError:
 from task_governance_tool import doctor as doctor_service
 from task_governance_tool import project_scope as project_scope_service
 from task_governance_tool.project_scope import ProjectScopeIssue
+from task_governance_tool.state_resolver import (
+    ProjectStateResolution,
+    StoredProjectObservation,
+    canonical_state_paths,
+    observe_current_root,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
+    DatabaseTarget,
     ProjectMaintenanceState,
     StorageError,
     ViewerMaintenanceState,
@@ -396,7 +403,8 @@ class DoctorCommandTests(unittest.TestCase):
             install = make_physical_install(Path(tmp))
             create_v10_database(install)
             before = file_snapshot(install.project_root)
-            before_db = hashlib.sha256(install.db_path.read_bytes()).hexdigest()
+            legacy_db_path = install.legacy_db_path
+            before_db = hashlib.sha256(legacy_db_path.read_bytes()).hexdigest()
 
             result = install.run("doctor", "--json")
 
@@ -421,7 +429,10 @@ class DoctorCommandTests(unittest.TestCase):
                     "message": "task database requires setup migration",
                 }],
             )
-            self.assertEqual(hashlib.sha256(install.db_path.read_bytes()).hexdigest(), before_db)
+            self.assertEqual(
+                hashlib.sha256(legacy_db_path.read_bytes()).hexdigest(),
+                before_db,
+            )
             self.assertEqual(file_snapshot(install.project_root), before)
 
     def test_modified_package_remains_advisory_and_setup_ineligible(self):
@@ -503,8 +514,8 @@ class DoctorCommandTests(unittest.TestCase):
             ("unsupported_journal_mode", "unsupported_journal", None, "connect"),
             ("database_busy", "busy", None, "connect"),
             ("project_state_unreadable", "unreadable", None, "connect"),
-            ("project_mismatch", "foreign", 11, "state"),
-            ("schema_too_new", "newer", SCHEMA_VERSION + 1, "state"),
+            ("project_mismatch", "foreign", 11, "resolver"),
+            ("schema_too_new", "newer", SCHEMA_VERSION + 1, "resolver"),
         )
         for source_code, projected_code, schema_version, phase in cases:
             with self.subTest(code=source_code), tempfile.TemporaryDirectory() as tmp:
@@ -518,12 +529,58 @@ class DoctorCommandTests(unittest.TestCase):
                     source_code,
                     doctor_service.DOCTOR_MESSAGES[source_code],
                 )
+                current_root = observe_current_root(install.project_root)
+                paths = canonical_state_paths(install.skill_root)
+                stored = StoredProjectObservation(
+                    project_id=install.legacy_project_id,
+                    identity_scheme="legacy_path_v1",
+                    binding_generation=1,
+                    canonical_path_hash=current_root.canonical_path_hash,
+                    display_name=current_root.display_name,
+                    source_schema_version=schema_version or SCHEMA_VERSION,
+                    binding_lineage=(current_root.canonical_path_hash,),
+                )
+                resolved = ProjectStateResolution(
+                    paths=paths,
+                    current_root=current_root,
+                    layout="fixed_current_v1",
+                    binding="matching",
+                    stored_project=stored,
+                    target=DatabaseTarget(
+                        project=install.legacy_target.project,
+                        db_path=paths.database,
+                        explicit_db=False,
+                    ),
+                )
+                if source_code == "project_mismatch":
+                    resolved = replace(
+                        resolved,
+                        binding="relocation_required",
+                        stored_project=replace(
+                            stored,
+                            canonical_path_hash="f" * 64,
+                            binding_lineage=("f" * 64,),
+                        ),
+                    )
+                elif phase == "resolver":
+                    resolved = replace(
+                        resolved,
+                        target=None,
+                        error_code=source_code,
+                    )
                 with ExitStack() as stack:
                     stack.enter_context(
                         mock.patch.object(
                             doctor_service,
                             "inspect_project_scope",
                             return_value=inspection,
+                        )
+                    )
+                    stack.enter_context(
+                        mock.patch.object(
+                            doctor_service,
+                            "resolve_project_state",
+                            return_value=resolved,
                         )
                     )
                     if phase == "connect":
@@ -539,21 +596,9 @@ class DoctorCommandTests(unittest.TestCase):
                             mock.patch.object(
                                 doctor_service,
                                 "connect_readonly",
-                                return_value=mock.MagicMock(),
-                            )
-                        )
-                        stack.enter_context(
-                            mock.patch.object(
-                                doctor_service,
-                                "current_schema_version",
-                                return_value=schema_version,
-                            )
-                        )
-                        stack.enter_context(
-                            mock.patch.object(
-                                doctor_service,
-                                "read_doctor_state",
-                                side_effect=failure,
+                                side_effect=AssertionError(
+                                    "resolver failures must not reopen storage"
+                                ),
                             )
                         )
                     result = doctor_service.run_doctor(

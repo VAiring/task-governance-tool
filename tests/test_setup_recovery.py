@@ -12,10 +12,10 @@ try:
     from m14_test_support import (
         canonical_managed_sqlite_files,
         canonical_test_path,
-        create_v10_database,
-        create_v11_database,
-        create_v12_database,
-        create_v9_database,
+        create_v10_target,
+        create_v11_target,
+        create_v12_target,
+        create_v9_target,
         json_payload,
         make_physical_install,
     )
@@ -23,17 +23,17 @@ except ModuleNotFoundError:
     from tests.m14_test_support import (
         canonical_managed_sqlite_files,
         canonical_test_path,
-        create_v10_database,
-        create_v11_database,
-        create_v12_database,
-        create_v9_database,
+        create_v10_target,
+        create_v11_target,
+        create_v12_target,
+        create_v9_target,
         json_payload,
         make_physical_install,
     )
 
 from task_governance_tool import backup as backup_service
 from task_governance_tool import setup as setup_service
-from task_governance_tool.storage import StorageError
+from task_governance_tool.storage import DatabaseTarget, StorageError
 
 
 RECOVERY_WRITES = [
@@ -47,6 +47,16 @@ RECOVERY_MIGRATION_WRITES = [
     "maintenance_configure",
     "viewer_publish",
 ]
+
+
+def fixed_fixture_target(install) -> DatabaseTarget:
+    """Create an explicit fixed-current target for pre-v14 fixtures."""
+
+    return DatabaseTarget(
+        project=install.legacy_target.project,
+        db_path=install.db_path,
+        explicit_db=True,
+    )
 
 
 class SetupManagedBackupRecoveryTests(unittest.TestCase):
@@ -200,7 +210,10 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 )
 
             self.assertFalse(preview.ok)
-            self.assertEqual(preview.error_code, "migration_required")
+            self.assertEqual(
+                preview.error_code,
+                "project_state_unreadable",
+            )
             self.assertEqual(
                 preview.data,
                 {
@@ -237,7 +250,10 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 )
 
             self.assertFalse(initialized.ok)
-            self.assertEqual(initialized.error_code, "migration_required")
+            self.assertEqual(
+                initialized.error_code,
+                "project_state_unreadable",
+            )
             self.assertEqual(initialized.data, preview.data)
             self.assertEqual(install.db_path.read_bytes(), before_primary)
             self.assertEqual(backup_path.read_bytes(), before_backup)
@@ -247,7 +263,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
     def test_setup_restores_supported_old_schema_then_uses_normal_migration(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            create_v9_database(install)
+            create_v9_target(fixed_fixture_target(install))
             with backup_service.managed_backup_lock(install.target):
                 candidate_metadata = backup_service.publish_setup_backup(
                     install.target,
@@ -311,7 +327,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     ).fetchone()
                 )
 
-    def test_newer_invalid_artifact_does_not_hide_older_valid_generation(self):
+    def test_newer_invalid_artifact_makes_the_fixed_backup_set_unreadable(self):
         with tempfile.TemporaryDirectory() as tmp:
             install, older_path = self._initialize_with_backed_up_task(
                 Path(tmp)
@@ -343,22 +359,23 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
 
             restored = install.run("setup", "--json")
 
-            self.assertEqual(restored.returncode, 0, restored.stderr)
-            with closing(sqlite3.connect(install.db_path)) as connection:
-                self.assertEqual(
-                    connection.execute(
-                        "SELECT title FROM tasks ORDER BY created_at, task_id"
-                    ).fetchall(),
-                    [("Retained recovery task",)],
-                )
+            self.assertEqual(restored.returncode, 2)
+            self.assertEqual(
+                json_payload(restored)["errors"],
+                [{
+                    "code": "project_state_unreadable",
+                    "message": "project state could not be read safely",
+                }],
+            )
+            self.assertFalse(install.db_path.exists())
             self.assertEqual(newer_path.read_bytes(), newer_bytes)
             self.assertTrue(older_path.is_file())
 
     def test_configured_v10_through_v12_recovery_preserves_policy(self):
         fixture_factories = {
-            10: create_v10_database,
-            11: create_v11_database,
-            12: create_v12_database,
+            10: create_v10_target,
+            11: create_v11_target,
+            12: create_v12_target,
         }
         expected_writes = [
             "database_restore",
@@ -370,7 +387,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as tmp:
                 install = make_physical_install(Path(tmp))
                 create_fixture(
-                    install,
+                    fixed_fixture_target(install),
                     enabled=True,
                     interval_minutes=45,
                     generations=2,
@@ -425,8 +442,8 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             self.assertEqual(
                 payload["errors"],
                 [{
-                    "code": "setup_restore_failed",
-                    "message": "managed backup could not be restored",
+                    "code": "project_state_unreadable",
+                    "message": "project state could not be read safely",
                 }],
             )
             self.assertEqual(payload["data"]["planned_writes"], [])
@@ -450,7 +467,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             self.assertEqual(failed.returncode, 2)
             self.assertEqual(
                 json_payload(failed)["errors"][0]["code"],
-                "setup_restore_failed",
+                "project_state_unreadable",
             )
             self.assertFalse(local.db_path.exists())
             self.assertEqual(copied.read_bytes(), copied_bytes)
@@ -459,8 +476,9 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
     def test_atomic_publish_does_not_replace_a_racing_canonical_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             install, _ = self._initialize_with_backed_up_task(Path(tmp))
+            target = install.target
             candidate = backup_service.select_managed_backup_for_recovery(
-                install.target
+                target
             )
             self.assertIsNotNone(candidate)
             install.db_path.unlink()
@@ -478,7 +496,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             ):
                 with self.assertRaises(StorageError) as raised:
                     backup_service.restore_managed_backup(
-                        install.target,
+                        target,
                         candidate,
                     )
 
@@ -536,10 +554,11 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             install, backup_path = self._initialize_with_backed_up_task(
                 Path(tmp)
             )
+            target = install.target
             before_backup = backup_path.read_bytes()
             install.db_path.unlink()
 
-            with backup_service.managed_backup_lock(install.target):
+            with backup_service.managed_backup_lock(target):
                 failed = install.run("setup", "--json")
 
             self.assertEqual(failed.returncode, 2)
@@ -570,8 +589,8 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             self.assertEqual(
                 json_payload(failed)["errors"],
                 [{
-                    "code": "setup_restore_failed",
-                    "message": "managed backup could not be restored",
+                    "code": "project_state_unreadable",
+                    "message": "project state could not be read safely",
                 }],
             )
             self.assertFalse(install.db_path.exists())
@@ -613,8 +632,8 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 self.assertEqual(
                     json_payload(failed)["errors"],
                     [{
-                        "code": "setup_restore_failed",
-                        "message": "managed backup could not be restored",
+                        "code": "project_state_unreadable",
+                        "message": "project state could not be read safely",
                     }],
                 )
                 self.assertFalse(install.db_path.exists())
@@ -629,8 +648,9 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             install, backup_path = self._initialize_with_backed_up_task(
                 Path(tmp)
             )
+            target = install.target
             candidate = backup_service.select_managed_backup_for_recovery(
-                install.target
+                target
             )
             self.assertIsNotNone(candidate)
             before_backup = backup_path.read_bytes()
@@ -650,7 +670,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             ):
                 with self.assertRaises(StorageError) as raised:
                     backup_service.restore_managed_backup(
-                        install.target,
+                        target,
                         candidate,
                     )
 
@@ -668,6 +688,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             backup_bytes = backup_path.read_bytes()
             shutil.move(backup_path, hidden)
             install.db_path.unlink()
+            shutil.rmtree(install.fixed_root)
             real_revalidate = setup_service._revalidate_scope
             restored_candidate = False
 
@@ -675,6 +696,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 nonlocal restored_candidate
                 scope = real_revalidate(**kwargs)
                 if not restored_candidate:
+                    backup_path.parent.mkdir(parents=True)
                     shutil.move(hidden, backup_path)
                     restored_candidate = True
                 return scope
@@ -709,7 +731,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     [("Retained recovery task",)],
                 )
 
-    def test_unrecognized_backup_directory_content_does_not_block_fresh_setup(self):
+    def test_unrecognized_fixed_backup_content_blocks_fresh_setup_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             backup_dir = install.db_path.parent / "backups"
@@ -719,8 +741,15 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
 
             initialized = install.run("setup", "--json")
 
-            self.assertEqual(initialized.returncode, 0, initialized.stderr)
-            self.assertTrue(install.db_path.is_file())
+            self.assertEqual(initialized.returncode, 2)
+            self.assertEqual(
+                json_payload(initialized)["errors"],
+                [{
+                    "code": "project_state_unreadable",
+                    "message": "project state could not be read safely",
+                }],
+            )
+            self.assertFalse(install.db_path.exists())
             self.assertEqual(
                 unrelated.read_text(encoding="utf-8"),
                 "not managed by taskgov",

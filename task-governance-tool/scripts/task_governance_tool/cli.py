@@ -63,13 +63,17 @@ from task_governance_tool.storage import (
     count_tasks,
     is_sqlite_busy_or_locked,
     operational_sqlite_error,
-    resolve_database_target,
     skill_root_from_script,
 )
 from task_governance_tool.doctor import run_doctor
 from task_governance_tool.project_scope import (
+    PROJECT_STATE_MESSAGES,
     STRUCTURAL_CODES,
     inspect_project_scope,
+)
+from task_governance_tool.state_resolver import (
+    consumer_error_code,
+    resolve_project_state,
 )
 from task_governance_tool.selection import select_next_tasks
 from task_governance_tool.reviews import (
@@ -672,11 +676,27 @@ def make_context(
 def resolve_context_target(context: CommandContext) -> DatabaseTarget:
     if context.target_override is not None:
         return context.target_override
-    return resolve_database_target(
-        repo=context.repo,
-        db=None,
-        script_path=cli_script_path(),
+    resolution = resolve_project_state(
+        skill_root=skill_root_from_script(cli_script_path()),
+        repo=Path(context.repo),
     )
+    error_code = consumer_error_code(resolution)
+    if error_code is not None:
+        message = (
+            "project state is not set up; run setup first"
+            if error_code == "db_not_initialized"
+            else PROJECT_STATE_MESSAGES.get(
+                error_code,
+                "project state could not be read safely",
+            )
+        )
+        raise StorageError(error_code, message)
+    if resolution.target is None:
+        raise StorageError(
+            "project_state_unreadable",
+            PROJECT_STATE_MESSAGES["project_state_unreadable"],
+        )
+    return resolution.target
 
 
 def handle_command(context: CommandContext) -> CommandResult:
@@ -701,12 +721,19 @@ def handle_command(context: CommandContext) -> CommandResult:
                 scope_issue.code,
                 scope_issue.message,
                 EXIT_TOOL_ERROR,
-                project_id=(
-                    scope_inspection.scope.target.project.project_id
-                    if scope_inspection.scope is not None
-                    else None
-                ),
+                project_id=None,
             )
+        try:
+            resolved_target = resolve_context_target(context)
+        except StorageError as exc:
+            return error_result(
+                context.command,
+                exc.code,
+                exc.message,
+                EXIT_TOOL_ERROR,
+                project_id=None,
+            )
+        context = replace(context, target_override=resolved_target)
     if context.command == "task.add":
         return handle_task_add(context)
     if context.command == "task.list":

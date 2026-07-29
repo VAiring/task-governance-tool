@@ -24,6 +24,7 @@ if str(SOURCE_SCRIPTS_ROOT) not in sys.path:
 from task_governance_tool.storage import (  # noqa: E402
     DatabaseTarget,
     MigrationBackupMetadata,
+    ProjectIdentity,
     apply_completion_commit_migration,
     apply_completion_evidence_migration,
     apply_effort_advisory_migration,
@@ -37,12 +38,16 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_task_checkpoints_migration,
     apply_task_contract_migration,
     connect,
+    connect_readonly,
     default_db_path,
     default_viewer_output_path,
     ensure_project_meta,
     initialize_database,
     project_identity,
     resolve_database_target,
+)
+from task_governance_tool.state_resolver import (  # noqa: E402
+    observe_current_root,
 )
 
 
@@ -136,25 +141,73 @@ class PhysicalInstall:
         return self.skill_root / "scripts" / "taskgov.py"
 
     @property
-    def project_id(self) -> str:
+    def legacy_project_id(self) -> str:
         return project_identity(self.project_root).project_id
 
     @property
+    def fixed_root(self) -> Path:
+        return self.skill_root.resolve() / "state" / "current"
+
+    @property
     def db_path(self) -> Path:
-        return default_db_path(self.skill_root, self.project_id)
+        return self.fixed_root / "taskgov.sqlite"
 
     @property
     def viewer_path(self) -> Path:
-        return default_viewer_output_path(self.skill_root, self.project_id)
+        return self.fixed_root / "viewer" / "task-viewer.html"
+
+    @property
+    def legacy_root(self) -> Path:
+        return (
+            self.skill_root.resolve()
+            / "state"
+            / "projects"
+            / self.legacy_project_id
+        )
+
+    @property
+    def legacy_db_path(self) -> Path:
+        return default_db_path(self.skill_root, self.legacy_project_id)
+
+    @property
+    def legacy_target(self) -> DatabaseTarget:
+        return resolve_database_target(
+            repo=self.project_root,
+            db=self.legacy_db_path,
+            script_path=self.entrypoint,
+        )
+
+    def _fixed_project_id(self) -> str:
+        with closing(connect_readonly(self.db_path)) as connection:
+            rows = connection.execute(
+                "SELECT project_id FROM project_meta"
+            ).fetchall()
+        if len(rows) != 1 or not isinstance(rows[0][0], str) or not rows[0][0]:
+            raise AssertionError("fixed test database must contain one project")
+        return str(rows[0][0])
+
+    @property
+    def project_id(self) -> str:
+        if self.db_path.is_file():
+            return self._fixed_project_id()
+        return self.legacy_project_id
 
     @property
     def target(self) -> DatabaseTarget:
         # Explicit path injection is an internal repository/test seam. It is not
         # passed to the public parser.
-        return resolve_database_target(
-            repo=self.project_root,
-            db=self.db_path,
-            script_path=self.entrypoint,
+        if not self.db_path.is_file():
+            return self.legacy_target
+        observed = observe_current_root(self.project_root)
+        return DatabaseTarget(
+            project=ProjectIdentity(
+                project_id=self._fixed_project_id(),
+                canonical_repo=observed.canonical_repo,
+                canonical_path_hash=observed.canonical_path_hash,
+                display_name=observed.display_name,
+            ),
+            db_path=self.db_path,
+            explicit_db=True,
         )
 
     def run(
@@ -180,6 +233,26 @@ class PhysicalInstall:
         )
 
 
+@dataclass(frozen=True)
+class LegacyPhysicalInstall(PhysicalInstall):
+    """M17.1 staging fixture whose canonical runtime target is still legacy."""
+
+    @property
+    def db_path(self) -> Path:
+        return self.legacy_db_path
+
+    @property
+    def viewer_path(self) -> Path:
+        return default_viewer_output_path(
+            self.skill_root,
+            self.legacy_project_id,
+        )
+
+    @property
+    def target(self) -> DatabaseTarget:
+        return self.legacy_target
+
+
 def make_physical_install(root: Path, *, git_managed: bool = False) -> PhysicalInstall:
     project = root / "project"
     skill_parent = project / ".agents" / "skills"
@@ -199,6 +272,18 @@ def make_physical_install(root: Path, *, git_managed: bool = False) -> PhysicalI
             encoding="utf-8",
         )
     return PhysicalInstall(project_root=project, skill_root=skill_root)
+
+
+def make_legacy_physical_install(
+    root: Path,
+    *,
+    git_managed: bool = False,
+) -> LegacyPhysicalInstall:
+    install = make_physical_install(root, git_managed=git_managed)
+    return LegacyPhysicalInstall(
+        project_root=install.project_root,
+        skill_root=install.skill_root,
+    )
 
 
 def make_source_self_host(root: Path) -> PhysicalInstall:

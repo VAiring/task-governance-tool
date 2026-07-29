@@ -1,14 +1,14 @@
 # task-governance-tool MVP Specification
 
-Status: implemented through the TG-M16.4 reduced loop-discipline behavioral
-acceptance at release v0.8.0/schema v13 and Viewer snapshot v3. The TG-M17.0
-stable-identity and relocation contract is complete as an approved target for
-release v0.9.0/schema v14. TG-M17.1's schema-v14 identity and binding
-repository primitives are implemented as a non-public staging slice; fixed
-production resolution, fresh UUID setup, and relocation remain inactive until
-their owning TG-M17 implementation and synchronization units complete. Viewer
-snapshot v3 is retained. TG-M12.3 Issue adapter remains blocked on a future
-intake contract.
+Status: release acceptance remains at v0.8.0/schema v13 with Viewer snapshot
+v3 through the completed TG-M16.4 reduced-loop behavioral acceptance. TG-M17.0 fixes the
+approved v0.9.0/schema-v14 stable-identity and relocation target. TG-M17.1 and
+TG-M17.2 are implemented as non-public staging slices: schema-v14 identity
+storage, fixed production resolution, fresh UUID setup, and same-binding
+legacy publication are active on this branch. Explicit relocation,
+consumer-hardening acceptance, and release synchronization remain owned by
+TG-M17.3 through TG-M17.5. Viewer snapshot v3 is retained. TG-M12.3 Issue
+adapter remains blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -2828,6 +2828,16 @@ Task/handoff/review leaf, backup, Viewer, maintenance, and recovery consumer
 must not reconstruct an identity or canonical state path independently.
 Internal explicit target injection remains test-only.
 
+With an authoritative fixed primary, ordinary Task/handoff/review resolution
+validates that primary's identity, schema, integrity, and binding but does not
+open retained backups or gate business-state availability on the
+non-authoritative Viewer projection. Setup uses the same resolver's
+deterministic deep-validation projection before repair or mutation. Fixed
+missing-primary recovery, legacy discovery, and private-stage publication also
+retain full backup/Viewer/lock/artifact validation. This caller-owned
+mechanical distinction adds no command, LLM choice, question, or normal-loop
+stop.
+
 ### Legacy Discovery And Compatibility
 
 When the fixed primary is absent, the shared resolver used by every DB-backed
@@ -3312,6 +3322,9 @@ private/current write transactions for migration, configuration, and binding,
 and releases every SQLite writer before Viewer publication or cleanup.
 Fixed-state rebinding takes the same transition lock and performs one short
 `BEGIN IMMEDIATE` compare-and-swap transaction.
+Setup preview and write preflight both validate an already present transition
+lock as one physical regular file of zero or one byte. An invalid artifact
+returns the same sanitized no-write `setup_incomplete` result in either mode.
 
 The binding repository compares project ID, identity scheme, old hash, and
 expected generation, appends generation `N+1`, and updates current binding in

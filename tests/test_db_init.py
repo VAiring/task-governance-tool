@@ -43,7 +43,7 @@ try:
         create_v12_database,
         create_v9_database,
         initialize_taskgov_internal,
-        make_physical_install,
+        make_legacy_physical_install as make_physical_install,
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
@@ -51,7 +51,7 @@ except ModuleNotFoundError:
         create_v12_database,
         create_v9_database,
         initialize_taskgov_internal,
-        make_physical_install,
+        make_legacy_physical_install as make_physical_install,
     )
 
 

@@ -260,14 +260,14 @@ def _directory(target: DatabaseTarget, *, create: bool) -> Path:
 
 
 @contextmanager
-def managed_backup_lock(target: DatabaseTarget) -> Iterator[None]:
+def managed_backup_lock(target: DatabaseTarget) -> Iterator[bytes]:
     """Take the shared zero-wait OS lock without holding a SQLite lock."""
     try:
         directory = _directory(target, create=True)
         path = directory / _LOCK_FILENAME
         try:
-            with zero_wait_artifact_lock(path):
-                yield
+            with zero_wait_artifact_lock(path) as lock_bytes:
+                yield lock_bytes
         except ArtifactLockError as exc:
             if exc.contended:
                 raise StorageError(
@@ -584,6 +584,78 @@ def restore_managed_backup(
             for suffix in ("-journal", "-wal", "-shm"):
                 with suppress(OSError):
                     Path(str(temporary) + suffix).unlink()
+
+
+def copy_database_snapshot(
+    *,
+    source_path: Path,
+    source_target: DatabaseTarget,
+    destination_target: DatabaseTarget,
+) -> int:
+    """Copy one validated SQLite snapshot into an absent private-stage DB."""
+
+    destination = destination_target.db_path
+    sidecars = tuple(
+        Path(f"{destination}{suffix}") for suffix in ("-journal", "-wal", "-shm")
+    )
+    if (
+        destination.exists()
+        or destination.is_symlink()
+        or any(os.path.lexists(path) for path in sidecars)
+    ):
+        raise _failure()
+    try:
+        with closing(connect_readonly(source_path)) as source:
+            source_version = _validate_database(source, source_target)
+            with closing(
+                configure_connection(sqlite3.connect(destination))
+            ) as copied:
+                source.backup(copied)
+                _validate_database(
+                    copied,
+                    destination_target,
+                    source_version,
+                )
+        with destination.open("r+b") as stream:
+            os.fsync(stream.fileno())
+        if _file_identity(destination) is None:
+            raise _failure()
+        return source_version
+    except StorageError:
+        raise
+    except (OSError, sqlite3.Error) as exc:
+        raise _failure() from exc
+    finally:
+        if not destination.exists():
+            for sidecar in sidecars:
+                with suppress(OSError):
+                    sidecar.unlink()
+
+
+def reconcile_private_migration_repository(target: DatabaseTarget) -> None:
+    """Converge only a validated private-stage backup repository."""
+
+    version = _source_version(target)
+    if version >= 11:
+        for _ in range(2):
+            if _reconcile_v11(
+                target,
+                observed_at=utc_now(),
+                migration_source=version < SCHEMA_VERSION,
+            ):
+                return
+        raise _failure()
+    if version == 10:
+        _reconcile_v10(target)
+        return
+    artifacts = _discover(target)
+    if artifacts:
+        newest = artifacts[-1]
+        _prune(
+            artifacts,
+            newest.metadata.publication_retention,
+            newest.metadata.generation_id,
+        )
 
 
 def _new_publication_metadata(

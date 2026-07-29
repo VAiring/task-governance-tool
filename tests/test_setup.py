@@ -13,7 +13,9 @@ try:  # noqa: E402
         canonical_managed_sqlite_files,
         canonical_test_path,
         create_v10_database,
+        create_v10_target,
         create_v12_database,
+        create_v12_target,
         create_v9_database,
         file_snapshot,
         json_payload,
@@ -25,7 +27,9 @@ except ModuleNotFoundError:  # noqa: E402
         canonical_managed_sqlite_files,
         canonical_test_path,
         create_v10_database,
+        create_v10_target,
         create_v12_database,
+        create_v12_target,
         create_v9_database,
         file_snapshot,
         json_payload,
@@ -36,7 +40,10 @@ except ModuleNotFoundError:  # noqa: E402
 from task_governance_tool import setup as setup_service
 from task_governance_tool import backup as backup_service
 from task_governance_tool import project_scope as project_scope_service
-from task_governance_tool.storage import MigrationBackupMetadata
+from task_governance_tool.storage import (
+    DatabaseTarget,
+    MigrationBackupMetadata,
+)
 
 
 SETUP_DATA_KEYS = {
@@ -55,12 +62,26 @@ FRESH_WRITES = [
     "maintenance_configure",
     "viewer_publish",
 ]
-MIGRATION_WRITES = [
+LEGACY_MIGRATION_WRITES = [
+    "legacy_state_publish",
     "migration_backup",
     "database_migrate",
     "maintenance_configure",
     "viewer_publish",
+    "legacy_state_cleanup",
 ]
+
+
+def fixed_fixture_target(install) -> DatabaseTarget:
+    """Construct a fixed-current fixture without using production resolution."""
+
+    return DatabaseTarget(
+        project=install.legacy_target.project,
+        db_path=install.db_path,
+        explicit_db=True,
+    )
+
+
 class SetupCommandTests(unittest.TestCase):
     def assert_setup_shape(self, payload: dict) -> dict:
         self.assertEqual(payload["command"], "setup")
@@ -79,7 +100,9 @@ class SetupCommandTests(unittest.TestCase):
             preview = install.run("setup", "--read-only", "--json")
 
             self.assertEqual(preview.returncode, 0, preview.stderr)
-            preview_data = self.assert_setup_shape(json_payload(preview))
+            preview_payload = json_payload(preview)
+            preview_data = self.assert_setup_shape(preview_payload)
+            self.assertIsNone(preview_payload["project_id"])
             self.assertEqual(
                 preview_data,
                 {
@@ -100,7 +123,14 @@ class SetupCommandTests(unittest.TestCase):
             completed = install.run("setup", "--json")
 
             self.assertEqual(completed.returncode, 0, completed.stderr)
-            completed_data = self.assert_setup_shape(json_payload(completed))
+            completed_payload = json_payload(completed)
+            completed_data = self.assert_setup_shape(completed_payload)
+            completed_project_id = completed_payload["project_id"]
+            self.assertIsInstance(completed_project_id, str)
+            self.assertRegex(
+                completed_project_id,
+                r"\Atg_project_[0-9a-f]{32}\Z",
+            )
             self.assertEqual(completed_data["status"], "setup_complete")
             self.assertEqual(completed_data["planned_writes"], FRESH_WRITES)
             self.assertEqual(completed_data["completed_writes"], FRESH_WRITES)
@@ -122,11 +152,26 @@ class SetupCommandTests(unittest.TestCase):
                 ).fetchone()
                 self.assertIsNotNone(row[0])
                 self.assertEqual(tuple(row[1:]), (30, 3, None))
+                identity = connection.execute(
+                    """
+                    SELECT project_id, identity_scheme, binding_generation
+                      FROM project_meta
+                    """
+                ).fetchone()
+                self.assertEqual(
+                    identity,
+                    (completed_project_id, "uuid_v1", 1),
+                )
 
             replay = install.run("setup", "--json")
 
             self.assertEqual(replay.returncode, 0, replay.stderr)
-            replay_data = self.assert_setup_shape(json_payload(replay))
+            replay_payload = json_payload(replay)
+            replay_data = self.assert_setup_shape(replay_payload)
+            self.assertEqual(
+                replay_payload["project_id"],
+                completed_project_id,
+            )
             self.assertEqual(replay_data["status"], "already_setup")
             self.assertEqual(replay_data["planned_writes"], [])
             self.assertEqual(replay_data["completed_writes"], [])
@@ -412,7 +457,7 @@ class SetupCommandTests(unittest.TestCase):
             (
                 "fresh initialization",
                 "fresh",
-                "initialize_database",
+                "initialize_uuid_database",
                 "setup_initialization_failed",
                 FRESH_WRITES,
                 [],
@@ -424,7 +469,7 @@ class SetupCommandTests(unittest.TestCase):
                 "migrated",
                 "publish_setup_backup",
                 "setup_backup_failed",
-                MIGRATION_WRITES,
+                LEGACY_MIGRATION_WRITES,
                 [],
                 False,
                 "not_present",
@@ -434,8 +479,8 @@ class SetupCommandTests(unittest.TestCase):
                 "migrated",
                 "initialize_database",
                 "setup_migration_failed",
-                MIGRATION_WRITES,
-                ["migration_backup"],
+                LEGACY_MIGRATION_WRITES,
+                [],
                 False,
                 "not_present",
             ),
@@ -464,8 +509,8 @@ class SetupCommandTests(unittest.TestCase):
                 "migrated",
                 "configure_project_maintenance",
                 "setup_incomplete",
-                MIGRATION_WRITES,
-                ["migration_backup", "database_migrate"],
+                LEGACY_MIGRATION_WRITES,
+                [],
                 False,
                 "not_present",
             ),
@@ -474,13 +519,9 @@ class SetupCommandTests(unittest.TestCase):
                 "migrated",
                 "_publish_viewer",
                 "setup_incomplete",
-                MIGRATION_WRITES,
-                [
-                    "migration_backup",
-                    "database_migrate",
-                    "maintenance_configure",
-                ],
-                True,
+                LEGACY_MIGRATION_WRITES,
+                [],
+                False,
                 "not_present",
             ),
         )
@@ -588,20 +629,63 @@ class SetupCommandTests(unittest.TestCase):
                 )
                 self.assertEqual(file_snapshot(install.project_root), before)
 
-    def test_failure_status_fallback_preserves_the_original_stage_error(self):
+    def test_legacy_failure_cleanup_preserves_a_replacement_owned_stage(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            with mock.patch.object(
-                setup_service,
-                "_viewer_status",
-                side_effect=(
-                    "not_present",
-                    RuntimeError("secondary Viewer observation failure"),
+            create_v10_database(install, enabled=True)
+            state_root = install.skill_root / "state"
+            replacement_stage_id = "f" * 32
+            transition_calls = 0
+            replacement_created = False
+            real_lock = setup_service.state_transition_lock
+            real_inspect = setup_service.inspect_stage_residue
+            real_remove = setup_service.remove_stage_residue
+
+            @contextmanager
+            def interleaving_lock(root):
+                nonlocal transition_calls, replacement_created
+                transition_calls += 1
+                call_number = transition_calls
+                try:
+                    with real_lock(root):
+                        yield
+                finally:
+                    if call_number == 1:
+                        with real_lock(root):
+                            residue = real_inspect(
+                                root,
+                                max_file_bytes=100_000_000,
+                            )
+                            self.assertIsNotNone(residue)
+                            self.assertNotEqual(
+                                residue.owner.stage_id,
+                                replacement_stage_id,
+                            )
+                            real_remove(root, residue)
+                            setup_service.create_owned_stage(
+                                root,
+                                project_id=residue.owner.project_id,
+                                inventory_fingerprint=(
+                                    residue.owner.inventory_fingerprint
+                                ),
+                                stage_id=replacement_stage_id,
+                            )
+                            replacement_created = True
+
+            with (
+                mock.patch.object(
+                    setup_service,
+                    "state_transition_lock",
+                    side_effect=interleaving_lock,
                 ),
-            ), mock.patch.object(
-                setup_service,
-                "initialize_database",
-                side_effect=RuntimeError("primary initialization failure"),
+                mock.patch.object(
+                    setup_service,
+                    "_publish_viewer",
+                    side_effect=setup_service.ViewerError(
+                        "output_write_failed",
+                        "injected pre-publish failure",
+                    ),
+                ),
             ):
                 result = setup_service.run_setup(
                     repo=str(install.project_root),
@@ -613,10 +697,152 @@ class SetupCommandTests(unittest.TestCase):
                 )
 
             self.assertFalse(result.ok)
-            self.assertEqual(result.error_code, "setup_initialization_failed")
+            self.assertEqual(result.error_code, "setup_incomplete")
+            self.assertTrue(replacement_created)
+            self.assertEqual(transition_calls, 2)
+            self.assertFalse(install.fixed_root.exists())
+            self.assertTrue(install.legacy_db_path.is_file())
+            replacement = real_inspect(
+                state_root,
+                max_file_bytes=100_000_000,
+            )
+            self.assertIsNotNone(replacement)
+            self.assertEqual(
+                replacement.owner.stage_id,
+                replacement_stage_id,
+            )
+
+    def test_malformed_stage_residue_precedes_relocation_without_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            create_v10_database(install, enabled=True)
+            with closing(sqlite3.connect(install.legacy_db_path)) as connection:
+                connection.execute(
+                    "UPDATE project_meta SET canonical_path_hash = ?",
+                    ("0" * 64,),
+                )
+                connection.commit()
+            malformed_stage = (
+                install.skill_root
+                / "state"
+                / f".current-stage-{'e' * 32}"
+            )
+            malformed_stage.mkdir()
+            (malformed_stage / "sentinel.txt").write_text(
+                "must remain untouched\n",
+                encoding="utf-8",
+            )
+            before = file_snapshot(install.project_root)
+
+            for options in (("--read-only",), ()):
+                with self.subTest(mode=options or ("write",)):
+                    attempted = install.run("setup", *options, "--json")
+
+                    self.assertEqual(
+                        attempted.returncode,
+                        2,
+                        attempted.stderr,
+                    )
+                    payload = json_payload(attempted)
+                    self.assertEqual(
+                        payload["errors"],
+                        [{
+                            "code": "setup_incomplete",
+                            "message": (
+                                "setup completed only partially; rerun setup"
+                            ),
+                        }],
+                    )
+                    self.assertIsNone(payload["project_id"])
+                    self.assertEqual(
+                        payload["data"]["planned_writes"],
+                        [],
+                    )
+                    self.assertEqual(
+                        payload["data"]["completed_writes"],
+                        [],
+                    )
+                    self.assertEqual(
+                        file_snapshot(install.project_root),
+                        before,
+                    )
+                    self.assertTrue(malformed_stage.is_dir())
+
+    def test_transition_lock_contention_preserves_database_busy(self):
+        for starting_state in ("fresh", "legacy"):
+            with (
+                self.subTest(starting_state=starting_state),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                install = make_physical_install(Path(tmp))
+                state_root = install.skill_root / "state"
+                if starting_state == "legacy":
+                    create_v10_database(install, enabled=True)
+                else:
+                    state_root.mkdir()
+
+                with setup_service.state_transition_lock(state_root):
+                    pass
+                before = file_snapshot(install.project_root)
+                with setup_service.state_transition_lock(state_root):
+                    attempted = install.run("setup", "--json")
+
+                    self.assertEqual(
+                        attempted.returncode,
+                        2,
+                        attempted.stderr,
+                    )
+                    payload = json_payload(attempted)
+                    self.assertEqual(
+                        payload["errors"],
+                        [{
+                            "code": "database_busy",
+                            "message": (
+                                "task database is busy; "
+                                "run the command again later"
+                            ),
+                        }],
+                    )
+                    self.assertEqual(
+                        payload["data"]["completed_writes"],
+                        [],
+                    )
+                self.assertEqual(
+                    file_snapshot(install.project_root),
+                    before,
+                )
+
+    def test_failure_status_fallback_preserves_the_original_stage_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            with mock.patch.object(
+                setup_service,
+                "_viewer_status",
+                side_effect=RuntimeError(
+                    "secondary Viewer observation failure"
+                ),
+            ), mock.patch.object(
+                setup_service,
+                "configure_project_maintenance",
+                side_effect=RuntimeError("primary configuration failure"),
+            ):
+                result = setup_service.run_setup(
+                    repo=str(install.project_root),
+                    repo_explicit=True,
+                    script_path=install.entrypoint,
+                    read_only=False,
+                    backup_interval_minutes=None,
+                    backup_generations=None,
+                )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "setup_incomplete")
             self.assertEqual(result.data["viewer_status"], "repair_required")
             self.assertEqual(result.data["planned_writes"], FRESH_WRITES)
-            self.assertEqual(result.data["completed_writes"], [])
+            self.assertEqual(
+                result.data["completed_writes"],
+                ["database_initialize"],
+            )
 
     def test_linklike_canonical_state_candidates_fail_before_writes(self):
         for candidate_kind in ("state_root", "database"):
@@ -705,8 +931,15 @@ class SetupCommandTests(unittest.TestCase):
             data = self.assert_setup_shape(json_payload(migrated))
             self.assertEqual(data["schema_from"], 9)
             self.assertEqual(data["schema_to"], 14)
-            self.assertEqual(data["planned_writes"], MIGRATION_WRITES)
-            self.assertEqual(data["completed_writes"], MIGRATION_WRITES)
+            self.assertEqual(
+                data["planned_writes"],
+                LEGACY_MIGRATION_WRITES,
+            )
+            self.assertEqual(
+                data["completed_writes"],
+                LEGACY_MIGRATION_WRITES,
+            )
+            self.assertFalse(install.legacy_db_path.exists())
             self.assertEqual(data["backup_generations"], 2)
             backups = canonical_managed_sqlite_files(
                 install,
@@ -754,14 +987,17 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             data = self.assert_setup_shape(json_payload(migrated))
             expected_writes = [
+                "legacy_state_publish",
                 "migration_backup",
                 "database_migrate",
                 "viewer_publish",
+                "legacy_state_cleanup",
             ]
             self.assertEqual(data["schema_from"], 10)
             self.assertEqual(data["schema_to"], 14)
             self.assertEqual(data["planned_writes"], expected_writes)
             self.assertEqual(data["completed_writes"], expected_writes)
+            self.assertFalse(install.legacy_db_path.exists())
             self.assertEqual(data["backup_interval_minutes"], 45)
             self.assertEqual(data["backup_generations"], 2)
             with closing(sqlite3.connect(install.db_path)) as connection:
@@ -830,9 +1066,16 @@ class SetupCommandTests(unittest.TestCase):
                 self.assertEqual(data["schema_to"], 14)
                 self.assertEqual(
                     data["planned_writes"],
-                    ["migration_backup", "database_migrate", "viewer_publish"],
+                    [
+                        "legacy_state_publish",
+                        "migration_backup",
+                        "database_migrate",
+                        "viewer_publish",
+                        "legacy_state_cleanup",
+                    ],
                 )
                 self.assertEqual(data["completed_writes"], data["planned_writes"])
+                self.assertFalse(install.legacy_db_path.exists())
                 self.assertNotIn("maintenance_configure", data["completed_writes"])
                 self.assertEqual(data["backup_interval_minutes"], 45)
                 self.assertEqual(data["backup_generations"], 2)
@@ -891,7 +1134,10 @@ class SetupCommandTests(unittest.TestCase):
 
         with self.subTest(boundary="file_published"), tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            create_v12_database(install, enabled=True)
+            create_v12_target(
+                fixed_fixture_target(install),
+                enabled=True,
+            )
             with mock.patch.object(
                 backup_service,
                 "record_managed_backup",
@@ -925,8 +1171,8 @@ class SetupCommandTests(unittest.TestCase):
 
         with self.subTest(boundary="row_committed"), tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            create_v12_database(
-                install,
+            create_v12_target(
+                fixed_fixture_target(install),
                 enabled=True,
                 generations=1,
             )
@@ -971,8 +1217,8 @@ class SetupCommandTests(unittest.TestCase):
 
         with self.subTest(boundary="file_before_row_prune"), tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            create_v12_database(
-                install,
+            create_v12_target(
+                fixed_fixture_target(install),
                 enabled=True,
                 generations=1,
             )
@@ -994,7 +1240,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(generation_count(install), 1)
             self.assertTrue(run(install).ok)
 
-    def test_v10_missing_latest_artifact_fails_backup_before_v11_migration(self):
+    def test_v10_missing_latest_artifact_fails_resolver_before_migration(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             missing = MigrationBackupMetadata(
@@ -1002,8 +1248,8 @@ class SetupCommandTests(unittest.TestCase):
                 published_at="2026-07-27T00:00:01Z",
                 publication_retention=3,
             )
-            create_v10_database(
-                install,
+            create_v10_target(
+                fixed_fixture_target(install),
                 enabled=True,
                 setup_backup=missing,
             )
@@ -1015,11 +1261,11 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(
                 payload["errors"],
                 [{
-                    "code": "setup_backup_failed",
-                    "message": "setup backup could not be completed",
+                    "code": "project_state_unreadable",
+                    "message": "project state could not be read safely",
                 }],
             )
-            self.assertEqual(payload["data"]["schema_from"], 10)
+            self.assertIsNone(payload["data"]["schema_from"])
             self.assertEqual(payload["data"]["completed_writes"], [])
             with closing(sqlite3.connect(install.db_path)) as connection:
                 self.assertEqual(

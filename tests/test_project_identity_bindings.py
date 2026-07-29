@@ -7,7 +7,7 @@ import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 from unittest import mock
 
@@ -24,6 +24,7 @@ from task_governance_tool.storage import (  # noqa: E402
     DatabaseTarget,
     ProjectIdentity,
     StorageError,
+    UnboundDatabaseTarget,
     apply_project_identity_bindings_migration,
     apply_completion_commit_migration,
     apply_completion_evidence_migration,
@@ -50,7 +51,7 @@ from task_governance_tool.storage import (  # noqa: E402
 )
 from tests.m14_test_support import (  # noqa: E402
     create_v12_target,
-    make_physical_install,
+    make_legacy_physical_install as make_physical_install,
 )
 
 
@@ -856,6 +857,101 @@ class ProjectIdentityBindingTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, "internal_error")
             self.assertEqual(logical_database_state(target.db_path), before_replay)
 
+    def test_unbound_uuid_initialization_has_no_placeholder_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = (root / "governed-project").resolve()
+            repo.mkdir()
+            observed = project_identity(repo)
+            target = UnboundDatabaseTarget(
+                canonical_repo=observed.canonical_repo,
+                canonical_path_hash=observed.canonical_path_hash,
+                display_name=observed.display_name,
+                db_path=(root / "state" / "current" / "taskgov.sqlite").resolve(),
+            )
+
+            self.assertTrue(target.explicit_db)
+            self.assertFalse(hasattr(target, "project"))
+            self.assertFalse(hasattr(target, "project_id"))
+            with self.assertRaises(FrozenInstanceError):
+                target.display_name = "changed"  # type: ignore[misc]
+
+            with mock.patch(
+                "task_governance_tool.storage.project_identity",
+                side_effect=AssertionError("path-derived identity must not be created"),
+            ) as path_identity:
+                result = initialize_uuid_database(
+                    target,
+                    project_id_factory=lambda: UUID_HEX,
+                    clock=lambda: MIGRATION_TIME,
+                )
+
+            path_identity.assert_not_called()
+            expected_id = f"tg_project_{UUID_HEX}"
+            self.assertEqual(result.target.project.project_id, expected_id)
+            self.assertEqual(result.target.project.canonical_repo, target.canonical_repo)
+            self.assertEqual(
+                result.target.project.canonical_path_hash,
+                target.canonical_path_hash,
+            )
+            self.assertEqual(result.target.project.display_name, target.display_name)
+            self.assertEqual(result.target.db_path, target.db_path)
+            self.assertTrue(result.target.explicit_db)
+            with closing(connect(target.db_path)) as connection:
+                binding = read_project_binding_state(
+                    connection,
+                    expected_project_id=expected_id,
+                )
+                self.assertEqual(
+                    (
+                        binding.identity_scheme,
+                        binding.binding_generation,
+                        binding.binding_reason,
+                        binding.binding_updated_at,
+                    ),
+                    ("uuid_v1", 1, "fresh_setup", MIGRATION_TIME),
+                )
+
+    def test_unbound_uuid_initializer_requires_the_exact_fixed_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = (root / "governed-project").resolve()
+            repo.mkdir()
+            observed = project_identity(repo)
+            valid = UnboundDatabaseTarget(
+                canonical_repo=observed.canonical_repo,
+                canonical_path_hash=observed.canonical_path_hash,
+                display_name=observed.display_name,
+                db_path=(root / "state" / "current" / "taskgov.sqlite").resolve(),
+            )
+            invalid_targets = (
+                replace(valid, explicit_db=False),
+                replace(valid, db_path=root / "state" / "current" / "other.sqlite"),
+                replace(valid, db_path=root / "state" / "other" / "taskgov.sqlite"),
+                replace(valid, db_path=root / "other" / "current" / "taskgov.sqlite"),
+                replace(valid, db_path=Path("state/current/taskgov.sqlite")),
+            )
+
+            for target in invalid_targets:
+                with self.subTest(target=target):
+                    with self.assertRaises(StorageError) as raised:
+                        initialize_uuid_database(
+                            target,
+                            project_id_factory=lambda: UUID_HEX,
+                            clock=lambda: MIGRATION_TIME,
+                        )
+                    self.assertEqual(
+                        (
+                            raised.exception.code,
+                            raised.exception.message,
+                        ),
+                        (
+                            "internal_error",
+                            "fixed database target is invalid",
+                        ),
+                    )
+            self.assertFalse((root / "state").exists())
+
     def test_uuid_initializer_rejects_nonexplicit_target_without_writing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -907,44 +1003,56 @@ class ProjectIdentityBindingTests(unittest.TestCase):
                 self.assertFalse((root / "state").exists())
 
     def test_uuid_initializer_injected_failures_leave_no_fixed_state(self):
-        for fail_stage in ("after_project_row", "after_history_row"):
-            with (
-                self.subTest(fail_stage=fail_stage),
-                tempfile.TemporaryDirectory() as tmp,
-            ):
-                root = Path(tmp)
-                repo = root / "governed-project"
-                repo.mkdir()
-                target = DatabaseTarget(
-                    project=project_identity(repo),
-                    db_path=(
+        for target_kind in ("bound", "unbound"):
+            for fail_stage in ("after_project_row", "after_history_row"):
+                with (
+                    self.subTest(target_kind=target_kind, fail_stage=fail_stage),
+                    tempfile.TemporaryDirectory() as tmp,
+                ):
+                    root = Path(tmp)
+                    repo = root / "governed-project"
+                    repo.mkdir()
+                    observed = project_identity(repo)
+                    db_path = (
                         root / "state" / "current" / "taskgov.sqlite"
-                    ).resolve(),
-                    explicit_db=True,
-                )
+                    ).resolve()
+                    target: DatabaseTarget | UnboundDatabaseTarget
+                    if target_kind == "bound":
+                        target = DatabaseTarget(
+                            project=observed,
+                            db_path=db_path,
+                            explicit_db=True,
+                        )
+                    else:
+                        target = UnboundDatabaseTarget(
+                            canonical_repo=observed.canonical_repo,
+                            canonical_path_hash=observed.canonical_path_hash,
+                            display_name=observed.display_name,
+                            db_path=db_path,
+                        )
 
-                with self.assertRaises(StorageError):
-                    initialize_uuid_database(
+                    with self.assertRaises(StorageError):
+                        initialize_uuid_database(
+                            target,
+                            project_id_factory=lambda: UUID_HEX,
+                            clock=lambda: MIGRATION_TIME,
+                            fail_stage=fail_stage,
+                        )
+
+                    self.assertFalse((root / "state").exists())
+                    self.assertFalse(target.db_path.exists())
+                    for suffix in ("-journal", "-wal", "-shm"):
+                        self.assertFalse(Path(f"{target.db_path}{suffix}").exists())
+
+                    result = initialize_uuid_database(
                         target,
                         project_id_factory=lambda: UUID_HEX,
                         clock=lambda: MIGRATION_TIME,
-                        fail_stage=fail_stage,
                     )
-
-                self.assertFalse((root / "state").exists())
-                self.assertFalse(target.db_path.exists())
-                for suffix in ("-journal", "-wal", "-shm"):
-                    self.assertFalse(Path(f"{target.db_path}{suffix}").exists())
-
-                result = initialize_uuid_database(
-                    target,
-                    project_id_factory=lambda: UUID_HEX,
-                    clock=lambda: MIGRATION_TIME,
-                )
-                self.assertEqual(
-                    result.target.project.project_id,
-                    f"tg_project_{UUID_HEX}",
-                )
+                    self.assertEqual(
+                        result.target.project.project_id,
+                        f"tg_project_{UUID_HEX}",
+                    )
 
     def test_uuid_initializer_rejects_invalid_target_metadata_and_sidecars(self):
         cases = (
@@ -1002,12 +1110,12 @@ class ProjectIdentityBindingTests(unittest.TestCase):
                 else:
                     self.assertTrue(sidecar.is_file())
 
-    def test_production_initializer_remains_legacy_layout_and_never_calls_uuid(self):
+    def test_legacy_initializer_remains_available_for_transition_sources(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             with mock.patch(
                 "task_governance_tool.storage.uuid.uuid4",
-                side_effect=AssertionError("production UUID activation"),
+                side_effect=AssertionError("legacy initializer must not use UUID"),
             ):
                 result = initialize_database(install.target)
 
@@ -1016,11 +1124,6 @@ class ProjectIdentityBindingTests(unittest.TestCase):
             self.assertTrue(install.db_path.is_file())
             self.assertIn("projects", install.db_path.parts)
             self.assertFalse((install.skill_root / "state" / "current").exists())
-            for module_name in ("cli.py", "setup.py", "project_scope.py", "doctor.py"):
-                module_text = (
-                    SKILL_ROOT / "scripts" / "task_governance_tool" / module_name
-                ).read_text(encoding="utf-8")
-                self.assertNotIn("initialize_uuid_database", module_text)
             with closing(connect(install.db_path)) as connection:
                 binding = read_project_binding_state(
                     connection,

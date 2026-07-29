@@ -1,12 +1,14 @@
 # task-governance-tool MVP Design
 
-Status: implemented through the TG-M16.4 reduced loop-discipline behavioral
-acceptance at release v0.8.0/schema v13 and Viewer snapshot v3. TG-M17.0 fixes
-the approved stable-identity and relocation target for release v0.9.0/schema
-v14 without activating it. TG-M17.1's schema and repository primitives are
-implemented as a non-public staging slice; TG-M17.2 through TG-M17.5 retain
-ownership of production activation, integration, and synchronization. Viewer
-snapshot v3 is retained. TG-M12.3 Issue adapter remains blocked.
+Status: release acceptance remains at v0.8.0/schema v13 with Viewer snapshot
+v3 through the completed TG-M16.4 reduced-loop behavioral acceptance. TG-M17.0 fixes the
+approved v0.9.0/schema-v14 stable-identity and relocation target. TG-M17.1 and
+TG-M17.2 are implemented as non-public staging slices: schema-v14
+identity/binding primitives, fixed production resolution, fresh UUID setup,
+and same-binding staged publication are active on this branch. TG-M17.3
+through TG-M17.5 retain ownership of relocation, consumer-hardening
+acceptance, and release synchronization. Viewer snapshot v3 is retained.
+TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -3275,6 +3277,15 @@ the consumer. A write request carries identity, hash, and generation as its
 basis and compares all three again in its existing short write transaction.
 There is no separate identity lookup call in the normal Task loop.
 
+The one resolver has two deterministic validation projections. Active
+fixed-primary consumers validate only the authoritative primary and derive the
+canonical artifact targets; they do not open every retained backup or validate
+Viewer content on each Task/handoff/review command. Setup selects the deep
+projection, and missing-primary recovery, legacy discovery, and private-stage
+validation always use it. That projection validates the full bounded
+backup/Viewer/lock inventory before setup repairs or publishes anything. The
+selection is fixed by the caller and never exposed as an LLM or CLI choice.
+
 ### Bounded Legacy Resolver
 
 Legacy inspection runs only when the fixed primary and higher-precedence fixed
@@ -3436,6 +3447,10 @@ Write-mode setup obtains locks in this order:
 It never holds a SQLite writer while copying a source database, rendering or
 publishing a Viewer, invoking Git, deleting a legacy artifact, or waiting for
 another lock. Read-only preview creates none of these locks or artifacts.
+Both setup modes inspect an existing transition-lock artifact through the
+shared zero/one-byte lock validator before planning or writing; malformed
+state returns the same sanitized `setup_incomplete` result without changing
+the file.
 Normal business commands do not take the state-transition lock; fixed rebind
 therefore uses SQLite compare-and-swap, while legacy state is not an active
 normal-command target after M17.2.

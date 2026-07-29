@@ -27,6 +27,10 @@ from task_governance_tool.storage import (
     read_doctor_state,
     utc_now,
 )
+from task_governance_tool.state_resolver import (
+    consumer_error_code,
+    resolve_project_state,
+)
 
 
 DOCTOR_MESSAGES = {
@@ -209,6 +213,7 @@ def _unavailable_result(
     schema_version: int | None = None,
     package_warning: dict[str, str] | None,
     advisory: bool,
+    project_id: str | None = None,
 ) -> DoctorServiceResult:
     package = (
         inspection.package_status.to_data()
@@ -224,11 +229,7 @@ def _unavailable_result(
     )
     return DoctorServiceResult(
         ok=advisory,
-        project_id=(
-            inspection.scope.target.project.project_id
-            if inspection.scope is not None
-            else None
-        ),
+        project_id=project_id,
         data=_doctor_data(
             package=package,
             setup_eligible=advisory and package_warning is None,
@@ -285,11 +286,43 @@ def run_doctor(
         )
 
     scope = inspection.scope
+    resolution = resolve_project_state(
+        skill_root=scope.skill_root,
+        repo=scope.canonical_repo,
+    )
+    resolver_code = consumer_error_code(resolution)
+    if resolver_code is not None:
+        code = (
+            "setup_required"
+            if resolver_code == "db_not_initialized"
+            else resolver_code
+        )
+        advisory = code in READINESS_WARNING_CODES
+        return _unavailable_result(
+            inspection,
+            code=code,
+            schema_version=resolution.source_schema_version,
+            package_warning=package_warning,
+            advisory=advisory,
+            project_id=(
+                resolution.project_id
+                if code in READINESS_WARNING_CODES
+                else None
+            ),
+        )
+    if resolution.target is None:
+        return _unavailable_result(
+            inspection,
+            code="project_state_unreadable",
+            package_warning=package_warning,
+            advisory=False,
+        )
+    target = resolution.target
     schema_version: int | None = None
     try:
-        with closing(connect_readonly(scope.target.db_path)) as connection:
+        with closing(connect_readonly(target.db_path)) as connection:
             schema_version = current_schema_version(connection)
-            storage_state = read_doctor_state(connection, scope.target)
+            storage_state = read_doctor_state(connection, target)
     except (StorageError, sqlite3.Error) as exc:
         code = _storage_error_code(exc)
         if code in READINESS_WARNING_CODES:
@@ -358,7 +391,7 @@ def run_doctor(
     )
     return DoctorServiceResult(
         ok=True,
-        project_id=scope.target.project.project_id,
+        project_id=target.project.project_id,
         data=data,
         warnings=warnings,
         errors=[],

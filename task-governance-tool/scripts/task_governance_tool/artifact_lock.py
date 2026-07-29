@@ -77,12 +77,48 @@ def _release(descriptor: int) -> None:
     )
 
 
+def inspect_existing_artifact_lock(path: Path) -> None:
+    """Validate an optional lock artifact without creating or acquiring it."""
+
+    try:
+        parent_before = path.parent.lstat()
+        if _is_reparse(parent_before) or not stat.S_ISDIR(parent_before.st_mode):
+            raise ArtifactLockError(contended=False)
+        try:
+            details = path.lstat()
+        except FileNotFoundError:
+            parent_after = path.parent.lstat()
+            if (
+                _identity(parent_before) != _identity(parent_after)
+                or _is_reparse(parent_after)
+                or not stat.S_ISDIR(parent_after.st_mode)
+            ):
+                raise ArtifactLockError(contended=False)
+            return
+        parent_after = path.parent.lstat()
+        if (
+            _identity(parent_before) != _identity(parent_after)
+            or _is_reparse(parent_after)
+            or not stat.S_ISDIR(parent_after.st_mode)
+            or _is_reparse(details)
+            or not stat.S_ISREG(details.st_mode)
+            or int(details.st_size) not in {0, 1}
+            or not _same_open_file(path, details)
+        ):
+            raise ArtifactLockError(contended=False)
+    except ArtifactLockError:
+        raise
+    except OSError as exc:
+        raise ArtifactLockError(contended=False) from exc
+
+
 @contextmanager
-def zero_wait_artifact_lock(path: Path) -> Iterator[None]:
+def zero_wait_artifact_lock(path: Path) -> Iterator[bytes]:
     """Lock one validated regular file without waiting or stale-file cleanup."""
 
     descriptor: int | None = None
     locked = False
+    lock_bytes = b""
     try:
         parent_before = path.parent.lstat()
         if _is_reparse(parent_before) or not stat.S_ISDIR(parent_before.st_mode):
@@ -110,6 +146,15 @@ def zero_wait_artifact_lock(path: Path) -> Iterator[None]:
                 raise ArtifactLockError(contended=True) from exc
             raise
         locked = True
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        lock_bytes = os.read(descriptor, 1)
+        current = os.fstat(descriptor)
+        if (
+            lock_bytes.__len__() != 1
+            or int(current.st_size) != 1
+            or not _same_open_file(path, current)
+        ):
+            raise ArtifactLockError(contended=False)
     except ArtifactLockError:
         if descriptor is not None:
             with suppress(OSError):
@@ -122,7 +167,7 @@ def zero_wait_artifact_lock(path: Path) -> Iterator[None]:
         raise ArtifactLockError(contended=False) from exc
 
     try:
-        yield
+        yield lock_bytes
     finally:
         if descriptor is not None:
             if locked:

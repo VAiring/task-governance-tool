@@ -15,9 +15,7 @@ from task_governance_tool.completion import safe_git_command, safe_git_environme
 from task_governance_tool.self_status import PackageSelfStatus, inspect_local_package
 from task_governance_tool.storage import (
     DATABASE_BUSY_MESSAGE,
-    DatabaseTarget,
     lexical_skill_root_from_script,
-    resolve_database_target,
     skill_root_from_script,
     uses_unsupported_linked_install,
 )
@@ -94,7 +92,8 @@ class ProjectScopeIssue:
 @dataclass(frozen=True)
 class ProjectScope:
     skill_root: Path
-    target: DatabaseTarget
+    canonical_repo: Path
+    layout: str
 
 
 @dataclass(frozen=True)
@@ -204,29 +203,22 @@ def _required_files_are_regular(root: Path, relative_paths: Iterable[Path]) -> b
     return True
 
 
-def _state_path_is_valid(skill_root: Path, target: DatabaseTarget) -> bool:
+def _state_path_is_valid(skill_root: Path) -> bool:
     state_root = skill_root / "state"
-    expected_db = (
-        state_root
-        / "projects"
-        / target.project.project_id
-        / "taskgov.sqlite"
-    )
-    if not _same_location(expected_db, target.db_path):
-        return False
+    current_root = state_root / "current"
+    database_path = current_root / "taskgov.sqlite"
     try:
         resolved_state = state_root.resolve(strict=False)
-        resolved_db = target.db_path.resolve(strict=False)
-        resolved_db.relative_to(resolved_state)
+        resolved_current = current_root.resolve(strict=False)
+        resolved_current.relative_to(resolved_state)
     except (OSError, RuntimeError, ValueError):
         return False
 
     directory_candidates = (
         state_root,
-        state_root / "projects",
-        state_root / "projects" / target.project.project_id,
-        state_root / "projects" / target.project.project_id / "viewer",
-        state_root / "projects" / target.project.project_id / "backups",
+        current_root,
+        current_root / "viewer",
+        current_root / "backups",
     )
     for candidate in directory_candidates:
         try:
@@ -237,8 +229,13 @@ def _state_path_is_valid(skill_root: Path, target: DatabaseTarget) -> bool:
         except OSError:
             return False
     try:
-        if _is_linklike(target.db_path) or (
-            target.db_path.exists() and not target.db_path.is_file()
+        if _is_linklike(database_path) or (
+            database_path.exists() and not database_path.is_file()
+        ):
+            return False
+        transition_lock = state_root / "taskgov-state.lock"
+        if _is_linklike(transition_lock) or (
+            transition_lock.exists() and not transition_lock.is_file()
         ):
             return False
     except OSError:
@@ -378,16 +375,12 @@ def inspect_project_scope(
 
     scope: ProjectScope | None = None
     if canonical_repo is not None and layout is not None:
-        target = resolve_database_target(
-            repo=canonical_repo,
-            db=None,
-            script_path=script_path,
-        )
-        if not _state_path_is_valid(physical_skill_root, target):
+        if not _state_path_is_valid(physical_skill_root):
             add_issue("state_path_invalid")
         scope = ProjectScope(
             skill_root=physical_skill_root,
-            target=target,
+            canonical_repo=canonical_repo,
+            layout=layout,
         )
         if include_ignore and not _state_is_ignored(canonical_repo, layout):
             add_issue("state_ignore_required")

@@ -2,8 +2,10 @@
 
 Status: implementation units through the TG-M16.4 reduced loop-discipline
 behavioral acceptance are complete at v0.8.0/schema v13 with Viewer snapshot
-v3. TG-M16.3 is cancelled. TG-M12.3 remains blocked on a future Issue Skill
-intake contract.
+v3. TG-M17.0 has fixed the approved v0.9.0/schema-v14 stable-identity and
+relocation contract; TG-M17.1 through TG-M17.5 remain sequential
+implementation units. TG-M16.3 is cancelled. TG-M12.3 remains blocked on a
+future Issue Skill intake contract.
 The default-browser launch follow-up remains requirements-only pending design
 and roadmap approval.
 
@@ -3229,6 +3231,305 @@ Verification:
 - package self-check, full offline suite, `git diff --check`, and two
   exact-target Tier 2 PASS reviews.
 
+## TG-M17 Stable Project Identity And Relocation
+
+TG-M17 is one sequential lane, `TG-M17-IDENTITY`. It keeps immutable project
+identity while allowing an explicitly confirmed project-root move, and replaces
+the path-keyed generated-state directory with one physical-package-local fixed
+layout. It adds no project registry, copy/fork inference, normal-loop call, or
+background process.
+
+The release target is v0.9.0/schema v14 with Viewer snapshot v3 and source
+schema support 5-14. M17.1 through M17.4 are staging revisions and retain
+package version 0.8.0; M17.5 alone synchronizes the release version. No M18
+execution unit may start until M17.5 is done.
+
+### TG-M17.0 Stable Project Identity And Relocation Contract
+
+Kind: sequential
+Lane: `TG-M17-IDENTITY`
+Lane order: 10
+Review tier: Tier 2
+Depends on: completed TG-M15.6 and TG-M16.4
+Status: complete
+
+Intended outcome:
+
+- Fix one implementation-ready contract for immutable IDs, mutable binding,
+  fixed state, v1-v13 compatibility, setup preview/confirmation, privacy,
+  recovery, concurrency, output, and exact M17 ownership.
+- Reconcile the completed Viewer-state and reduced-loop contracts without
+  activating runtime behavior.
+
+Write scope:
+
+- durable authority routing only in root `AGENTS.md`;
+- `docs/specification.md`, `docs/design.md`,
+  `docs/implementation-roadmap.md`, and `plan.md`;
+- no Python, tests, active Skill/package, manifest, generated state, or target
+  source.
+
+Verification:
+
+- target v0.9.0/schema v14/Viewer v3, 20 leaves, and sole setup option are
+  exact;
+- UUID/legacy identity, binding DDL/history, fixed paths, legacy and transition
+  discovery, token codec/time/replay, JSON/errors, truth tables, durable stage
+  order, cleanup, missing/corrupt recovery, privacy, locks, and unit ownership
+  leave no implementation choice;
+- normal Task work stays at nine/ten calls and adds no question or stop;
+- full offline suite, doctor, `git diff --check`, and two exact-target Tier 2
+  PASS reviews.
+
+### TG-M17.1 Schema V14 Identity And Binding Repository
+
+Kind: sequential
+Lane: `TG-M17-IDENTITY`
+Lane order: 20
+Review tier: Tier 2
+Depends on: completed TG-M17.0
+Status: ready
+
+Intended outcome:
+
+- Add schema v14 identity scheme, binding generation/current metadata,
+  append-only history, immutable triggers, and compare-and-swap repository
+  operations while preserving all existing IDs and records.
+- Provide a UUID initializer only through an explicit injected fixed target;
+  do not activate fixed production resolution or fresh UUID setup.
+
+Write scope:
+
+- storage schema/migration and repository/model primitives;
+- v1-v13 migration, invariant, rollback, concurrency, privacy, and injected
+  initializer tests;
+- directly coupled design/status and manifest hashes for changed covered core.
+
+Verification:
+
+- every v1-v13 source preserves project ID, records, 12-task/191-event and
+  completion/review/maintenance traces and becomes `legacy_path_v1`
+  generation 1;
+- previously valid legacy display metadata is deterministically normalized to
+  the v14 bounded non-authoritative form without changing identity or business
+  records;
+- UUID IDs are exact UUIDv4-backed `tg_project_<32hex>` values only through
+  injection; production remains legacy-layout/path identity in this staging
+  revision;
+- current/history mismatch, raw path, invalid hash/display/reason/time,
+  mutation/deletion, stale CAS, same-hash update, overflow, and injected
+  failures are no-write;
+- binding CAS atomically advances the Viewer source generation; missing state
+  or either generation overflow rolls back identity/history/token use;
+- self-host may become the explicitly supported schema-v14 legacy-layout
+  transition input;
+- focused/full offline tests, doctor, manifest, diff check, and two exact
+  Tier 2 PASS reviews.
+
+### TG-M17.2 Fixed State Resolver And Same-Binding Migration
+
+Kind: sequential
+Lane: `TG-M17-IDENTITY`
+Lane order: 30
+Review tier: Tier 2
+Depends on: completed TG-M17.1
+Status: ready
+
+Intended outcome:
+
+- Activate the one `state/current` production resolver and fresh `uuid_v1`
+  initializer for every DB-backed entry path.
+- Publish exactly one valid same-binding legacy source to fixed state without a
+  relocation decision; discover and fully validate moved sources read-only.
+
+Write scope:
+
+- project scope/storage resolver and production initialization wiring;
+- bounded legacy discovery and opaque validated DB/backup/Viewer transport;
+- same-binding staging/no-clobber/cleanup and fixed path tests;
+- moved-candidate interim no-write result only;
+- directly coupled implementation docs and manifest hashes.
+
+Verification:
+
+- fixed database/backups/Viewer derive only from the shared resolver; fresh
+  preview has no ID and write setup creates one UUID once;
+- source schemas 1-13 and M17.1 transition v14 migrate same-binding; records,
+  retained backups/policy, and last-good Viewer survive;
+- a same-binding legacy missing primary restores from its newest coherent
+  managed backup only into the private fixed stage; a moved backup-only source
+  remains unreadable;
+- the existing retained-set-plus-one crash state (maximum 21 artifacts) is
+  accepted with or without a primary in both pre-row file-only and post-row
+  coherent forms, plus the single row-only interrupted-prune form; it is copied
+  unchanged and reconciled to bounded convergence only in the private stage
+  before migration backup. Missing-primary recovery also accepts the exact
+  bounded relation where the selected newest backup is file-only and zero
+  through 20 older snapshot rows lack files already removed by pruning. A
+  second file-only artifact, a second row-only exception with a primary, more
+  than 20 missing snapshot rows, more than 21 artifact/row union identities, or
+  an existing-reconciler-invalid state fails closed; v1-v10 artifacts follow
+  their existing schema-specific pointer/retention rules rather than being
+  misclassified as v11+ file-only exceptions;
+- staged publication records one path-free bounded canonical cleanup inventory
+  plus pending/fingerprint state;
+- private stage recovery requires the exact sibling owner marker and bounded
+  allow-list; basename shape alone never authorizes deletion;
+  fixed-primary setup can resume only its exact fixed-length retirement
+  inventory without reopening general legacy discovery;
+- zero/one/multiple/65-entry, unsafe canonical, foreign, corrupt, journal, and
+  concurrent-destination paths fail as specified; unrelated contained files,
+  including the self-host pre-v9 copy, retain bytes and location;
+- moved legacy and fixed mismatch never write and M17.2 contains no token,
+  option, or binding update;
+- structural/focused/full tests, doctor, manifest, diff check, and two exact
+  Tier 2 PASS reviews.
+
+### TG-M17.3 Explicit Relocation Confirmation And Rebind
+
+Kind: sequential
+Lane: `TG-M17-IDENTITY`
+Lane order: 40
+Review tier: Tier 2
+Depends on: completed TG-M17.2
+Status: ready
+
+Intended outcome:
+
+- Add only `setup --confirm-relocation <token>` and the deterministic 15-minute
+  self-contained confirmation transport.
+- Implement fixed-state rebind and confirmed moved-legacy staged
+  publication/rebind with replay-safe, token-free rerun and bounded cleanup.
+
+Write scope:
+
+- setup parser/service, token codec/context, additive relocation JSON, stable
+  sanitized errors/messages, state-transition lock, binding orchestration,
+  and reuse of M17.2's staged publication and cleanup/resume primitive for a
+  confirmed moved source;
+- no new command leaf or source kind;
+- focused help/JSON/error/time/failure/concurrency/privacy tests and coupled
+  docs/manifest hashes.
+
+Verification:
+
+- preview alone issues an exact canonical token and creates no file, lock,
+  sidecar, DB, artifact, Git, or target change;
+- every relocation error has the exact setup arrays, observed/null scalar
+  projection, and six-key relocation object fixed by the specification;
+- malformed, future, expired, stale, wrong-context, current-context, used, and
+  combined read-only/token paths return their exact result without echoing
+  values;
+- each moved/fixed failure point preserves the designated source/last-good
+  state; no-clobber publication, atomic binding history, token replay error,
+  token-free Viewer/cleanup rerun, and idempotent final setup pass;
+- inventory serialization/fingerprint, exact temp bounds, long legacy IDs, partial
+  old/retirement cleanup, neither-location flag clear, and fixed-rebind
+  Viewer-due crash recovery are deterministic;
+- backup-only moved recovery remains fail-closed rather than becoming a third
+  relocation source;
+- focused/full offline tests, doctor, manifest, diff check, and two exact
+  Tier 2 PASS reviews.
+
+### TG-M17.4 Stable-State Consumer And Recovery Hardening
+
+Kind: sequential
+Lane: `TG-M17-IDENTITY`
+Lane order: 50
+Review tier: Tier 2
+Depends on: completed TG-M17.3
+Status: ready
+
+Intended outcome:
+
+- Audit M17.2's already-active public entry-path wiring and every artifact
+  consumer for exclusive use of that resolver, correcting only integration,
+  stale-target, recovery, privacy, and concurrency gaps.
+- Preserve the completed TG-M15.5/M15.6 presentation boundary and TG-M16
+  reduced-loop/reconciliation behavior.
+
+Write scope:
+
+- backup restore/rotation, Viewer/last-good, doctor, maintenance, setup, Task,
+  handoff, and review consumer integration;
+- structural and end-to-end recovery/no-write/concurrency tests plus directly
+  coupled implementation docs and manifest hashes;
+- no schema, setup option, second resolver, or token redesign.
+
+Verification:
+
+- all 20 leaves and every artifact consumer use one resolver; stateful stale
+  targets cannot write or publish;
+- doctor remains one read-only diagnostic with the exact relocation/migration/
+  unreadable rows, fixed `continue`, and no token or repair;
+- missing primary restores only from valid matching fixed backups or the
+  explicitly same-binding legacy recovery path; corrupt primary is never
+  replaced; retained older backup bindings must be exact lineage prefixes;
+  primary-present and primary-missing legacy fixtures cover both pre-row
+  file-only and post-row coherent in-flight states, including a 20-to-1
+  retention reduction, plus interrupted file-before-row pruning and the
+  missing-primary fully-pruned and partially-pruned snapshot normalization;
+  they reject a second file-only, an invalid/beyond-20 missing-row relation,
+  and more than 21 union identities;
+  retained backup lineage, Viewer generations, retention, refresh, History
+  state, last-good, lock order, and no-write reads survive migration/rebind;
+  fixed-primary loss before the next current-binding backup remains the
+  documented fail-closed recovery window rather than triggering an implicit
+  synchronous backup;
+- normal selection, Effort route, Skill loop, privacy, compact JSON, and
+  nine/ten calls are unchanged;
+- focused/full offline tests, doctor, manifest, diff check, and two exact
+  Tier 2 PASS reviews.
+
+Before this unit starts, its SQLite Task Contract must replace the obsolete
+reference to the cancelled TG-M16.3 bootstrap with the completed reduced-loop
+and reconciliation boundary. This is a Task-record authority correction, not
+new product scope.
+
+### TG-M17.5 Package Synchronization And Relocation Acceptance
+
+Kind: sequential
+Lane: `TG-M17-IDENTITY`
+Lane order: 60
+Review tier: Tier 2
+Depends on: completed TG-M17.4
+Status: ready
+
+Intended outcome:
+
+- Synchronize the active Skill, one-level references, parser/help, README,
+  release/install guidance, metadata, integrity manifest, formal status, and
+  isolated/self-host acceptance at v0.9.0/schema v14/Viewer v3.
+- Add no behavior and perform no external publication action.
+
+Write scope:
+
+- package/release/help/guidance/examples/fixtures/integrity synchronization;
+- final status only in specification, design, roadmap, and plan; root
+  `AGENTS.md` receives only durable safety/authority routing, never milestone
+  status;
+- representative forward tests that reuse M17.1-M17.4 focused fixtures.
+
+Verification:
+
+- exactly 20 leaves and one relocation option; source/package versions,
+  schemas, Viewer source 5-14, JSON, help, docs, fixtures, and hashes agree;
+- fresh UUID, full pre-v9, v13, and transition-v14 same-binding flows; moved
+  preview/confirm, fixed rebind, record preservation, replay, token-free rerun,
+  corrupt/unsafe/ambiguous/copy refusal, backup/Viewer/M15.6, and self-host;
+- setup and doctor remain outside the normal Skill loop; no raw path, network,
+  target mutation, push, workflow dispatch, install, or release publication;
+- Skill guidance presents mismatch preview and waits for explicit current user
+  approval before passing the exact token; it never auto-confirms, and a fresh
+  token after expiry/staleness requires fresh approval;
+- package self-check, full offline suite, forward matrix, doctor, release
+  artifact gate, diff check, and two exact-final-target Tier 2 PASS reviews.
+
+Before this unit starts, its SQLite Task Contract must replace the obsolete
+TG-M16.3 policy/bootstrap reference and constrain root `AGENTS.md` to durable
+routing rather than milestone status. These are Task-record authority
+corrections, not behavior additions.
+
 ## Roadmap Completion Criteria
 
 The currently approved roadmap is complete when:
@@ -3237,6 +3538,8 @@ The currently approved roadmap is complete when:
   through TG-M15.6 are complete;
 - TG-M16.0, TG-M16.1, TG-M16.2, and TG-M16.4 are complete, with TG-M16.3
   remaining cancelled;
+- TG-M17.0 through TG-M17.5 are complete in lane order, including correction of
+  the two stale future Task-record references before M17.4 and M17.5 begin;
 - every unit's documented verification and review gate has passed for its exact
   final revision;
 - no valid High or Medium review finding remains unresolved;

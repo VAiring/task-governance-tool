@@ -193,6 +193,11 @@ The product must not become:
 - Use stable IDs for records that cross boundaries, such as `project_id`,
   `profile_id`, `task_id`, `execution_unit_id`, `verification_run_id`, and
   `review_request_id`.
+- Keep a stored project identity separate from its mutable filesystem binding.
+  A path change never changes durable business-record IDs, and only the
+  explicit setup confirmation flow defined by the current specification may
+  advance a binding. Normal commands and `doctor` never infer or perform a
+  rebind.
 - Avoid abstractions broader than the implemented and tested profile and CLI
   flows.
 
@@ -228,6 +233,10 @@ The product must not become:
 - Because the MVP skill is installed per governed project, generated local
   state belongs under the physical project-scoped package's `state/`
   directory. The public CLI does not expose an alternate state path.
+- One shared storage resolver owns the canonical package-local database,
+  backup, and Viewer targets. Feature code must not reconstruct a project ID
+  or state path, and approved future layout contracts remain inactive until
+  their owning resolver-activation unit is complete.
 - Generated state under a project-scoped install must be ignored or otherwise
   kept out of source commits before `setup` or other write commands are used.
 - The canonical static Viewer produced by explicit setup and opted-in bounded
@@ -259,6 +268,10 @@ The product must not become:
 - Inspect target projects read-only by default.
 - Do not modify a target project simply because task-governance-tool inspected
   it.
+- A changed project path is not evidence of move, copy, or fork intent.
+  Inspection may report a sanitized binding mismatch, but no path, hash,
+  identity, database, artifact, or target-project write is authorized until
+  the user invokes the exact explicit setup confirmation flow.
 - Installing the skill into a target project's `.agents/skills` directory is a
   target-project mutation and requires explicit user approval for that
   destination. Ordinary writes use only the canonical generated database, and

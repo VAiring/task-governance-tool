@@ -1,10 +1,12 @@
 # task-governance-tool MVP Specification
 
 Status: implemented through the TG-M16.4 reduced loop-discipline behavioral
-acceptance at release v0.8.0/schema v13 and Viewer snapshot v3. TG-M16.1
-supplies runtime Effort routing, while TG-M16.2 and TG-M16.4 supply the
-conditional session-local guidance and synchronized package evidence.
-TG-M12.3 Issue adapter remains blocked on a future intake contract.
+acceptance at release v0.8.0/schema v13 and Viewer snapshot v3. The TG-M17.0
+stable-identity and relocation contract is complete as an approved target for
+release v0.9.0/schema v14; it is not active runtime behavior until its owning
+TG-M17 implementation and synchronization units complete. Viewer snapshot v3
+is retained. TG-M12.3 Issue adapter remains blocked on a future intake
+contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -2741,6 +2743,627 @@ with session-local retry counts reset. It installs nothing, edits no consuming
 project, and performs no instruction adoption. Any broader project-policy
 adoption requires a later separately approved design and is not a standing
 handoff from TG-M16.
+
+## Approved Post-MVP Extension: TG-M17 Stable Project Identity And Relocation
+
+TG-M17 separates immutable project identity from mutable filesystem binding.
+This section is the approved target contract. Until TG-M17.5 completes, the
+implemented runtime remains release v0.8.0/schema v13 with the historical
+path-derived identity and `state/projects/<project-id>` layout described
+earlier. TG-M17.1 through TG-M17.4 are non-public staging revisions; TG-M17.5
+alone synchronizes release v0.9.0.
+
+The final TG-M17 surface remains exactly 20 command leaves. The only added
+public option is `setup --confirm-relocation <token>`. Viewer snapshot remains
+version 3 and accepts source schemas 5 through 14. The normal default-off Task
+flow remains at no more than nine governance calls and an enabled Effort
+Advisory flow at no more than ten. Setup and doctor remain outside that normal
+flow.
+
+### Identity, Binding, And Fixed State
+
+Schema v14 supports exactly two identity schemes:
+
+- `legacy_path_v1`: every database migrated from schema v1 through v13 keeps
+  its existing `project_id` byte-for-byte;
+- `uuid_v1`: a fresh production setup creates one random UUIDv4-backed
+  `project_id` formatted as `tg_project_<32-lowercase-hex>`.
+
+TG-M17 never rewrites a Task, event, Contract, handoff, review, completion,
+maintenance, or Viewer-generation `project_id`. A missing fresh database has
+no durable identity: doctor, normal-command errors, and `setup --read-only`
+use top-level `project_id=null`; only write-mode setup creates and persists the
+UUID once.
+
+The current binding consists of a positive generation, the existing full
+64-lowercase-hex canonical-path SHA-256, and a non-authoritative display name.
+The hash algorithm remains the implemented `canonical_path_v1` algorithm so
+legacy values compare exactly: resolve the governed root without requiring it
+to exist, use the platform-normalized absolute spelling, UTF-8 encode, and
+SHA-256 hash. The display name is derived only from the root basename, replaces
+control and line-separator characters with U+FFFD, falls back to `project`,
+and is limited to 200 Unicode code points. Neither value is project identity.
+
+Schema v14 records the identity scheme and current binding in `project_meta`
+and one append-only binding-history row for each generation. Each row stores
+only the project ID, generation, prior and current hashes, bounded display
+name, one fixed reason, an optional relocation-token digest, and canonical UTC
+time. Reasons are exactly `legacy_migration`, `fresh_setup`, and
+`confirmed_relocation`. Generation 1 has no prior hash or token digest.
+Confirmed relocation stores SHA-256 of the complete accepted token, never the
+token itself. Raw absolute paths are prohibited from the new project identity,
+binding, cleanup, and token-history metadata. Existing sanitized Task and
+business-text privacy rules are unchanged; TG-M17 does not retrospectively
+redefine an ordinary governing-file reference as identity metadata.
+
+`project_meta` also owns one internal legacy-cleanup pending bit, an optional
+bounded canonical source-inventory JSON value, and its optional 64-hex
+fingerprint. All three are null/false normally. Staged legacy publication sets
+them before fixed state becomes canonical; successful cleanup clears them.
+The inventory contains at most 32 of the exact recognized relative artifact
+names defined below, is at most 16,384 ASCII/UTF-8 bytes, and contains no
+absolute path or unrelated filename. These fields authorize only setup's exact
+old-layout retirement, not identity or binding change.
+
+The final canonical generated targets are fixed under the one supported
+physical package:
+
+```text
+<physical-skill>/state/current/taskgov.sqlite
+<physical-skill>/state/current/backups/
+<physical-skill>/state/current/viewer/task-viewer.html
+```
+
+The ordinary project-scoped and bounded development self-host package rules
+remain unchanged. The package `state/` directory remains the ignore operand
+and generated-state boundary. Public alternate state or database paths remain
+unavailable.
+
+One shared resolver owns all production database and artifact targets. It
+derives only the current root hash and bounded display name from `--repo`, then
+reads the stored identity and binding from fixed state. Setup, doctor, every
+Task/handoff/review leaf, backup, Viewer, maintenance, and recovery consumer
+must not reconstruct an identity or canonical state path independently.
+Internal explicit target injection remains test-only.
+
+### Legacy Discovery And Compatibility
+
+When the fixed primary is absent, the shared resolver used by every DB-backed
+leaf may inspect only direct children of
+`<physical-skill>/state/projects`; it does not search a repository, parent
+directory, user-wide install, link target, or network location. Setup and
+doctor consume the richer plan/diagnostic projection; normal leaves use the
+same read-only observation only to return the exact state result below.
+Enumeration stops and fails closed after 64 entries. Every inspected component
+must be lexically and canonically contained, physical, non-link,
+non-junction/non-reparse, and of the expected regular-file or directory kind.
+An unknown direct child of `state/projects` is left untouched and makes source
+selection unreadable rather than permitting fresh initialization.
+
+One legacy candidate requires all of the following:
+
+- exactly one physical candidate directory and either one regular
+  `taskgov.sqlite` or a missing primary with at least one valid managed backup;
+- directory basename equal to the database's stored legacy `project_id`;
+- source schema 1 through 13, or the schema-v14 legacy-layout transition state
+  produced while TG-M17.1 is active before TG-M17.2;
+- implicit pre-v14 or explicit `legacy_path_v1` identity;
+- contiguous migration history, one project row, successful `quick_check`,
+  no foreign-key violation, and supported rollback-journal state;
+- valid same-project artifact metadata at every recognized managed path, with
+  generation rows inside the existing reconciler's retained-set-plus-one
+  in-flight envelope;
+- every canonical or recognized owned path is physical and safe.
+
+Other entries *inside* that one candidate directory are not candidate input.
+The resolver does not traverse, open, copy, fingerprint, rename, or delete
+them, even when their name ends in `.sqlite`; they remain in the old directory
+after migration. A link or unsafe object at a canonical database, recognized
+managed-backup, Viewer, lock, or exact recognized temporary path fails closed;
+an unrelated entry at another name is preserved.
+
+The only recognized legacy crash-temporary basenames are one file per class:
+
+```text
+database directory  .taskgov-restore-[a-z0-9_]{8}.tmp
+backups directory   .taskgov-backup-[a-z0-9_]{8}.tmp
+Viewer directory    .task-viewer-[a-z0-9_]{8}.tmp
+```
+
+Each must be a non-link regular file no larger than the source database size
+plus 16,777,216 bytes. A class is recognized only when exactly one matching
+basename exists. If two or more basenames match one class, every match in that
+class is unrelated and preserved; none is selected by enumeration order. A
+nonmatching random length/alphabet or an oversized file is likewise unrelated
+and preserved, not deletable tool state. Publication preflight only classifies
+these temporaries; it does not reconcile or delete them before fixed state is
+durable.
+
+The canonical backup and Viewer lock files are recognized for retirement, but
+are never copied as durable state into the fixed layout. They are released
+before cleanup, included in the cleanup inventory when present, and removed
+only through that inventory. Other lock-like names are unrelated and
+preserved.
+
+A candidate-shaped invalid or unsafe canonical entry, more than one candidate,
+multiple project identities, foreign backup metadata, or a newer schema fails
+with the exact sanitized boundary below and changes nothing. It never falls
+through to recovery or initialization.
+
+Source selection is deterministic:
+
+1. An existing fixed primary is authoritative. If it is unreadable or corrupt,
+   setup never replaces it from a backup or legacy candidate.
+2. With no fixed primary, recognized fixed-layout managed backups retain the
+   existing missing-primary recovery precedence. Valid generations must carry
+   one identity scheme and one coherent binding lineage.
+3. With neither fixed primary nor usable fixed recovery source, exactly one
+   valid legacy candidate may be considered.
+4. Only when none of those durable sources or candidate-shaped residues exists
+   may setup initialize fresh state.
+
+A fixed backup-only recovery whose selected newest valid generation is bound
+to a different current root fails closed as `project_state_unreadable`.
+TG-M17 does not infer a move from backup material or extend relocation
+confirmation to that third source kind. Older retained valid generations may
+have earlier bindings only when their identity and scheme match and their
+history, or implicit pre-v14 generation 1, is an exact prefix of the selected
+generation's history. They remain retained but are not selected over the
+mechanically newest valid generation.
+
+A confirmed fixed-state rebind does not synthesize an extra backup merely to
+close this lineage. Existing pre-rebind generations remain valid retained
+history, but none has the new binding head until the next successful managed
+backup. If the fixed primary is lost during that bounded interval, setup fails
+closed as `project_state_unreadable` rather than restoring an old-binding
+generation. This explicit residual preserves the existing backup schedule and
+write vocabulary; it is not a reason to add a synchronous rebind backup.
+
+Legacy discovery preserves the existing M14 crash-reconciliation envelope.
+The normally retained set is at most 20 generations, but it may have exactly
+one additional canonical, valid, same-project in-flight generation. Source
+validation allows no more than 21 canonical same-project artifacts, no more
+than 21 generation rows when that table exists, no more than 21 distinct
+generation identities across their union, and only a state accepted by the
+existing schema-specific reconciler or recovery normalizer. For schema v11+
+with a present primary, it permits no more than one artifact lacking its
+generation row or one generation row whose file is absent from an interrupted
+file-before-row prune, never both. When the primary is missing and the newest
+backup is the database source, that snapshot normally lacks its own later row:
+the sole file-only artifact must be that mechanically selected newest backup,
+and zero through 20 of its older snapshot rows may lack files already removed
+by completed or interrupted retention pruning. The existing recovery
+normalizer must accept every removal/import, and the artifact/row union remains
+bounded to 21 identities.
+For schemas v1 through v10, absence of the v11
+generation table is not a file-only exception: v10 uses its existing pointer
+rules and v1-v9 use their existing newest-artifact retention rules. This
+permits all 21 row-backed files after a newly published
+artifact lowered applied retention but the process stopped before pruning.
+The in-flight generation may be file-only before its row transaction or
+coherent after that transaction; it participates in newest-candidate
+selection, including when the legacy primary is absent.
+
+A second v11+ file-only artifact; a second missing-file row with a present
+primary; more than 20 missing rows in the exact missing-primary relation; more
+than 21 artifacts, rows, or union identities; divergent identity/binding
+lineage; or any state the existing reconciler/normalizer rejects fails closed.
+Discovery and source locking do not import, delete a stale row, prune, or
+otherwise change the legacy source. In the private fixed stage,
+missing-primary recovery normalization first removes zero through 20 stale
+snapshot rows and imports the selected newest artifact in one bounded pass.
+The existing version-specific reconciler then runs to bounded convergence
+before any migration backup: present-primary v11+ imports one missing row,
+removes one stale row, or prunes the coherent post-row set and may require at
+most two passes, while v10 and pre-v10 use their pointer/prune normalization.
+Only the private copy is reconciled. Every present valid source artifact,
+including the selected recovery file, remains in the persisted cleanup
+inventory; a row-only missing file has no filesystem entry to inventory.
+
+A legacy candidate whose primary or newest valid backup has a stored hash
+equal to the current root is a same-binding layout migration and requires no
+relocation token. When its primary is missing, setup restores the newest
+coherent managed backup into the private fixed-layout stage; it never recreates
+the old primary. A primary-backed legacy candidate with a differing hash is a
+relocation candidate and remains strictly no-write until TG-M17.3
+confirmation. A moved backup-only legacy candidate fails
+`project_state_unreadable` because recovery would be the unsupported third
+relocation source.
+
+All schema v1 through v13 inputs migrate sequentially and idempotently to v14,
+preserving every durable record and completion trace. The migration matrix
+tests each source version. Final end-to-end acceptance additionally exercises
+at least one complete pre-v9 fixture, one v13 fixture, and the schema-v14
+legacy-layout transition state. Viewer snapshot v3 reads sources 5 through 14;
+earlier sources must complete setup migration before Viewer publication.
+Migration deterministically normalizes the old non-authoritative display name
+with the same control replacement, fallback, and 200-code-point bound used for
+new bindings; ordinary valid names are unchanged. This is not a business-record
+or identity rewrite.
+
+### Setup Relocation Confirmation
+
+A path mismatch proves neither move, copy, nor fork intent. Normal commands
+and doctor never rebind. Normal commands return
+`project_relocation_required` without a business, SQLite, artifact, Git, or
+target-project write. Doctor remains successful, read-only, and fixed at
+`suggested_action="continue"`; it reports project-state code
+`relocation_required`, the same warning, and `setup_eligible=true` when every
+other precondition passes.
+
+Write-mode `setup` without a token also returns
+`project_relocation_required` and performs no write. Only
+`setup --read-only` returns a successful `status="relocation_preview"` with
+the exact future plan and a confirmation token. Supplying
+`--confirm-relocation` with `--read-only` is rejected before project or state
+resolution as `invalid_option_combination`. Setup never prompts.
+
+Token issuance is not user approval. In the Skill-driven flow, the agent must
+present the relocation requirement and bounded plan, stop for the user's
+explicit current approval, and only then pass that exact token to write setup.
+It must never turn preview into confirmation autonomously. A token that expires
+or becomes stale before use requires a new preview and new approval. A user who
+directly invokes write setup with `--confirm-relocation` has supplied that
+explicit intent outside the Skill mediation. This exceptional one-decision
+boundary occurs only on a proven mismatch and adds nothing to the normal
+nine/ten-call Task loop.
+
+The token is an accidental-misapplication checksum and bounded approval
+transport, not authentication, a signature, a secret, or protection from a
+malicious local process. Its exact ASCII form is:
+
+```text
+tgr1.<unpadded-base64url-canonical-json>.<64-lowercase-hex-checksum>
+```
+
+The checksum is SHA-256 of the ASCII bytes `tgr1.<payload>`. The decoded JSON
+uses UTF-8, rejects duplicate keys, and has exactly these sorted canonical
+keys:
+
+```text
+binding_generation
+expires_at
+identity_scheme
+issued_at
+new_path_hash
+old_path_hash
+project_id
+source_layout
+source_schema_version
+v
+```
+
+`v` is integer 1; `source_layout` is exactly `fixed_current_v1` or
+`legacy_projects_v1`; hashes are 64 lowercase hex; the generation is positive;
+and the schema is a supported observed source. JSON uses sorted keys,
+`(",", ":")` separators, and no insignificant whitespace before unpadded
+base64url encoding. `expires_at` is exactly 900 seconds after `issued_at`.
+The token is accepted only while `issued_at <= now < expires_at`, is at most
+2,048 ASCII bytes, re-encodes canonically, and passes constant-time checksum
+comparison.
+
+The token binds consent to the stored project ID, identity scheme, current
+generation/hash, proposed hash, source layout, source schema, and validity
+window. It deliberately does not fingerprint Task/business content:
+confirmation authorizes a binding change, and the actual command migrates the
+latest coherent source observed under its locks. Confirmation revalidates all
+token fields, package/install/ignore state, source inventory and integrity,
+destination state, and the current root hash immediately before durable work.
+
+Malformed structure, types, checksum, time relation, or future issue time is
+`relocation_token_invalid`; expiry is `relocation_token_expired`; a
+well-formed token whose bound source or proposed context changed is
+`relocation_token_stale`; an already successful token is
+`relocation_token_used`; and a valid-context token supplied when no relocation
+is required is `relocation_not_required`. A successful-token replay always
+fails. A later token-free setup at the rebound path is the normal idempotent
+setup or cleanup/Viewer-repair path.
+
+After ordinary package/project/state preflight, token-result precedence is
+structural/checksum validity, a digest already present in binding history,
+expiry, stale context, then not-required context. Consequently, every
+structurally valid successful-token replay returns `relocation_token_used` even
+after its original validity window. No lower-precedence result reveals which
+payload field differed.
+
+The fixed sanitized errors and messages are:
+
+| Code | Message |
+|---|---|
+| `project_relocation_required` | `project state is bound to a different project location; run setup --read-only` |
+| `relocation_token_invalid` | `relocation confirmation is invalid` |
+| `relocation_token_expired` | `relocation confirmation has expired; run setup --read-only again` |
+| `relocation_token_stale` | `project relocation state changed; run setup --read-only again` |
+| `relocation_token_used` | `relocation confirmation has already been used` |
+| `relocation_not_required` | `project relocation is not required` |
+
+These setup service errors use exit 2. Parser-level
+`invalid_option_combination` uses the existing usage-error exit 1. No rejected
+token, hash, path, source count, filename, SQLite/OS exception, or validation
+detail is echoed.
+
+### Setup JSON And Durable Write Order
+
+TG-M17.3 adds one always-present `data.relocation` object to setup results with
+exactly:
+
+```text
+required
+source_layout
+identity_scheme
+binding_generation
+confirmation_token
+expires_at
+```
+
+`required` is boolean. Other values are bounded scalar values or `null`;
+`confirmation_token` and `expires_at` are non-null only in a successful
+relocation preview. No path or hash appears outside the opaque token. Fresh
+preview has a null top-level project ID, a false `required`, and null identity,
+generation, token, and expiry. Existing matching state reports its scheme and
+generation without adding a normal-loop branch.
+
+Relocation-related setup failures follow the existing setup scalar rules:
+`status` is `null`; `schema_to` is 14; `schema_from` and the maintenance,
+policy, and Viewer fields are the safely observed/effective values when
+ordinary preflight established them, otherwise null as for a shared-preflight
+failure. The top-level project ID is the safely established stored value or
+null. Every error has `confirmation_token=null` and `expires_at=null`; no
+rejected token field is reflected. The remaining values are exact:
+
+| Setup error | `planned_writes` | `completed_writes` | `relocation.required` and context |
+|---|---|---|---|
+| mismatch, no token: `project_relocation_required` | the same ordered future plan `P` that read-only preview would return | `[]` | `true`; safely observed source layout, scheme, and generation |
+| `relocation_token_invalid` | `[]` | `[]` | current mechanically observed mismatch boolean; safely observed context or null |
+| `relocation_token_expired` | `[]` | `[]` | current mechanically observed mismatch boolean; safely observed context or null |
+| `relocation_token_stale` | `[]` | `[]` | current mechanically observed mismatch boolean; safely observed context or null |
+| `relocation_token_used` | `[]` | `[]` | current mechanically observed mismatch boolean; safely observed context or null |
+| `relocation_not_required` | `[]` | `[]` | `false`; safely observed source layout, scheme, and generation |
+
+Here `P` includes migration/configuration, binding, Viewer, and pending-cleanup
+stages applicable to that source under the durable ordering below. All six
+rows exit 2 with `ok=false`, empty warnings, and exactly their fixed error.
+Supplying a token cannot convert an earlier package, project, ignore, unsafe,
+busy, newer-schema, corrupt-state, or ambiguous-source result into one of
+these rows; the earlier shared preflight row and its existing null/empty data
+contract wins.
+
+Once a fixed or legacy database identity has passed validation, the envelope's
+top-level `project_id` is that stored ID, including relocation preview/error.
+It is `null` for fresh/missing state and for an invalid source whose identity
+was not safely established.
+
+The setup write vocabulary adds exactly `legacy_state_publish`,
+`project_binding_update`, and `legacy_state_cleanup` to the existing values.
+For any path, `planned_writes` and `completed_writes` use this durable stage
+order:
+
+1. a source prefix of exactly one of `[]`, `[database_restore]`,
+   `[legacy_state_publish]`,
+   `[database_restore, legacy_state_publish]`, or
+   `[database_initialize]`; the two-stage prefix is only same-binding
+   legacy-layout missing-primary recovery;
+2. `migration_backup` and `database_migrate` when required;
+3. `maintenance_configure` when required;
+4. `project_binding_update` only for confirmed mismatch;
+5. `viewer_publish` when required;
+6. `legacy_state_cleanup` only after fixed database, binding, maintenance, and
+   regenerated Viewer state are durable.
+
+A same-binding legacy source plans no `project_binding_update`. A fixed current
+database without valid pending cleanup plans no `legacy_state_publish` or
+cleanup; when its pending record is valid, setup alone plans
+`legacy_state_cleanup` after any due Viewer repair. A moved legacy source plans
+publication, any schema/configuration stages, binding update, Viewer
+publication, then cleanup. Before fixed publication, all legacy work occurs in
+one private, contained staging directory; staging writes are not reported as
+completed. The staged database and recognized artifacts are validated, and
+the complete `state/current` directory is published atomically without
+clobbering an entry that appeared concurrently. Publication makes every
+preceding staged stage durable together; the result still lists their ordered
+prefix.
+
+The private stage is owned by one separate sibling marker; its random basename
+alone never authorizes deletion:
+
+```text
+state/.current-stage-<32-lowercase-hex>
+state/.current-stage-<same-32-lowercase-hex>.owner
+```
+
+After source inventory validation and while holding the transition lock, setup
+creates the owner file exclusively and durably before creating the directory.
+The owner is canonical ASCII JSON no larger than 2,048 bytes with exactly
+`v=1`, the matching `stage_id`, validated `project_id`, and
+`inventory_fingerprint`; it uses sorted keys, `ensure_ascii=true`,
+`(",", ":")`, and duplicate-key rejection. It contains no path and is a
+physical non-link regular file. The directory may contain only physical
+directories `backups` and `viewer` and at most 32 physical regular files total
+from this exact
+allow-list: the staged database and optional rollback journal, up to 21 exact
+managed backups, canonical backup and Viewer lock files, Viewer HTML, and at
+most one exact bounded temporary from each existing class. Every non-marker
+file is no larger than the source database plus 16,777,216 bytes.
+
+Write setup may remove one owner/stage residue only when the marker is
+canonical and matches the directory suffix, every component is contained and
+non-link/non-reparse, the allow-list/count/size rules hold, and no unknown
+entry exists. It removes explicit files and then proven-empty directories; it
+never recursively deletes an unvalidated tree. A valid orphan owner with no
+stage is removed by itself, including after successful directory publication.
+Read-only setup never removes either member and may continue to the ordinary
+preview because the next write can recover it; this internal residue cleanup
+does not add a public planned-write value. A valid orphan owner beside an
+authoritative fixed primary does not block normal Task/handoff/review leaves.
+A stage without its owner, a
+mismatched/invalid owner, more than one residue pair, an unsafe component, or
+an unknown/oversized entry returns `setup_incomplete` with `schema_to=14`,
+all other setup scalars and project ID null, empty write arrays, false/null
+relocation fields, exit 2, and no deletion in both read-only and write mode.
+
+Failure before atomic fixed publication removes only an owner-validated
+staging residue and leaves the legacy source unchanged. Failure after fixed
+publication but before cleanup leaves valid fixed state authoritative and the
+legacy source intact. Fixed-primary resolution does not resume general legacy
+discovery; instead, only setup observes the current database's pending flag.
+It derives the old directory from the stored project ID and the fixed-length
+retirement directory
+`state/.legacy-cleanup-<sha256(project-id-utf8)>`, using all 64 lowercase hex
+characters rather than the possibly long legacy ID. A collision or entry not
+authorized by the pending record fails closed. A token-free setup resumes
+Viewer repair or this bounded cleanup. Token replay remains an error.
+
+Before fixed publication, setup persists this exact canonical JSON inventory
+in the staged database and stores its SHA-256 fingerprint:
+
+```json
+{"entries":[{"kind":"file","name":"relative/posix/name","sha256":"64hex","size":0}],"v":1}
+```
+
+Entries are sorted by UTF-8 bytes of `name`; object keys are sorted; JSON uses
+UTF-8, `ensure_ascii=true`, and `(",", ":")`; `size` is a nonnegative byte
+count. There are 1 through 32 unique entries and the complete canonical JSON
+is at most 16,384 bytes. Repository validation reparses it with duplicate-key
+rejection, validates every relative POSIX name against the fixed recognized
+artifact grammar, requires canonical byte-for-byte re-encoding, and requires
+its SHA-256 to equal the stored fingerprint. It includes only the canonical
+database when present, at most 21 valid managed backups in the exact
+retained-set-plus-one-in-flight envelope, last-good
+Viewer, canonical backup and Viewer lock files, and at most one exact bounded
+temporary in each of the three classes above. Unrelated files are excluded and
+stay in the legacy directory.
+
+Cleanup atomically moves each recognized entry without replacement from its
+old relative location to the same relative location under the retirement
+directory. The database inventory, not a fresh directory enumeration, is the
+sole allow-list. For each inventory entry, both old/retirement locations is an
+error; an old-only or retirement-only file must match its stored kind, size,
+and SHA-256; and neither means that entry is already absent. Setup first moves
+and verifies every still-present old entry. It begins deletion only after no
+recorded old entry remains, then deletes verified retirement entries one at a
+time. A retry uses the persisted inventory to continue moving or deleting only
+the recorded remaining subset. New or changed content at a recorded path
+fails, and an unrecorded retirement entry prevents deletion.
+
+Cleanup removes only those recognized files and proven-empty owned
+subdirectories; the old project directory remains when unrelated entries
+exist. When neither old nor retirement location contains a recorded entry,
+filesystem cleanup is already durable and setup clears the pending bit,
+inventory, and fingerprint in one short fixed-DB transaction. This covers a
+crash after the last delete but before the metadata update. A changed
+recognized source, collision, or unrecorded retirement entry yields
+`setup_incomplete` for setup; it does not make an otherwise valid fixed
+database unreadable. Unrelated old entries are never traversed, recursively
+deleted, overwritten, or treated as another candidate. Normal Task commands
+remain usable from valid fixed state while cleanup is pending or its
+filesystem retirement is incomplete.
+
+The following symbols make the setup rows exact:
+
+- `M` is `[migration_backup, database_migrate]` when the selected source
+  schema is below 14, otherwise `[]`;
+- `C` is `[maintenance_configure]` when maintenance is not configured or an
+  explicit setup policy change is valid, otherwise `[]`;
+- `L` is `[legacy_state_cleanup]` when the authoritative fixed database has a
+  valid pending cleanup record, otherwise `[]`; it is always ordered after any
+  required Viewer publication.
+- list concatenation preserves the durable stage order above.
+
+| Observed state and invocation | Planned writes / result |
+|---|---|
+| no fixed/recovery/legacy source, `--read-only` | `[database_initialize] + C + [viewer_publish]`; `setup_preview`; project ID null; no token/write |
+| no source, write setup | same plan; create one UUID identity; `setup_complete` or existing stage-specific failure |
+| matching fixed primary | existing restore/migrate/configure/Viewer truth table, then `L`; no relocation token or binding stage |
+| fixed mismatch, `--read-only` | `M + C + [project_binding_update, viewer_publish] + L`; `relocation_preview`; token present; no write |
+| fixed mismatch, write setup without token | `project_relocation_required`; no write |
+| fixed mismatch, valid token | preview plan including `L`; binding CAS precedes Viewer and cleanup follows Viewer; `setup_complete` or ordered partial result |
+| one same-binding legacy source, `--read-only` | `[legacy_state_publish] + M + C + [viewer_publish, legacy_state_cleanup]`; `setup_preview`; no token/write |
+| one same-binding legacy source, write setup | same plan; staged no-clobber publication; no binding stage |
+| same-binding legacy primary missing with valid backups, `--read-only` | `[database_restore, legacy_state_publish] + M + C + [viewer_publish, legacy_state_cleanup]`; `setup_preview`; no token/write |
+| same-binding legacy primary missing with valid backups, write setup | same plan; restore only into the private fixed stage; old primary remains absent |
+| one moved legacy source, `--read-only` | `[legacy_state_publish] + M + C + [project_binding_update, viewer_publish, legacy_state_cleanup]`; `relocation_preview`; token present; no write |
+| one moved legacy source, write setup without token | `project_relocation_required`; neither source nor destination changes |
+| one moved legacy source, valid token | preview plan; atomic staged publication followed only by cleanup; `setup_complete` or ordered partial result |
+| accepted token supplied again | `relocation_token_used`; no write |
+| no token after successful rebind | `already_setup`, or only the still-due `[viewer_publish]`, `[legacy_state_cleanup]`, or both in that order |
+| valid fixed primary with pending cleanup whose recorded filesystem entry changed, collided, or has an unrecorded retirement peer | setup `setup_incomplete`; stored project ID and relocation scheme/generation remain available; planned writes retain the due Viewer/cleanup stages and completed writes stop before cleanup; normal Task/handoff/review leaves remain usable |
+| fixed primary missing, matching fixed managed backup | existing `database_restore` truth table, then `M + C + [viewer_publish]`; no relocation token |
+| fixed primary missing, moved/ambiguous fixed backup identity | `project_state_unreadable`; no restore, rebind, or initialization |
+| corrupt/unreadable existing fixed primary | `project_state_unreadable`; no backup/legacy fallback |
+| no fixed or legacy state | normal leaf `db_not_initialized`; doctor `setup_required`; setup follows fresh rows |
+| same-binding legacy state | normal leaf `migration_required`; doctor `migration_required`; setup follows same-binding rows |
+| primary-backed moved legacy state | normal leaf `project_relocation_required`; doctor relocation warning/row; setup follows relocation rows |
+| more than one or more than 64 `state/projects` entries, unknown direct child, invalid history/integrity, unsafe canonical entry, or invalid persisted cleanup metadata | `project_state_unreadable`; project ID null; `planned_writes=[]`; `completed_writes=[]`; relocation fields false/null; no fallback/write |
+| safely read candidate whose directory, primary, or managed backup identity differs | `project_mismatch`; project ID null; empty write arrays and false/null relocation fields; no fallback/write |
+| candidate source schema above 14 | `schema_too_new`; safely read project ID or null; empty write arrays and false/null relocation fields; no fallback/write |
+| candidate busy/locked or unsupported journal state | existing `database_busy` or `unsupported_journal_mode`; safely read project ID or null; empty write arrays and false/null relocation fields; no fallback/write |
+| unrelated physical entry inside the sole valid legacy directory | preserve and exclude it; it neither changes the selected source result nor appears in JSON |
+
+### Concurrency, Recovery, Privacy, And Ownership
+
+Preview creates no directory, lock file, SQLite sidecar, temporary file,
+backup, Viewer, Git change, or target-project change. Actual legacy publication
+uses one fail-fast package-state transition lock before the existing backup
+artifact lock. It performs source SQLite copying through the backup API, never
+holds a source write transaction during filesystem copy, uses only short
+private/current write transactions for migration, configuration, and binding,
+and releases every SQLite writer before Viewer publication or cleanup.
+Fixed-state rebinding takes the same transition lock and performs one short
+`BEGIN IMMEDIATE` compare-and-swap transaction.
+
+The binding repository compares project ID, identity scheme, old hash, and
+expected generation, appends generation `N+1`, and updates current binding in
+one transaction. That same transaction increments
+`viewer_maintenance_state.source_generation` exactly once so a crash before
+Viewer publication leaves a durable due marker. Missing Viewer state, binding
+generation overflow, or Viewer source-generation overflow rolls the whole
+rebind back as `project_state_unreadable` without consuming the token. Stale
+comparison, same-hash rebind, or invalid fields likewise rolls back without a
+history row. Every business writer
+revalidates the resolver's project ID, binding hash, and generation under its
+existing short write transaction. Read commands use one lock-respecting
+query-only transaction. Backup and Viewer publication revalidate binding
+before publication and preserve last-good artifacts on stale state or failure.
+No SQLite writer is held during Git, backup copying, Viewer rendering, or other
+subprocess work.
+
+Missing-primary managed-backup restore remains setup-only and no-clobber.
+Unreadable or corrupt existing fixed state is never replaced. Wrong identity,
+unsafe links, ambiguous sources, unsupported journal state, concurrent
+destination appearance, and lock contention fail closed through existing
+sanitized boundaries. No new daemon, watcher, queue, service, network call,
+generic migration engine, signature system, secret store, fork inference,
+normal Task gate, LLM judgment, or routine stop is added.
+
+TG-M17 ownership is exclusive:
+
+- M17.1 owns schema v14, v1-v13 migration, identity/binding repository
+  primitives, and an injected-target-only UUID initializer. Production
+  resolution and fresh UUID setup remain unchanged in that staging revision.
+- M17.2 activates the one fixed resolver, fresh production `uuid_v1`, and
+  same-binding legacy publication. It owns the shared staged-publication and
+  bounded cleanup/resume primitive for same-binding sources, transports
+  validated backup/Viewer artifacts opaquely, recognizes moved sources
+  read-only, and supports the schema-v14 legacy-layout transition state. It
+  adds no token or moved write.
+- M17.3 owns the sole setup option, token codec, setup JSON/errors, fixed
+  rebind, confirmed moved-legacy staged publication/rebind, and replay. It
+  reuses the M17.2 staged-publication and cleanup/resume primitive for the
+  confirmed moved source rather than adding a second implementation.
+- M17.4 owns the structural audit of all 20 leaves and runtime integration for
+  backup, Viewer, doctor, maintenance, restore, last-good, privacy, and
+  concurrency. It adds no schema, option, resolver, or token semantics.
+- M17.5 synchronizes Skill/references, help, README/release guidance, manifest,
+  release version, formal status, and isolated/self-host acceptance. It adds no
+  behavior and performs no push, workflow dispatch, install, or publication.
+  The synchronized Skill must present relocation preview and wait for explicit
+  user approval before it reuses the token; it never auto-confirms.
+
+Each unit is Tier 2 and requires its focused and full offline verification,
+`doctor`, manifest/package checks where covered files change,
+`git diff --check`, and two independent PASS receipts for the exact final
+target. TG-M17.1 cannot start before M17.0 completes those gates. M18 cannot
+start before M17.5 is done.
 
 ## Task Ordering
 

@@ -1,7 +1,9 @@
 # task-governance-tool Initial Plan
 
 Status: implemented through the TG-M16.4 reduced loop-discipline behavioral
-acceptance at v0.8.0/schema v13 with Viewer snapshot v3. The TG-M12.3 Issue
+acceptance at v0.8.0/schema v13 with Viewer snapshot v3. TG-M17.0 has fixed the
+approved v0.9.0/schema-v14 stable-identity and relocation target, while
+TG-M17.1 through TG-M17.5 remain implementation work. The TG-M12.3 Issue
 adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
@@ -681,8 +683,12 @@ Confirmed decisions:
 - The source repository should contain the installable skill folder directly.
   Runtime modules live inside that skill folder; docs, tests, and fixtures live
   outside it as development and review surfaces.
-- Default SQLite storage is skill-local and per-project:
+- Through implemented release v0.8.0, default SQLite storage is skill-local and
+  path-keyed at
   `<installed-skill-root>/state/projects/<project-id>/taskgov.sqlite`.
+  TG-M17.0 supersedes that as the approved v0.9.0 target with the fixed
+  `<installed-skill-root>/state/current/taskgov.sqlite`; it is not active until
+  the M17 resolver and synchronization units complete.
 - The stateful governed-project install target is one physical project-scoped
   copy at `<target-project>/.agents/skills/task-governance-tool`. TG-M13
   supersedes the earlier merely-discouraged user-wide guidance: user-wide,
@@ -690,8 +696,11 @@ Confirmed decisions:
 - `taskgov setup` is the sole explicit initializer/migrator and one-way
   maintenance opt-in. `taskgov doctor` is the sole read-only diagnostic and
   reports missing or migration-needed state without changing it.
-- Project IDs should use a sanitized project directory basename plus a short
-  stable hash of the canonical project path.
+- Through v0.8.0, project IDs use a sanitized project-directory basename plus a
+  short canonical-path hash. TG-M17 preserves every such existing ID as
+  `legacy_path_v1`, separates its mutable binding, and creates only fresh
+  v0.9.0 projects as UUIDv4-backed `uuid_v1`
+  `tg_project_<32-lowercase-hex>` identities.
 - Tags stay as a simple comma-separated field in the MVP.
 - `task block` and `task done` aliases are postponed; use `task edit` in the
   MVP.
@@ -923,7 +932,8 @@ Confirmed decisions:
   installs, canonical-path relocation limits, root-anchored state ignore
   guidance, Python 3.12+, and exact Windows 3.12/3.14 CI. It does not require a
   Git repository, make `--repo` globally mandatory, or add relocation/state
-  modes.
+  modes. Those relocation limits remain the implemented v0.8.0 behavior;
+  TG-M17.0 now defines the separately staged explicit relocation replacement.
 - TG-M13.4 owns final integrated local acceptance and two same-revision Tier 2
   reviews. Push, PR, workflow dispatch, and publication remain separate
   external actions requiring explicit user authorization. No M13 unit adds a
@@ -1082,6 +1092,39 @@ Confirmed decisions:
     target-project edit.
   - Operational evidence may justify a later separately approved adoption
     design. This decision itself creates no handoff or standing follow-up.
+- TG-M17.0 fixes the stable-identity target without activating it:
+  - final release is v0.9.0/schema v14 with Viewer snapshot v3 and source
+    schemas 5-14;
+  - public inventory remains 20 leaves and adds only
+    `setup --confirm-relocation <token>`;
+  - generated state moves to one physical-package-local `state/current`
+    database/backups/Viewer hierarchy;
+  - v1-v13 identities and business rows remain byte-for-byte linked by their
+    existing project ID under `legacy_path_v1`; fresh production state becomes
+    `uuid_v1` only when M17.2 activates the resolver;
+  - path mismatch never implies move/copy/fork. Doctor and normal commands are
+    no-write; only a 15-minute setup read-only preview token may authorize one
+    binding generation advance;
+  - preview token issuance is not approval: Skill use waits for explicit
+    current user confirmation and never auto-submits the token; expiry or stale
+    context requires a fresh preview and approval;
+  - the checksum token is not authentication or a signature, stores no raw
+    path, and successful history retains only its SHA-256 digest;
+  - same-binding legacy layout migrates without confirmation, while moved
+    backup-only recovery remains fail-closed rather than becoming an inferred
+    third relocation source;
+  - legacy migration preserves both pre-row and post-row forms of the existing
+    retained-set-plus-one in-flight backup crash envelope plus the single
+    interrupted-prune row-only form, and reconciles only the private fixed
+    stage;
+  - fixed rebind retains older backup lineage but deliberately adds no
+    synchronous backup; primary loss before the next ordinary current-binding
+    generation is a bounded fail-closed recovery window;
+  - M17.1 owns schema/repository primitives, M17.2 the fixed resolver/fresh
+    UUID/same-binding migration, M17.3 confirmation/rebind, M17.4 consumer
+    integration, and M17.5 v0.9.0 package synchronization;
+  - no signature service, fork registry, daemon, network, normal-loop call,
+    LLM judgment, question, or new stopping rule is introduced.
 
 Open issues:
 
@@ -1119,6 +1162,11 @@ completion evidence is maintained in SQLite.
 The reduced TG-M16.0 formal contract, TG-M16.1 runtime route, TG-M16.2 active
 guidance, and TG-M16.4 package/behavioral acceptance are complete. TG-M16.3 is
 cancelled.
+TG-M17.0's five-document stable-identity/relocation contract is complete.
+TG-M17.1 through TG-M17.5 remain the sequential implementation lane. Before
+M17.4 and M17.5 start, their stored Task Contracts require explicit authority
+to replace two stale references to cancelled M16.3 behavior; M17.5 must also
+limit root `AGENTS.md` to durable routing rather than milestone status.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

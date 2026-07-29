@@ -1,14 +1,13 @@
 ﻿# task-governance-tool MVP Implementation Roadmap
 
-Status: implementation units through the TG-M16.4 reduced loop-discipline
-behavioral acceptance are complete at v0.8.0/schema v13 with Viewer snapshot
-v3. TG-M17.0 has fixed the approved v0.9.0/schema-v14 stable-identity and
-relocation contract, and TG-M17.1 through TG-M17.3 have completed their
-schema/repository, fixed-resolver/same-binding staging, and explicit relocation
-slices. TG-M17.4 and TG-M17.5 remain sequential implementation units. TG-M16.3 is
-cancelled. TG-M12.3 remains blocked on a future Issue Skill intake contract.
-The default-browser launch follow-up remains requirements-only pending design
-and roadmap approval.
+Status: implementation units through TG-M17.5 are complete at
+v0.9.0/schema v14 with Viewer snapshot v3. TG-M17 completed stable identity,
+fixed project-local state, same-binding migration, explicit confirmed
+relocation, consumer hardening, and package acceptance in lane order.
+The completed TG-M16.4 reduced-loop behavioral acceptance is retained;
+TG-M16.3 is cancelled. TG-M12.3 remains blocked on a future Issue Skill
+intake contract. The default-browser launch follow-up remains
+requirements-only pending design and roadmap approval.
 
 Completed unit descriptions before TG-M14 are explicitly historical execution
 lineage. Their legacy commands, options, and intermediate release surfaces do
@@ -3240,10 +3239,10 @@ the path-keyed generated-state directory with one physical-package-local fixed
 layout. It adds no project registry, copy/fork inference, normal-loop call, or
 background process.
 
-The release target is v0.9.0/schema v14 with Viewer snapshot v3 and source
-schema support 5-14. M17.1 through M17.4 are staging revisions and retain
-package version 0.8.0; M17.5 alone synchronizes the release version. No M18
-execution unit may start until M17.5 is done.
+The completed release is v0.9.0/schema v14 with Viewer snapshot v3 and source
+schema support 5-14. M17.1 through M17.4 were staging revisions that retained
+package version 0.8.0; M17.5 synchronized the release version and unblocked the
+M18 lane.
 
 ### TG-M17.0 Stable Project Identity And Relocation Contract
 
@@ -3439,7 +3438,7 @@ Lane: `TG-M17-IDENTITY`
 Lane order: 50
 Review tier: Tier 2
 Depends on: completed TG-M17.3
-Status: ready
+Status: complete
 
 Intended outcome:
 
@@ -3498,7 +3497,7 @@ Lane: `TG-M17-IDENTITY`
 Lane order: 60
 Review tier: Tier 2
 Depends on: completed TG-M17.4
-Status: ready
+Status: complete
 
 Intended outcome:
 

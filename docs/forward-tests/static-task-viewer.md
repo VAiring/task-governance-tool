@@ -3,7 +3,7 @@
 Date: 2026-07-17
 
 Historical execution record: commands reflect the tested release on this date
-and are superseded by the current v0.8.0 active guidance.
+and are superseded by the current v0.9.0 active guidance.
 
 ## Scope
 

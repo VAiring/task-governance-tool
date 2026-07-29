@@ -1,14 +1,11 @@
 # task-governance-tool MVP Specification
 
-Status: release acceptance remains at v0.8.0/schema v13 with Viewer snapshot
-v3 through the completed TG-M16.4 reduced-loop behavioral acceptance. TG-M17.0 fixes the
-approved v0.9.0/schema-v14 stable-identity and relocation target. TG-M17.1
-through TG-M17.3 are implemented: schema-v14 identity storage, fixed
-production resolution, fresh UUID setup, same-binding legacy publication, and
-explicit confirmed relocation are active on this branch. Consumer-hardening
-acceptance and release synchronization remain owned by TG-M17.4 and TG-M17.5.
-Viewer snapshot v3 is retained. TG-M12.3 Issue adapter remains blocked on a
-future intake contract.
+Status: release v0.9.0/schema v14 with Viewer snapshot v3 implements
+TG-M17.0 through TG-M17.5: stable project identity, fixed project-local state,
+same-binding legacy publication, explicit confirmed relocation, consumer
+hardening, and synchronized package acceptance are complete. The completed
+TG-M16.4 reduced-loop behavioral acceptance is retained. TG-M12.3 Issue adapter remains
+blocked on a future intake contract.
 
 This document defines the first product contract for `task-governance-tool`.
 It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
@@ -20,8 +17,8 @@ lineage for those releases, including headings labeled `Implemented` or
 `Approved`. Their durable state-transition, review, and privacy rules continue
 only where TG-M14 does not supersede them. Sections labeled `Historical`
 preserve additional pre-M14 contract detail for migration and compatibility
-review. The implemented TG-M14 section is the current public command, setup,
-diagnostic, maintenance, and output contract.
+review. The implemented TG-M14 and later extension sections together are the
+current public command, setup, diagnostic, maintenance, and output contract.
 
 ## Product Goal
 
@@ -2752,14 +2749,13 @@ project, and performs no instruction adoption. Any broader project-policy
 adoption requires a later separately approved design and is not a standing
 handoff from TG-M16.
 
-## Approved Post-MVP Extension: TG-M17 Stable Project Identity And Relocation
+## Implemented Post-MVP Extension: TG-M17 Stable Project Identity And Relocation
 
 TG-M17 separates immutable project identity from mutable filesystem binding.
-This section is the approved target contract. Until TG-M17.5 completes, the
-implemented runtime remains release v0.8.0/schema v13 with the historical
-path-derived identity and `state/projects/<project-id>` layout described
-earlier. TG-M17.1 through TG-M17.4 are non-public staging revisions; TG-M17.5
-alone synchronizes release v0.9.0.
+This section is the implemented release-v0.9.0/schema-v14 contract.
+TG-M17.1 through TG-M17.4 were non-public staging revisions; TG-M17.5
+synchronized the accepted fixed resolver and relocation behavior into the
+release package.
 
 The final TG-M17 surface remains exactly 20 command leaves. The only added
 public option is `setup --confirm-relocation <token>`. Viewer snapshot remains
@@ -3405,8 +3401,9 @@ The MVP uses `lane` plus `lane_order` instead of a general dependency graph.
 This section preserves the pre-M14 command-by-command baseline. It is not the
 current invocation contract. The implemented TG-M14 public-surface, setup,
 doctor, completion, checkpoint, and Review Packet sections above control
-v0.8.0; removed commands and `--db` fail through the fixed no-write parser
-contract.
+the v0.8.0 lineage; the implemented TG-M17 section controls the v0.9.0
+identity/storage boundary. Removed commands and `--db` fail through the fixed
+no-write parser contract.
 
 All MVP commands must support:
 
@@ -3646,7 +3643,8 @@ LLM calls; they record and validate evidence produced by the approved workflow.
 
 This section preserves the old envelope and command inventory for compatibility
 review. Current v0.8.0 envelopes follow the implemented TG-M14 contract and
-never expose `db_path`.
+never expose `db_path`; the TG-M17 additions preserve that envelope boundary
+in v0.9.0.
 
 JSON output must be stable enough for Codex to consume. Each command should emit
 a top-level object with:

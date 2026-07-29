@@ -1,14 +1,14 @@
 # Release And Install Decision
 
 This note defines the release artifact and supported installation boundary for
-`task-governance-tool` 0.8.0. It does not authorize installing or overwriting a
+`task-governance-tool` 0.9.0. It does not authorize installing or overwriting a
 Skill in any project.
 
 ## Release Identity
 
-- Package version: `0.8.0`
-- SQLite schema: v13
-- Viewer snapshot: v3, with source-schema compatibility from v5 through v13
+- Package version: `0.9.0`
+- SQLite schema: v14
+- Viewer snapshot: v3, with source-schema compatibility from v5 through v14
 - Supported runtime: Python 3.12 or newer on Windows
 - Verified platform: Windows
 
@@ -88,6 +88,14 @@ one-way opt-in to bounded local maintenance and directly publishes or repairs
 the canonical Viewer. It is explicit, noninteractive, idempotent, and limited
 to the supported physical project-scoped package.
 
+Version 0.9.0 uses the fixed package-local `state/current/` layout. Fresh
+write-mode setup creates one UUIDv4-backed immutable project identity and
+stores the mutable governed-directory binding separately. Explicit setup
+publishes supported schema-v1-through-v13 legacy state into the fixed layout
+without changing any existing project, Task, event, Contract, handoff, review,
+completion, or maintenance identity. Same-binding migration is mechanical and
+adds no user choice.
+
 If the canonical DB is missing but canonical managed generations remain,
 setup validates only same-project artifacts, selects the newest valid
 generation deterministically, restores it without overwriting any existing
@@ -97,6 +105,33 @@ valid same-project managed candidate exists, setup fails instead of creating
 empty task state. An orphan rollback journal for the missing canonical DB also
 fails closed and remains untouched. There is no public recovery command or
 recovery path option.
+
+If the stored binding differs from the current governed directory, neither a
+normal command nor `doctor` rebinding state is permitted. A write setup without
+confirmation fails no-write with `project_relocation_required`. Run the
+read-only preview:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py setup --read-only --json
+```
+
+A successful `relocation_preview` reports the ordered future writes and a
+bounded, expiring confirmation token without changing either source or
+destination. Token issuance is not approval. Present that plan and wait for
+explicit approval from the current user; only then submit the exact token:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py setup --confirm-relocation <exact-token> --json
+```
+
+Never infer that a mismatch proves a move rather than a copy or fork, and
+never auto-confirm. Invalid, expired, stale, or already-used tokens fail
+closed; expired or stale context requires a fresh preview and fresh user
+approval.
+Successful relocation preserves the immutable project identity while updating
+the mutable binding and its history, together with the applicable ordered
+fixed-layout, migration, maintenance, and Viewer stages. A token-free replay
+after completion is `already_setup`; replaying the consumed token is rejected.
 
 Fresh setup and migration default to:
 
@@ -119,8 +154,10 @@ Before migration, setup creates one validated managed backup while holding the
 shared fail-fast artifact lock. Migration from supported older schemas is
 transactional, ordered, idempotent, and never a downgrade. It preserves task
 and event identity, completion/review history, handoffs, Contracts, effort
-metadata, and checkpoints through schema v13. An older runtime rejects a newer
-schema.
+metadata, and checkpoints from every supported source. An older runtime
+rejects a newer schema. Schema v14 adds only stable identity, binding,
+relocation history, and bounded legacy-cleanup metadata; migration from every
+supported source schema v1 through v13 is ordered and repeatable.
 
 Installation alone and ordinary task commands never migrate. After replacing
 packaged core files while preserving local state, run `setup`; it performs any
@@ -167,7 +204,7 @@ separate model decision. Handoff-only writes may make backup due but do not
 change the Viewer generation. Setup publishes the Viewer directly.
 
 The Viewer is a self-contained, read-only `file://` projection under the
-ignored package state. Snapshot v3 accepts source schemas v5-v13 and omits
+ignored package state. Snapshot v3 accepts source schemas v5-v14 and omits
 storage paths, maintenance internals, checkpoint content, handoffs, raw
 evidence, environment data, and secrets. It performs no network request and
 provides no database or task write control.
@@ -236,8 +273,9 @@ profile mechanically adds `task effort`. Doctor, checkpoint, and completion
 check are optional and absent from the standard success path.
 
 An enabled `task effort` result returns `suggested_action=continue` or the
-single non-blocking `suggested_action=reconcile_scope` route. The latter loads
-`references/reconciliation.md` once for the whole result. Initial failure
+single `suggested_action=reconcile_scope` route. The latter loads
+`references/reconciliation.md` for one non-blocking episode covering the whole
+result. Initial failure
 integrity remains in the Skill itself:
 failed verification or blocking review prevents affected completion but not
 safe authorized repair or unrelated ready work, and tests are never weakened
@@ -274,24 +312,28 @@ project's governing documents and current user decisions remain authoritative.
 
 ## Pre-Release Checks
 
-Before creating the 0.8.0 artifact:
+Before creating the 0.9.0 artifact:
 
-1. Confirm all M14.1-M14.7 and reduced TG-M16 acceptance and required Tier 2
-   reviews passed on their exact revisions.
+1. Confirm all M14.1-M14.7, TG-M15.5-TG-M15.6, reduced TG-M16, and
+   TG-M17.0-TG-M17.5 acceptance and required Tier 2 reviews passed on their
+   exact revisions.
 2. Run the complete offline test suite and `git diff --check`.
 3. Verify root and group help expose exactly the 20 leaves above.
 4. Verify unknown removed surfaces and raw path options fail before any
    project, Git, or SQLite observation.
-5. Confirm `taskgov --version` reports `0.8.0`, runtime schema is v13, and
-   Viewer snapshot v3 accepts source schemas v5-v13.
+5. Confirm `taskgov --version` reports `0.9.0`, runtime schema is v14, and
+   Viewer snapshot v3 accepts source schemas v5-v14.
 6. Validate an isolated physical project-scoped install: package status is
    clean in `doctor`, setup preview is no-write, setup succeeds, and a repeated
    setup is idempotent.
 7. Run the installed-Skill self-containment, realistic setup-to-completion
-   smoke tests, and the TG-M16 fresh-session repair, review, and rediscovery
-   pressure scenarios.
+   smoke tests, TG-M16 fresh-session repair/review/rediscovery scenarios, and
+   the TG-M17 matrix: full pre-v9 and v13 legacy records, transition-v14
+   self-host state, fresh UUID, same-binding publication, moved-state
+   preview/explicit-confirmation, fixed rebind, corrupt refusal, replay, and
+   token-free idempotency.
 8. Confirm the archive manifest includes every packaged core file with current
-   digests and package version `0.8.0`.
+   digests and package version `0.9.0`.
 9. Confirm generated state, SQLite files and sidecars, backups, locks, Viewer
    HTML, root references, logs, caches, and scratch output are absent from the
    artifact.
@@ -304,12 +346,13 @@ separate explicit authorization.
 
 ## Release Summary
 
-Version 0.8.0 consolidates setup and diagnostics, adds typed checkpoints and a
-bounded Review Packet, moves backup and Viewer upkeep behind deterministic
-post-commit maintenance, removes storage and Viewer administration from the
-public CLI, and migrates local state through schema v13. Viewer snapshot v3 is
-unchanged while its accepted source schemas expand through v13. Reduced loop
-discipline routes only deterministically exceeded Effort results to one
-non-blocking reconciliation episode and bounds repeated repair in session-local
-guidance without adding a command, schema field, persisted counter, or normal
-green-path stop.
+Version 0.9.0 replaces path-derived state lookup with one immutable stored
+project identity, a mutable binding, and the fixed `state/current/` layout.
+It migrates supported schema-v1-through-v13 state to schema v14, preserves
+durable task and review history, and permits relocation only through a
+read-only preview followed by explicit current user approval of one exact
+token. Viewer snapshot v3 is unchanged while its accepted source schemas
+expand through v14. The public inventory remains exactly 20 leaves; the sole
+relocation option is `setup --confirm-relocation`. Reduced loop discipline,
+the nine/ten-call normal flow, privacy boundaries, offline operation, and
+target-project/Git no-mutation remain unchanged.

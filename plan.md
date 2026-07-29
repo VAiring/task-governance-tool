@@ -1,12 +1,10 @@
 # task-governance-tool Initial Plan
 
-Status: implemented through the TG-M16.4 reduced loop-discipline behavioral
-acceptance at v0.8.0/schema v13 with Viewer snapshot v3. TG-M17.0 has fixed the
-approved v0.9.0/schema-v14 stable-identity and relocation target, and TG-M17.1
-through TG-M17.3 have completed their schema/repository,
-fixed-resolver/same-binding staging, and explicit relocation slices. TG-M17.4
-and TG-M17.5 remain implementation work. The TG-M12.3 Issue adapter remains
-blocked.
+Status: implemented through TG-M17.5 at v0.9.0/schema v14 with Viewer
+snapshot v3. Stable identity, fixed project-local state, same-binding
+migration, explicit confirmed relocation, consumer hardening, and synchronized
+package acceptance are complete. The completed TG-M16.4 reduced-loop
+behavioral acceptance is retained. The TG-M12.3 Issue adapter remains blocked.
 Explicit default-browser launch is approved only as a follow-up requirement
 pending design and roadmap approval.
 Reduced TG-M16 has a fixed formal contract, the TG-M16.1 runtime route, active
@@ -688,9 +686,8 @@ Confirmed decisions:
 - Through implemented release v0.8.0, default SQLite storage is skill-local and
   path-keyed at
   `<installed-skill-root>/state/projects/<project-id>/taskgov.sqlite`.
-  TG-M17.0 supersedes that as the approved v0.9.0 target with the fixed
-  `<installed-skill-root>/state/current/taskgov.sqlite`; it is not active until
-  the M17 resolver and synchronization units complete.
+  Implemented TG-M17 supersedes it in v0.9.0 with the fixed
+  `<installed-skill-root>/state/current/taskgov.sqlite`.
 - The stateful governed-project install target is one physical project-scoped
   copy at `<target-project>/.agents/skills/task-governance-tool`. TG-M13
   supersedes the earlier merely-discouraged user-wide guidance: user-wide,
@@ -1167,11 +1164,11 @@ cancelled.
 TG-M17.0's five-document stable-identity/relocation contract, TG-M17.1's
 schema-v14 identity/binding repository slice, TG-M17.2's fixed resolver/fresh
 UUID/same-binding migration slice, and TG-M17.3's explicit relocation slice
-are complete. TG-M17.4 and TG-M17.5 remain the sequential implementation lane.
-Before M17.4 and M17.5
-start, their stored Task Contracts require explicit authority to replace two
-stale references to cancelled M16.3 behavior; M17.5 must also limit root
-`AGENTS.md` to durable routing rather than milestone status.
+are complete. TG-M17.4 consumer hardening and TG-M17.5 package/relocation
+acceptance are also complete. Their stored Task Contracts were corrected from
+the cancelled M16.3 reference to the completed reduced-loop/reconciliation
+authority before execution; root `AGENTS.md` retains only durable routing
+rather than milestone status.
 TG-M12.3 remains blocked on an Issue intake contract, governing permission
 update, and separate integration approval.
 

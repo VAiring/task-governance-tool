@@ -102,6 +102,25 @@ class CliHelpTests(unittest.TestCase):
                 "--read-only",
             ):
                 self.assertIn(option, result.stdout)
+            normalized = " ".join(result.stdout.split())
+            self.assertIn("first use --read-only to preview", normalized)
+            self.assertIn("explicit current user approval", normalized)
+            self.assertIn("exact token", normalized)
+            for error_code in (
+                "project_relocation_required",
+                "relocation_token_invalid",
+                "relocation_token_expired",
+                "relocation_token_stale",
+                "relocation_token_used",
+                "relocation_not_required",
+            ):
+                self.assertIn(error_code, result.stdout)
+            relocation_options = {
+                token
+                for token in result.stdout.split()
+                if token.startswith("--") and "relocation" in token
+            }
+            self.assertEqual(relocation_options, {"--confirm-relocation"})
             for removed in ("--db", "--output", "--fix", "--disable", "--restore"):
                 self.assertNotIn(removed, result.stdout)
 

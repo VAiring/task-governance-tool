@@ -1,14 +1,11 @@
 # task-governance-tool MVP Design
 
-Status: release acceptance remains at v0.8.0/schema v13 with Viewer snapshot
-v3 through the completed TG-M16.4 reduced-loop behavioral acceptance. TG-M17.0 fixes the
-approved v0.9.0/schema-v14 stable-identity and relocation target. TG-M17.1
-through TG-M17.3 are implemented: schema-v14 identity/binding primitives,
-fixed production resolution, fresh UUID setup, same-binding staged
-publication, and explicit confirmed relocation are active on this branch.
-TG-M17.4 and TG-M17.5 retain ownership of consumer-hardening acceptance and
-release synchronization. Viewer snapshot v3 is retained. TG-M12.3 Issue
-adapter remains blocked.
+Status: release v0.9.0/schema v14 with Viewer snapshot v3 implements
+TG-M17.0 through TG-M17.5: stable identity/binding primitives, fixed
+production resolution, fresh UUID setup, same-binding staged publication,
+explicit confirmed relocation, consumer hardening, and package acceptance are
+complete. The completed TG-M16.4 reduced-loop behavioral acceptance is
+retained. TG-M12.3 Issue adapter remains blocked.
 
 This document describes the initial implementation design for the MVP specified
 in `docs/specification.md`.
@@ -19,7 +16,8 @@ implementation lineage, including headings labeled `Implemented` or
 applicable only where TG-M14 does not supersede it. Sections labeled
 `Historical` preserve additional pre-M14 implementation detail. The
 implemented TG-M14 section and later component designs are the current v0.8.0
-authority when those older boundaries differ.
+lineage; implemented TG-M17 design is the current v0.9.0
+identity/storage authority when those older boundaries differ.
 
 ## Design Summary
 
@@ -3041,16 +3039,14 @@ repository tests and sanitized forward evidence, not persisted runtime policy.
 The package remains physical and project-scoped with explicit `--repo`; no
 test installs into or edits a real consuming project.
 
-## Approved TG-M17 Stable Identity And Relocation Design
+## Implemented TG-M17 Stable Identity And Relocation Design
 
 TG-M17 is one staged storage-boundary change, not a general project registry or
-workflow engine. M17.0 fixes this design while release v0.8.0/schema v13 is
-still active. M17.1 through M17.4 may temporarily combine package version
-0.8.0 with schema v14 or a legacy-layout transition database on the feature
-branch; those revisions are not publication targets. M17.5 changes package and
-release metadata to v0.9.0 only after the full fixed resolver is accepted.
-Viewer snapshot stays v3 and expands its source-schema validator from 5-13 to
-5-14.
+workflow engine. M17.0 fixed the design; M17.1 through M17.4 were non-public
+staging revisions that could temporarily combine package version 0.8.0 with
+schema v14 or a legacy-layout transition database. M17.5 synchronized the
+accepted full fixed resolver as release v0.9.0. Viewer snapshot stays v3 and
+its source-schema validator accepts 5-14.
 
 ### Schema Version 14: Identity And Binding
 

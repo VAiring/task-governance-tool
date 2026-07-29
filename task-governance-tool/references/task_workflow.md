@@ -37,9 +37,24 @@ the `.agents` path. When running from inside the Skill directory, pass
 the current directory and never re-roots it to an enclosing Git worktree. A
 non-Git governed directory is valid.
 
-Project identity follows the canonical governed-directory location. Do not
-infer relocation, copy state, or invent another operating mode when a project
-moves.
+Project identity is immutable; the governed-directory binding is mutable.
+Normal commands and `doctor` never change that binding. Explicit setup
+mechanically publishes supported same-binding legacy state into the fixed
+package-local layout.
+
+If a command reports `project_relocation_required`, do not infer whether the
+directory was moved, copied, or forked. Run `setup --read-only --json` once,
+present its bounded `relocation_preview` and planned writes, and wait for
+explicit current user approval. Only after that approval, submit the exact
+returned token with:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py setup --confirm-relocation <exact-token> --json
+```
+
+Never auto-confirm a preview. An expired or stale token requires a fresh
+preview and fresh user approval. This exception is outside the bounded normal
+Task loop and adds no routine command or question.
 
 ## First Use And Optional Diagnosis
 

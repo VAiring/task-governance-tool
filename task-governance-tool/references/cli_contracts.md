@@ -3,7 +3,7 @@
 Use this reference when exact public commands, arguments, JSON fields, bounds,
 or error behavior matter.
 
-Release `0.8.0` uses task schema v13 and offline snapshot v3.
+Release `0.9.0` uses task schema v14 and offline snapshot v3.
 
 ## Contents
 
@@ -45,10 +45,10 @@ python scripts/taskgov.py <command> --repo <target-project> [options]
 ```
 
 Omitting `--repo` means the current directory and never re-roots it to an
-enclosing Git worktree. A non-Git directory is valid. Stateful use supports one physical
-project-scoped package only; user-wide, symbolic-link, and Windows junction
-layouts are unsupported. The verified runtime is Windows with Python 3.12 or
-later.
+enclosing Git worktree. A non-Git directory is valid. Stateful use supports
+one physical project-scoped package only; user-wide, symbolic-link, and
+Windows junction layouts are unsupported. The verified runtime is Windows
+with Python 3.12 or later.
 
 The complete public command inventory is exactly these 20 leaves:
 
@@ -95,7 +95,7 @@ Every JSON result has exactly these top-level keys:
 {
   "ok": true,
   "command": "task.next",
-  "project_id": "project-a1b2c3d4e5f6",
+  "project_id": "tg_project_0123456789abcdef0123456789abcdef",
   "data": {},
   "warnings": [],
   "errors": []
@@ -104,6 +104,10 @@ Every JSON result has exactly these top-level keys:
 
 Public output contains no local storage, backup, projection, or rejected-input
 path. Error rows contain only `code` and a sanitized `message`.
+Fresh setup uses a `uuid_v1` identity in the shown format. Migrated
+`legacy_path_v1` IDs are preserved byte-for-byte; top-level `project_id`
+always comes from stored identity and is never recomputed from the current
+path.
 
 Inherently read-only commands are `doctor`, task `list`, `next`, `current`,
 `effort`, and `show`, `task complete --check`, handoff `list` and `show`, and
@@ -137,12 +141,16 @@ Options:
 
 - `--backup-interval-minutes <1..1440>`
 - `--backup-generations <1..20>`
+- `--confirm-relocation <token>` for one explicitly approved exceptional
+  relocation
 - `--read-only` for a no-write preview
 
-The normal Skill flow supplies neither policy option. A first setup defaults
-to 30 minutes after the last successful managed copy and three retained
-generations. Once configured, omitted options preserve stored values; values
-equal to stored policy are a write-free replay.
+The normal Skill flow supplies neither policy option nor a relocation token.
+The exceptional binding-mismatch flow supplies one only after the explicit
+approval boundary below. A first setup defaults to 30 minutes after the last
+successful managed copy and three retained generations. Once configured,
+omitted options preserve stored values; values equal to stored policy are a
+write-free replay.
 
 When the canonical database is absent, setup checks only canonical managed
 generations for the same project. It mechanically restores the newest valid
@@ -154,6 +162,22 @@ with `setup_restore_failed` and message
 `managed backup could not be restored`; setup does not initialize empty state.
 The same fixed failure applies when a rollback-journal entry remains for the
 missing canonical DB; setup neither applies nor changes that journal.
+
+Release 0.9.0 stores the database in the fixed package-local
+`state/current/` layout. Fresh write-mode setup creates one UUID-backed
+immutable project identity; same-binding schema-v1-through-v13 legacy state is
+published into the fixed layout by explicit setup without an LLM choice.
+Project identity is separate from the mutable governed-directory binding.
+
+A binding mismatch never authorizes a rebind. Normal commands and `doctor`
+return the bounded relocation condition without writing. Write-mode setup
+without a token returns `project_relocation_required`. Only
+`setup --read-only` returns successful `status="relocation_preview"` with the
+future ordered write plan, an exact confirmation token, and its expiry. Token
+issuance is not approval: the Skill presents the plan, waits for explicit
+current user approval, and only then calls write-mode setup with that exact
+unexpired token. It never infers move/copy/fork semantics or auto-confirms.
+Expired or stale context requires a fresh preview and fresh user approval.
 
 `data` always has exactly:
 
@@ -171,26 +195,42 @@ missing canonical DB; setup neither applies nor changes that journal.
     "viewer_publish"
   ],
   "schema_from": null,
-  "schema_to": 13,
+  "schema_to": 14,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
-  "viewer_status": "published"
+  "viewer_status": "published",
+  "relocation": {
+    "required": false,
+    "source_layout": null,
+    "identity_scheme": null,
+    "binding_generation": null,
+    "confirmation_token": null,
+    "expires_at": null
+  }
 }
 ```
 
-Successful `status` is `setup_preview`, `setup_complete`, or
-`already_setup`. Write-list values are limited to `database_restore`,
-`database_initialize`,
-`migration_backup`, `database_migrate`, `maintenance_configure`, and
-`viewer_publish` in execution order. `viewer_status` is `not_present`,
-`current`, `published`, or `repair_required`.
+Successful `status` is `setup_preview`, `relocation_preview`,
+`setup_complete`, or `already_setup`. Write-list values are limited to
+`database_restore`, `legacy_state_publish`, `database_initialize`,
+`migration_backup`, `database_migrate`, `maintenance_configure`,
+`project_binding_update`, `viewer_publish`, and `legacy_state_cleanup` in
+execution order. `viewer_status` is `not_present`, `current`, `published`, or
+`repair_required`.
+
+`relocation` is always present with exactly the six shown keys. `required`
+is boolean. `source_layout` is null, `legacy_projects_v1`, or
+`fixed_current_v1`; `identity_scheme` is null, `legacy_path_v1`, or `uuid_v1`;
+`binding_generation` is a positive integer or null. The confirmation token
+and expiry are non-null only in a successful relocation preview. Public output
+does not expose a stored or current absolute binding path.
 
 Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=13`. A later-stage failure reports only
+null observed values except `schema_to=14`. A later-stage failure reports only
 the durable ordered prefix.
 
 Setup is noninteractive and idempotent. It does not create a second
@@ -211,6 +251,12 @@ runs project tests, or changes target state. For a Git-candidate target, only
 its single bounded effective-ignore preflight may inspect Git. It is not a
 prerequisite for setup or normal task work.
 
+On a recognized binding mismatch, doctor remains successful and reports
+`project_state.code="relocation_required"`, warning
+`project_relocation_required`, `setup_eligible=true`, and the fixed
+`suggested_action="continue"`. It never returns a relocation token or performs
+the preview/confirmation step.
+
 `data` has exactly `suggested_action`, `setup_eligible`, and `components`.
 `suggested_action` is always `continue`. Component keys are exactly
 `package`, `project_state`, `task_summary`, `handoff_delivery`, and
@@ -225,7 +271,7 @@ A ready result has this structure:
   "components": {
     "package": {
       "package_name": "task-governance-tool",
-      "package_version": "0.8.0",
+      "package_version": "0.9.0",
       "release_origin": "github:VAiring/task-governance-tool",
       "manifest_version": 1,
       "status": "clean",
@@ -237,8 +283,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 13,
-      "required_schema_version": 13
+      "schema_version": 14,
+      "required_schema_version": 14
     },
     "task_summary": {
       "code": "ready",
@@ -762,7 +808,7 @@ command, or normal-loop decision is added.
 
 These operations add no Skill command or LLM judgment. Their artifacts and
 paths are absent from public command output. Snapshot v3 reads source schemas
-5 through 13 without exposing internal maintenance or checkpoint fields.
+5 through 14 without exposing internal maintenance or checkpoint fields.
 
 If post-commit maintenance cannot complete, the primary business mutation
 remains successful and only a bounded warning is appended:
@@ -785,6 +831,24 @@ nested commands and unsupported or malformed options return exit 1 and
 these parser failures use the normal bounded envelope, resolve no project, and
 perform no read or write.
 
+Mutually incompatible supported options return
+`invalid_option_combination` with a bounded sanitized message.
+Specifically, `setup --read-only --confirm-relocation <token>` fails before
+project/state resolution with exit 1,
+`invalid_option_combination`, and message
+`--confirm-relocation cannot be used with --read-only`.
+
+Relocation setup failures use exit 2 and these fixed sanitized messages:
+
+| Code | Message |
+|---|---|
+| `project_relocation_required` | `project state is bound to a different project location; run setup --read-only` |
+| `relocation_token_invalid` | `relocation confirmation is invalid` |
+| `relocation_token_expired` | `relocation confirmation has expired; run setup --read-only again` |
+| `relocation_token_stale` | `project relocation state changed; run setup --read-only again` |
+| `relocation_token_used` | `relocation confirmation has already been used` |
+| `relocation_not_required` | `project relocation is not required` |
+
 Important setup/diagnostic errors include:
 
 - `unsupported_python`
@@ -801,6 +865,12 @@ Important setup/diagnostic errors include:
 - `setup_incomplete`
 - `project_state_unreadable`
 - `project_mismatch`
+- `project_relocation_required`
+- `relocation_token_invalid`
+- `relocation_token_expired`
+- `relocation_token_stale`
+- `relocation_token_used`
+- `relocation_not_required`
 - `schema_too_new`
 - `unsupported_journal_mode`
 - `database_busy`

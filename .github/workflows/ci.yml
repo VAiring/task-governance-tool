@@ -154,11 +154,15 @@ jobs:
             "$skillRoot/scripts/task_governance_tool/maintenance.py",
             "$skillRoot/scripts/task_governance_tool/ordering.py",
             "$skillRoot/scripts/task_governance_tool/project_scope.py",
+            "$skillRoot/scripts/task_governance_tool/relocation.py",
             "$skillRoot/scripts/task_governance_tool/review_packet.py",
             "$skillRoot/scripts/task_governance_tool/reviews.py",
             "$skillRoot/scripts/task_governance_tool/selection.py",
             "$skillRoot/scripts/task_governance_tool/self_status.py",
             "$skillRoot/scripts/task_governance_tool/setup.py",
+            "$skillRoot/scripts/task_governance_tool/state_paths.py",
+            "$skillRoot/scripts/task_governance_tool/state_resolver.py",
+            "$skillRoot/scripts/task_governance_tool/state_transition.py",
             "$skillRoot/scripts/task_governance_tool/storage.py",
             "$skillRoot/scripts/task_governance_tool/tasks.py",
             "$skillRoot/scripts/task_governance_tool/viewer.py",
@@ -185,8 +189,8 @@ jobs:
           $contracts = Get-Content -Raw "$skillRoot/references/cli_contracts.md"
           $readme = Get-Content -Raw 'README.md'
           $release = Get-Content -Raw 'docs/release-install.md'
-          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.8\.0"') {
-            throw 'Runtime package version is not 0.8.0'
+          if ($runtimeInit -notmatch '__version__\s*=\s*"0\.9\.0"') {
+            throw 'Runtime package version is not 0.9.0'
           }
           if ($storage -notmatch 'SCHEMA_VERSION\s*=\s*14') {
             throw 'Runtime schema version is not 14'
@@ -221,8 +225,20 @@ jobs:
               $skillMd -notmatch 'reopen') {
             throw 'Skill guidance is missing deterministic effort, Contract, or reopen routing'
           }
-          if ($release -notmatch 'schema v13' -or $release -notmatch '0\.8\.0') {
-            throw 'Release guidance is inconsistent with version 0.8.0/schema v13'
+          if ($release -notmatch 'schema v14' -or $release -notmatch '0\.9\.0') {
+            throw 'Release guidance is inconsistent with version 0.9.0/schema v14'
+          }
+          foreach ($document in @($skillMd, $workflow, $contracts, $readme, $release)) {
+            foreach ($token in @(
+              'relocation_preview',
+              '--confirm-relocation',
+              'explicit',
+              'approval'
+            )) {
+              if ($document -notmatch [regex]::Escape($token)) {
+                throw "Relocation guidance is missing $token"
+              }
+            }
           }
           foreach ($document in @($skillMd, $readme, $release)) {
             if ($document -notmatch '\.agents/skills/task-governance-tool') {

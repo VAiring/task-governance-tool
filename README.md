@@ -5,7 +5,7 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.8.0` uses SQLite schema v13 and Viewer snapshot v3.
+Release `0.9.0` uses SQLite schema v14 and Viewer snapshot v3.
 
 ## Install
 
@@ -48,6 +48,26 @@ offline Viewer. It is noninteractive and idempotent. If the canonical DB is
 missing while a valid managed generation remains, setup recovers the newest
 valid same-project generation before normal migration and Viewer repair. It
 does not add a recovery command or accept a recovery path.
+
+Release 0.9.0 stores one immutable project identity in the fixed package-local
+`state/current/` layout and keeps the governed-directory binding separately.
+Fresh setup creates a UUID-backed identity. Explicit setup mechanically moves
+a supported schema-v1-through-v13 legacy database to the fixed layout when its
+stored binding still matches the current project.
+
+A binding mismatch is an exceptional relocation flow, not a normal Task-loop
+step. Normal commands and `doctor` never rebind state. Run
+`setup --read-only --json` to obtain a bounded `relocation_preview`, present
+its planned writes to the user, and wait for explicit current approval. Only
+then pass the exact returned token:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py setup --confirm-relocation <exact-token> --json
+```
+
+Never infer that a mismatch means a move rather than a copy or fork, and never
+auto-confirm a preview. An expired or stale token requires a fresh preview and
+fresh user approval.
 
 If invoking the CLI from inside the installed Skill directory, pass the target
 directory explicitly:
@@ -213,7 +233,7 @@ reported only as bounded sanitized warnings.
 Taskgov starts no daemon, timer, background process, queue, service, browser,
 or maintenance command. The generated Viewer and managed backups remain
 projections/runtime artifacts under the ignored Skill `state/` directory.
-Viewer snapshot v3 reads source schemas 5 through 13, contains bounded
+Viewer snapshot v3 reads source schemas 5 through 14, contains bounded
 sanitized task/review history, and has no write controls or network
 dependency.
 
@@ -253,7 +273,7 @@ plus the existing sanitized Viewer warning.
 
 ## Public Commands
 
-Release 0.8.0 exposes exactly these 20 command leaves:
+Release 0.9.0 exposes exactly these 20 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`

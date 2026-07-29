@@ -128,10 +128,80 @@ class SkillSelfContainmentTests(unittest.TestCase):
             " ".join(skill_md.lower().split()),
         )
         self.assertIn("snapshot v3", contracts.lower())
-        self.assertIn("schema v13", release_note.lower())
-        self.assertIn("0.8.0", release_note)
+        self.assertIn("schema v14", release_note.lower())
+        self.assertIn("0.9.0", release_note)
         self.assertIn("verification and review gates", skill_md.lower())
         self.assertIn("current governed task", openai_yaml.lower())
+
+    def test_m17_release_and_relocation_guidance_is_synchronized(self):
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
+            encoding="utf-8"
+        )
+        contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
+            encoding="utf-8"
+        )
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        release_note = (ROOT / "docs" / "release-install.md").read_text(
+            encoding="utf-8"
+        )
+        manifest = json.loads(
+            (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
+        )
+
+        for text in (skill_md, workflow, contracts, readme, release_note):
+            normalized = " ".join(text.lower().split())
+            for phrase in (
+                "relocation_preview",
+                "--confirm-relocation",
+                "explicit",
+                "approval",
+                "exact",
+                "token",
+                "never",
+                "auto-confirm",
+                "fresh preview",
+                "fresh user approval",
+            ):
+                self.assertIn(phrase, normalized)
+        self.assertIn("schema v14", contracts.lower())
+        self.assertIn("source schemas 5 through 14", readme.lower())
+        self.assertIn("source schemas v5-v14", release_note.lower())
+        self.assertEqual(manifest["package_version"], "0.9.0")
+
+        setup_section = contracts.split("## `setup`", 1)[1].split(
+            "## `doctor`",
+            1,
+        )[0]
+        for key in (
+            "required",
+            "source_layout",
+            "identity_scheme",
+            "binding_generation",
+            "confirmation_token",
+            "expires_at",
+        ):
+            self.assertIn(f'"{key}"', setup_section)
+        for code in (
+            "project_relocation_required",
+            "relocation_token_invalid",
+            "relocation_token_expired",
+            "relocation_token_stale",
+            "relocation_token_used",
+            "relocation_not_required",
+        ):
+            self.assertIn(code, contracts)
+        for message in (
+            "project state is bound to a different project location; "
+            "run setup --read-only",
+            "relocation confirmation is invalid",
+            "relocation confirmation has expired; run setup --read-only again",
+            "project relocation state changed; run setup --read-only again",
+            "relocation confirmation has already been used",
+            "project relocation is not required",
+            "--confirm-relocation cannot be used with --read-only",
+        ):
+            self.assertIn(message, contracts)
 
     def test_m16_reconciliation_guidance_is_conditional_and_bounded(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -395,7 +465,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("--kind git_snapshot", release_note)
         self.assertIn("unstaged", release_normalized)
         self.assertIn("untracked", release_normalized)
-        self.assertIn('__version__ = "0.8.0"', runtime_init)
+        self.assertIn('__version__ = "0.9.0"', runtime_init)
         self.assertIn("SCHEMA_VERSION = 14", storage)
         self.assertIn("SNAPSHOT_VERSION = 3", viewer)
         self.assertIn("omits", release_note)
@@ -412,7 +482,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertIn("0.8.0", version.stdout)
+        self.assertIn("0.9.0", version.stdout)
 
     def test_tg_m12_local_handoff_guidance_and_isolated_flow_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -439,8 +509,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("rejected raw", text.lower())
         for text in (workflow, contracts):
             self.assertIn("handoff_not_persisted", text)
-        self.assertIn("schema v13", release_note.lower())
-        self.assertIn("0.8.0", release_note)
+        self.assertIn("schema v14", release_note.lower())
+        self.assertIn("0.9.0", release_note)
         for text in (workflow, contracts, readme, release_note):
             self.assertIn("Effort Advisory", text)
         self.assertIn("effort_advisory_enabled", skill_md)
@@ -907,6 +977,21 @@ class SkillSelfContainmentTests(unittest.TestCase):
                     / "viewer_config.py"
                 ).is_file()
             )
+            for module in (
+                "relocation.py",
+                "state_paths.py",
+                "state_resolver.py",
+                "state_transition.py",
+            ):
+                self.assertTrue(
+                    (
+                        copied
+                        / "scripts"
+                        / "task_governance_tool"
+                        / module
+                    ).is_file(),
+                    module,
+                )
             self.assertTrue(
                 (
                     copied
@@ -964,13 +1049,23 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("$skillRoot/scripts/task_governance_tool/effort.py", workflow)
         self.assertIn("$skillRoot/references/reconciliation.md", workflow)
         self.assertIn("$skillRoot/scripts/task_governance_tool/self_status.py", workflow)
+        for module in (
+            "relocation.py",
+            "state_paths.py",
+            "state_resolver.py",
+            "state_transition.py",
+        ):
+            self.assertIn(
+                f"$skillRoot/scripts/task_governance_tool/{module}",
+                workflow,
+            )
         self.assertIn("$skillRoot/release-manifest.json", workflow)
         self.assertIn("$doctorJson | ConvertFrom-Json", workflow)
         self.assertIn("$doctor.data.components.package.status -ne 'clean'", workflow)
         self.assertIn("@('self', 'status')", workflow)
         self.assertIn("invalid_command", workflow)
         self.assertIn("SCHEMA_VERSION", workflow)
-        self.assertIn("0\\.8\\.0", workflow)
+        self.assertIn("0\\.9\\.0", workflow)
         self.assertIn("task-viewer\\.html$", workflow)
         self.assertIn('Windows skill checks (Python ${{ matrix.python-version }})', workflow)
         matrix_block = workflow.split("matrix:", 1)[1].split("\n\n    steps:", 1)[0]
@@ -1023,6 +1118,16 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "task-governance-tool/scripts/task_governance_tool/self_status.py",
             tracked,
         )
+        for module in (
+            "relocation.py",
+            "state_paths.py",
+            "state_resolver.py",
+            "state_transition.py",
+        ):
+            self.assertIn(
+                f"task-governance-tool/scripts/task_governance_tool/{module}",
+                tracked,
+            )
         self.assertIn("task-governance-tool/release-manifest.json", tracked)
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
@@ -1032,6 +1137,16 @@ class SkillSelfContainmentTests(unittest.TestCase):
             manifest["core_files"],
         )
         self.assertIn("references/reconciliation.md", manifest["core_files"])
+        for module in (
+            "relocation.py",
+            "state_paths.py",
+            "state_resolver.py",
+            "state_transition.py",
+        ):
+            self.assertIn(
+                f"scripts/task_governance_tool/{module}",
+                manifest["core_files"],
+            )
         self.assertNotIn("config/viewer.json", manifest["core_files"])
         self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))
         self.assertFalse(any(path.startswith("task-governance-tool/config/") for path in tracked))

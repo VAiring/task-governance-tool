@@ -56,6 +56,17 @@ recovers the newest valid generation before continuing normal migration and
 repair. Do not invent a separate recovery command or path choice. The normal
 Skill flow supplies no maintenance-policy options.
 
+Project identity is immutable and its filesystem binding is mutable. Normal
+commands and `doctor` never rebind state. If a command reports
+`project_relocation_required`, run `setup --read-only --json` once and present
+the returned bounded `relocation_preview` and planned writes to the user.
+Wait for explicit approval in the current conversation; only then submit the
+exact unexpired token with
+`setup --confirm-relocation <exact-token> --json`. Never infer move/copy/fork
+semantics or auto-confirm a preview. An expired or stale token requires a fresh
+preview and fresh user approval. This exceptional flow adds nothing to the
+normal Task loop.
+
 Run `doctor` only for an explicit diagnosis or install/release validation:
 
 ```powershell

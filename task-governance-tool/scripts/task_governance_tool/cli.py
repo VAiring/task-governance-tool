@@ -378,6 +378,17 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser = subparsers.add_parser(
         "setup",
         help="initialize, migrate, and configure local project state",
+        description=(
+            "Initialize, migrate, and configure local project state. "
+            "For relocation, first use --read-only to preview; submit the "
+            "exact token only after explicit current user approval."
+        ),
+        epilog=(
+            "Relocation errors: project_relocation_required, "
+            "relocation_token_invalid, relocation_token_expired, "
+            "relocation_token_stale, relocation_token_used, "
+            "relocation_not_required."
+        ),
     )
     add_common_options(setup_parser)
     setup_parser.add_argument(
@@ -393,6 +404,11 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument(
         "--confirm-relocation",
         default=None,
+        metavar="TOKEN",
+        help=(
+            "submit the exact unexpired token only after a current "
+            "setup --read-only relocation preview and explicit user approval"
+        ),
     )
 
     doctor_parser = subparsers.add_parser(

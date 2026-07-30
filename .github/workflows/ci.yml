@@ -248,7 +248,7 @@ jobs:
           }
           if ($release -notmatch 'schema v16' -or
               $release -notmatch '0\.10\.0' -or
-              $release -notmatch 'Viewer snapshot: v4' -or
+              $release -notmatch '\| Viewer snapshot \| v4,' -or
               $release -notmatch 'v5 through v16') {
             throw 'Release guidance is inconsistent with version 0.10.0/schema v16/Viewer v4 source v5-v16'
           }

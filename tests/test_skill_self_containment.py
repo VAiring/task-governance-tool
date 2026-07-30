@@ -214,8 +214,11 @@ class SkillSelfContainmentTests(unittest.TestCase):
             normalized = " ".join(text.lower().split())
             for phrase in (
                 "deterministically evaluates",
-                "recorded receipts and findings",
-                "current review target and generation",
+                "qualifying pass receipts",
+                "changes-requested receipts only for the current review "
+                "target and generation",
+                "unresolved high or medium finding",
+                "any recorded generation",
                 "distinct stored strings",
                 "people",
                 "llms",

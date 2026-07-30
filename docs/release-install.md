@@ -362,10 +362,12 @@ instruction so reviewers inspect the exact stored index, commit, fingerprint-
 bound material, or external revision rather than ambient content. The
 independent reviewer returns the result; the trusted parent/orchestrator
 records its sanitized receipt/findings. Taskgov deterministically evaluates
-only recorded receipts and findings for the current review target and
-generation against the configured gate. Distinct reviewer keys prove distinct
-stored strings only; they do not prove distinct people, LLMs, machines,
-independent processes, independence, or authenticated provenance.
+qualifying PASS receipts and changes-requested receipts only for the current
+review target and generation. Any unresolved high or medium finding from any
+recorded generation of that Task continues to block the gate. Distinct
+reviewer keys prove distinct stored strings only; they do not prove distinct
+people, LLMs, machines, independent processes, independence, or authenticated
+provenance.
 
 ## Safety And Privacy
 

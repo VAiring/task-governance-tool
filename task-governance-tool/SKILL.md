@@ -169,11 +169,12 @@ excluded. Use the single bounded `review prepare` packet for the independent
 reviewers; follow its exact-target instruction rather than ambient Git or
 worktree state. Have reviewers return verdicts and findings. Record those
 sanitized results from the trusted parent or orchestrator. Taskgov
-deterministically evaluates only recorded receipts and findings for the current
-review target and generation against the configured gate. Distinct reviewer
-keys prove distinct stored strings only; they do not prove distinct people,
-LLMs, machines, independent processes, independence, or authenticated
-provenance.
+deterministically evaluates qualifying PASS receipts and changes-requested
+receipts only for the current review target and generation. Any unresolved high
+or medium finding from any recorded generation of that Task continues to block
+the gate. Distinct reviewer keys prove distinct stored strings only; they do
+not prove distinct people, LLMs, machines, independent processes,
+independence, or authenticated provenance.
 
 Tier 2 normally requires two distinct independent PASS receipts for the same
 target generation. A changed target requires fresh receipts. A

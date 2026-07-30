@@ -1,12 +1,12 @@
 {
   "core_files": {
     "LICENSE": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-    "SKILL.md": "sha256:9ab349013d22aa89fa2ecff52d2e21f7ea96bdb94dbef5c6aad4a07507cae41a",
+    "SKILL.md": "sha256:aa3e8efc1d25b97c7d61558ba4865fff387ef0564d027b5c4f30a96d9eaa262b",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
     "assets/task-viewer.template.html": "sha256:7f0868c39120f51016955df3d72d413ae0ccbd03ef52f67158b140c51ea9b563",
-    "references/cli_contracts.md": "sha256:f0fc342204eab73be200c5d075992849481c58205eaa9e83dee128f64a1e287e",
+    "references/cli_contracts.md": "sha256:9358c3691a9fd03227e52504442276ddebf14248053a2ec4e4ead2f8e35320da",
     "references/reconciliation.md": "sha256:8ab7b5e734034a8dc186b274de5c1ce65eb17496e7a5690011585292670688aa",
-    "references/task_workflow.md": "sha256:7bf998171717d110e66ed69d6ef7647fb2e9937d78f22bc06c922f7dcf897d01",
+    "references/task_workflow.md": "sha256:9f73d8ae74592bbe3c71e400c9b997ac9f6012f4eb2b43687225c82d9fb7c290",
     "scripts/task_governance_tool/__init__.py": "sha256:6daa4d5fd0b7978311295aae0cee6ec1712288102083f23f50c97515af33d6f9",
     "scripts/task_governance_tool/artifact_lock.py": "sha256:cbaea048859c08d1317f4363ebefa2078b366ad4c0208b7d8fda929c2314420a",
     "scripts/task_governance_tool/backup.py": "sha256:752b4f0f8cdc0d33b5c65ee563f44f4340265b595c37093f8acd63c0332193d3",

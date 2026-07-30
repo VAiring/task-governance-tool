@@ -227,11 +227,12 @@ The packet tells each reviewer how to inspect the exact target rather than
 ambient `HEAD` or worktree content. The independent reviewer returns the
 verdict and findings; the trusted parent/orchestrator records their sanitized
 result with the shown receipt command and existing finding commands. Taskgov
-deterministically evaluates only recorded receipts and findings for the current
-review target and generation against the configured gate. Distinct reviewer
-keys prove distinct stored strings only; they do not prove distinct people,
-LLMs, machines, independent processes, independence, or authenticated
-provenance.
+deterministically evaluates qualifying PASS receipts and changes-requested
+receipts only for the current review target and generation. Any unresolved high
+or medium finding from any recorded generation of that Task continues to block
+the gate. Distinct reviewer keys prove distinct stored strings only; they do
+not prove distinct people, LLMs, machines, independent processes,
+independence, or authenticated provenance.
 
 Tier 1 normally requires one independent PASS. Tier 2 normally requires two
 distinct independent PASS receipts for the same target generation and blocks

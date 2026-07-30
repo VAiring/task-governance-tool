@@ -220,6 +220,17 @@ class CliHelpTests(unittest.TestCase):
             ):
                 self.assertNotIn(unsupported, prepare.stdout)
 
+            receipt = install.run("review", "receipt", "add", "--help")
+            self.assertEqual(receipt.returncode, 0, receipt.stderr)
+            normalized_receipt = " ".join(receipt.stdout.split())
+            for phrase in (
+                "current-generation stored distinctness key",
+                "distinct strings do not prove reviewer identity",
+                "independence",
+                "authenticated provenance",
+            ):
+                self.assertIn(phrase, normalized_receipt)
+
     def test_removed_groups_are_not_compatibility_help_handlers(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))

@@ -649,7 +649,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common_options(review_receipt_add_parser)
     review_receipt_add_parser.add_argument("task_id")
-    review_receipt_add_parser.add_argument("--reviewer", required=True)
+    review_receipt_add_parser.add_argument(
+        "--reviewer",
+        required=True,
+        help=(
+            "current-generation stored distinctness key; distinct strings do "
+            "not prove reviewer identity, independence, or authenticated "
+            "provenance"
+        ),
+    )
     review_receipt_add_parser.add_argument("--kind", required=True)
     review_receipt_add_parser.add_argument("--verdict", required=True)
     review_receipt_add_parser.add_argument("--summary", default="")

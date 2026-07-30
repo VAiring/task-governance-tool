@@ -177,6 +177,12 @@ immutable project identity; same-binding schema-v1-through-v13 legacy state is
 published into the fixed layout by explicit setup without an LLM choice.
 Project identity is separate from the mutable governed-directory binding.
 
+Package replacement preserves project-local state and requires explicit setup.
+There is no public downgrade or restore command. Release rollback means
+restoring one matched pre-migration package, database, and managed-artifact set
+together; an older runtime against a newer schema, mixed generations, an
+in-place reverse migration, or a Git checkout alone is not rollback.
+
 A binding mismatch never authorizes a rebind. Normal commands and `doctor`
 return the bounded relocation condition without writing. Write-mode setup
 without a token returns `project_relocation_required`. Only
@@ -806,9 +812,11 @@ approval; the normal independent path omits it.
 
 The independent reviewer returns the verdict and findings. The trusted
 parent/orchestrator records their concise sanitized receipt/finding rows as an
-attestation. taskgov validates target binding and reviewer-key distinctness,
-but does not authenticate the recorder or reviewer and proves neither identity
-nor independence.
+attestation. Taskgov deterministically evaluates only recorded receipts and
+findings for the current review target and generation against the configured
+gate. Distinct reviewer keys prove distinct stored strings only; they do not
+prove distinct people, LLMs, machines, independent processes, independence,
+authenticated provenance, or summary truth.
 
 Record and resolve structured findings:
 

@@ -6,11 +6,23 @@ Skill in any project.
 
 ## Release Identity
 
-- Package version: `0.10.0`
-- SQLite schema: v16
-- Viewer snapshot: v4, accepting source schemas v5-v16 (v5 through v16)
-- Supported runtime: Python 3.12 or newer on Windows
-- Verified platform: Windows
+| Item | Value |
+|---|---|
+| Package version | `0.10.0` |
+| SQLite schema | v16 |
+| Viewer snapshot | v4, accepting source schemas v5-v16 (v5 through v16) |
+| Public command leaves | 20 |
+| Supported runtime | Python 3.12 or newer on Windows |
+| Verified platform | Windows |
+| Tag | lightweight `v0.10.0` |
+| Remote/repository | `origin`, `VAiring/task-governance-tool` |
+| Archive | `task-governance-tool-0.10.0.zip` |
+| Checksum | `task-governance-tool-0.10.0.zip.sha256` |
+| Archive root | `task-governance-tool/` |
+| Release title | `task-governance-tool v0.10.0` |
+| Release notes | `docs/releases/v0.10.0.md` |
+| Workflow/name/job | `.github/workflows/ci.yml`, `CI`, `test` |
+| CI Python matrix | 3.12 and 3.14 |
 
 Linux and macOS are not claimed as supported in this release.
 
@@ -47,6 +59,17 @@ The archive must exclude:
 - root `references/`, `research.md`, tests, fixtures, development-only
   documents, and local scratch output;
 - caches, logs, temporary files, environment files, secrets, and editor files.
+
+The canonical archive recipe identifier is `git-archive-v1`:
+
+```text
+git archive --format=zip --output=<staging-file> <RC_SHA> -- task-governance-tool
+```
+
+The checksum bytes are the lowercase 64-hex archive SHA-256, two ASCII spaces,
+the archive basename, and one LF. M19.6 executes this exact recipe twice with
+one recorded Git executable and version and requires byte-identical output.
+No tracked archive builder or product command is added.
 
 Creating an archive is side-effect free. It does not initialize, migrate, copy,
 or inspect a target project's local state.
@@ -188,6 +211,24 @@ packaged core files while preserving local state, run `setup`; it performs any
 required migration and Viewer repair. A failed migration backup prevents the
 migration.
 
+## Release Upgrade And Paired Rollback
+
+Before publication, release acceptance rehearses the supported transition from
+the exact legacy v0.1.0/schema-v2 baseline to the unchanged v0.10.0/schema-v16
+package using isolated copies only. The rehearsal covers package replacement,
+pre-migration backup, migration/restart, maintenance configuration, Viewer
+publication, record and identity preservation, quick check, and foreign keys.
+It never selects or mutates user-wide, linked, junction, or custom-`--db`
+state.
+
+Rollback restores one matched pre-migration package, database, and managed
+artifact set as a single compatibility point, then proves that the legacy
+package can read that restored state. Running old code against schema v16,
+reverse-migrating in place, mixing generations, or treating a Git checkout
+alone as rollback is unsupported. After cutover, a defect is handled by a
+forward fix and new candidate/version, not a force update, history rewrite,
+retag, or asset replacement.
+
 ## Doctor Contract
 
 `doctor` is the sole diagnostic:
@@ -304,7 +345,7 @@ An enabled `task effort` result returns `suggested_action=continue` or the
 single `suggested_action=reconcile_scope` route. The latter loads
 `references/reconciliation.md` for one non-blocking episode covering the whole
 result. Initial failure
-integrity remains in the Skill itself:
+handling remains in the Skill itself:
 failed verification or blocking review prevents affected completion but not
 safe authorized repair or unrelated ready work, and tests are never weakened
 merely to obtain PASS. Without new evidence, two materially equivalent failed
@@ -320,8 +361,11 @@ remain outside that target. The packet adds one deterministic target-kind
 instruction so reviewers inspect the exact stored index, commit, fingerprint-
 bound material, or external revision rather than ambient content. The
 independent reviewer returns the result; the trusted parent/orchestrator
-records its sanitized receipt/findings. Reviewer keys prove distinct strings,
-not identity.
+records its sanitized receipt/findings. Taskgov deterministically evaluates
+only recorded receipts and findings for the current review target and
+generation against the configured gate. Distinct reviewer keys prove distinct
+stored strings only; they do not prove distinct people, LLMs, machines,
+independent processes, independence, or authenticated provenance.
 
 ## Safety And Privacy
 

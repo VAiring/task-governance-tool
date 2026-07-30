@@ -70,6 +70,12 @@ local-continuity opt-in and repairs the canonical offline projection. It is
 noninteractive and idempotent. The normal Skill workflow supplies no
 maintenance-policy choice.
 
+For a package upgrade, preserve project-local state and run explicit setup.
+There is no downgrade or restore command. A release rollback restores one
+matched pre-migration package, database, and managed-artifact set together;
+never run an older runtime against a newer schema, mix generations, or treat a
+Git checkout alone as state rollback.
+
 When the fixed canonical DB is missing, setup first checks fixed-layout
 managed generations. If no fixed source exists, it may select exactly one
 eligible legacy source. A same-binding legacy primary or legacy backup-only
@@ -357,9 +363,12 @@ Follow the packet's target-kind instruction exactly:
 
 The independent reviewer returns the actual verdict and findings. The trusted
 parent/orchestrator that requested the review records concise sanitized
-receipts and findings as attestations of those results. taskgov checks only
-target binding and distinct reviewer-key strings; it does not authenticate
-reviewers or prove independence.
+receipts and findings as attestations of those results. Taskgov
+deterministically evaluates only recorded receipts and findings for the current
+review target and generation against the configured gate. Distinct reviewer
+keys prove distinct stored strings only; they do not prove distinct people,
+LLMs, machines, independent processes, independence, or authenticated
+provenance.
 
 Tier 2 normally requires two distinct independent PASS receipts for one target
 generation:

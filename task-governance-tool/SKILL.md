@@ -56,6 +56,12 @@ recovers the newest valid generation before continuing normal migration and
 repair. Do not invent a separate recovery command or path choice. The normal
 Skill flow supplies no maintenance-policy options.
 
+For a package upgrade, preserve project-local state and run explicit `setup`.
+There is no downgrade or restore command. A release rollback is valid only
+when one matched pre-migration package, database, and managed-artifact set is
+restored together; never run an older runtime against a newer schema or treat
+a Git checkout alone as state rollback.
+
 Project identity is immutable and its filesystem binding is mutable. Normal
 commands and `doctor` never rebind state. If a command reports
 `project_relocation_required`, run `setup --read-only --json` once and present
@@ -162,8 +168,12 @@ Git completion commit, stage exactly the intended files and set
 excluded. Use the single bounded `review prepare` packet for the independent
 reviewers; follow its exact-target instruction rather than ambient Git or
 worktree state. Have reviewers return verdicts and findings. Record those
-sanitized results from the trusted parent or orchestrator. Treat reviewer keys
-as distinctness checks, not identity proof.
+sanitized results from the trusted parent or orchestrator. Taskgov
+deterministically evaluates only recorded receipts and findings for the current
+review target and generation against the configured gate. Distinct reviewer
+keys prove distinct stored strings only; they do not prove distinct people,
+LLMs, machines, independent processes, independence, or authenticated
+provenance.
 
 Tier 2 normally requires two distinct independent PASS receipts for the same
 target generation. A changed target requires fresh receipts. A

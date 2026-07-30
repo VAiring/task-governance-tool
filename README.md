@@ -118,6 +118,13 @@ renders, backs up, or runs project tests. For a Git-candidate target, only its
 single bounded effective-ignore preflight may inspect Git. Doctor is optional
 and is not a prerequisite for setup or normal task work.
 
+Release validation rehearses the isolated transition from the exact legacy
+v0.1.0/schema-v2 baseline to v0.10.0/schema v16. Paired rollback restores the
+matched pre-migration package, database, and managed artifacts together; it
+never runs legacy code against schema v16 or treats a Git checkout alone as
+state rollback. See [Release And Install Decision](docs/release-install.md) for
+the complete boundary.
+
 ## Minimal Task Workflow
 
 Register only work already approved by the user or an approved roadmap:
@@ -219,9 +226,12 @@ pushes, opens a PR, or creates an Issue.
 The packet tells each reviewer how to inspect the exact target rather than
 ambient `HEAD` or worktree content. The independent reviewer returns the
 verdict and findings; the trusted parent/orchestrator records their sanitized
-result with the shown receipt command and existing finding commands. Reviewer
-keys enforce distinct strings only and are not authentication or identity
-proof.
+result with the shown receipt command and existing finding commands. Taskgov
+deterministically evaluates only recorded receipts and findings for the current
+review target and generation against the configured gate. Distinct reviewer
+keys prove distinct stored strings only; they do not prove distinct people,
+LLMs, machines, independent processes, independence, or authenticated
+provenance.
 
 Tier 1 normally requires one independent PASS. Tier 2 normally requires two
 distinct independent PASS receipts for the same target generation and blocks
@@ -342,6 +352,16 @@ It is local-first and uses no network service. It does not mutate target-project
 files or Git state, run project-specific verification automatically, or create
 external Issues/PRs. SQLite remains helper state; governing project documents
 and current user decisions remain authoritative.
+
+## Release Artifact
+
+The release identity uses lightweight tag `v0.10.0`, title
+`task-governance-tool v0.10.0`, archive
+`task-governance-tool-0.10.0.zip`, and checksum
+`task-governance-tool-0.10.0.zip.sha256`. The canonical Release body is
+[docs/releases/v0.10.0.md](docs/releases/v0.10.0.md). The exact
+`git-archive-v1` recipe, checksum format, workflow identity, and runtime matrix
+are fixed in [docs/release-install.md](docs/release-install.md).
 
 ## Development Checks
 

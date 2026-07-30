@@ -154,6 +154,80 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 " ".join(text.split()),
             )
 
+    def test_m19_release_identity_trust_and_rollback_are_synchronized(self):
+        release_body_bytes = (
+            ROOT / "docs" / "releases" / "v0.10.0.md"
+        ).read_bytes()
+        release_body = release_body_bytes.decode("utf-8")
+        release_guide = (ROOT / "docs" / "release-install.md").read_text(
+            encoding="utf-8"
+        )
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow_guide = (
+            SKILL_ROOT / "references" / "task_workflow.md"
+        ).read_text(encoding="utf-8")
+        contracts = (
+            SKILL_ROOT / "references" / "cli_contracts.md"
+        ).read_text(encoding="utf-8")
+        ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertFalse(release_body_bytes.startswith(b"\xef\xbb\xbf"))
+        self.assertNotIn(b"\r", release_body_bytes)
+        self.assertTrue(release_body_bytes.endswith(b"\n"))
+        self.assertEqual(
+            release_body.splitlines()[0],
+            "# task-governance-tool v0.10.0",
+        )
+        identity_tokens = (
+            "v0.10.0",
+            "origin",
+            "VAiring/task-governance-tool",
+            "task-governance-tool-0.10.0.zip",
+            "task-governance-tool-0.10.0.zip.sha256",
+            "task-governance-tool v0.10.0",
+            ".github/workflows/ci.yml",
+            "3.12 and 3.14",
+            "git-archive-v1",
+            "git archive --format=zip --output=<staging-file> <RC_SHA> "
+            "-- task-governance-tool",
+        )
+        for text in (release_guide, release_body):
+            for token in identity_tokens:
+                self.assertIn(token, text)
+        self.assertIn("docs/releases/v0.10.0.md", release_guide)
+        self.assertIn("docs/releases/v0.10.0.md", readme)
+        self.assertTrue(ci.startswith("name: CI\n"))
+        self.assertRegex(ci, r"(?m)^  test:\n")
+
+        trust_documents = (
+            readme,
+            release_guide,
+            release_body,
+            skill_md,
+            workflow_guide,
+            contracts,
+        )
+        for text in trust_documents:
+            normalized = " ".join(text.lower().split())
+            for phrase in (
+                "deterministically evaluates",
+                "recorded receipts and findings",
+                "current review target and generation",
+                "distinct stored strings",
+                "people",
+                "llms",
+                "machines",
+                "independent processes",
+                "independence",
+                "authenticated provenance",
+            ):
+                self.assertIn(phrase, normalized)
+            self.assertIn("matched pre-migration package", normalized)
+            self.assertIn("git checkout alone", normalized)
+
     def test_core_task_and_review_guidance_is_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
@@ -1088,8 +1162,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn('Windows skill checks (Python ${{ matrix.python-version }})', workflow)
         matrix_block = workflow.split("matrix:", 1)[1].split("\n\n    steps:", 1)[0]
         self.assertEqual(
-            set(re.findall(r'- "([0-9]+\.[0-9]+)"', matrix_block)),
-            {"3.12", "3.14"},
+            re.findall(r'- "([0-9]+\.[0-9]+)"', matrix_block),
+            ["3.12", "3.14"],
         )
         self.assertIn("runs-on: windows-latest", workflow)
         self.assertNotIn("ubuntu-", workflow)

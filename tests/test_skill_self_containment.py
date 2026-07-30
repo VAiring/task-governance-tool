@@ -2,6 +2,7 @@ import os
 import json
 import argparse
 import ast
+import hashlib
 import re
 import shutil
 import subprocess
@@ -100,6 +101,59 @@ def parser_leaf_commands(
 
 
 class SkillSelfContainmentTests(unittest.TestCase):
+    def test_apache_2_license_boundary_is_official_and_manifest_covered(self):
+        expected_digest = (
+            "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        )
+        root_bytes = (ROOT / "LICENSE").read_bytes()
+        package_bytes = (SKILL_ROOT / "LICENSE").read_bytes()
+        manifest = json.loads(
+            (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
+        )
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        release_note = (ROOT / "docs" / "release-install.md").read_text(
+            encoding="utf-8"
+        )
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        tracked = subprocess.run(
+            ["git", "ls-files"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        ).stdout.splitlines()
+
+        self.assertEqual(root_bytes, package_bytes)
+        self.assertEqual(hashlib.sha256(root_bytes).hexdigest(), expected_digest)
+        self.assertNotIn(b"\r", root_bytes)
+        self.assertFalse(root_bytes.startswith(b"\xef\xbb\xbf"))
+        self.assertEqual(
+            manifest["core_files"]["LICENSE"],
+            f"sha256:{expected_digest}",
+        )
+        self.assertIn("LICENSE", tracked)
+        self.assertIn("task-governance-tool/LICENSE", tracked)
+        self.assertNotIn("NOTICE", tracked)
+        self.assertNotIn("task-governance-tool/NOTICE", tracked)
+        self.assertFalse((ROOT / "NOTICE").exists())
+        self.assertFalse((SKILL_ROOT / "NOTICE").exists())
+        self.assertFalse(any(path.startswith("references/") for path in tracked))
+        self.assertIn("$skillRoot/LICENSE", workflow)
+        self.assertIn(expected_digest, workflow)
+        for text in (readme, release_note, skill_md):
+            self.assertIn("Apache License, Version 2.0", text)
+            self.assertIn("Apache-2.0", text)
+            self.assertIn("Omoronine", text)
+        for text in (readme, release_note):
+            self.assertIn(
+                "Copyright holder: Omoronine.",
+                " ".join(text.split()),
+            )
+
     def test_core_task_and_review_guidance_is_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
@@ -969,6 +1023,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 ).is_file()
             )
             self.assertTrue((copied / "release-manifest.json").is_file())
+            self.assertEqual(
+                (copied / "LICENSE").read_bytes(),
+                (ROOT / "LICENSE").read_bytes(),
+            )
             self.assertTrue(
                 (
                     copied

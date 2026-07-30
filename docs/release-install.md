@@ -14,23 +14,38 @@ Skill in any project.
 
 Linux and macOS are not claimed as supported in this release.
 
+## License Boundary
+
+Original copyrightable material owned by Omoronine in Git-tracked files is
+licensed under the Apache License, Version 2.0 (`Apache-2.0`). Copyright
+holder: Omoronine.
+The repository root and installable package carry byte-identical official
+unmodified `LICENSE` files, and the package copy is release-required and
+manifest-covered.
+
+Root `references/`, `research.md`, untracked or ignored files, generated state
+and Viewer output, target configuration, caches, logs, secrets, scratch files,
+and separately licensed or unowned third-party material are outside this
+boundary. The current audit found no concrete attribution duty, so neither the
+repository nor the package contains a `NOTICE`.
+
 ## Publication Decision
 
 Publish the reviewed source repository as a Git tag and publish a separate
 installable archive whose root is the repository's
 `task-governance-tool/` directory.
 
-The installable package contains the co-located release manifest, `SKILL.md`,
-display metadata, bundled Viewer template, CLI entry point and runtime modules,
-and the three one-level Skill references. The manifest is the exact inventory
-and digest authority for packaged core files.
+The installable package contains its `LICENSE`, the co-located release
+manifest, `SKILL.md`, display metadata, bundled Viewer template, CLI entry point
+and runtime modules, and the three one-level Skill references. The manifest is
+the exact inventory and digest authority for packaged core files.
 
 The archive must exclude:
 
 - generated `state/`, Viewer HTML, managed backups, SQLite databases, and
   SQLite sidecars;
-- root `references/`, tests, fixtures, development-only documents, and local
-  scratch output;
+- root `references/`, `research.md`, tests, fixtures, development-only
+  documents, and local scratch output;
 - caches, logs, temporary files, environment files, secrets, and editor files.
 
 Creating an archive is side-effect free. It does not initialize, migrate, copy,
@@ -350,8 +365,10 @@ Before creating the 0.10.0 artifact:
    schema-v15 activation/reentry, native completion/reopen cycles, exact
    task-show/Viewer bounds, privacy, and proof that history never satisfies a
    current gate.
-8. Confirm the archive manifest includes every packaged core file with current
-   digests and package version `0.10.0`.
+8. Confirm root/package `LICENSE` bytes match the official Apache-2.0 text,
+   package `LICENSE` is shipped and manifest-covered, no unsupported `NOTICE`
+   exists, and the archive manifest includes every packaged core file with
+   current digests and package version `0.10.0`.
 9. Confirm generated state, SQLite files and sidecars, backups, locks, Viewer
    HTML, root references, logs, caches, and scratch output are absent from the
    artifact.

@@ -135,6 +135,7 @@ jobs:
 
           $requiredFiles = @(
             "$skillRoot/release-manifest.json",
+            "$skillRoot/LICENSE",
             "$skillRoot/SKILL.md",
             "$skillRoot/agents/openai.yaml",
             "$skillRoot/scripts/taskgov.py",
@@ -178,6 +179,24 @@ jobs:
             if (-not (Test-Path $file)) {
               throw "Missing required skill package file: $file"
             }
+          }
+          $officialLicenseSha256 = 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30'
+          if (-not (Test-Path -LiteralPath 'LICENSE' -PathType Leaf)) {
+            throw 'Missing repository LICENSE'
+          }
+          $rootLicenseSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath 'LICENSE').Hash.ToLowerInvariant()
+          $packageLicenseSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath "$skillRoot/LICENSE").Hash.ToLowerInvariant()
+          if (
+            $rootLicenseSha256 -ne $officialLicenseSha256 -or
+            $packageLicenseSha256 -ne $officialLicenseSha256
+          ) {
+            throw 'Root and package LICENSE must match the official Apache-2.0 bytes'
+          }
+          if (
+            (Test-Path -LiteralPath 'NOTICE') -or
+            (Test-Path -LiteralPath "$skillRoot/NOTICE")
+          ) {
+            throw 'NOTICE requires a concrete reviewed attribution duty'
           }
           if (Test-Path "$skillRoot/config/viewer.json") {
             throw 'Optional Viewer config must not be shipped'

@@ -199,3 +199,9 @@ arguments, JSON fields, bounds, or errors matter.
 
 Read [references/reconciliation.md](references/reconciliation.md) only for the
 conditional reconciliation or repeated-failure triggers defined above.
+
+## License
+
+Original copyrightable package material owned by Omoronine is licensed under
+the Apache License, Version 2.0 (`Apache-2.0`). See [LICENSE](LICENSE).
+No `NOTICE` is shipped because no concrete attribution duty was identified.

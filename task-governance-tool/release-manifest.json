@@ -1,6 +1,7 @@
 {
   "core_files": {
-    "SKILL.md": "sha256:4320fc2bd9ef8cf12d64f2d52273b3c3e7cf2ed4cdf28184dadd128e5fca645e",
+    "LICENSE": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "SKILL.md": "sha256:c1c91e8206bb51863cbec971236dc4f3a48715ffc1411397e6b4883e99a54243",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
     "assets/task-viewer.template.html": "sha256:7f0868c39120f51016955df3d72d413ae0ccbd03ef52f67158b140c51ea9b563",
     "references/cli_contracts.md": "sha256:6abc991f17c1c75ef3c939cbf6a01afac572f93be2cf5ba2989469bc36bf8fc6",

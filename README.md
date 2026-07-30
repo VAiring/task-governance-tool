@@ -8,6 +8,21 @@ design documents, tests, or current user decisions.
 Release `0.10.0` uses SQLite schema v16 and Viewer snapshot v4 with source
 schemas 5 through 16.
 
+## License
+
+Original copyrightable material owned by Omoronine in Git-tracked files is
+licensed under the Apache License, Version 2.0 (`Apache-2.0`). Copyright
+holder: Omoronine.
+The root [LICENSE](LICENSE) and installable
+[`task-governance-tool/LICENSE`](task-governance-tool/LICENSE) contain the
+same official unmodified license text.
+
+This boundary excludes root `references/`, `research.md`, untracked or ignored
+files, generated local state and Viewer output, target configuration, caches,
+logs, secrets, scratch files, and any separately licensed or unowned
+third-party material. The current tracked and shipped material has no
+identified attribution duty requiring a `NOTICE`, so no `NOTICE` is included.
+
 ## Install
 
 Python 3.12 or newer on Windows is the supported runtime. Windows is the
@@ -344,7 +359,9 @@ the exact 20-leaf help surface, and confirm generated `state/`, SQLite files,
 Viewer HTML, backups, logs, caches, and root copied references are absent from
 the release artifact. The optional `config/viewer.json` must also be absent
 from the release artifact and core manifest, while its loader and changed
-runtime sources remain manifest-covered.
+runtime sources remain manifest-covered. Confirm the root and packaged
+`LICENSE` files match the official Apache-2.0 bytes and that the package
+license is manifest-covered.
 
 ## Project Docs
 

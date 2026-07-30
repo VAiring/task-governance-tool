@@ -11,15 +11,11 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Windows skill checks (Python ${{ matrix.python-version }})
+  policy:
+    name: Repository test policy
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version:
-          - "3.12"
-          - "3.14"
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
 
     steps:
       - name: Checkout
@@ -31,10 +27,20 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
 
-      - name: Run unit tests
-        run: python -m unittest discover -s tests
+      - name: Validate test partition
+        run: python tools/test_lanes.py --repo . --check
+
+      - name: Plan event test matrix
+        id: matrix
+        shell: pwsh
+        run: |
+          $matrix = python tools/test_lanes.py --repo . --matrix-event "${{ github.event_name }}"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Test matrix policy failed'
+          }
+          "matrix=$matrix" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Check CLI help
         shell: pwsh
@@ -97,3 +103,48 @@ jobs:
 
       - name: Check release contract
         run: python tools/release_contract.py --repo .
+
+  test:
+    name: Windows tests (${{ matrix.lane }}, Python ${{ matrix.python-version }})
+    needs: policy
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.policy.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run test lane
+        run: python tools/test_lanes.py --repo . --lane "${{ matrix.lane }}" --ci-event "${{ github.event_name }}" --expected-python "${{ matrix.python-version }}"
+
+  release-candidate:
+    name: Full release-candidate gate
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+    needs:
+      - policy
+      - test
+    runs-on: windows-latest
+
+    steps:
+      - name: Require policy and complete test matrix
+        shell: pwsh
+        env:
+          POLICY_RESULT: ${{ needs.policy.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          if (
+            $env:POLICY_RESULT -ne 'success' -or
+            $env:TEST_RESULT -ne 'success'
+          ) {
+            throw 'Full release-candidate gate failed'
+          }

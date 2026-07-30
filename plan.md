@@ -6,7 +6,9 @@ lightweight tag `v0.10.0` resolve to that commit. GitHub Release
 `362617903` has prerelease visibility and contains the accepted archive and
 checksum. TG-M19.0 through TG-M19.10, including TG-M19.6A and TG-M19.6B, are
 complete. TG-M19.11 through TG-M19.14 form the approved post-release
-correctness sequence. TG-M12.3 remains separately blocked.
+correctness sequence. TG-M19.11 and TG-M19.12 are complete, TG-M19.13 is
+active, and TG-M19.14 remains approved next. TG-M12.3 remains separately
+blocked.
 
 This file owns current decisions, explicit open issues, and user-decision
 gates. It is not the product contract, execution ledger, or evidence store:
@@ -105,6 +107,21 @@ gates. It is not the product contract, execution ledger, or evidence store:
 - Exact artifact identities and install/upgrade boundaries live in
   [`docs/release-install.md`](docs/release-install.md); the active roadmap
   owns completion evidence routing and post-release execution order.
+
+### Repository Verification Policy
+
+- The repository-only deterministic runner owns three exhaustive,
+  module-level base lanes: `fast`, `integration`, and `release`. `all` is the
+  unchanged standard-discovery suite, not another maintained inventory.
+  Missing, duplicate, unassigned, stale, or loader-failed test material stops
+  before execution.
+- Pull requests run the complete partition on Python 3.12 and `fast` on 3.14;
+  pushes to `main` run every base lane on both versions; manual
+  `workflow_dispatch` runs `all` on both versions.
+- A future release candidate requires the explicit aggregate manual gate after
+  policy validation and both full-version jobs. This repository CI policy
+  grants no push, dispatch, tag, Release, or other external mutation
+  authority.
 
 ## Current Blocker And User Decision
 

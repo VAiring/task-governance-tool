@@ -418,13 +418,20 @@ read-only checker with `python tools/release_contract.py --repo .`. It derives
 the parser leaves and package/schema/Viewer versions from owning Python code,
 uses the release manifest as the exact packaged-core inventory, and checks
 license, metadata, active command inventories, CI wiring, and tracked
-generated-artifact exclusions. Then rerun the complete current offline suite,
-isolated physical install and upgrade/rollback acceptance, the current CI
-matrix versions (Python 3.12 and 3.14), and `git diff --check` against that
-candidate's own exact identity. The checker is repository tooling, not an
-installable `taskgov` command or a target-project write. A prior v0.10.0
-result, Task receipt, approval object, or historical gate never satisfies a
-future candidate.
+generated-artifact exclusions. Validate the exact test partition with
+`python tools/test_lanes.py --repo . --check`, then run
+`python tools/test_lanes.py --repo . --lane all`, isolated physical install
+and upgrade/rollback acceptance, and `git diff --check` against that
+candidate's own exact identity.
+
+The current CI policy parallelizes all three base lanes on pushes to `main`
+for Python 3.12 and 3.14. Pull requests run the complete partition once on
+3.12 plus `fast` on 3.14. A future release candidate requires an exact-ref
+manual `workflow_dispatch`: its matrix is monolithic `all` on both Python
+versions and the explicit `Full release-candidate gate` must succeed. The
+checker and lane runner are repository tooling, not installable `taskgov`
+commands or target-project writes. A prior v0.10.0 result, Task receipt,
+approval object, or historical gate never satisfies a future candidate.
 
 Pushing, dispatching external CI, changing `main`, creating or changing a tag,
 or publishing a Release always requires separate exact current authorization.

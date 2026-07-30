@@ -23,6 +23,21 @@ OFFICIAL_APACHE_2_LICENSE_SHA256 = (
 CHECKER_INVOCATION = "python tools/release_contract.py --repo ."
 EXPECTED_RELEASE_ORIGIN = "github:VAiring/task-governance-tool"
 
+if str(DEFAULT_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(DEFAULT_REPO_ROOT))
+
+from tools.test_lanes import (  # noqa: E402
+    CI_CHECK_INVOCATION,
+    CI_EVENTS,
+    CI_LANE_INVOCATION,
+    CI_MATRIX_INVOCATION,
+    CI_PUSH_BRANCHES,
+    CI_PYTHON_VERSIONS,
+    RELEASE_CANDIDATE_EVENT,
+    TestLaneError,
+    validate_ci_policy,
+)
+
 _RUNTIME_SCRIPTS = DEFAULT_REPO_ROOT / SKILL_DIRECTORY / "scripts"
 if str(_RUNTIME_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_RUNTIME_SCRIPTS))
@@ -231,44 +246,120 @@ def _markdown_table(text: str) -> dict[str, str]:
     return rows
 
 
-def _parse_ci_python_versions(text: str) -> tuple[str, ...]:
+def _parse_ci_triggers(
+    text: str,
+) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
     lines = text.splitlines()
-    key_index: int | None = None
-    key_indent = 0
-    for index, line in enumerate(lines):
-        if line.strip() == "python-version:":
-            key_index = index
-            key_indent = len(line) - len(line.lstrip())
+    on_indexes = [
+        index for index, line in enumerate(lines) if line == "on:"
+    ]
+    if len(on_indexes) != 1:
+        return None
+    block: list[str] = []
+    for line in lines[on_indexes[0] + 1 :]:
+        if line and not line.startswith((" ", "\t")):
             break
-    if key_index is None:
-        return ()
+        if line.strip():
+            block.append(line)
 
-    versions: list[str] = []
-    for line in lines[key_index + 1 :]:
-        if not line.strip():
-            continue
+    events: list[str] = []
+    bodies: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in block:
+        if "\t" in line:
+            return None
         indent = len(line) - len(line.lstrip())
-        if indent <= key_indent:
-            break
         stripped = line.strip()
-        if not stripped.startswith("- "):
-            continue
-        value = stripped[2:].strip()
-        if value.startswith('"') and value.endswith('"'):
-            try:
-                decoded = json.loads(value)
-            except json.JSONDecodeError:
-                return ()
-            if not isinstance(decoded, str):
-                return ()
-            value = decoded
-        parts = value.split(".")
-        if len(parts) != 2 or not all(part.isdecimal() for part in parts):
-            return ()
-        versions.append(value)
-    if not versions or len(set(versions)) != len(versions):
-        return ()
-    return tuple(versions)
+        if indent == 2 and stripped.endswith(":"):
+            event = stripped[:-1]
+            if not event or event in bodies:
+                return None
+            events.append(event)
+            bodies[event] = []
+            current = event
+        elif current is None or indent <= 2:
+            return None
+        else:
+            bodies[current].append(stripped)
+
+    if set(events) != set(CI_EVENTS) or len(events) != len(CI_EVENTS):
+        return None
+    if bodies.get("pull_request") or bodies.get("workflow_dispatch"):
+        return None
+    push_body = bodies.get("push")
+    if push_body is None or not push_body or push_body[0] != "branches:":
+        return None
+    branches = tuple(
+        line[2:].strip()
+        for line in push_body[1:]
+        if line.startswith("- ")
+    )
+    if len(branches) != len(push_body) - 1:
+        return None
+    return tuple(events), branches
+
+
+def _parse_ci_jobs(text: str) -> dict[str, str] | None:
+    lines = text.splitlines()
+    jobs_indexes = [
+        index for index, line in enumerate(lines) if line == "jobs:"
+    ]
+    if len(jobs_indexes) != 1:
+        return None
+
+    jobs: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in lines[jobs_indexes[0] + 1 :]:
+        if line and not line.startswith((" ", "\t")):
+            break
+        if "\t" in line:
+            return None
+        indent = len(line) - len(line.lstrip())
+        stripped = line.strip()
+        if indent == 2 and stripped.endswith(":"):
+            job = stripped[:-1]
+            if not job or job in jobs:
+                return None
+            jobs[job] = []
+            current = job
+        elif current is not None:
+            jobs[current].append(line)
+        elif stripped:
+            return None
+    return {
+        name: "\n".join(body) + "\n"
+        for name, body in jobs.items()
+    }
+
+
+def _parse_named_steps(job_block: str) -> dict[str, tuple[str, ...]] | None:
+    steps: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in job_block.splitlines():
+        indent = len(line) - len(line.lstrip())
+        stripped = line.strip()
+        if indent == 6 and stripped.startswith("- name: "):
+            name = stripped[len("- name: ") :]
+            if not name or name in steps:
+                return None
+            steps[name] = []
+            current = name
+        elif current is not None:
+            steps[current].append(line)
+    return {
+        name: tuple(line for line in body if line.strip())
+        for name, body in steps.items()
+    }
+
+
+def _job_preamble(job_block: str) -> tuple[str, ...] | None:
+    preamble: list[str] = []
+    for line in job_block.splitlines():
+        if line == "    steps:":
+            return tuple(preamble)
+        if line.strip():
+            preamble.append(line)
+    return None
 
 
 def _parse_skill_frontmatter(text: str) -> dict[str, str] | None:
@@ -809,13 +900,25 @@ def _workflow_checks(
 ) -> tuple[str, ...]:
     if workflow is None:
         return ()
-    versions = _parse_ci_python_versions(workflow)
-    if not versions:
+    try:
+        validate_ci_policy()
+        versions = CI_PYTHON_VERSIONS
+    except TestLaneError:
+        versions = ()
         issues.append(
             ContractIssue(
                 "ci_runtime_matrix_invalid",
+                "tools/test_lanes.py",
+                "CI event, Python, or lane policy is invalid",
+            )
+        )
+    triggers = _parse_ci_triggers(workflow)
+    if triggers is None or triggers[1] != CI_PUSH_BRANCHES:
+        issues.append(
+            ContractIssue(
+                "ci_event_policy_invalid",
                 ".github/workflows/ci.yml",
-                "CI Python matrix is missing or invalid",
+                "CI events or push branches differ from the repository policy",
             )
         )
     run_commands = [
@@ -835,6 +938,149 @@ def _workflow_checks(
                 "ci_checker_wiring_invalid",
                 ".github/workflows/ci.yml",
                 "CI does not delegate release consistency to one checker",
+            )
+        )
+    jobs = _parse_ci_jobs(workflow)
+    jobs_valid = (
+        jobs is not None
+        and tuple(jobs) == ("policy", "test", "release-candidate")
+    )
+    policy_block = jobs.get("policy", "") if jobs is not None else ""
+    test_block = jobs.get("test", "") if jobs is not None else ""
+    candidate_block = (
+        jobs.get("release-candidate", "") if jobs is not None else ""
+    )
+    policy_steps = _parse_named_steps(policy_block)
+    test_steps = _parse_named_steps(test_block)
+
+    expected_checkout = (
+        "        uses: actions/checkout@v6",
+        "        with:",
+        "          fetch-depth: 0",
+        "          persist-credentials: false",
+    )
+    expected_policy_python = (
+        "        uses: actions/setup-python@v6",
+        "        with:",
+        '          python-version: "3.12"',
+    )
+    expected_test_python = (
+        "        uses: actions/setup-python@v6",
+        "        with:",
+        "          python-version: ${{ matrix.python-version }}",
+    )
+    expected_matrix_step = (
+        "        id: matrix",
+        "        shell: pwsh",
+        "        run: |",
+        f"          $matrix = {CI_MATRIX_INVOCATION}",
+        "          if ($LASTEXITCODE -ne 0) {",
+        "            throw 'Test matrix policy failed'",
+        "          }",
+        (
+            '          "matrix=$matrix" | Out-File -FilePath '
+            "$env:GITHUB_OUTPUT -Encoding utf8 -Append"
+        ),
+    )
+    expected_policy_preamble = (
+        "    name: Repository test policy",
+        "    runs-on: windows-latest",
+        "    outputs:",
+        "      matrix: ${{ steps.matrix.outputs.matrix }}",
+    )
+    expected_test_preamble = (
+        (
+            "    name: Windows tests (${{ matrix.lane }}, "
+            "Python ${{ matrix.python-version }})"
+        ),
+        "    needs: policy",
+        "    runs-on: windows-latest",
+        "    strategy:",
+        "      fail-fast: false",
+        "      matrix: ${{ fromJSON(needs.policy.outputs.matrix) }}",
+    )
+    policy_valid = (
+        jobs_valid
+        and policy_steps is not None
+        and tuple(policy_steps)
+        == (
+            "Checkout",
+            "Set up Python",
+            "Validate test partition",
+            "Plan event test matrix",
+            "Check CLI help",
+            "Check release contract",
+        )
+        and _job_preamble(policy_block) == expected_policy_preamble
+        and policy_steps.get("Checkout") == expected_checkout
+        and policy_steps.get("Set up Python") == expected_policy_python
+        and policy_steps.get("Validate test partition")
+        == (f"        run: {CI_CHECK_INVOCATION}",)
+        and policy_steps.get("Plan event test matrix") == expected_matrix_step
+        and policy_steps.get("Check release contract")
+        == (f"        run: {CHECKER_INVOCATION}",)
+        and "Check CLI help" in policy_steps
+    )
+    test_valid = (
+        jobs_valid
+        and test_steps is not None
+        and tuple(test_steps)
+        == ("Checkout", "Set up Python", "Run test lane")
+        and _job_preamble(test_block) == expected_test_preamble
+        and test_steps.get("Checkout") == expected_checkout
+        and test_steps.get("Set up Python") == expected_test_python
+        and test_steps.get("Run test lane")
+        == (f"        run: {CI_LANE_INVOCATION}",)
+    )
+    if (
+        not policy_valid
+        or not test_valid
+        or run_commands.count(CI_CHECK_INVOCATION) != 1
+        or run_commands.count(CI_LANE_INVOCATION) != 1
+        or "python -m unittest discover -s tests" in workflow
+        or "permissions:\n  contents: read\n\njobs:\n" not in workflow
+    ):
+        issues.append(
+            ContractIssue(
+                "ci_test_policy_wiring_invalid",
+                ".github/workflows/ci.yml",
+                "CI does not consume the deterministic test-lane policy",
+            )
+        )
+    expected_candidate = (
+        "    name: Full release-candidate gate",
+        (
+            "    if: ${{ always() && github.event_name == "
+            f"'{RELEASE_CANDIDATE_EVENT}' "
+            "}}"
+        ),
+        "    needs:",
+        "      - policy",
+        "      - test",
+        "    runs-on: windows-latest",
+        "    steps:",
+        "      - name: Require policy and complete test matrix",
+        "        shell: pwsh",
+        "        env:",
+        "          POLICY_RESULT: ${{ needs.policy.result }}",
+        "          TEST_RESULT: ${{ needs.test.result }}",
+        "        run: |",
+        "          if (",
+        "            $env:POLICY_RESULT -ne 'success' -or",
+        "            $env:TEST_RESULT -ne 'success'",
+        "          ) {",
+        "            throw 'Full release-candidate gate failed'",
+        "          }",
+    )
+    observed_candidate = tuple(
+        line for line in candidate_block.splitlines() if line.strip()
+    )
+    if observed_candidate != expected_candidate:
+        issues.append(
+            ContractIssue(
+                "ci_candidate_gate_invalid",
+                ".github/workflows/ci.yml",
+                "CI does not enforce the complete manual release-candidate gate",
             )
         )
     if (
@@ -877,6 +1123,12 @@ def check_release_contract(
         subject=".github/workflows/ci.yml",
         issues=issues,
     )
+    for relative in ("tools/release_contract.py", "tools/test_lanes.py"):
+        _read_utf8(
+            root / Path(*relative.split("/")),
+            subject=relative,
+            issues=issues,
+        )
     ci_versions = _workflow_checks(workflow, issues)
     observed_paths = (
         tuple(sorted(path.replace("\\", "/") for path in tracked_paths))

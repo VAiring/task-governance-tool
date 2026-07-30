@@ -15,6 +15,11 @@ from tools.release_contract import (
     OFFICIAL_APACHE_2_LICENSE_SHA256,
     check_release_contract,
 )
+from tools.test_lanes import (
+    CI_CHECK_INVOCATION,
+    CI_LANE_INVOCATION,
+    CI_MATRIX_INVOCATION,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1066,7 +1071,15 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("$doctor.data.components.package.status -ne 'clean'", workflow)
         self.assertIn("@('self', 'status')", workflow)
         self.assertIn("invalid_command", workflow)
-        self.assertIn('Windows skill checks (Python ${{ matrix.python-version }})', workflow)
+        self.assertIn(
+            "Windows tests (${{ matrix.lane }}, "
+            "Python ${{ matrix.python-version }})",
+            workflow,
+        )
+        self.assertEqual(workflow.count(CI_CHECK_INVOCATION), 1)
+        self.assertEqual(workflow.count(CI_MATRIX_INVOCATION), 1)
+        self.assertEqual(workflow.count(CI_LANE_INVOCATION), 1)
+        self.assertIn("Full release-candidate gate", workflow)
         self.assertEqual(contract.ci_python_versions, ("3.12", "3.14"))
         for removed_duplicate in (
             "$requiredFiles",

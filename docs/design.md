@@ -48,6 +48,7 @@ docs/
 plan.md
 tools/
   release_contract.py
+  test_lanes.py
 task-governance-tool/
   release-manifest.json
   SKILL.md
@@ -144,6 +145,16 @@ bounded shell-free `git ls-files -z`. Its deterministic findings cover
 manifest/package drift, release metadata, license, active command inventories,
 CI wiring, and generated-artifact exclusions without creating state or
 changing a target project.
+
+The root `tools/test_lanes.py` is the single repository-only owner for the
+module-level `fast`, `integration`, and `release` test manifest and the CI
+event/Python/lane matrix. It discovers with the same `unittest` start,
+top-level directory, and pattern as the prior full command, rejects loader
+errors, duplicate IDs, duplicate ownership, unassigned modules, and stale
+manifest modules, and preserves discovery order when filtering. `all` is a
+meta-lane over the unchanged standard suite, not a fourth maintained list.
+The runner disables bytecode generation, performs no network or repository
+write, and is not an installable package module or public CLI leaf.
 
 ## Public CLI And Serialization
 
@@ -1563,6 +1574,31 @@ manifest-license mismatch, invalid Skill/agent/manifest metadata, parser-to-
 document drift, and tracked generated artifacts. The checker does not replace
 installed-CLI, no-write, physical-isolation, migration, upgrade/rollback, or
 release-acceptance behavior tests.
+
+The deterministic repository runner assigns every discovered test module to
+exactly one base lane:
+
+- `fast` covers parser, validation, state transitions, pure helpers, and small
+  temporary repositories;
+- `integration` covers setup, recovery, relocation publication, backup,
+  Viewer, concurrency, consumer layouts, and normal migration; and
+- `release` covers legacy migration/recovery, upgrade and paired rollback,
+  performance, package/license, active documents, workflow policy, and
+  integrated release acceptance.
+
+Every run first validates the complete manifest. A base lane is an ordered
+filter of standard discovery, while `all` runs the original discovered suite
+in its original order. New `test*.py` modules therefore fail closed until
+classified; new methods in an owned module inherit that module's lane.
+
+CI obtains one compact include matrix from this same policy. Pull requests run
+all three base lanes on Python 3.12 and `fast` on 3.14. Pushes to `main` run
+all three base lanes independently on both versions. Manual
+`workflow_dispatch` runs monolithic `all` on both versions, and an
+`always()` aggregate job fails unless policy validation and the full matrix
+succeed. The workflow trigger remains limited to pull requests, pushes to
+`main`, and manual dispatch; a candidate gate cannot be replaced by a skipped
+dependency job.
 
 Tier-2 changes use two independent exact-target reviews. Tests hard-fail count,
 byte, subprocess, attempt, and render limits; performance budgets never justify

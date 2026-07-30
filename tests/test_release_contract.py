@@ -16,6 +16,11 @@ from tools.release_contract import (
     collect_runtime_contract,
     forbidden_tracked_artifact,
 )
+from tools.test_lanes import (
+    CI_CHECK_INVOCATION,
+    CI_LANE_INVOCATION,
+    CI_MATRIX_INVOCATION,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +61,10 @@ def copy_release_fixture(destination: Path) -> Path:
         ROOT / ".github" / "workflows" / "ci.yml",
         fixture / ".github" / "workflows" / "ci.yml",
     )
+
+    (fixture / "tools").mkdir()
+    for name in ("release_contract.py", "test_lanes.py"):
+        shutil.copy2(ROOT / "tools" / name, fixture / "tools" / name)
 
     (fixture / "docs" / "releases").mkdir(parents=True)
     for relative in (
@@ -392,6 +401,9 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         )
 
         self.assertEqual(workflow.count(CHECKER_INVOCATION), 1)
+        self.assertEqual(workflow.count(CI_CHECK_INVOCATION), 1)
+        self.assertEqual(workflow.count(CI_MATRIX_INVOCATION), 1)
+        self.assertEqual(workflow.count(CI_LANE_INVOCATION), 1)
         for removed in (
             "$requiredFiles",
             "$publicTokens",
@@ -399,7 +411,12 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             "Guard generated artifacts",
         ):
             self.assertNotIn(removed, workflow)
-        self.assertIn("python -m unittest discover -s tests", workflow)
+        self.assertNotIn("python -m unittest discover -s tests", workflow)
+        self.assertIn("Full release-candidate gate", workflow)
+        self.assertIn(
+            "matrix: ${{ fromJSON(needs.policy.outputs.matrix) }}",
+            workflow,
+        )
         self.assertIn("doctor --repo . --read-only --json", workflow)
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -415,6 +432,163 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             )
             commented = check_fixture(fixture)
             self.assertIn("ci_checker_wiring_invalid", issue_codes(commented))
+
+    def test_ci_policy_wiring_event_and_candidate_drift_fail(self):
+        def relocate_candidate_condition(text: str) -> str:
+            candidate = (
+                "    if: ${{ always() && github.event_name == "
+                "'workflow_dispatch' }}\n"
+            )
+            changed = text.replace(
+                candidate,
+                "    if: ${{ always() && github.event_name == 'push' }}\n",
+                1,
+            )
+            return changed.replace(
+                "  test:\n",
+                f"  test:\n{candidate}",
+                1,
+            )
+
+        mutations = (
+            (
+                "lane_commented",
+                lambda text: text.replace(
+                    f"run: {CI_LANE_INVOCATION}",
+                    f"# run: {CI_LANE_INVOCATION}",
+                    1,
+                ),
+                "ci_test_policy_wiring_invalid",
+            ),
+            (
+                "matrix_commented",
+                lambda text: text.replace(
+                    f"          $matrix = {CI_MATRIX_INVOCATION}",
+                    f"          # $matrix = {CI_MATRIX_INVOCATION}",
+                    1,
+                ),
+                "ci_test_policy_wiring_invalid",
+            ),
+            (
+                "matrix_overridden",
+                lambda text: text.replace(
+                    '          "matrix=$matrix" | Out-File',
+                    "          $matrix = '{\"include\":[]}'\n"
+                    '          "matrix=$matrix" | Out-File',
+                    1,
+                ),
+                "ci_test_policy_wiring_invalid",
+            ),
+            (
+                "test_job_restricted_to_dispatch",
+                lambda text: text.replace(
+                    "  test:\n",
+                    "  test:\n"
+                    "    if: github.event_name == 'workflow_dispatch'\n",
+                    1,
+                ),
+                "ci_test_policy_wiring_invalid",
+            ),
+            (
+                "test_job_continue_on_error",
+                lambda text: text.replace(
+                    "  test:\n",
+                    "  test:\n    continue-on-error: true\n",
+                    1,
+                ),
+                "ci_test_policy_wiring_invalid",
+            ),
+            (
+                "permission_write",
+                lambda text: text.replace(
+                    "  contents: read",
+                    "  contents: write",
+                    1,
+                ),
+                "ci_test_policy_wiring_invalid",
+            ),
+            (
+                "extra_job_with_write_permission",
+                lambda text: text
+                + "\n  unapproved:\n"
+                "    runs-on: windows-latest\n"
+                "    permissions:\n"
+                "      contents: write\n"
+                "    steps:\n"
+                "      - name: Mutate repository\n"
+                "        run: Write-Output mutation\n",
+                "ci_test_policy_wiring_invalid",
+            ),
+            (
+                "extra_policy_step",
+                lambda text: text.replace(
+                    "  test:\n",
+                    "      - name: Unapproved policy action\n"
+                    "        run: Write-Output mutation\n\n"
+                    "  test:\n",
+                    1,
+                ),
+                "ci_test_policy_wiring_invalid",
+            ),
+            (
+                "push_branch",
+                lambda text: text.replace("- main", "- release", 1),
+                "ci_event_policy_invalid",
+            ),
+            (
+                "extra_event",
+                lambda text: text.replace(
+                    "  workflow_dispatch:\n",
+                    "  workflow_dispatch:\n  schedule:\n",
+                    1,
+                ),
+                "ci_event_policy_invalid",
+            ),
+            (
+                "candidate_event",
+                lambda text: text.replace(
+                    "github.event_name == 'workflow_dispatch'",
+                    "github.event_name == 'push'",
+                    1,
+                ),
+                "ci_candidate_gate_invalid",
+            ),
+            (
+                "candidate_condition_relocated",
+                relocate_candidate_condition,
+                "ci_candidate_gate_invalid",
+            ),
+            (
+                "matrix_source",
+                lambda text: text.replace(
+                    "matrix: ${{ fromJSON(needs.policy.outputs.matrix) }}",
+                    "matrix: ${{ fromJSON('{}') }}",
+                    1,
+                ),
+                "ci_test_policy_wiring_invalid",
+            ),
+        )
+        for name, mutate, expected_code in mutations:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                fixture = copy_release_fixture(Path(temporary))
+                fixture_workflow = fixture / ".github" / "workflows" / "ci.yml"
+                original = fixture_workflow.read_text(encoding="utf-8")
+                fixture_workflow.write_text(
+                    mutate(original),
+                    encoding="utf-8",
+                )
+
+                result = check_fixture(fixture)
+
+                self.assertIn(expected_code, issue_codes(result), result.issues)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = copy_release_fixture(Path(temporary))
+            (fixture / "tools" / "test_lanes.py").unlink()
+
+            result = check_fixture(fixture)
+
+            self.assertIn("required_file_missing", issue_codes(result))
 
     def test_uninjected_runtime_facts_fail_closed_for_another_repository(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -372,11 +372,29 @@ For current development and any later release candidate, run at least:
 
 ```powershell
 python tools\release_contract.py --repo .
-python -m unittest discover -s tests
+python tools\test_lanes.py --repo . --check
+python tools\test_lanes.py --repo . --lane all
 python task-governance-tool\scripts\taskgov.py --help
 python task-governance-tool\scripts\taskgov.py --version
 git diff --check
 ```
+
+For shorter local feedback, replace `all` with `fast`, `integration`, or
+`release`. The three base lanes own every standard-discovery test exactly once;
+an unassigned, duplicate, or stale test module fails before execution. The
+`all` lane preserves the ordered test IDs and suite from
+`python -m unittest discover -s tests`.
+
+CI consumes the same repository-only policy:
+
+| Event | Python 3.12 | Python 3.14 |
+|---|---|---|
+| pull request | `fast`, `integration`, `release` | `fast` |
+| push to `main` | `fast`, `integration`, `release` | `fast`, `integration`, `release` |
+| manual `workflow_dispatch` | `all` | `all` |
+
+The manual matrix is the complete future release-candidate gate; its aggregate
+job fails unless policy validation and both full-version jobs succeed.
 
 The repository-only release checker is offline and read-only. It derives the
 CLI leaves and runtime release versions from their owning Python modules, uses

@@ -1,12 +1,26 @@
+# NON-AUTHORITATIVE HISTORY — v0.10.0 Publication Capture
+
+> [!CAUTION]
+> This file preserves `docs/specification.md` exactly as it existed at publication commit
+> `a9b80ce177a6dead10d51a070b76ff01f7af0294`, preceded only by this banner. It is not current authority.
+> Use the active [specification](../../../specification.md). Words such as
+> current, approved, pending, or implemented below describe only the captured
+> revision and cannot satisfy a current contract, verification, or review gate.
+
+Source path: `docs/specification.md`
+Source commit: `a9b80ce177a6dead10d51a070b76ff01f7af0294`
+Current replacement: [docs/specification.md](../../../specification.md)
+
+---
+
 # task-governance-tool Current Product Specification
 
-Status: The published product is v0.10.0, SQLite schema v16, and Viewer
-snapshot v4 accepting source schemas v5-v16. The accepted release commit,
-remote `main`, and lightweight tag `v0.10.0` are
-`a9b80ce177a6dead10d51a070b76ff01f7af0294`; GitHub Release `362617903` is
-published with prerelease visibility. TG-M19.0 through TG-M19.10, including
-the TG-M19.6A and TG-M19.6B corrections, are complete. This post-release
-reconciliation is the active current-product authority.
+Status: The implemented product is v0.10.0, SQLite schema v16, and Viewer
+snapshot v4 accepting source schemas v5-v16. TG-M18.4 completed at
+`b0df647d9caf693afc0ff46aecf71a2c4739c864`; the TG-M16.4 reduced-loop
+behavioral acceptance, TG-M17 stable identity, and TG-M18 completion-cycle
+history remain current. TG-M19.0 fixed the release-correctness gates, and this
+TG-M19.1 consolidation is the active current-product authority.
 
 This document specifies supported product behavior. `docs/design.md` owns
 implementation structure, `docs/implementation-roadmap.md` owns execution
@@ -710,10 +724,9 @@ Tier 2 requires two PASS receipts from distinct independent reviewer keys;
 Tier 1 requires one. Tier 2 fallback requires one documented self-review PASS
 plus explicit user approval; Tier 1 fallback requires the self-review PASS.
 Tier 0 permits not-required only with a mechanical-change rationale. Any
-current-generation changes-requested receipt, unresolved high/medium finding
-from any recorded generation, or fresh-review-required condition blocks
-completion. Resolving a blocking finding is insufficient: advance to a newer
-target and obtain fresh receipts.
+current-generation changes-requested receipt, unresolved high/medium finding,
+or fresh-review-required condition blocks completion. Resolving a blocking
+finding is insufficient: advance to a newer target and obtain fresh receipts.
 
 Reviewer keys prove only normalized-string distinctness. The trusted caller
 attests the actual returned result; taskgov neither launches/authenticates a
@@ -1586,76 +1599,311 @@ include `paused_tasks_present`, `handoff_delivery_pending`,
 four maintenance codes. Warnings never carry Task prose, secrets, raw output,
 diffs, paths, or exception text.
 
-## Published v0.10.0 Release Record
+## Release Correctness And Publication Contract
 
-Version 0.10.0 is published from the exact accepted commit
-`a9b80ce177a6dead10d51a070b76ff01f7af0294`. Remote `main` and the
-unpeeled lightweight tag `v0.10.0` resolve to that commit. GitHub Release
-`362617903` is the canonical publication record and has prerelease
-visibility. A mutable branch name, remote-tracking reference, generated state,
-or an older completion cycle is not release authority.
+TG-M19 converts the reviewed v0.10.0 baseline into one licensable,
+reproducible, upgrade-tested exact-commit release without changing product
+behavior. Documentation, licensing, synchronization, local rehearsal,
+candidate CI, main cutover, remote-main acceptance, and publication are
+separate gates. Earlier approval never authorizes a later external write.
 
-The published identity is:
+### Authority And Release Identity
 
-| Item | Published value |
+The frozen input is M18.4 commit
+`b0df647d9caf693afc0ff46aecf71a2c4739c864`. Its reviewed descendants on
+`codex/project-scoped-install-guidance` are development authority until the
+explicit main fast-forward succeeds; exact reviewed commits, not mutable
+branch names or generated state, are authoritative.
+
+Legacy main is
+`f017ee228d435d892fb7136c5e79b3063320fac5`, package 0.1.0/schema v2 with no
+current Viewer contract. It is an ancestor and rehearsal source, not current
+authority. Its user-wide install, public `--db`, old commands, and release text
+must not return to active guidance.
+
+Main authority switches only when M19.8 freshly verifies expected remote main
+as an ancestor and normally fast-forwards it to the unchanged accepted
+candidate. Merge, squash, rebase, force, history replacement, or extra cutover
+commit is prohibited.
+
+Exact release identity is:
+
+| Item | Value |
 |---|---|
-| Package | `0.10.0` |
+| package | `0.10.0` |
 | SQLite | v16 |
-| Viewer | snapshot v4, source schemas v5-v16 |
-| Public command leaves | 20 |
-| Runtime/CI | Windows Python 3.12+, CI 3.12 and 3.14 |
-| Commit / `main` / tag | `a9b80ce177a6dead10d51a070b76ff01f7af0294` |
-| Tag | lightweight `v0.10.0` |
-| Remote/repository | `origin`, `VAiring/task-governance-tool` |
-| GitHub Release | `362617903`, prerelease |
-| Archive | `task-governance-tool-0.10.0.zip` |
-| Archive SHA-256 | `99fc2345fd036091349c47f7379eee25b8b3b4c8873c0f74aaceac323bb82a03` |
-| Checksum file | `task-governance-tool-0.10.0.zip.sha256` |
-| Checksum-file SHA-256 | `9cdc99bd26cc4887bd88ef2ec638659224f0a0d8f567edb12a3800d59a8b6764` |
-| Release notes | `docs/releases/v0.10.0.md` |
-| Release-notes SHA-256 | `aaa118a3fbbb261ec6a24f7a80f50f161e606a86857f99e17f957f34ba044a03` |
-| Candidate CI | run `30561916953`, attempt 1, Python 3.12/3.14 success |
-| Remote-main CI | run `30565181070`, attempt 1, Python 3.12/3.14 success |
+| Viewer | v4, sources v5-v16 |
+| command leaves | 20 |
+| runtime/CI | Windows Python 3.12+, CI 3.12 and 3.14 |
+| tag | lightweight `v0.10.0` |
+| remote/repository | `origin`, `VAiring/task-governance-tool` |
+| archive | `task-governance-tool-0.10.0.zip` |
+| checksum | `task-governance-tool-0.10.0.zip.sha256` |
+| archive root | `task-governance-tool/` |
+| Release title | `task-governance-tool v0.10.0` |
+| notes source | `docs/releases/v0.10.0.md` |
 
-The archive contains exactly the committed installable package subtree under
-one `task-governance-tool/` root. The package release manifest owns its
-packaged-core inventory and digests. Generated state, SQLite files and
-sidecars, backups, locks, Viewer output, target configuration, root
-`references/`, tests, fixtures, caches, logs, secrets, and scratch files are
-not artifact content. The canonical recipe and checksum format remain defined
-by [the release and install record](release-install.md).
+Every remote gate freshly resolves exactly one fetch and one push endpoint and
+normalizes only host plus owner/repository. Both must be
+`github.com/VAiring/task-governance-tool`. Missing, additional, duplicate,
+unparseable, or different endpoint stops before mutation. Raw URL, userinfo,
+credential, and query are neither printed nor stored. Remote-tracking refs are
+observations, not authority.
 
-Original copyrightable material owned by Omoronine in the reviewed tracked and
-shipped scope is licensed under Apache-2.0. Root and package `LICENSE` files
-contain byte-identical official unmodified text, the package copy is
-manifest-covered, and no concrete `NOTICE` duty was identified. Root
-`references/`, `research.md`, untracked or ignored material, generated
-state, and separately licensed or unowned third-party material remain outside
-that grant.
+### Licensing And Package Artifact
 
-The accepted tag, Release metadata, notes, archive, and checksum are immutable
-by project policy. A defect is handled by a reviewed forward-fix candidate and
-new version; routine recovery never force-updates `main`, rewrites history,
-moves or replaces the tag, replaces published assets, or deletes the Release
-to hide a mismatch. Any future Git or network mutation still requires exact
-current user authority for that operation. Product inspection and normal Task
-commands grant no release authority.
+Apache-2.0 is selected but cannot be applied until the user confirms authority
+to license included personal work, exact holder text, covered tracked/shipped
+scope, exclusions, and every employer/contractor/contributor/third-party/OSS
+policy restriction. Git identity/repository ownership is not proof.
 
-The v0.10.0 acceptance rehearsed an isolated transition from the exact legacy
-v0.1.0/schema-v2 package and state to the unchanged v0.10.0/schema-v16
-package. Supported rollback restores a matched legacy package, database, and
-managed artifacts as one compatibility point before legacy code runs. Running
-old code against schema v16, in-place downgrade, mixed generations, and Git
-checkout alone are unsupported.
+The licensing audit covers tracked code, docs, tests, fixtures, HTML, workflow,
+and shipped package. Unconfirmed material is excluded/replaced or the gate
+stops. Official unmodified Apache-2.0 text appears identically at root and
+package; package license is manifest-covered. NOTICE exists only for a concrete
+duty. Ignored root references remain excluded absent separate promotion.
 
-Completed release-gate Contracts, checkpoint schemas, approval objects,
-candidate staging mechanics, and ordered mutation evidence are one-time
-execution lineage, not active normal-loop product behavior. Their exact
-publication-commit forms are indexed by
-[the historical documentation index](history/README.md). Final completion
-evidence remains in the project-local Task database and the active roadmap's
-concise completion index. Current product, privacy, review, migration, and
-artifact requirements above do not depend on historical text.
+The archive is exactly the committed package subtree, including package
+LICENSE, and excludes generated state/SQLite/sidecars/backups/locks/Viewer
+output, target config, caches/logs/secrets, root references, tests, fixtures,
+and development docs. The manifest covers every packaged core file/digest.
+
+Archive recipe from repository root is:
+
+```text
+git archive --format=zip --output=<staging-file> <RC_SHA> -- task-governance-tool
+```
+
+The commit tree-ish preserves commit-derived timestamps. M19.6 records
+sanitized exact `git --version`, builds twice to separate files with one
+executable/recipe, and requires byte equality. Reproducibility is claimed only
+for that toolchain. Checksum bytes are lowercase 64-hex archive SHA-256, two
+ASCII spaces, archive basename, and LF.
+
+Canonical accepted staging is ignored physical
+`dist/task-governance-tool-0.10.0/<RC_SHA>/<EVIDENCE_SHA256>/` and contains
+only archive, checksum, and `release-candidate-v1.json` (summary bytes plus LF).
+Prepare under sibling `.staging-<EVIDENCE_SHA256>`, validate, then atomic
+no-clobber rename. Exact final is reusable; bounded three-file partial staging
+may complete or be recreated; unexpected/link/conflicting final stops. An
+accepted final is never overwritten/repaired. Invalid/missing accepted bytes
+return to M19.6 with new generation/acceptance. Files remain through M19.10.
+
+Release notes are UTF-8 without BOM, LF, exact bytes in
+`docs/releases/v0.10.0.md`; Release body must decode to them exactly.
+
+### Release Candidate Evidence v1
+
+M19.6 writes one existing checkpoint for Task
+`tg_task_67a3f3e73b913bfb` whose ASCII compact sorted-key JSON summary is at
+most 1,024 bytes, next action is exactly
+`Bind this evidence, pass both reviews, and complete TG-M19.6.`, and risks are
+empty. It has exactly:
+
+```text
+schema gen rc legacy main branch branch_head remote repo version tag tag_kind
+recipe git zip zip_bytes zip_sha256 sum sum_sha256 title notes notes_sha256
+workflow workflow_name job python
+```
+
+Values are `schema="rc-v1"`, fresh stable-per-attempt
+`gen="tg_rc_<16-lowercase-hex>"`, canonical full SHAs, exact release identity,
+`tag_kind="lightweight"`, `recipe="git-archive-v1"`,
+`workflow=".github/workflows/ci.yml"`, `workflow_name="CI"`, `job="test"`,
+and `python=["3.12","3.14"]`. `legacy` is the M19.5 completion commit and an
+ancestor of `rc`; `zip_bytes` is integer; hashes are lowercase 64-hex.
+
+It stores no path, URL, credential, provider body, log, or checksum-line copy.
+Staging path and checksum content derive exactly from fixed fields and summary
+hash. A new full acceptance uses a new generated ID; retry of one attempt keeps
+it stable.
+
+After readback, hash exact summary bytes for the staging directory, set review
+target `git_commit=rc`, provide summary/commit/assets/notes/verification as
+review material, obtain two Tier-2 PASS receipts, and complete with
+`git_commit=rc`. Any record/asset change resets the target generation and
+reviews.
+
+### Remote Gate Evidence v1
+
+M19.7-M19.10 change no tracked file. After exact readback each records one
+existing checkpoint with sorted compact ASCII JSON at most 1,024 bytes, fresh
+stable `tg_gate_<16-lowercase-hex>` generation, empty risks, and respectively:
+
+1. `Bind this evidence, pass both reviews, and complete TG-M19.7.`
+2. `Bind this evidence, pass both reviews, and complete TG-M19.8.`
+3. `Bind this evidence, pass both reviews, and complete TG-M19.9.`
+4. `Bind this evidence, pass both reviews, and complete TG-M19.10.`
+
+Common keys are `schema`, `gen`, `remote`, `repo`, and `rc`. Exact additional
+keys are:
+
+| Schema | Keys |
+|---|---|
+| `m19.7-evidence-v1` | `branch`, `branch_head=rc`, positive integer `dispatch_authorization`, `workflow`, `workflow_name`, integer `run_id`, integer `run_attempt`, `run_event="workflow_dispatch"`, `run_head=rc`, `job="test"`, `py312="success"`, `py314="success"` |
+| `m19.8-evidence-v1` | `expected_main`, `ref="refs/heads/main"`, `main=rc`, `transition="fast_forward"`, integer `candidate_ci_run_id`, integer `candidate_ci_run_attempt` |
+| `m19.9-evidence-v1` | `main=rc`, `workflow`, `workflow_name`, integer `run_id`, integer `run_attempt`, `run_event="push"`, `run_head=rc`, `job="test"`, `py312="success"`, `py314="success"`, `version`, `legacy`, `tag`, `tag_state="absent"`, `notes_sha256`, `zip_sha256`, `sum_sha256` |
+| `m19.10-evidence-v1` | `main=rc`, integer `main_ci_run_id`/`main_ci_run_attempt`, `tag`, `tag_kind="lightweight"`, `tag_ref=rc`, integer `release_id`, `final_state="release"|"prerelease"`, Boolean `draft_staging`, `title`, `notes_sha256`, `zip`, `zip_sha256`, `sum`, `sum_sha256`, `default_smoke="pass"`, `tag_smoke="pass"`, `archive_smoke="pass"` |
+
+Every common field and every release-identity, asset, notes, workflow, branch,
+and `legacy` value repeated from `rc-v1` is byte-equal to that accepted
+record. M19.8 run equals M19.7; M19.9 legacy equals rc-v1; M19.10 main run
+equals M19.9. Select a run only for exact
+workflow/event/ref and provider `head_sha=rc`: greatest integer run ID, then
+greatest attempt. Latest
+must succeed; queued/running waits, non-success stops, and older success cannot
+override. Immediately before M19.8/M19.10 first mutation, repeat selection and
+require unchanged successful upstream run. Mismatch returns the later Task to
+blocked, reopens/reaccepts the prior gate, and changed mutation values require
+fresh approval/Contract revision.
+
+M19.7 dispatches only when no exact run exists. Before its one dispatch it
+records a same-generation `m19.7-dispatch-intent-v1` checkpoint containing
+exactly `schema`, `gen`, `remote`, `repo`, `rc`, `branch`, positive integer
+`dispatch_authorization`, and `workflow`, with next action
+`Observe this authorized dispatch; never dispatch again for this gen.`, and no
+risks. The final `m19.7-evidence-v1.dispatch_authorization` always equals the
+current M19.7 Approval value. When an intent exists, final evidence also uses
+that intent's identical `gen` and authorization value. Once present, only
+read observation is allowed; no matching run stops.
+Another dispatch needs fresh user approval, new Contract revision, new
+generation, and authorization incremented from initial 1 by exactly one. Its
+authority is `user_instruction:<task-id>:<new-contract-revision>`. Exact
+change reason is
+`Fresh authorization for another bounded workflow dispatch.`.
+
+Each gate then sets/uses:
+
+| Unit | Target and completion |
+|---|---|
+| M19.7 | external `github-actions-run:VAiring/task-governance-tool:<run_id>:<run_attempt>`, exact reason `Exact approved candidate-branch CI run is the durable external revision.`, approved external completion |
+| M19.8 | `git_commit=rc` |
+| M19.9 | diff fingerprint SHA-256 of summary, commit-not-required |
+| M19.10 | external `github-release:VAiring/task-governance-tool:<release_id>`, exact reason `Exact approved GitHub Release is the durable external revision.`, approved external completion |
+
+Two current-generation Tier-2 PASS receipts are required with exact sanitized
+readback/material. M19.7/M19.10 external completion is authorized only by the
+stored fresh approval objects naming the exact completion source. Any evidence
+change makes a new generation/target/review. No URL/raw provider body/log/
+credential/new product store is used.
+
+### Upgrade And Paired Rollback
+
+M19.5 obtains exact legacy-main package tree and schema-v2 database, uses only
+isolated copies, and advances supported project-scoped state through setup to
+unchanged v0.10.0/schema16. It proves preservation where records exist, setup
+backup, migration failure/restart, quick-check, foreign keys, and Viewer.
+
+Old user-wide/custom `--db` behavior remains unsupported. Rehearsal may place
+isolated legacy state only into a current supported project-scoped layout; this
+is not public relocation. Unsupported user-wide/link/junction/custom paths
+must be rejected, not selected/moved/mutated.
+
+Rollback restores one matched pre-migration package, database, and managed
+artifact set, then proves that legacy package can read it. Old code against
+v16, in-place downgrade, mixed generations, or Git checkout alone is not
+rollback. Canonical state is never used.
+
+After cutover, correction is a forward-fix candidate/new version. Never force
+main, rewrite history, move/delete tag, replace assets, or delete a Release to
+hide mismatch.
+
+### Exact Ordered Gates And Approvals
+
+The exact gates are:
+
+| Gate | Required boundary |
+|---|---|
+| M19.1 | Indexed immutable history and atomic active spec/design switch; no runtime/package change |
+| M19.2 | Indexed roadmap/plan/evidence split retaining current decisions, blockers, dependencies, and reusable evidence |
+| M19.3 | User licensing authority plus audit before matching license/NOTICE decision |
+| M19.4 | README, release guide, Skill/references/help/manifest/version/trust wording match runtime |
+| M19.5 | Isolated legacy upgrade and paired rollback, no canonical/remote mutation |
+| M19.6 | Clean exact commit, reproducible archive/checksum, Windows 3.12/3.14 offline suites, isolated install, exact reviews, retained assets, no remote write |
+| M19.7 | Fresh exact-value approval, normal candidate-branch push and exact-ref workflow dispatch; exact SHA and both jobs pass; no PR/main/tag/Release |
+| M19.8 | Fresh exact-value approval, refetch/equality/ancestry, normal fast-forward main only |
+| M19.9 | Remote main exact candidate, exact successful main CI, release/legacy/assets revalidated, no write |
+| M19.10 | Fresh exact-value approval, lightweight tag and GitHub Release with only accepted bytes; exact interrupted state may resume, conflict stops |
+
+M19.7, M19.8, and M19.10 approvals are separate. General roadmap/task/push/
+license permission cannot substitute. Any tracked code/doc/workflow/manifest/
+license/package change after M19.6 invalidates candidate/assets/reviews/remote
+CI and returns to M19.6.
+
+Before any candidate-branch push, fresh readback has exactly three outcomes:
+already at `rc` is a write-free resumed success; exactly the approved
+`branch_head` permits one normal non-force push to `rc`; any other head stops.
+Before main cutover, already at `rc` is a resumed success; exactly approved
+`main` permits one normal fast-forward push after ancestry proof; any other
+head stops. M19.7 creates no PR, and an ambient PR check never substitutes for
+the exact `workflow_dispatch` ref/SHA run.
+
+Before requesting M19.8 or M19.10 approval, a read-only comparison may avoid a
+stale question but stores no approval. After approval, first activate that Task
+so its exact Approval object is durable, then repeat the upstream run check
+immediately before the first external write. Mismatch follows the blocked/
+prior-gate reacceptance rule above.
+
+Remote ambiguity is resolved by readback: exact requested state succeeds;
+exact approved pre-write branch state permits only the same normal non-force
+retry under current approval; any third state stops. M19.10 may reuse exact
+tag/metadata/asset from an interrupted approved attempt and add only a missing
+accepted asset. Conflict stops without move/replacement/deletion. Reusable tag
+must be an unpeeled direct commit object; annotated tag conflicts even if its
+peeled SHA matches.
+
+### Just-In-Time M19 Task Contract
+
+Dependency-gated M19 Tasks remain Contract revision 0 until start. At a unit
+boundary `SOURCE_SHA` is the canonical current commit containing the active
+roadmap section. Before activation, stored identity/kind/lane/order and first
+ASCII roadmap status word must match. Separately correct ready/blocked
+description, verification, blocker reason, and Tier 2 metadata:
+
+- description is Intended-outcome bullets joined by one ASCII space;
+- verification is
+  `Execute every Verification bullet in docs/implementation-roadmap.md@<SOURCE_SHA>#TG-M19.<unit>; retain only bounded sanitized evidence.`;
+- blocked reason is
+  `Blocked until the dependencies and every Required user approval value in docs/implementation-roadmap.md@<SOURCE_SHA>#TG-M19.<unit> are satisfied.`;
+- nonblocked reason is empty.
+
+The M19.2 authority split retained the then-unstarted M19.3-M19.10 roadmap
+sections verbatim. After a unit starts, its active status may be synchronized;
+the remaining revision-zero M19.7-M19.10 block stays byte-frozen until its own
+activation or a separately approved contract correction.
+
+Then one Contract-only plus in-progress edit activates revision 1. Normalize
+wrapped bullet lines with ASCII spaces, prefix each bullet `- `, retain order,
+and separate by LF. Scope is heading `Write scope:` plus bullets. Acceptance is
+`Intended outcome:` bullets then `Verification:` bullets. Constraints contain
+literal Depends-on, rewritten
+`Activation source status (satisfied before transition): <roadmap status>`,
+any required-decision/approval heading and bullets, then exact:
+
+```text
+All prohibitions, stop and invalidation rules in this unit remain mandatory; no fallback or scope expansion is authorized.
+```
+
+For M19.3/.7/.8/.10 append `Approval:` and canonical approval JSON and use
+`user_instruction:<task-id>:1`; others use roadmap SHA anchor. Initial change
+reason is empty and is not passed. Approval JSON uses UTF-8
+`json.dumps(value, ensure_ascii=False, sort_keys=True,
+separators=(",", ":"))`, maximum 1,024 bytes;
+complete constraints remain within 2,000 characters. Empty strings never imply
+permission; `none_declared` is affirmative absence.
+
+Approval schemas are:
+
+| Unit/schema | Exact keys beyond `schema` |
+|---|---|
+| M19.3 `m19.3-approval-v1` | `authority="confirmed"`, `license="Apache-2.0"`, exact string values for `holder`, `scope`, `excluded`, `employer`, `contractor`, `third_party`, and `oss_policy` |
+| M19.7 `m19.7-approval-v1` | `remote`, `repo`, `rc`, `branch`, `branch_head`, `main`, `tag`, `tag_kind`, `zip`, `zip_sha256`, `sum`, `sum_sha256`, `workflow`, `workflow_name`, `job`, `python`, positive integer `dispatch_authorization` (initially 1), `completion_source="github_actions_run"`, `action="push_and_dispatch"` |
+| M19.8 `m19.8-approval-v1` | `remote`, `repo`, `rc`, `main`, `ref="refs/heads/main"`, `action="fast_forward"` |
+| M19.10 `m19.10-approval-v1` | `remote`, `repo`, `rc`, `version`, `tag`, `tag_kind`, `title`, `notes_sha256`, `final_state="release"|"prerelease"`, Boolean `draft_staging`, `zip`, `zip_sha256`, `sum`, `sum_sha256`, `completion_source="github_release"`, `action="publish"` |
+
+Missing/overflow/noncanonical source, metadata drift, or content mismatch stops
+before implementation write. This transcription adds no requirement choice,
+question, unsupported layout, or fallback.
 
 ## Deferred Boundaries
 

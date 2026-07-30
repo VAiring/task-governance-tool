@@ -1,13 +1,27 @@
+# NON-AUTHORITATIVE HISTORY — v0.10.0 Publication Capture
+
+> [!CAUTION]
+> This file preserves `docs/design.md` exactly as it existed at publication commit
+> `a9b80ce177a6dead10d51a070b76ff01f7af0294`, preceded only by this banner. It is not current authority.
+> Use the active [design](../../../design.md). Words such as current,
+> approved, pending, or implemented below describe only the captured revision
+> and cannot satisfy a current contract, verification, or review gate.
+
+Source path: `docs/design.md`
+Source commit: `a9b80ce177a6dead10d51a070b76ff01f7af0294`
+Current replacement: [docs/design.md](../../../design.md)
+
+---
+
 # task-governance-tool Current Implementation Design
 
-Status: the published product is v0.10.0 with SQLite schema v16 and Viewer
-snapshot v4 accepting source schemas v5-v16. The accepted release commit,
-remote `main`, and lightweight tag `v0.10.0` are
-`a9b80ce177a6dead10d51a070b76ff01f7af0294`; GitHub Release `362617903` has
-prerelease visibility. TG-M19.0 through TG-M19.10, including TG-M19.6A and
-TG-M19.6B, are complete. This post-release revision is the consolidated active
-implementation authority. TG-M16.4 behavioral acceptance remains part of the
-published baseline.
+Status: the synchronized product is v0.10.0 with SQLite schema v16 and Viewer
+snapshot v4 accepting source schemas v5-v16. TG-M18.4 completed at
+`b0df647d9caf693afc0ff46aecf71a2c4739c864`; TG-M19.0 fixed the release
+correctness contract and this TG-M19.1 revision is the consolidated active
+authority. The
+reduced-loop work through TG-M16.4, including fresh-session behavioral
+acceptance, is complete.
 
 This document is the current implementation design for the behavior specified
 in `docs/specification.md`. Historical design captures under `docs/history/`
@@ -1448,67 +1462,276 @@ ordinary misunderstanding, over-implementation, local races, crashes, and
 accidental path changes; it does not add signing, hostile-kernel protection, or
 general adversarial TOCTOU defense.
 
-## Published Release Artifact And Compatibility Design
+## Release Correctness Design
 
-The v0.10.0 publication is an external projection of one reviewed repository
-commit, not a product runtime subsystem. The exact accepted commit, remote
-`main`, and unpeeled lightweight tag `v0.10.0` are
-`a9b80ce177a6dead10d51a070b76ff01f7af0294`. GitHub Release `362617903`
-has prerelease visibility. Runtime code does not derive current behavior from
-a branch, tag, Release, local candidate directory, or historical Task evidence.
+TG-M19 changes documentation authority, licensing artifacts, acceptance
+evidence, and repository publication state only. It does not change the
+20-leaf product CLI, schema v16, Viewer v4, normal nine/ten-call budget,
+privacy, state transition, review, or target-mutation contracts.
 
-The release archive has exactly one `task-governance-tool/` root and is built
-from the accepted commit with the package subtree as the sole pathspec. The
-package `release-manifest.json` is the inventory and digest boundary for
-packaged core files. Root and packaged `LICENSE` bytes are the same official
-unmodified Apache-2.0 text, and the package license is manifest-covered.
-Generated state, SQLite files and sidecars, backups, locks, Viewer output,
-target configuration, source-repository tests and fixtures, root references,
-caches, logs, secrets, and scratch output remain outside the artifact.
+### Authority And History Switch
 
-The published archive and checksum identities are fixed:
+The fixed product baseline is M18.4 commit
+`b0df647d9caf693afc0ff46aecf71a2c4739c864`.
+`f017ee228d435d892fb7136c5e79b3063320fac5` is only the legacy
+v0.1.0/schema-v2 upgrade fixture and ancestry reference. The checked-out
+committed descendant lineage is implementation authority until separately
+approved fast-forward cutover.
+
+Non-authoritative captures use:
 
 ```text
-archive              task-governance-tool-0.10.0.zip
-archive sha256       99fc2345fd036091349c47f7379eee25b8b3b4c8873c0f74aaceac323bb82a03
-checksum             task-governance-tool-0.10.0.zip.sha256
-checksum sha256      9cdc99bd26cc4887bd88ef2ec638659224f0a0d8f567edb12a3800d59a8b6764
-release notes        docs/releases/v0.10.0.md
-notes sha256         aaa118a3fbbb261ec6a24f7a80f50f161e606a86857f99e17f957f34ba044a03
-candidate CI         run 30561916953, attempt 1
-remote-main CI       run 30565181070, attempt 1
+docs/history/
+  README.md
+  v0.10.0/
+    specification.md
+    design.md
+    implementation-roadmap.md
+    plan.md
+    forward-tests/
 ```
 
-Release staging, GitHub workflow selection, push readback, and Release upload
-are orchestration outside the CLI architecture. They add no taskgov command,
-schema table, runtime module, background process, network client, credential
-store, or target-project mutation path. A later release may reuse the durable
-principles—exact reviewed tree, manifest-complete package, deterministic local
-checks, explicit authority for each external mutation, and readback after an
-ambiguous write—but must define and approve its own exact identity and
-evidence. Completed v0.10.0 approval objects and gate checkpoint schemas never
-authorize a future operation.
+The sole index records source path, immutable history path, capture commit,
+purpose, and active replacement. Every capture begins with a prominent
+non-authority banner repeating source/capture/replacement. Internal words such
+as current or implemented retain historical meaning only. Captured bodies are
+immutable; later history appends a new file/index entry.
 
-The release boundary is immutable by policy. A defect creates a reviewed
-forward-fix candidate and new version. Routine repair does not force-update
-`main`, rewrite history, move or replace a published tag, replace an existing
-asset, or delete a Release to hide disagreement.
+M19.1 switches indexed specification/design/history plus durable AGENTS routing
+in one reviewed commit. M19.2 similarly switched roadmap/plan/forward evidence
+and retained the then-unstarted M19.3-M19.10 sections verbatim. Completed-unit
+status may later synchronize, while the remaining revision-zero M19.7-M19.10
+block stays byte-frozen until its own activation or a separately approved
+contract correction. No intermediate commit may have a missing destination,
+two plausible authorities, dangling link, or current behavior dependent on
+history.
 
-The accepted upgrade rehearsal treated package files, database, and managed
-artifacts as one compatibility point. It created legacy schema-v2 state with
-the exact legacy package, preserved that state while installing v0.10.0,
-allowed current `setup` to back up and migrate through schema v16, and proved
-restart, identity/record preservation, quick check, foreign keys, and Viewer
-publication in isolation. The paired rollback restored the matching legacy
-package, database, and managed artifacts before running legacy code. Old code
-against v16, reverse migration, mixed generations, arbitrary `--db` state,
-and a source checkout used as state rollback remain unsupported.
+### Licensing Boundary
 
-The detailed M19 history switch, candidate staging, evidence schemas, remote
-state machine, and just-in-time activation rules were one-time execution
-design. The exact publication-commit form is indexed by
-[the historical documentation index](history/README.md); no active product or
-release guarantee depends on that historical copy.
+Apache-2.0 is selected but not applied until explicit user confirmation covers:
+
+- authority to license the included personal work;
+- exact copyright-holder text and tracked/shipped scope; and
+- employer, contractor, contributor, copied-material, third-party, and
+  open-source-policy restrictions.
+
+Git identity, email, repository ownership, and sole-maintainer status are not
+licensing authority. Ambiguous/unlicensed material is excluded or replaced
+under explicit authority.
+
+After confirmation, root and package `LICENSE` are byte-identical official
+unmodified Apache-2.0 text. Package license is release-required and
+manifest-covered. Root/package `NOTICE` exists and ships only for a concrete
+identified notice duty; otherwise both stay absent. No speculative notice,
+invented attribution, signature system, or per-file header campaign is added.
+
+### Candidate Archive And Evidence
+
+Release identity is:
+
+```text
+version             0.10.0
+schema              16
+Viewer snapshot      4
+lightweight tag      v0.10.0
+remote               origin
+repository           github.com/VAiring/task-governance-tool
+archive              task-governance-tool-0.10.0.zip
+checksum             task-governance-tool-0.10.0.zip.sha256
+release title        task-governance-tool v0.10.0
+release notes        docs/releases/v0.10.0.md
+workflow/job         .github/workflows/ci.yml / test
+Python matrix        3.12 and 3.14 on Windows
+```
+
+M19.6 freezes exact `RC_SHA` and uses:
+
+```text
+git archive --format=zip --output=<staging-file> <RC_SHA> -- task-governance-tool
+```
+
+The full commit is the tree-ish and package is the sole pathspec; neither
+`RC_SHA:task-governance-tool` nor working-tree bytes are used. Two independent
+outputs from the recorded same Git executable/version must be byte-identical.
+The archive has one package root and only manifest-admitted committed package
+files. The checksum is UTF-8 without BOM:
+
+```text
+<64 lowercase archive sha256><two ASCII spaces><archive basename><LF>
+```
+
+Accepted local bytes live only under ignored:
+
+```text
+dist/task-governance-tool-0.10.0/<RC_SHA>/<EVIDENCE_SHA256>/
+```
+
+It contains exactly archive, checksum, and `release-candidate-v1.json`, whose
+bytes are the canonical checkpoint summary plus LF. The summary uses compact
+sorted-key ASCII JSON, at most 1,024 bytes, a mechanical
+`tg_rc_<16hex>` generation, RC/expected heads, remote/repository, identities,
+recipe/Git, file sizes/hashes, notes/workflow/job/runtime values, and no path,
+URL, credential, provider body, or raw log.
+
+Its `legacy` value is the canonical M19.5 completion commit, must resolve as a
+commit, equal that Task's stored evidence, and be an ancestor of RC. The exact
+record otherwise carries the specification's fixed rc-v1 keys; it never copies
+the checksum line because that content is derived from the accepted names and
+hash.
+
+Preparation uses only `.staging-<EVIDENCE_SHA256>` and those three allow-listed
+files, validates them, then atomically renames when final is absent. An exact
+final is reusable. A bounded allow-listed partial may be completed or
+recreated; unexpected content or conflicting final stops without cleanup.
+Changing tracked bytes, accepted assets, remote-head freeze, or a full
+reacceptance creates a new generation/evidence path; accepted finals are never
+repaired or overwritten.
+
+M19.6 stores the evidence in its existing Task checkpoint, sets a Git-commit
+review target equal to RC, gives reviewers the exact record/commit/assets, and
+completes with the same Git commit after two current Tier-2 passes. TG-M19 adds
+no release table, product command, or tracked archive.
+
+### Upgrade And Paired Rollback Rehearsal
+
+M19.5 creates an isolated physical project-scoped package from the exact legacy
+commit, uses that runtime to create/populate schema v2, and captures the entire
+pre-upgrade package/state compatibility point. It then replaces packaged files
+only, preserves state, and runs current setup through supported legacy
+publication, pre-migration backup, migration to v16, maintenance
+configuration, and Viewer publication.
+
+The rehearsal proves ID/record preservation, restart, injected rollback,
+quick/FK checks, and package integrity. Unsupported user-wide or arbitrary
+`--db` state remains unchanged and undiscovered. Rollback restores the matching
+legacy package, database, and managed artifacts together before running old
+code. It never points old code at v16, reverse-migrates, mixes generations, or
+treats a source checkout as state rollback. After cutover, defects use a
+forward-fix candidate/version; no force-update, history rewrite, retag, or
+asset replacement is routine rollback.
+
+### Exact Remote Gate State Machine
+
+Before every network read or write, release work resolves exactly one fetch and
+one push endpoint for `origin`, normalizes each to host/owner/repository, and
+requires both to equal the approved identity. Missing, additional, duplicate,
+mismatching, or unparseable endpoints stop before mutation. Raw endpoint text,
+userinfo, credentials, and query strings are never retained or printed.
+Remote-tracking refs are observations only; each gate fetches fresh state.
+
+The forward state machine is:
+
+```text
+local_candidate_accepted
+  -> candidate_branch_ci_accepted
+  -> main_fast_forwarded
+  -> remote_main_accepted
+  -> tag_and_release_published
+```
+
+M19.7, M19.8, and M19.10 each need a separate fresh exact-value user approval.
+M19.3 licensing approval does not authorize publication. No gate infers a
+later approval.
+
+M19.7 normally performs one normal non-force candidate-branch push and exact-ref
+workflow dispatch; it creates no PR. The accepted run must match workflow,
+event, ref, `head_sha=rc`, job `test`, and successful Python 3.12/3.14 entries.
+Exact runs are selected by greatest run ID then attempt; an older success never
+masks a newer queued, running, or failed exact attempt.
+
+If no exact run exists, M19.7 first writes and reads back the canonical
+`m19.7-dispatch-intent-v1` checkpoint. That intent, generation, and explicit
+`dispatch_authorization` form the durable at-most-once boundary. After intent,
+retry only observes; it never dispatches again for that generation. A crash
+before the call may require fresh approval/Contract revision but cannot
+silently duplicate dispatch.
+
+M19.8 freshly verifies the separately approved expected remote main, candidate
+branch/run, and ancestry, then performs only a normal fast-forward main push.
+M19.9 is read-only and accepts exact remote main plus the required exact-SHA CI
+run. M19.10 creates or reuses only an unpeeled lightweight tag ref whose object
+type is commit and target is RC, then creates/resumes the exact approved
+Release and accepted archive/checksum assets. An annotated tag conflicts even
+when it peels to RC.
+
+Every ambiguous write is read back:
+
+- exact requested state is success;
+- exact approved pre-write ref state permits only the identical normal
+  non-force retry while approval remains current;
+- any third state stops.
+
+For Release resume, exact tag, metadata/body, and asset name/hash are
+idempotent stages; only a missing accepted asset may be added. Conflicting tag
+type/target, Release metadata/body, asset name/hash, remote movement, or CI
+failure stops without move, replace, delete, force, rebase, squash, or retag.
+
+M19.7-M19.10 each store a compact <=1,024-byte canonical gate-evidence
+checkpoint with a mechanical `tg_gate_<16hex>` generation and exact sanitized
+readback. Evidence schemas bind, respectively:
+
+- M19.7 branch and exact workflow run/attempt/event/head plus both matrix
+  successes;
+- M19.8 expected main, main=RC, fast-forward fact, and selected M19.7 run;
+- M19.9 exact main CI run plus version/legacy/tag-absence and notes/archive/
+  checksum hashes; and
+- M19.10 tag, Release ID/final state/draft/title/assets and smoke results.
+
+Beyond common `schema`, `gen`, `remote`, `repo`, and `rc`, their exact fields
+are:
+
+| Schema | Exact additional fields |
+|---|---|
+| `m19.7-evidence-v1` | `branch`, `branch_head=rc`, positive integer `dispatch_authorization`, `workflow`, `workflow_name`, integer `run_id`, integer `run_attempt`, `run_event="workflow_dispatch"`, `run_head=rc`, `job="test"`, `py312="success"`, `py314="success"` |
+| `m19.8-evidence-v1` | `expected_main`, `ref="refs/heads/main"`, `main=rc`, `transition="fast_forward"`, integer `candidate_ci_run_id`, integer `candidate_ci_run_attempt` |
+| `m19.9-evidence-v1` | `main=rc`, `workflow`, `workflow_name`, integer `run_id`, integer `run_attempt`, `run_event="push"`, `run_head=rc`, `job="test"`, `py312="success"`, `py314="success"`, `version`, `legacy`, `tag`, `tag_state="absent"`, `notes_sha256`, `zip_sha256`, `sum_sha256` |
+| `m19.10-evidence-v1` | `main=rc`, integer `main_ci_run_id`, integer `main_ci_run_attempt`, `tag`, `tag_kind="lightweight"`, `tag_ref=rc`, integer `release_id`, `final_state="release"|"prerelease"`, Boolean `draft_staging`, `title`, `notes_sha256`, `zip`, `zip_sha256`, `sum`, `sum_sha256`, `default_smoke="pass"`, `tag_smoke="pass"`, `archive_smoke="pass"` |
+
+M19.7 final evidence always copies `dispatch_authorization` from the current
+M19.7 Approval. If dispatch intent exists, final evidence also reuses that
+intent's `gen` and authorization value; a pre-existing exact successful run
+still uses the current Approval value even though no intent is created.
+
+Each uses a fresh target generation and two exact Tier-2 reviews. M19.7 and
+M19.10 use approved durable external revisions (run/attempt and Release ID),
+M19.8 uses RC as Git commit, and read-only M19.9 hashes its summary as a diff
+fingerprint and uses commit-not-required. The evidence contains no URL,
+provider body, log, credential, or new product storage.
+
+The external identities are exactly
+`github-actions-run:VAiring/task-governance-tool:<run_id>:<run_attempt>` and
+`github-release:VAiring/task-governance-tool:<release_id>` with the fixed
+sanitized reasons defined by the product specification. A Release may use a
+draft staging step only when the fresh M19.10 Approval object explicitly
+permits that exact staging/final-state choice.
+
+A read-only run-ID/attempt preflight may precede asking for M19.8/M19.10
+approval. After approval, the Task first activates and persists the exact
+Approval object, then reselects immediately before external write. A changed
+run returns the later Task to blocked before reopening the prior gate.
+Reacceptance may resume unchanged mutation values under stored authority;
+changed mutation values require fresh approval and Contract revision.
+
+### Just-In-Time Release Task Activation
+
+Pre-created M19 planning Tasks remain Contract revision 0 until their own
+start. Activation:
+
+1. freezes the current committed active-roadmap SHA;
+2. checks exact Task identity/kind/lane/order and roadmap status mapping;
+3. corrects description/verification/review-tier drift by a metadata-only edit
+   while status is unchanged; and
+4. in a second edit, supplies only Contract fields plus transition to
+   in-progress.
+
+Scope maps from normalized Write Scope bullets; acceptance maps Intended
+Outcome plus Verification bullets; constraints map dependencies/status/
+approval plus the fixed no-expansion sentence; authority names the roadmap
+SHA. Initial change reason is empty. Approval-gated Tasks append the exact
+canonical <=1,024-byte Approval object, stay within Contract field limits, and
+use `user_instruction:<task-id>:1`. A named blocker is satisfied before
+activation; roadmap `ready|blocked` labels the activation source and is never
+copied as current Task state.
 
 ## Validation And Test Design
 

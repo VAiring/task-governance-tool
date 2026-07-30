@@ -131,3 +131,57 @@ to this index. It must not alter the two archived bodies above.
   evidence.
 - Current replacement:
   [docs/implementation-roadmap.md](../implementation-roadmap.md)
+
+## v0.10.0 Publication-State Lineage
+
+The following captures preserve the exact active bodies at published commit
+`a9b80ce177a6dead10d51a070b76ff01f7af0294` before post-release
+reconciliation. Each file adds only its non-authority banner before those
+bytes. The completed release-stage execution wording remains historical even
+when an older index sentence describes it in future tense.
+
+### Publication capture of `docs/specification.md`
+
+- Immutable history:
+  [v0.10.0/release-publication/specification.md](v0.10.0/release-publication/specification.md)
+- Capture commit: `a9b80ce177a6dead10d51a070b76ff01f7af0294`
+- Capture purpose: preserve the full product specification and one-time M19
+  publication contract before post-release reduction.
+- Current replacement: [docs/specification.md](../specification.md)
+
+### Publication capture of `docs/design.md`
+
+- Immutable history:
+  [v0.10.0/release-publication/design.md](v0.10.0/release-publication/design.md)
+- Capture commit: `a9b80ce177a6dead10d51a070b76ff01f7af0294`
+- Capture purpose: preserve the full design and one-time M19 release
+  orchestration before post-release reduction.
+- Current replacement: [docs/design.md](../design.md)
+
+### Publication capture of `docs/implementation-roadmap.md`
+
+- Immutable history:
+  [v0.10.0/release-publication/implementation-roadmap.md](v0.10.0/release-publication/implementation-roadmap.md)
+- Capture commit: `a9b80ce177a6dead10d51a070b76ff01f7af0294`
+- Capture purpose: preserve completed M19 execution contracts, approvals,
+  verification gates, and pre-reconciliation status.
+- Current replacement:
+  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+
+### Publication capture of `plan.md`
+
+- Immutable history:
+  [v0.10.0/release-publication/plan.md](v0.10.0/release-publication/plan.md)
+- Capture commit: `a9b80ce177a6dead10d51a070b76ff01f7af0294`
+- Capture purpose: preserve pre-publication decisions, blockers, and the
+  superseded volatile handoff mirror.
+- Current replacement: [plan.md](../../plan.md)
+
+### Publication capture of `docs/release-install.md`
+
+- Immutable history:
+  [v0.10.0/release-publication/release-install.md](v0.10.0/release-publication/release-install.md)
+- Capture commit: `a9b80ce177a6dead10d51a070b76ff01f7af0294`
+- Capture purpose: preserve the exact pre-publication checklist and artifact
+  decision before conversion to the published record.
+- Current replacement: [docs/release-install.md](../release-install.md)

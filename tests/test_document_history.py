@@ -1,5 +1,6 @@
 import hashlib
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -8,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HISTORY_ROOT = ROOT / "docs" / "history"
 CAPTURE_M19_1 = "1ac8c001073b1a4cb29e9de3f0281d8ff2d9aca1"
 CAPTURE_M19_2 = "cbf75372617e90ca0b54746ae27f24a4e67cb292"
+CAPTURE_M19_PUBLICATION = "a9b80ce177a6dead10d51a070b76ff01f7af0294"
 
 
 ARCHIVES = {
@@ -107,6 +109,51 @@ ARCHIVES = {
         "body_sha256": "75a81eb877fda70eabf11deef31fad9e319cb94c80787cead44fc21ca6fc96d6",
         "archive_sha256": "d48b9c446d67b6e2de0735a873f2335ec533bb0f30c0a5f5b9d317fa578984ff",
     },
+    "release-publication/specification.md": {
+        "source": "docs/specification.md",
+        "replacement": "docs/specification.md",
+        "capture": CAPTURE_M19_PUBLICATION,
+        "index_heading": "Publication capture of `docs/specification.md`",
+        "body_size": 103_742,
+        "body_sha256": "1f522a3c6918d92af2d753f8a477da50ba1caa3f530dc5a44ace847617afd2d9",
+        "archive_sha256": "3dc98bba47256d3d7e0b5679a22d90736780f508bb206735ebfde194f3e12e28",
+    },
+    "release-publication/design.md": {
+        "source": "docs/design.md",
+        "replacement": "docs/design.md",
+        "capture": CAPTURE_M19_PUBLICATION,
+        "index_heading": "Publication capture of `docs/design.md`",
+        "body_size": 85_484,
+        "body_sha256": "71edc6b16a2df71ca36c92e763722f947f49fbfe94cf0328757a6342f76f89cb",
+        "archive_sha256": "3a5bd780f0b766b63adcfdb4a1292d06d547adc9884be9d24fd1df0d600849d9",
+    },
+    "release-publication/implementation-roadmap.md": {
+        "source": "docs/implementation-roadmap.md",
+        "replacement": "docs/implementation-roadmap.md",
+        "capture": CAPTURE_M19_PUBLICATION,
+        "index_heading": "Publication capture of `docs/implementation-roadmap.md`",
+        "body_size": 38_328,
+        "body_sha256": "93cc7f8ca8c865c734c40bb076b35be45df12500945b379615fa93ed2f822a67",
+        "archive_sha256": "f22639b3b64860782fedf66bfd67f709bc0382ebeb02b6173ed53a880ae1c7d8",
+    },
+    "release-publication/plan.md": {
+        "source": "plan.md",
+        "replacement": "plan.md",
+        "capture": CAPTURE_M19_PUBLICATION,
+        "index_heading": "Publication capture of `plan.md`",
+        "body_size": 11_036,
+        "body_sha256": "ad35b396fdb29c66eae6405b9bdde9932e6cc5b38f8438233a8078539cb3886e",
+        "archive_sha256": "54a57bd6abf2511054b9bddc7b59fc3b7f0d324880e7084fbd36ae56123afe39",
+    },
+    "release-publication/release-install.md": {
+        "source": "docs/release-install.md",
+        "replacement": "docs/release-install.md",
+        "capture": CAPTURE_M19_PUBLICATION,
+        "index_heading": "Publication capture of `docs/release-install.md`",
+        "body_size": 21_372,
+        "body_sha256": "ea799a0f9538fdc08849cc0f39ad79ddb311cd1eca8c18442c34c956aa4118ba",
+        "archive_sha256": "24e43ff9129299d529658ab7267e986bf9f773aa491661e956e33292bd587a03",
+    },
 }
 
 
@@ -130,6 +177,18 @@ class DocumentHistoryTests(unittest.TestCase):
                     hashlib.sha256(body).hexdigest(),
                     expected["body_sha256"],
                 )
+                captured = subprocess.run(
+                    [
+                        "git",
+                        "show",
+                        f"{expected['capture']}:{expected['source']}",
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(captured.returncode, 0)
+                self.assertEqual(body, captured.stdout)
                 banner = data[: -expected["body_size"]].decode("utf-8")
                 self.assertIn("NON-AUTHORITATIVE HISTORY", banner)
                 self.assertIn(expected["source"], banner)
@@ -148,12 +207,27 @@ class DocumentHistoryTests(unittest.TestCase):
         self.assertIn("append-only", index)
         for relative, expected in ARCHIVES.items():
             with self.subTest(relative=relative):
-                self.assertEqual(
-                    index.count(f"### `{expected['source']}`"),
-                    1,
+                heading = expected.get(
+                    "index_heading",
+                    f"`{expected['source']}`",
                 )
-                self.assertIn(expected["capture"], index)
-                self.assertIn(f"v0.10.0/{relative}", index)
+                sections = re.findall(
+                    rf"^### {re.escape(heading)}\n(.*?)(?=^### |^## |\Z)",
+                    index,
+                    flags=re.MULTILINE | re.DOTALL,
+                )
+                self.assertEqual(len(sections), 1)
+                section = sections[0]
+                self.assertIn(expected["capture"], section)
+                self.assertIn(expected["replacement"], section)
+                self.assertEqual(section.count(f"](v0.10.0/{relative})"), 1)
+
+        indexed_archives = set(ARCHIVES)
+        actual_archives = {
+            path.relative_to(HISTORY_ROOT / "v0.10.0").as_posix()
+            for path in (HISTORY_ROOT / "v0.10.0").rglob("*.md")
+        }
+        self.assertEqual(actual_archives, indexed_archives)
 
     def test_governing_and_historical_markdown_links_resolve(self):
         documents = [
@@ -164,9 +238,6 @@ class DocumentHistoryTests(unittest.TestCase):
             ROOT / "docs" / "implementation-roadmap.md",
             HISTORY_ROOT / "README.md",
         ]
-        documents.extend(
-            HISTORY_ROOT / "v0.10.0" / relative for relative in ARCHIVES
-        )
         link_pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
         checked = 0
         for document in documents:
@@ -180,6 +251,21 @@ class DocumentHistoryTests(unittest.TestCase):
                 self.assertTrue(
                     resolved.is_file(),
                     f"{document.relative_to(ROOT)} -> {target}",
+                )
+
+        for relative, expected in ARCHIVES.items():
+            document = HISTORY_ROOT / "v0.10.0" / relative
+            data = document.read_bytes()
+            banner = data[: -expected["body_size"]].decode("utf-8")
+            for target in link_pattern.findall(banner):
+                path_text = target.split("#", 1)[0]
+                if not path_text or "://" in path_text:
+                    continue
+                checked += 1
+                resolved = (document.parent / path_text).resolve()
+                self.assertTrue(
+                    resolved.is_file(),
+                    f"{document.relative_to(ROOT)} banner -> {target}",
                 )
         self.assertGreaterEqual(checked, 40)
 
@@ -200,62 +286,69 @@ class DocumentHistoryTests(unittest.TestCase):
         self.assertIn("docs/history/README.md", roadmap)
         self.assertIn("docs/history/README.md", plan)
 
-    def test_remaining_m19_contracts_remain_exact_and_plan_keeps_open_state(self):
-        roadmap = (ROOT / "docs" / "implementation-roadmap.md").read_text(
-            encoding="utf-8-sig"
+    def test_post_release_authority_is_synchronized_and_plan_avoids_handoff_mirror(
+        self,
+    ):
+        active_paths = (
+            ROOT / "docs" / "specification.md",
+            ROOT / "docs" / "design.md",
+            ROOT / "docs" / "implementation-roadmap.md",
+            ROOT / "plan.md",
+            ROOT / "README.md",
+            ROOT / "docs" / "release-install.md",
         )
-        start = roadmap.index(
-            "### TG-M19.7 Release Candidate Remote CI Gate"
-        )
-        end = roadmap.index("## Roadmap Completion Criteria", start)
-        remaining_contracts = roadmap[start:end].encode("utf-8")
-        self.assertEqual(len(remaining_contracts), 10_836)
-        self.assertEqual(
-            hashlib.sha256(remaining_contracts).hexdigest(),
-            "48d8d47d2927efabe73344d9b9b2b13c9b804cff60d833a02977ee649b2ee1c3",
-        )
-        for task_id, completion_sha in (
-            (
-                "tg_task_20fd398141755a65",
-                "2af0382c54615640fbd8475a59f374b1b71804c4",
-            ),
-            (
-                "tg_task_b71ac20177aae41a",
-                "4040e923cfdbd8b3f65d8883187a57578d64c092",
-            ),
-            (
-                "tg_task_7cc967fc224440cb",
-                "639bc74adfd1f5e15996d1416bd064f1b9303edc",
-            ),
-            (
-                "tg_task_bd93525dc71f4dcd",
-                "fe9fdafd207cab9d0966785f4b340fe3224397fa",
-            ),
+        active = {
+            path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8-sig")
+            for path in active_paths
+        }
+        for relative, text in active.items():
+            with self.subTest(relative=relative):
+                self.assertIn(CAPTURE_M19_PUBLICATION, text)
+                self.assertIn("362617903", text)
+                self.assertIn("prerelease", text.lower())
+
+        combined = "\n".join(active.values())
+        for stale in (
+            "TG-M19.6A is the current corrective unit",
+            "reacceptance required after TG-M19.6A",
+            "Apache-2.0 is selected but not applied until",
+            "selected but cannot be applied until",
+            "Before publication, run at least",
+        ):
+            self.assertNotIn(stale, combined)
+
+        roadmap = active["docs/implementation-roadmap.md"]
+        for task_id in (
+            "tg_task_e452e6eb7dcf0e08",
+            "tg_task_d0e8ac1287bd07a4",
+            "tg_task_704ecd1d1e2f7552",
+            "tg_task_0f76a52915987511",
         ):
             self.assertIn(task_id, roadmap)
-            self.assertIn(completion_sha, roadmap)
 
-        plan = (ROOT / "plan.md").read_text(encoding="utf-8")
-        for task_id in (
-            "tg_task_2fc57c401dd2855d",
-            "tg_task_67a3f3e73b913bfb",
-            "tg_task_5b8796de20a32d39",
-            "tg_task_79791addafcf0e00",
-            "tg_task_9807bdc4ddc5ba37",
-            "tg_task_1f7503aca5e32cdc",
-        ):
-            self.assertIn(task_id, plan)
-        for handoff_id in (
-            "tg_handoff_4001907257f93856",
-            "tg_handoff_d5e1081385c3c568",
-            "tg_handoff_696a19cba075d56e",
-            "tg_handoff_f62d99cb033e95ee",
-            "tg_handoff_c87a159f6583349d",
-            "tg_handoff_3952e6681a58a101",
-            "tg_handoff_d85090045f2addb1",
-        ):
-            self.assertIn(handoff_id, plan)
+        plan = active["plan.md"]
+        handoff_scan = combined + "\n" + (ROOT / "AGENTS.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("## Pending Local Handoffs", handoff_scan)
+        self.assertNotRegex(handoff_scan, r"tg_handoff_[0-9a-f]{16}")
+        self.assertNotRegex(
+            handoff_scan,
+            (
+                r"(?i)(?:reports|contains|has)[^.]{0,120}\b"
+                r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b"
+                r"[^.]{0,80}(?:pending[_ -]?handoff|handoff records?)"
+            ),
+        )
         normalized_plan = " ".join(plan.split())
+        self.assertRegex(
+            normalized_plan,
+            r"Task database[^.]{0,200}handoff",
+        )
+        self.assertRegex(
+            normalized_plan,
+            r"does not mirror[^.]{0,100}handoff",
+        )
         for candidate in (
             "project-profile detection",
             "verification-run recording",
@@ -267,35 +360,156 @@ class DocumentHistoryTests(unittest.TestCase):
         ):
             self.assertIn(candidate, normalized_plan)
 
+        specification = " ".join(
+            active["docs/specification.md"].lower().split()
+        )
+        design = " ".join(active["docs/design.md"].lower().split())
+        self.assertIn(
+            "current-generation changes-requested receipt",
+            specification,
+        )
+        self.assertIn(
+            "unresolved high/medium finding from any recorded generation",
+            specification,
+        )
+        self.assertIn("across all task receipts", design)
+
+        release_body = (ROOT / "docs" / "releases" / "v0.10.0.md").read_bytes()
+        self.assertEqual(
+            hashlib.sha256(release_body).hexdigest(),
+            "aaa118a3fbbb261ec6a24f7a80f50f161e606a86857f99e17f957f34ba044a03",
+        )
+
     def test_completion_index_keeps_full_revisions_and_exact_older_blocker(self):
         roadmap = (ROOT / "docs" / "implementation-roadmap.md").read_text(
             encoding="utf-8-sig"
         )
         expected_rows = {
-            "TG-M1.1-TG-M4.3 MVP": "86fccf389e6e16c6ba2fdcaf5acd39d32c26b911",
-            "TG-M4.O1 and TG-M5.O1-TG-M5.O6 follow-ups": "b7b41ad458f59f9ad2ae8dcb0a7c56493d24a6ab",
-            "TG-M6": "f017ee228d435d892fb7136c5e79b3063320fac5",
-            "TG-M7": "a9843337666c55a6866edf616b4b3d47af76426a",
-            "TG-M8": "0af9d1b57d648c801b021f5a6fff5779b04b0fb8",
-            "TG-M9": "57583dba5dc1c04fe5f167602a4f89f1dd464639",
-            "TG-M11": "b46a188f3b8df3d9702f99b0eb190f04923bdc1f",
-            "TG-M12.1, TG-M12.2, TG-M12.O1, and TG-M12.O2": "143090ffb5e140804e27e350769c319e3be6a237",
-            "TG-M13": "a024c07dc9d587d62ecf3705a409ac62806ce11b",
-            "TG-M14": "b1ce82f1aeffc226ba827231228727ee5a2b35c5",
-            "TG-M15 through TG-M15.6": "1927b65fc2437ec799a6591ec1db9f7cb4373fe8",
-            "TG-M16": "e0b109d67074015b5494757fa64cf7524ebaa92d",
-            "TG-M17": "29ac34d8c6e96c2cf091e504abe05b5485a54dd0",
-            "TG-M18": "b0df647d9caf693afc0ff46aecf71a2c4739c864",
-            "TG-M19.0": "1ac8c001073b1a4cb29e9de3f0281d8ff2d9aca1",
-            "TG-M19.1": "cbf75372617e90ca0b54746ae27f24a4e67cb292",
+            "TG-M1.1-TG-M4.3 MVP": (
+                "pre-Task-DB",
+                "86fccf389e6e16c6ba2fdcaf5acd39d32c26b911",
+            ),
+            "TG-M4.O1 and TG-M5.O1-TG-M5.O6 follow-ups": (
+                "pre-Task-DB",
+                "b7b41ad458f59f9ad2ae8dcb0a7c56493d24a6ab",
+            ),
+            "TG-M6": (
+                "tg_task_306c6ac4199122fb",
+                "f017ee228d435d892fb7136c5e79b3063320fac5",
+            ),
+            "TG-M7": (
+                "tg_task_f18ca3ea0982df9a",
+                "a9843337666c55a6866edf616b4b3d47af76426a",
+            ),
+            "TG-M8": (
+                "tg_task_5950b5447de43993",
+                "0af9d1b57d648c801b021f5a6fff5779b04b0fb8",
+            ),
+            "TG-M9": (
+                "tg_task_ca49db07778db0e4",
+                "57583dba5dc1c04fe5f167602a4f89f1dd464639",
+            ),
+            "TG-M11": (
+                "tg_task_b62ad41d367d5e01",
+                "b46a188f3b8df3d9702f99b0eb190f04923bdc1f",
+            ),
+            "TG-M12.1, TG-M12.2, TG-M12.O1, and TG-M12.O2": (
+                "tg_task_a23869622600a71c",
+                "143090ffb5e140804e27e350769c319e3be6a237",
+            ),
+            "TG-M13": (
+                "tg_task_2302ce786a28d1b0",
+                "a024c07dc9d587d62ecf3705a409ac62806ce11b",
+            ),
+            "TG-M14": (
+                "tg_task_c30e126d19b2a0e2",
+                "b1ce82f1aeffc226ba827231228727ee5a2b35c5",
+            ),
+            "TG-M15 through TG-M15.6": (
+                "tg_task_1c4ab208be113c8a",
+                "1927b65fc2437ec799a6591ec1db9f7cb4373fe8",
+            ),
+            "TG-M16": (
+                "tg_task_1a2f5af057e45ef1",
+                "e0b109d67074015b5494757fa64cf7524ebaa92d",
+            ),
+            "TG-M17": (
+                "tg_task_c8054d1c57087956",
+                "29ac34d8c6e96c2cf091e504abe05b5485a54dd0",
+            ),
+            "TG-M18": (
+                "tg_task_fa3a57ae3089e3fc",
+                "b0df647d9caf693afc0ff46aecf71a2c4739c864",
+            ),
+            "TG-M19.0": (
+                "tg_task_2b95de205e3f92e3",
+                "1ac8c001073b1a4cb29e9de3f0281d8ff2d9aca1",
+            ),
+            "TG-M19.1": (
+                "tg_task_ba59e260cc2c58a6",
+                "cbf75372617e90ca0b54746ae27f24a4e67cb292",
+            ),
+            "TG-M19.2": (
+                "tg_task_20fd398141755a65",
+                "2af0382c54615640fbd8475a59f374b1b71804c4",
+            ),
+            "TG-M19.3": (
+                "tg_task_b71ac20177aae41a",
+                "4040e923cfdbd8b3f65d8883187a57578d64c092",
+            ),
+            "TG-M19.4": (
+                "tg_task_7cc967fc224440cb",
+                "639bc74adfd1f5e15996d1416bd064f1b9303edc",
+            ),
+            "TG-M19.5": (
+                "tg_task_bd93525dc71f4dcd",
+                "fe9fdafd207cab9d0966785f4b340fe3224397fa",
+            ),
+            "TG-M19.6A": (
+                "tg_task_2fc57c401dd2855d",
+                "5ce64e1eae239d78e185d68349784cfe0c069f00",
+            ),
+            "TG-M19.6B": (
+                "tg_task_cacf382b827c58d5",
+                CAPTURE_M19_PUBLICATION,
+            ),
+            "TG-M19.6": (
+                "tg_task_67a3f3e73b913bfb",
+                CAPTURE_M19_PUBLICATION,
+            ),
+            "TG-M19.7": (
+                "tg_task_5b8796de20a32d39",
+                "github-actions-run:VAiring/task-governance-tool:"
+                "30561916953:1",
+            ),
+            "TG-M19.8": (
+                "tg_task_79791addafcf0e00",
+                CAPTURE_M19_PUBLICATION,
+            ),
+            "TG-M19.9": (
+                "tg_task_418792bf98f211af",
+                "sha256:"
+                "ed79ea10ff9e07dd44f86c6ef9e3979bd296c1fc731b06148d2f01f70ae763ac",
+            ),
+            "TG-M19.10": (
+                "tg_task_9807bdc4ddc5ba37",
+                "github-release:VAiring/task-governance-tool:362617903",
+            ),
         }
-        for scope, revision in expected_rows.items():
+        lines = roadmap.splitlines()
+        for scope, (task_id, revision) in expected_rows.items():
             with self.subTest(scope=scope):
-                row = next(
-                    line
-                    for line in roadmap.splitlines()
-                    if line.startswith(f"| {scope} |")
+                matches = [
+                    line for line in lines if line.startswith(f"| {scope} |")
+                ]
+                self.assertEqual(len(matches), 1)
+                row = matches[0]
+                task_cell = (
+                    task_id
+                    if task_id == "pre-Task-DB"
+                    else f"`{task_id}`"
                 )
+                self.assertIn(f"| {task_cell} |", row)
                 self.assertIn(revision, row)
 
         normalized = " ".join(roadmap.split())
@@ -306,6 +520,16 @@ class DocumentHistoryTests(unittest.TestCase):
             "approval of the integration boundary.",
             normalized,
         )
+        for durable_m12_boundary in (
+            "fixed bounded retry",
+            "bounded receiver acceptance receipt",
+            "no public command name is active or invocable",
+            "must come from the separately approved receiver contract",
+            "zero additional LLM decisions",
+            "one receiver item under concurrent claim/acknowledgement",
+            "no local-withdrawn plus receiver-accepted race",
+        ):
+            self.assertIn(durable_m12_boundary, normalized)
 
 
 if __name__ == "__main__":

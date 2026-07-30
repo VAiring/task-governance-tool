@@ -1,11 +1,23 @@
-# Published Release And Install Record
+# NON-AUTHORITATIVE HISTORY — v0.10.0 Publication Capture
 
-This note records the published artifact and supported installation boundary
-for `task-governance-tool` 0.10.0. The exact accepted commit, remote `main`,
-and lightweight tag are
-`a9b80ce177a6dead10d51a070b76ff01f7af0294`; GitHub Release `362617903` has
-prerelease visibility. This record does not authorize installing or
-overwriting a Skill in any project.
+> [!CAUTION]
+> This file preserves `docs/release-install.md` exactly as it existed at publication commit
+> `a9b80ce177a6dead10d51a070b76ff01f7af0294`, preceded only by this banner. It is not current authority.
+> Use the active [release and install record](../../../release-install.md). Words such as current,
+> approved, pending, or implemented below describe only the captured revision
+> and cannot satisfy a current contract, verification, or review gate.
+
+Source path: `docs/release-install.md`
+Source commit: `a9b80ce177a6dead10d51a070b76ff01f7af0294`
+Current replacement: [docs/release-install.md](../../../release-install.md)
+
+---
+
+# Release And Install Decision
+
+This note defines the release artifact and supported installation boundary for
+`task-governance-tool` 0.10.0. It does not authorize installing or overwriting a
+Skill in any project.
 
 ## Release Identity
 
@@ -17,9 +29,7 @@ overwriting a Skill in any project.
 | Public command leaves | 20 |
 | Supported runtime | Python 3.12 or newer on Windows |
 | Verified platform | Windows |
-| Accepted commit / `main` | `a9b80ce177a6dead10d51a070b76ff01f7af0294` |
 | Tag | lightweight `v0.10.0` |
-| GitHub Release | `362617903`, prerelease |
 | Remote/repository | `origin`, `VAiring/task-governance-tool` |
 | Archive | `task-governance-tool-0.10.0.zip` |
 | Checksum | `task-governance-tool-0.10.0.zip.sha256` |
@@ -46,10 +56,10 @@ and separately licensed or unowned third-party material are outside this
 boundary. The current audit found no concrete attribution duty, so neither the
 repository nor the package contains a `NOTICE`.
 
-## Published Artifact
+## Publication Decision
 
-The reviewed source repository is published under lightweight tag `v0.10.0`
-with a separate installable archive whose root is the repository's
+Publish the reviewed source repository as a Git tag and publish a separate
+installable archive whose root is the repository's
 `task-governance-tool/` directory.
 
 The installable package contains its `LICENSE`, the co-located release
@@ -65,20 +75,16 @@ The archive must exclude:
   documents, and local scratch output;
 - caches, logs, temporary files, environment files, secrets, and editor files.
 
-The canonical accepted archive recipe identifier is `git-archive-v1`:
+The canonical archive recipe identifier is `git-archive-v1`:
 
 ```text
 git archive --format=zip --output=<staging-file> <RC_SHA> -- task-governance-tool
 ```
 
 The checksum bytes are the lowercase 64-hex archive SHA-256, two ASCII spaces,
-the archive basename, and one LF. M19.6 executed this exact recipe twice with
-one recorded Git executable and version and produced byte-identical output.
-The accepted archive SHA-256 is
-`99fc2345fd036091349c47f7379eee25b8b3b4c8873c0f74aaceac323bb82a03`;
-the checksum-file SHA-256 is
-`9cdc99bd26cc4887bd88ef2ec638659224f0a0d8f567edb12a3800d59a8b6764`.
-No tracked archive builder or product command was added.
+the archive basename, and one LF. M19.6 executes this exact recipe twice with
+one recorded Git executable and version and requires byte-identical output.
+No tracked archive builder or product command is added.
 
 Creating an archive is side-effect free. It does not initialize, migrate, copy,
 or inspect a target project's local state.
@@ -222,12 +228,12 @@ migration.
 
 ## Release Upgrade And Paired Rollback
 
-Release acceptance rehearsed the supported transition from the exact legacy
-v0.1.0/schema-v2 baseline to the unchanged v0.10.0/schema-v16 package using
-isolated copies only. The rehearsal covered package replacement,
+Before publication, release acceptance rehearses the supported transition from
+the exact legacy v0.1.0/schema-v2 baseline to the unchanged v0.10.0/schema-v16
+package using isolated copies only. The rehearsal covers package replacement,
 pre-migration backup, migration/restart, maintenance configuration, Viewer
 publication, record and identity preservation, quick check, and foreign keys.
-It did not select or mutate user-wide, linked, junction, or custom-`--db`
+It never selects or mutates user-wide, linked, junction, or custom-`--db`
 state.
 
 Rollback restores one matched pre-migration package, database, and managed
@@ -395,45 +401,53 @@ current gate.
 SQLite is helper state, not authority over project decisions. The target
 project's governing documents and current user decisions remain authoritative.
 
-## Published Acceptance And Future Candidate Checks
+## Pre-Release Checks
 
-The v0.10.0 acceptance boundary is complete:
+Before creating the 0.10.0 artifact:
 
-- M14 through M19.10 acceptance and required reviews passed on their recorded
-  exact targets, including the M19.6A and M19.6B corrections.
-- Candidate CI run `30561916953`, attempt 1, and remote-main CI run
-  `30565181070`, attempt 1, succeeded for Python 3.12 and 3.14 at
-  `a9b80ce177a6dead10d51a070b76ff01f7af0294`.
-- Root/package `LICENSE` files match the official Apache-2.0 bytes; package
-  `LICENSE` is manifest-covered and no unsupported `NOTICE` exists.
-- The accepted archive is manifest-complete and excludes generated state,
-  SQLite files and sidecars, Viewer output, backups, locks, root references,
-  logs, caches, configuration, and scratch output.
-- Default-branch, tag, and archive isolated-install smokes passed. The Release
-  body is the exact bytes of `docs/releases/v0.10.0.md`, SHA-256
-  `aaa118a3fbbb261ec6a24f7a80f50f161e606a86857f99e17f957f34ba044a03`.
+1. Confirm all M14.1-M14.7, TG-M15.5-TG-M15.6, reduced TG-M16,
+   TG-M17.0-TG-M17.5, and TG-M18.0-TG-M18.4 acceptance and required Tier 2
+   reviews passed on their exact revisions.
+2. Run the complete offline test suite and `git diff --check`.
+3. Verify root and group help expose exactly the 20 leaves above.
+4. Verify unknown removed surfaces and raw path options fail before any
+   project, Git, or SQLite observation.
+5. Confirm `taskgov --version` reports `0.10.0`, runtime schema is v16, and
+   Viewer snapshot v4 accepts source schemas v5-v16.
+6. Validate an isolated physical project-scoped install: package status is
+   clean in `doctor`, setup preview is no-write, setup succeeds, and a repeated
+   setup is idempotent.
+7. Run the installed-Skill self-containment, realistic setup-to-completion
+   smoke tests, TG-M16 fresh-session repair/review/rediscovery scenarios, and
+   the TG-M17 matrix: full pre-v9 and v13 legacy records, transition-v14
+   self-host state, fresh UUID, same-binding publication, moved-state
+   preview/explicit-confirmation, fixed rebind, corrupt refusal, replay, and
+   token-free idempotency. Also run the TG-M18 matrix across v1-v14 migration,
+   schema-v15 activation/reentry, native completion/reopen cycles, exact
+   task-show/Viewer bounds, privacy, and proof that history never satisfies a
+   current gate.
+8. Confirm root/package `LICENSE` bytes match the official Apache-2.0 text,
+   package `LICENSE` is shipped and manifest-covered, no unsupported `NOTICE`
+   exists, and the archive manifest includes every packaged core file with
+   current digests and package version `0.10.0`.
+9. Confirm generated state, SQLite files and sidecars, backups, locks, Viewer
+   HTML, root references, logs, caches, and scratch output are absent from the
+   artifact.
+10. Confirm `SKILL.md`, display metadata, workflow, CLI contracts, README, this
+    note, executable help, and release manifest describe one synchronized
+    revision.
 
-For a later release candidate, rerun the complete current offline suite,
-package/manifest/license/document/help consistency checks, isolated physical
-install and upgrade/rollback acceptance, the current CI matrix versions
-(Python 3.12 and 3.14), and `git diff --check` against that candidate's own
-exact identity. A prior v0.10.0 result, Task receipt, approval object, or
-historical gate never satisfies a future candidate.
-
-Pushing, dispatching external CI, changing `main`, creating or changing a tag,
-or publishing a Release always requires separate exact current authorization.
-The completed v0.10.0 approvals authorize no later operation.
+Publishing, pushing, creating a PR, or dispatching external CI requires
+separate explicit authorization.
 
 ## Release Summary
 
-Version 0.10.0 is published as GitHub prerelease `362617903` at exact commit
-and lightweight tag target
-`a9b80ce177a6dead10d51a070b76ff01f7af0294`. It builds on the stable identity,
-mutable binding, explicit relocation, and fixed `state/current/` layout from
-0.9.0. Schema v16 preserves each accepted completion as append-only audit
-history across reopen while requiring fresh current verification, target,
-review, and completion evidence. Viewer snapshot v4 accepts source schemas
-v5-v16 and displays the same bounded history already returned by `task show`.
-The public inventory remains exactly 20 leaves with no history command or
-option; the nine/ten-call normal flow, privacy boundaries, offline operation,
-and target-project/Git no-mutation remain unchanged.
+Version 0.10.0 builds on the stable identity, mutable binding, explicit
+relocation, and fixed `state/current/` layout from 0.9.0. Schema v16 preserves
+each accepted completion as append-only audit history across reopen while
+requiring fresh current verification, target, review, and completion evidence.
+Viewer snapshot v4 accepts source schemas v5-v16 and displays the same bounded
+history already returned by `task show`. The public inventory remains exactly
+20 leaves with no history command or option; the nine/ten-call normal flow,
+privacy boundaries, offline operation, and target-project/Git no-mutation
+remain unchanged.

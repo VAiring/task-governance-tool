@@ -356,8 +356,10 @@ and current user decisions remain authoritative.
 
 ## Release Artifact
 
-The release identity uses lightweight tag `v0.10.0`, title
-`task-governance-tool v0.10.0`, archive
+Version 0.10.0 is published from exact commit
+`a9b80ce177a6dead10d51a070b76ff01f7af0294`; remote `main` and lightweight
+tag `v0.10.0` resolve to that commit. GitHub Release `362617903` has prerelease
+visibility. Its title is `task-governance-tool v0.10.0`, archive
 `task-governance-tool-0.10.0.zip`, and checksum
 `task-governance-tool-0.10.0.zip.sha256`. The canonical Release body is
 [docs/releases/v0.10.0.md](docs/releases/v0.10.0.md). The exact
@@ -366,7 +368,7 @@ are fixed in [docs/release-install.md](docs/release-install.md).
 
 ## Development Checks
 
-Before publication, run at least:
+For current development and any later release candidate, run at least:
 
 ```powershell
 python -m unittest discover -s tests

@@ -371,20 +371,20 @@ are fixed in [docs/release-install.md](docs/release-install.md).
 For current development and any later release candidate, run at least:
 
 ```powershell
+python tools\release_contract.py --repo .
 python -m unittest discover -s tests
 python task-governance-tool\scripts\taskgov.py --help
 python task-governance-tool\scripts\taskgov.py --version
 git diff --check
 ```
 
-Also validate an isolated physical project-scoped package with `doctor`, verify
-the exact 20-leaf help surface, and confirm generated `state/`, SQLite files,
-Viewer HTML, backups, logs, caches, and root copied references are absent from
-the release artifact. The optional `config/viewer.json` must also be absent
-from the release artifact and core manifest, while its loader and changed
-runtime sources remain manifest-covered. Confirm the root and packaged
-`LICENSE` files match the official Apache-2.0 bytes and that the package
-license is manifest-covered.
+The repository-only release checker is offline and read-only. It derives the
+CLI leaves and runtime release versions from their owning Python modules, uses
+the release manifest as the package inventory, and checks metadata,
+documentation, license, CI, and tracked generated-artifact consistency. It is
+not an installable `taskgov` command. The suite separately retains isolated
+physical-install, no-write, migration, upgrade, and paired-rollback behavior
+coverage.
 
 ## Project Docs
 

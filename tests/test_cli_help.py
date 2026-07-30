@@ -1,9 +1,10 @@
-import argparse
 import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from tools.release_contract import parser_leaf_commands
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,24 +43,6 @@ M14_6_STAGE_LEAVES = {
     "review finding add",
     "review finding resolve",
 }
-
-
-def parser_leaf_commands(
-    parser: argparse.ArgumentParser,
-    prefix: tuple[str, ...] = (),
-) -> set[str]:
-    subparsers = [
-        action
-        for action in parser._actions
-        if isinstance(action, argparse._SubParsersAction)
-    ]
-    if not subparsers:
-        return {" ".join(prefix)}
-    leaves: set[str] = set()
-    for subparser_action in subparsers:
-        for name, child in subparser_action.choices.items():
-            leaves.update(parser_leaf_commands(child, (*prefix, name)))
-    return leaves
 
 
 class CliHelpTests(unittest.TestCase):

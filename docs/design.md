@@ -46,6 +46,8 @@ docs/
   implementation-roadmap.md
   history/
 plan.md
+tools/
+  release_contract.py
 task-governance-tool/
   release-manifest.json
   SKILL.md
@@ -132,6 +134,16 @@ The implementation keeps these narrow ownership boundaries:
 
 The bundled template is a complete offline HTML/CSS/JavaScript application. It
 has no external dependency, server, database connection, or network API.
+
+The root `tools/release_contract.py` is repository-only verification tooling,
+not an installable package module or public CLI leaf. It disables bytecode
+generation before importing package code, derives parser leaves and release
+versions from their owning runtime modules, delegates packaged-core inspection
+to the runtime manifest inspector, and reads the tracked inventory with one
+bounded shell-free `git ls-files -z`. Its deterministic findings cover
+manifest/package drift, release metadata, license, active command inventories,
+CI wiring, and generated-artifact exclusions without creating state or
+changing a target project.
 
 ## Public CLI And Serialization
 
@@ -1543,6 +1555,14 @@ a real consuming project or Git state. Tests cover:
 - release archive reproducibility, license/manifest/archive inclusion,
   legacy upgrade/paired rollback, exact workflow identity, and sanitized
   release evidence.
+
+Repository release consistency uses the same offline read-only checker from
+focused unit fixtures and CI. Negative fixtures independently cover a missing
+manifest or declared file, extra packaged core, digest mismatch, license or
+manifest-license mismatch, invalid Skill/agent/manifest metadata, parser-to-
+document drift, and tracked generated artifacts. The checker does not replace
+installed-CLI, no-write, physical-isolation, migration, upgrade/rollback, or
+release-acceptance behavior tests.
 
 Tier-2 changes use two independent exact-target reviews. Tests hard-fail count,
 byte, subprocess, attempt, and render limits; performance budgets never justify

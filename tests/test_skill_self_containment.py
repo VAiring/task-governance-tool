@@ -1,6 +1,5 @@
 import os
 import json
-import argparse
 import ast
 import hashlib
 import re
@@ -11,6 +10,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tools.release_contract import (
+    CHECKER_INVOCATION,
+    OFFICIAL_APACHE_2_LICENSE_SHA256,
+    check_release_contract,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -18,7 +23,6 @@ SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from task_governance_tool.cli import build_parser  # noqa: E402
 from task_governance_tool.storage import validate_identity_project_id  # noqa: E402
 try:  # noqa: E402
     from m14_test_support import canonical_test_path, make_physical_install
@@ -82,36 +86,13 @@ def git_is_ignored(path: str) -> bool:
     return result.returncode == 0
 
 
-def parser_leaf_commands(
-    parser: argparse.ArgumentParser,
-    prefix: tuple[str, ...] = (),
-) -> set[str]:
-    subparsers = [
-        action
-        for action in parser._actions
-        if isinstance(action, argparse._SubParsersAction)
-    ]
-    if not subparsers:
-        return {" ".join(prefix)}
-    leaves: set[str] = set()
-    for subparser_action in subparsers:
-        for name, child in subparser_action.choices.items():
-            leaves.update(parser_leaf_commands(child, (*prefix, name)))
-    return leaves
-
-
 class SkillSelfContainmentTests(unittest.TestCase):
     def test_apache_2_license_boundary_is_official_and_manifest_covered(self):
-        expected_digest = (
-            "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
-        )
+        expected_digest = OFFICIAL_APACHE_2_LICENSE_SHA256
         root_bytes = (ROOT / "LICENSE").read_bytes()
         package_bytes = (SKILL_ROOT / "LICENSE").read_bytes()
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
-        )
-        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
-            encoding="utf-8"
         )
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         release_note = (ROOT / "docs" / "release-install.md").read_text(
@@ -142,8 +123,6 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertFalse((ROOT / "NOTICE").exists())
         self.assertFalse((SKILL_ROOT / "NOTICE").exists())
         self.assertFalse(any(path.startswith("references/") for path in tracked))
-        self.assertIn("$skillRoot/LICENSE", workflow)
-        self.assertIn(expected_digest, workflow)
         for text in (readme, release_note, skill_md):
             self.assertIn("Apache License, Version 2.0", text)
             self.assertIn("Apache-2.0", text)
@@ -554,15 +533,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
         release_note = (ROOT / "docs" / "release-install.md").read_text(
             encoding="utf-8"
         )
-        runtime_init = (
-            SKILL_ROOT / "scripts" / "task_governance_tool" / "__init__.py"
-        ).read_text(encoding="utf-8")
-        storage = (
-            SKILL_ROOT / "scripts" / "task_governance_tool" / "storage.py"
-        ).read_text(encoding="utf-8")
-        viewer = (
-            SKILL_ROOT / "scripts" / "task_governance_tool" / "viewer.py"
-        ).read_text(encoding="utf-8")
+        release_contract = check_release_contract(ROOT)
+        self.assertTrue(release_contract.ok, release_contract.issues)
         for text in (skill_md, workflow, contracts, readme, release_note):
             self.assertIn("git_snapshot", text)
         for text in (skill_md, workflow, contracts, readme):
@@ -582,9 +554,6 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("--kind git_snapshot", release_note)
         self.assertIn("unstaged", release_normalized)
         self.assertIn("untracked", release_normalized)
-        self.assertIn('__version__ = "0.10.0"', runtime_init)
-        self.assertIn("SCHEMA_VERSION = 16", storage)
-        self.assertIn("SNAPSHOT_VERSION = 4", viewer)
         self.assertIn("omits", release_note)
         version = subprocess.run(
             [sys.executable, "scripts/taskgov.py", "--version"],
@@ -900,48 +869,6 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "ready",
             )
 
-    def test_m14_7_parser_and_readme_publish_the_same_twenty_leaves(self):
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        command_section = readme.split("## Public Commands", 1)[1].split(
-            "## Privacy And Scope",
-            1,
-        )[0]
-        documented = set(
-            re.findall(
-                r"^\d+\. `taskgov ([^`]+)`$",
-                command_section,
-                re.MULTILINE,
-            )
-        )
-
-        self.assertEqual(
-            parser_leaf_commands(build_parser()),
-            {
-                "setup",
-                "doctor",
-                "task add",
-                "task list",
-                "task next",
-                "task current",
-                "task effort",
-                "task show",
-                "task checkpoint",
-                "task edit",
-                "task complete",
-                "handoff record",
-                "handoff list",
-                "handoff show",
-                "handoff withdraw",
-                "review prepare",
-                "review target set",
-                "review receipt add",
-                "review finding add",
-                "review finding resolve",
-            },
-        )
-        self.assertEqual(documented, parser_leaf_commands(build_parser()))
-        self.assertEqual(len(documented), 20)
-
     def test_m14_spec_routing_contract_has_fixed_nine_or_ten_calls(self):
         specification = (ROOT / "docs" / "specification.md").read_text(
             encoding="utf-8"
@@ -1129,45 +1056,25 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 ).is_file()
             )
 
-    def test_ci_requires_viewer_runtime_and_rejects_generated_viewer(self):
+    def test_ci_uses_the_shared_release_checker_and_keeps_runtime_smokes(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        contract = check_release_contract(ROOT)
 
-        self.assertIn("$skillRoot/assets/task-viewer.template.html", workflow)
-        self.assertIn("$skillRoot/scripts/task_governance_tool/viewer.py", workflow)
-        self.assertIn(
-            "$skillRoot/scripts/task_governance_tool/viewer_config.py",
-            workflow,
-        )
-        self.assertIn("$skillRoot/scripts/task_governance_tool/git_snapshot.py", workflow)
-        self.assertIn("$skillRoot/scripts/task_governance_tool/handoffs.py", workflow)
-        self.assertIn("$skillRoot/scripts/task_governance_tool/contracts.py", workflow)
-        self.assertIn("$skillRoot/scripts/task_governance_tool/effort.py", workflow)
-        self.assertIn("$skillRoot/references/reconciliation.md", workflow)
-        self.assertIn("$skillRoot/scripts/task_governance_tool/self_status.py", workflow)
-        for module in (
-            "relocation.py",
-            "state_paths.py",
-            "state_resolver.py",
-            "state_transition.py",
-        ):
-            self.assertIn(
-                f"$skillRoot/scripts/task_governance_tool/{module}",
-                workflow,
-            )
-        self.assertIn("$skillRoot/release-manifest.json", workflow)
+        self.assertTrue(contract.ok, contract.issues)
+        self.assertEqual(workflow.count(CHECKER_INVOCATION), 1)
         self.assertIn("$doctorJson | ConvertFrom-Json", workflow)
         self.assertIn("$doctor.data.components.package.status -ne 'clean'", workflow)
         self.assertIn("@('self', 'status')", workflow)
         self.assertIn("invalid_command", workflow)
-        self.assertIn("SCHEMA_VERSION", workflow)
-        self.assertIn("0\\.10\\.0", workflow)
-        self.assertIn("task-viewer\\.html$", workflow)
         self.assertIn('Windows skill checks (Python ${{ matrix.python-version }})', workflow)
-        matrix_block = workflow.split("matrix:", 1)[1].split("\n\n    steps:", 1)[0]
-        self.assertEqual(
-            re.findall(r'- "([0-9]+\.[0-9]+)"', matrix_block),
-            ["3.12", "3.14"],
-        )
+        self.assertEqual(contract.ci_python_versions, ("3.12", "3.14"))
+        for removed_duplicate in (
+            "$requiredFiles",
+            "$publicTokens",
+            "Get-FileHash",
+            "Guard generated artifacts",
+        ):
+            self.assertNotIn(removed_duplicate, workflow)
         self.assertIn("runs-on: windows-latest", workflow)
         self.assertNotIn("ubuntu-", workflow)
         self.assertNotIn("macos-", workflow)

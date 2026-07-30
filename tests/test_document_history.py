@@ -495,6 +495,10 @@ class DocumentHistoryTests(unittest.TestCase):
                 "tg_task_9807bdc4ddc5ba37",
                 "github-release:VAiring/task-governance-tool:362617903",
             ),
+            "TG-M19.11": (
+                "tg_task_e452e6eb7dcf0e08",
+                "f5d7ed4706eac41c422690f16e5791893fdb1989",
+            ),
         }
         lines = roadmap.splitlines()
         for scope, (task_id, revision) in expected_rows.items():

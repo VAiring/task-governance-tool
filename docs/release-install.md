@@ -413,12 +413,18 @@ The v0.10.0 acceptance boundary is complete:
   body is the exact bytes of `docs/releases/v0.10.0.md`, SHA-256
   `aaa118a3fbbb261ec6a24f7a80f50f161e606a86857f99e17f957f34ba044a03`.
 
-For a later release candidate, rerun the complete current offline suite,
-package/manifest/license/document/help consistency checks, isolated physical
-install and upgrade/rollback acceptance, the current CI matrix versions
-(Python 3.12 and 3.14), and `git diff --check` against that candidate's own
-exact identity. A prior v0.10.0 result, Task receipt, approval object, or
-historical gate never satisfies a future candidate.
+For a later release candidate, first run the repository-only, offline,
+read-only checker with `python tools/release_contract.py --repo .`. It derives
+the parser leaves and package/schema/Viewer versions from owning Python code,
+uses the release manifest as the exact packaged-core inventory, and checks
+license, metadata, active command inventories, CI wiring, and tracked
+generated-artifact exclusions. Then rerun the complete current offline suite,
+isolated physical install and upgrade/rollback acceptance, the current CI
+matrix versions (Python 3.12 and 3.14), and `git diff --check` against that
+candidate's own exact identity. The checker is repository tooling, not an
+installable `taskgov` command or a target-project write. A prior v0.10.0
+result, Task receipt, approval object, or historical gate never satisfies a
+future candidate.
 
 Pushing, dispatching external CI, changing `main`, creating or changing a tag,
 or publishing a Release always requires separate exact current authorization.

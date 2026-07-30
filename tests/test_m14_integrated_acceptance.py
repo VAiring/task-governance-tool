@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import builtins
 import io
 import json
@@ -15,6 +14,7 @@ from typing import Any
 from unittest import mock
 
 from tests.m14_test_support import file_snapshot, make_physical_install
+from tools.release_contract import check_release_contract
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,10 +24,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import __version__  # noqa: E402
-from task_governance_tool.cli import build_parser  # noqa: E402
 from task_governance_tool.setup import run_setup  # noqa: E402
-from task_governance_tool.storage import SCHEMA_VERSION  # noqa: E402
-from task_governance_tool.viewer import SNAPSHOT_VERSION  # noqa: E402
 
 
 ENVELOPE_KEYS = {
@@ -37,28 +34,6 @@ ENVELOPE_KEYS = {
     "data",
     "warnings",
     "errors",
-}
-PUBLIC_LEAVES = {
-    "setup",
-    "doctor",
-    "task add",
-    "task list",
-    "task next",
-    "task current",
-    "task effort",
-    "task show",
-    "task edit",
-    "task complete",
-    "task checkpoint",
-    "handoff record",
-    "handoff list",
-    "handoff show",
-    "handoff withdraw",
-    "review prepare",
-    "review target set",
-    "review receipt add",
-    "review finding add",
-    "review finding resolve",
 }
 HELP_CHOICES = {
     (): ("setup", "doctor", "task", "handoff", "review"),
@@ -108,24 +83,6 @@ GUIDANCE_FILES = (
     SKILL_ROOT / "references" / "reconciliation.md",
     SKILL_ROOT / "references" / "task_workflow.md",
 )
-
-
-def parser_leaf_commands(
-    parser: argparse.ArgumentParser,
-    prefix: tuple[str, ...] = (),
-) -> set[str]:
-    subparsers = [
-        action
-        for action in parser._actions
-        if isinstance(action, argparse._SubParsersAction)
-    ]
-    if not subparsers:
-        return {" ".join(prefix)}
-    leaves: set[str] = set()
-    for action in subparsers:
-        for name, child in action.choices.items():
-            leaves.update(parser_leaf_commands(child, (*prefix, name)))
-    return leaves
 
 
 def help_choices(stdout: str) -> tuple[str, ...]:
@@ -218,9 +175,6 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         return payload, result
 
     def test_final_help_and_removed_surfaces_share_one_no_write_boundary(self):
-        self.assertEqual(parser_leaf_commands(build_parser()), PUBLIC_LEAVES)
-        self.assertEqual(len(PUBLIC_LEAVES), 20)
-
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             before = file_snapshot(install.project_root)
@@ -295,24 +249,12 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
             self.assertFalse((install.skill_root / "state").exists())
 
     def test_active_publication_matches_runtime_schema_and_command_surface(self):
+        release_contract = check_release_contract(ROOT)
+        self.assertTrue(release_contract.ok, release_contract.issues)
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
         self.assertEqual(manifest["package_version"], __version__)
-        self.assertEqual(SCHEMA_VERSION, 16)
-        self.assertEqual(SNAPSHOT_VERSION, 4)
-        self.assertIn(
-            "scripts/task_governance_tool/viewer_maintenance.py",
-            manifest["core_files"],
-        )
-        self.assertIn(
-            "scripts/task_governance_tool/artifact_lock.py",
-            manifest["core_files"],
-        )
-        self.assertIn(
-            "references/reconciliation.md",
-            manifest["core_files"],
-        )
 
         with tempfile.TemporaryDirectory() as tmp:
             version = make_physical_install(Path(tmp)).run("--version")
@@ -355,14 +297,10 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         self.assertNotRegex(metadata, r"(?i)\bexport\b")
         self.assertRegex(metadata, r"(?i)\btask\b")
 
-        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
-            encoding="utf-8"
+        self.assertEqual(
+            release_contract.runtime.package_version,
+            __version__,
         )
-        self.assertIn("unittest discover -s tests", workflow)
-        self.assertIn("doctor --repo . --read-only --json", workflow)
-        self.assertIn(__version__, workflow)
-        self.assertRegex(workflow, r"SCHEMA_VERSION[^\r\n]*16")
-        self.assertNotIn("web export --help", workflow)
 
     def test_m16_setup_does_not_seed_tasks_or_adopt_project_instructions(self):
         with tempfile.TemporaryDirectory() as tmp:

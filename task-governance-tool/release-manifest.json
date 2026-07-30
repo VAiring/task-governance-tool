@@ -34,7 +34,7 @@
     "scripts/task_governance_tool/state_resolver.py": "sha256:e75ffdae568333f90d646b4a39eb26a1d43b5e2113cc4ae11d3df2953faca52a",
     "scripts/task_governance_tool/state_transition.py": "sha256:4bb5a14cd39df53a9ec8b6fb6a2fb076ff8a7842915dc23939edb38f13726598",
     "scripts/task_governance_tool/storage.py": "sha256:7865a8340674ad66abb974d9fbcdd57256f5a3384a9b28b0aee7a3d392353a5a",
-    "scripts/task_governance_tool/tasks.py": "sha256:d41871a45fbf38bcbbf0035c40ef75a57173345c71aab305e260cc2491cd1aed",
+    "scripts/task_governance_tool/tasks.py": "sha256:6491b221a191722948cac94dee4e1f330875ecd626ee8759799ee980036335ec",
     "scripts/task_governance_tool/viewer.py": "sha256:420b614dd9dfa4204fa505a5ece2af81e3022b8794a917ac5975136e6ffc93e5",
     "scripts/task_governance_tool/viewer_config.py": "sha256:2efcb960d52239b91ded47619a894618fc2cab6f548088bd7654484a75b7e9ec",
     "scripts/task_governance_tool/viewer_maintenance.py": "sha256:9a537a89915ec76c5217d534fab09290da9371237869c9b409464e396d00c6d4",

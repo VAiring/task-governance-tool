@@ -200,25 +200,45 @@ class DocumentHistoryTests(unittest.TestCase):
         self.assertIn("docs/history/README.md", roadmap)
         self.assertIn("docs/history/README.md", plan)
 
-    def test_unstarted_m19_contracts_remain_exact_and_plan_keeps_open_state(self):
+    def test_remaining_m19_contracts_remain_exact_and_plan_keeps_open_state(self):
         roadmap = (ROOT / "docs" / "implementation-roadmap.md").read_text(
             encoding="utf-8-sig"
         )
         start = roadmap.index(
-            "### TG-M19.3 Apache-2.0 License And Attribution Boundary"
+            "### TG-M19.7 Release Candidate Remote CI Gate"
         )
         end = roadmap.index("## Roadmap Completion Criteria", start)
-        unstarted_contracts = roadmap[start:end].encode("utf-8")
-        self.assertEqual(len(unstarted_contracts), 19_245)
+        remaining_contracts = roadmap[start:end].encode("utf-8")
+        self.assertEqual(len(remaining_contracts), 10_836)
         self.assertEqual(
-            hashlib.sha256(unstarted_contracts).hexdigest(),
-            "30af0dc83cd6b56be39d607e11a4b60b12ef8e783ed0e091da4be2f5dd90c29d",
+            hashlib.sha256(remaining_contracts).hexdigest(),
+            "48d8d47d2927efabe73344d9b9b2b13c9b804cff60d833a02977ee649b2ee1c3",
         )
+        for task_id, completion_sha in (
+            (
+                "tg_task_20fd398141755a65",
+                "2af0382c54615640fbd8475a59f374b1b71804c4",
+            ),
+            (
+                "tg_task_b71ac20177aae41a",
+                "4040e923cfdbd8b3f65d8883187a57578d64c092",
+            ),
+            (
+                "tg_task_7cc967fc224440cb",
+                "639bc74adfd1f5e15996d1416bd064f1b9303edc",
+            ),
+            (
+                "tg_task_bd93525dc71f4dcd",
+                "fe9fdafd207cab9d0966785f4b340fe3224397fa",
+            ),
+        ):
+            self.assertIn(task_id, roadmap)
+            self.assertIn(completion_sha, roadmap)
 
         plan = (ROOT / "plan.md").read_text(encoding="utf-8")
         for task_id in (
-            "tg_task_20fd398141755a65",
-            "tg_task_b71ac20177aae41a",
+            "tg_task_2fc57c401dd2855d",
+            "tg_task_67a3f3e73b913bfb",
             "tg_task_5b8796de20a32d39",
             "tg_task_79791addafcf0e00",
             "tg_task_9807bdc4ddc5ba37",

@@ -1537,6 +1537,15 @@ character limit and still use the common privacy guard and state validation.
 `lane` is canonicalized by trimming outer whitespace; `blocked_reason` is
 retained as supplied after string/privacy checks.
 
+The sole assignment exception is the exact lowercase release-gate field
+`dispatch_authorization=<positive canonical integer>` at start-of-text or
+after whitespace or its Markdown code delimiter, and followed by end-of-text
+or a bounded text delimiter. Taskgov replaces only that complete counter with
+a non-secret sentinel before running every existing privacy pattern. Prefixed
+names, zero, leading-zero, decimal, suffixed, credential-valued, differently
+named/cased, or nested Authorization assignments remain rejected, as do all
+independent credential, token, and raw-content patterns.
+
 Stable domain codes include:
 
 ```text
@@ -1843,8 +1852,10 @@ description, verification, blocker reason, and Tier 2 metadata:
   `Blocked until the dependencies and every Required user approval value in docs/implementation-roadmap.md@<SOURCE_SHA>#TG-M19.<unit> are satisfied.`;
 - nonblocked reason is empty.
 
-The M19.2 authority split must retain the complete unstarted M19.3-M19.10
-roadmap sections verbatim so this deterministic source remains stable.
+The M19.2 authority split retained the then-unstarted M19.3-M19.10 roadmap
+sections verbatim. After a unit starts, its active status may be synchronized;
+the remaining revision-zero M19.7-M19.10 block stays byte-frozen until its own
+activation or a separately approved contract correction.
 
 Then one Contract-only plus in-progress edit activates revision 1. Normalize
 wrapped bullet lines with ASCII spaces, prefix each bullet `- `, retain order,

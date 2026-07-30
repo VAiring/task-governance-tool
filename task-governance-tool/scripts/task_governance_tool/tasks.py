@@ -145,6 +145,11 @@ KNOWN_ENV_NAME_PATTERN = (
 )
 ENV_NAME_PATTERN = rf"(?:{UPPER_ENV_NAME_PATTERN}|{KNOWN_ENV_NAME_PATTERN})"
 
+SAFE_DISPATCH_AUTHORIZATION_COUNTER_PATTERN = re.compile(
+    r"(?<![^\s`])dispatch_authorization=[1-9][0-9]*(?=$|[\s`;,)\]])"
+)
+SAFE_DISPATCH_AUTHORIZATION_COUNTER_SENTINEL = "taskgov_dispatch_counter"
+
 PRIVACY_PATTERNS = (
     re.compile(r"Authorization\s*[:=]\s*\S+", re.IGNORECASE),
     re.compile(r"Authorization\s+(Basic|Bearer|Token|ApiKey)\s+\S+", re.IGNORECASE),
@@ -383,17 +388,21 @@ def ensure_string(field: str, value: Any, *, default: str = "") -> str:
 
 
 def reject_private_or_raw_content(field: str, value: str) -> None:
+    guard_value = SAFE_DISPATCH_AUTHORIZATION_COUNTER_PATTERN.sub(
+        SAFE_DISPATCH_AUTHORIZATION_COUNTER_SENTINEL,
+        value,
+    )
     for pattern in PRIVACY_PATTERNS:
-        if pattern.search(value):
+        if pattern.search(guard_value):
             raise validation_error(
                 "privacy_rejected",
                 f"{field} appears to contain a secret, raw log, or dump content",
                 field,
             )
     if (
-        contains_basic_auth_value(value)
-        or contains_bearer_token_value(field, value)
-        or contains_raw_output_value(field, value)
+        contains_basic_auth_value(guard_value)
+        or contains_bearer_token_value(field, guard_value)
+        or contains_raw_output_value(field, guard_value)
     ):
         raise validation_error(
             "privacy_rejected",

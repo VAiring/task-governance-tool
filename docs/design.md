@@ -1417,6 +1417,15 @@ including authorization/Bearer headers, private-key blocks, password/token/API
 key assignments, Python traceback headers, raw stdout/stderr headings, and
 repeated raw Git diffs.
 
+Before privacy matching, one case-sensitive bounded recognizer substitutes
+only the complete lowercase release counter
+`dispatch_authorization=<positive canonical integer>` at start-of-text or
+after whitespace/its Markdown code delimiter with a fixed non-secret sentinel.
+Every existing privacy detector then runs on that substituted text, so a
+prefixed name or surrounding/nested credential assignment remains visible.
+Other Authorization names/values, zero/leading-zero/decimal/suffixed forms,
+JSON credential keys, and token detectors remain unchanged and rejected.
+
 Stored or emitted data excludes secrets, cookies, provider bodies,
 authorization material, raw stdout/stderr, stack traces, environment dumps,
 full prompts/conversations, private reasoning, raw reviews, large diffs,
@@ -1474,10 +1483,13 @@ as current or implemented retain historical meaning only. Captured bodies are
 immutable; later history appends a new file/index entry.
 
 M19.1 switches indexed specification/design/history plus durable AGENTS routing
-in one reviewed commit. M19.2 similarly switches roadmap/plan/forward evidence
-and retains unstarted M19.3-M19.10 sections verbatim. No intermediate commit
-may have a missing destination, two plausible authorities, dangling link, or
-current behavior dependent on history.
+in one reviewed commit. M19.2 similarly switched roadmap/plan/forward evidence
+and retained the then-unstarted M19.3-M19.10 sections verbatim. Completed-unit
+status may later synchronize, while the remaining revision-zero M19.7-M19.10
+block stays byte-frozen until its own activation or a separately approved
+contract correction. No intermediate commit may have a missing destination,
+two plausible authorities, dangling link, or current behavior dependent on
+history.
 
 ### Licensing Boundary
 

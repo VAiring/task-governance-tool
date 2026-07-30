@@ -3,12 +3,14 @@
 Status: the implemented product baseline is v0.10.0, SQLite schema v16, and
 Viewer snapshot v4 accepting source schemas v5-v16. TG-M18.4 fixed that
 baseline at `b0df647d9caf693afc0ff46aecf71a2c4739c864`. TG-M19.0 fixed the
-release-correctness contract, TG-M19.1 completed the active
+release-correctness contract, and TG-M19.1 completed the active
 specification/design consolidation at
-`cbf75372617e90ca0b54746ae27f24a4e67cb292`, and TG-M19.2 is the current
-roadmap/plan/evidence authority switch. When TG-M19.2 is accepted, the next
-required stop is the TG-M19.3 licensing-authority decision. TG-M12.3 remains
-separately blocked.
+`cbf75372617e90ca0b54746ae27f24a4e67cb292`; TG-M19.2 through TG-M19.5 are
+complete. The first TG-M19.6 local candidate acceptance was invalidated before
+any remote write by the TG-M19.6A Contract-privacy compatibility correction.
+After that narrow correction, TG-M19.6 must accept a new exact commit and
+TG-M19.7 must receive fresh exact-value approval. TG-M12.3 remains separately
+blocked.
 
 This file is limited to current decisions that help route future work, explicit
 open issues, and user-decision gates. It is not the product specification,
@@ -119,16 +121,17 @@ discovery summary, not a second Contract.
 
 | Unit | Task | Current gate |
 |---|---|---|
-| TG-M19.2 | `tg_task_20fd398141755a65` | Current in-progress authority split; complete its exact verification and Tier 2 review before asking the licensing question. |
-| TG-M19.3 | `tg_task_b71ac20177aae41a` | After M19.2, obtain the exact holder, covered scope, exclusions, and employer/contractor/contributor/third-party/OSS-policy authority statement required by `m19.3-approval-v1`. Do not infer it from Git metadata or maintainer status. |
-| TG-M19.7 | `tg_task_5b8796de20a32d39` | Depends on the accepted local candidate and a separate exact-value push/dispatch approval. |
+| TG-M19.6A | `tg_task_2fc57c401dd2855d` | Current narrow privacy-compatibility correction; complete exact verification and two Tier 2 reviews before reopening TG-M19.6. |
+| TG-M19.6 | `tg_task_67a3f3e73b913bfb` | Reaccept a new exact commit and assets after TG-M19.6A; the prior local acceptance remains historical only. |
+| TG-M19.7 | `tg_task_5b8796de20a32d39` | Depends on the newly accepted local candidate and a separate fresh exact-value push/dispatch approval. |
 | TG-M19.8 | `tg_task_79791addafcf0e00` | Depends on exact candidate CI and a separate exact-value direct fast-forward approval. |
 | TG-M19.10 | `tg_task_9807bdc4ddc5ba37` | Depends on remote-main acceptance and a separate exact-value tag/Release publication approval. |
 | TG-M12.3 | `tg_task_1f7503aca5e32cdc` | Blocked until a separately approved versioned Issue Skill intake contract, governing permission update, and integration approval exist. |
 
-No other user decision is required before completing TG-M19.2. The exact
-completion history and remaining dependency-gated M19 units are indexed in the
-active implementation roadmap rather than repeated here.
+No other user decision is required before completing TG-M19.6A and reaccepting
+TG-M19.6. The exact completion history and remaining dependency-gated M19
+units are indexed in the active implementation roadmap rather than repeated
+here.
 
 ## Open Issues And Deferred Candidates
 
@@ -155,7 +158,7 @@ contract and execution unit before work begins.
 
 ## Pending Local Handoffs
 
-The project-local database currently reports the following seven records as
+The project-local database currently reports the following nine records as
 `pending_handoff`. This list preserves discovery and identifiers; the database
 remains the lifecycle record. A subject already addressed by later work is not
 automatically withdrawn, reopened, or converted into current scope by this
@@ -170,6 +173,8 @@ document change.
 | `tg_handoff_c87a159f6583349d` | Consider the bounded post-release M14.6 Viewer-maintenance cleanup without weakening safety checks. |
 | `tg_handoff_3952e6681a58a101` | Reassess restore temporary identity binding and cleanup residue only with operational evidence. |
 | `tg_handoff_d85090045f2addb1` | Reassess a Git-tracked source self-host Viewer refresh profile under an explicit release-policy choice. |
+| `tg_handoff_9d181d809abb34d4` | Reconcile active roadmap and plan status headers with completed M19 licensing work. |
+| `tg_handoff_0134aaa7530a4983` | Correct active M19.4 roadmap review-finding generation wording. |
 
 ## Reference Material
 

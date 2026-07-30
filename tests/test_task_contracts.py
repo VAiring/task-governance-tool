@@ -304,6 +304,48 @@ class TaskContractCliTests(unittest.TestCase):
                     0,
                 )
 
+    def test_m19_7_dispatch_authorization_constraint_is_not_a_header(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / "taskgov.sqlite"
+            repo = root / "repo"
+            init_db(db, repo)
+            constraints = (
+                "Required user approval:\n"
+                "- The initial approval names `dispatch_authorization=1`; "
+                "every later fresh dispatch approval increments it by exactly one.\n"
+                "Approval:\n"
+                '{"dispatch_authorization":1,"schema":"m19.7-approval-v1"}'
+            )
+
+            result, payload = add_task(
+                db,
+                repo,
+                "M19.7 contract",
+                "--contract-scope",
+                "Publish the accepted candidate only.",
+                "--contract-acceptance",
+                "The exact candidate CI run passes.",
+                "--contract-constraints",
+                constraints,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            task_id = payload["data"]["task"]["task_id"]
+            _, revisions, _ = durable_contract_state(db, task_id)
+            self.assertEqual(revisions[0]["constraints_text"], constraints)
+            shown_result, shown = json_command(
+                "task",
+                "show",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task_id,
+            )
+            self.assertEqual(shown_result.returncode, 0, shown_result.stderr)
+            self.assertEqual(shown["data"]["contract"]["constraints"], constraints)
+
     def test_revision_zero_edit_requires_exact_start_boundary(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

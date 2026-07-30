@@ -5,10 +5,13 @@ snapshot v4 accepting source schemas v5-v16. TG-M18.4 fixed that baseline at
 `b0df647d9caf693afc0ff46aecf71a2c4739c864`. TG-M19.0 fixed the release
 correctness contract at `1ac8c001073b1a4cb29e9de3f0281d8ff2d9aca1`,
 TG-M19.1 completed the active specification/design consolidation at
-`cbf75372617e90ca0b54746ae27f24a4e67cb292`, and TG-M19.2 is the current
-in-progress roadmap/plan/evidence authority switch. The next required stop is
-the TG-M19.3 licensing-authority decision. TG-M12.3 remains independently
-blocked.
+`cbf75372617e90ca0b54746ae27f24a4e67cb292`; TG-M19.2 through TG-M19.5 are
+complete. TG-M19.6 accepted commit
+`fe9fdafd207cab9d0966785f4b340fe3224397fa`, but its acceptance was invalidated
+before any remote write when TG-M19.7 exposed the TG-M19.6A Contract-privacy
+compatibility defect. TG-M19.6A is the current corrective unit; TG-M19.6 must
+then be reaccepted at a new exact commit before a fresh TG-M19.7 approval.
+TG-M12.3 remains independently blocked.
 
 This active roadmap contains current execution rules, a concise completion
 index, the one older approved blocked unit, and the current or remaining
@@ -71,6 +74,11 @@ reviewed lineage-closing commits rather than retroactively invented evidence.
 | TG-M18 | `tg_task_fa3a57ae3089e3fc` | `b0df647d9caf693afc0ff46aecf71a2c4739c864` | v0.10.0/schema-v16/Viewer-v4 completion-cycle-history baseline. |
 | TG-M19.0 | `tg_task_2b95de205e3f92e3` | `1ac8c001073b1a4cb29e9de3f0281d8ff2d9aca1` | Release correctness and cutover contract. |
 | TG-M19.1 | `tg_task_ba59e260cc2c58a6` | `cbf75372617e90ca0b54746ae27f24a4e67cb292` | Active specification/design consolidation and indexed immutable history. |
+| TG-M19.2 | `tg_task_20fd398141755a65` | `2af0382c54615640fbd8475a59f374b1b71804c4` | Roadmap/plan/evidence authority split. |
+| TG-M19.3 | `tg_task_b71ac20177aae41a` | `4040e923cfdbd8b3f65d8883187a57578d64c092` | Apache-2.0 licensing-authority and attribution acceptance. |
+| TG-M19.4 | `tg_task_7cc967fc224440cb` | `639bc74adfd1f5e15996d1416bd064f1b9303edc` | Public package, release guidance, and review-trust synchronization. |
+| TG-M19.5 | `tg_task_bd93525dc71f4dcd` | `fe9fdafd207cab9d0966785f4b340fe3224397fa` | Isolated legacy upgrade and paired rollback rehearsal. |
+| TG-M19.6 first acceptance, now invalidated | `tg_task_67a3f3e73b913bfb` | `fe9fdafd207cab9d0966785f4b340fe3224397fa` | Historical completion cycle only; TG-M19.6A requires a new candidate and assets before any remote write. |
 
 Terminal units with no completion SHA are not missing evidence:
 
@@ -143,11 +151,12 @@ Verification:
 
 ## TG-M19 Release Correctness
 
-TG-M19 is one sequential lane, `TG-M19-RELEASE-CORRECTNESS`. It converts the
-completed v0.10.0 candidate into concise active authority, licensed and
-rehearsed release material, and a deliberately staged remote publication. It
-does not add product behavior, a public command, a schema change, or another
-normal-loop judgment.
+TG-M19 is one sequential release lane plus the independently ordered
+TG-M19.6A corrective Task. It converts the completed v0.10.0 candidate into
+concise active authority, licensed and rehearsed release material, and a
+deliberately staged remote publication. TG-M19.6A makes the existing privacy
+contract and implementation agree; it adds no public command, schema change,
+Viewer change, normal-loop judgment, or new authority.
 
 The immutable M18 baseline for this lane is:
 
@@ -197,8 +206,8 @@ one another:
 TG-M19.3 has its own non-publication user decision for licensing authority.
 No earlier approval authorizes a later gate.
 
-The pre-created M19.3-M19.10 Task rows remain planning records at Contract
-revision zero until their own start. First correct any verification or
+The remaining pre-created M19.7-M19.10 Task rows remain planning records at
+Contract revision zero until their own start. First correct any verification or
 review-tier drift by a separate metadata-only edit while status is unchanged.
 Then use the specification's exact roadmap-bullet mapping in a second
 Contract-options-plus-`in_progress` edit to activate revision 1. Do not
@@ -225,7 +234,7 @@ Lane: `TG-M19-RELEASE-CORRECTNESS`
 Lane order: 30
 Review tier: Tier 2
 Depends on: completed TG-M19.1
-Status: in_progress
+Status: completed at `2af0382c54615640fbd8475a59f374b1b71804c4`
 
 Intended outcome:
 
@@ -264,7 +273,7 @@ Lane: `TG-M19-RELEASE-CORRECTNESS`
 Lane order: 40
 Review tier: Tier 2
 Depends on: completed TG-M19.2 and the licensing decision below
-Status: ready, dependency- and user-decision-gated
+Status: completed at `4040e923cfdbd8b3f65d8883187a57578d64c092`
 
 Required user decision:
 
@@ -310,7 +319,7 @@ Lane: `TG-M19-RELEASE-CORRECTNESS`
 Lane order: 50
 Review tier: Tier 2
 Depends on: completed TG-M19.3
-Status: ready, dependency-gated
+Status: completed at `639bc74adfd1f5e15996d1416bd064f1b9303edc`
 
 Intended outcome:
 
@@ -353,7 +362,7 @@ Lane: `TG-M19-RELEASE-CORRECTNESS`
 Lane order: 60
 Review tier: Tier 2
 Depends on: completed TG-M19.4
-Status: ready, dependency-gated
+Status: completed at `fe9fdafd207cab9d0966785f4b340fe3224397fa`
 
 Intended outcome:
 
@@ -387,6 +396,44 @@ Verification:
 - full migration/recovery/package checks, offline suite, `git diff --check`,
   and two exact-target Tier 2 reviews pass.
 
+### TG-M19.6A Contract Privacy Identifier Correction
+
+Task: `tg_task_2fc57c401dd2855d`
+Kind: optional
+Review tier: Tier 2
+Depends on: explicit user reapproval and completed TG-M19.5
+Status: in_progress
+
+Intended outcome:
+
+- Accept the mandated structured M19.7 dispatch authorization identifier when
+  it is not a credential header.
+- Preserve rejection of actual Authorization header forms and every other
+  existing privacy pattern.
+- Invalidate the prior candidate locally and require TG-M19.6 reacceptance
+  before any remote write.
+
+Write scope:
+
+- narrow only direct Authorization-assignment handling through the bounded
+  release-counter exception in `tasks.py`;
+- directly coupled privacy and Task Contract regression tests;
+- synchronized active specification, design, roadmap, plan status, and package
+  integrity manifest; and
+- no public CLI, SQLite schema, Viewer, release identity, accepted-asset, Git
+  remote, or network change.
+
+Verification:
+
+- prove the exact normalized M19.7 Required user approval constraints pass the
+  common privacy guard;
+- prove start-of-text and hyphen-prefixed Authorization assignments, Bearer
+  credentials, and every existing secret/raw-content pattern remain rejected;
+- run focused privacy and Contract tests, the complete offline suite, package
+  self-check, and `git diff --check`; and
+- obtain two independent Tier 2 passes on one exact correction commit before
+  completing this Task and reopening TG-M19.6.
+
 ### TG-M19.6 Exact-SHA Local Release Candidate Acceptance
 
 Task: `tg_task_67a3f3e73b913bfb`
@@ -394,8 +441,8 @@ Kind: sequential
 Lane: `TG-M19-RELEASE-CORRECTNESS`
 Lane order: 70
 Review tier: Tier 2
-Depends on: completed TG-M19.5
-Status: ready, dependency-gated
+Depends on: completed TG-M19.5 and TG-M19.6A
+Status: reacceptance required after TG-M19.6A
 
 Intended outcome:
 
@@ -685,8 +732,9 @@ The currently approved roadmap is complete when:
   `b0df647d9caf693afc0ff46aecf71a2c4739c864`;
 - TG-M19.1 and TG-M19.2 complete their active/history authority switch before
   the user is asked for TG-M19.3 licensing authority;
-- TG-M19.3 through TG-M19.6 complete in lane order, including exact licensing,
-  paired legacy rollback, and one frozen clean local Release Candidate;
+- TG-M19.3 through TG-M19.5 complete in lane order with exact licensing and
+  paired legacy rollback; independently ordered TG-M19.6A completes before
+  TG-M19.6 reaccepts one frozen clean local Release Candidate;
 - TG-M19.7, TG-M19.8, and TG-M19.10 each receive their own fresh exact-value
   approval, while TG-M19.9 proves the unchanged remote-main SHA between
   cutover and publication;

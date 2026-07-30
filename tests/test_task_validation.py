@@ -199,6 +199,20 @@ class TaskValidationTests(unittest.TestCase):
             "Authorization: secret-value",
             "AUTHORIZATION=Basic dXNlcjpwYXNz",
             "AUTHORIZATION=secret-value",
+            "X-Authorization: secret-value",
+            "Proxy-Authorization=secret-value",
+            "HTTP_AUTHORIZATION=credential-value",
+            "PROXY_AUTHORIZATION=opaque-value",
+            "client_authorization=secret-value",
+            "dispatch_authorization=secret-value",
+            "dispatch_authorization=0",
+            "dispatch_authorization=01",
+            "dispatch_authorization=1.0",
+            "dispatch_authorization=1suffix",
+            "x-dispatch_authorization=1",
+            "object.dispatch_authorization=1",
+            "Authorization=dispatch_authorization=1",
+            "token=dispatch_authorization=1",
             "Authorization Basic dXNlcjpwYXNz",
             "Authorization Bearer=secret",
             "authorization basic=abc",
@@ -421,6 +435,17 @@ class TaskValidationTests(unittest.TestCase):
             with self.subTest(title=title):
                 validated = validate_task_input(title=title)
                 self.assertEqual(validated["title"], title)
+
+    def test_privacy_guard_allows_bounded_dispatch_authorization_counter(self):
+        for note in (
+            "dispatch_authorization=1",
+            "`dispatch_authorization=1`",
+            "dispatch_authorization=2; continue observation",
+            "M19.7 records dispatch_authorization=1 before dispatch.",
+        ):
+            with self.subTest(note=note):
+                validated = validate_task_input(title="Task", add_note=note)
+                self.assertEqual(validated["add_note"], note)
 
 
 if __name__ == "__main__":

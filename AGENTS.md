@@ -20,10 +20,13 @@ workspace.
 - The intended repository root is `C:\WorkSpace\task-governance-tool`.
 - The installable package, CLI, migrations, tests, and formal documents already
   exist; inspect them before changing an established contract.
-- Current release/runtime state, approved or pending execution units, and
-  milestone history are maintained in `docs/implementation-roadmap.md` and
-  `plan.md`. Consult those authorities instead of mirroring volatile status
-  here.
+- Current release/runtime state, the concise completion index, and approved or
+  pending execution units are maintained in
+  `docs/implementation-roadmap.md`. Current decisions, open issues, and future
+  candidates belong in `plan.md`; completed milestone narratives and
+  superseded evidence are indexed as non-authoritative lineage by
+  `docs/history/README.md`. Consult those owning documents instead of mirroring
+  volatile status here.
 - The workspace is Git-managed. The checked-out committed lineage determines
   which revision of the active governing documents applies locally; a default
   or legacy branch name is not authority by itself. Continue to verify Git
@@ -71,8 +74,9 @@ If these documents conflict:
 - For implementation structure, prefer `docs/design.md`.
 - For implementation order, execution-unit boundaries, verification gates, and
   review gates, prefer `docs/implementation-roadmap.md`.
-- Use `plan.md` for roadmap candidates, decisions not yet promoted to formal
-  docs, and open issues.
+- Use `plan.md` for current roadmap candidates, decisions not yet promoted to
+  formal docs, and open issues. It is not the execution-status or historical
+  milestone log.
 - If a required product decision is missing, record it as an open issue in
   `plan.md` or ask the user before hard-coding behavior.
 
@@ -208,8 +212,10 @@ The product must not become:
 - Do not duplicate release- or milestone-specific product contracts, status,
   command inventories, schemas, constants, truth tables, acceptance matrices,
   or history in this file. Product behavior belongs in `docs/specification.md`,
-  implementation structure in `docs/design.md`, execution order and status in
-  `docs/implementation-roadmap.md`, and decisions or open issues in `plan.md`.
+  implementation structure in `docs/design.md`, active execution order/status
+  and the concise completion index in `docs/implementation-roadmap.md`,
+  decisions or open issues in `plan.md`, and immutable non-authoritative
+  lineage behind `docs/history/README.md`.
 - Treat the current CLI, storage, setup/doctor, maintenance, Viewer, and output
   contracts as established. Read their exact current formal sections and
   directly coupled code and tests before changing them; do not reconstruct them

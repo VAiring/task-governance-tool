@@ -31,3 +31,103 @@ entry, but must not revise an existing archived body or entry.
 
 TG-M19.2 may append the roadmap, plan, and superseded forward-evidence lineage
 to this index. It must not alter the two archived bodies above.
+
+## v0.10.0 Roadmap, Plan, And Forward-Evidence Lineage
+
+### `docs/implementation-roadmap.md`
+
+- Immutable history:
+  [v0.10.0/implementation-roadmap.md](v0.10.0/implementation-roadmap.md)
+- Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
+- Capture purpose: preserve the implementation roadmap before its active
+  milestone-history consolidation.
+- Current replacement:
+  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+
+### `plan.md`
+
+- Immutable history: [v0.10.0/plan.md](v0.10.0/plan.md)
+- Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
+- Capture purpose: preserve the decision log and execution-status lineage
+  before its current-decision and open-issue consolidation.
+- Current replacement: [plan.md](../../plan.md)
+
+### `docs/forward-tests/completion-commit-flow.md`
+
+- Immutable history:
+  [v0.10.0/forward-tests/completion-commit-flow.md](v0.10.0/forward-tests/completion-commit-flow.md)
+- Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
+- Capture purpose: preserve superseded forward-test evidence for the completion
+  commit flow.
+- Current replacement:
+  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+
+### `docs/forward-tests/static-task-viewer.md`
+
+- Immutable history:
+  [v0.10.0/forward-tests/static-task-viewer.md](v0.10.0/forward-tests/static-task-viewer.md)
+- Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
+- Capture purpose: preserve superseded forward-test evidence for the static
+  Task Viewer.
+- Current replacement:
+  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+
+### `docs/forward-tests/tg-m11-git-snapshot-completion.md`
+
+- Immutable history:
+  [v0.10.0/forward-tests/tg-m11-git-snapshot-completion.md](v0.10.0/forward-tests/tg-m11-git-snapshot-completion.md)
+- Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
+- Capture purpose: preserve superseded TG-M11 Git-snapshot completion
+  forward-test evidence.
+- Current replacement:
+  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+
+### `docs/forward-tests/tg-m12-local-handoff.md`
+
+- Immutable history:
+  [v0.10.0/forward-tests/tg-m12-local-handoff.md](v0.10.0/forward-tests/tg-m12-local-handoff.md)
+- Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
+- Capture purpose: preserve superseded TG-M12 local-handoff forward-test
+  evidence.
+- Current replacement:
+  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+
+### `docs/forward-tests/tg-m12-task-contract.md`
+
+- Immutable history:
+  [v0.10.0/forward-tests/tg-m12-task-contract.md](v0.10.0/forward-tests/tg-m12-task-contract.md)
+- Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
+- Capture purpose: preserve superseded TG-M12 Task Contract forward-test
+  evidence.
+- Current replacement:
+  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+
+### `docs/forward-tests/tg-m16-loop-discipline.md`
+
+- Immutable history:
+  [v0.10.0/forward-tests/tg-m16-loop-discipline.md](v0.10.0/forward-tests/tg-m16-loop-discipline.md)
+- Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
+- Capture purpose: preserve superseded TG-M16 loop-discipline forward-test
+  evidence.
+- Current replacement:
+  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+
+### `docs/forward-tests/tg-m18-completion-history.md`
+
+- Immutable history:
+  [v0.10.0/forward-tests/tg-m18-completion-history.md](v0.10.0/forward-tests/tg-m18-completion-history.md)
+- Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
+- Capture purpose: preserve superseded TG-M18 completion-history forward-test
+  evidence.
+- Current replacement:
+  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+
+### `docs/forward-tests/tg-m8-resume-and-completion.md`
+
+- Immutable history:
+  [v0.10.0/forward-tests/tg-m8-resume-and-completion.md](v0.10.0/forward-tests/tg-m8-resume-and-completion.md)
+- Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
+- Capture purpose: preserve superseded TG-M8 resume-and-completion forward-test
+  evidence.
+- Current replacement:
+  [docs/implementation-roadmap.md](../implementation-roadmap.md)

@@ -1,3 +1,12 @@
+> [!CAUTION]
+> **NON-AUTHORITATIVE HISTORY — DO NOT USE AS CURRENT VERIFICATION EVIDENCE OR PRODUCT CONTRACT.**
+> This file preserves the former docs/forward-tests/tg-m12-task-contract.md from exact source
+> commit cbf75372617e90ca0b54746ae27f24a4e67cb292. Internal words such as
+> “current”, “approved”, and “implemented” describe that historical source
+> only. Current replacement is [docs/implementation-roadmap.md](../../../implementation-roadmap.md).
+
+---
+
 # TG-M12.2 Task Contract Forward Test
 
 Date: 2026-07-26

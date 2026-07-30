@@ -1,1432 +1,116 @@
-# task-governance-tool MVP Specification
+# task-governance-tool Current Product Specification
 
-Status: TG-M18.0 through TG-M18.4 are complete at exact M18.4 completion
-commit `b0df647d9caf693afc0ff46aecf71a2c4739c864`. The synchronized repository
-baseline is v0.10.0/schema v16 with Viewer snapshot v4 accepting sources 5-16,
-atomic native completion capture, and the bounded public history read
-projection. TG-M19.0 has fixed the Release Correctness contract below;
-TG-M19.1 is the next implementation unit. The completed TG-M17
-identity/storage behavior and TG-M16.4 reduced-loop behavioral acceptance are
-retained. TG-M12.3 Issue adapter remains blocked on a future intake contract.
+Status: The implemented product is v0.10.0, SQLite schema v16, and Viewer
+snapshot v4 accepting source schemas v5-v16. TG-M18.4 completed at
+`b0df647d9caf693afc0ff46aecf71a2c4739c864`; the TG-M16.4 reduced-loop
+behavioral acceptance, TG-M17 stable identity, and TG-M18 completion-cycle
+history remain current. TG-M19.0 fixed the release-correctness gates, and this
+TG-M19.1 consolidation is the active current-product authority.
 
-This document defines the first product contract for `task-governance-tool`.
-It supersedes `plan.md` for MVP product behavior. `docs/implementation-roadmap.md`
-governs implementation order and execution-unit boundaries. `plan.md` remains
-the decision log and open-issue holding area.
+This document specifies supported product behavior. `docs/design.md` owns
+implementation structure, `docs/implementation-roadmap.md` owns execution
+order and gates, root `AGENTS.md` owns durable agent behavior, and `plan.md`
+holds current decisions and open issues. Indexed files under
+[`docs/history/`](history/README.md) are non-authoritative lineage only.
+Required current behavior never depends on historical text.
 
-All release- or milestone-specific sections before TG-M14 are historical
-lineage for those releases, including headings labeled `Implemented` or
-`Approved`. Their durable state-transition, review, and privacy rules continue
-only where TG-M14 does not supersede them. Sections labeled `Historical`
-preserve additional pre-M14 contract detail for migration and compatibility
-review. The implemented TG-M14 and later extension sections together are the
-current public command, setup, diagnostic, maintenance, and output contract.
+## Documentation Authority And History
 
-## Product Goal
+The active governing set is exactly root `AGENTS.md`, this specification,
+`docs/design.md`, `docs/implementation-roadmap.md`, and root `plan.md` in the
+repository authority order. History is indexed by `docs/history/README.md`.
+Each captured body is immutable after its capture commit; later history work
+may append a new file and index entry but never revise an archived body.
 
-`task-governance-tool` helps Codex and the user run project work without loading
-large task-status Markdown files into context. The MVP replaces the practical
-functions of a large `TASK_STATUS.md`: register tasks, inspect current work,
-select next actionable work, record blockers, and keep concise local task
-history.
+Every archive begins with a conspicuous non-authority banner, names its source
+path and exact source commit, links to the active replacement, and warns that
+internal words such as current/approved/implemented describe only the captured
+revision. History may support lineage, migration review, rationale, and
+evidence discovery, but never fills an active-contract gap, satisfies a current
+gate, or revives a removed command, path, install layout, or workflow.
 
-The tool must stay local-first, project-doc-respecting, and non-authoritative.
-Target project governing documents remain the source of truth for project
-decisions.
+An authority-layout transition prepares and indexes history before reducing an
+active file, then lands history, active replacements, links, and routing in one
+exact reviewed commit. No intermediate commit may expose a missing target, two
+plausible active authorities, or a current document that depends on history.
 
-## Historical MVP Scope Through v0.7.0
+## Product Boundary
 
-The original MVP included the following surfaces. TG-M14 supersedes this
-inventory with the implemented 20-leaf public surface below.
+`task-governance-tool` is a local-first Codex Skill and deterministic Python
+CLI for bounded task registration, rediscovery, selection, state transition,
+local handoff, review evidence, completion evidence, and concise history. It
+reduces repeated loading of large task-status documents; it does not replace a
+project's `AGENTS.md`, requirements, design, tests, or decision log.
 
-- A Codex skill named `task-governance-tool`.
-- A Python stdlib-first CLI named `taskgov`.
-- A SQLite state store scoped to one governed project per installed skill copy
-  by default.
-- Task registration and inspection commands:
-  - `taskgov db init`
-  - `taskgov db status`
-  - `taskgov task add`
-  - `taskgov task list`
-  - `taskgov task next`
-  - `taskgov task current`
-  - `taskgov task show`
-  - `taskgov task edit`
-  - `taskgov review target set`
-  - `taskgov review receipt add`
-  - `taskgov review finding add`
-  - `taskgov review finding resolve`
-- JSON output for Codex and concise text output for humans.
-- Project-scoped skill-local generated runtime state under the installed skill
-  folder.
-- Offline operation by default.
+Task Skill owns:
 
-## Historical Non-Goals For MVP
+- the Task purpose, scope, acceptance, constraints, current state, next work,
+  blockers, and optional continuation checkpoint;
+- the select, execute, verify, review, update, and complete loop;
+- stopping at satisfied acceptance or at an existing blocker, unavailable
+  dependency, required decision, or unsafe affected lane; and
+- immediate durable local handoff of discoveries outside current acceptance.
 
-The MVP does not include:
+It does not own Issue priority, triage, duplicate resolution, Issue lifecycle,
+external ticket synchronization, resulting-Task creation, project-specific
+test strategy, threat-model management, reviewer authentication, signatures,
+or a general workflow/audit engine.
 
-- Importing tasks from Markdown or planning documents.
-- Draft/approval workflows such as `task approve`.
-- A standalone dependency graph or `task depend`.
-- Persistent project profile authoring or `profile register`.
-- Verification-run recording beyond short task fields.
-- Review request generation.
-- Creating Git commits, branches, PRs, issue comments, or other target-project
-  mutation. The tool may inspect Git read-only to validate an existing commit, but
-  `taskgov` must not create or change Git state.
-- Live dashboards, services, network sync, or cloud workflows. The approved
-  post-MVP static Task Viewer extension below is not a live dashboard or
-  service.
-- Raw command-output retention.
+The tool is offline by default. It never creates or changes target-project
+source, Git commits, branches, refs, tags, PRs, Issues, external services, or
+network state. Read-only Git subprocesses are permitted only for the exact
+validation and review operations defined below. Explicit setup may create the
+canonical ignored package-local state and generated Viewer; successful
+business mutations may perform the opted-in bounded same-process maintenance
+defined below.
 
-## Skill Package Requirements
+## Package, Runtime, And Generated State
 
-The installable skill folder name and `SKILL.md` frontmatter `name` must be
-`task-governance-tool`.
-
-The MVP is intended for project-scoped installation. Install a separate copy of
-the skill into each governed project that needs task tracking:
+The installable folder and `SKILL.md` name are `task-governance-tool`.
+Ordinary stateful use supports exactly one physical project-scoped package:
 
 ```text
 <target-project>/.agents/skills/task-governance-tool/
 ```
 
-Stateful governed-project use supports only a physical project-scoped copy.
-User-wide, symlink, and junction installs are not public operating modes because
-they can blur state ownership across projects. Source-checkout development and
-tests remain separate from installing the Skill to govern another project.
-M14.2 formalizes only the bounded self-host source-tree exception needed
-for this repository's own Task history; it does not broaden ordinary install
-guidance.
+User-wide, symlink, junction, reparse-point, and competing project-scoped
+installations are unsupported. This repository alone has a development
+self-host exception at `<repo>/task-governance-tool`: it requires explicit
+`--repo`, a physical package and repository, all five governing files, a valid
+manifest/package boundary, and no competing ordinary install. It reuses the
+source package's canonical state and is not install guidance for consumers.
 
-Project-scoped setup is a distinct, explicit step after installation. The
-installer or agent must ensure that the canonical package `state/` directory
-is effectively ignored for a Git-managed target, may preview with
-`taskgov setup --read-only`, and runs
-`taskgov setup --repo <target-project>` only with explicit intent to initialize
-or migrate that project's local state. `setup` is the sole initializer and
-migrator. Building the source skill package must not create a database,
-because the target project identity is not known at package-build time.
+Python 3.12 or newer is required. Windows is the CI-verified platform; exact
+CI runtimes are Python 3.12 and 3.14. Linux and macOS are unverified.
 
-The skill package should contain only files needed by Codex to use the skill:
+The static package includes its manifest, Skill metadata and instructions,
+runtime modules, one-level references, and bundled Viewer template. Generated
+state and target-local presentation configuration are not release-package
+content. The fixed generated targets are:
 
 ```text
-task-governance-tool/
-  release-manifest.json
-  SKILL.md
-  agents/
-    openai.yaml
-  scripts/
-    taskgov.py
-    task_governance_tool/
-  references/
-    task_workflow.md
-    cli_contracts.md
+<physical-skill>/state/current/taskgov.sqlite
+<physical-skill>/state/current/backups/
+<physical-skill>/state/current/viewer/task-viewer.html
 ```
 
-The skill package may create generated local runtime state after installation:
+The package `state/` directory is the generated-state and Git-ignore boundary.
+The recommended target-local rule is exactly:
 
-```text
-task-governance-tool/
-  state/
-    projects/
-      <project-id>/
-        taskgov.sqlite
+```gitignore
+/.agents/skills/task-governance-tool/state/
 ```
 
-`state/` is not part of the static skill package and must not be committed or
-exported.
+An effective enclosing rule is also valid. Broad `*.sqlite`, `*.sqlite3`, or
+`*.db` guidance is prohibited. Public alternate database, backup, Viewer,
+state, export, and output paths do not exist; explicit path injection is an
+internal test/service seam only.
 
-Runtime code required by `scripts/taskgov.py` must be included inside the skill
-package so the installed skill is self-contained.
+## Public CLI And Output Contract
 
-The implemented static Task Viewer package additionally includes:
+### Command Inventory
 
-```text
-task-governance-tool/
-  assets/
-    task-viewer.template.html
-  scripts/
-    task_governance_tool/
-      viewer.py
-```
-
-The bundled template is static runtime input. Generated `task-viewer.html`
-snapshots remain under `state/` and are not part of the package.
-
-## Data Location
-
-Default database path:
-
-```text
-<installed-skill-root>/state/projects/<project-id>/taskgov.sqlite
-```
-
-With the recommended project-scoped install, this resolves under:
-
-```text
-<target-project>/.agents/skills/task-governance-tool/state/projects/<project-id>/taskgov.sqlite
-```
-
-`<project-id>` must be deterministic from the canonical target project path. It
-should use a sanitized target project directory basename plus a short stable
-SHA-256 hash of the canonical path, for example:
-
-```text
-kurakoma-a1b2c3d4e5f6
-```
-
-The public CLI derives this canonical path and rejects `--db`. Explicit
-database-path injection remains internal to storage/service constructors and
-tests only.
-
-## Task Model
-
-The MVP task record includes:
-
-- `task_id`: stable ID such as `tg_task_...`.
-- `project_id`: deterministic project ID.
-- `title`: required short title.
-- `description`: optional detail.
-- `kind`: `sequential` or `optional`.
-- `lane`: optional grouping string; normally required for ordered sequential
-  work.
-- `lane_order`: integer order within a lane.
-- `priority`: `low`, `normal`, `high`, or `urgent`.
-- `status`: `ready`, `in_progress`, `paused`, `blocked`, `review_pending`,
-  `done`, or `cancelled`.
-- `blocked_reason`: required when status is `blocked`.
-- `pause_reason`: required when status is `paused`.
-- `review_tier`: integer `0`, `1`, or `2`.
-- `verification`: short verification expectation or command label.
-- `tags`: comma-separated labels.
-- `created_at`, `updated_at`, and optional `completed_at` timestamps.
-
-The MVP may store task notes and state changes in a concise task event history.
-
-## Implemented Post-MVP Extension: Completion Commit Gate
-
-This extension made task completion auditable without adding a heavy
-material-tracking schema. Its generic revision and boolean-only review details
-are historical baseline behavior and are superseded for new transitions by the
-implemented TG-M8 contract below.
-
-A task may be marked `done` only after all of these gates are satisfied:
-
-- Required verification for the task has passed or has an explicit documented
-  user-approved exception.
-- Required sub-agent review has completed under the same tiered review rules
-  used by this project: Tier 2 requires two independent review passes when
-  review tooling is available; Tier 1 requires one independent review or the
-  documented fallback when tooling is unavailable; Tier 0 may skip review only
-  for purely mechanical changes.
-- If Tier 2 review tooling is unavailable, the strongest feasible documented
-  self-review must be run and the user must explicitly approve treating that
-  fallback as completion evidence before the task can be marked `done`.
-- No valid high or medium review finding remains unresolved.
-- The commit gate has passed according to the task's commit requirement fields.
-
-Managed materials are source-controlled files or user-approved durable assets
-whose final state should be traceable after task completion. Generated local
-runtime state, caches, logs, temporary files, SQLite databases, and ignored
-scratch artifacts are not managed materials unless a governing document or user
-explicitly says they are.
-
-The database must keep commit evidence intentionally simple. Store commit state
-directly on the task row:
-
-- `completion_commit_required`: boolean-like value, default true.
-- `completion_commit_hash`: concise commit hash or unique revision identifier,
-  empty by default.
-
-Completion commit rules:
-
-- If `completion_commit_required=true`, `completion_commit_hash` is required
-  before the task can be marked `done`.
-- If no managed materials changed, the user or agent must explicitly set
-  `completion_commit_required=false`; then `completion_commit_hash` must stay
-  empty. This is the explicit commit-not-required decision.
-- `completion_commit_required=false` with a non-empty
-  `completion_commit_hash` is invalid.
-- A Git commit hash is preferred for Git projects. For non-Git managed
-  materials, a user-approved unique revision ID may be stored in
-  `completion_commit_hash`.
-- The hash or revision ID must be unique enough to identify the final material
-  state in the target project's durable history.
-
-The database does not store changed material paths in this simplified design.
-To trace changed materials for a completed historical task, read the task's
-`completion_commit_hash` and inspect the target project's version-control
-history, for example:
-
-```powershell
-git show --name-only <completion_commit_hash>
-```
-
-Valid review evidence by tier:
-
-- Tier 2: `passed` with at least two independent reviewers, or
-  `unavailable_fallback` only when review tooling is unavailable, the strongest
-  feasible documented self-review was completed, and the user explicitly
-  approved the fallback.
-- Tier 1: `passed` with at least one independent reviewer, or
-  `unavailable_fallback` with a documented self-review when review tooling is
-  unavailable.
-- Tier 0: `not_required` is valid only for purely mechanical changes with no
-  behavior, schema, API, privacy, setup, persistence, or documentation contract
-  risk.
-
-This simplified extension does not add separate verification or review tables.
-The `done` transition must still require explicit command-time confirmation
-that required verification and review gates have passed or have an approved
-fallback. The CLI may record those confirmations as concise task events, but it
-must not store full transcripts or raw command output.
-
-Completion transition interface:
-
-- `task edit --status done` must require `--verification-complete`.
-- `task edit --status done` must require `--review-complete`.
-- `--verification-complete` means required verification passed or a documented
-  user-approved exception exists.
-- `--review-complete` means the required review gate passed, or a valid
-  documented fallback/not-required decision exists for the task's review tier.
-- `--completion-commit-hash <hash>` records the commit hash or unique revision
-  ID used when `completion_commit_required=true`.
-- `--commit-not-required` explicitly sets `completion_commit_required=false`
-  for a task with no managed material changes.
-
-The extension must not store raw diffs, raw command output, full review
-transcripts, full prompts, secrets, stack traces, environment dumps, or large
-logs by default.
-
-When this extension is implemented, `task edit --status done` must reject
-completion with structured errors if required verification, review, or commit
-state is missing or inconsistent. The error codes should include
-`verification_required`, `review_required`, `commit_required`, and
-`completion_commit_conflict` unless a later approved CLI contract chooses
-narrower names.
-
-## Implemented Post-MVP Extension: TG-M8 Governance Hardening
-
-TG-M8 supersedes the simplified completion-evidence and boolean-only review
-parts of the completion commit extension. It preserves the local-first SQLite
-ledger, compact JSON envelope, project identity, privacy boundary, and
-read-only target-project policy.
-
-### Explicit Initialization
-
-`taskgov db init` is the only command allowed to create or migrate a database.
-All task write commands must open an already initialized database at the
-current schema version. A missing database must produce
-`db_not_initialized` without creating a file or parent state directory. An
-older supported database must produce `migration_required` without applying a
-migration. `--read-only` must continue to reject every write path before any
-database or Git change.
-
-### Initial Done Prohibition
-
-`taskgov task add --status done` is prohibited. It must fail with
-`initial_done_forbidden` before a task or event is stored. Historical import or
-migration, if later required, must use a separately approved explicit command;
-normal task registration must not double as an import bypass.
-
-Initial `task add --status paused` is also prohibited with
-`initial_paused_forbidden`; pausing is a transition for work already in
-progress or review.
-
-### Paused Work And Sequential Transition Enforcement
-
-`paused` represents active work intentionally put on hold. It is distinct from
-`blocked`, which means progress depends on a named blocking condition.
-
-- Moving a task to `paused` requires a concise sanitized `pause_reason`.
-- Only `in_progress` or `review_pending` work may move directly to `paused`.
-- Normal resumption moves `paused` back to `in_progress`.
-- `paused` tasks are excluded from `task next` and included in `task current`.
-- A `paused` sequential predecessor remains incomplete and blocks later tasks
-  in the same lane.
-- A sequential task may enter `in_progress`, `review_pending`, or `done` only
-  when every earlier task in its lane is `done` or `cancelled`.
-- The rule applies to initial `task add` status as well as `task edit`.
-  Initial `done` remains prohibited separately.
-- An add or edit that changes kind, lane, order, or status must validate the
-  complete resulting row and every affected old/new lane. It must reject an
-  insertion or reorder that would place an incomplete predecessor before an
-  already `in_progress`, `review_pending`, or `done` task.
-- A failed transition must return `sequential_predecessor_incomplete` and must
-  not change the task or append a success event.
-- `task next` and task transitions must use the same predecessor-completeness
-  implementation. TG-M8 does not add a general dependency graph or an
-  administrative override.
-
-### Current Task Rediscovery
-
-TG-M8 adds the read-only command `taskgov task current`. It returns tasks in
-`in_progress`, `review_pending`, `paused`, or `blocked`, including task fields,
-the latest event when present, `updated_at`, and a deterministic suggested next
-action. The default limit is `20`.
-
-Default ordering is status (`in_progress`, `review_pending`, `paused`, then
-`blocked`), priority (`urgent`, `high`, `normal`, `low`), newest `updated_at`,
-and `task_id` for deterministic ties. `task next` remains ready-task selection;
-it is not changed into a resume command.
-
-Stale-age calculation, persistent checkpoints, and event-history pagination
-are deferred. The command must not claim that `updated_at` proves repository
-working-tree freshness.
-
-### Completion Evidence Kinds And Git Validation
-
-Every new TG-M8 completion transition must use one explicit evidence kind:
-
-- `git_commit`: an existing commit in the target Git repository.
-- `external_revision`: an existing durable revision outside the target Git
-  history, with a concise sanitized reason and explicit acknowledgement.
-- `commit_not_required`: an explicit statement that no managed material
-  changed.
-
-For `git_commit`, the CLI must verify the supplied revision as a commit using a
-read-only Git command. A unique abbreviated hash may be accepted, but missing,
-ambiguous, or non-commit revisions must fail with
-`git_commit_not_found_or_ambiguous`. The canonical full object ID must be
-stored. Validation must not change `HEAD`, the index, the worktree, refs, or
-configuration.
-
-`external_revision` must never be inferred from an arbitrary string. It
-requires an explicit evidence kind, revision value, reason,
-`--external-revision-approved`, and audit event. In a Git project the
-acknowledgement specifically confirms that the external system, rather than the
-available Git history, is the approved durable source of the completed
-materials. Missing acknowledgement returns
-`external_revision_approval_required`. `commit_not_required` stores no revision
-value.
-
-The existing `--completion-commit-hash` option remains a Git-only compatibility
-alias for `git_commit`; it no longer accepts a generic revision string.
-Existing schema-v2 rows and their original hashes must be retained. Migration
-may label historical evidence `legacy_unverified`; it must not rewrite or
-retroactively invalidate completed tasks.
-
-### Structured Review Evidence
-
-TG-M8 stores sanitized review receipts and findings rather than full review
-text or private reasoning. Each task has a current review target identified by
-`git_commit`, `diff_fingerprint`, or `external_revision` and its value. Git
-targets are verified and canonicalized like completion Git evidence. Every
-target-set operation also advances a monotonic target generation, including
-when the kind/value returns to an earlier value.
-Each receipt records a stable reviewer key, receipt kind, verdict, the exact
-target, a concise summary, and timestamps. Each finding records severity,
-resolution status, a concise summary, and resolution metadata.
-
-Completion rules are:
-
-- Tier 2 requires two `PASS` receipts from distinct independent reviewer keys
-  for the same current review target.
-- Tier 1 requires one independent `PASS` receipt for the current target.
-- Tier 2 tooling-unavailable fallback requires a documented self-review
-  `PASS` receipt and explicit user approval recorded as structured evidence.
-- Tier 1 tooling-unavailable fallback requires a documented self-review
-  `PASS` receipt.
-- Tier 0 may use a `not_required` receipt only with a concise mechanical-change
-  rationale.
-- Any unresolved `high` or `medium` finding blocks completion.
-- Changing or re-setting the current review target advances its generation and
-  prevents every older-generation receipt from satisfying the gate, even for
-  an A-to-B-to-A target sequence.
-- Resolving a high or medium finding does not by itself restore completion
-  eligibility. The current target generation must be greater than the
-  generation of the receipt that produced the finding, and fresh required PASS
-  receipts must target that newer generation. Minor record-only edits and low
-  findings that do not change the target do not trigger review calls.
-
-Reviewer keys provide mechanically checkable distinctness, not identity
-proof. The agent remains responsible for using genuinely independent review
-passes. An independent reviewer returns the actual verdict and findings; the
-trusted caller that requested the review, normally the parent Codex or
-orchestrator, records a concise sanitized receipt and any findings as an
-attestation of that returned result. taskgov authenticates neither the caller
-nor the reviewer and does not prove reviewer identity or independence.
-`--review-complete` remains a command-time compatibility confirmation, but
-cannot substitute for missing structured evidence.
-
-The normal successful Tier 2 path therefore uses two LLM review decisions.
-Recording or validating receipts, reviewer distinctness, target equality,
-findings, and Git commits is deterministic and adds no LLM decision. One
-finding/fix cycle normally adds two fresh final-review decisions, for four
-review decisions in total; each additional meaningful fix cycle adds two.
-
-### Deferred Feedback
-
-TG-M8 does not add verification receipts, stale-active detection, persistent
-handoff checkpoints, event-history pagination, or parent/child execution
-units. Large tasks may continue to use concise task events and bounded roadmap
-units. A checklist or child-task feature should be reconsidered only after
-operational evidence from `paused` and `task current` shows that the simple lane
-model is insufficient.
-
-## Implemented Post-MVP Extension: TG-M9 Paused Work Visibility
-
-TG-M9 addresses the narrower risk that intentionally paused work can disappear
-from the normal ready-task flow. It adds deterministic visibility to existing
-read surfaces without changing paused-state semantics, sequential readiness,
-or the local-first and no-target-mutation boundaries.
-
-### Paused Count
-
-After TG-M9 is implemented, `taskgov db status` must expose an exact
-`counts.paused` value for the current project. `counts.active` remains backward
-compatible: it continues to include `ready`, `in_progress`, `paused`,
-`blocked`, and `review_pending`. The separate paused count is additive and must
-not change any existing total.
-
-The concise text form must label the paused count explicitly. Missing,
-migration-required, and project-mismatch responses must retain the normal
-command-specific empty count object, including `paused: 0`, without creating,
-migrating, or modifying the database.
-
-### Ready Selection Warning
-
-`taskgov task next` remains a ready-task selector. Its candidate query,
-filters, ordering, `data` payload, and treatment of sequential lanes do not
-change. When the current project has one or more paused tasks, a successful
-`task next` response must add one structured warning with code
-`paused_tasks_present`. Its deterministic message must include the paused-task
-count and suggest:
-
-```text
-taskgov task current --status paused
-```
-
-The text form must present the same advisory warning. The warning must not add
-paused tasks to the result, suppress otherwise ready work, change the success
-exit code, or write a task event, tool event, database byte, or Git state. No
-paused warning is emitted when the count is zero or when `task next` itself
-fails database or argument validation. The warning contains only the count and
-command suggestion, not task titles, pause reasons, or event text.
-
-The warning count is the exact result of the successful database-status
-inspection that precedes candidate selection. It is an advisory observation,
-not a cross-command lock: a concurrent writer may change task state immediately
-after that read. TG-M9 does not change the existing `task next` connection or
-WAL/sidecar policy merely to make the warning linearizable.
-
-### Current-Status Filter
-
-`taskgov task current` gains an optional `--status` filter. Accepted values are
-the existing current-work statuses `in_progress`, `review_pending`, `paused`,
-and `blocked`. Omitting the filter preserves the TG-M8 query, output,
-ordering, default limit `20`, and maximum limit `100` unchanged.
-
-`taskgov task current --status paused` returns only paused tasks using the
-existing paused ordering, latest-event projection, pause reason, and
-deterministic suggested next action. In JSON, `data.statuses` contains the
-effective selected status list, so a paused-only response reports
-`["paused"]`. An unsupported status such as `ready`, `done`, or `cancelled`
-must fail with `invalid_status` and no database or Git mutation.
-
-This is a bounded resume-rich view, not an unbounded ledger. Operators can
-compare the returned page count with `db status`'s exact paused count and raise
-the existing limit when useful. Cursor pagination for `task current`, richer
-`task list` retrieval, and event-history pagination remain deferred; TG-M9 must
-not advertise exhaustive retrieval beyond the existing limit.
-
-### Compatibility, Cost, And Non-Goals
-
-TG-M9 requires no SQLite schema migration and makes no data model change. It
-adds one count key, may add one warning on successful `task next`, and narrows
-the existing `task.current.data.statuses` list only when the caller explicitly
-requests a filter. The compact top-level JSON envelope and all existing command
-names remain unchanged.
-
-Paused counting, warning construction, and status filtering are deterministic
-SQLite/CLI operations and add zero LLM judgments. TG-M9 does not add stale-age
-calculation, checkpoints, parent/child tasks, acceptance checklists, automatic
-resume, network access, or GitHub update checking. A once-daily GitHub update
-check remains an unapproved follow-up pending a separate network, cache,
-failure, and privacy contract.
-
-## Implemented Post-MVP Extension: TG-M11 Completion Integrity Corrections
-
-TG-M11 incorporates the accepted parts of the CanonWeave operational
-hardening feedback without making completed tasks permanently immutable or
-increasing the normal Tier 2 review path beyond two LLM judgments. The contract
-and its bounded implementation are part of the v0.3.0/schema-v6 baseline.
-
-TG-M11 preserves the existing local-first database, compact JSON envelope,
-project identity, privacy boundary, explicit `db init`, task selection, paused
-work, and no-target-project-mutation rules.
-
-### Locked Done State And Explicit Reopen
-
-A `done` task is locked, but not permanently immutable. The only accepted write
-against a `done` task is an explicit reopen transition:
-
-```powershell
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --reopen-reason "<sanitized reason>" --json
-```
-
-The reopen transition must be atomic and must:
-
-- require a non-empty sanitized `reopen_reason`;
-- reject every additional task mutation, completion confirmation, completion
-  evidence option, or note in the same command;
-- change status only from `done` to `in_progress`;
-- clear `completed_at`, blocker state, and pause state;
-- reset writable completion evidence to `none` and its legacy projection to
-  commit-required with an empty hash;
-- clear the current review target while advancing its generation so every
-  earlier receipt remains historical and cannot satisfy a later completion;
-- preserve all existing task events, review receipts, and findings;
-- append one sanitized `task_reopened` event that identifies the previous
-  completion evidence kind and revision without storing raw output; and
-- apply the shared sequential-lane invariant to the resulting state.
-
-Every other task edit or structured review write against a `done` task must
-fail with stable error code `done_task_requires_reopen` and perform no write.
-This includes metadata edits, notes, review-tier changes, target changes,
-receipts, new findings, finding resolution, and completion-evidence changes.
-A reopened task must satisfy fresh verification, review, and completion gates
-before returning to `done`.
-
-### Review-Tier Downgrade Boundary
-
-A review-tier downgrade is allowed only before structured review begins.
-Structured review begins when the first review target is set, represented
-mechanically by `review_target_generation > 0`; status events are not used as
-an indirect latch.
-
-A downgrade must:
-
-- occur while the task is `ready`, `in_progress`, `paused`, or `blocked`;
-- require a concise sanitized `--review-tier-change-reason`;
-- require `review_target_generation == 0` with an empty current target;
-- reject combination with completion evidence, verification/review
-  confirmations, or a transition into `review_pending` or `done`; and
-- append a `review_tier_changed` event with the old tier, new tier, and reason.
-
-Once any review target has been set, the tier may be raised but must never be
-lowered, including after a reopen. No `task_added_review_unstarted` event latch
-or event-history backfill is required. Invalid downgrades return
-`review_tier_downgrade_forbidden` without mutation.
-
-### Current-Generation Changes Requested
-
-Any `changes_requested` receipt for the exact current review target generation
-must block completion even when the tier's required PASS count is otherwise
-satisfied. `task show.review_evidence.counts` must expose
-`changes_requested_current_generation`. The completion path must return
-`review_changes_requested`. Setting a newer target generation and obtaining
-fresh qualifying review receipts is the only way to clear this condition;
-historical receipts remain preserved.
-
-### Done-Time Git Revalidation And Input Boundaries
-
-Every transition to `done` must re-resolve stored Git completion evidence and
-any Git-backed current review target immediately before the database update.
-The canonical full commit ID must still equal the stored value. Missing,
-ambiguous, non-commit, or no-longer-resolvable evidence fails with the existing
-Git validation error and changes neither SQLite nor Git.
-
-Lane values must be trimmed consistently by add, edit, list, and next
-operations. Explicit and automatically assigned `lane_order` values must stay
-within SQLite's signed 64-bit integer range. Whitespace-shadow lanes and
-automatic order overflow must return structured validation errors without a
-traceback.
-
-These checks are deterministic and add no LLM judgment.
-
-### Review-Before-Commit Git Snapshot Binding
-
-TG-M11 retains the approved workflow in which implementation is verified and
-reviewed before the completion commit is created. It adds review target kind
-`git_snapshot` so the reviewed staged state can be bound deterministically to
-the later Git commit without a second pair of LLM reviews.
-
-Setting a `git_snapshot` target must:
-
-- read the canonical current `HEAD` commit as the base revision;
-- read only stage-0 entries from the Git index;
-- reject an unborn `HEAD`, unmerged index, zero-object intent-to-add entry, or
-  sparse-directory index entry;
-- construct a versioned canonical manifest from base commit, file mode, object
-  ID, and raw path bytes for every index entry;
-- store a SHA-256 fingerprint and the canonical base commit;
-- advance the normal review target generation; and
-- leave Git `HEAD`, refs, objects, index, worktree, configuration, and hooks
-  unchanged.
-
-`review target set --kind git_snapshot` captures the current staged snapshot;
-it does not accept a caller-supplied `--revision`. Unstaged and untracked
-content is outside the snapshot and is not inspected or recorded.
-
-At completion, `git_commit` evidence may satisfy review binding in either of
-these ways:
-
-- the current target is `git_commit` with the identical canonical commit ID; or
-- the current target is `git_snapshot`, the completion commit has exactly one
-  parent equal to the stored base revision, and the completion commit tree
-  produces the identical canonical manifest fingerprint.
-
-Merge commits and snapshot/parent/tree mismatches must fail with
-`review_target_mismatch`. `external_revision` completion still requires the
-identical external target. `commit_not_required` still requires an explicit
-`diff_fingerprint` target. Existing target kinds and historical receipts remain
-valid under their existing rules.
-
-The normal successful Tier 2 path remains two independent LLM review
-judgments. Fingerprint creation, parent/tree comparison, receipt counting, Git
-resolution, and finding-state checks are deterministic.
-
-### TG-M11 Compatibility And Acceptance
-
-TG-M11 is advertised by `SKILL.md`, README, release guidance, and
-installed-skill references only as part of the synchronized v0.3.0 release
-after its acceptance gates pass. Implementation provides an explicit,
-repeatable schema migration and preserves the sanitized 12-task/191-event
-fixture, nine historical completion hashes, every existing review
-receipt/finding, and project identity.
-
-Acceptance requires automated proof that:
-
-- every non-reopen write against `done` is rejected without mutation;
-- reopen atomically invalidates old completion/review eligibility while
-  preserving history;
-- a reopened task cannot complete without fresh evidence;
-- the sequential invariant also governs reopen;
-- review-tier downgrade is possible only at generation `0` with a reason;
-- current-generation `changes_requested` blocks otherwise sufficient PASS;
-- stored Git evidence is revalidated at the done transition;
-- `git_snapshot` binds the reviewed staged state to one later single-parent
-  commit and detects added, removed, changed, renamed, mode-changed, hook-
-  changed, wrong-parent, and merge-commit cases;
-- normal Tier 2 completion uses two review judgments, not four;
-- lane normalization and integer boundaries cannot bypass ordering;
-- privacy rejection, compact envelopes, read-only behavior, project
-  separation, concurrency, and migration preservation remain intact; and
-- no validation or inspection command changes SQLite or target-project Git
-  state unless the command is an explicitly authorized task-database write.
-
-## Approved Post-MVP Extension: TG-M12 Scope Control And Local Handoff
-
-TG-M12 incorporates the accepted task-scope and effort-growth feedback without
-turning Task Skill into an Issue tracker, workflow engine, or audit platform.
-It was approved as a staged extension from the v0.3.0/schema-v6 baseline.
-Each separately approved implementation unit changes and advertises only the
-behavior that passes that unit's gates; TG-M12.1 advanced the implemented
-baseline to v0.4.0/schema v7 without pre-advertising later units.
-
-The extension has two core capabilities:
-
-- an optional, authority-copied Task Contract that reduces repeated scope and
-  acceptance reinterpretation; and
-- a durable local handoff outbox that records out-of-scope discoveries before
-  work continues, whether or not an Issue Skill is installed.
-
-An informational Effort Advisory and local-package self-status are optional
-later units. They must not make the minimum Task loop more complex.
-
-### Responsibility And Continue-First Rule
-
-Task Skill remains responsible for:
-
-- preserving the task purpose through existing `title` and `description`;
-- recording scope, acceptance, constraints, current state, next work, and
-  blockers;
-- running selection, execution, verification, state-update, review, and
-  completion loops; and
-- ending work when the current accepted authority is satisfied or reporting an
-  existing blocker, unavailable dependency, or required user decision.
-
-Task Skill does not own long-term Issue lifecycle, external ticket import,
-Issue priority or triage, duplicate resolution, resulting-task creation,
-threat-model management, project-specific test strategy, or a large evidence
-and signature system. A future Issue Skill owns those concerns independently.
-
-For each newly discovered defect, improvement, or request, the agent makes the
-single classification already inherent in scoped work:
-
-1. If resolving it is within the current accepted scope and can proceed under
-   current authority, keep it in the current task.
-2. If an unmet condition prevents current acceptance and cannot be resolved
-   safely within the currently authorized work, record it as the current
-   task's blocker.
-3. Otherwise, durably record one handoff and continue the current task.
-
-Quality improvement, possible future risk, or convenience alone must not add an
-acceptance condition. The agent must not ask whether to enable a Contract,
-whether an Issue Skill exists, or whether to continue merely because a handoff
-or Effort Advisory exists.
-
-Safety is an orthogonal modifier, not a fourth destination. First choose current
-task, blocker, or handoff using the rules above. A credible data-loss or safety
-risk must also be reported promptly. If continuing the affected task or lane is
-unsafe, block only that task or lane and continue other safe ready work. A
-global stop occurs only when all otherwise ready work is unsafe or an existing
-user-decision rule already requires it.
-
-Reaching current acceptance remains the normal completion condition. Pending
-handoffs, advisory warnings, and later Issue resolution do not extend or block
-the source task.
-
-### Optional Task Contract
-
-A Task Contract is a concise, immutable revision of explicit scope and
-acceptance information already supplied by authority. It is per-task optional
-and must never become a new question or a heuristic LLM decision.
-
-Contract revision 1 is recorded only when both scope and acceptance are already
-explicit in at least one of:
-
-- the user's current instruction;
-- an approved implementation roadmap; or
-- explicit task-registration input.
-
-The CLI options are `--contract-scope`, `--contract-acceptance`,
-`--contract-constraints`, `--contract-authority-ref`, and
-`--contract-change-reason`. Supplying any Contract option supplies the group;
-an explicit partial group is rejected rather than silently discarded. The CLI
-copies that information during `task add`, or during an explicit
-revision-0 transition from `ready` or `blocked` to `in_progress`. On add, the
-resulting status must be `ready`, `in_progress`, `blocked`, or
-`review_pending`. On edit, the Contract group may be combined only with that
-status transition and requires empty completion evidence, target, and target
-generation. It cannot be combined with notes, metadata, review-tier,
-completion-evidence, or gate-confirmation changes. When no Contract option is
-supplied, the task remains at revision `0`; the agent must not ask for missing
-fields or infer that a task is "long enough" to need them. If the caller
-explicitly starts a Contract group but omits scope or acceptance, the command
-fails with `invalid_argument`.
-
-A revision-0 task that does not use one of those activation boundaries remains
-revision 0. `paused`, `review_pending`, `done`, and `cancelled` existing tasks
-cannot activate a first Contract. Revision `0` continues to use the user
-request, governing documents, and existing task fields as authority. It never
-means that acceptance is optional or automatically satisfied.
-
-The Contract stores:
-
-- concise `scope`;
-- concise `acceptance`;
-- optional `constraints`;
-- an optional initial stable sanitized `authority_ref`; and
-- for later revisions, a concise change reason and timestamp.
-
-Purpose remains in existing `title` and `description`; no duplicate purpose
-column is added. A user-instruction authority reference must identify a stable
-decision without storing a raw prompt, full chat, or private reasoning.
-
-Every later revision is append-only and requires a non-empty stable sanitized
-`authority_ref` identifying either an explicit user instruction or a later
-independent authority change, plus a change reason. This is structured
-acknowledgement of authority, not a stored prompt. A governing document edited
-as an output of the current task cannot authorize that same task to expand its
-Contract. Agent-proposed hardening outside the current Contract is handed off
-instead.
-
-Later revision is a Contract-only edit allowed while the task is `ready`,
-`in_progress`, `paused`, `blocked`, or `review_pending`. It rejects every
-caller-supplied task metadata, note, status, review-tier, evidence, or gate
-change in the same command. The service itself moves `review_pending` to
-`in_progress` when invalidating review. A `done` task must be reopened first;
-`cancelled` rejects Contract writes.
-
-Contract content is canonicalized by converting CRLF or CR to LF and removing
-outer whitespace; internal text is otherwise preserved. Initial omitted
-constraints are empty. On a later edit, omitted constraints preserve the
-current value, while an explicitly supplied empty value removes them.
-
-Supplying scope, acceptance, and constraints that canonically equal the current
-Contract is an exact replay regardless of omitted, repeated, or re-labeled
-authority/change metadata. Any supplied metadata is still privacy- and
-size-validated before replay is accepted. A supplied `user_instruction`
-reference must still name the same task and a positive revision, but an older
-revision placeholder does not block an otherwise exact replay.
-It returns `recorded=false` with the current revision and performs no task,
-evidence, target, timestamp, or event write. A semantic revision requires at
-least one of those three Contract-content fields to change and then requires
-both authority reference and change reason. A crash retry or authority re-label
-therefore cannot create a new Contract generation or force another review.
-
-For an explicit current user instruction with no external decision ID, the
-agent may generate `user_instruction:<task-id>:<next-revision>` as the stable
-authority reference without asking another question. Governing-document
-authority uses a repository-relative path plus a known revision or content
-hash. Neither form stores the instruction or document body.
-
-A semantic Contract revision must atomically:
-
-- preserve all earlier Contract revisions;
-- advance the current revision;
-- clear current completion evidence;
-- when review has not started (`generation=0` and target empty), keep generation
-  `0`; otherwise clear the current review target and advance its generation;
-- move `review_pending` back to `in_progress` while leaving other allowed
-  active statuses unchanged;
-- update the task timestamp; and
-- append one sanitized `contract_revised` event.
-
-The task must then satisfy fresh verification, review, and completion gates.
-Contract writes against `done` remain forbidden by the TG-M11 done guard until
-the task is explicitly reopened. When and only when Contract input is supplied,
-the write response adds a receipt containing `recorded` and the current
-`revision`; ordinary add/edit payloads remain unchanged. The receipt does not
-broaden the compact task object used by list/current/next.
-
-Only `task show` gains an additive sibling `contract` projection. Contract
-fields do not appear in `task list`, `task current`, `task next`, or the static
-Viewer.
-An exact replay returns `event=null` and `changed_fields=[]`. The fixed
-`task show` projection contains revision, scope, acceptance, constraints,
-authority reference, change reason, and creation time; revision zero uses
-empty strings and `created_at=null`. The task object itself never contains the
-current pointer.
-
-The service validates the exact
-`user_instruction:<task-id>:<revision>` form mechanically. Other sanitized
-governing-file or roadmap identifiers remain caller-provided provenance; the
-workflow rule that current-task outputs cannot self-authorize scope expansion
-remains a documented authority boundary rather than a general provenance
-engine. Concurrent same-content writes become one record plus one replay.
-Without an expected-revision option, different valid semantic inputs serialize
-as successive immutable revisions. If concurrent callers formed the exact
-current-or-next `user_instruction` placeholder before locking, the service
-binds it deterministically to the revision allocated by the locked write;
-semantic changes reject other revision numbers, while exact replay accepts an
-older same-task positive placeholder. Pointer or companion-input races return
-`contract_write_conflict`.
-
-### Local Handoff Outbox
-
-The same command is used whether an Issue Skill is absent, installed but
-disabled, or explicitly connected:
-
-```text
-taskgov handoff record <source-task-id> ...
-```
-
-The agent never chooses a different workflow based on Issue Skill presence.
-The command first commits one sanitized local record. Its only user-visible
-states are:
-
-- `pending_handoff`: durably recorded locally and awaiting or retrying
-  delivery;
-- `handed_off`: a configured receiver has accepted the record; this does not
-  mean the Issue is resolved; and
-- `handoff_withdrawn_by_user`: the user explicitly handled or withdrew the
-  pending request outside Task Skill before any delivery claim.
-
-Allowed state transitions are only
-`pending_handoff -> handed_off` and
-`pending_handoff -> handoff_withdrawn_by_user`. A handed-off or withdrawn
-record cannot return to pending. Withdrawing records that the user no longer
-wants Task Skill to deliver; it does not claim that an external Issue was
-resolved. Once any delivery claim has been acquired, Task Skill can no longer
-withdraw the record, even after lease expiry. Later cancellation would require
-a separately designed receiver lookup/cancel contract.
-
-The outbox stores only bounded, sanitized discovery metadata, source task
-identity, the source Contract revision (or `0`), an idempotency identity, state,
-delivery bookkeeping, and timestamps. It must not store Issue priority, Issue
-lifecycle, semantic duplicate decisions, threat models, raw review/output,
-secrets, stack traces, large diffs, or a `resulting_task_id`.
-
-Exact replay of the same source task and canonical payload returns the existing
-handoff. A distinct occurrence requires a stable explicit occurrence ID
-provided by user instruction or another deterministic source. The first
-version does not ask an LLM to distinguish a crash retry from a semantic
-recurrence. Omitting `--occurrence-id` uses the canonical empty value.
-Supplying it explicitly with an empty, non-string, or over-200-character value
-returns `handoff_occurrence_invalid`; privacy rejection remains
-`privacy_rejected`.
-
-The local commit is the success boundary. Only a successful local commit may
-return `ok=true`. Transient SQLite failure may receive one bounded retry and a
-privacy-rejected payload may be replaced once with a shorter sanitized
-abstraction; no unbounded retry loop is allowed. If the local record still
-cannot be committed, the command returns `ok=false`, the agent immediately
-reports stable `handoff_not_persisted`, and the current execution unit stops
-until persistence succeeds or the user explicitly accepts the forgetting risk.
-This is the one deliberate continue-first exception: it is an orchestration
-stop, not an automatic Task status change. Recovery is deterministic: inspect
-`db status`, obtain any required explicit initialization/migration or external
-state repair, and replay the same record identity. The agent must never claim
-that a failed local record was handed off.
-
-Failure after the local commit returns success with state `pending_handoff`.
-An absent or disabled receiver is the normal local-only mode and emits no
-warning. A delivery attempt through an enabled receiver that fails emits the
-additive warning with fixed `suggested_action=continue`. Neither case blocks
-source-task completion, alters task
-selection, appends a task event, or changes the source task's `updated_at`.
-
-The approved command family is introduced only by the implementation unit that
-can make each command useful:
-
-- `handoff record`;
-- `handoff list`, bounded to the existing compact-list style;
-- `handoff show`;
-- `handoff withdraw`; and
-- `handoff sync --due`, which retries pending delivery only and never imports,
-  reconciles, or mutates Issue lifecycle.
-
-The local-outbox unit introduces record/list/show/withdraw. `handoff sync
---due` is introduced only with the separately approved Issue adapter and claim
-state machine; the base Skill does not advertise a dead sync command.
-
-Stable command names are `handoff.record`, `handoff.list`, `handoff.show`,
-`handoff.withdraw`, and `handoff.sync`. Their minimum data payloads are:
-
-- record: `handoff` and `local_record` with `durable`, `created`, `replayed`,
-  and `handoff_id`;
-- list: `handoffs`, returned `count`, exact `total_matching`, `limit`, and
-  selected `states`;
-- show: `handoff`;
-- withdraw: `handoff` and
-  `changed_fields=["state","withdraw_reason","withdrawn_at"]`; and
-- sync: bounded `claimed`, `accepted`, `pending`, and `failed` counts.
-
-`handoff list` defaults to `pending_handoff` and oldest-first
-`created_at, handoff_id` order. Terminal records appear only with an explicit
-state filter. The default limit is 20 and maximum is 100; paging remains
-deferred. Count and rows come from one read snapshot. Its compact rows contain
-only `handoff_id`, `source_task_id`, `source_contract_revision`, `summary`,
-`state`, `created_at`, and `updated_at`. Record/show/withdraw may return the
-full sanitized public record, but never the internal `claim_token`. Every
-public projection revalidates stored privacy limits and the cross-field state
-matrix rather than emitting corrupt or private stored text.
-
-New stable error codes are `handoff_not_persisted`,
-`handoff_not_withdrawable`, `handoff_occurrence_invalid`,
-`contract_activation_forbidden`, `contract_authority_required`,
-and `contract_write_conflict`. Canonically unchanged Contract input is a
-successful no-op, not an error. `handoff_delivery_pending` is a warning code,
-never a completion error.
-
-`task show` gains only a compact sibling `handoff_summary` with exact
-`pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user` counts. Full
-records remain behind the handoff commands. Handoff command errors use fixed
-empty data shapes. Database readiness failures retain
-`db_not_initialized`, `migration_required`, or `project_mismatch`;
-`handoff_not_persisted` applies only after readiness validation when the local
-record transaction cannot be committed.
-
-### Pending Rediscovery And Delivery
-
-After local-outbox implementation, `db status` adds:
-
-- exact `counts.handoff_pending`;
-- `handoff_delivery.adapter_enabled`; and
-- deterministic `handoff_delivery.sync_due`.
-
-At session or execution-unit boundaries, the workflow runs exactly one
-`handoff sync --due` only when both `adapter_enabled` and `sync_due` are true.
-The agent does not decide whether to retry, ask the user, or enter a retry loop.
-A delivery failure remains pending and non-blocking. No current/next warning is
-required.
-
-Delivery uses the stable `handoff_id` as receiver idempotency identity. Internal
-claim and expiring-lease fields prevent concurrent delivery and withdrawal
-races. Withdrawal succeeds only when no claim has ever been acquired.
-Receiver acknowledgement changes state only through a compare-and-swap that
-matches the active claim. After a crash between receiver acceptance and local
-acknowledgement, the lease expires and a retry with the same `handoff_id` must
-return the same receiver item before local state becomes `handed_off`.
-
-The first adapter uses a fixed retry contract. A never-claimed record with
-`delivery_attempts=0` is immediately due when an adapter is enabled, including
-a record created before that adapter existed. Claim acquisition atomically
-increments `delivery_attempts`, but that counter is observability only and does
-not select a retry stage. Retry stage advances only on a matching-claim
-retryable negative response:
-
-- the first stores `last_delivery_code=retryable_wait_1` and is due after 60
-  seconds;
-- the second stores `last_delivery_code=retryable_wait_2` and is due after 300
-  seconds; and
-- the third stores `last_delivery_code=retry_exhausted` with no automatic due
-  time.
-
-A permanent negative response stores `permanent_error` and is also pending but
-not due. An expired claim represents an uncertain acknowledgement: it does not
-advance the retryable-result stage and is due for idempotent reconciliation
-regardless of the normal retry cap. Active claims, permanent errors, and
-exhausted negative responses make `sync_due=false`. Adapter-version changes do
-not silently reset terminal retry metadata.
-
-The Issue adapter is not part of the first outbox unit. It remains disabled by
-default and may be implemented only after a versioned local Issue intake
-contract exists and the governing write boundary is explicitly updated.
-Enabling it requires user-approved project-scoped configuration. Task Skill may
-then call only that versioned local intake boundary; it must not directly open,
-initialize, migrate, or edit an Issue database, and must not invoke a shell,
-URL, network service, or GitHub. Without the adapter, records simply remain
-pending and the user may explicitly ask an agent to handle or withdraw one
-outside Task Skill.
-
-Handoff summary and rationale are limited to 1000 characters each; occurrence
-ID to 200; adapter key/version, receiver receipt, stable delivery code, and
-Contract authority reference to 500; withdrawal reason and Contract change
-reason to 1000; Contract scope and acceptance to 4000 each; and Contract
-constraints to 2000. All use the existing secret/raw-output/diff rejection.
-Adapter source reference is only the tuple `project_id`, `source_task_id`, and
-`source_contract_revision`; it contains no Contract or task prose.
-
-### Optional Informational Effort Advisory
-
-Effort Advisory is a default-off, project-scoped profile feature. The only
-configuration source is the installed Skill's fixed
-`config/effort-advisory.json`; `taskgov` never creates or edits it. The
-version-1 profile requires `profile="informational-v1"` and an explicit
-boolean `enabled`. Its optional threshold allow-list is exactly
-`changed_files`, `changed_lines`, `changed_modules`, `contract_revisions`, and
-`handoffs`. Values are non-negative integers and exceed only on
-`measurement > threshold`. Unknown fields, duplicate keys, unsupported
-metrics, or invalid values disable the profile with a bounded diagnostic.
-
-The public inspection command is
-`taskgov task effort <task-id>`. It deterministically reports those five
-metrics when their coverage is available. Git file/line/module counts use the
-captured basis and current read-only endpoint; Contract revision and recorded
-source-task handoff counts come from existing structured Task DB fields.
-Generated fixture size, retry inference, configured test execution, and generic
-risk profiles are deferred rather than guessed or added to the initial
-implementation.
-
-Its implemented contract through TG-M15.6 is informational only:
-
-- `suggested_action` is always `continue`;
-- it never asks the user, records a handoff, changes acceptance, pauses,
-  blocks, or fails a task by itself;
-- it stores no acknowledgement or LLM disposition;
-- repeated warnings may reuse one stable key; and
-- absent or unreliable attribution is reported as `unknown`, not inferred.
-
-Optional best-effort basis metadata may be attached to the first
-`in_progress` write when the feature is enabled. Capture failure never blocks
-task start. Git evaluation is read-only. Attribution is `unknown` whenever the
-repository is non-Git, either endpoint is dirty or uncertain, basis coverage is
-missing, or any active-task overlap occurred between basis and observation.
-The advisory must expose its basis, coverage, attribution, thresholds, unknown
-reasons, and stable warning key. Schema v9 adds only empty basis/activity
-metadata and a zero project activity generation to support this conservative
-attribution; migration does not rewrite existing task history.
-
-An absent or valid disabled profile preserves all pre-advisory Task output and
-performs no Git work. A project that has never captured
-an advisory basis also performs no advisory-state bookkeeping. If a basis was
-captured during an earlier enabled period, disabling the profile stops new
-basis capture but retains only project/subject activity counters; this avoids
-silently losing overlap evidence if the same profile is enabled later. An
-invalid present profile adds only a bounded continuation diagnostic. The
-mandatory default JSON `task show` response exposes the deterministic
-enablement flag so the Skill can run one `task effort` observation at the
-existing verification/review boundary rather than after every command.
-
-For implementation lineage, M14.1 added that boolean to `task show`, M14.2
-removed public `db status`, and M14.7 published the mechanically routed Skill
-flow from `task show`. The approved TG-M16.1 override is defined in the
-TG-M16 section below; TG-M16.0 does not change this implemented runtime.
-
-### Consuming-Project Modification Boundary
-
-Consuming-project behavior belongs in documented configuration or an approved
-adapter. Core Task Skill improvements belong in an upstream Issue or pull
-request. If a consuming project modifies core package files, it must make the
-installed version, origin, and local difference visible.
-
-TG-M12.O2 adds the offline read-only command `taskgov self status`. It compares
-the installed core package with the co-located version-1
-`release-manifest.json` and reports:
-
-- installed `package_name` and `package_version`;
-- manifest-declared `release_origin` and `manifest_version`;
-- `status` as `clean`, `modified`, or `unknown`;
-- exact `changed_core_count` and at most 20 sorted relative
-  `changed_core_paths` after a complete comparison;
-- stable `unknown_reasons`; and
-- fixed `suggested_action=continue`.
-
-The manifest contains a sorted map from portable package-relative core paths
-to `sha256:<lowercase digest>`. It excludes itself to avoid recursive hashing.
-Only root `config/`, `adapters/`, generated `state/`, and Python bytecode/cache
-entries are non-core. An added file outside those boundaries is a core
-modification. Manifest paths are strict relative POSIX paths; absolute,
-traversal, duplicate, case-colliding, excluded, or malformed entries make the
-result `unknown` without reading outside the package.
-
-Missing, invalid, unsupported, identity-mismatched, version-mismatched, or
-incompletely inspected packages return `ok=true`, `status=unknown`, and
-`suggested_action=continue`. Confirmed missing, changed, non-regular, or
-unexpected core entries return `modified`. Changed paths are bounded and never
-include absolute paths, file content, expected or actual hashes, link targets,
-or operating-system exception text.
-
-`release_origin` is a sanitized declaration from the co-located manifest, not
-a signature or authenticity proof. Simultaneously replacing core files and the
-manifest can evade this local-drift check. The command does not use SQLite,
-inspect target-project Git, contact GitHub or another network service, write a
-cache, update, repair, download, install, create an Issue/PR/handoff, or stop
-task work. It is an explicit package-inspection/setup surface and is not added
-to the minimum task-consumption loop. The once-daily GitHub update-check
-proposal remains separately deferred.
-
-### Compatibility, Judgment Budget, And Acceptance
-
-Migration order is fixed:
-
-1. TG-M11 schema-neutral corrections use schema-v5 fields only.
-2. TG-M11 adds schema version 6 for Git snapshot base revisions.
-3. TG-M12 adds schema version 7 for the handoff outbox.
-4. TG-M12 adds schema version 8 for Task Contract revisions.
-5. TG-M12.O1 adds schema version 9 for optional Effort Advisory basis/activity
-   metadata.
-
-Old binaries must reject newer schemas with `migration_required` or an
-equivalent explicit newer-schema error; they must never downgrade or write a
-newer database. Operators must update the installed Skill before `db init` and
-retain the normal local backup/rollback discipline.
-
-Static Viewer snapshot version 3 maps to source schema versions 5 through 13.
-`source_schema_version` contains the actual database version. Contract,
-outbox, Effort Advisory, checkpoint, and maintenance metadata remain excluded
-from the Viewer task allow-list. Snapshot-v3 compatibility must be tested at
-every intermediate schema; no public Viewer export command or read-only export
-mode remains.
-
-The decision budget is:
-
-- legacy or simple revision-0 task: zero additional LLM judgments;
-- Contract activation: zero judgments because it copies only explicit input;
-- Task-versus-handoff classification: the one judgment already inherent in
-  scope handling, with no second Issue-presence or continuation judgment;
-- adapter delivery and due retry: zero judgments;
-- Effort Advisory through TG-M15.6: zero judgments and zero stop decisions;
-  TG-M16 retains zero green-path judgments and permits one bounded
-  session-local reconciliation episode only for a valid exceeded observation;
-  and
-- Local Package Self-Status: zero judgments and zero stop decisions; and
-- normal Tier 2 review: the existing two independent review judgments.
-
-The sole new stop is failure to make an out-of-scope discovery durable after
-the bounded local retry. It requires no LLM disposition, affects only the
-current execution unit, and exists because continuing would reintroduce the
-context-compression forgetting risk this extension is intended to remove.
-
-Acceptance requires automated proof that:
-
-- revision-0 tasks retain existing add/current/next/edit/done behavior;
-- Contract creation and revision follow only explicit authority and preserve
-  immutable history;
-- canonical replay of the current Contract is a write-free no-op;
-- a semantic Contract revision changes at least one content field;
-- pre-review Contract change keeps generation 0, while a post-review semantic
-  revision clears completion evidence and requires a fresh review generation;
-- exact handoff replay creates one row, while explicit stable occurrence IDs
-  can distinguish genuinely separate occurrences;
-- local-record failure is never reported as durable, while delivery failure is
-  durable, pending, and non-blocking;
-- concurrent sync/withdraw/ack paths cannot produce a withdrawn record that was
-  already accepted;
-- once-claimed records cannot be withdrawn, including after lease expiry;
-- pending handoffs default to deterministic oldest-first retrieval and are
-  exactly counted;
-- absence, disabled presence, or enabled presence of Issue Skill does not
-  change the command the agent uses;
-- migrations v5-to-v6-to-v7-to-v8-to-v9 and v8-to-v9 preserve tasks,
-  191-event fixture history, nine completion hashes, review evidence, handoffs,
-  Contract pointers/revisions, and project identity with rollback, quick, and
-  foreign-key checks;
-- Viewer snapshot v3 remains safe and unchanged at schemas 5 through 9;
-- disabled Effort Advisory leaves Task output and Git reads unchanged; without
-  an existing basis it also leaves advisory state unchanged, while after a
-  prior basis it may advance only hidden activity counters; enabled threshold
-  or unknown results through TG-M15.6 always continue and never mutate
-  Task/handoff/acceptance/review state; TG-M16.1 changes only an exceeded
-  result's action while preserving that no-mutation boundary;
-- package self-status is deterministic and read-only for clean, modified,
-  missing/invalid-manifest, excluded-directory, and installed-copy cases;
-  every result continues and changes no package, SQLite, Git, or target state;
-- privacy, compact envelopes, read-only behavior, project separation,
-  concurrency, and no-target-project-mutation behavior do not regress; and
-- the implemented Skill remains concise and advertises each surface only after
-  its own implementation and acceptance pass.
-
-Semantic duplicate/recurrence resolution, retention/archive, paging, multiple
-Issue receivers, Issue import/sync/priority/triage, automatic Task creation,
-advanced risk or fixture analysis, child/checklist tasks, signed evidence, and
-daily GitHub update checking remain separate Issue candidates.
-
-## Approved Post-MVP Extension: TG-M13 Operational Release Hardening
-
-TG-M13 corrects operational consistency, lock duration, and distribution
-guidance discovered during the independent v0.7.0 review. It adds no Task
-lifecycle, Issue lifecycle, workflow-engine behavior, or normal-path LLM
-judgment. The units are sequential:
-
-1. TG-M13.1 makes live SQLite reads transactionally coherent, fixes the
-   operational journal-mode contract, and maps read-side lock contention.
-2. TG-M13.2 moves Git and Effort preflight outside short SQLite write
-   transactions and extends the sanitized lock-contention error to writes.
-3. TG-M13.3 synchronizes project-scoped installation, runtime, CI, Viewer, and
-   privacy compatibility guidance.
-4. TG-M13.4 performs integrated local acceptance and, only when separately
-   authorized, records final-commit GitHub CI evidence.
-
-### Operational SQLite Read And Journal Contract
-
-The live task-governance-tool database supports SQLite rollback-journal mode
-only. Before any operational SQLite read or write, the tool must inspect the
-database header and adjacent WAL sidecar names without opening a mutable
-connection. A persistent WAL header or an existing `-wal` or `-shm` sidecar
-returns `unsupported_journal_mode` with the exact sanitized message
-`task database uses unsupported WAL journal mode`. The tool must not open the
-database, create a sidecar, checkpoint, delete a sidecar, or convert journal
-mode on that path. Rollback-journal `-journal` files are not rejected merely
-for existing; SQLite locking and recovery rules decide whether the requested
-read can proceed.
-
-Every live operational read must remove `immutable=1`. It opens the database
-with `mode=ro`, enables `PRAGMA query_only=ON`, and begins one explicit read
-transaction before validating schema, project identity, and the rows that form
-one internally coherent response. Related counts and rows, task/event/review/
-Contract projections, and handoff count/list projections must come from that
-same response transaction. Each read therefore returns one committed-consistent
-response or a structured concurrency error; it must never report uncommitted,
-rolled-back, or internally mixed state.
-
-In TG-M13.1, residual read-side `SQLITE_BUSY` or `SQLITE_LOCKED` after the
-normal driver wait returns exit code 2, code `database_busy`, and the exact
-message `task database is busy; run the command again later`. TG-M13.2 extends
-that same mapping to write-side contention.
-
-`task next` retains only its already documented advisory freshness boundary:
-the paused/status inspection and candidate selection may be two committed read
-transactions, so a commit between them may make the warning and candidates
-briefly differ. Each half must remain internally coherent. This is not a
-cross-command snapshot or blanket linearizability guarantee.
-
-`task effort` is the other explicit phased inspection when the enabled advisory
-has a stored basis. It reads the task, Contract count, handoff count, and stored
-basis in one transaction and closes that transaction before Git observation. It
-then refreshes activity generations in a second validated transaction. Each
-phase is internally coherent; the generation comparison is the deliberate
-bridge across them. Without a stored basis there is no generation comparison,
-so the command does not add a valueless second database read. A post-Git
-busy/locked read returns `database_busy`, and a newly detected WAL state returns
-`unsupported_journal_mode`; neither is converted into a successful advisory.
-Other bounded observation failures may retain the existing
-`activity_generation_uncertain` advisory behavior.
-
-### Short Write Transactions And Stable Contention
-
-Potentially slow Git commit resolution, Git snapshot capture/comparison,
-completion verification, and Effort observation must finish before
-`BEGIN IMMEDIATE`. After acquiring the short write transaction, the service
-must reread and revalidate schema/project identity plus the relevant task,
-review generation, target/base, Task Contract revision, and completion basis.
-Stale governance state returns the existing applicable domain conflict and
-performs no partial write.
-
-For optional Effort basis capture, preflight records the starting project and
-subject activity generations plus whether another task is active, then observes
-Git outside the write transaction. Under the short lock, the transition is
-reread and the generations are compared before a basis is stored. Any
-generation regression or impossible delta discards the best-effort basis.
-Activity attributable to another task during capture, or another task active
-before or after capture, sets `other_active_at_capture`; it must never be
-reported later as an exclusive task window.
-
-A `git_snapshot` is a stable observation of canonical HEAD and the stage-0
-index at capture time. It neither acquires nor promises a persistent Git index
-lock. A later index change is handled through the existing completion binding
-and fresh-target rules.
-
-Residual write-side SQLite `SQLITE_BUSY` or `SQLITE_LOCKED` after the normal
-driver wait uses the same exit code 2, `database_busy`, and exact sanitized
-message introduced for reads in TG-M13.1.
-The envelope gains no `retryable` or `suggested_action` field, and the tool
-does not increase the busy timeout or add sleep, backoff, or generic retries.
-The existing handoff-record retry of one complete fresh transaction remains
-the sole bounded exception. A failed write leaves no row, event, receipt, Git
-change, or target-project change.
-
-### Distribution And Compatibility Boundary
-
-Normal governed-project use is documented only for a physical project-scoped
-copy at:
-
-```text
-<target-project>/.agents/skills/task-governance-tool
-```
-
-When a command is launched from the target-project root, omitted `--repo`
-continues to mean that whole directory, whether or not it is a Git repository.
-When launched from inside the installed Skill directory, project commands must
-pass the target-project path explicitly with `--repo`. Symlink and Windows
-junction installs are unsupported for stateful use because code location and
-project-local state ownership must not silently diverge. User-wide
-`$CODEX_HOME/skills`, `%USERPROFILE%\.codex\skills`, and user-wide
-`.agents/skills` operating paths are not part of the public governed-project
-workflow.
-
-Project identity remains derived from the canonical absolute target path, so
-moving the project changes its default identity and can require explicit state
-recovery. TG-M13 does not add a relocation command, project UUID, runtime
-`--repo` requirement, or Git-repository existence requirement.
-
-Target-project ignore guidance must name only the canonical Skill state
-directory; the recommended target-local rule is
-`/.agents/skills/task-governance-tool/state/`, while an effective enclosing
-rule is also valid. Broad repository-wide `*.sqlite`, `*.sqlite3`, or `*.db`
-guidance is not acceptable. Release-archive artifact exclusions remain a
-separate packaging concern.
-
-The documented minimum runtime is Python 3.12. Windows CI must exercise exact
-Python 3.12 and 3.14 entries, including unsupported-junction detection. Windows
-is the CI-verified platform; Linux and macOS remain unverified without a
-support claim. Viewer snapshot v3 continues to accept source schemas 5 through
-9, including automated schema-v8 coverage. No schema or Viewer snapshot version
-changes in TG-M13.
-
-### TG-M13 Acceptance And Judgment Budget
-
-Acceptance requires automated proof that:
-
-- rollback-journal cache spill and concurrent writers cannot produce an
-  uncommitted, partial, or internally mixed successful inspection;
-- persistent WAL header, WAL sidecar, and SHM sidecar paths fail before
-  operational access without new sidecars or conversion;
-- `db status`, task list/next/current/show/effort, handoff list/show, and Viewer
-  projections preserve their compact success/error shapes and no-write rules;
-- deliberately delayed Git or Effort preflight does not prevent an unrelated
-  task or handoff write from completing;
-- post-lock stale state is rejected atomically and residual lock contention
-  maps only to `database_busy`;
-- project-scoped install, ignore, relocation-limit, Python, Windows CI,
-  junction, privacy recovery, and Viewer schema-compatibility contracts are
-  synchronized and tested; and
-- the final revision passes the full offline suite, integrity checks, package
-  self-status, two independent Tier 2 reviews, and any separately authorized
-  final-commit CI gate.
-
-These corrections add zero normal-path LLM judgments, questions, retry choices,
-or stop decisions. A deterministic SQLite error may fail the affected command,
-but the Skill does not ask the model to choose a recovery policy. External CI
-dispatch, push, PR creation, or publication remains outside local task
-authority and requires explicit user authorization.
-
-## Implemented Post-MVP Extension: TG-M14 Daily UX And Local Continuity
-
-TG-M14 is implemented as the current v0.8.0/schema-v13 public contract. TG-M14.0
-fixed the contract before implementation; TG-M14.1 through TG-M14.6 introduced
-the bounded runtime slices, and TG-M14.7 synchronized the active Skill,
-metadata, help, release guidance, manifest, workflow, and integrated
-acceptance.
-
-### Public Surface And Removed Invocation Contract
-
-The completed M14 public surface contains exactly these 20 leaves:
+The public CLI has exactly 20 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -1449,153 +133,168 @@ The completed M14 public surface contains exactly these 20 leaves:
 19. `taskgov review finding add`
 20. `taskgov review finding resolve`
 
-`task complete --check` is a read-only mode of the same leaf. Applicable
-commands retain `--repo`, `--json`, `--read-only`, and root `--version`.
-`setup` alone also accepts `--backup-interval-minutes` in the inclusive range
-1-1,440 and `--backup-generations` in the inclusive range 1-20. The normal
-Skill setup supplies neither option. Completed M14 removes public `self`, `db`,
-`web`, `--db`, raw database/backup/Viewer path fields, custom Viewer output,
-compatibility aliases, and any replacement storage, database, Viewer, export,
-repair, maintenance, disable, or admin command.
+`task complete --check` is a mode of the same leaf. Applicable commands retain
+`--repo`, `--json`, and `--read-only`; root `--version` is project-free.
+Omitted `--repo` means the current directory, including a physical non-Git
+directory. Invocation from either supported package root requires explicit
+`--repo`.
 
-Removed root commands and any unknown root command fail before package, project,
-Git, or SQLite resolution. They use exit 2. With lexical `--json`, stdout is the
-compact envelope below and stderr is empty:
+`setup` alone also accepts `--backup-interval-minutes` from 1 through 1,440,
+`--backup-generations` from 1 through 20, and
+`--confirm-relocation <token>`. The normal Skill flow supplies neither backup
+option and supplies a relocation token only after the explicit approval flow.
 
-```json
-{
-  "ok": false,
-  "command": "parse",
-  "project_id": null,
-  "data": {},
-  "warnings": [],
-  "errors": [
-    {"code": "invalid_command", "message": "command is not available"}
-  ]
-}
+Public `self`, `db`, `web`, `--db`, custom output, compatibility aliases, and
+replacement storage, Viewer, export, repair, maintenance, disable, or admin
+commands are removed. Unknown/removed root commands fail before package,
+project, Git, or SQLite resolution with exit 2 and `invalid_command`. A lexical
+`--db` takes precedence and fails with `invalid_option` and exact message
+`option is not available`; its following value is never echoed. Without
+lexical JSON, stdout is empty and stderr is exactly
+`taskgov: command is not available\n` or
+`taskgov: option is not available\n`. With lexical `--json`, stderr is empty
+and stdout is the normal compact envelope with `command="parse"`, null project
+identity, empty data/warnings, and one sanitized error.
+
+### JSON, Text, Limits, And Exit Status
+
+Every JSON result is one compact object with exactly:
+
+```text
+ok, command, project_id, data, warnings, errors
 ```
 
-Any public `--db` occurrence fails at the same pre-resolution boundary with
-code `invalid_option` and exact message `option is not available`. Its following
-value is never echoed. Without lexical `--json`, stdout is empty and stderr is
-exactly `taskgov: command is not available` or
-`taskgov: option is not available`, followed by one newline. No compatibility
-handler, alias, state lookup, or write is permitted. Lexical `--db` takes
-precedence over an unknown or removed command; otherwise command validation
-precedes every command-specific option check.
+`project_id` is the safely resolved stored identity or null. Public output
+never contains `db_path`, `backup_path`, `viewer_path`, another raw storage
+path, a rejected token/value, raw remote URL, or credential. UTC timestamps
+use canonical ISO-8601 strings. Human text remains concise and cannot replace
+the JSON contract.
 
-All completed-M14 command envelopes contain only `ok`, `command`, `project_id`,
-`data`, `warnings`, and `errors`. `project_id` remains the existing sanitized
-identity when safely resolved. Public output never contains `db_path`,
-`backup_path`, `viewer_path`, another raw storage path, or a rejected CLI value.
+Exit status is 0 for success, 1 for parser/validation usage errors, and 2 for
+database, migration, project-state, or tool-service errors unless a command
+section fixes a narrower result. Inspection leaves are inherently read-only;
+`--read-only` rejects every write before database, artifact, Git, or target
+change.
 
-### Compact Selection And Completion
+Every JSON parser rejection requested lexically before `--`, including a
+supported abbreviation of `--json`, uses the bounded formatter with an
+8,192-byte cap. The formatter preserves the envelope, command, data, first
+safe error code, and exit status. If needed it nulls legacy diagnostic
+identity fields atomically and replaces an unsafe/unbounded message with
+`diagnostic details omitted to satisfy the bounded output limit`; it never
+partially truncates an identity.
 
-Only `task current` and `task next` accept `--compact`. Default JSON and text
-payloads remain compatible. Compact JSON uses the normal envelope and these
-allow-lists:
+Supported nested-command or option parse failures use exit 1,
+`invalid_argument`, and `arguments are invalid`. Incompatible supported
+options use `invalid_option_combination` with a bounded fixed message.
+Specifically, `setup --read-only --confirm-relocation <token>` fails before
+project/state resolution with exact message
+`--confirm-relocation cannot be used with --read-only`.
 
-- current data: `tasks`, `total_matching`, `returned_count`, `limit`,
-  `statuses`, `truncated`;
-- current task: `task_id`, `title`, `status`, `kind`, `lane`, `lane_order`,
-  `priority`, `review_tier`, `blocked_reason`, `pause_reason`, `latest_event`,
-  `suggested_next_action`;
-- compact latest event: `event_type`, `summary`, `created_at`,
-  `summary_truncated`;
-- next data: `tasks`, `total_matching`, `returned_count`, `limit`,
-  `truncated`;
-- next task: `task_id`, `title`, `kind`, `lane`, `lane_order`, `priority`,
-  `review_tier`, `tags`, and `suggested_next_action`.
+Current success-data projections are:
 
-Compact current is at most 24,576 UTF-8 bytes and compact next is at most
-16,384 UTF-8 bytes, including the envelope. Event summary is bounded to 256
-UTF-8 bytes at a valid code-point boundary. Rows are retained only in the
-existing deterministic order; if another complete row would exceed the cap it
-and all later rows are omitted and `truncated=true`. Compact mode never changes
-selection, state, the database query's coherent transaction, or default output.
-`--compact` requires `--json`; without it the command fails before state access
-with exit 2, code `invalid_option_combination`, and exact message
-`--compact requires --json`. No second compact text formatter exists.
-Compact selection intentionally omits Contract and checkpoint content; the
-fixed post-selection `task show` call below obtains both without inflating every
-candidate row.
+| Command | Data keys |
+|---|---|
+| `task.add` | `task`, `event`, plus `contract_write` only when Contract input was supplied |
+| `task.list` | `tasks`, `count`, `limit` |
+| default `task.next` | `tasks`, `count`, `limit`, `selection_rules` |
+| default `task.current` | `tasks`, `count`, `limit`, `statuses` |
+| `task.effort` enabled | `task_id`, `enabled`, `profile`, `measurements`, `thresholds`, `exceeded`, `basis`, `observation`, `coverage`, `attribution`, `unknown_reasons`, `warning_key`, `suggested_action` |
+| `task.show` | exactly `task`, `events`, `suggested_next_action`, `review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`, `effort_advisory_enabled`, `completion_history` |
+| `task.edit` | `task`, `changed_fields`, `event`, plus `contract_write` only for Contract input |
+| `task.complete` | `task`, `changed_fields`, `event` |
+| `handoff.record` | `handoff`, `local_record` |
+| `handoff.list` | `handoffs`, `count`, `total_matching`, `limit`, `states` |
+| `handoff.show` | `handoff` |
+| `handoff.withdraw` | `handoff`, `changed_fields` |
+| `review.target.set` | `task`, `changed_fields`, `event` |
+| `review.receipt.add` | `receipt`, `event` |
+| `review.finding.add` | `finding`, `event` |
+| `review.finding.resolve` | `finding`, `event` |
 
-M14.1 retains the normal envelope keys while M14.2 owns their global removal.
-Every compact JSON and JSON completion-check handler exit passes through one
-final bounded formatter. Independently, every argparse rejection that requests
-JSON lexically before `--`, including an argparse-supported `--json`
-abbreviation, passes through the same formatter at the smallest 8,192-byte
-cap. It therefore needs no second task-leaf or root-option parser and remains
-within all three bounded-command caps. The formatter keeps diagnostic identity
-values when the exact rowless envelope fits. If those values would break the
-applicable hard cap, it sets `db_path` to `null` and then, only if still
-necessary, `project_id` to `null`; identity values are never partially
-truncated. If an error envelope still cannot fit because its diagnostic
-message contains a rejected path, option, or other unbounded value, the
-formatter preserves the command, data, exit code, and first safe error code but
-replaces that message with
-`diagnostic details omitted to satisfy the bounded output limit`. Success data
-and error codes otherwise retain their command semantics.
+`task.show` failure keeps `completion_history=null` in its bounded empty data.
+Revision-zero Contract output is exactly revision 0; empty scope, acceptance,
+constraints, `authority_ref`, and `change_reason`; and null `created_at`.
+`local_record` contains exactly `durable`, `created`, `replayed`, and
+`handoff_id`.
 
-`task complete --check` accepts the same proposed evidence and confirmation
-inputs as thin `task complete`, invokes exactly the current completion
-validator, writes nothing, and emits at most 8,192 UTF-8 bytes. It captures one
-short coherent database basis, closes that transaction before any required Git
-observation, then uses a second short coherent read to revalidate task,
-Contract, target generation/fields, receipts/findings, and evidence basis
-before returning. No SQLite transaction is held during Git. A changed basis
-returns not-ready with first code `completion_check_stale`. Its data allow-list
-is `task_id`, `ready`, `status`,
-`blocking_codes`, `contract_revision`, `review_target_generation`,
-`completion_evidence_kind`, and `suggested_action`. Blocking codes preserve the
-validator's existing order: task/state and sequential ordering, evidence input
-and Git binding, verification confirmation, current review target/receipts/
-findings, then final snapshot binding. `blocking_codes` contains either no code
-or the one first stable code that the write path would return. Check and write
-call one shared fail-fast pure preflight; the check does not invent an
-all-findings collector or a second state machine. A check is never an
-authorization token; the write revalidates everything.
+### Task Selection And Read Commands
 
-Only these user-correctable completion/gate codes may appear in
-`blocking_codes`: `invalid_status_transition`,
-`sequential_predecessor_incomplete`, `verification_required`,
-`review_required`, `completion_evidence_conflict`,
-`external_revision_approval_required`, `commit_required`,
-`git_commit_not_found_or_ambiguous`, `invalid_review_evidence`,
-`review_target_required`, `review_target_mismatch`,
-`review_finding_unresolved`, `review_changes_requested`,
-`review_receipts_insufficient`, and `completion_check_stale`. Parse/privacy
-validation, `not_found`, project identity, schema/journal/busy/storage, and
-internal errors remain normal `ok=false` command errors and never appear as
-readiness data.
+Task statuses are `ready`, `in_progress`, `paused`, `blocked`,
+`review_pending`, `done`, and `cancelled`; priorities are `low`, `normal`,
+`high`, and `urgent`; kinds are `sequential` and `optional`; review tiers are
+0, 1, and 2.
 
-The check text form is exactly three LF-terminated lines:
-`Task <task_id>: ready|not ready`, `Blocking: none|<comma-separated codes>`,
-and `Suggested action: <bounded suggested_action>`. It contains no evidence
-value, path, Contract text, or review content.
+`task add` requires a title and accepts description, kind, lane/order,
+priority, initial status, blocker reason, review tier, verification, tags, and
+the optional complete Task Contract group. Defaults are optional kind, normal
+priority, ready status, and Tier 1. A sequential Task may receive a
+deterministic default lane and append order; output exposes the stored values.
+Initial blocked requires a reason. Initial done and paused fail respectively
+with `initial_done_forbidden` and `initial_paused_forbidden`.
+The exact editable Task arguments are title, description, kind, lane, order,
+priority, status, blocked/pause reason, review tier, verification, tags, note,
+reopen reason, review-tier-change reason, typed/legacy completion evidence and
+confirmations, and the Contract group. A write response states the fields and
+event it recorded.
+The corresponding exceptional options are exactly `--reopen-reason`,
+`--review-tier-change-reason`, `--completion-evidence-kind`,
+`--completion-revision`, `--completion-evidence-reason`,
+`--external-revision-approved`, `--completion-commit-hash`,
+`--commit-not-required`, `--verification-complete`, and
+`--review-complete`.
 
-Thin `task complete` shares the existing transition and accepts only the
-completion subset currently supported by `task edit`: task ID, verification
-and review confirmations, and one valid `git_commit`, `external_revision`, or
-`commit_not_required` evidence form. Legacy `task edit --status done` remains
-compatible. Neither check nor thin completion creates a second completion state
-machine.
+`task list` is a compact bounded read with status, kind, lane, priority, tag,
+limit, and include-done filters. Its default limit is 20 and maximum is 100;
+order is priority urgent/high/normal/low, canonical lane, lane order with nulls
+last, creation time, then Task ID. `task next` returns only ready optional
+Tasks and ready sequential Tasks whose earlier same-lane Tasks are done or
+cancelled. Its filters are kind, lane, priority, and limit; default limit is 5.
+Order is priority urgent/high/normal/low, canonical lane, lane order with nulls
+last, creation time, then Task ID. Paused, active, blocked, review-pending,
+done, and cancelled Tasks are excluded.
 
-Thin completion emits `command=task.complete`. Its data keys are exactly the
-existing edit result keys `task`, `changed_fields`, and `event`; it adds no
-completion wrapper. Text uses the existing edit summary fields with the first
-line changed to `Task completed: <task_id>`.
+When paused work exists, successful `task next` adds exactly one
+`paused_tasks_present` warning with the exact paused count and suggestion
+`taskgov task current --status paused`. It does not change candidates, data,
+exit status, or state. Zero paused Tasks or a failing next command emits no
+such warning. The count and candidate selection may be separate committed read
+transactions; each is coherent, but no cross-transaction linearizability is
+claimed.
 
-M14.1 moves the existing Effort Advisory routing signal off removed
-`db status` and onto the already mandatory default JSON `task show` response.
-Its data gains exactly one machine-routing field,
-`effort_advisory_enabled: true|false`. A valid enabled profile returns `true`;
-an absent or valid disabled profile returns `false`; and an invalid profile
-returns `false` plus the existing `effort_advisory_profile_invalid`
-continuation warning. The field performs no Git work and text `task show`
-remains unchanged. The Skill mechanically invokes one existing `task effort`
-call at the established verification/review boundary only when this boolean is
-true. It does not ask an LLM whether the advisory applies.
+`task current` returns only `in_progress`, `review_pending`, `paused`, and
+`blocked`, with the latest event, reasons, update time, and deterministic next
+action. Default limit is 20 and maximum is 100. Order is status in that listed
+order, priority urgent/high/normal/low, newest `updated_at`, then Task ID.
+Optional `--status` accepts only one current-work status; JSON reports the
+effective `statuses`. It is bounded rediscovery, not stale-age, working-tree
+freshness, exhaustive history, or pagination.
+
+Only `task current` and `task next` accept `--compact`, and compact requires
+`--json` or fails before state access with `invalid_option_combination` and
+exact message `--compact requires --json`. Compact current is at most 24,576
+UTF-8 bytes and compact next at most 16,384. Rows remain in deterministic
+order; the first row that would cross the cap and all later rows are omitted
+and `truncated=true`. Event summary is at most 256 UTF-8 bytes at a code-point
+boundary.
+
+Compact current data is exactly `tasks`, `total_matching`, `returned_count`,
+`limit`, `statuses`, and `truncated`; each Task contains `task_id`, `title`,
+`status`, `kind`, `lane`, `lane_order`, `priority`, `review_tier`,
+`blocked_reason`, `pause_reason`, `latest_event`, and
+`suggested_next_action`. A compact event contains `event_type`, `summary`,
+`created_at`, and `summary_truncated`.
+
+Compact next data is exactly `tasks`, `total_matching`, `returned_count`,
+`limit`, and `truncated`; each Task contains `task_id`, `title`, `kind`,
+`lane`, `lane_order`, `priority`, `review_tier`, `tags`, and
+`suggested_next_action`.
+
+`task show` reads one Task, bounded events, current review evidence, Contract,
+handoff counts, latest checkpoint, completion history, and suggested action in
+one query-only transaction. It also returns exactly one routing Boolean
+`effort_advisory_enabled`; invalid advisory configuration returns false plus
+the existing continuation warning. Text show does not add that flag.
 
 The deterministic Skill call graph is:
 
@@ -1624,130 +323,88 @@ default success path.
 
 ### Doctor Contract
 
-`doctor` is the sole diagnostic, is inherently read-only, emits
-`command=doctor`, and always includes `data.suggested_action="continue"`.
-It has no fix mode and never initializes, migrates, backs up, renders, locks a
-maintenance artifact, runs project tests, or changes target state. Only when a
-Git administrative marker exists at the governed target or an ancestor may
-doctor run the one TG-M15.4 effective-ignore inspection; it performs no Task,
-review, or completion Git observation. Doctor is not a prerequisite for setup
-or normal Task work.
-
-The component ownership is exclusive:
-
-- `package`: package integrity only;
-- `project_state`: setup, format, identity, and readability readiness;
-- `task_summary`: active, blocked, done, next-actionable, paused, and
-  review-pending task counts;
-- `handoff_delivery`: pending handoffs, adapter enablement, and delivery/due
-  state;
-- `maintenance`: backup and Viewer opt-in, due state, and latest bounded
-  sanitized outcomes.
-
-Package inspection is an independent bounded filesystem observation. When
-project state is readable, every other component is assembled from one
-lock-respecting SQLite read transaction. No atomicity is claimed between the
-package observation and SQLite snapshot. Unavailable project-backed components
-contain only `{"code":"unavailable"}`.
+`doctor` is the sole diagnostic. It is inherently read-only, emits
+`command="doctor"`, and always includes
+`data.suggested_action="continue"`. It never fixes, initializes, migrates,
+backs up, renders, acquires a maintenance lock, runs project tests, or changes
+state. It is not a setup or normal-loop prerequisite.
 
 Doctor data contains only `suggested_action`, `setup_eligible`, and
-`components`. `setup_eligible` is the logical conjunction of every package,
-runtime, install, ignore, project, and state precondition; it is never a
-project-state-only claim. Component keys are exactly `package`,
-`project_state`, `task_summary`, `handoff_delivery`, and `maintenance`.
-`package` reuses the existing bounded package-integrity projection.
-`project_state` owns every non-package readiness/preflight code and contains
-only `code`, `schema_version`, and `required_schema_version`. A readable
-`task_summary` contains `code` plus
-counts for `active`, `blocked`, `done`,
-`next_actionable`, `paused`, and `review_pending`. A readable
-`handoff_delivery` contains `code`, `handoff_pending`, `adapter_enabled`, and
-`delivery_due`. A readable `maintenance` contains `code`, `opted_in`, one
-bounded `backup` object, and one bounded `viewer` object. The backup object
-has exactly `code`, `due`, `interval_minutes`, `generations`,
-`last_success_at`, and `last_outcome`. The Viewer object has exactly `code`,
-`due`, `source_generation`, `rendered_generation`, `last_success_at`, and
-`last_outcome`. Each `last_outcome` contains only `code` (`none`, `succeeded`,
-`deferred`, or `failed`) and `occurred_at`; it never contains a message or
-exception. A not-yet-owned value is `null`, not omitted. An unavailable
-project-backed component is only `{"code":"unavailable"}`.
+`components`. Component keys are exactly `package`, `project_state`,
+`task_summary`, `handoff_delivery`, and `maintenance`. Package inspection is
+one independent bounded filesystem observation. When state is readable, all
+project-backed components come from one lock-respecting read transaction; an
+unavailable project-backed component is exactly `{"code":"unavailable"}`.
 
-Doctor process results are fixed as follows:
+- `package` is the bounded manifest-integrity projection.
+- `project_state` contains only `code`, `schema_version`, and
+  `required_schema_version`.
+- `task_summary` contains `code` and exact counts for `active`, `blocked`,
+  `done`, `next_actionable`, `paused`, and `review_pending`.
+- `handoff_delivery` contains `code`, `handoff_pending`, `adapter_enabled`,
+  and `delivery_due`.
+- `maintenance` contains `code`, `opted_in`, `backup`, and `viewer`.
 
-| Package/project row | Component code | Exit / `ok` | Warning or error | `setup_eligible` |
-|---|---|---|---|---|
-| clean + current readable state | `clean` / `ready` | 0 / true | none | true |
-| modified package | `modified` | 0 / true | `package_core_modified` warning | false |
-| unknown package inspection | `unknown` | 0 / true | `package_status_unknown` warning | false |
-| missing state | `setup_required` | 0 / true | `setup_required` warning | true |
-| supported older schema | `migration_required` | 0 / true | `migration_required` warning | true |
-| unreadable or invalid state | `unreadable` | 2 / false | `project_state_unreadable` error | false |
-| foreign project identity | `foreign` | 2 / false | `project_mismatch` error | false |
-| newer schema | `newer` | 2 / false | `schema_too_new` error | false |
-| SQLite busy/locked | `busy` | 2 / false | `database_busy` error | false |
-| WAL header/sidecar state | `unsupported_journal` | 2 / false | `unsupported_journal_mode` error | false |
-| linked/unsupported/colliding layout | project_state `invalid_layout` | 2 / false | `unsupported_install_layout` error | false |
-| invalid/missing project directory | `invalid_project` | 2 / false | `invalid_project_root` error | false |
-| omitted repo at either package root | `invalid_project` | 2 / false | `project_scope_required` error | false |
-| unsupported Python | `unsupported_runtime` | 2 / false | `unsupported_python` error | false |
-| missing state ignore protection | `ignore_required` | 2 / false | `state_ignore_required` error | false |
-| invalid canonical state ownership | `invalid_state_path` | 2 / false | `state_path_invalid` error | false |
+The package projection contains exactly `package_name`, `package_version`,
+`release_origin`, `manifest_version`, `status`, `changed_core_count`,
+`changed_core_paths`, `changed_core_paths_truncated`, `unknown_reasons`, and
+`suggested_action="continue"`. Status is `clean`, `modified`, or `unknown`.
+It compares the physical package with the co-located strict v1 release
+manifest: declared core paths are normalized relative POSIX paths with
+`sha256:<lowercase-digest>`, and added files outside root `config/`,
+`adapters/`, generated `state/`, and bytecode/cache are core modifications.
+The manifest excludes itself. Absolute/traversal/duplicate/case-colliding/
+excluded/malformed paths, identity/version mismatch, incomplete inspection, or
+unsafe objects produce unknown without reading outside the package. Output is
+at most 20 sorted relative changed paths and never includes absolute paths,
+content, expected/actual hashes, link targets, or exceptions. `release_origin`
+is a declaration, not a signature; replacing both manifest and core can evade
+this local drift check.
 
-Here, a supported older schema means contiguous declared history with every
-object and per-project row required through that version and no recognized
-marker from a later migration. A missing required object/row or later marker
-is unreadable/invalid state; setup must not advertise or begin migration for
-it.
+The backup object has exactly `code`, `due`, `interval_minutes`,
+`generations`, `last_success_at`, and `last_outcome`. The Viewer object has
+exactly `code`, `due`, `source_generation`, `rendered_generation`,
+`last_success_at`, and `last_outcome`. Each outcome contains only `code`
+(`none`, `succeeded`, `deferred`, or `failed`) and `occurred_at`; not-yet-owned
+values are null.
 
-Fatal project errors take process precedence but do not suppress a bounded
-package warning. Layout validity never changes the independently observed
-package-integrity code: for example, a clean source package with a competing
-install is package `clean` plus project_state `invalid_layout`; an
-uninspectable linked package may independently be package `unknown` plus the
-same project-state error. No row exposes a path or OS/SQLite exception. M14.2
-implements
-the envelope, package/project/task/handoff rows, and base maintenance rows
-`not_opted_in` or `enabled`, including only whether a setup-owned backup copy
-and Viewer publish succeeded. M14.3 preserves that setup-copy baseline and adds
-backup due calculation, routine generations, and routine fixed outcomes. M14.6
-adds Viewer source/render generation, due, and latest fixed outcome while
-preserving backup fields. M14.7 accepts the combined table.
+Readable/current state is exit 0, `ok=true`, and setup-eligible when package,
+runtime, install, ignore, identity, and state preconditions all pass. Missing
+state and supported older schema are successful diagnostics with respectively
+`setup_required` and `migration_required` warnings and remain setup-eligible.
+Package `modified` or `unknown` is a successful warning but not setup-eligible.
+Relocation-required state is a successful warning with
+project-state `relocation_required`, `setup_eligible=true` when all other
+preconditions pass, and no write.
 
-Maintenance row staging is exact:
+Fatal rows use exit 2 and these component/error mappings:
 
-| Stage/object | `code` values | Other fixed behavior |
+| Condition | Project/package code | Error |
 |---|---|---|
-| M14.2 maintenance | `not_opted_in`, `enabled` | interval/retention are exposed only when enabled |
-| M14.2 backup | `not_opted_in`, `setup_copy_succeeded`, `configured` | a partial migration row can expose setup-copy success before opt-in; enabled state exposes policy plus setup-copy `last_success_at`/`last_outcome=succeeded`; `due` remains null |
-| M14.2 Viewer | `not_opted_in`, `published`, `repair_required` | reflects setup publication only; no generation calculation |
-| M14.3 backup | `not_opted_in`, `current`, `due`, `deferred`, `failed` | exposes `due`, policy, last success, and one fixed sanitized latest outcome |
-| M14.6 Viewer | `not_opted_in`, `current`, `due`, `deferred`, `failed` | exposes `due`, source/render generations, last success, and one fixed sanitized latest outcome |
+| unreadable/invalid state | `unreadable` | `project_state_unreadable` |
+| foreign identity | `foreign` | `project_mismatch` |
+| newer schema | `newer` | `schema_too_new` |
+| SQLite busy/locked | `busy` | `database_busy` |
+| WAL header/sidecar | `unsupported_journal` | `unsupported_journal_mode` |
+| linked/competing/unsupported layout | `invalid_layout` | `unsupported_install_layout` |
+| invalid/missing project | `invalid_project` | `invalid_project_root` |
+| omitted repo at a package root | `invalid_project` | `project_scope_required` |
+| unsupported Python | `unsupported_runtime` | `unsupported_python` |
+| ignore not effective | `ignore_required` | `state_ignore_required` |
+| invalid state ownership | `invalid_state_path` | `state_path_invalid` |
 
-For the same object, a later stage's code set replaces the earlier provisional
-labels while preserving the established keys and base facts; stage code sets
-are not cumulative aliases.
-
-`deferred` means zero-wait artifact-lock contention and remains due; `failed`
-means a bounded artifact operation failed and remains due. `current` means not
-due. Doctor never converts these historical maintenance codes into an envelope
-warning or error: every readable maintenance combination has exit 0,
-`ok=true`, and `suggested_action=continue`. Only an independently fatal
-project-state row makes maintenance `unavailable` and the command fail.
-
-Doctor and setup share this fixed first-applicable preflight precedence:
+Doctor and setup share this first-applicable preflight precedence:
 `unsupported_python`, `unsupported_install_layout`, `project_scope_required`,
-`invalid_project_root`, `state_path_invalid`, package
+`invalid_project_root`, `state_path_invalid`,
 `package_core_modified|package_status_unknown`, `state_ignore_required`,
 `unsupported_journal_mode`, `database_busy`, `project_state_unreadable`,
 `project_mismatch`, `schema_too_new`, then
-`migration_required|setup_required|ready`. Package drift/unknown is an exit-0
-doctor warning but makes top-level `setup_eligible=false`; the same code is a
-fatal setup error. Ignore protection participates only for a Git-managed
-project, so a physical non-Git project remains eligible. A lower-precedence
-condition never replaces the process error, although the independent bounded
-package warning may still accompany a later project-state error.
+`migration_required|setup_required|ready`. Package drift is a doctor warning
+but a setup error. A physical non-Git target skips ignore enforcement. Lower
+precedence never replaces the process result, though the independent package
+warning may accompany a later project error.
 
-Preflight/doctor codes use these fixed sanitized messages:
+Fixed sanitized messages are:
 
 | Code | Message |
 |---|---|
@@ -1767,1118 +424,678 @@ Preflight/doctor codes use these fixed sanitized messages:
 | `migration_required` | `task database requires setup migration` |
 | `setup_required` | `project state is not set up` |
 
-### Enclosing Git Ignore Preflight
-
-TG-M15.4 changes only how the existing `state_ignore_required` preflight
-recognizes Git management and effective ignore rules. It does not change the
-governed project root, project identity, package layout, canonical state path,
-preflight precedence, public error, or setup/doctor envelope.
-
-The canonical explicit target remains the governed root even when it is a
-subdirectory of a larger Git worktree. `--repo`, omitted-repo behavior,
-project-ID derivation, state ownership, setup writes, Viewer publication, and
-completion Git validation continue to use that target rather than an enclosing
-worktree root.
-
-Ignore inspection is deterministic:
-
-1. Inspect the canonical target and each parent through the filesystem root,
-   stopping at the nearest existing or link-like `.git` administrative marker.
-   An error while inspecting a marker or advancing the parent chain fails
-   closed as `state_ignore_required` without a subprocess or write.
-2. If no marker exists, classify the physical target as non-Git for this
-   preflight, accept it without launching an ignore subprocess, and preserve
-   existing non-Git setup/doctor behavior.
-3. If a marker exists, invoke exactly one shell-free Git process from the
-   governed target with the fixed equivalent of
-   `git check-ignore --quiet --no-index -- <canonical-state-directory/>`.
-   The single target-relative operand is
-   `.agents/skills/task-governance-tool/state/` for the ordinary layout or
-   `task-governance-tool/state/` for self-host, uses forward slashes and the
-   trailing slash for directory semantics, and follows `--` as one argument.
-4. Exit 0 alone proves the effective ignore result. Exit 1, any other exit,
-   the two-second timeout, launch failure, or other subprocess failure maps to
-   the existing `state_ignore_required` result and performs no write.
-
-The process uses the existing sanitized Git environment, disables optional
-locks, lazy fetch, replacement objects, terminal prompts, and filesystem
-monitor integration, supplies no stdin, and retains or emits no stdout,
-stderr, path, pattern source, or OS exception. Parent-worktree rules,
-target-local rules, negation, linked-worktree/gitfile layouts, and submodule
-boundaries are therefore decided by Git's effective ignore semantics rather
-than by parsing one `.gitignore` file. A superproject rule does not stand in
-for a submodule-local effective rule.
-
-Each `setup`, `setup --read-only`, or `doctor` invocation runs at most this one
-ignore process. Setup's later stage revalidations repeat structural,
-package-integrity, project, and state-ownership checks without repeating
-ignore inspection. Ordinary Task, handoff, and review commands run no added
-marker scan or ignore process.
-
-This preflight does not inspect whether an artifact is already tracked, prove
-that an ignore rule is committed or portable, add a sentinel filename, edit
-`.gitignore`, authenticate Git, retry, cache, or create a reusable Git command
-framework. Perfect ignore-rule TOCTOU detection across later setup stages is
-also outside the local non-adversarial threat model. It adds no Task-loop call,
-LLM judgment, question, or normal stop; only setup/doctor for a Git-candidate
-target may return the already defined deterministic error.
-
-### Setup Contract
-
-`setup` is explicit, noninteractive, idempotent, and limited to one supported
-physical project-scoped package layout. Ordinary governed projects use exactly
-`<repo>/.agents/skills/task-governance-tool`. The bounded development-only
-self-host layout uses exactly `<repo>/task-governance-tool` and is accepted only
-when:
-
-- the caller supplied `--repo` explicitly;
-- package and repository paths are physical, canonical, non-linked directories;
-- regular source files `AGENTS.md`, `docs/specification.md`, `docs/design.md`,
-  `docs/implementation-roadmap.md`, and `plan.md` exist under that same repo;
-- the package's `SKILL.md`, `release-manifest.json`, and `scripts/taskgov.py`
-  pass the normal package boundary and integrity checks; and
-- no competing `<repo>/.agents/skills/task-governance-tool` package exists.
-
-The exception reuses the canonical state already under the source package. It
-does not copy or relocate a database, create a second state mode, relax
-user-wide/link rejection, or become consuming-project install guidance.
-`setup` remains the sole public initializer, migrator, one-way
-local-maintenance opt-in, and canonical Viewer repair action. Non-Git ordinary
-project directories remain valid. Invocation from either package root without
-explicit `--repo` is rejected for setup and every other project-scoped command;
-root `--version` remains project-free.
-
-Preflight validates the project directory, physical install boundary, Python
-3.12+, canonical state ownership, package integrity, ignore protection, and
-project state before a write. When the canonical database is missing, setup
-first inspects only this project's canonical managed-backup directory. If a
-valid same-project generation exists, setup selects the newest valid generation
-by publication time then generation ID and plans recovery instead of empty
-initialization. The write order is: preflight; recovery or fresh
-initialization; when migrating, one validated backup; migration; one-way
-opt-in/configuration; canonical Viewer publication. `setup --read-only`
-returns the same planned write set and performs none of those writes.
-
-Schema v10 stores `backup_interval_minutes` and `backup_generations` in the
-single project-maintenance row beside the one-way opt-in. Initialization or
-migration creates a partial row with nullable `enabled_at` and policy fields;
-successful migration may already store its setup-copy success metadata.
-Configuration atomically fills the policy and changes `enabled_at` from null to
-one immutable non-null timestamp. Doctor reports `setup_required` while it is
-null, and setup resumes at configuration without losing the setup-copy
-baseline. Fresh setup and migration use defaults 30 and 3 when options are
-omitted. On an already
-configured project, an omitted option preserves its stored value; an explicitly
-provided option changes only that field. Values outside 1-1,440 minutes or 1-20
-generations fail before any write with `invalid_backup_policy`. The standard
-Skill workflow never selects or supplies non-default values; they require
-explicit caller intent. The configuration transaction rereads the current row
-under its short SQLite writer lock and resolves each omitted field from that
-locked row, so a stale preflight plan cannot revert a concurrently completed
-explicit setting. A configuration-only setup does not itself render or attempt
-a routine backup. The next eligible business mutation uses the new values, and
-reduced retention is enforced only after the next successful backup
-publication.
-The same row has nullable internal `applied_backup_generations`, constrained to
-the same 1-20 range. Configuration does not change it. Each managed-backup
-stage resolves one immutable 1-20 `publication_retention` before copying:
-setup uses its validated explicit value or default 3 when the source policy is
-partial/unconfigured, setup uses the stored value observed before any later
-`maintenance_configure` when the source is configured, and routine work uses
-the stored value observed for that attempt. A successfully published
-generation records this value as applied in the same metadata transaction.
-Post-publication pruning and restart reconciliation use the applied value. This
-distinguishes an interrupted prune from a newly reduced policy without a second
-configuration store or a user-visible option.
-No second JSON/TOML configuration file is created; SQLite keeps policy and
-maintenance state atomic while the public CLI and Viewer continue to hide the
-storage path.
-
-Setup data contains only `status`, `planned_writes`, `completed_writes`,
-`schema_from`, `schema_to`, `maintenance_enabled`,
-`backup_interval_minutes`, `backup_generations`, and `viewer_status`.
-Write lists use only `database_restore`, `database_initialize`, `migration_backup`,
-`database_migrate`, `maintenance_configure`, and `viewer_publish`, in execution
-order. `viewer_status` is one of `not_present`, `current`, `published`, or
-`repair_required`. Explicit values equal to stored policy are a no-write replay,
-including under `--read-only`.
-
-Those scalar fields have one meaning on every row:
-
-- `schema_from` is the safely observed canonical schema before the command,
-  the selected managed-backup schema when recovery is planned, or `null` when
-  neither initialized state nor a recovery candidate exists. `schema_to` is
-  always the owning runtime's required schema version.
-- `maintenance_enabled` and `viewer_status` describe durable state after the
-  command returns. Preview therefore reports current state, not planned state.
-  `published` means this invocation successfully published the canonical
-  Viewer; an already-current Viewer is `current`; a missing Viewer is
-  `not_present`; and a present invalid/stale Viewer is `repair_required`.
-- the two policy fields are the effective valid requested/stored values for the
-  plan. They do not assert persistence; `completed_writes` records whether
-  configuration became durable.
-- every `ok=false` row has `status=null`. On a shared-preflight failure or
-  `invalid_backup_policy`, `schema_from`, `maintenance_enabled`, both policy
-  fields, and `viewer_status` are `null`, `schema_to` remains the required
-  version, and both write arrays are empty. On a later stage failure,
-  `schema_from` and the effective policy remain populated while
-  `maintenance_enabled`, `viewer_status`, and `completed_writes` report the
-  durable ordered prefix left by that invocation.
-
-| Setup row | `planned_writes` | `completed_writes` | Exit / `ok` / `status` or error |
-|---|---|---|---|
-| fresh preview | `[database_initialize, maintenance_configure, viewer_publish]` | `[]` | 0 / true / `setup_preview` |
-| fresh success | `[database_initialize, maintenance_configure, viewer_publish]` | `[database_initialize, maintenance_configure, viewer_publish]` | 0 / true / `setup_complete` |
-| current-schema recovery preview | `[database_restore, viewer_publish]` | `[]` | 0 / true / `setup_preview` |
-| current-schema recovery success | `[database_restore, viewer_publish]` | `[database_restore, viewer_publish]` | 0 / true / `setup_complete` |
-| older-schema recovery preview | `[database_restore, migration_backup, database_migrate, maintenance_configure?, viewer_publish]` | `[]` | 0 / true / `setup_preview` |
-| older-schema recovery success | `[database_restore, migration_backup, database_migrate, maintenance_configure?, viewer_publish]` | same ordered list | 0 / true / `setup_complete` |
-| managed recovery material but no valid same-project candidate | `[]` | `[]` | 2 / false / `setup_restore_failed` |
-| recovery publication failure | recovery plan | `[]` | 2 / false / `setup_restore_failed` |
-| current healthy, options omitted or equal | `[]` | `[]` | 0 / true / `already_setup` |
-| policy-change preview | `[maintenance_configure]` | `[]` | 0 / true / `setup_preview` |
-| policy-change success | `[maintenance_configure]` | `[maintenance_configure]` | 0 / true / `setup_complete` |
-| invalid policy | `[]` | `[]` | 2 / false / `invalid_backup_policy` |
-| unconfigured or policy-change migration preview | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[]` | 0 / true / `setup_preview` |
-| unconfigured or policy-change migration success | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | 0 / true / `setup_complete` |
-| unconfigured or policy-change migration-backup failure | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[]` | 2 / false / `setup_backup_failed` |
-| configured unchanged migration preview | `[migration_backup, database_migrate, viewer_publish]` | `[]` | 0 / true / `setup_preview` |
-| configured unchanged migration success | `[migration_backup, database_migrate, viewer_publish]` | `[migration_backup, database_migrate, viewer_publish]` | 0 / true / `setup_complete` |
-| configured unchanged migration-backup failure | `[migration_backup, database_migrate, viewer_publish]` | `[]` | 2 / false / `setup_backup_failed` |
-| configured unchanged migration failure after backup | `[migration_backup, database_migrate, viewer_publish]` | `[migration_backup]` | 2 / false / `setup_migration_failed` |
-| configured unchanged migrated Viewer failure | `[migration_backup, database_migrate, viewer_publish]` | `[migration_backup, database_migrate]` | 2 / false / `setup_incomplete` |
-| initialization failure | `[database_initialize, maintenance_configure, viewer_publish]` | `[]` | 2 / false / `setup_initialization_failed` |
-| unconfigured or policy-change migration failure after backup | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[migration_backup]` | 2 / false / `setup_migration_failed` |
-| fresh configuration failure | `[database_initialize, maintenance_configure, viewer_publish]` | `[database_initialize]` | 2 / false / `setup_incomplete` |
-| migrated configuration failure | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[migration_backup, database_migrate]` | 2 / false / `setup_incomplete` |
-| fresh Viewer failure | `[database_initialize, maintenance_configure, viewer_publish]` | `[database_initialize, maintenance_configure]` | 2 / false / `setup_incomplete` |
-| migrated Viewer failure | `[migration_backup, database_migrate, maintenance_configure, viewer_publish]` | `[migration_backup, database_migrate, maintenance_configure]` | 2 / false / `setup_incomplete` |
-| current Viewer repair success | `[viewer_publish]` | `[viewer_publish]` | 0 / true / `setup_complete` |
-| current Viewer repair failure | `[viewer_publish]` | `[]` | 2 / false / `setup_incomplete` |
-| missing configuration and Viewer recovery | `[maintenance_configure, viewer_publish]` | `[maintenance_configure, viewer_publish]` | 0 / true / `setup_complete` |
-| any preflight failure | `[]` | `[]` | 2 / false / first code from the shared precedence |
-
-If a policy change and Viewer repair are both due, their exact plan is
-`[maintenance_configure, viewer_publish]`; success or Viewer failure follows the
-corresponding ordered-prefix rule above. A pre-v10 source is unconfigured.
-For a configured v10+ source, omitted/equal policy uses the configured-unchanged
-rows and never reports `maintenance_configure`; an actual explicit change uses
-the policy-change rows. Every success has empty warnings and errors. Every
-failure has empty warnings and exactly one error. Fixed messages
-for setup-owned errors are: `backup policy is outside the supported range`,
-`managed backup could not be restored`, `setup backup could not be completed`,
-`project state could not be initialized`, `project state could not be migrated`,
-and `setup completed only partially; rerun setup`, corresponding to
-`invalid_backup_policy`, `setup_restore_failed`, `setup_backup_failed`,
-`setup_initialization_failed`, `setup_migration_failed`, and
-`setup_incomplete`. Rerun recomputes the plan and begins with
-the first incomplete durable stage; a prior migration backup is evidence, not a
-reusable result, so a later migration retry performs a new backup attempt.
-
-The validated backup primitive is implemented once in M14.2 and reused by
-M14.3. It uses the SQLite backup API, validates project identity, supported
-format, `quick_check`, and foreign keys, closes the temporary database, and
-atomically publishes one managed generation. Migration cannot begin if it
-fails. Write-mode setup holds the shared zero-wait backup artifact lock from
-before reconciliation/publication until the corresponding migration
-transaction commits; it never holds a SQLite writer lock while copying.
-Contention fails the setup backup stage without migrating. M14.3 reuses the
-same lock primitive for routine backup work. Preview never creates a lock or
-backup.
-
-Setup-owned recovery adds no public command, path option, prompt, or automatic
-action outside explicit setup. It never overwrites an existing canonical
-database, including an unreadable one. It reuses the managed filename,
-same-project, schema-history, `quick_check`, foreign-key, regular-file,
-non-link, and identity checks. Invalid, foreign, linked, and unrecognized
-artifacts are never changed or deleted. A newer invalid artifact does not hide
-an older valid generation; selection is the newest valid generation. If
-canonical managed names exist but no valid same-project candidate remains,
-setup fails closed rather than creating empty state.
-
-Recovery copies the selected artifact through the SQLite backup API into a
-fresh sibling temporary database. For schema v11 and newer, it normalizes the
-temporary database's generation rows to the currently validated managed
-artifacts and points maintenance state at the selected generation, because a
-managed copy necessarily predates recording its own generation row. Schema v10
-updates its setup-copy pointer; earlier schemas carry no managed-generation
-metadata. The temporary database is revalidated, flushed, and published with
-an atomic no-clobber operation only while the canonical database remains
-absent. A lexical rollback-journal entry for the missing canonical database is
-unsafe residue: missing-database preflight rejects it before either fresh
-initialization or candidate selection, and recovery start plus final
-publication revalidate it. Every case fails closed without reading, deleting,
-or changing that journal. The shared zero-wait backup lock covers selection
-revalidation, recovery, and any
-immediately required migration backup/migration. A changed candidate, orphan
-canonical rollback journal, or lock contention returns
-`setup_restore_failed` without creating or replacing canonical state.
-Supported older recovered schemas then follow the existing migration-backup
-and migration contract. Successful and partial results report durable
-recovered maintenance state, while preview reports that canonical maintenance
-is not yet enabled.
-
-Fresh initialization uses that same artifact lock and immediately rechecks
-that the canonical database is still absent, no rollback journal exists, and
-no valid managed recovery candidate has appeared since preflight. A newly
-available candidate returns `setup_restore_failed`; rerunning setup then plans
-recovery instead of making empty state.
-
-### Maintenance Bounds
-
-Maintenance is enabled once by successful setup and has no disable surface in
-M14. Every successful backup-eligible business mutation commits and closes its
-SQLite connection before same-process maintenance; Viewer publication is then
-gated to the Viewer-relevant subset. Read-only, failed, replayed, no-op, and
-maintenance-internal operations trigger nothing. Taskgov itself starts no
-detached process, child process, thread, timer, watcher, service, queue, daemon,
-scheduler, or network operation. TG-M15.5's optional timer lives only inside an
-already opened generated `file://` page and performs no taskgov process work.
-
-Viewer refresh runs first to honor the near-real-time observation goal; an
-independent due backup attempt runs second. Each artifact lock is fail-fast
-with a fixed maximum wait of 0 milliseconds. It is an OS-held advisory lock on
-one byte of a canonical regular lock file, not ownership inferred from file
-existence. Normal release occurs in `finally`; process termination releases the
-OS lock, so a leftover regular file is harmless and is never deleted through a
-stale-age heuristic. A linked, non-regular, or uninspectable lock path fails
-safely. Lock contention preserves the primary result and last good artifact,
-emits one sanitized continuing warning, and leaves work due.
-
-Post-commit maintenance warnings have fixed code/message pairs:
-
-| Code | Message |
-|---|---|
-| `viewer_refresh_deferred` | `Viewer refresh was deferred; task result is unchanged` |
-| `viewer_refresh_failed` | `Viewer refresh did not complete; task result is unchanged` |
-| `backup_deferred` | `managed backup was deferred; task result is unchanged` |
-| `backup_failed` | `managed backup did not complete; task result is unchanged` |
-
-They contain no retry, stop, or choice instruction and never change the
-primary command's success.
-
-Routine backups use the project-local policy stored by setup:
-
-- due immediately on the first eligible mutation when no managed backup
-  success exists;
-- thereafter due after the configured interval, whose default is 30 minutes;
-- retain the applied number of successfully published managed generations,
-  initially resolved from the configured/default value and normally 3;
-- attempt at most once per eligible successful mutation;
-- after failure remain due for the next eligible successful mutation; and
-- prune recognized older generations only after successful atomic publish.
-
-A setup pre-migration copy is produced by the same primitive and is a managed
-generation. Every published artifact carries an internal generation identity,
-publication timestamp, and 1-20 `publication_retention` in its canonical
-managed filename; the copied database's project identity and the bounded
-filename metadata are validated before the artifact is recognized.
-Schema v10 stores the latest setup-copy identity, time, and outcome when
-migration succeeds from v1-v9. When the source is already v10, the backup stage
-must, in order: validate and atomically publish the new copy; update the v10
-latest identity/time/outcome and the stage's `publication_retention` as
-`applied_backup_generations` in one short transaction; keep that new identity
-while pruning to the applied value; and only then begin schema migration. A
-fully published copy left newer than the v10 pointer by process termination is
-deterministically validated, including its filename retention, and reconciled
-to the pointer and applied retention before pruning on the next setup run.
-Metadata-update failure prevents migration and pruning.
-
-Before a v10 row can exist, repeated failed migration attempts still apply the
-effective explicit policy, or the default policy, to recognized same-project
-setup copies: each successful publish precedes pruning, and the number
-remaining does not exceed that stage's `publication_retention`. A successful
-v1-v9 migration creates the v10 row with the current copy's
-identity/time/outcome and applied retention in the migration transaction before
-any v11 seeding step. A pre-v10 retry may finish pruning left incomplete by a
-prior successful publication only with the newest recognized artifact's own
-immutable filename retention. It never applies the new attempt's lower
-retention before that attempt publishes successfully.
-
-The v11 migration deterministically discovers every canonical, valid,
-same-project managed artifact retained by setup, orders it by publication time
-then generation identity, and seeds one generation row per artifact. This
-includes the current migration copy and any retained earlier failed-attempt
-copies; the v10 latest identity must match one seeded row when non-null.
-Unrecognized, linked, invalid, or foreign files are neither imported nor
-deleted. Because the current setup copy was successfully published first, the
-migration then prunes recognized seeded rows/files to that copy's now-applied
-`publication_retention` using the same validated file-before-row order as
-routine pruning. Routine publication uses the same ordering and applied
-retention set, so setup G0 cannot survive outside the applied generation count.
-Backup errors never change the primary command result.
-
-Every v11+ managed backup stage, whether setup migration or routine, holds the
-same backup artifact lock and runs the same reconciler before deciding whether
-to publish:
-
-1. discover canonical regular artifacts and generation rows;
-2. validate and import a fully published same-project artifact that lacks a
-   row, updating the v10 latest identity/time/outcome and
-   `applied_backup_generations` from that artifact's immutable
-   `publication_retention` in the same short transaction;
-3. remove a row whose file is missing, linked, invalid, or foreign without
-   deleting an untrusted path, recompute the v10 pointer, and keep the outcome
-   failed/due when artifact loss occurred; and
-4. finish an interrupted prune against `applied_backup_generations` oldest
-   first by deleting the validated file before deleting its row, then normalize
-   the v10 pointer to the newest retained row. A lower configured policy is not
-   used here until a successful publication records it as applied.
-
-If reconciliation or pruning cannot finish, a routine command emits
-`backup_failed` and remains due; setup returns `setup_backup_failed`. Neither
-path publishes another generation, and setup performs no migration. Otherwise
-a due routine backup or setup migration backup atomically publishes one file,
-then one short transaction inserts its v11 row and updates the v10 latest
-identity/time/outcome plus the artifact's immutable `publication_retention` as
-`applied_backup_generations` before pruning with the same file-before-row
-order. Process termination after file publish, after the row transaction, or
-between file and row pruning is recovered by the next routine or setup
-reconciliation. A later policy-only change never alters the retention imported
-from an earlier file-only artifact. No new publication occurs while an earlier
-inconsistency is unreconciled, so crash residue cannot accumulate beyond the
-previously valid retained set plus one in-flight generation. Unrecognized
-artifacts remain untouched.
-
-Viewer maintenance reuses snapshot v3, the existing renderer, canonical output,
-path protection, and atomic publication. A per-Viewer generation check prevents
-older-over-newer publication. One initial render plus at most one follow-up is
-allowed per mutation. Remaining churn stays due until the next eligible
-mutation. Setup rerun is the only explicit force/repair action. Browser reload
-remains manual when the optional TG-M15.5 Viewer profile is absent; a valid
-profile may automate only that same local reload.
-
-The hard performance fixture is fixed:
-
-- small: 12 tasks and 191 events using the existing migration-acceptance data;
-- large: 500 tasks and 5,000 events;
-- generated title, description, and event summary payloads are respectively
-  80, 512, and 256 UTF-8 bytes;
-- eight successful writes at injected minute offsets
-  `[0, 1, 5, 29, 30, 31, 59, 60]`;
-- backup attempts are therefore due at offsets 0, 30, and 60 when all succeed;
-  Viewer remains eligible on all eight relevant writes;
-- each enabled eight-write run must finish within 10 seconds more than the
-  matching disabled run, and each individual foreground command within
-  5 seconds on the Windows CI fixture.
-
-The eight writes are fixed `task edit <fixture-task-id> --add-note <payload-N>`
-mutations against one seeded `in_progress` task, with `N` from `00` through
-`07`. Each ASCII payload is deterministically padded so the stored event summary
-is exactly 256 UTF-8 bytes. Every scenario starts from an identical copied
-fixture and uses the injected clock above. M14.3 compares an internal
-coordinator-disabled baseline with backup-only; Viewer is absent. M14.6 compares
-the same disabled baseline with Viewer-only by keeping backup not due, then with
-Viewer plus due backup. M14.7 repeats the disabled and final combined cases.
-These are test seams, never public configuration.
-
-Attempt, render, call, byte, and zero-wait bounds are hard assertions. Wall-clock
-limits are deliberately broad; timing cannot waive a deterministic bound.
-M14.3 measures backup-disabled versus backup-only. M14.6 measures
-Viewer-disabled versus Viewer-only and the due-backup combination. M14.7
-repeats final combined integration. A budget failure is a blocking design
-finding, not authority to add background architecture.
-
-### Typed Checkpoint
-
-`task checkpoint <task-id>` requires `--summary` and `--next-action`, and
-accepts `--unresolved-risk` at most eight times. UTF-8 limits are 1,024 bytes
-for summary, 1,024 for next action, 512 per risk, 4,096 for all risks, and
-6,144 for the complete caller payload.
-
-One append-only row stores only those fields, task/project identity, source
-Contract revision, and timestamp. The same transaction adds one event with
-fixed type `checkpoint_recorded` and fixed summary `Checkpoint recorded`; it
-never stores checkpoint content in the event or changes `tasks.updated_at`.
-Exact replay against the latest checkpoint for the same Contract revision
-returns that row with `replayed=true` and writes nothing. Done tasks remain
-immutable.
-
-Checkpoint use is optional, never automatic or required at pause, resume,
-review, or completion, and adds one bounded content judgment only when the
-caller chooses a genuine continuation boundary. It changes no status, scope,
-acceptance, priority, selection, review, evidence, or completion gate.
-`task current` and `task show` expose only the latest structured checkpoint.
-Viewer compatibility does not require publishing its content.
-
-The command emits `command=task.checkpoint`. Data keys are exactly
-`checkpoint`, `created`, `replayed`, and `event`. The checkpoint object contains
-only `checkpoint_id`, `task_id`, `contract_revision`, `summary`, `next_action`,
-`unresolved_risks`, and `created_at`. A new append returns
-`created=true`, `replayed=false`, and an event object containing only
-`task_event_id`, `event_type="checkpoint_recorded"`, and `created_at`; exact
-replay returns
-`created=false`, `replayed=true`, and `event=null`. The same checkpoint object
-appears under key `latest_checkpoint` in default `task current` rows and
-`task show` data. Text is exactly
-`Checkpoint <checkpoint_id>: recorded|replayed for task <task_id>` plus one LF.
-
-### Review Packet
-
-`review prepare <task-id>` is read-only stdout generation for every existing
-review target kind: `git_snapshot`, `git_commit`, `diff_fingerprint`, and
-`external_revision`. A missing target returns `review_target_missing` with
-exact message `review target is required before preparing a review packet`.
-`git_snapshot` recaptures and validates the stored snapshot. `git_commit`
-resolves the canonical commit and lists first-parent changes; a root commit is
-compared with the empty tree. The two non-Git target kinds emit an empty path
-list with `changed_paths_available=false` and run no Git subprocess. This
-target-specific behavior is internal and does not create a Skill/LLM branch.
-Revision-zero tasks are supported with Contract revision 0 and empty Contract
-fields.
-
-Packet data keys are exactly `task`, `contract`, `review_target`,
-`changed_paths_available`, `changed_paths`, `changed_paths_total`,
-`changed_paths_truncated`, `review_focus`, `required_output`, and
-`receipt_command`. `task` contains only ID, title, status, verification, and
-review tier. `contract` contains only revision, scope, acceptance, and
-constraints. `review_target` contains only kind, value, base revision, and
-generation. It contains no raw diff, review result, receipt import,
-stdout/stderr, prompt, conversation, secret, absolute path, or caller-authored
-focus.
-
-At most 100 changed paths are emitted, each at most 240 UTF-8 bytes and at most
-16,384 aggregate path bytes. Safe rows are retained in bytewise order and
-`changed_paths_truncated=true` records count/byte omission. An unsafe path
-fails rather than being hidden with code `review_packet_path_unsafe` and exact
-message `review packet contains an unsafe project path`. The complete text
-stdout or complete compact JSON stdout including its envelope is at most 32,768
-UTF-8 bytes; otherwise `review_packet_too_large` is returned with exact message
-`review packet exceeds the supported size` and no partial packet. Git
-observation uses at most 10 subprocesses. The command
-does not launch a reviewer or import a result and replaces separate task,
-Contract, target, and Git-context reads without adding an LLM branch.
-
-The focus list contains the four fixed common rows, in order: Contract
-compliance; state-transition and completion-gate integrity; privacy and
-target-project safety; verification sufficiency and regression risk. Exactly
-one fifth fixed row is selected mechanically from the target kind:
-
-- `git_snapshot`: inspect only the matching stage-0 index against the stored
-  base revision, using the cached diff and index blobs; exclude unstaged and
-  untracked worktree content;
-- `git_commit`: inspect the canonical target commit against its first parent,
-  or the empty tree for a root commit, and read that commit's tree and blobs
-  rather than ambient `HEAD` or worktree content;
-- `diff_fingerprint`: do not return `PASS` unless the orchestrator supplies
-  exact review material plus evidence binding it to the target value, because
-  the fingerprint alone cannot retrieve content; and
-- `external_revision`: do not return `PASS` unless exact external material is
-  bound to the target value; taskgov does not retrieve external artifacts.
-
-This selection adds no Git subprocess, caller-authored focus, or LLM branch.
-The fixed required-output list is: verdict `PASS` or `CHANGES_REQUESTED`;
-severity-ordered findings with exact file/line; remaining risks; recommended
-changes. The receipt shape is the existing
-`taskgov review receipt add <task_id> --reviewer <reviewer-key> --kind
-independent --verdict <pass|changes_requested> --summary <sanitized-summary>
---json` argv. It tells the trusted orchestrator how to attest the reviewer's
-actual returned result; it is never executed or imported by `review prepare`
-and proves no identity.
-
-Text serialization uses LF, a final newline, and the fixed section order
-`Task`, `Status`, `Verification`, `Contract revision`, `Scope`, `Acceptance`,
-`Constraints`, `Review target`, `Changed paths`, `Review focus`,
-`Required output`, `Receipt command`. JSON uses the normal envelope and the
-same ordered data fields. After Git observation, a second short coherent
-read-only transaction revalidates project identity, task identity, Contract
-revision, and every review-target field/generation read initially. Any change
-returns `review_packet_stale` with exact message
-`review context changed while preparing the packet` and no packet. No SQLite
-transaction is held during Git work.
-
-### Schema And Ownership Sequence
-
-M14 uses narrow sequential migrations rather than pre-creating later feature
-state:
-
-- M14.1: schema v9 unchanged;
-- M14.2: schema v10 adds one-way project maintenance opt-in, bounded mutable
-  backup-policy values, and the shared bounded backup last-success/outcome
-  fields plus latest managed-generation identity and internal applied-retention
-  value used first by the setup copy and later by routine backup;
-- M14.3: schema v11 adds managed backup generation rows, deterministically
-  seeds all retained valid setup copies, and makes those rows the sole
-  retention set; routine backup updates the v10 shared success/outcome/latest
-  identity fields rather than duplicating state;
-- M14.4: schema v12 adds append-only task checkpoints;
-- M14.5: schema v12 unchanged;
-- M14.6: schema v13 adds Viewer business/render generation and bounded outcome
-  state; and
-- M14.7: schema v13 unchanged.
-
-Only setup invokes the internal migration service. Each migration is
-transactional, idempotent, rollback-tested, and preserves the realistic 12-task,
-191-event, completion/review trace. Older binaries reject newer schemas. Viewer
-snapshot version remains v3 and expands source-schema compatibility from 5
-through the current staged schema; it excludes maintenance and checkpoint fields
-unless a later explicit snapshot contract adds them. M14.0 does not choose a
-release number.
-
-Each M14.1-M14.6 unit that changes a release-manifest-covered core file must
-refresh that manifest's file inventory/hash in the same reviewed revision.
-M14.1 verifies the still-public `self status` result is `clean`. M14.2-M14.6,
-after public `self` removal, verify the same shared package inspector through
-`doctor.data.components.package.status="clean"` and separately require
-`taskgov self status` to fail with the fixed `invalid_command` contract.
-Intermediate refreshes do not change release version/origin or publish an
-active Skill. M14.7 owns the final release metadata/version decision and
-publication synchronization, with the same doctor/package and removed-command
-checks.
-
-### Judgment, Privacy, And Deferred Scope
-
-Setup adds one explicit first-use call. Doctor, compact output, backup, and
-Viewer maintenance add zero normal-loop calls or judgments. Completion check is
-optional and adds one call only when explicitly requested. Checkpoint adds one
-bounded content judgment only when used. Review Packet removes context
-acquisition calls. The existing Effort Advisory adds one mechanically routed
-call only for a valid enabled profile and no LLM judgment; the default-off flow
-remains at nine calls. No M14 feature adds a mandatory question, user-return
-stop, Issue action, Git write, target mutation, network use, or project test
-strategy.
-
-Overview, action aliases, result or receipt-file import, verification receipts,
-manual backup, standalone/manual restore, general export, relocation, browser
-launch, durable or general browser-state persistence, live server, search,
-pagination, Issue lifecycle, generic diagnostics, and workflow automation
-remain deferred. TG-M15.6's exact one-shot History API handoff is the sole
-browser-state exception.
-
-## Static Task Viewer
-
-The Task Viewer is a generated, self-contained projection of current SQLite
-task state. It is maintained only after setup opt-in: setup owns explicit
-initial publication and repair, while the bounded same-process post-commit
-coordinator refreshes it after Viewer-relevant business mutations. There is no
-public `web` command, custom output, Viewer option, or separate model decision.
-
-The only output is:
+Maintenance codes are `not_opted_in` before setup and, once enabled,
+`current`, `due`, `deferred`, or `failed` for current runtime state.
+Readable maintenance never becomes an envelope warning/error. Deferred means
+zero-wait lock contention; failed means bounded artifact failure; both remain
+due.
+
+### Effective Git-Ignore Preflight
+
+For setup, preview, and doctor only, inspect the governed target and parents to
+the nearest existing/link-like `.git` marker. Inspection failure fails closed
+as `state_ignore_required`. No marker means physical non-Git and no subprocess.
+With a marker, invoke exactly one shell-free, sanitized, two-second-bounded
+equivalent of:
 
 ```text
-<installed-skill-root>/state/projects/<project-id>/viewer/task-viewer.html
+git check-ignore --quiet --no-index -- <canonical-state-directory/>
 ```
 
-An internally injected database target uses its own database state directory,
-so tests and development seams cannot write the installed package's real
-Viewer. The canonical parent may be created only after opt-in. Linked,
-non-regular, database-alias, or escaping paths fail safely. Publication uses a
-temporary regular file in the same directory, flushes it, and atomically
-replaces the prior artifact. Failure preserves the last good HTML.
+The one target-relative operand is
+`.agents/skills/task-governance-tool/state/` or self-host
+`task-governance-tool/state/`, with forward slashes and trailing slash.
+Exit 0 alone proves effective ignore. Exit 1, timeout, launch failure, or other
+result fails closed without output or write. Git decides parent rules,
+gitfiles, submodules, and negation; taskgov does not parse `.gitignore`, test
+trackedness, edit ignore files, cache, retry, or expose path/pattern/error
+detail. Later setup structural revalidation does not repeat this subprocess.
 
-### Snapshot And Read Boundary
+## Task State, Scope, Review, And Completion
 
-Snapshot version 3 accepts source schemas 5 through 13. One lock-respecting
-query-only SQLite transaction validates schema and project identity, reads the
-Viewer generation, and assembles all snapshot rows. Rendering and file
-publication occur after that transaction closes.
+### Task Record And State Transitions
 
-The snapshot contains only:
+The current Task projection includes stable Task/project IDs, title,
+description, kind, lane/order, priority, status, blocker/pause reason, review
+tier, verification, tags, timestamps, current typed completion evidence plus
+its legacy compatibility projection, current review target/generation/base,
+Contract pointer, and completion-history coverage. Concise events retain notes
+and transitions; events are not a generic payload/log store.
 
-- snapshot version and one UTC `generated_at`;
-- project ID and display name;
-- source schema version and per-status counts;
-- the explicit task-field allow-list used by `task show`;
-- at most ten newest sanitized events, receipts, and findings per task.
+Typed completion storage is exactly `completion_evidence_kind`,
+`completion_evidence_revision`, `completion_evidence_reason`,
+`external_revision_approved`, `completion_commit_required`, and
+`completion_commit_hash`. Current target storage is
+`review_target_kind`, `review_target_value`,
+`review_target_base_revision`, and generation. Values and their legacy
+projection must satisfy one cross-field matrix before storage or output.
 
-It excludes repository and database paths, maintenance generations and
-outcomes, checkpoints, Contracts not already represented by the task
-projection, handoff state, tool events, environment data, and raw evidence.
-The deterministic UTF-8 JSON is base64 encoded before insertion into the
-bundled template. Browser rendering uses text-only DOM APIs for stored values.
+Optional work is actionable when ready. Sequential work is actionable only
+when every earlier Task in its lane is done or cancelled. That same predicate
+guards entry into `in_progress`, `review_pending`, or `done`; paused is
+incomplete. Add/edit validates the complete resulting row and both affected
+lanes when kind/lane/order/status changes. It rejects inserting or moving an
+incomplete predecessor before active, review-pending, or done work with
+`sequential_predecessor_incomplete` and no event/write. Blocked lanes never
+hide unrelated ready optional work or other ready lanes.
 
-### Maintenance And Freshness
+Blocked requires a concise reason. Paused requires a concise reason and is
+reachable only from in-progress or review-pending; normal resume is paused to
+in-progress. Initial paused is prohibited. Lane values are trimmed, and
+explicit/automatic order must fit signed 64-bit.
 
-Schema v13 atomically increments one source generation with each
-Viewer-relevant task, checkpoint, or review event. Handoff-only, read, failed,
-replayed, no-op, setup-configuration-only, and maintenance-internal operations
-do not increment it. The Viewer stage:
+A done Task is write-locked. Every write except an exact reopen fails
+`done_task_requires_reopen`. Reopen alone requires a sanitized reason, changes
+done to in-progress, clears completion/blocker/pause/current target, advances
+review generation, preserves all history, appends `task_reopened`, applies the
+lane guard, and cannot share metadata, note, evidence, confirmation, or other
+mutation. Fresh verification, target, review, and completion evidence are then
+required.
 
-1. skips without creating a directory before setup opt-in;
-2. takes the canonical one-byte OS advisory lock with zero wait;
-3. rereads source/render generations and renders only when due;
-4. records the published generation in a short transaction;
-5. rechecks once and performs at most one follow-up render.
+A review-tier downgrade is allowed only while ready, in-progress, paused, or
+blocked, before structured review (`generation=0` and target empty), with a
+reason, and without completion evidence, gate confirmation, or transition to
+review-pending/done. Once review begins, including after reopen, tier may only
+stay or rise. Invalid downgrade is `review_tier_downgrade_forbidden`.
+Successful change appends `review_tier_changed` with old/new tier and reason.
 
-An older capture cannot replace a newer publication. Churn remaining after two
-renders stays due for the next eligible mutation. Contention records
-`deferred`; another bounded failure records `failed`; both preserve the
-primary command result and last good artifact. Doctor reports only the stored
-generation/outcome facts and never inspects or repairs the HTML or its optional
-presentation profile. `generated_at` remains the visible boundary of the
-snapshot currently rendered; browser reload never implies direct database
-observation.
+### Task Contract
 
-### Viewer Experience And Safety
+The optional Task Contract copies already-explicit authority and adds no
+question or heuristic. Revision 1 is allowed only when scope and acceptance
+are explicit in the current user instruction, approved roadmap, or explicit
+registration input. Supplying any of `--contract-scope`,
+`--contract-acceptance`, `--contract-constraints`,
+`--contract-authority-ref`, or `--contract-change-reason` supplies the group;
+partial explicit input fails `invalid_argument`.
 
-The read-only `file://` application provides project identity, generation
-time, all seven status totals, search and status/kind/lane/priority/tag
-filters, deterministic task ordering, terminal-history visibility, task
-details, review/completion evidence, and recent events. It has responsive
-desktop/mobile layout, keyboard access, visible focus, associated labels, and
-readable contrast. It provides no task or database write controls.
+Revision 1 may be created on add with status ready, in-progress, blocked, or
+review-pending, or in one revision-0 transition from ready/blocked to
+in-progress. The edit boundary additionally requires empty completion
+evidence, target, and generation, and cannot share note, metadata, review-tier,
+completion, or confirmation input. Paused/review-pending/done/cancelled Tasks
+cannot activate revision 1. Omitted Contract input leaves revision 0 without
+making acceptance optional or prompting for fields.
 
-The generated page contains only bundled inline HTML, CSS, and JavaScript. It
-uses no network API, external URL, analytics, telemetry, durable or general
-browser persistence, server, direct browser-to-SQLite access, watcher,
-automatic browser launch, or task-state mutation. TG-M15.6's only browser
-history changes are one-shot replacement/clearing of the current classic state
-and its bounded manual scroll-restoration mode; neither changes the URL or
-history length. Its exact content security policy and prohibited DOM sinks are
-defined and tested in `docs/design.md`.
+A Contract stores scope and acceptance (each at most 4,000 characters),
+optional constraints (2,000), optional initial stable authority reference
+(500), and for later revisions a reason (1,000) and timestamp. Purpose remains
+in title/description. Text normalizes line endings to LF and outer whitespace;
+internal content is preserved.
 
-### Optional Visibility-Aware Reload
+Later semantic revision is Contract-only, allowed while ready, in-progress,
+paused, blocked, or review-pending, and requires at least one changed content
+field, a nonempty stable authority reference, and reason. User authority may
+use `user_instruction:<task-id>:<next-revision>`; governing authority uses a
+repository-relative path plus known revision/hash. Neither stores prompt/body.
+A current Task output cannot authorize expansion of that same Task.
+Out-of-scope hardening is handed off.
 
-TG-M15.5 adds one presentation-only profile at:
+An exact canonical content replay is a successful write-free no-op even if
+authority/change labels are omitted or relabeled after their privacy/size
+validation. It returns `recorded=false`, current revision, `event=null`, and
+`changed_fields=[]`. Same-content concurrency produces one row plus one
+replay. Different valid semantic writes serialize; pointer races fail
+`contract_write_conflict`.
 
-```text
-<installed-skill-root>/config/viewer.json
-```
+On later revision, omitted constraints preserve the current value and an
+explicit empty value clears it. The exact
+`user_instruction:<task-id>:<revision>` form is validated mechanically.
+Semantic change accepts only the locked next revision placeholder; exact replay
+may accept an older same-Task positive placeholder. A caller-supplied authority
+label never creates a revision when Contract content did not change.
 
-Taskgov never creates, edits, migrates, or supplies a default copy of this
-file. If the canonical file is absent, automatic refresh is disabled, the
-rendered interval sentinel is decimal `0`, no browser refresh timeout is
-created, and the user refreshes the page manually. A present profile is at
-most 16,384 bytes of strict UTF-8 JSON and has exactly:
+A semantic revision appends immutable history, advances the pointer, clears
+completion evidence, preserves generation 0 if review never began or otherwise
+clears target and advances generation, moves review-pending to in-progress,
+updates time, and appends `contract_revised` atomically. Fresh gates are
+required. Done must reopen; cancelled rejects.
 
-```json
-{
-  "schema_version": 1,
-  "profile": "visibility-refresh-v1",
-  "refresh_interval_seconds": 30
-}
-```
+Only `task show` exposes the full additive `contract` object: revision, scope,
+acceptance, constraints, authority reference, change reason, and creation time.
+Revision 0 uses empty strings and null time. Compact/list/current/next/Viewer
+omit Contract text.
 
-`refresh_interval_seconds` is a JSON integer from 5 through 3,600 inclusive;
-booleans and floating-point values are invalid. Malformed JSON, invalid UTF-8,
-duplicate or unknown keys, missing keys, out-of-range values, oversized
-content, broken links, symbolic links, reparse points or junctions anywhere in
-the config path, and non-regular final objects are invalid. Bounded descriptor
-and identity checks fail closed if the file is replaced while read. Errors are
-sanitized and expose no path, OS exception, content, or expected/actual
-metadata.
+### Handoff Outbox
 
-One publication attempt observes this profile once and reuses that result for
-both of its at-most-two renders. The bundled template contains exactly one
-base64 snapshot placeholder and exactly one separate decimal interval
-placeholder. A config change, including deletion, takes effect on the next
-Viewer-relevant publication. Explicit setup also compares the currently
-rendered interval/template with the current profile and plans
-`viewer_publish` when they differ.
+For every discovery, classify once:
 
-An invalid present profile makes `setup --read-only` a successful no-write
-preview with `viewer_status="repair_required"` and `viewer_publish` in the
-planned writes. Actual setup preserves any last-good Viewer and returns the
-existing `setup_incomplete` failure. The same invalid profile during routine
-post-commit publication preserves the committed primary mutation and last-good
-Viewer, records the existing bounded failed outcome, and emits only
-`viewer_refresh_failed` for this Viewer/config failure. The independent due
-backup attempt still runs second and may emit its own existing bounded warning.
-Doctor does not inspect the optional profile and adds no status, warning,
-judgment, or stop for it.
+1. Keep it in the Task when resolution is within accepted scope and current
+   authority.
+2. Block the affected Task when an unmet condition prevents acceptance and no
+   safe authorized resolution remains.
+3. Otherwise run the same `handoff record` command immediately and continue.
 
-After fatal UTF-8 snapshot decoding and the initial DOM render both succeed,
-the page enables scheduling only when `location.protocol === "file:"` and the
-rendered interval is positive. It records a monotonic load epoch with
-`performance.now()` and owns at most one timeout. While
-`document.visibilityState` is not `visible`, it clears and owns no timeout and
-requests no reload. When the page becomes visible or the timeout fires, it
-rechecks visibility and monotonic elapsed time. If at least the configured
-interval has elapsed it requests at most one same-document reload for that
-loaded page; otherwise it schedules only the remaining delay. Browser
-throttling may make a request later but never earlier. Decode or render failure
-schedules nothing.
+Safety is orthogonal: report credible risk promptly, block only unsafe affected
+work, and continue other safe ready lanes. Pending handoffs never expand or
+block source acceptance.
 
-The reload reads only the latest atomically published HTML file. It is not
-real-time database observation and may retain an older snapshot until taskgov
-successfully publishes another one. TG-M15.5 alone stores no filter, selection,
-focus, or scroll state; TG-M15.6 defines the only bounded automatic-reload
-handoff below. M15.5 adds no public command or option, normal-loop call, LLM
-decision, automatic launch, network access, service worker, storage API,
-background taskgov process, SQLite field, or Viewer snapshot field.
+`handoff record` first commits one local sanitized record regardless of Issue
+adapter presence. States are only `pending_handoff`, `handed_off`, and
+`handoff_withdrawn_by_user`; allowed transitions are pending to either terminal
+state. Withdrawal means the user handled/withdrew undelivered work, not Issue
+resolution, and is forbidden after any delivery claim.
 
-### One-Shot Automatic-Reload UI State
+The outbox stores source Task/Contract revision, bounded summary/rationale,
+optional occurrence ID, stable idempotency identity, state, bounded delivery
+bookkeeping, and timestamps. It stores no Issue priority/lifecycle/triage,
+semantic duplicate decision, `resulting_task_id`, threat model, raw
+output/review, secret, stack trace, or diff. Public records never expose an
+internal `claim_token`.
 
-TG-M15.6 applies only when the M15.5 scheduler is enabled on a `file:` page and
-is about to request its one automatic same-document reload. Immediately before
-that existing callback invokes reload, the Viewer may attempt exactly one
-`history.replaceState(envelope, "")` call with no URL argument. The reload
-continues if reading current state, encoding, validation, or replacement fails.
-If `history.state` is non-null and is not a Viewer-owned state, it is neither
-overwritten nor cleared and no preservation is attempted. A non-array object
-whose `owner` field is exactly `taskgov-viewer-auto-reload` is Viewer-owned
-even when the rest of the object is invalid.
+Exact source/canonical-payload replay returns the same record. A separate
+occurrence requires an explicit stable ID; omission is canonical empty.
+Invalid/empty explicit/over-200 occurrence ID is
+`handoff_occurrence_invalid`. Summary and rationale are at most 1,000
+characters.
 
-The schema-1 envelope has exactly these 13 top-level keys:
+Local commit is the success boundary. It may retry one complete fresh
+transaction after transient SQLite failure and may replace rejected content
+once with a shorter sanitized abstraction. Persistent failure returns
+`handoff_not_persisted`, never claims durability, and stops the current unit
+until persistence or explicit acceptance of forgetting risk. Delivery absence
+or failure after local commit leaves pending and source work continues; enabled
+delivery failure adds warning `handoff_delivery_pending` with action
+`continue`.
 
-```json
-{
-  "owner": "taskgov-viewer-auto-reload",
-  "schema_version": 1,
-  "captured_at_ms": 0,
-  "status": "",
-  "kind": "",
-  "lane": "",
-  "priority": "",
-  "tag": "",
-  "terminal": false,
-  "selected_task_id": "tg_task_example",
-  "scroll_x": 0,
-  "scroll_y": 0,
-  "focus_id": ""
-}
-```
+Public leaves are record/list/show/withdraw; base Skill has no dead sync
+command. List defaults to pending, oldest `created_at, handoff_id`, limit 20,
+maximum 100, and returns exact `total_matching` from the same read snapshot.
+Compact rows contain only `handoff_id`, `source_task_id`,
+`source_contract_revision`, `summary`, `state`, `created_at`, and
+`updated_at`. Full public records never expose internal claim tokens and are
+revalidated before output. `task show.handoff_summary` contains exact counts
+for all three states.
+Successful withdrawal reports
+`changed_fields=["state","withdraw_reason","withdrawn_at"]`.
 
-The deterministic JSON serialization must be no more than 4,096 UTF-8 bytes
-both before replacement and after reading `history.state`. `captured_at_ms` is
-a nonnegative safe integer from `Date.now()`. `status` is empty or one of the
-seven current statuses; `kind` is empty, `sequential`, or `optional`;
-`priority` is empty or one of the four current priorities. `lane` and `tag`
-are UTF-8 strings of at most 1,024 bytes each and must be empty or present in
-the newly loaded snapshot's corresponding options. `terminal` is Boolean.
-`selected_task_id` is a nonempty string of at most 128 Unicode characters; if
-the current filtered result has no selection, the Viewer skips envelope save
-and still reloads. Each scroll coordinate is a finite number in the inclusive
-range zero through 2,147,483,647. The fixed focus allow-list consists of the
-empty no-focus sentinel plus exactly
-`search-filter`, `status-filter`, `kind-filter`, `lane-filter`,
-`priority-filter`, `tag-filter`, `terminal-filter`, or `reset-filters`.
-Dynamic task-row or status-tile focus is captured as the empty sentinel and is
-not restored.
+Adapter delivery is not implemented and remains disabled until a separately
+approved versioned local Issue intake exists. Doctor therefore reports the
+local pending count with adapter/due false. Task Skill never opens an Issue
+database, shells, uses a URL/network/GitHub, imports, reconciles, prioritizes,
+or mutates Issue lifecycle. Any later adapter must preserve the same local
+record command and source-task non-blocking boundary.
 
-The envelope never contains search text, task title or description, event,
-receipt, finding, snapshot data, option lists, URL, query, fragment, file or
-project path, arbitrary selector, caret or text selection, dynamic task-row
-focus, or nested-panel scroll. It uses no cookie, `localStorage`,
-`sessionStorage`, IndexedDB, Cache API, service worker, network request,
-database record, or snapshot field.
+### Effort Advisory
 
-At the start of a `file:` page load, before snapshot decoding, the Viewer reads
-`history.state` at most once. It performs no further M15.6 work unless
-automatic refresh is enabled or that value is Viewer-owned. An owned state is
-cleared immediately with
-`history.replaceState(null, "")`, again with no URL argument. This clear occurs
-even when the state is malformed, stale, from a non-reload navigation, or the
-snapshot later fails to decode. If clearing fails, nothing is restored.
-If reading or clearing throws, the page continues with its normal snapshot and
-default UI while the existing M15.5 scheduler remains independent. Non-`file:`
-pages neither read nor change History state for M15.6.
+The optional project-scoped profile exists only at
+`config/effort-advisory.json`; taskgov never creates or edits it. Strict
+profile v1 requires `profile="informational-v1"` and Boolean `enabled`.
+Optional nonnegative integer thresholds are limited to `changed_files`,
+`changed_lines`, `changed_modules`, `contract_revisions`, and `handoffs`, and
+exceed only when measurement is greater than the threshold. Unknown/duplicate
+keys or invalid values disable the profile with a bounded diagnostic.
 
-On that same eligible `file:` load, the Viewer must successfully set
-`history.scrollRestoration` to `manual` before snapshot/UI restoration. It
-first requires `"scrollRestoration" in history`, then assigns `manual`, then
-requires a readback equal to `manual`; this prevents an unsupported expando
-property from appearing supported. The mode prevents the user agent's own
-reload scroll restoration from competing with the bounded document
-coordinates. If the property is unavailable, rejects `manual`, or throws,
-M15.6 save and restore are disabled for that loaded page; an already owned
-state is still cleared without restoration, and the M15.5 timer and reload
-remain enabled.
+`task effort <task-id>` reports those five deterministic metrics when covered.
+Git measurement is read-only; Contract/handoff counts use structured DB data.
+Missing coverage or dirty/uncertain/non-Git endpoints and overlapping active
+work produce `unknown`, never inference. Optional basis capture on the first
+in-progress write is best-effort and never blocks start. An absent/disabled
+profile performs no Git work; disabling after a prior basis may retain only
+hidden activity counters.
 
-A `history.state` read exception on an auto-refresh-enabled `file:` page does
-not skip the manual scroll-mode attempt. The unreadable state disables envelope
-save and restore for that page, while a successful manual-mode readback still
-prevents user-agent reload scroll from competing with the normal default
-`(0, 0)` fallback.
-
-After a successful clear and snapshot option initialization, restoration
-requires the current navigation entry to report type `reload`, exact keys,
-owner and version, valid primitive types and bounds, a capture age from zero
-through 300,000 milliseconds inclusive, current lane and tag membership, a
-selected task that still exists and is visible under the candidate filters,
-and any nonempty fixed focus target to exist. Initialization explicitly resets
-search and every filter to the Viewer defaults before optional envelope
-application, so excluded form state is not adopted from browser restoration.
-
-Valid filters are assigned before one task-list/detail render. That render
-restores selection; fixed-control focus is then restored without preserving
-caret or selection, and document scroll is restored last. Invalid, stale,
-oversized, unsupported, unavailable, or otherwise failed restoration renders
-the normal default UI and explicitly scrolls the document to `(0, 0)`. Owned
-state is consumed even when rejected, so a later reload starts from defaults
-unless the M15.5 scheduler creates a new valid envelope. The reload timer
-remains independent of every save or restore outcome. If fixed focus succeeds
-but the following scroll operation fails, fallback best-effort blurs only that
-just-restored fixed control before resetting filters and selection, rerendering
-the defaults, and attempting `(0, 0)` scroll. Blur failure is contained and
-does not prevent the remaining fallback.
-No ignored state, serialization content, browser exception, URL/path, or
-validation detail is written to the page, console, snapshot, or taskgov output.
-
-History state is browser-managed and may survive in a session-restored history
-entry; it is not guaranteed to be memory-only. TG-M15.6 therefore relies on
-one-shot owner validation, the five-minute limit, the 4,096-byte cap, and
-clear-before-restore rather than making a durability claim. It never calls
-`pushState`, never supplies a URL argument to `replaceState`, and leaves the
-current URL, classic state payload, and history length unchanged when setting
-the scroll mode. Setting `scrollRestoration` updates the current entry's
-user-agent scroll-restoration mode but does not add an entry or change its URL.
-Manual reload never creates a new envelope. If automatic navigation is
-interrupted after save, the outstanding bounded envelope may be consumed by
-the next qualifying reload within five minutes.
-
-TG-M15.6 adds no command, option, configuration choice, Task-loop call, LLM
-judgment, user-return stop, automatic browser launch, database/schema field,
-Viewer snapshot field or version, network behavior, or CSP relaxation.
-Release v0.8.0, schema v13, Viewer snapshot v3, compact JSON, and the 20-leaf
-CLI remain unchanged.
-
-Acceptance requires schema-5-to-13 snapshot compatibility, privacy allow-list
-tests, atomic/last-good path tests, zero-wait and two-render bounds, Viewer-only
-and Viewer-plus-backup performance fixtures, offline `file://` usability, and
-exclusion of generated HTML from source and release artifacts. TG-M15.5 also
-requires strict config/path/replacement tests, absence-as-disabled behavior,
-setup preview/failure and routine last-good behavior, exact two-placeholder
-rendering, structural scheduling/CSP/storage/network tests, and a real
-`file://` browser forward test. Package/archive checks must prove that the
-optional `config/viewer.json` is absent from the release artifact while the
-loader and changed runtime sources remain manifest-covered. Automatic browser
-launch remains deferred.
-
-TG-M15.6 acceptance additionally requires automatic `file:` reload save,
-reload-only consume, clear-before-restore, and second-reload-default browser
-tests. Tests reject wrong ownership/version/keys/types/bounds/age/navigation,
-oversized encodings, missing dynamic options, invisible or missing selection,
-and unavailable focus; preserve unknown non-Viewer state; exercise save and
-clear failures; and prove exclusions, unchanged URL/history length, existing
-timer/visibility bounds, required/manual scroll-restoration fallback, exact
-CSP, no storage/network API, no console/UI disclosure, and no command, schema,
-snapshot, or normal-loop change.
+The basis captures project/subject activity generations and
+`other_active_at_capture`; later attribution is exclusive only when both
+endpoints and generation bridge remain reliable. A bounded observation failure
+may report `activity_generation_uncertain`. These fields are advisory
+bookkeeping, never Task authority or a completion gate.
 
 ## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial
 
-TG-M16 is implemented as a reduced behavioral trial. TG-M16.0 fixes this formal
-contract before any runtime or active-Skill change. TG-M16.1 owns only Effort
-action routing, TG-M16.2 owns concise Test Repair and Scope Reconciliation
-guidance, and TG-M16.4 owns final package synchronization and behavioral
-acceptance. The former TG-M16.3 setup bootstrap and consuming-project
-instruction-adoption unit is cancelled.
-
-### Effort Reconciliation Signal
-
-TG-M16.1 retains the existing profile, metrics, observation point, warning
-code `effort_advisory_threshold_exceeded`, warning key
+The nonempty deterministic `exceeded` list is the sole predicate that changes
+an enabled valid result's `data.suggested_action` and matching threshold-warning
+action from `continue` to `reconcile_scope`. Absent, disabled, invalid,
+unknown-only, and non-exceeded observations continue. The warning remains
+`effort_advisory_threshold_exceeded`, key
 `effort_advisory.threshold_exceeded.v1`, and message
-`One or more configured effort thresholds were exceeded.` It changes only the
-action selected after one observation:
+`One or more configured effort thresholds were exceeded.` Any number of
+exceeded metrics creates at most one session-local episode.
 
-| Profile and observation | `data.suggested_action` | Threshold-warning action |
-|---|---|---|
-| absent or valid disabled | `continue` | no threshold warning |
-| invalid present profile | `continue` | no `task effort` threshold warning; the existing `task show` invalid-profile warning remains `continue` |
-| valid enabled, `exceeded` empty, attribution known | `continue` | no threshold warning |
-| valid enabled, `exceeded` empty, attribution unknown | `continue` | no threshold warning |
-| valid enabled, `exceeded` nonempty, attribution known | `reconcile_scope` | `reconcile_scope` |
-| valid enabled, `exceeded` nonempty, attribution unknown | `reconcile_scope` | `reconcile_scope` |
+The signal is non-blocking. It never asks the user, writes a handoff, changes
+Task status, Contract, acceptance, review tier/evidence, completion evidence,
+pauses, blocks, or fails a Task. It adds no second observation, command, or
+green-path judgment.
 
-The nonempty `exceeded` list is the sole action predicate after valid
-enablement. Unknown attribution does not erase a deterministically observed
-threshold exceedance, but an unknown-only observation does not invent one.
-Data and warning actions must match. Any number of exceeded metrics in the
-same result creates at most one session-local reconciliation episode.
+Reconciliation guidance is session-local. Without new evidence, after two
+materially equivalent failed repair attempts the agent must not execute a
+third equivalent repair. Command spelling, working directory, wrapper, Task
+label, or execution-unit label alone is not new evidence. A safe diagnostic or
+genuinely different repair is new only when it can materially change the
+causal hypothesis, authorized repair, or expected outcome.
 
-`reconcile_scope` is non-blocking. The signal never asks the user, records a
-handoff, changes Task status, Contract, acceptance, review tier, review or
-completion evidence, pauses, blocks, or fails a Task. It does not add a second
-observation, command, or judgment to the green path. The default-off
-no-finding Tier 2 flow remains at nine governance calls and the enabled flow at
-ten. TG-M16.2 guidance, not the deterministic Effort result, owns any later
-scope classification.
+Never weaken a test merely to pass. A test may change only when current
+authority shows it is wrong; a Task Contract or acceptance change still needs
+later explicit authority. A failing test alone proves neither scope nor
+authority. Work inside accepted scope/current authority remains in the Task;
+out-of-scope work is handed off; a blocker is recorded only after safe
+authorized work is exhausted; paused is reserved for temporary interruption;
+unrelated safe ready lanes continue and remaining decisions are batched.
 
-### Session-Local Test Repair And Scope Reconciliation
+Review repair still requires a fresh target and fresh current-generation
+review. A result that remains blocking counts as one unsuccessful remediation
+cycle. Without new evidence, two materially equivalent unsuccessful review
+cycles prohibit a third equivalent cycle. Completion still requires qualifying
+fresh PASS receipts; unrelated safe lanes continue.
 
-TG-M16.2 adds concise guidance, not a persisted state machine. A reconciliation
-episode first diagnoses the evidence and repair boundary. Without new
-evidence, after two materially equivalent failed repair attempts the agent
-must not execute a third materially equivalent retry. Changing only command
-spelling, working directory, runner wrapper, Task label, or execution-unit
-label is not new evidence. A safe diagnostic result is new evidence only when
-it can materially change the causal hypothesis, authorized repair, or expected
-outcome. Diagnostic work and a genuinely different evidence-backed repair are
-not prohibited by the two-attempt bound.
+No attempt counter, persisted latch, semantic-failure parser, automatic
+Task/Contract/status/handoff mutation, mandatory checkpoint, project test
+strategy, instruction-chain adoption, or workflow engine is added. TG-M16.4
+synchronized this guidance and its behavioral acceptance; setup creates no
+bootstrap Task and edits no consuming-project instruction.
 
-Tests must not be weakened merely to obtain a pass. A test may be changed when
-current governing authority shows that the test is wrong, but a Contract or
-acceptance change still requires later explicit authority; neither a failure
-nor an advisory signal supplies that authority.
+## Review And Completion
 
-Classification reuses the existing Responsibility And Continue-First Rule:
+### Review Target, Receipt, And Finding Ledger
 
-1. Keep work in the current Task only when resolving it is within its accepted
-   scope and can proceed under current authority. This includes work required
-   by current acceptance and regressions introduced by the current Task.
-2. A failing test alone establishes neither accepted scope nor current
-   authority. An out-of-scope discovery uses the existing immediate local
-   handoff.
-3. Record a blocker only after safe authorized work for the affected Task or
-   lane is exhausted. Reserve `paused` for an explicit temporary interruption.
-4. Continue unrelated safe ready lanes. Batch any remaining user decisions
-   after that independent work rather than returning once per discovery.
+A current target is one of:
 
-Existing review gates remain authoritative. A current-generation
-`changes_requested` receipt or an unresolved high or medium finding blocks
-completion; historical receipts, PASS receipts, and low findings do not
-independently add a stop. A meaningful fix resolves applicable findings,
-advances review evidence to a fresh target, and obtains a fresh
-current-generation review result. A result that remains blocking counts as one
-unsuccessful remediation cycle; completion still requires fresh qualifying
-PASS receipts. Without new evidence, two unsuccessful materially equivalent
-review remediation cycles prohibit a third equivalent cycle. The agent then
-uses one bounded existing decision or blocker path for the affected work while
-unrelated safe lanes continue.
+- `git_commit`: a canonical existing commit;
+- `git_snapshot`: an internally captured staged snapshot;
+- `diff_fingerprint`: exact `sha256:<64-lowercase-hex>`; or
+- `external_revision`: a caller-approved durable external identity.
 
-All attempt counting is session-local and may reset in a fresh session; durable
-Task, event, finding, and receipt records remain the only rediscovery state.
-TG-M16 adds no attempt table, counter, latch, acknowledgement, semantic failure
-parser, automatic Task/Contract/status/handoff mutation, mandatory checkpoint,
-project-specific test strategy, or workflow engine.
+Every target set, including identical or A-to-B-to-A values, increments a
+positive signed-64-bit generation. Historical receipts never reactivate.
+Target setting is forbidden on done Tasks.
 
-### Setup, Adoption, And Acceptance Boundary
+`review receipt add` binds a sanitized reviewer key, independent/fallback/
+not-required kind, PASS or changes-requested verdict, summary, user-approval
+flag when required, and timestamps to the exact current target/generation.
+One reviewer cannot replace or contradict a receipt in the same generation.
+`review finding add` requires a same-project/Task receipt and severity;
+resolution preserves the original finding.
 
-TG-M16.3 is withdrawn. Setup creates no policy or bootstrap Task, performs no
-instruction-chain audit, and does not create or edit a consuming project's
-`AGENTS.md` or other instructions. Setup JSON, Viewer maintenance, task
-selection, schema v13, Viewer snapshot v3, release v0.8.0, and the 20 command
-leaves remain unchanged.
+Tier 2 requires two PASS receipts from distinct independent reviewer keys;
+Tier 1 requires one. Tier 2 fallback requires one documented self-review PASS
+plus explicit user approval; Tier 1 fallback requires the self-review PASS.
+Tier 0 permits not-required only with a mechanical-change rationale. Any
+current-generation changes-requested receipt, unresolved high/medium finding,
+or fresh-review-required condition blocks completion. Resolving a blocking
+finding is insufficient: advance to a newer target and obtain fresh receipts.
 
-TG-M16.4 synchronizes the concise Skill entry point, one failure-only
-one-level reference, package guidance and manifest, then pressure-tests fresh
-sessions for the exact Effort truth table, two-attempt Test Repair boundary,
-review remediation, existing scope/blocker/handoff classification,
-unrelated-lane continuation, batched decisions, and durable Task rediscovery
-with session-local retry counts reset. It installs nothing, edits no consuming
-project, and performs no instruction adoption. Any broader project-policy
-adoption requires a later separately approved design and is not a standing
-handoff from TG-M16.
+Reviewer keys prove only normalized-string distinctness. The trusted caller
+attests the actual returned result; taskgov neither launches/authenticates a
+reviewer nor proves person/model/process identity, independence, expertise,
+provenance, or summary truth.
 
-## Implemented Post-MVP Extension: TG-M17 Stable Project Identity And Relocation
+Public receipt kinds are exactly `independent`, `self_review_fallback`, and
+`not_required`; verdicts are `pass`, `changes_requested`, and `not_required`.
+Detailed rows remain in `review_receipts` and `review_findings`. Completion
+cycle basis selection is independent of the existing diagnostic
+`fallback_kind` projection.
 
-TG-M17 separates immutable project identity from mutable filesystem binding.
-This section is the implemented release-v0.9.0/schema-v14 contract.
-TG-M17.1 through TG-M17.4 were non-public staging revisions; TG-M17.5
-synchronized the accepted fixed resolver and relocation behavior into the
-release package.
+`task show.review_evidence` exposes the current target/generation, tier
+requirement, qualifying current-generation counts, fallback state, bounded
+recent receipts/findings, and blocking counts including
+`changes_requested_current_generation`. It never emits raw review content.
 
-The final TG-M17 surface remains exactly 20 command leaves. The only added
-public option is `setup --confirm-relocation <token>`. Viewer snapshot remains
-version 3 and accepts source schemas 5 through 14. The normal default-off Task
-flow remains at no more than nine governance calls and an enabled Effort
-Advisory flow at no more than ten. Setup and doctor remain outside that normal
-flow.
+### Git Snapshot And Target Binding
 
-### Identity, Binding, And Fixed State
+`review target set --kind git_snapshot` accepts no caller revision. It reads a
+canonical HEAD and stage-0 index, rejecting unborn HEAD, unmerged index,
+zero-object intent-to-add, and sparse-directory entries. A canonical manifest
+binds base commit, mode, object ID, and raw path bytes; its SHA-256 plus base
+are stored. No Git state, hook, config, worktree, object, index, or ref changes.
+Unstaged/untracked content is outside the snapshot.
 
-Schema v14 supports exactly two identity schemes:
+At `git_commit` completion, review binding succeeds when the current target is
+the identical canonical commit, or when a snapshot target's completion commit
+has exactly one parent equal to the stored base and its commit-tree manifest
+has the identical fingerprint. Merge/wrong-parent/tree mismatch is
+`review_target_mismatch`. External completion requires identical external
+target; commit-not-required requires a diff fingerprint.
 
-- `legacy_path_v1`: every database migrated from schema v1 through v13 keeps
-  its existing `project_id` byte-for-byte;
-- `uuid_v1`: a fresh production setup creates one random UUIDv4-backed
-  `project_id` formatted as `tg_project_<32-lowercase-hex>`.
+Git commits are resolved read-only. A unique abbreviation is accepted and
+stored as a canonical full object ID; missing, ambiguous, or non-commit input
+is `git_commit_not_found_or_ambiguous`. Done transition re-resolves stored Git
+completion and target evidence immediately before update. Git observation is
+outside the SQLite writer.
 
-TG-M17 never rewrites a Task, event, Contract, handoff, review, completion,
-maintenance, or Viewer-generation `project_id`. A missing fresh database has
-no durable identity: doctor, normal-command errors, and `setup --read-only`
-use top-level `project_id=null`; only write-mode setup creates and persists the
-UUID once.
+### Review Packet
 
-The current binding consists of a positive generation, the existing full
-64-lowercase-hex canonical-path SHA-256, and a non-authoritative display name.
-The hash algorithm remains the implemented `canonical_path_v1` algorithm so
-legacy values compare exactly: resolve the governed root without requiring it
-to exist, use the platform-normalized absolute spelling, UTF-8 encode, and
-SHA-256 hash. The display name is derived only from the root basename, replaces
-control and line-separator characters with U+FFFD, falls back to `project`,
-and is limited to 200 Unicode code points. Neither value is project identity.
+`review prepare <task-id>` is bounded read-only stdout generation for all four
+target kinds. Missing target returns `review_target_missing` and
+`review target is required before preparing a review packet`.
 
-Schema v14 records the identity scheme and current binding in `project_meta`
-and one append-only binding-history row for each generation. Each row stores
-only the project ID, generation, prior and current hashes, bounded display
-name, one fixed reason, an optional relocation-token digest, and canonical UTC
-time. Reasons are exactly `legacy_migration`, `fresh_setup`, and
-`confirmed_relocation`. Generation 1 has no prior hash or token digest.
-Confirmed relocation stores SHA-256 of the complete accepted token, never the
-token itself. Raw absolute paths are prohibited from the new project identity,
-binding, cleanup, and token-history metadata. Existing sanitized Task and
-business-text privacy rules are unchanged; TG-M17 does not retrospectively
-redefine an ordinary governing-file reference as identity metadata.
+Snapshot targets are recaptured; commit targets resolve the commit and list
+first-parent changes (root against empty tree); diff/external targets perform
+no Git and report paths unavailable. Target-specific behavior is internal and
+adds no Skill branch.
 
-`project_meta` also owns one internal legacy-cleanup pending bit, an optional
-bounded canonical source-inventory JSON value, and its optional 64-hex
-fingerprint. All three are null/false normally. Staged legacy publication sets
-them before fixed state becomes canonical; successful cleanup clears them.
-The inventory contains at most 32 of the exact recognized relative artifact
-names defined below, is at most 16,384 ASCII/UTF-8 bytes, and contains no
-absolute path or unrelated filename. These fields authorize only setup's exact
-old-layout retirement, not identity or binding change.
+Data keys are exactly `task`, `contract`, `review_target`,
+`changed_paths_available`, `changed_paths`, `changed_paths_total`,
+`changed_paths_truncated`, `review_focus`, `required_output`, and
+`receipt_command`. Task contains ID/title/status/verification/tier; Contract
+contains revision/scope/acceptance/constraints; target contains kind/value/base/
+generation. No diff, result, raw output, prompt, conversation, secret, absolute
+path, or caller-authored focus is included.
 
-The final canonical generated targets are fixed under the one supported
-physical package:
+At most 100 bytewise-ordered changed paths, 240 UTF-8 bytes each and 16,384
+bytes total, are returned. Unsafe paths fail `review_packet_path_unsafe` with
+`review packet contains an unsafe project path`; no path is hidden. Complete
+text or JSON is at most 32,768 UTF-8 bytes or fails
+`review_packet_too_large` with `review packet exceeds the supported size`.
+Git observation uses at most 10 subprocesses.
 
-```text
-<physical-skill>/state/current/taskgov.sqlite
-<physical-skill>/state/current/backups/
-<physical-skill>/state/current/viewer/task-viewer.html
-```
+Four common focus rows are Contract compliance; state/completion integrity;
+privacy/target safety; and verification/regression. The fifth mechanically
+states the exact snapshot, commit, supplied diff-fingerprint material, or
+supplied external material boundary. Required output is verdict PASS or
+CHANGES_REQUESTED, severity-ordered exact file/line findings, remaining risks,
+and recommended changes. Receipt command is a non-executed attestation shape.
 
-The ordinary project-scoped and bounded development self-host package rules
-remain unchanged. The package `state/` directory remains the ignore operand
-and generated-state boundary. Public alternate state or database paths remain
-unavailable.
+Text order is `Task`, `Status`, `Verification`, `Contract revision`, `Scope`,
+`Acceptance`, `Constraints`, `Review target`, `Changed paths`, `Review focus`,
+`Required output`, `Receipt command`, LF-terminated. After Git, a second short
+read revalidates Task, Contract, and every target field/generation; drift fails
+`review_packet_stale` with `review context changed while preparing the packet`.
 
-One shared resolver owns all production database and artifact targets. It
-derives only the current root hash and bounded display name from `--repo`, then
-reads the stored identity and binding from fixed state. Setup, doctor, every
-Task/handoff/review leaf, backup, Viewer, maintenance, and recovery consumer
-must not reconstruct an identity or canonical state path independently.
-Internal explicit target injection remains test-only.
+### Completion Evidence And Commands
 
-With an authoritative fixed primary, ordinary Task/handoff/review resolution
-validates that primary's identity, schema, integrity, and binding but does not
-open retained backups or gate business-state availability on the
-non-authoritative Viewer projection. Setup uses the same resolver's
-deterministic deep-validation projection before repair or mutation. Fixed
-missing-primary recovery, legacy discovery, and private-stage publication also
-retain full backup/Viewer/lock/artifact validation. This caller-owned
-mechanical distinction adds no command, LLM choice, question, or normal-loop
-stop.
+Every done transition supplies exactly one:
 
-### Legacy Discovery And Compatibility
+- `git_commit`: canonical existing target-project commit;
+- `external_revision`: revision plus reason and
+  `--external-revision-approved`; or
+- `commit_not_required`: explicit assertion that no managed material changed,
+  with no revision.
 
-When the fixed primary is absent, the shared resolver used by every DB-backed
-leaf may inspect only direct children of
-`<physical-skill>/state/projects`; it does not search a repository, parent
-directory, user-wide install, link target, or network location. Setup and
-doctor consume the richer plan/diagnostic projection; normal leaves use the
-same read-only observation only to return the exact state result below.
-Enumeration stops and fails closed after 64 entries. Every inspected component
-must be lexically and canonically contained, physical, non-link,
-non-junction/non-reparse, and of the expected regular-file or directory kind.
-An unknown direct child of `state/projects` is left untouched and makes source
-selection unreadable rather than permitting fresh initialization.
+External revision is never inferred. Missing approval is
+`external_revision_approval_required`. The compatibility
+`--completion-commit-hash` is Git-only and cannot store a generic string.
+Existing migrated legacy values remain `legacy_unverified`; they are not
+retrospectively strengthened or invalidated.
 
-One legacy candidate requires all of the following:
+Managed material is source-controlled content or a user-approved durable asset
+whose final state must be traceable. Generated local state, ignored SQLite,
+caches, locks, logs, and scratch files are not managed material unless current
+authority explicitly says otherwise. `commit_not_required` is valid only when
+no managed material changed.
 
-- exactly one physical candidate directory and either one regular
-  `taskgov.sqlite` or a missing primary with at least one valid managed backup;
-- directory basename equal to the database's stored legacy `project_id`;
-- source schema 1 through 13, or the schema-v14 legacy-layout transition state
-  produced while TG-M17.1 is active before TG-M17.2;
-- implicit pre-v14 or explicit `legacy_path_v1` identity;
-- contiguous migration history, one project row, successful `quick_check`,
-  no foreign-key violation, and supported rollback-journal state;
-- valid same-project artifact metadata at every recognized managed path, with
-  generation rows inside the existing reconciler's retained-set-plus-one
-  in-flight envelope;
-- every canonical or recognized owned path is physical and safe.
+Both thin `task complete` and compatibility `task edit --status done` require
+verification and review confirmations, typed completion evidence, sequential
+eligibility, a matching current target, sufficient current-generation review,
+and no blocking finding/receipt. They use the same transition service.
 
-Other entries *inside* that one candidate directory are not candidate input.
-The resolver does not traverse, open, copy, fingerprint, rename, or delete
-them, even when their name ends in `.sqlite`; they remain in the old directory
-after migration. A link or unsafe object at a canonical database, recognized
-managed-backup, Viewer, lock, or exact recognized temporary path fails closed;
-an unrelated entry at another name is preserved.
+Thin completion emits `command="task.complete"` and data exactly `task`,
+`changed_fields`, and `event`; text starts
+`Task completed: <task-id>`. It accepts no non-completion edit.
 
-The only recognized legacy crash-temporary basenames are one file per class:
+`task complete --check` accepts the same proposed evidence and confirmations,
+is read-only, invokes the exact shared fail-fast validator, and is not an
+authorization token. It captures one coherent basis, closes before Git, then
+revalidates in a second coherent read. Drift returns not-ready with
+`completion_check_stale`.
+
+Check output is at most 8,192 UTF-8 bytes. Data is exactly `task_id`, `ready`,
+`status`, `blocking_codes`, `contract_revision`,
+`review_target_generation`, `completion_evidence_kind`, and
+`suggested_action`. It returns only the first code in existing validation
+order. Allowed readiness codes are `invalid_status_transition`,
+`sequential_predecessor_incomplete`, `verification_required`,
+`review_required`, `completion_evidence_conflict`,
+`external_revision_approval_required`, `commit_required`,
+`git_commit_not_found_or_ambiguous`, `invalid_review_evidence`,
+`review_target_required`, `review_target_mismatch`,
+`review_finding_unresolved`, `review_changes_requested`,
+`review_receipts_insufficient`, and `completion_check_stale`. Parse/privacy,
+not-found, project/schema/journal/busy/storage/internal failures remain command
+errors.
+
+Check text is exactly three LF-terminated lines:
+`Task <task_id>: ready|not ready`,
+`Blocking: none|<comma-separated codes>`, and
+`Suggested action: <bounded suggested_action>`.
+
+### Typed Checkpoint
+
+`task checkpoint <task-id>` requires summary and next action and accepts up to
+eight unresolved risks. UTF-8 limits are 1,024 for summary, 1,024 for next
+action, 512 per risk, 4,096 combined risks, and 6,144 total caller payload.
+One append-only row stores only that content, Task/project, Contract revision,
+and time. The same transaction adds event type `checkpoint_recorded` with
+fixed summary `Checkpoint recorded`, does not copy content into the event, and
+does not update `tasks.updated_at`.
+
+Exact replay against the latest same-Contract checkpoint is write-free with
+`replayed=true`. Done is immutable. Checkpoints are optional, never automatic,
+and change no status, scope, acceptance, selection, review, evidence, or gate.
+`task show`/default current expose only the latest object.
+
+Command data is exactly `checkpoint`, `created`, `replayed`, and `event`.
+Checkpoint keys are `checkpoint_id`, `task_id`, `contract_revision`,
+`summary`, `next_action`, `unresolved_risks`, and `created_at`. New event
+output contains only ID, type, and time; replay event is null. Text is
+`Checkpoint <checkpoint_id>: recorded|replayed for task <task_id>\n`.
+
+## Completion Cycle History
+
+Schema v15 adds `tasks.completion_history_coverage` (`legacy_unknown` or
+`complete`, default legacy unknown), nullable internal
+`task_events.completion_cycle_id`, and append-only
+`task_completion_cycles`. Schema v16 is a marker-only
+`completion_cycle_capture_activation` migration: it adds no object but prevents
+a schema-v15 binary from writing after native capture activates.
+
+Each cycle ID is `tg_completion_cycle_<16-lowercase-hex>` with a positive
+signed-64-bit per-Task ordinal beginning at 1 and increasing exactly by one.
+It stores ownership; origin (`native_done` or `legacy_current_done`);
+completeness (`complete` or `partial`); completion/record times; Contract
+revision; tier; specified/unspecified verification expectation and nullable
+attestation; the exact six-field completion evidence; exact four-field review
+target; and versioned accepted gate-basis counts plus up to two qualifying
+receipt IDs.
+
+The migration is named `completion_cycle_history`. Internal cycle fields
+include `recorded_at`, `gate_basis_version`, and `review_basis_kind`; these are
+project-owned validated values and do not broaden the public allow-list.
+
+Native rows are complete, have non-null completion time, true verification
+attestation, gate basis v1, zero changes-requested/open-high/open-medium/
+fresh-review-required, and a valid tier basis:
+
+- Tier 1/2 selects enough distinct independent PASS receipts ordered by
+  `reviewer_key, review_receipt_id`;
+- only when insufficient, Tier 1/2 selects the first valid fallback by receipt
+  ID, including Tier 2 approval;
+- Tier 0 selects the first valid not-required receipt.
+
+The stored v1 basis kind is exactly `independent_passes`,
+`self_review_fallback`, or `not_required`; a v0 legacy row uses `unknown`.
+
+Legacy rows are partial, have null attestation, unknown review basis, gate
+basis v0 with null counts and no receipt IDs, and may preserve `none` or
+`legacy_unverified` without strengthening it. Cycles are immutable and never
+satisfy a current gate.
+
+Migration 15 is transactional: every existing Task remains
+`legacy_unknown`; existing event bytes/links remain unchanged; each currently
+done Task receives exactly one ordinal-1 partial cycle copied only from its
+current projection; other statuses receive none. It never parses event prose
+or infers reopened cycles.
+
+Activation to v16 rereads current done unknown-coverage Tasks in binary Task-ID
+order. It reuses an exact latest un-reopened partial cycle or appends one next
+partial cycle; mismatch, overflow, ownership error, or inconsistent link rolls
+back the whole activation and marker. From v16, new Tasks explicitly receive
+complete coverage; older Tasks remain legacy-unknown permanently.
+
+`legacy_history_incomplete` is true when coverage is not complete, any cycle is
+partial, or any `task_reopened` event has null cycle link. A fresh v16 Task with
+no cycle is complete-history and false.
+
+Both done paths insert one complete cycle, update Task, create the existing
+linked completion event, record effort/Viewer state, and commit atomically
+under one short writer after all external observation. Reopen requires the
+current done projection to equal the latest un-reopened cycle; it links the
+new reopen event and resets current state atomically. The sole compatibility
+bridge may create an ordinal-1 partial cycle for an unknown-coverage done Task
+with no cycle. Other mismatch is `completion_history_inconsistent` and no
+write.
+
+Default `task show` adds exactly one `completion_history` object with
+`total`, `returned_count`, `truncated`, `legacy_history_incomplete`, and
+`cycles`. It returns the newest complete-row prefix, maximum 10. Each cycle is
+at most 8,192 bytes and the complete component at most 32,768, measured with
+canonical compact UTF-8 JSON including actual wrapper counts. It never skips
+or partially serializes an oversized row.
+
+Public cycle fields are exactly `completion_cycle_id`,
+`saved_cycle_ordinal`, `origin`, `completeness`, `completed_at`,
+`contract_revision`, `review_tier`, `verification_expectation`,
+`verification_attestation`, `completion_evidence`, `review_target`, and
+`gate_basis`. Nested evidence has `kind`, `revision`, `reason`,
+`external_revision_approved`, `completion_commit_required`, and
+`completion_commit_hash`; target has `kind`, `value`, `base_revision`,
+`generation`; gate basis has `version`, `kind`,
+`required_independent_passes`, `qualifying_independent_passes`,
+`changes_requested`, `open_high`, `open_medium`, `fresh_review_required`, and
+`qualifying_receipt_ids`.
+
+Gate-basis v0 emits six null counts and an empty receipt array; v1 emits integer
+counts and exactly one qualifying ID for Tier-0/Tier-1/fallback or two for
+Tier-2 independent basis. Attestation is true or null, never false. Public
+events remain only `task_event_id`, `task_id`, `project_id`, `event_type`,
+`summary`, and `created_at`; internal cycle link is never emitted.
+
+Text show prints history returned/total/truncation/incompleteness and only the
+latest cycle's ordinal, origin/completeness, time, evidence kind, target
+kind/generation, and review-basis kind. Other list/current/next/effort/packet
+outputs remain unchanged and history has no option or pagination.
+
+The only new error is exit-2 `completion_history_inconsistent` with exact
+message `stored completion history is inconsistent`. It covers required-cycle
+absence, projection mismatch, reused reopen link, ordinal overflow, invalid
+gate relationship, and cycle/event ownership conflict; it is not a completion
+check blocker code.
+
+## SQLite, Migration, And Concurrency
+
+### Initialization And Supported Schemas
+
+`setup` is the sole public initializer and migrator. No Task, handoff, review,
+doctor, read, or write command creates/migrates a missing/old database.
+Missing state is `db_not_initialized`; supported older state is
+`migration_required`; a newer schema is `schema_too_new`. Old binaries reject
+newer state and never downgrade/write it.
+
+Fresh setup creates schema v16. Structurally complete contiguous source schemas
+v1-v15 are setup-only migration inputs; v16 is idempotent current state.
+Schema sequence is:
+
+| Version | Durable addition |
+|---:|---|
+| v1-v4 | original Task/event/project and completion-evidence lineage |
+| v5 | structured review target, receipt, and finding state |
+| v6 | Git-snapshot base revision |
+| v7 | local handoff outbox |
+| v8 | immutable Task Contract revisions |
+| v9 | optional Effort basis/activity metadata |
+| v10 | maintenance opt-in, policy, latest backup/outcome/applied retention |
+| v11 | managed backup generation ledger |
+| v12 | append-only checkpoints |
+| v13 | Viewer source/render generation and outcomes |
+| v14 | stable identity, binding/history, and cleanup metadata |
+| v15 | completion-cycle history |
+| v16 | marker-only native capture activation |
+
+Each migration is transactional, idempotent, rollback-tested, validates
+contiguous history and required objects/rows, preserves project/business IDs
+and durable records, and passes `quick_check` and foreign keys. Acceptance
+retains the realistic 12-Task/191-event fixture and historical completion/
+review trace through every supported source version. No migration parses
+private prose to invent structure.
+
+### Operational Read/Write Boundary
+
+Operational databases support rollback-journal mode only. Before opening, the
+tool inspects the header and adjacent `-wal`/`-shm`; persistent WAL state fails
+`unsupported_journal_mode` with
+`task database uses unsupported WAL journal mode` before connection, sidecar,
+checkpoint, deletion, or conversion. Existing rollback `-journal` is left to
+SQLite locking/recovery.
+
+Every read uses `mode=ro`, `PRAGMA query_only=ON`, and one explicit transaction
+covering schema, project identity/binding, and all rows/counts in a response.
+`immutable=1` is prohibited. Reads return one committed-consistent result or a
+structured concurrency error.
+
+`task next` has the documented two-read advisory boundary. Enabled
+`task effort` reads Task/Contract/handoff/basis once, closes before Git, then
+uses a second validated generation read only when a stored basis exists. The
+generation comparison bridges phases. Post-Git busy or newly observed WAL
+fails; other bounded observation uncertainty may remain an advisory.
+
+Git resolution, snapshot capture/comparison, completion validation, and Effort
+observation finish before `BEGIN IMMEDIATE`. Under the short writer, services
+reread schema, identity/binding, Task, lane, Contract, target generation/base,
+review rows, and completion basis and reject stale state atomically. No SQLite
+writer is held during Git, backup copy, Viewer rendering, cleanup, or another
+subprocess.
+
+Residual `SQLITE_BUSY`/`SQLITE_LOCKED` after the normal driver wait is exit 2
+`database_busy` with
+`task database is busy; run the command again later` for reads and writes. The
+tool adds no retryable flag, longer timeout, sleep, backoff, or generic retry;
+handoff record's one complete retry is the sole exception. Failed writes leave
+no row/event/receipt/Git/target change.
+
+## Stable Project Identity And Relocation
+
+### Identity, Binding, Resolver, And Source Selection
+
+Schema v14 has exactly two schemes:
+
+- migrated v1-v13 databases retain their byte-identical legacy project ID as
+  `legacy_path_v1`;
+- fresh production setup creates one random UUIDv4 ID
+  `tg_project_<32-lowercase-hex>` as `uuid_v1`.
+
+No Task, event, Contract, handoff, review, completion, maintenance, or Viewer
+record ID is rewritten. Missing state has top-level null project ID until
+write setup creates and persists the UUID once.
+
+Binding is separate: positive generation, 64-lowercase-hex canonical-path
+SHA-256, and bounded display name. `canonical_path_v1` resolves without
+requiring existence, platform-normalizes absolute spelling, UTF-8 encodes, and
+hashes. Display uses the root basename, replaces controls/line separators with
+U+FFFD, falls back to `project`, and is at most 200 code points. Neither is
+identity.
+
+`project_meta` plus append-only binding history records ID, generation,
+old/new hashes, display, UTC time, fixed reason (`legacy_migration`,
+`fresh_setup`, `confirmed_relocation`), and optional SHA-256 of the accepted
+token. Generation 1 has no prior hash/token digest. Raw paths and raw tokens
+are never stored.
+
+One shared resolver owns every production database/backup/Viewer/lock target.
+It derives only current hash/display from repo, then reads stored identity and
+binding. Every business writer revalidates ID/hash/generation under its short
+lock. An authoritative fixed primary is validated without gating ordinary
+business reads on backups or Viewer. Setup alone uses deep artifact validation.
+
+With no fixed primary, the resolver inspects only direct physical children of
+`state/projects`, at most 64, without traversing unknown content. Unknown
+direct children, unsafe canonical paths, links/reparse points, multiple
+candidates/identities, newer/corrupt/foreign state, or validation ambiguity
+fail closed and never fall through to fresh initialization.
+
+Source precedence is:
+
+1. existing fixed primary, even when invalid (never replaced);
+2. valid fixed managed-backup recovery with coherent identity/binding lineage;
+3. exactly one valid legacy physical candidate;
+4. fresh initialization only when no durable/candidate-shaped residue exists.
+
+A legacy candidate is one physical directory named exactly by its stored legacy
+project ID, with a regular primary or missing primary plus valid managed
+backup, schema v1-v13 or the bounded v14 transition state, contiguous history,
+one project row, quick/foreign-key success, rollback-journal compatibility,
+and safe recognized artifacts. Unrelated entries inside that sole directory
+are not traversed or copied and remain after migration.
+
+Recognized legacy crash temporaries are at most one physical bounded file per
+class:
 
 ```text
 database directory  .taskgov-restore-[a-z0-9_]{8}.tmp
@@ -2886,203 +1103,69 @@ backups directory   .taskgov-backup-[a-z0-9_]{8}.tmp
 Viewer directory    .task-viewer-[a-z0-9_]{8}.tmp
 ```
 
-Each must be a non-link regular file no larger than the source database size
-plus 16,777,216 bytes. A class is recognized only when exactly one matching
-basename exists. If two or more basenames match one class, every match in that
-class is unrelated and preserved; none is selected by enumeration order. A
-nonmatching random length/alphabet or an oversized file is likewise unrelated
-and preserved, not deletable tool state. Publication preflight only classifies
-these temporaries; it does not reconcile or delete them before fixed state is
-durable.
+Each is no larger than source database size plus 16,777,216 bytes. Multiple
+matches, wrong grammar, or oversized files are unrelated and preserved. Only
+canonical backup/Viewer locks are recognized for retirement; they are not
+copied as durable state.
 
-The canonical backup and Viewer lock files are recognized for retirement, but
-are never copied as durable state into the fixed layout. They are released
-before cleanup, included in the cleanup inventory when present, and removed
-only through that inventory. Other lock-like names are unrelated and
-preserved.
+Managed generations are normally at most 20 plus one in-flight identity:
+at most 21 artifacts, rows, and union identities. Schema v11+ permits only the
+existing one file-only or one missing-file-row crash relation (never both with
+a present primary), and the missing-primary selected newest file plus zero
+through 20 older missing rows accepted by recovery normalization. v10 uses its
+pointer rules; v1-v9 use newest-artifact retention. Any second inconsistency,
+overflow, divergent lineage, or reconciler rejection fails closed. Discovery
+does not repair the legacy source; only a private copy is reconciled.
 
-A candidate-shaped invalid or unsafe canonical entry, more than one candidate,
-multiple project identities, foreign backup metadata, or a newer schema fails
-with the exact sanitized boundary below and changes nothing. It never falls
-through to recovery or initialization.
+Same-binding legacy state migrates without a token. A primary-backed differing
+binding is a relocation candidate. Moved backup-only legacy/fixed recovery is
+`project_state_unreadable`; relocation is never inferred from backup material.
+After a confirmed fixed rebind, old-binding backups remain retained but cannot
+recover a missing primary until a new-binding backup succeeds.
 
-Source selection is deterministic:
+Before setup, normal DB-backed leaves report `db_not_initialized` when no
+source exists, `migration_required` for one same-binding legacy source,
+`project_relocation_required` for a primary-backed moved legacy source, and
+the existing unreadable/mismatch/newer/journal/busy result for invalid source
+state. They perform no publication, recovery, cleanup, initialization, or
+migration.
 
-1. An existing fixed primary is authoritative. If it is unreadable or corrupt,
-   setup never replaces it from a backup or legacy candidate.
-2. With no fixed primary, recognized fixed-layout managed backups retain the
-   existing missing-primary recovery precedence. Valid generations must carry
-   one identity scheme and one coherent binding lineage.
-3. With neither fixed primary nor usable fixed recovery source, exactly one
-   valid legacy candidate may be considered.
-4. Only when none of those durable sources or candidate-shaped residues exists
-   may setup initialize fresh state.
+### Relocation Preview And Token
 
-A fixed backup-only recovery whose selected newest valid generation is bound
-to a different current root fails closed as `project_state_unreadable`.
-TG-M17 does not infer a move from backup material or extend relocation
-confirmation to that third source kind. Older retained valid generations may
-have earlier bindings only when their identity and scheme match and their
-history, or implicit pre-v14 generation 1, is an exact prefix of the selected
-generation's history. They remain retained but are not selected over the
-mechanically newest valid generation.
+A path mismatch proves neither move, copy, nor fork. Normal commands return
+`project_relocation_required` without write. Doctor returns a successful
+continuation warning and setup eligibility. Write setup without token also
+fails. Only `setup --read-only` returns successful
+`status="relocation_preview"`, exact future plan, and opaque token. Combining
+token with read-only is parser-level `invalid_option_combination`.
 
-A confirmed fixed-state rebind does not synthesize an extra backup merely to
-close this lineage. Existing pre-rebind generations remain valid retained
-history, but none has the new binding head until the next successful managed
-backup. If the fixed primary is lost during that bounded interval, setup fails
-closed as `project_state_unreadable` rather than restoring an old-binding
-generation. This explicit residual preserves the existing backup schedule and
-write vocabulary; it is not a reason to add a synchronous rebind backup.
+The Skill presents the plan, stops for explicit current approval, then may pass
+that exact token. Preview is not approval; expired/stale token requires a new
+preview and approval. Direct user invocation with a token is explicit intent.
 
-Legacy discovery preserves the existing M14 crash-reconciliation envelope.
-The normally retained set is at most 20 generations, but it may have exactly
-one additional canonical, valid, same-project in-flight generation. Source
-validation allows no more than 21 canonical same-project artifacts, no more
-than 21 generation rows when that table exists, no more than 21 distinct
-generation identities across their union, and only a state accepted by the
-existing schema-specific reconciler or recovery normalizer. For schema v11+
-with a present primary, it permits no more than one artifact lacking its
-generation row or one generation row whose file is absent from an interrupted
-file-before-row prune, never both. When the primary is missing and the newest
-backup is the database source, that snapshot normally lacks its own later row:
-the sole file-only artifact must be that mechanically selected newest backup,
-and zero through 20 of its older snapshot rows may lack files already removed
-by completed or interrupted retention pruning. The existing recovery
-normalizer must accept every removal/import, and the artifact/row union remains
-bounded to 21 identities.
-For schemas v1 through v10, absence of the v11
-generation table is not a file-only exception: v10 uses its existing pointer
-rules and v1-v9 use their existing newest-artifact retention rules. This
-permits all 21 row-backed files after a newly published
-artifact lowered applied retention but the process stopped before pruning.
-The in-flight generation may be file-only before its row transaction or
-coherent after that transaction; it participates in newest-candidate
-selection, including when the legacy primary is absent.
-
-A second v11+ file-only artifact; a second missing-file row with a present
-primary; more than 20 missing rows in the exact missing-primary relation; more
-than 21 artifacts, rows, or union identities; divergent identity/binding
-lineage; or any state the existing reconciler/normalizer rejects fails closed.
-Discovery and source locking do not import, delete a stale row, prune, or
-otherwise change the legacy source. In the private fixed stage,
-missing-primary recovery normalization first removes zero through 20 stale
-snapshot rows and imports the selected newest artifact in one bounded pass.
-The existing version-specific reconciler then runs to bounded convergence
-before any migration backup: present-primary v11+ imports one missing row,
-removes one stale row, or prunes the coherent post-row set and may require at
-most two passes, while v10 and pre-v10 use their pointer/prune normalization.
-Only the private copy is reconciled. Every present valid source artifact,
-including the selected recovery file, remains in the persisted cleanup
-inventory; a row-only missing file has no filesystem entry to inventory.
-
-A legacy candidate whose primary or newest valid backup has a stored hash
-equal to the current root is a same-binding layout migration and requires no
-relocation token. When its primary is missing, setup restores the newest
-coherent managed backup into the private fixed-layout stage; it never recreates
-the old primary. A primary-backed legacy candidate with a differing hash is a
-relocation candidate and remains strictly no-write until TG-M17.3
-confirmation. A moved backup-only legacy candidate fails
-`project_state_unreadable` because recovery would be the unsupported third
-relocation source.
-
-All schema v1 through v13 inputs migrate sequentially and idempotently to v14,
-preserving every durable record and completion trace. The migration matrix
-tests each source version. Final end-to-end acceptance additionally exercises
-at least one complete pre-v9 fixture, one v13 fixture, and the schema-v14
-legacy-layout transition state. Viewer snapshot v3 reads sources 5 through 14;
-earlier sources must complete setup migration before Viewer publication.
-Migration deterministically normalizes the old non-authoritative display name
-with the same control replacement, fallback, and 200-code-point bound used for
-new bindings; ordinary valid names are unchanged. This is not a business-record
-or identity rewrite.
-
-### Setup Relocation Confirmation
-
-A path mismatch proves neither move, copy, nor fork intent. Normal commands
-and doctor never rebind. Normal commands return
-`project_relocation_required` without a business, SQLite, artifact, Git, or
-target-project write. Doctor remains successful, read-only, and fixed at
-`suggested_action="continue"`; it reports project-state code
-`relocation_required`, the same warning, and `setup_eligible=true` when every
-other precondition passes.
-
-Write-mode `setup` without a token also returns
-`project_relocation_required` and performs no write. Only
-`setup --read-only` returns a successful `status="relocation_preview"` with
-the exact future plan and a confirmation token. Supplying
-`--confirm-relocation` with `--read-only` is rejected before project or state
-resolution as `invalid_option_combination`. Setup never prompts.
-
-Token issuance is not user approval. In the Skill-driven flow, the agent must
-present the relocation requirement and bounded plan, stop for the user's
-explicit current approval, and only then pass that exact token to write setup.
-It must never turn preview into confirmation autonomously. A token that expires
-or becomes stale before use requires a new preview and new approval. A user who
-directly invokes write setup with `--confirm-relocation` has supplied that
-explicit intent outside the Skill mediation. This exceptional one-decision
-boundary occurs only on a proven mismatch and adds nothing to the normal
-nine/ten-call Task loop.
-
-The token is an accidental-misapplication checksum and bounded approval
-transport, not authentication, a signature, a secret, or protection from a
-malicious local process. Its exact ASCII form is:
+Token format is:
 
 ```text
 tgr1.<unpadded-base64url-canonical-json>.<64-lowercase-hex-checksum>
 ```
 
-The checksum is SHA-256 of the ASCII bytes `tgr1.<payload>`. The decoded JSON
-uses UTF-8, rejects duplicate keys, and has exactly these sorted canonical
-keys:
+Checksum is SHA-256 of ASCII `tgr1.<payload>`. Canonical duplicate-free UTF-8
+JSON has exactly sorted keys `binding_generation`, `expires_at`,
+`identity_scheme`, `issued_at`, `new_path_hash`, `old_path_hash`,
+`project_id`, `source_layout`, `source_schema_version`, and `v`. Version is 1;
+source layout is `fixed_current_v1` or `legacy_projects_v1`; hashes are 64
+lowercase hex; generation positive; schema supported. Serialization uses
+sorted keys, `(",", ":")`, unpadded base64url. Expiry is exactly 900 seconds
+after issue, acceptance is `issued_at <= now < expires_at`, total token at most
+2,048 ASCII bytes, and checksum comparison constant-time.
 
-```text
-binding_generation
-expires_at
-identity_scheme
-issued_at
-new_path_hash
-old_path_hash
-project_id
-source_layout
-source_schema_version
-v
-```
+The token binds stored ID/scheme/generation/hash, proposed hash, layout, source
+schema, and time, not business content. Confirmation revalidates all fields,
+package/install/ignore, source inventory/integrity, destination, and current
+root under locks.
 
-`v` is integer 1; `source_layout` is exactly `fixed_current_v1` or
-`legacy_projects_v1`; hashes are 64 lowercase hex; the generation is positive;
-and the schema is a supported observed source. JSON uses sorted keys,
-`(",", ":")` separators, and no insignificant whitespace before unpadded
-base64url encoding. `expires_at` is exactly 900 seconds after `issued_at`.
-The token is accepted only while `issued_at <= now < expires_at`, is at most
-2,048 ASCII bytes, re-encodes canonically, and passes constant-time checksum
-comparison.
-
-The token binds consent to the stored project ID, identity scheme, current
-generation/hash, proposed hash, source layout, source schema, and validity
-window. It deliberately does not fingerprint Task/business content:
-confirmation authorizes a binding change, and the actual command migrates the
-latest coherent source observed under its locks. Confirmation revalidates all
-token fields, package/install/ignore state, source inventory and integrity,
-destination state, and the current root hash immediately before durable work.
-
-Malformed structure, types, checksum, time relation, or future issue time is
-`relocation_token_invalid`; expiry is `relocation_token_expired`; a
-well-formed token whose bound source or proposed context changed is
-`relocation_token_stale`; an already successful token is
-`relocation_token_used`; and a valid-context token supplied when no relocation
-is required is `relocation_not_required`. A successful-token replay always
-fails. A later token-free setup at the rebound path is the normal idempotent
-setup or cleanup/Viewer-repair path.
-
-After ordinary package/project/state preflight, token-result precedence is
-structural/checksum validity, a digest already present in binding history,
-expiry, stale context, then not-required context. Consequently, every
-structurally valid successful-token replay returns `relocation_token_used` even
-after its original validity window. No lower-precedence result reveals which
-payload field differed.
-
-The fixed sanitized errors and messages are:
+After common preflight, precedence is invalid structure/checksum, already-used
+digest, expired, stale context, then not-required. Fixed codes/messages are:
 
 | Code | Message |
 |---|---|
@@ -3093,1695 +1176,719 @@ The fixed sanitized errors and messages are:
 | `relocation_token_used` | `relocation confirmation has already been used` |
 | `relocation_not_required` | `project relocation is not required` |
 
-These setup service errors use exit 2. Parser-level
-`invalid_option_combination` uses the existing usage-error exit 1. No rejected
-token, hash, path, source count, filename, SQLite/OS exception, or validation
-detail is echoed.
+Service errors exit 2; rejected token/hash/path/count/name/exception is never
+echoed. Successful replay always returns used, even after expiry.
 
-### Setup JSON And Durable Write Order
+### Setup Relocation Output And Durable Publication
 
-TG-M17.3 adds one always-present `data.relocation` object to setup results with
-exactly:
+Setup always includes `data.relocation` with exactly `required`,
+`source_layout`, `identity_scheme`, `binding_generation`,
+`confirmation_token`, and `expires_at`. Token/expiry are non-null only on a
+successful relocation preview. Fresh preview has null top-level ID and null
+identity/generation/token/expiry.
 
-```text
-required
-source_layout
-identity_scheme
-binding_generation
-confirmation_token
-expires_at
-```
+Relocation failure has status null, required schema 16, empty warnings, one
+error, null token/expiry, and no rejected value. A no-token mismatch preserves
+the read-only future `planned_writes`; invalid/expired/stale/used/not-required
+token rows have empty write arrays and mechanically observed bounded context.
+Earlier common-preflight errors retain precedence.
 
-`required` is boolean. Other values are bounded scalar values or `null`;
-`confirmation_token` and `expires_at` are non-null only in a successful
-relocation preview. No path or hash appears outside the opaque token. Fresh
-preview has a null top-level project ID, a false `required`, and null identity,
-generation, token, and expiry. Existing matching state reports its scheme and
-generation without adding a normal-loop branch.
+The complete setup write vocabulary is `database_restore`,
+`database_initialize`, `migration_backup`, `database_migrate`,
+`maintenance_configure`, `legacy_state_publish`, `project_binding_update`,
+`viewer_publish`, and `legacy_state_cleanup`. Durable order is:
 
-Relocation-related setup failures follow the existing setup scalar rules:
-`status` is `null`; `schema_to` is 14; `schema_from` and the maintenance,
-policy, and Viewer fields are the safely observed/effective values when
-ordinary preflight established them, otherwise null as for a shared-preflight
-failure. The top-level project ID is the safely established stored value or
-null. Every error has `confirmation_token=null` and `expires_at=null`; no
-rejected token field is reflected. The remaining values are exact:
+1. one source prefix: empty, restore, legacy publish, restore plus legacy
+   publish, or initialize;
+2. migration backup then migration;
+3. maintenance configuration;
+4. binding update only for confirmed mismatch;
+5. Viewer publication;
+6. legacy cleanup only after fixed database, binding, maintenance, and Viewer.
 
-| Setup error | `planned_writes` | `completed_writes` | `relocation.required` and context |
-|---|---|---|---|
-| mismatch, no token: `project_relocation_required` | the same ordered future plan `P` that read-only preview would return | `[]` | `true`; safely observed source layout, scheme, and generation |
-| `relocation_token_invalid` | `[]` | `[]` | current mechanically observed mismatch boolean; safely observed context or null |
-| `relocation_token_expired` | `[]` | `[]` | current mechanically observed mismatch boolean; safely observed context or null |
-| `relocation_token_stale` | `[]` | `[]` | current mechanically observed mismatch boolean; safely observed context or null |
-| `relocation_token_used` | `[]` | `[]` | current mechanically observed mismatch boolean; safely observed context or null |
-| `relocation_not_required` | `[]` | `[]` | `false`; safely observed source layout, scheme, and generation |
+Legacy work occurs in one private contained stage. Pre-publication staging is
+not reported completed. Atomic no-clobber publication makes its staged prefix
+durable together. Binding CAS appends generation and increments Viewer source
+generation in one short transaction; overflow/missing Viewer state/mismatch
+rolls back without consuming the token.
 
-Here `P` includes migration/configuration, binding, Viewer, and pending-cleanup
-stages applicable to that source under the durable ordering below. All six
-rows exit 2 with `ok=false`, empty warnings, and exactly their fixed error.
-Supplying a token cannot convert an earlier package, project, ignore, unsafe,
-busy, newer-schema, corrupt-state, or ambiguous-source result into one of
-these rows; the earlier shared preflight row and its existing null/empty data
-contract wins.
-
-Once a fixed or legacy database identity has passed validation, the envelope's
-top-level `project_id` is that stored ID, including relocation preview/error.
-It is `null` for fresh/missing state and for an invalid source whose identity
-was not safely established.
-
-The setup write vocabulary adds exactly `legacy_state_publish`,
-`project_binding_update`, and `legacy_state_cleanup` to the existing values.
-For any path, `planned_writes` and `completed_writes` use this durable stage
-order:
-
-1. a source prefix of exactly one of `[]`, `[database_restore]`,
-   `[legacy_state_publish]`,
-   `[database_restore, legacy_state_publish]`, or
-   `[database_initialize]`; the two-stage prefix is only same-binding
-   legacy-layout missing-primary recovery;
-2. `migration_backup` and `database_migrate` when required;
-3. `maintenance_configure` when required;
-4. `project_binding_update` only for confirmed mismatch;
-5. `viewer_publish` when required;
-6. `legacy_state_cleanup` only after fixed database, binding, maintenance, and
-   regenerated Viewer state are durable.
-
-A same-binding legacy source plans no `project_binding_update`. A fixed current
-database without valid pending cleanup plans no `legacy_state_publish` or
-cleanup; when its pending record is valid, setup alone plans
-`legacy_state_cleanup` after any due Viewer repair. A moved legacy source plans
-publication, any schema/configuration stages, binding update, Viewer
-publication, then cleanup. Before fixed publication, all legacy work occurs in
-one private, contained staging directory; staging writes are not reported as
-completed. The staged database and recognized artifacts are validated, and
-the complete `state/current` directory is published atomically without
-clobbering an entry that appeared concurrently. Publication makes every
-preceding staged stage durable together; the result still lists their ordered
-prefix.
-
-The private stage is owned by one separate sibling marker; its random basename
-alone never authorizes deletion:
+Private stage names are:
 
 ```text
 state/.current-stage-<32-lowercase-hex>
 state/.current-stage-<same-32-lowercase-hex>.owner
 ```
 
-After source inventory validation and while holding the transition lock, setup
-creates the owner file exclusively and durably before creating the directory.
-The owner is canonical ASCII JSON no larger than 2,048 bytes with exactly
-`v=1`, the matching `stage_id`, validated `project_id`, and
-`inventory_fingerprint`; it uses sorted keys, `ensure_ascii=true`,
-`(",", ":")`, and duplicate-key rejection. It contains no path and is a
-physical non-link regular file. The directory may contain only physical
-directories `backups` and `viewer` and at most 32 physical regular files total
-from this exact
-allow-list: the staged database and optional rollback journal, up to 21 exact
-managed backups, canonical backup and Viewer lock files, Viewer HTML, and at
-most one exact bounded temporary from each existing class. Every non-marker
-file is no larger than the source database plus 16,777,216 bytes.
+The exclusively and durably created physical owner precedes the directory. It
+is canonical ASCII JSON at most 2,048 bytes with exactly `v=1`, matching
+`stage_id`, validated `project_id`, and `inventory_fingerprint`, sorted keys,
+ASCII escaping, compact separators, and no path. The stage allows only physical
+`backups`/`viewer` directories and at most 32 regular files from the fixed
+database/journal, up to 21 managed backups, canonical locks, Viewer HTML, and
+one recognized temporary per class; each file is at most source database plus
+16,777,216 bytes.
 
-Write setup may remove one owner/stage residue only when the marker is
-canonical and matches the directory suffix, every component is contained and
-non-link/non-reparse, the allow-list/count/size rules hold, and no unknown
-entry exists. It removes explicit files and then proven-empty directories; it
-never recursively deletes an unvalidated tree. A valid orphan owner with no
-stage is removed by itself, including after successful directory publication.
-Read-only setup never removes either member and may continue to the ordinary
-preview because the next write can recover it; this internal residue cleanup
-does not add a public planned-write value. A valid orphan owner beside an
-authoritative fixed primary does not block normal Task/handoff/review leaves.
-A stage without its owner, a
-mismatched/invalid owner, more than one residue pair, an unsafe component, or
-an unknown/oversized entry returns `setup_incomplete` with `schema_to=14`,
-all other setup scalars and project ID null, empty write arrays, false/null
-relocation fields, exit 2, and no deletion in both read-only and write mode.
+Write setup may remove only one fully owner-validated residue, enumerating
+explicit allowed files then proven-empty directories. Read-only setup never
+removes it. A stage without owner, invalid/mismatched owner, multiple pairs,
+unsafe/unknown/oversized content fails `setup_incomplete` with no deletion.
 
-Failure before atomic fixed publication removes only an owner-validated
-staging residue and leaves the legacy source unchanged. Failure after fixed
-publication but before cleanup leaves valid fixed state authoritative and the
-legacy source intact. Fixed-primary resolution does not resume general legacy
-discovery; instead, only setup observes the current database's pending flag.
-It derives the old directory from the stored project ID and the fixed-length
-retirement directory
-`state/.legacy-cleanup-<sha256(project-id-utf8)>`, using all 64 lowercase hex
-characters rather than the possibly long legacy ID. A collision or entry not
-authorized by the pending record fails closed. A token-free setup resumes
-Viewer repair or this bounded cleanup. Token replay remains an error.
-
-Before fixed publication, setup persists this exact canonical JSON inventory
-in the staged database and stores its SHA-256 fingerprint:
+Before publication, setup stores canonical cleanup inventory JSON:
 
 ```json
 {"entries":[{"kind":"file","name":"relative/posix/name","sha256":"64hex","size":0}],"v":1}
 ```
 
-Entries are sorted by UTF-8 bytes of `name`; object keys are sorted; JSON uses
-UTF-8, `ensure_ascii=true`, and `(",", ":")`; `size` is a nonnegative byte
-count. There are 1 through 32 unique entries and the complete canonical JSON
-is at most 16,384 bytes. Repository validation reparses it with duplicate-key
-rejection, validates every relative POSIX name against the fixed recognized
-artifact grammar, requires canonical byte-for-byte re-encoding, and requires
-its SHA-256 to equal the stored fingerprint. It includes only the canonical
-database when present, at most 21 valid managed backups in the exact
-retained-set-plus-one-in-flight envelope, last-good
-Viewer, canonical backup and Viewer lock files, and at most one exact bounded
-temporary in each of the three classes above. Unrelated files are excluded and
-stay in the legacy directory.
+It has 1-32 unique UTF-8-byte-sorted allowed entries, compact sorted-key ASCII
+JSON at most 16,384 bytes, plus exact SHA-256. It lists only recognized
+present source artifacts. Cleanup derives a fixed retirement directory from
+the full SHA-256 of project ID, moves each inventoried file without replacement
+after kind/size/hash validation, then deletes verified retirement entries.
+Retry continues only the persisted subset. Both source/destination present,
+changed content, unrecorded retirement content, or collision stops; unrelated
+legacy files remain. After all recorded entries are absent, setup clears
+pending inventory metadata atomically. Normal business commands remain usable
+while valid fixed cleanup is pending.
 
-Cleanup atomically moves each recognized entry without replacement from its
-old relative location to the same relative location under the retirement
-directory. The database inventory, not a fresh directory enumeration, is the
-sole allow-list. For each inventory entry, both old/retirement locations is an
-error; an old-only or retirement-only file must match its stored kind, size,
-and SHA-256; and neither means that entry is already absent. Setup first moves
-and verifies every still-present old entry. It begins deletion only after no
-recorded old entry remains, then deletes verified retirement entries one at a
-time. A retry uses the persisted inventory to continue moving or deleting only
-the recorded remaining subset. New or changed content at a recorded path
-fails, and an unrecorded retirement entry prevents deletion.
+Preview creates no directory, lock, sidecar, temporary, backup, Viewer, Git, or
+target change. Actual publication holds one fail-fast package transition lock
+before the backup lock, uses SQLite backup API without a source writer during
+copy, and releases writers before Viewer/cleanup. Failures before fixed
+publication remove only proven owned staging; failures after publication keep
+fixed state authoritative and legacy state intact for resumable cleanup.
 
-Cleanup removes only those recognized files and proven-empty owned
-subdirectories; the old project directory remains when unrelated entries
-exist. When neither old nor retirement location contains a recorded entry,
-filesystem cleanup is already durable and setup clears the pending bit,
-inventory, and fingerprint in one short fixed-DB transaction. This covers a
-crash after the last delete but before the metadata update. A changed
-recognized source, collision, or unrecorded retirement entry yields
-`setup_incomplete` for setup; it does not make an otherwise valid fixed
-database unreadable. Unrelated old entries are never traversed, recursively
-deleted, overwritten, or treated as another candidate. Normal Task commands
-remain usable from valid fixed state while cleanup is pending or its
-filesystem retirement is incomplete.
+## Setup, Recovery, Backup, And Viewer Maintenance
 
-The following symbols make the setup rows exact:
+### Setup Contract
 
-- `M` is `[migration_backup, database_migrate]` when the selected source
-  schema is below 14, otherwise `[]`;
-- `C` is `[maintenance_configure]` when maintenance is not configured or an
-  explicit setup policy change is valid, otherwise `[]`;
-- `L` is `[legacy_state_cleanup]` when the authoritative fixed database has a
-  valid pending cleanup record, otherwise `[]`; it is always ordered after any
-  required Viewer publication.
-- list concatenation preserves the durable stage order above.
+`setup` is explicit, noninteractive, idempotent, and the sole initializer,
+migrator, one-way maintenance opt-in, relocation flow, fixed/legacy recovery,
+and canonical Viewer repair action. Preflight validates runtime, one physical
+layout, project, state ownership, package integrity, Git ignore when applicable,
+journal, schema, identity, binding, and artifacts.
 
-| Observed state and invocation | Planned writes / result |
+When canonical state is absent, setup checks only the canonical managed backup
+directory. It chooses the newest valid same-project generation by publication
+time then ID; invalid/newer artifacts do not hide an older valid one. Existing
+unreadable canonical state is never overwritten. If recognized material exists
+but no valid same-project candidate remains, setup fails
+`setup_restore_failed` rather than initializing empty.
+
+Recovery copies the selected artifact via SQLite backup API into a fresh
+sibling temporary database, normalizes schema-appropriate generation/pointer
+metadata, validates and flushes it, then atomically no-clobber publishes only
+while canonical state and rollback journal remain absent. A lexical orphan
+canonical `-journal`, changed candidate, or lock contention fails closed.
+Older recovered schema then receives a new migration backup and migration.
+Fresh initialization uses the same artifact lock and rechecks absence of state,
+journal, and newly appeared recovery candidates.
+
+Schema v10 maintenance state has immutable non-null `enabled_at` once
+configured, backup interval/generation policy, latest managed success/outcome,
+and internal `applied_backup_generations` retention. Fresh/migrated setup
+defaults are 30 minutes and 3 generations. On configured state, omitted
+options preserve locked stored
+values; explicit valid options change only supplied fields; equal values are a
+no-op. Invalid range is `invalid_backup_policy` before write. Configuration
+does not change applied retention or itself trigger backup/Viewer; lower
+retention applies only after the next successful backup publication.
+
+Setup output data is exactly `status`, `planned_writes`, `completed_writes`,
+`schema_from`, `schema_to`, `maintenance_enabled`,
+`backup_interval_minutes`, `backup_generations`, `viewer_status`, and
+`relocation`. `schema_to` is always 16. `schema_from` is safely observed source
+schema, selected recovery schema, or null. Policy values are effective
+requested/stored values, not persistence claims. `maintenance_enabled` and
+Viewer status describe durable post-command state.
+
+Viewer status is `not_present`, `current`, `published`, or `repair_required`.
+Successful preview is `setup_preview`; completed writes use `setup_complete`;
+current/equal state is `already_setup`; relocation preview is
+`relocation_preview`. Preview reports the full ordered plan and empty completed
+array. Failures report the durable ordered completed prefix. Common preflight
+and invalid policy failures have status null, empty arrays, null observed
+scalars except required schema; later failures retain safe/effective values.
+
+Core setup outcomes are:
+
+| Stage/result | Stable error |
 |---|---|
-| no fixed/recovery/legacy source, `--read-only` | `[database_initialize] + C + [viewer_publish]`; `setup_preview`; project ID null; no token/write |
-| no source, write setup | same plan; create one UUID identity; `setup_complete` or existing stage-specific failure |
-| matching fixed primary | existing restore/migrate/configure/Viewer truth table, then `L`; no relocation token or binding stage |
-| fixed mismatch, `--read-only` | `M + C + [project_binding_update, viewer_publish] + L`; `relocation_preview`; token present; no write |
-| fixed mismatch, write setup without token | `project_relocation_required`; no write |
-| fixed mismatch, valid token | preview plan including `L`; binding CAS precedes Viewer and cleanup follows Viewer; `setup_complete` or ordered partial result |
-| one same-binding legacy source, `--read-only` | `[legacy_state_publish] + M + C + [viewer_publish, legacy_state_cleanup]`; `setup_preview`; no token/write |
-| one same-binding legacy source, write setup | same plan; staged no-clobber publication; no binding stage |
-| same-binding legacy primary missing with valid backups, `--read-only` | `[database_restore, legacy_state_publish] + M + C + [viewer_publish, legacy_state_cleanup]`; `setup_preview`; no token/write |
-| same-binding legacy primary missing with valid backups, write setup | same plan; restore only into the private fixed stage; old primary remains absent |
-| one moved legacy source, `--read-only` | `[legacy_state_publish] + M + C + [project_binding_update, viewer_publish, legacy_state_cleanup]`; `relocation_preview`; token present; no write |
-| one moved legacy source, write setup without token | `project_relocation_required`; neither source nor destination changes |
-| one moved legacy source, valid token | preview plan; atomic staged publication followed only by cleanup; `setup_complete` or ordered partial result |
-| accepted token supplied again | `relocation_token_used`; no write |
-| no token after successful rebind | `already_setup`, or only the still-due `[viewer_publish]`, `[legacy_state_cleanup]`, or both in that order |
-| valid fixed primary with pending cleanup whose recorded filesystem entry changed, collided, or has an unrecorded retirement peer | setup `setup_incomplete`; stored project ID and relocation scheme/generation remain available; planned writes retain the due Viewer/cleanup stages and completed writes stop before cleanup; normal Task/handoff/review leaves remain usable |
-| fixed primary missing, matching fixed managed backup | existing `database_restore` truth table, then `M + C + [viewer_publish]`; no relocation token |
-| fixed primary missing, moved/ambiguous fixed backup identity | `project_state_unreadable`; no restore, rebind, or initialization |
-| corrupt/unreadable existing fixed primary | `project_state_unreadable`; no backup/legacy fallback |
-| no fixed or legacy state | normal leaf `db_not_initialized`; doctor `setup_required`; setup follows fresh rows |
-| same-binding legacy state | normal leaf `migration_required`; doctor `migration_required`; setup follows same-binding rows |
-| primary-backed moved legacy state | normal leaf `project_relocation_required`; doctor relocation warning/row; setup follows relocation rows |
-| more than one or more than 64 `state/projects` entries, unknown direct child, invalid history/integrity, unsafe canonical entry, or invalid persisted cleanup metadata | `project_state_unreadable`; project ID null; `planned_writes=[]`; `completed_writes=[]`; relocation fields false/null; no fallback/write |
-| safely read candidate whose directory, primary, or managed backup identity differs | `project_mismatch`; project ID null; empty write arrays and false/null relocation fields; no fallback/write |
-| candidate source schema above 14 | `schema_too_new`; safely read project ID or null; empty write arrays and false/null relocation fields; no fallback/write |
-| candidate busy/locked or unsupported journal state | existing `database_busy` or `unsupported_journal_mode`; safely read project ID or null; empty write arrays and false/null relocation fields; no fallback/write |
-| unrelated physical entry inside the sole valid legacy directory | preserve and exclude it; it neither changes the selected source result nor appears in JSON |
+| invalid policy | `invalid_backup_policy` |
+| recognized recovery without valid candidate/publication failure | `setup_restore_failed` |
+| migration backup failure | `setup_backup_failed` |
+| initialization failure | `setup_initialization_failed` |
+| migration failure after backup | `setup_migration_failed` |
+| configuration, Viewer, cleanup, or other later partial failure | `setup_incomplete` |
 
-### Concurrency, Recovery, Privacy, And Ownership
+Messages are respectively `backup policy is outside the supported range`,
+`managed backup could not be restored`,
+`setup backup could not be completed`,
+`project state could not be initialized`,
+`project state could not be migrated`, and
+`setup completed only partially; rerun setup`. Setup success has empty warnings
+and errors; failure has empty warnings and exactly one error. Rerun recomputes
+from durable state; a prior migration backup never substitutes for the new
+attempt's required backup.
 
-Preview creates no directory, lock file, SQLite sidecar, temporary file,
-backup, Viewer, Git change, or target-project change. Actual legacy publication
-uses one fail-fast package-state transition lock before the existing backup
-artifact lock. It performs source SQLite copying through the backup API, never
-holds a source write transaction during filesystem copy, uses only short
-private/current write transactions for migration, configuration, and binding,
-and releases every SQLite writer before Viewer publication or cleanup.
-Fixed-state rebinding takes the same transition lock and performs one short
-`BEGIN IMMEDIATE` compare-and-swap transaction.
-Setup preview and write preflight both validate an already present transition
-lock as one physical regular file of zero or one byte. An invalid artifact
-returns the same sanitized no-write `setup_incomplete` result in either mode.
+The shared backup primitive uses SQLite backup API, validates project identity,
+schema/history, regular physical paths, `quick_check`, and foreign keys,
+closes/flushed temporary state, and atomically publishes. Setup holds its
+zero-wait artifact lock through backup publication/reconciliation and the
+corresponding migration commit, but never a SQLite writer while copying.
+Preview creates neither lock nor artifact.
 
-The binding repository compares project ID, identity scheme, old hash, and
-expected generation, appends generation `N+1`, and updates current binding in
-one transaction. That same transaction increments
-`viewer_maintenance_state.source_generation` exactly once so a crash before
-Viewer publication leaves a durable due marker. Missing Viewer state, binding
-generation overflow, or Viewer source-generation overflow rolls the whole
-rebind back as `project_state_unreadable` without consuming the token. Stale
-comparison, same-hash rebind, or invalid fields likewise rolls back without a
-history row. Every business writer
-revalidates the resolver's project ID, binding hash, and generation under its
-existing short write transaction. Read commands use one lock-respecting
-query-only transaction. Backup and Viewer publication revalidate binding
-before publication and preserve last-good artifacts on stale state or failure.
-No SQLite writer is held during Git, backup copying, Viewer rendering, or other
-subprocess work.
+### Same-Process Maintenance
 
-Missing-primary managed-backup restore remains setup-only and no-clobber.
-Unreadable or corrupt existing fixed state is never replaced. Wrong identity,
-unsafe links, ambiguous sources, unsupported journal state, concurrent
-destination appearance, and lock contention fail closed through existing
-sanitized boundaries. No new daemon, watcher, queue, service, network call,
-generic migration engine, signature system, secret store, fork inference,
-normal Task gate, LLM judgment, or routine stop is added.
+Maintenance is permanently enabled by successful setup; there is no disable
+surface. Every successful backup-eligible business mutation commits and closes
+SQLite before bounded same-process maintenance. Viewer refresh runs first for
+Viewer-relevant mutations; due backup runs second. Read-only, failed, replayed,
+no-op, handoff-only where inapplicable, setup configuration, and
+maintenance-internal operations trigger nothing.
 
-TG-M17 ownership is exclusive:
+Taskgov starts no detached process, child process, thread, timer, watcher,
+service, queue, daemon, scheduler, or network operation. Each artifact uses a
+canonical regular one-byte OS advisory lock with zero wait; process termination
+releases ownership, so leftover regular lock files are harmless and never
+deleted by age. Unsafe lock path, contention, or failure preserves primary
+result and last-good artifact, leaves due state, and emits at most the fixed
+continuation warning:
 
-- M17.1 owns schema v14, v1-v13 migration, identity/binding repository
-  primitives, and an injected-target-only UUID initializer. Production
-  resolution and fresh UUID setup remain unchanged in that staging revision.
-- M17.2 activates the one fixed resolver, fresh production `uuid_v1`, and
-  same-binding legacy publication. It owns the shared staged-publication and
-  bounded cleanup/resume primitive for same-binding sources, transports
-  validated backup/Viewer artifacts opaquely, recognizes moved sources
-  read-only, and supports the schema-v14 legacy-layout transition state. It
-  adds no token or moved write.
-- M17.3 owns the sole setup option, token codec, setup JSON/errors, fixed
-  rebind, confirmed moved-legacy staged publication/rebind, and replay. It
-  reuses the M17.2 staged-publication and cleanup/resume primitive for the
-  confirmed moved source rather than adding a second implementation.
-- M17.4 owns the structural audit of all 20 leaves and runtime integration for
-  backup, Viewer, doctor, maintenance, restore, last-good, privacy, and
-  concurrency. It adds no schema, option, resolver, or token semantics.
-- M17.5 synchronizes Skill/references, help, README/release guidance, manifest,
-  release version, formal status, and isolated/self-host acceptance. It adds no
-  behavior and performs no push, workflow dispatch, install, or publication.
-  The synchronized Skill must present relocation preview and wait for explicit
-  user approval before it reuses the token; it never auto-confirms.
-
-Each unit is Tier 2 and requires its focused and full offline verification,
-`doctor`, manifest/package checks where covered files change,
-`git diff --check`, and two independent PASS receipts for the exact final
-target. TG-M17.1 cannot start before M17.0 completes those gates. M18 cannot
-start before M17.5 is done.
-
-## Approved Post-MVP Extension: TG-M18 Completion Cycle History
-
-TG-M18 preserves accepted completion evidence when a Task is reopened without
-allowing old evidence to satisfy a later completion. It is an audit extension
-to the existing Task lifecycle, not Issue management, general event history,
-verification-run storage, or a workflow engine.
-
-The synchronized repository release candidate is v0.10.0/schema v16/Viewer
-snapshot v4. The completed allocation, including its non-public staging
-revisions, is:
-
-| Stage | Package | SQLite | Viewer | Publication state |
-|---|---:|---:|---:|---|
-| M18.1 schema/repository | 0.9.0 | 15 | 3, source 5-15 | non-public staging |
-| M18.2 native capture activation | 0.9.0 | 16 | 3, source 5-16 | non-public staging |
-| M18.3 read model/Viewer | 0.9.0 | 16 | 4, source 5-16 | non-public staging |
-| M18.4 synchronized release | 0.10.0 | 16 | 4, source 5-16 | release candidate |
-
-Schema v15 is named `completion_cycle_history`. Schema v16 is the marker-only
-`completion_cycle_capture_activation` migration. It adds no table or column;
-it exists so a schema-v15 binary cannot write a database after native capture
-and `complete` coverage have become active. A v14 binary rejects v15 or v16,
-and a v15 binary rejects v16 through the existing too-new-schema boundary.
-
-The public CLI remains exactly 20 command leaves. TG-M18 adds no command,
-option, setup choice, normal-loop call, LLM judgment, question, or stopping
-rule. The default-off Task loop remains at most nine governance calls and an
-enabled Effort Advisory flow remains at most ten. History is supplied by the
-already mandatory `task show` only after M18.3.
-
-### Schema And Immutable Cycle Contract
-
-Schema v15 adds exactly:
-
-- one `tasks.completion_history_coverage` column with values
-  `legacy_unknown` or `complete` and default `legacy_unknown`;
-- one nullable internal `task_events.completion_cycle_id` foreign-key column;
-  and
-- one append-only `task_completion_cycles` table.
-
-No second history, join, reopen, verification-receipt, or generic event-payload
-table is authorized. `tasks` remains the current mutable projection.
-`review_receipts` and `review_findings` remain the detailed review ledger.
-
-Each cycle has a stable
-`tg_completion_cycle_<16-lowercase-hex>` ID and one positive signed-64-bit
-`saved_cycle_ordinal` unique within its project and Task. Ordinals begin at 1
-and increase by exactly one. The stored fields are:
-
-| Group | Exact stored fields and values |
+| Code | Message |
 |---|---|
-| ownership | `completion_cycle_id`, `project_id`, `task_id`, `saved_cycle_ordinal` |
-| provenance | `origin` = `native_done` or `legacy_current_done`; `completeness` = `complete` or `partial`; nullable `completed_at`; internal `recorded_at` |
-| authority | nonnegative `contract_revision`; `review_tier` 0, 1, or 2 |
-| verification | `verification_expectation` = `specified` or `unspecified`; nullable Boolean `verification_attestation` |
-| completion evidence | `completion_evidence_kind`, `completion_evidence_revision`, `completion_evidence_reason`, `external_revision_approved`, `completion_commit_required`, and `completion_commit_hash` |
-| exact target | `review_target_kind`, `review_target_value`, `review_target_base_revision`, and `review_target_generation` |
-| gate basis | `gate_basis_version`, `review_basis_kind`, required and qualifying independent-PASS counts, changes-requested count, open-high count, open-medium count, fresh-review-required count, and two nullable qualifying receipt-ID slots |
+| `viewer_refresh_deferred` | `Viewer refresh was deferred; task result is unchanged` |
+| `viewer_refresh_failed` | `Viewer refresh did not complete; task result is unchanged` |
+| `backup_deferred` | `managed backup was deferred; task result is unchanged` |
+| `backup_failed` | `managed backup did not complete; task result is unchanged` |
 
-The completion-evidence fields preserve the existing typed/legacy projection
-and bounds: revision at most 500 characters, reason at most 1,000, and the
-stored compatibility commit-hash projection at most 500. The legacy direct
-`completion_commit_hash` input alias retains its existing 128-character input
-limit. Native rows allow `git_commit`, `external_revision`, or
-`commit_not_required` with the existing exact matrix. Partial migrated rows
-additionally allow `none` with the exact empty/required matrix and
-`legacy_unverified`; they never convert either into stronger evidence. Target
-value and base revision are each at most 500 characters and retain the existing
-target-kind matrix.
+Backup is due on the first eligible mutation with no managed success, then
+after the configured interval. At most one attempt occurs per eligible
+mutation. Failure remains due. Successful atomic publication records its
+immutable generation ID, publication time, and 1-20
+`publication_retention`, then prunes recognized older generations to the
+applied value. Unknown/linked/foreign artifacts are never imported or deleted.
 
-`native_done` always pairs with `complete`, a non-null completion time,
-verification attestation `true`, and gate-basis version 1.
-`legacy_current_done` always pairs with `partial`, verification attestation
-`null`, review basis `unknown`, and gate-basis version 0. The storage type is a
-nullable Boolean, but the current exact origin matrix admits only `true` for a
-native row and `null` for a legacy row; stored `false` is rejected.
-`verification_expectation` records only whether the locked Task's bounded
-verification field was non-empty; it does not copy command output.
+Every v11+ backup attempt first reconciles bounded crash residue under the same
+lock: import one valid file missing a row; remove a row whose file is invalid/
+missing without deleting an untrusted path; update latest/applied retention;
+and finish file-before-row pruning oldest first. It will not publish while
+inconsistency remains. Publish then insert-row/update-pointer in one short
+transaction, followed by pruning. Recovery handles process termination after
+file publish, row commit, or between prune file/row. Residue cannot exceed the
+valid retained set plus one in-flight generation.
 
-Gate-basis version 0 has null counts and no receipt IDs. Version 1 has
-nonnegative signed-64-bit counts, exactly the tier-derived required count
-(0, 1, or 2), and one of:
+For v10, a successfully published migration copy updates latest identity/time/
+outcome/applied retention before migration and is reconciled on retry. For
+v1-v9, each successful pre-migration copy precedes pruning under its immutable
+stage retention; a successful migration creates v10 state pointing to it.
+Migration v11 discovers all canonical valid retained same-project artifacts,
+seeds one row each, includes the current copy, and prunes to that copy's
+applied retention.
 
-- `independent_passes`: Tier 1 or 2, enough independent PASS reviewers, one
-  receipt ID for Tier 1 and two for Tier 2;
-- `self_review_fallback`: Tier 1 or 2, insufficient independent PASS reviewers,
-  one valid fallback receipt ID; or
-- `not_required`: Tier 0, one valid not-required receipt ID.
+Viewer maintenance compares source/render generation, renders once and at most
+one follow-up per mutation, prevents older-over-newer publication, and leaves
+remaining churn due. Setup rerun is the only explicit force/repair.
 
-Because a native cycle is written only after the current gate succeeds, its
-changes-requested, open-high, open-medium, and fresh-review-required counts are
-all zero. The counts remain stored so the accepted basis cannot be changed by
-later review-row resolution. Receipt slots reference existing exact-target
-rows; review bodies and finding summaries are not copied.
+The performance fixture is 12 Tasks/191 events and 500 Tasks/5,000 events,
+payloads 80/512/256 UTF-8 bytes, with eight note writes at injected minutes
+0, 1, 5, 29, 30, 31, 59, and 60. Due backups are at 0, 30, 60; Viewer is
+eligible on all eight. Enabled run overhead versus disabled is at most 10
+seconds and each foreground command at most 5 seconds on Windows CI. Attempt,
+render, call, byte, and zero-wait limits are hard; timing cannot waive them.
 
-Cycles cannot be updated or deleted. Coverage cannot be heuristically upgraded.
-The event link is internal and immutable after insertion. Only the event
-created by an actual successful native done transition and the later native
-`task_reopened` event may reference the corresponding cycle. No event type is
-added.
+## Static Task Viewer
 
-### Migration And Honest Legacy Coverage
+The Viewer is a generated self-contained projection, never an authority.
+Setup owns initial publication/repair and post-commit maintenance owns bounded
+refresh. There is no Viewer command, custom output, browser launch, or model
+decision. Canonical path protection rejects linked/non-regular/escaping/
+database-alias targets. Same-directory temporary publication is flushed and
+atomically replaces; failure preserves last good.
 
-Migration 15 runs only after a structurally complete schema v14 and is one
-transaction. It sets `legacy_unknown` for every existing Task, leaves every
-existing event field and value unchanged with a null cycle link, and inserts
-exactly one ordinal-1 partial cycle for each Task that is currently `done`.
-Every other status receives zero cycles.
+### Snapshot v4
 
-The partial cycle copies only the current done projection: completion time,
-Contract revision, review tier, verification expectation, existing typed or
-legacy completion fields, and current review target. Its verification and
-review attestations remain unknown. The migration does not parse event
-summaries, associate old receipts by inference, update an event, or synthesize
-a completion that was reopened before migration. An invalid current-done
-projection fails the whole migration as unreadable state rather than inventing
-values.
+Snapshot v4 accepts source schemas v5-v16. One query-only transaction validates
+schema/project/binding, reads generation, and assembles rows; rendering and
+publication occur after close.
 
-M18.1 retains schema default `legacy_unknown` for all task additions and does
-not activate production done/reopen capture or alter either path. Migration 16
-is applied only by the M18.2 runtime after both native done paths and reopen
-integration exist. Its one activation transaction rereads every current done
-`legacy_unknown` Task in `task_id` binary order, validates the current
-projection, and compares it with the latest saved cycle using the exact normal
-reopen projection fields. When no cycle exists, the latest cycle does not
-match, or a `task_reopened` event already links the latest cycle, activation
-appends one next-ordinal `legacy_current_done` partial cycle from the current
-projection. An exact un-reopened latest cycle is reused without another row.
-Invalid projection, ordinal overflow, or inconsistent ownership fails the
-whole activation without the marker or any partial insert. Once schema v16 is
-recorded, setup reentry validates the marker, objects, and stored rows but
-never reruns this reconciliation.
+It contains version/UTC `generated_at`, project ID/display, source schema,
+seven status counts, explicit Task allow-list, newest at most 10 sanitized
+events/receipts/findings, and the exact completion-history projection. Sources
+v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v16
+read stored history in query batches of at most 500 Task IDs. The Viewer
+selects all project Tasks; 500 Tasks is the accepted performance fixture, not a
+selection cap. The HTML artifact is at most 64 MiB.
 
-This bounded reconciliation is needed because schema-v15 capture-less
-completion and reopen remain legal and may change the current projection after
-the migration-15 backfill. It neither infers nor recreates an older completion:
-only the current done projection is saved, coverage remains `legacy_unknown`,
-and any unlinked reopen event continues to report incomplete history. Schema
-v16 remains marker-only in schema shape: it adds no table, column, index, or
-trigger, although its activation transaction may add these conservative
-partial rows before inserting the marker.
+It excludes paths, maintenance, checkpoints, Task Contract prose, handoff/tool
+state, environment, raw evidence, logs, prompts, and secrets. Deterministic
+UTF-8 JSON is base64-embedded into a bundled template; stored values use
+text-only DOM APIs.
 
-From activation onward, `task add` explicitly assigns `complete`; the schema
-default remains `legacy_unknown` so an incomplete writer fails
-conservatively. Tasks created before activation remain `legacy_unknown`
-permanently, including after a later native completion.
+Schema v13+ increments source generation on Viewer-relevant Task, checkpoint,
+or review events, not handoff-only/read/failure/replay/no-op/config/
+maintenance. The Viewer stage skips before opt-in, takes zero-wait lock,
+renders only when due, records rendered generation shortly, rechecks once, and
+never publishes an older capture over newer. Doctor reports stored facts only;
+browser reload never observes SQLite directly.
+The owning state is `viewer_maintenance_state`; its source generation is
+advanced in the same business transaction as the corresponding event.
 
-For every status, `legacy_history_incomplete` is true if any of these is true:
+The offline `file://` UI shows project/time/status totals, search and
+status/kind/lane/priority/tag filters, deterministic Task order, terminal
+history, details, review/completion/history, and recent events. It is responsive
+and keyboard/label/focus/contrast accessible and has no write controls,
+network/API/analytics/telemetry/server/direct SQLite/watcher/launch/storage.
 
-- `completion_history_coverage` is not `complete`;
-- any saved cycle is `partial`; or
-- the Task has an explicit `task_reopened` event whose internal cycle link is
-  null.
+### Optional Visibility-Aware Reload
 
-It is false only for a fully covered Task with no partial cycle and no unlinked
-reopen event. A fresh, never-completed Task created after activation therefore
-has zero cycles and `legacy_history_incomplete=false`. No text parsing is used.
+Only physical `<skill>/config/viewer.json` controls reload. Taskgov never
+creates/edits/migrates it. Absence means decimal interval 0 and no browser
+timer. A present file is physical regular non-link/non-reparse strict UTF-8
+JSON at most 16,384 bytes with exactly:
 
-### Native Completion And Deterministic Review Basis
-
-Both public done paths, `task complete` and compatibility
-`task edit --status done`, use the same capture service. Existing parsing,
-verification confirmation, Git validation, sequential ordering, Contract,
-review-target, receipt, finding, and concurrency gates run unchanged. Git and
-other subprocess work remains outside the SQLite writer.
-
-Under one short writer transaction, the service rereads the Task, current
-Contract revision, target, exact-target receipts, findings, and lane basis. It
-rejects a stale preflight, computes the next ordinal without overflow, selects
-the review basis, inserts one complete cycle, updates the current Task, creates
-the existing completion event with the internal cycle link, records the
-existing effort transition, and commits. Cycle, Task, event, effort state,
-Viewer source generation, and post-commit-maintenance due state either commit
-coherently or remain unchanged. Backup and Viewer work still occurs only after
-the business transaction commits.
-
-Review-basis selection is independent of the existing diagnostic
-`fallback_kind` field:
-
-1. Count distinct independent PASS reviewers for the exact project, Task,
-   target kind/value/base/generation.
-2. If that count meets the tier requirement, select exactly the required one
-   or two receipts ordered by `reviewer_key ASC, review_receipt_id ASC`.
-3. Only if independent PASS is insufficient may Tier 1 or 2 select the first
-   otherwise-valid fallback ordered by `review_receipt_id ASC`, including the
-   existing Tier-2 user-approval requirement.
-4. Tier 0 selects the first valid not-required receipt ordered by
-   `review_receipt_id ASC`.
-
-A valid fallback is never stored when enough independent PASS receipts exist.
-Historical cycles and their receipt IDs are audit-only and are never queried
-to satisfy a current gate.
-
-### Reopen, Linkage, And Fresh Gates
-
-An exact `done` to `in_progress` reopen locks and rereads the Task and its
-latest ordinal cycle. The current done projection must match that cycle's
-completion time, Contract revision, review tier, derived verification
-expectation, six completion-evidence fields, and four review-target fields, and
-that cycle must not already have a linked reopen event. Reopen does not
-revalidate Git or reinterpret review rows merely to archive values already
-accepted.
-
-The same transaction links the new `task_reopened` event to that cycle, clears
-only the existing current completion and review-target fields, advances review
-generation with the existing overflow guard, applies the sequential-lane
-guard, records the effort transition, and commits. The saved cycle remains
-unchanged.
-
-Normal activation ensures every then-current done `legacy_unknown` Task has a
-latest cycle that matches its current projection. The stored compatibility
-bridge nevertheless remains exact and exclusive: if a locked done Task has
-`legacy_unknown` coverage and no cycle, reopen first inserts one ordinal-1
-`legacy_current_done` partial cycle from that locked projection, then links the
-reopen event and performs the normal reset in the same transaction. A
-`complete`-coverage Task with no cycle, an unknown-coverage Task with a
-mismatching existing cycle, or caller-supplied bridge data returns
-`completion_history_inconsistent` with no write. A schema-v15 Task that was not
-done at activation simply receives its first native complete cycle on a later
-done transition.
-
-A later completion always creates the next ordinal and requires a new
-verification confirmation, post-reopen target, current-generation review
-evidence, review confirmation, and completion evidence. Reopen history never
-weakens current completion eligibility.
-
-### Bounded Task Show And Viewer Projection
-
-M18.3 adds exactly one `completion_history` sibling to default `task show`
-data. The object has exactly:
-
-```text
-total, returned_count, truncated, legacy_history_incomplete, cycles
+```json
+{"schema_version":1,"profile":"visibility-refresh-v1","refresh_interval_seconds":30}
 ```
 
-Cycles are a newest-first complete-row prefix ordered by
-`saved_cycle_ordinal DESC`. At most 10 are returned. Byte measurement for one
-cycle and for the complete `completion_history` component uses exactly
-`json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")`.
-One measured cycle is limited to 8,192 bytes and the measured complete
-component is limited to 32,768 bytes. For every candidate, the formatter
-measures the final five-key wrapper with the actual `total`, candidate
-`returned_count`, resulting `truncated`, actual
-`legacy_history_incomplete`, and candidate `cycles` array. This includes
-non-ASCII UTF-8 and count-digit growth in the decision. Rows are never
-partially serialized or skipped to fit an older row: collection stops before
-the first row that would exceed either bound. `returned_count` is the actual
-array length and `truncated` is `returned_count < total`.
+Interval is an integer (not Boolean/float) 5-3,600. Duplicate/unknown/missing
+keys, malformed/oversized/replaced/unsafe content is invalid with no raw
+diagnostic. One publication attempt reads it once for at most two renders.
+Template has exactly one base64 snapshot and one decimal interval placeholder.
+Config change applies at next relevant publication; setup plans Viewer repair
+when rendered template/interval differs.
 
-The public cycle allow-list is exactly:
+Invalid present config makes preview a successful repair plan; actual setup
+returns `setup_incomplete` and routine mutation emits
+`viewer_refresh_failed`, preserving last-good Viewer. Backup still attempts
+second. Doctor ignores this optional file.
+
+After decode and initial render succeed, scheduling occurs only under `file:`
+with positive interval. One monotonic load epoch and at most one timeout are
+owned. Hidden pages own no timer. On visible change/timeout, reload is requested
+at most once per loaded page only after elapsed interval; otherwise only the
+remainder is scheduled. Browser throttling may delay, never advance. Decode/
+render failure schedules nothing. It reloads only latest published HTML and
+adds no command, schema/snapshot field, process, service, storage, network, or
+LLM choice.
+
+### One-Shot Automatic-Reload UI State
+
+Immediately before that one automatic reload, an eligible `file:` page may call
+exactly one `history.replaceState(envelope, "")` with no URL. Failure never
+prevents reload. Non-null non-owned state is untouched; any non-array object
+with owner `taskgov-viewer-auto-reload` is owned even if otherwise invalid.
+
+The schema-1 object has exactly owner, schema_version, captured_at_ms, status,
+kind, lane, priority, tag, terminal, selected_task_id, scroll_x, scroll_y, and
+focus_id. Canonical serialization and readback are at most 4,096 UTF-8 bytes.
+Time is nonnegative safe integer; status/kind/priority use current enums or
+empty; lane/tag are at most 1,024 UTF-8 bytes and must exist in new options;
+terminal is Boolean; selected ID is nonempty and at most 128 code points;
+scroll is finite 0-2,147,483,647. Focus is empty or one of
+`search-filter`, `status-filter`, `kind-filter`, `lane-filter`,
+`priority-filter`, `tag-filter`, `terminal-filter`, `reset-filters`.
+
+Search text, business/snapshot content, option arrays, URL/query/fragment,
+path, arbitrary selector, caret/text selection, dynamic-row focus, or nested
+scroll is prohibited. Cookies, Web Storage, IndexedDB, Cache API, service
+workers, and network are prohibited.
+
+At eligible load, read state at most once before snapshot decode. Owned state
+is immediately cleared with `replaceState(null, "")` even when invalid,
+stale, non-reload, or later decode fails. Clear failure disables restore.
+Non-file state is untouched. `history.scrollRestoration` must exist, accept
+`manual`, and read back manual before save/restore; otherwise M15.6 is disabled
+but reload continues. State-read failure does not skip the manual-mode attempt.
+
+Restore only on navigation type reload, after successful clear, with exact
+keys/types/bounds, age 0-300,000 ms, current options, visible selected Task,
+and existing fixed focus. Defaults are explicitly applied first. Valid restore
+applies filters, one render/selection, focus without caret, then document
+scroll. Any failure consumes state and resets defaults plus `(0,0)`. If scroll
+fails after focus, best-effort blur only that focused fixed control, then reset.
+No state/error detail reaches UI, console, snapshot, or taskgov output.
+
+History state is browser-managed and may survive session restore; it is not
+memory-only. One-shot ownership, five-minute age, size cap, and clear-before-
+restore are the privacy boundary. `pushState`, URL arguments, URL/history-length
+changes, cross-tab sync, and manual-reload capture are prohibited. Interrupted
+navigation may leave one bounded envelope for the next qualifying reload.
+
+## Privacy, Safety, And Stable Errors
+
+Taskgov stores only bounded sanitized summaries, command labels, exit/duration/
+status/time metadata, hashes, stable IDs, and explicit structured evidence.
+It never stores or emits API keys, credential/session tokens, cookies,
+authorization headers, raw provider bodies, private prompts, chat transcripts,
+large/raw diffs, raw stdout/stderr, full logs, stack traces, environment dumps,
+review reasoning/bodies, OS/SQLite exception detail, raw paths in identity
+metadata, expected/actual hash pairs, or rejected values.
+
+Free-form limits not narrowed above are: title 200 characters; description
+4,000; verification 500; tags/reviewer/target/external revision/authority ref
+500; note 2,000; event/receipt/finding/resolution/pause/reopen/Contract
+change reason 1,000. Secret/header/private-key/password/token/api-key,
+traceback, raw stream dump, and large diff patterns are rejected with
+`privacy_rejected` before storage. Rejected patterns include bearer tokens,
+authorization headers, private-key blocks, `password=`, `token=`, and
+`api_key=`. Public read projections revalidate stored content and cross-field
+matrices. The existing `lane` and `blocked_reason` inputs have no numeric
+character limit and still use the common privacy guard and state validation.
+`lane` is canonicalized by trimming outer whitespace; `blocked_reason` is
+retained as supplied after string/privacy checks.
+
+Stable domain codes include:
 
 ```text
-completion_cycle_id, saved_cycle_ordinal, origin, completeness, completed_at,
-contract_revision, review_tier, verification_expectation,
-verification_attestation, completion_evidence, review_target, gate_basis
+invalid_argument invalid_option invalid_option_combination invalid_command
+invalid_status invalid_kind invalid_priority invalid_review_tier
+blocked_reason_required pause_reason_required initial_done_forbidden
+initial_paused_forbidden invalid_status_transition
+sequential_predecessor_incomplete done_task_requires_reopen
+review_tier_downgrade_forbidden privacy_rejected not_found
+db_not_initialized migration_required schema_too_new project_mismatch
+project_relocation_required unsupported_journal_mode database_busy
+review_target_required review_target_missing review_target_mismatch
+review_changes_requested review_receipts_insufficient
+review_finding_unresolved review_receipt_mismatch
+review_receipt_already_recorded invalid_review_evidence
+verification_required review_required commit_required
+completion_commit_conflict completion_evidence_conflict
+git_commit_not_found_or_ambiguous external_revision_approval_required
+completion_check_stale completion_history_inconsistent
+handoff_not_persisted handoff_not_withdrawable handoff_occurrence_invalid
+contract_activation_forbidden contract_authority_required
+contract_write_conflict review_packet_path_unsafe review_packet_too_large
+review_packet_stale invalid_backup_policy setup_restore_failed
+setup_backup_failed setup_initialization_failed setup_migration_failed
+setup_incomplete unsupported_python unsupported_install_layout
+project_scope_required invalid_project_root state_path_invalid
+state_ignore_required package_core_modified package_status_unknown
+relocation_token_invalid relocation_token_expired relocation_token_stale
+relocation_token_used relocation_not_required internal_error
 ```
 
-`completion_evidence` contains exactly `kind`, `revision`, `reason`,
-`external_revision_approved`, `completion_commit_required`, and
-`completion_commit_hash`. `review_target` contains exactly `kind`, `value`,
-`base_revision`, and `generation`. `gate_basis` contains exactly `version`,
-`kind`, `required_independent_passes`, `qualifying_independent_passes`,
-`changes_requested`, `open_high`, `open_medium`,
-`fresh_review_required`, and `qualifying_receipt_ids`.
+Warnings are bounded, sanitized, and non-authoritative. Required warning codes
+include `paused_tasks_present`, `handoff_delivery_pending`,
+`effort_advisory_profile_invalid`,
+`effort_advisory_threshold_exceeded`, package/setup advisory codes, and the
+four maintenance codes. Warnings never carry Task prose, secrets, raw output,
+diffs, paths, or exception text.
 
-For a gate-basis version-0 cycle, all six public count fields are JSON `null`
-and `qualifying_receipt_ids` is exactly `[]`. For version 1, every count is a
-JSON integer and `qualifying_receipt_ids` is an ordered JSON string array made
-by filtering the two stored slots in slot order; null placeholders are never
-emitted. Its length is exactly 1 for Tier-0 not-required, Tier-1 independent,
-or Tier-1/2 fallback basis, and exactly 2 for a Tier-2 independent basis.
-Public `verification_attestation` is JSON `true` for a native cycle and JSON
-`null` for a legacy partial cycle; JSON `false` is never emitted.
+## Release Correctness And Publication Contract
 
-The six existing public event fields remain the only event projection:
+TG-M19 converts the reviewed v0.10.0 baseline into one licensable,
+reproducible, upgrade-tested exact-commit release without changing product
+behavior. Documentation, licensing, synchronization, local rehearsal,
+candidate CI, main cutover, remote-main acceptance, and publication are
+separate gates. Earlier approval never authorizes a later external write.
 
-```text
-task_event_id, task_id, project_id, event_type, summary, created_at
-```
+### Authority And Release Identity
 
-An explicit `PUBLIC_EVENT_FIELDS` boundary applies to event reads and every
-write receipt. `task_events.completion_cycle_id` never appears there.
-`completion_cycle_id` is public only as the stable ID of a returned cycle.
+The frozen input is M18.4 commit
+`b0df647d9caf693afc0ff46aecf71a2c4739c864`. Its reviewed descendants on
+`codex/project-scoped-install-guidance` are development authority until the
+explicit main fast-forward succeeds; exact reviewed commits, not mutable
+branch names or generated state, are authoritative.
 
-Text `task show` reports returned/total, truncation, legacy incompleteness, and
-only the latest cycle's ordinal, origin/completeness, completion time,
-evidence kind, target kind/generation, and review-basis kind. It does not print
-revision values, reasons, receipt IDs, or review bodies. Task show reads Task,
-events, current review evidence, handoff summary, Contract, counts, and cycles
-in one query-only transaction.
+Legacy main is
+`f017ee228d435d892fb7136c5e79b3063320fac5`, package 0.1.0/schema v2 with no
+current Viewer contract. It is an ancestor and rehearsal source, not current
+authority. Its user-wide install, public `--db`, old commands, and release text
+must not return to active guidance.
 
-`task list`, `task current`, `task next`, their compact forms, `task effort`,
-and Review Packet output remain byte-contract compatible. No history option or
-pagination path is added.
+Main authority switches only when M19.8 freshly verifies expected remote main
+as an ancestor and normally fast-forwards it to the unchanged accepted
+candidate. Merge, squash, rebase, force, history replacement, or extra cutover
+commit is prohibited.
 
-Viewer snapshot v4 includes the same five-key, 10-row/32,768-byte history
-object per Task. For source schemas 5-14 it derives zero cycles and
-`legacy_history_incomplete=true`; for schemas 15-16 it uses stored coverage,
-cycles, and event links. The existing 500-Task selection and 64 MiB artifact
-cap remain. Snapshot v3 accepts source 15 during M18.1 and source 16 during
-M18.2 but omits all history fields; only M18.3 activates snapshot v4.
+Exact release identity is:
 
-The Viewer remains static, offline, text-only, and database-independent in the
-browser. TG-M18 adds no additional timer and preserves M15.5's existing single
-visibility-aware timer. M15.6 stores no completion-history field, and filter,
-selection, focus, scroll, CSP, no-storage/no-network, atomic publication, and
-last-good behavior remain unchanged.
-
-### Errors, Privacy, Recovery, And Ownership
-
-`completion_history_inconsistent` is the only new stable public error. It uses
-exit 2 and the sanitized message `stored completion history is inconsistent`.
-It covers a missing required cycle, latest-cycle/current-projection mismatch,
-reused reopen link, ordinal overflow, invalid gate-basis relationship, and
-cycle/event ownership conflict. It is a command error, not a new
-`task complete --check` blocker code. Existing stale-plan, review, Git,
-sequential, busy, journal, migration, project mismatch, and unreadable-state
-errors retain their precedence and messages.
-
-No cycle stores raw stdout/stderr, verification-run details, stack traces,
-environment data, diffs, review bodies or reasoning, prompts, conversations,
-path lists, secrets, tokens, or authorization headers. Existing bounded,
-validated completion values are copied once; current review rows remain their
-own detailed history. Reads, failed checks, failed writes, and replay create no
-cycle.
-
-Schema v15/v16 state participates in the existing setup-only migration backup,
-managed backup, restore, quick-check, foreign-key, fixed-state, and last-good
-rules. A fixed schema-v15 backup restored by the schema-v16 runtime is migrated
-before normal writes. Legacy `state/projects` eligibility remains schemas 1-13
-plus the explicit schema-v14 transition; it is not broadened to v15/v16.
-Fixed-state relocation tokens and backup validators accept the current schema
-through 16. No new backup, restore, alternate path, target-project mutation,
-network behavior, worker, queue, watcher, daemon, or service is introduced.
-
-TG-M18 ownership is exclusive:
-
-- M18.1 owns schema v15, migrations from the complete M17 schema lineage,
-  partial current-done backfill, storage models/repository primitives,
-  immutable/public-event boundaries, and snapshot-v3 source-15 compatibility.
-- M18.2 owns marker-only schema v16, activation of `complete` task additions,
-  activation-time partial reconciliation, both native done paths, exact reopen
-  and compatibility-bridge behavior, deterministic gate selection, and
-  snapshot-v3 source-16 compatibility.
-- M18.3 owns the bounded `task show` JSON/text read model and Viewer snapshot
-  v4. It changes no history writer or current gate.
-- M18.4 synchronizes the active Skill, references, help, README/release package,
-  manifest, versions, formal status, and full lifecycle acceptance at
-  v0.10.0/schema v16/Viewer v4. It adds no behavior.
-
-Every unit is sequential Tier 2 and requires focused and full offline tests,
-schema/quick/foreign-key and compatibility checks, `doctor`, package/manifest
-checks where covered files change, `git diff --check`, and two independent
-PASS receipts for the exact final target. Handoff
-`tg_handoff_696a19cba075d56e` remains pending as rationale until the user
-separately directs its disposition.
-
-## Approved Release Correctness: TG-M19
-
-TG-M19 converts the reviewed v0.10.0 repository baseline into one licensable,
-reproducible, upgrade-tested, exact-commit release without changing runtime
-behavior. Documentation consolidation, licensing, package synchronization,
-local acceptance, candidate-branch CI, main cutover, remote-main acceptance,
-and public publication are separate gates. Passing an earlier gate never
-authorizes a later external write.
-
-TG-M19 adds no public command, option, schema, Viewer field, Task-loop call,
-LLM judgment, normal-path question, target-project mutation, background
-process, network behavior, reviewer identity system, or alternate state
-layout. The public inventory remains 20 command leaves, the default-off loop
-remains at most nine governance calls, the Effort-enabled loop remains at most
-ten, and the current v0.10.0/schema-v16/Viewer-v4 product contract remains
-unchanged.
-
-### Product Authority And Legacy Main
-
-The frozen TG-M19 input is M18.4 completion commit
-`b0df647d9caf693afc0ff46aecf71a2c4739c864`. The committed lineage descended
-from that commit on the currently checked-out
-`codex/project-scoped-install-guidance` branch is the product-development
-authority until the explicit main cutover succeeds. The branch name is only a
-locator: each completed execution unit is authoritative at its own exact
-reviewed commit. Uncommitted work, a mutable branch name, commit-message text,
-and generated Task state are not substitutes for the active governing
-documents at that commit.
-
-Local `main` and `origin/main` currently identify the public legacy baseline
-`f017ee228d435d892fb7136c5e79b3063320fac5`, package 0.1.0 with schema v2 and
-no current Viewer contract. That commit is an ancestor and an upgrade
-reference, not current product authority. Its old commands, user-wide install
-guidance, public `--db`, and release text must not be merged back into active
-guidance. Merely fetching, checking out, or naming `main` never changes the
-authority boundary.
-
-The authority switch to public main occurs only when TG-M19.8 verifies the
-approved expected remote-main commit, proves it is an ancestor of the
-unchanged accepted candidate, and advances main to that candidate by
-fast-forward with no merge commit. Squash, rebase, force, history replacement,
-or an additional cutover commit is prohibited. After a successful cutover the
-same candidate commit, now at remote main, is the public source authority.
-Neither a tag nor a GitHub Release exists until its later independent gate.
-
-### Active And Historical Documentation
-
-The active governing set remains exactly:
-
-1. root `AGENTS.md` for durable agent behavior, safety, authority routing, and
-   workflow gates;
-2. `docs/specification.md` for current product behavior;
-3. `docs/design.md` for current implementation structure;
-4. `docs/implementation-roadmap.md` for execution order, dependencies, status,
-   verification, and review gates; and
-5. `plan.md` for current decisions and open issues.
-
-M19.1 creates `docs/history/README.md` as the index for non-authoritative
-history, preserves the pre-consolidation specification and design there, and
-then replaces the active specification and design with concise current
-authority. The history files must begin with a conspicuous non-authority
-banner, name their source path and exact source commit, link back to the active
-document, and state that internal words such as `current`, `approved`, and
-`implemented` describe only the captured revision.
-
-M19.2 applies the same boundary to the roadmap, plan, and superseded
-forward-test evidence. The active roadmap retains approved unfinished work,
-dependencies, blockers, and a concise completion index. The active plan
-retains current decisions and open issues. Evidence that still tests current
-behavior may remain outside history only when it is clearly evidence rather
-than authority; evidence using removed commands or superseded release
-surfaces belongs under the indexed history boundary.
-
-History is for lineage, migration review, rationale, and evidence discovery.
-It never governs current behavior, repairs an omission in an active contract,
-satisfies a current Task gate, or revives a removed command, path, install
-layout, or workflow. Every currently supported migration, compatibility,
-privacy, state-transition, setup, recovery, Viewer, and safety rule must remain
-self-contained in the active specification and design, even when a more
-verbose historical narrative is archived.
-
-Each authority transition is atomic. Within the M19.1 or M19.2 working
-revision, the history copy and index are prepared before an active document is
-reduced; the history, active replacements, links, and affected AGENTS routing
-then land in the same exact reviewed commit. No intermediate commit may expose
-an absent history target, two plausible active authorities, or active files
-that depend on non-authoritative text for required behavior. The resulting
-commit must remain understandable and implementable without consulting an
-uncommitted file.
-
-### Release Identity, Licensing, And Artifact Boundary
-
-The intended release identity is:
-
-| Item | Exact value |
+| Item | Value |
 |---|---|
-| package version | `0.10.0` |
-| SQLite schema | v16 |
-| Viewer snapshot | v4, accepting source schemas v5-v16 |
-| public command leaves | 20 |
-| supported runtime | Python 3.12 or newer on Windows |
-| required CI runtimes | Windows Python 3.12 and 3.14 |
-| proposed immutable-by-policy lightweight tag | `v0.10.0` |
-| publication remote | `origin` |
-| publication repository | `VAiring/task-governance-tool` |
-| installable archive | `task-governance-tool-0.10.0.zip` |
-| checksum asset | `task-governance-tool-0.10.0.zip.sha256` |
+| package | `0.10.0` |
+| SQLite | v16 |
+| Viewer | v4, sources v5-v16 |
+| command leaves | 20 |
+| runtime/CI | Windows Python 3.12+, CI 3.12 and 3.14 |
+| tag | lightweight `v0.10.0` |
+| remote/repository | `origin`, `VAiring/task-governance-tool` |
+| archive | `task-governance-tool-0.10.0.zip` |
+| checksum | `task-governance-tool-0.10.0.zip.sha256` |
 | archive root | `task-governance-tool/` |
 | Release title | `task-governance-tool v0.10.0` |
-| Release-notes source | `docs/releases/v0.10.0.md` |
+| notes source | `docs/releases/v0.10.0.md` |
 
-Every remote gate freshly resolves exactly one fetch endpoint and exactly one
-push endpoint for the named remote and normalizes only the provider host plus
-repository owner/name. Both must identify
-`github.com/VAiring/task-governance-tool`; a missing or additional endpoint,
-even when duplicate after normalization, another host, owner, repository, or
-an unparseable endpoint stops before network mutation. Raw URLs, userinfo,
-credentials, and query values are neither printed nor stored.
+Every remote gate freshly resolves exactly one fetch and one push endpoint and
+normalizes only host plus owner/repository. Both must be
+`github.com/VAiring/task-governance-tool`. Missing, additional, duplicate,
+unparseable, or different endpoint stops before mutation. Raw URL, userinfo,
+credential, and query are neither printed nor stored. Remote-tracking refs are
+observations, not authority.
 
-Apache License 2.0 is the approved license choice, but that choice is not proof
-that the project may apply it. Before M19.3 writes a license file, the user
-must explicitly confirm:
+### Licensing And Package Artifact
 
-- authority to license the included personal work;
-- the exact copyright-holder text;
-- the tracked source and shipped package scope that the confirmation covers;
-  and
-- any employer, contractor, contributor, or third-party ownership,
-  attribution, redistribution, or open-source-policy restriction.
+Apache-2.0 is selected but cannot be applied until the user confirms authority
+to license included personal work, exact holder text, covered tracked/shipped
+scope, exclusions, and every employer/contractor/contributor/third-party/OSS
+policy restriction. Git identity/repository ownership is not proof.
 
-Git author names, email addresses, repository ownership, and prior commits are
-not evidence of licensing authority. A missing confirmation blocks M19.3 but
-does not invalidate this documentation-only contract.
+The licensing audit covers tracked code, docs, tests, fixtures, HTML, workflow,
+and shipped package. Unconfirmed material is excluded/replaced or the gate
+stops. Official unmodified Apache-2.0 text appears identically at root and
+package; package license is manifest-covered. NOTICE exists only for a concrete
+duty. Ignored root references remain excluded absent separate promotion.
 
-M19.3 audits every tracked code, document, test, fixture, HTML asset, workflow,
-and shipped package file. Ignored root reference material remains excluded
-unless the user separately promotes and licenses it. Material that is not
-confirmed licensable must be removed from the covered release or replaced
-under explicit authority; ambiguity fails closed. M19.3 installs the official
-unmodified Apache-2.0 text as matching root and package `LICENSE` files. The
-package `LICENSE` becomes a required manifest-covered archive file. A `NOTICE`
-file is created only when the audit identifies a concrete notice duty; no
-speculative NOTICE, invented attribution, per-file header campaign, signature
-system, or legal conclusion is required.
+The archive is exactly the committed package subtree, including package
+LICENSE, and excludes generated state/SQLite/sidecars/backups/locks/Viewer
+output, target config, caches/logs/secrets, root references, tests, fixtures,
+and development docs. The manifest covers every packaged core file/digest.
 
-The archive contains only the exact committed installable
-`task-governance-tool/` subtree plus the required package `LICENSE`. It excludes
-generated state, SQLite files and sidecars, backups, locks, generated Viewer
-HTML, optional target-local configuration, caches, logs, secrets, root
-references, tests, fixtures, development documents, and other repository-root
-material. The co-located release manifest must cover every packaged core file
-and its exact digest, including the package license.
-
-M19.6 runs the following `git-archive-v1` recipe from the repository root,
-substituting only the accepted full `RC_SHA` and an isolated output path:
+Archive recipe from repository root is:
 
 ```text
 git archive --format=zip --output=<staging-file> <RC_SHA> -- task-governance-tool
 ```
 
-The tree-ish remains the commit, rather than
-`<RC_SHA>:task-governance-tool`, so archive timestamps remain derived from the
-commit rather than the invocation time. M19.6 records the exact sanitized
-`git --version` output, builds twice to different staging files with that same
-Git executable and command, and requires byte equality. This is a
-same-toolchain reproducibility gate; it does not claim byte identity across
-unspecified Git/zlib versions. No tracked release-builder or new product
-command is required.
+The commit tree-ish preserves commit-derived timestamps. M19.6 records
+sanitized exact `git --version`, builds twice to separate files with one
+executable/recipe, and requires byte equality. Reproducibility is claimed only
+for that toolchain. Checksum bytes are lowercase 64-hex archive SHA-256, two
+ASCII spaces, archive basename, and LF.
 
-The checksum file contains one ASCII line with the lowercase 64-character
-archive SHA-256 digest, two spaces, the archive filename, and LF. The archive
-and checksum are local acceptance artifacts, not tracked source files or
-target-project state.
+Canonical accepted staging is ignored physical
+`dist/task-governance-tool-0.10.0/<RC_SHA>/<EVIDENCE_SHA256>/` and contains
+only archive, checksum, and `release-candidate-v1.json` (summary bytes plus LF).
+Prepare under sibling `.staging-<EVIDENCE_SHA256>`, validate, then atomic
+no-clobber rename. Exact final is reusable; bounded three-file partial staging
+may complete or be recreated; unexpected/link/conflicting final stops. An
+accepted final is never overwritten/repaired. Invalid/missing accepted bytes
+return to M19.6 with new generation/acceptance. Files remain through M19.10.
 
-The accepted local directory is the already ignored repository-root path
-`dist/task-governance-tool-0.10.0/<RC_SHA>/<EVIDENCE_SHA256>/`, where
-`EVIDENCE_SHA256` is the lowercase hash of the exact checkpoint-summary bytes.
-It contains only the accepted archive, checksum, and
-`release-candidate-v1.json`; the JSON file is the summary bytes plus one LF.
-A new `rc-v1` for the same commit therefore receives a different directory
-instead of colliding with an older remote-head observation.
+Release notes are UTF-8 without BOM, LF, exact bytes in
+`docs/releases/v0.10.0.md`; Release body must decode to them exactly.
 
-M19.6 first proves `dist/` and every existing path component are ignored,
-physical, and non-link/non-reparse. It prepares the three files under the same
-parent as `.staging-<EVIDENCE_SHA256>`, validates their exact bytes, then
-atomically renames that directory to `<EVIDENCE_SHA256>` only when the final
-directory is absent. On restart, an exact final directory is reused. A partial
-staging directory containing only the three allowed regular filenames may be
-completed; a mismatching allowed partial may be removed and recreated because
-it was never accepted. Any unexpected entry, link/reparse point, conflicting
-final directory, or failed atomic rename stops without changing accepted
-bytes. Final files remain until M19.10 completes. If an accepted file is later
-missing or invalid, the lane returns to M19.6, creates a new `gen`, and performs
-a new full acceptance in a new evidence directory; the old final is never
-repaired or overwritten and a later gate never rebuilds or substitutes it.
+### Release Candidate Evidence v1
 
-M19.4 creates `docs/releases/v0.10.0.md` as the canonical Release body. The
-file is UTF-8 without BOM with LF line endings; its complete committed bytes
-are the digest target. The GitHub Release title is the exact fixed title in
-the table above, while the Release body must decode to the exact file text.
+M19.6 writes one existing checkpoint for Task
+`tg_task_67a3f3e73b913bfb` whose ASCII compact sorted-key JSON summary is at
+most 1,024 bytes, next action is exactly
+`Bind this evidence, pass both reviews, and complete TG-M19.6.`, and risks are
+empty. It has exactly:
 
-#### Release Candidate Evidence v1
+```text
+schema gen rc legacy main branch branch_head remote repo version tag tag_kind
+recipe git zip zip_bytes zip_sha256 sum sum_sha256 title notes notes_sha256
+workflow workflow_name job python
+```
 
-M19.6 records one canonical `rc-v1` evidence object before completing its Task.
-It uses the existing optional checkpoint of Task
-`tg_task_67a3f3e73b913bfb`: `summary` is an ASCII compact JSON object with keys
-sorted lexicographically and separators `(",", ":")`; `next_action` is
-exactly
-`Bind this evidence, pass both reviews, and complete TG-M19.6.`; and
-`unresolved_risks` is empty. The summary must fit the existing 1,024-byte
-checkpoint bound. Exceeding the bound stops M19.6 and requires a reviewed
-contract revision; the record must not be split across informal notes.
+Values are `schema="rc-v1"`, fresh stable-per-attempt
+`gen="tg_rc_<16-lowercase-hex>"`, canonical full SHAs, exact release identity,
+`tag_kind="lightweight"`, `recipe="git-archive-v1"`,
+`workflow=".github/workflows/ci.yml"`, `workflow_name="CI"`, `job="test"`,
+and `python=["3.12","3.14"]`. `legacy` is the M19.5 completion commit and an
+ancestor of `rc`; `zip_bytes` is integer; hashes are lowercase 64-hex.
 
-The object contains exactly these keys:
+It stores no path, URL, credential, provider body, log, or checksum-line copy.
+Staging path and checksum content derive exactly from fixed fields and summary
+hash. A new full acceptance uses a new generated ID; retry of one attempt keeps
+it stable.
 
-| Key | Exact meaning |
-|---|---|
-| `schema` | `rc-v1` |
-| `gen` | fresh `tg_rc_` plus 16 lowercase hexadecimal characters |
-| `rc` | accepted canonical full commit SHA |
-| `legacy` | canonical full Git completion revision of TG-M19.5 |
-| `main` | freshly observed expected remote-main full SHA |
-| `branch` | candidate branch name |
-| `branch_head` | freshly observed expected pre-push candidate-branch full SHA |
-| `remote` | `origin` |
-| `repo` | `VAiring/task-governance-tool` |
-| `version` | `0.10.0` |
-| `tag` | `v0.10.0` |
-| `tag_kind` | `lightweight` |
-| `recipe` | `git-archive-v1` |
-| `git` | sanitized exact Git version value |
-| `zip` | archive basename |
-| `zip_bytes` | archive byte length |
-| `zip_sha256` | lowercase archive SHA-256 |
-| `sum` | checksum basename |
-| `sum_sha256` | lowercase SHA-256 of the complete checksum-file bytes |
-| `title` | exact Release title |
-| `notes` | `docs/releases/v0.10.0.md` |
-| `notes_sha256` | lowercase SHA-256 of the complete notes-file bytes |
-| `workflow` | `.github/workflows/ci.yml` |
-| `workflow_name` | `CI` |
-| `job` | `test` |
-| `python` | exact ordered array `["3.12","3.14"]` |
+After readback, hash exact summary bytes for the staging directory, set review
+target `git_commit=rc`, provide summary/commit/assets/notes/verification as
+review material, obtain two Tier-2 PASS receipts, and complete with
+`git_commit=rc`. Any record/asset change resets the target generation and
+reviews.
 
-The checkpoint is bounded local continuation evidence, not new product
-authority, a release database, or proof that a remote gate passed. Later gates
-read the exact current record through `task show`, compare every field they
-consume, and retain the accepted archive/checksum bytes outside SQLite. The
-record stores no staging path, credential, URL, provider body, or raw log.
-The staging location is omitted because it is derived exactly from the
-repository root, fixed version, `rc`, and the exact summary-byte hash, not
-caller-selected.
-The checksum content is likewise derived exactly from `zip_sha256`, two ASCII
-spaces, `zip`, and LF, so it is not duplicated in the bounded JSON.
-`legacy` must resolve as a commit, equal TG-M19.5's stored Git completion
-revision, and be an ancestor of `rc`; M19.6 stops rather than inferring the
-rehearsal from branch position or prose.
-`gen` is generated mechanically once per M19.6 acceptance attempt, checked
-against existing candidate records before checkpoint creation, and then held
-stable for every retry of that attempt. It adds no LLM judgment. A later full
-reacceptance uses a new value, so it never overwrites a prior final generation.
+### Remote Gate Evidence v1
 
-After exact checkpoint readback, M19.6 hashes the summary's exact UTF-8 bytes
-to locate the accepted evidence directory, but sets its review target to
-`git_commit` value `rc`. The exact summary, accepted commit, archive, checksum,
-notes, and verification evidence are supplied with the Review Packet as the
-target material. Two Tier 2 PASS receipts must use that generation, and the
-Task completes with `git_commit` evidence equal to `rc`. This requires `rc` to
-resolve as a real clean commit and uses that commit as the durable source from
-which the ignored archive was deterministically derived. Any record or
-accepted-asset change re-sets the target, advances its generation even though
-the commit value is unchanged, and invalidates the previous receipts.
-
-#### Remote Gate Evidence v1
-
-M19.7-M19.10 change no tracked file. After each unit's required readback
-succeeds, it records one bounded gate-evidence object in that Task's existing
-checkpoint. `summary` uses ASCII JSON with lexicographically sorted keys and
-separators `(",", ":")`, is at most 1,024 UTF-8 bytes, and contains exactly
-the schema's keys below. `gen` is fresh `tg_gate_` plus 16 lowercase
-hexadecimal characters for a new acceptance and is stable across retries.
-`unresolved_risks` is empty.
-
-| Schema | Exact keys beyond `schema`, `gen`, `remote`, `repo`, and `rc` |
-|---|---|
-| `m19.7-evidence-v1` | `branch`, `branch_head=rc`, positive integer `dispatch_authorization`, `workflow`, `workflow_name`, integer `run_id`, integer `run_attempt`, `run_event="workflow_dispatch"`, `run_head=rc`, `job="test"`, `py312="success"`, `py314="success"` |
-| `m19.8-evidence-v1` | `expected_main`, `ref="refs/heads/main"`, `main=rc`, `transition="fast_forward"`, and integer `candidate_ci_run_id` plus integer `candidate_ci_run_attempt` from M19.7 |
-| `m19.9-evidence-v1` | `main=rc`, `workflow`, `workflow_name`, integer `run_id`, integer `run_attempt`, `run_event="push"`, `run_head=rc`, `job="test"`, `py312="success"`, `py314="success"`, `version`, `legacy`, `tag`, `tag_state="absent"`, `notes_sha256`, `zip_sha256`, and `sum_sha256` |
-| `m19.10-evidence-v1` | `main=rc`, integer `main_ci_run_id` plus integer `main_ci_run_attempt` from M19.9, `tag`, `tag_kind="lightweight"`, `tag_ref=rc`, integer `release_id`, `final_state="release"|"prerelease"`, boolean `draft_staging`, `title`, `notes_sha256`, `zip`, `zip_sha256`, `sum`, `sum_sha256`, `default_smoke="pass"`, `tag_smoke="pass"`, and `archive_smoke="pass"` |
-
-The checkpoint `next_action` strings are respectively:
+M19.7-M19.10 change no tracked file. After exact readback each records one
+existing checkpoint with sorted compact ASCII JSON at most 1,024 bytes, fresh
+stable `tg_gate_<16-lowercase-hex>` generation, empty risks, and respectively:
 
 1. `Bind this evidence, pass both reviews, and complete TG-M19.7.`
 2. `Bind this evidence, pass both reviews, and complete TG-M19.8.`
 3. `Bind this evidence, pass both reviews, and complete TG-M19.9.`
 4. `Bind this evidence, pass both reviews, and complete TG-M19.10.`
 
+Common keys are `schema`, `gen`, `remote`, `repo`, and `rc`. Exact additional
+keys are:
+
+| Schema | Keys |
+|---|---|
+| `m19.7-evidence-v1` | `branch`, `branch_head=rc`, positive integer `dispatch_authorization`, `workflow`, `workflow_name`, integer `run_id`, integer `run_attempt`, `run_event="workflow_dispatch"`, `run_head=rc`, `job="test"`, `py312="success"`, `py314="success"` |
+| `m19.8-evidence-v1` | `expected_main`, `ref="refs/heads/main"`, `main=rc`, `transition="fast_forward"`, integer `candidate_ci_run_id`, integer `candidate_ci_run_attempt` |
+| `m19.9-evidence-v1` | `main=rc`, `workflow`, `workflow_name`, integer `run_id`, integer `run_attempt`, `run_event="push"`, `run_head=rc`, `job="test"`, `py312="success"`, `py314="success"`, `version`, `legacy`, `tag`, `tag_state="absent"`, `notes_sha256`, `zip_sha256`, `sum_sha256` |
+| `m19.10-evidence-v1` | `main=rc`, integer `main_ci_run_id`/`main_ci_run_attempt`, `tag`, `tag_kind="lightweight"`, `tag_ref=rc`, integer `release_id`, `final_state="release"|"prerelease"`, Boolean `draft_staging`, `title`, `notes_sha256`, `zip`, `zip_sha256`, `sum`, `sum_sha256`, `default_smoke="pass"`, `tag_smoke="pass"`, `archive_smoke="pass"` |
+
 Every common field and every release-identity, asset, notes, workflow, branch,
-and `legacy` value repeated from `rc-v1` must be byte-equal to that accepted
-record. M19.8 `candidate_ci_run_id` and `candidate_ci_run_attempt` must equal
-M19.7 `run_id` and `run_attempt`; M19.9 `legacy` must equal
-`rc-v1.legacy`; and M19.10 `main_ci_run_id` and `main_ci_run_attempt` must
-equal M19.9 `run_id` and `run_attempt`. A run is selected only from the exact
-workflow, event, ref, and `head_sha`: choose the greatest integer `run_id` and
-then its greatest integer `run_attempt`. The selected latest attempt must be
-successful; a queued or in-progress attempt is awaited and a completed
-non-success attempt stops the gate. An older successful attempt never
-overrides a newer exact attempt. Immediately before M19.8 changes `main` and
-immediately before M19.10 first changes tag/Release state, repeat the matching
-query and require the selected run ID/attempt still equals the prior gate's
-checkpoint and remains successful. A difference returns to fresh acceptance
-of M19.7 or M19.9 respectively; it is never ignored. A read-only comparison
-before requesting the later unit's user approval may avoid asking against stale
-evidence, but it stores no approval. After approval, first activate the Task so
-its exact Approval object is durable, then repeat the comparison immediately
-before the first external write. A mismatch moves the later Task back to
-`blocked` with a bounded reason, then reopens the prior gate, preserving
-sequential-lane invariants. Once that gate is freshly accepted, unchanged
-approved mutation values resume under the stored Contract; changed mutation
-values require a fresh approval and Contract revision.
+and `legacy` value repeated from `rc-v1` is byte-equal to that accepted
+record. M19.8 run equals M19.7; M19.9 legacy equals rc-v1; M19.10 main run
+equals M19.9. Select a run only for exact
+workflow/event/ref and provider `head_sha=rc`: greatest integer run ID, then
+greatest attempt. Latest
+must succeed; queued/running waits, non-success stops, and older success cannot
+override. Immediately before M19.8/M19.10 first mutation, repeat selection and
+require unchanged successful upstream run. Mismatch returns the later Task to
+blocked, reopens/reaccepts the prior gate, and changed mutation values require
+fresh approval/Contract revision.
 
-M19.7 dispatches only when that exact-run query returns no row. Immediately
-before the one dispatch, it appends and reads back a checkpoint whose summary
-is canonical compact ASCII JSON with exactly
-`schema="m19.7-dispatch-intent-v1"`, the new gate `gen`, `remote`, `repo`, `rc`,
-`branch`, positive integer `dispatch_authorization`, and `workflow`; its exact
-`next_action` is
-`Observe this authorized dispatch; never dispatch again for this gen.` and
-`unresolved_risks` is empty. The later `m19.7-evidence-v1` uses the same
-`gen`. Once that intent exists, success, timeout, process loss, or an ambiguous
-provider response may lead only to read-only observation of a matching run;
-the same generation never dispatches again. If no matching run becomes
-observable, the gate stops. Another dispatch requires a new fresh user
-approval recorded in a new Contract revision and a new generation, preventing
-a crash window from becoming an unbounded duplicate workflow queue.
-The initial approval uses `dispatch_authorization=1`; each later authorization
-increments it by exactly one, and the intent/final evidence must equal the
-current approved value. The later Contract revision uses
-`authority_ref=user_instruction:<task-id>:<new-contract-revision>` and exact
-change reason `Fresh authorization for another bounded workflow dispatch.`.
+M19.7 dispatches only when no exact run exists. Before its one dispatch it
+records a same-generation `m19.7-dispatch-intent-v1` checkpoint containing
+exactly `schema`, `gen`, `remote`, `repo`, `rc`, `branch`, positive integer
+`dispatch_authorization`, and `workflow`, with next action
+`Observe this authorized dispatch; never dispatch again for this gen.`, and no
+risks. The final `m19.7-evidence-v1.dispatch_authorization` always equals the
+current M19.7 Approval value. When an intent exists, final evidence also uses
+that intent's identical `gen` and authorization value. Once present, only
+read observation is allowed; no matching run stops.
+Another dispatch needs fresh user approval, new Contract revision, new
+generation, and authorization incremented from initial 1 by exactly one. Its
+authority is `user_instruction:<task-id>:<new-contract-revision>`. Exact
+change reason is
+`Fresh authorization for another bounded workflow dispatch.`.
 
-After exact checkpoint readback, each unit uses the existing review/completion
-binding below. The orchestrator supplies the summary plus the exact sanitized
-run/ref/Release readback and matching retained assets as Review Packet
-material. Two Tier 2 PASS receipts must bind the current generation.
+Each gate then sets/uses:
 
-| Unit | Review target and completion evidence |
+| Unit | Target and completion |
 |---|---|
-| M19.7 | `external_revision` value `github-actions-run:VAiring/task-governance-tool:<run_id>:<run_attempt>` for both target and completion; exact reason `Exact approved candidate-branch CI run is the durable external revision.` and `--external-revision-approved` |
-| M19.8 | `git_commit` value `rc` for both target and completion |
-| M19.9 | `diff_fingerprint` value `sha256:<lowercase-64hex>` of the exact summary bytes, with `commit_not_required` completion |
-| M19.10 | `external_revision` value `github-release:VAiring/task-governance-tool:<release_id>` for both target and completion; exact reason `Exact approved GitHub Release is the durable external revision.` and `--external-revision-approved` |
+| M19.7 | external `github-actions-run:VAiring/task-governance-tool:<run_id>:<run_attempt>`, exact reason `Exact approved candidate-branch CI run is the durable external revision.`, approved external completion |
+| M19.8 | `git_commit=rc` |
+| M19.9 | diff fingerprint SHA-256 of summary, commit-not-required |
+| M19.10 | external `github-release:VAiring/task-governance-tool:<release_id>`, exact reason `Exact approved GitHub Release is the durable external revision.`, approved external completion |
 
-The M19.7 and M19.10 flags are authorized only by those units' fresh approval
-objects naming `completion_source="github_actions_run"` and
-`completion_source="github_release"` respectively; they are not inferred from
-the existence of an ID. M19.8's commit must resolve canonically at completion.
-Changing any evidence field records a fresh `gen`, re-sets the required target,
-advances its generation even when its kind/value is unchanged, and repeats
-both reviews. No URL, raw provider body, command log, credential, or new
-product storage is used.
+Two current-generation Tier-2 PASS receipts are required with exact sanitized
+readback/material. M19.7/M19.10 external completion is authorized only by the
+stored fresh approval objects naming the exact completion source. Any evidence
+change makes a new generation/target/review. No URL/raw provider body/log/
+credential/new product store is used.
 
-### Supported Upgrade And Paired Rollback
+### Upgrade And Paired Rollback
 
-The runtime continues to support a structurally valid, contiguous schema-v1
-through schema-v15 database as a setup-only migration source and schema v16 as
-the idempotent current state. Schema zero creates fresh v16 state. A missing or
-incomplete migration history, invalid structure or ownership, an unsupported
-location, or a schema newer than v16 fails closed under the existing sanitized
-errors. Viewer source compatibility remains v5-v16 and does not broaden the
-database migration or legacy-discovery boundary.
+M19.5 obtains exact legacy-main package tree and schema-v2 database, uses only
+isolated copies, and advances supported project-scoped state through setup to
+unchanged v0.10.0/schema16. It proves preservation where records exist, setup
+backup, migration failure/restart, quick-check, foreign keys, and Viewer.
 
-M19.5 must independently rehearse the public legacy-main baseline by obtaining
-the package tree and a schema-v2 database from exact commit
-`f017ee228d435d892fb7136c5e79b3063320fac5`, operating only on isolated copies,
-and advancing the supported project-scoped state through setup to the unchanged
-v0.10.0/schema-v16 candidate. The rehearsal must prove preservation of task,
-event, completion, review, handoff, maintenance, identity, binding, backup, and
-Viewer-relevant state wherever those records exist at each source version, as
-well as setup backup, migration failure, restart, quick-check, and foreign-key
-behavior.
+Old user-wide/custom `--db` behavior remains unsupported. Rehearsal may place
+isolated legacy state only into a current supported project-scoped layout; this
+is not public relocation. Unsupported user-wide/link/junction/custom paths
+must be rejected, not selected/moved/mutated.
 
-The old user-wide installation locations and public custom `--db` path are not
-reactivated. For the rehearsal only, an explicitly managed isolated copy of
-legacy state may be placed in a layout already supported by the current
-project-scoped package contract; that fixture arrangement is not a public
-manual relocation or alternate-state procedure. Current setup and doctor
-continue to reject user-wide, symbolic-link, junction, raw custom-database, and
-other unsupported layouts while retaining the existing bounded source
-self-host exception. The rehearsal must test that unsupported paths are
-refused rather than silently selected, moved, or mutated.
+Rollback restores one matched pre-migration package, database, and managed
+artifact set, then proves that legacy package can read it. Old code against
+v16, in-place downgrade, mixed generations, or Git checkout alone is not
+rollback. Canonical state is never used.
 
-Rollback is a paired restore to one pre-migration point: restore the legacy
-package, its matching pre-migration database, and its matching managed
-artifacts together, then prove that the legacy package can read that restored
-state. Running old code against a schema-v16 database, performing an in-place
-database downgrade, combining artifacts from different generations, or
-claiming that a Git checkout alone restores state is prohibited. Canonical
-project state is never used for the rehearsal.
+After cutover, correction is a forward-fix candidate/new version. Never force
+main, rewrite history, move/delete tag, replace assets, or delete a Release to
+hide mismatch.
 
-After public cutover, release rollback is a forward-fix candidate and, if
-needed, a new version. Routine rollback never force-updates main, rewrites
-history, moves or deletes a published tag, replaces accepted release assets, or
-deletes a Release to hide a mismatch.
+### Exact Ordered Gates And Approvals
 
-### Review Evidence Trust Boundary
+The exact gates are:
 
-For the current exact review target and target generation, stored receipts,
-changes-requested results, and unresolved findings deterministically satisfy or
-block the existing review gate. TG-M19 does not change that calculation.
-
-An `independent` receipt and its `reviewer_key` are bounded caller-supplied
-records. Distinct reviewer keys prove only that the stored normalized strings
-are distinct. They do not authenticate a person, model, process, machine,
-organization, independence, expertise, provenance, or the truth of the review
-summary. The CLI does not call an external reviewer and the manifest does not
-sign review evidence. Public guidance must describe the deterministic stored
-gate accurately and must not market it as identity verification, cryptographic
-attestation, or independently measured assurance.
-
-The project workflow remains responsible for actually assigning appropriate
-reviewers and preserving any external provenance it requires outside this
-tool. Adding reviewer identity, signatures, remote attestation, or a general
-audit service is outside TG-M19.
-
-### Exact-Commit Acceptance And Publication Gates
-
-The gates are strictly ordered:
-
-| Gate | Required evidence and permitted effect |
+| Gate | Required boundary |
 |---|---|
-| M19.0 contract | The five governing documents agree on this boundary at one exact reviewed commit. No product code, package, license, history destination, generated product artifact, or Git ref changes. |
-| M19.1 active contract consolidation | Indexed history plus atomic active specification/design switch; no runtime or package behavior change. |
-| M19.2 roadmap/plan/evidence split | Indexed history plus atomic active roadmap/plan switch; preserve every current decision, blocker, dependency, and reusable evidence fact. |
-| M19.3 licensing | User licensing-authority confirmation and content audit precede matching official license files and any duty-driven NOTICE. |
-| M19.4 public synchronization | README, release guide, Skill metadata/references, CLI help, manifest, versions, and review-trust wording match the unchanged runtime. |
-| M19.5 local upgrade/rollback | Isolated legacy upgrade and paired rollback pass without canonical-state or remote mutation. |
-| M19.6 local candidate acceptance | One clean exact commit, two byte-identical `git-archive-v1` outputs, the checksum, both Windows Python CI-equivalent offline suites, isolated install, and two exact-target reviews pass. Record every `Release Candidate Evidence v1` field and retain the accepted asset bytes. No remote write. |
-| M19.7 candidate remote CI | Only after fresh user approval naming the `rc-v1` remote/repository, candidate/branch heads, asset identities, tag, and exact CI workflow boundary, normally push the unchanged candidate to that branch and dispatch `.github/workflows/ci.yml` at that exact remote ref. Require the run `head_sha` to equal `rc` and both `test` matrix jobs for Python 3.12/3.14 to pass. M19.7 creates no PR; any ambient PR check never substitutes for this exact-ref run. No main, tag, or Release change. |
-| M19.8 main fast-forward | Only after M19.7 and fresh user approval naming the remote/repository, accepted candidate SHA, and expected current `origin/main` SHA, refetch, compare exact equality and ancestry, then fast-forward main to the unchanged candidate. No tag or Release. |
-| M19.9 remote-main release gate | Read back remote main, require exact candidate equality, require all main checks on that SHA, and revalidate version, legacy evidence, archive identity, and checksum. No managed-file or Git ref write. |
-| M19.10 tag and GitHub Release | Only after M19.9 and separate fresh user approval naming remote/repository, exact main SHA, version, lightweight tag, title/notes digest, final visibility, draft-staging permission, and both accepted asset names/hashes, create the immutable-by-policy tag at that SHA and the approved GitHub Release with only those accepted bytes. Exact pre-existing state from an interrupted approved attempt may be resumed; conflicting state stops without retag, replacement, or deletion. |
+| M19.1 | Indexed immutable history and atomic active spec/design switch; no runtime/package change |
+| M19.2 | Indexed roadmap/plan/evidence split retaining current decisions, blockers, dependencies, and reusable evidence |
+| M19.3 | User licensing authority plus audit before matching license/NOTICE decision |
+| M19.4 | README, release guide, Skill/references/help/manifest/version/trust wording match runtime |
+| M19.5 | Isolated legacy upgrade and paired rollback, no canonical/remote mutation |
+| M19.6 | Clean exact commit, reproducible archive/checksum, Windows 3.12/3.14 offline suites, isolated install, exact reviews, retained assets, no remote write |
+| M19.7 | Fresh exact-value approval, normal candidate-branch push and exact-ref workflow dispatch; exact SHA and both jobs pass; no PR/main/tag/Release |
+| M19.8 | Fresh exact-value approval, refetch/equality/ancestry, normal fast-forward main only |
+| M19.9 | Remote main exact candidate, exact successful main CI, release/legacy/assets revalidated, no write |
+| M19.10 | Fresh exact-value approval, lightweight tag and GitHub Release with only accepted bytes; exact interrupted state may resume, conflict stops |
 
-The M19.7, M19.8, and M19.10 approvals are distinct. Earlier roadmap approval,
-general permission to continue tasks, permission to push a feature branch, or
-approval of the Apache-2.0 choice does not satisfy them. Each approval must
-name the then-current exact values listed in the table.
+M19.7, M19.8, and M19.10 approvals are separate. General roadmap/task/push/
+license permission cannot substitute. Any tracked code/doc/workflow/manifest/
+license/package change after M19.6 invalidates candidate/assets/reviews/remote
+CI and returns to M19.6.
 
-The planned M19.1-M19.10 SQLite Task rows may remain at Contract revision zero
-while dependency-gated. M19.0 does not bulk-edit them. At a unit boundary,
-`SOURCE_SHA` is the canonical current commit containing that unit's active
-roadmap section. The section must still match its approved M19.0 semantics.
-M19.2 must preserve every unstarted M19.3-M19.10 section verbatim.
+Before any candidate-branch push, fresh readback has exactly three outcomes:
+already at `rc` is a write-free resumed success; exactly the approved
+`branch_head` permits one normal non-force push to `rc`; any other head stops.
+Before main cutover, already at `rc` is a resumed success; exactly approved
+`main` permits one normal fast-forward push after ancestry proof; any other
+head stops. M19.7 creates no PR, and an ambient PR check never substitutes for
+the exact `workflow_dispatch` ref/SHA run.
 
-Before activation, require the stored title, kind, and lane/order to match the
-roadmap unit. The stored status must equal the first ASCII status-enum word
-after `Status:` (`ready` or `blocked`), ignoring later roadmap qualifiers.
-Normalize bullet text as defined below. The stored
-description must equal the `Intended outcome` bullet texts joined by one ASCII
-space; review tier must be 2. Verification is the exact bounded projection
-`Execute every Verification bullet in
-docs/implementation-roadmap.md@<SOURCE_SHA>#TG-M19.<unit>; retain only bounded
-sanitized evidence.` A blocked Task's reason is
-`Blocked until the dependencies and every Required user approval value in
-docs/implementation-roadmap.md@<SOURCE_SHA>#TG-M19.<unit> are satisfied.`;
-a non-blocked Task reason remains empty. Any description, verification,
-blocked-reason, or tier mismatch is corrected while the Task remains `ready`
-or `blocked` by one separate metadata-only edit; identity/lane/status mismatch
-stops. These projections fit the existing 500-character verification and
-1,000-character reason limits. Metadata cannot share a command with Contract
-input or status. This
-deterministically removes M19.5's old user-wide/custom-`--db` either/or text,
-M19.7's old PR-as-alternative wording, and other superseded planning metadata
-before it can enter a Review Packet.
+Before requesting M19.8 or M19.10 approval, a read-only comparison may avoid a
+stale question but stores no approval. After approval, first activate that Task
+so its exact Approval object is durable, then repeat the upstream run check
+immediately before the first external write. Mismatch follows the blocked/
+prior-gate reacceptance rule above.
 
-Contract revision 1 is then created in a second edit containing only the
-`in_progress` transition and Contract options. Its three content fields are
-derived without semantic choice:
+Remote ambiguity is resolved by readback: exact requested state succeeds;
+exact approved pre-write branch state permits only the same normal non-force
+retry under current approval; any third state stops. M19.10 may reuse exact
+tag/metadata/asset from an interrupted approved attempt and add only a missing
+accepted asset. Conflict stops without move/replacement/deletion. Reusable tag
+must be an unpeeled direct commit object; annotated tag conflicts even if its
+peeled SHA matches.
 
-1. Join wrapped lines within each roadmap bullet with one ASCII space, preserve
-   bullet order and inline text, prefix every result with `- `, and separate
-   bullets with LF.
-2. `scope` is `Write scope:` plus LF and the normalized `Write scope` bullets.
-3. `acceptance` is `Intended outcome:` plus its normalized bullets, then LF,
-   `Verification:`, LF, and the normalized `Verification` bullets.
-4. `constraints` contains the literal normalized `Depends on:` line. It then
-   rewrites the roadmap status deterministically as
-   `Activation source status (satisfied before transition): <text after
-   Status:>` so the provenance cannot be mistaken for current Task status.
-   This is followed when present by the normalized `Required user decision:`
-   or `Required user approval:` heading and bullets, then this exact sentence:
+### Just-In-Time M19 Task Contract
 
-   ```text
-   All prohibitions, stop and invalidation rules in this unit remain mandatory; no fallback or scope expansion is authorized.
-   ```
-5. For M19.3, M19.7, M19.8, and M19.10, append `Approval:` plus LF and the
-   canonical approval object below, and use
-   `user_instruction:<task-id>:1` as `authority_ref`. For all other units,
-   `authority_ref` is
-   `docs/implementation-roadmap.md@<SOURCE_SHA>#TG-M19.<unit>`.
-6. Initial Contract revision 1 has the required empty `change_reason`; do not
-   pass `--contract-change-reason`.
+Dependency-gated M19 Tasks remain Contract revision 0 until start. At a unit
+boundary `SOURCE_SHA` is the canonical current commit containing the active
+roadmap section. Before activation, stored identity/kind/lane/order and first
+ASCII roadmap status word must match. Separately correct ready/blocked
+description, verification, blocker reason, and Tier 2 metadata:
 
-Approval objects use
-`json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))`
-encoded as UTF-8 and are at most 1,024 bytes. The complete resulting
-`constraints` value must also fit the existing 2,000-character limit before
-activation. They store only the user's sanitized exact decision, not a prompt
-or conversation. Empty strings are not used to imply permission; an explicit
-`none_declared` value records an affirmative statement that the named
-restriction is absent.
+- description is Intended-outcome bullets joined by one ASCII space;
+- verification is
+  `Execute every Verification bullet in docs/implementation-roadmap.md@<SOURCE_SHA>#TG-M19.<unit>; retain only bounded sanitized evidence.`;
+- blocked reason is
+  `Blocked until the dependencies and every Required user approval value in docs/implementation-roadmap.md@<SOURCE_SHA>#TG-M19.<unit> are satisfied.`;
+- nonblocked reason is empty.
+
+The M19.2 authority split must retain the complete unstarted M19.3-M19.10
+roadmap sections verbatim so this deterministic source remains stable.
+
+Then one Contract-only plus in-progress edit activates revision 1. Normalize
+wrapped bullet lines with ASCII spaces, prefix each bullet `- `, retain order,
+and separate by LF. Scope is heading `Write scope:` plus bullets. Acceptance is
+`Intended outcome:` bullets then `Verification:` bullets. Constraints contain
+literal Depends-on, rewritten
+`Activation source status (satisfied before transition): <roadmap status>`,
+any required-decision/approval heading and bullets, then exact:
+
+```text
+All prohibitions, stop and invalidation rules in this unit remain mandatory; no fallback or scope expansion is authorized.
+```
+
+For M19.3/.7/.8/.10 append `Approval:` and canonical approval JSON and use
+`user_instruction:<task-id>:1`; others use roadmap SHA anchor. Initial change
+reason is empty and is not passed. Approval JSON uses UTF-8
+`json.dumps(value, ensure_ascii=False, sort_keys=True,
+separators=(",", ":"))`, maximum 1,024 bytes;
+complete constraints remain within 2,000 characters. Empty strings never imply
+permission; `none_declared` is affirmative absence.
+
+Approval schemas are:
 
 | Unit/schema | Exact keys beyond `schema` |
 |---|---|
-| M19.3 `m19.3-approval-v1` | `authority="confirmed"`, `license="Apache-2.0"`, exact `holder`, `scope`, `excluded`, `employer`, `contractor`, `third_party`, and `oss_policy` strings |
-| M19.7 `m19.7-approval-v1` | `remote`, `repo`, `rc`, `branch`, `branch_head`, `main`, `tag`, `tag_kind`, `zip`, `zip_sha256`, `sum`, `sum_sha256`, `workflow`, `workflow_name`, `job`, `python`, positive integer `dispatch_authorization` (initially 1), `completion_source="github_actions_run"`, and `action="push_and_dispatch"` |
-| M19.8 `m19.8-approval-v1` | `remote`, `repo`, `rc`, `main`, `ref="refs/heads/main"`, and `action="fast_forward"` |
-| M19.10 `m19.10-approval-v1` | `remote`, `repo`, `rc`, `version`, `tag`, `tag_kind`, `title`, `notes_sha256`, `final_state="release"|"prerelease"`, boolean `draft_staging`, `zip`, `zip_sha256`, `sum`, `sum_sha256`, `completion_source="github_release"`, and `action="publish"` |
-
-Missing headings, overflow, non-canonical `SOURCE_SHA`, metadata drift, or a
-content mismatch stops before an implementation write. This just-in-time
-transcription adds no requirement choice or user question and cannot weaken
-an unsupported-layout refusal or fresh-approval gate.
-
-Any tracked code, documentation, workflow, manifest, license, or package change
-after M19.6 invalidates candidate acceptance, archive identity, reviews, and
-remote-CI evidence and returns the lane to M19.6 with a new commit and
-artifacts. Task DB status writes and read-only inspection do not alter the
-candidate commit, but they cannot waive a failed gate. A remote SHA mismatch,
-unexpected main movement, CI failure, archive mismatch, missing approval, or
-ambiguous publication result stops the affected external gate. It never
-authorizes force, retag, asset replacement, history rewrite, or a different
-commit under the accepted identity.
-
-After an ambiguous remote write result, readback controls the outcome. The
-exact requested state is success; the exact approved pre-write branch state
-permits only the same normal non-force retry under the still-current approval;
-any third state stops. For M19.10, an exact tag, draft/final metadata, or asset
-from the interrupted approved attempt is reusable and only a missing accepted
-asset may be added. A conflicting tag target, metadata value, asset name, or
-asset hash stops publication; nothing is moved, replaced, or deleted.
-An exact reusable lightweight tag requires its unpeeled ref to point directly
-to the accepted commit object and the object type to be `commit`; an annotated
-tag conflicts even when its peeled SHA is the accepted commit.
-
-M19.0 itself changes only the five governing documents. It creates no
-`LICENSE`, `NOTICE`, history file, archive, checksum, package, tag, branch, PR,
-GitHub Release, workflow run, network request, target-project write, or product
-runtime-state migration. Routine Task status and review evidence remain the
-existing governance workflow, not a new TG-M19 product effect. All other
-effects remain exclusively owned by their later gates.
-
-## Task Ordering
-
-Task selection must support both sequence-sensitive and free-order work.
-
-- `optional` tasks are actionable when their status is `ready`.
-- `sequential` tasks are actionable when their status is `ready` and all earlier
-  tasks in the same `lane` are `done` or `cancelled`.
-- The same earlier-task predicate guards direct transitions to
-  `in_progress`, `review_pending`, and `done`; `paused` is incomplete.
-- A blocked sequential lane must not hide ready optional tasks or ready tasks in
-  other lanes.
-
-The MVP uses `lane` plus `lane_order` instead of a general dependency graph.
-
-## Historical CLI Requirements Through v0.7.0
-
-This section preserves the pre-M14 command-by-command baseline. It is not the
-current invocation contract. The implemented TG-M14 public-surface, setup,
-doctor, completion, checkpoint, and Review Packet sections above control
-the v0.8.0 lineage; the implemented TG-M17 section controls the v0.9.0
-identity/storage boundary. Removed commands and `--db` fail through the fixed
-no-write parser contract.
-
-All MVP commands must support:
-
-- `--repo`: target project root; default current directory.
-- `--db`: explicit SQLite path override.
-- `--json`: machine-readable output for Codex.
-- `--read-only`: prohibit database creation, migration, or writes. Inspection
-  commands behave as read-only even when this flag is omitted.
-
-Inspection commands must not create or migrate databases by default. Commands
-that write to the task-governance-tool database must state what they recorded in
-both JSON and text output.
-
-### `taskgov self status`
-
-Purpose: inspect installed package version and local core drift without a
-database, Git repository, or network.
-
-`--repo` and `--db` are accepted for common CLI compatibility but are not read
-or resolved by this package-local command. `--read-only` is accepted and
-redundant because the command is always read-only. All three statuses are
-successful advisory results with exit code 0.
-
-Required output:
-
-- package name and installed package version
-- manifest-declared release origin and manifest version, or null when unknown
-- `clean`, `modified`, or `unknown`
-- exact changed-core count and bounded sorted relative paths after a complete
-  comparison
-- stable unknown-reason list
-- fixed `suggested_action=continue`
-
-### `taskgov db init`
-
-Purpose: explicitly create or migrate the current project database.
-
-Required output:
-
-- database path
-- project ID
-- whether the database was created
-- migration versions applied
-- final schema version
-
-### `taskgov db status`
-
-Purpose: show whether the current task database is usable.
-
-This command is read-only by default. If the database does not exist or needs a
-schema migration, it must report that state without creating or migrating the
-database. Use `taskgov db init` to create or migrate the database.
-
-Required output:
-
-- database path
-- schema version
-- whether the database exists
-- whether initialization is needed
-- whether migration is needed
-- project ID
-- active task count
-- blocked task count
-- review-pending task count
-- done task count
-- next-actionable task count
-
-After TG-M9 implementation, required output also includes the exact paused task
-count. This additive field does not remove paused tasks from the existing active
-count.
-
-### `taskgov task add`
-
-Purpose: register one explicit task as current state.
-
-Required arguments:
-
-- `--title`
-
-Optional arguments:
-
-- `--description`
-- `--kind`, default `optional`
-- `--lane`
-- `--order`
-- `--priority`, default `normal`
-- `--status`, default `ready`
-- `--blocked-reason`, required when initial `--status` is `blocked`
-- `--review-tier`, default `1` unless project rules later say otherwise
-- `--verification`
-- `--tags`
-
-Adding a task is an explicit registration action. The MVP does not create draft
-tasks. If a sequential task omits `--lane` or `--order`, the CLI may store a
-deterministic default lane and append order; command output must include the
-stored `lane` and `lane_order` so the auto-filled ordering is visible.
-
-If `task add` sets initial `--status blocked`, it must require
-`--blocked-reason`. The CLI must reject blocked task creation without a blocked
-reason before any row is stored.
-
-This command must not create or migrate a database and must reject
-initial `--status done` with `initial_done_forbidden`. Initial
-`in_progress` or `review_pending` must pass the shared sequential predecessor
-rule when the new task is sequential. Initial `paused` fails with
-`initial_paused_forbidden`.
-
-### `taskgov task list`
-
-Purpose: return compact filtered task lists.
-
-Supported filters:
-
-- `--status`
-- `--kind`
-- `--lane`
-- `--priority`
-- `--tag`
-- `--limit`, default around 20
-- `--include-done`
-
-### `taskgov task next`
-
-Purpose: return ready work candidates without loading all task history.
-
-Selection rules:
-
-- Include only `status=ready`.
-- Include ready `optional` tasks directly.
-- Include ready `sequential` tasks only when earlier tasks in the lane are
-  complete or cancelled.
-- Exclude `in_progress`, `paused`, `blocked`, `review_pending`, `done`, and
-  `cancelled`.
-- Supported filters are `--kind`, `--lane`, `--priority`, and `--limit`.
-- Default limit is `5`.
-- Priority order is `urgent`, `high`, `normal`, `low`.
-- Sort by priority rank, lane, lane order with nulls last, creation time, and
-  `task_id` for deterministic ties.
-
-After TG-M9 implementation, a successful response also emits the
-`paused_tasks_present` advisory warning when paused work exists. This does not
-change any selection rule or `data` field.
-
-### `taskgov task current`
-
-Purpose: rediscover work already started, under review, paused, or blocked.
-
-This TG-M8 inspection command is read-only and includes only `in_progress`,
-`review_pending`, `paused`, and `blocked`. It returns the latest event and a
-deterministic suggested next action for each task. Its default limit is `20`.
-It does not perform stale-age or working-tree freshness analysis.
-
-After TG-M9 implementation, optional `--status` accepts one of those four
-current-work statuses. Omitting it preserves the existing combined view;
-`--status paused` provides the bounded paused-work list used by the
-`task next` warning.
-
-### `taskgov task show`
-
-Purpose: show one task and immediate context.
-
-Required output:
-
-- task fields
-- recent notes or events
-- timestamps
-- suggested next action
-
-After schema version 5, `task show` also returns `review_evidence` with the
-current target/generation, tier requirement, current-generation qualifying
-receipt counts, fallback state, blocking-finding counts and up to 10 sanitized
-recent receipts/findings. This is a read-only projection, not raw review text.
-
-### `taskgov task edit`
-
-Purpose: update task state or metadata.
-
-Editable fields:
-
-- `--title`
-- `--description`
-- `--kind`
-- `--lane`
-- `--order`
-- `--priority`
-- `--status`
-- `--blocked-reason`
-- `--pause-reason`
-- `--review-tier`
-- `--verification`
-- `--tags`
-- `--add-note`
-- `--reopen-reason`
-- `--review-tier-change-reason`
-- `--completion-evidence-kind`, `--completion-revision`, and
-  `--completion-evidence-reason`
-- `--external-revision-approved`
-- existing `--completion-commit-hash` and `--commit-not-required`
-
-When setting `--status blocked`, `--blocked-reason` is required.
-Setting `--status paused` requires `--pause-reason`, sequential
-start/review/completion transitions enforce the shared predecessor rule, and
-completion enforces structured review and explicit completion evidence. The
-guard evaluates the resulting kind, lane, order, and status together and checks
-both affected lanes when ordering metadata changes.
-
-`task block` and `task done` aliases are postponed. Use `task edit` in the MVP.
-
-### TG-M8 Review Evidence Commands
-
-`taskgov review target set <task-id>` sets the task's current review target.
-It requires `--kind` with `git_commit`, `diff_fingerprint`, or
-`external_revision`, plus `--revision`; `git_snapshot` instead captures the
-current staged index and rejects a caller revision. A Git target is verified
-and stored as its canonical full commit ID; a diff fingerprint must be canonical
-`sha256:<64-lowercase-hex>`. Changing a target appends an audit event and does
-not delete older receipts. Every set, including re-setting the same value,
-advances the target generation so historical receipts cannot reactivate.
-
-`taskgov review receipt add <task-id>` stores one sanitized receipt for the
-current target. It requires `--reviewer`, `--kind`, and `--verdict`; optional
-`--summary` and the Tier 2 fallback `--user-approved` flag follow the structured
-review rules above. Callers do not provide a separate target on this command.
-The task and current target must exist, and the receipt kind, verdict, approval,
-tier, and rationale combination must be valid as a unit.
-
-`taskgov review finding add <task-id>` stores a sanitized finding and requires
-`--receipt-id`, `--severity`, and `--summary`. The receipt must belong to the
-same task and current project. Task and project identity are derived from the
-loaded receipt rather than trusted from caller-provided values.
-
-`taskgov review finding resolve <finding-id>` requires `--resolution` and
-preserves the original finding. These commands never launch reviewers or make
-LLM calls; they record and validate evidence produced by the approved workflow.
-
-## Historical JSON Output Through v0.7.0
-
-This section preserves the old envelope and command inventory for compatibility
-review. Current v0.8.0 envelopes follow the implemented TG-M14 contract and
-never expose `db_path`; the TG-M17 additions preserve that envelope boundary
-in v0.9.0.
-
-JSON output must be stable enough for Codex to consume. Each command should emit
-a top-level object with:
-
-- `ok`: boolean.
-- `command`: command name.
-- `project_id`: when applicable.
-- `db_path`: when applicable.
-- `data`: command-specific payload.
-- `errors`: list of structured errors.
-- `warnings`: list of structured warnings.
-
-Human-readable output should be concise and should not replace JSON contracts.
-
-Command names must be stable:
-
-- `self.status`
-- `db.init`
-- `db.status`
-- `task.add`
-- `task.list`
-- `task.next`
-- `task.current`
-- `task.show`
-- `task.edit`
-- `review.target.set`
-- `review.receipt.add`
-- `review.finding.add`
-- `review.finding.resolve`
-
-Exit codes:
-
-- `0`: success.
-- `1`: validation or user-correctable command error.
-- `2`: database, migration, or unexpected tool error.
-
-Timestamps in JSON must use UTC ISO-8601 strings. Paths should be emitted as
-normalized absolute strings for local display; IDs must not encode private path
-details.
-
-Required `data` payloads:
-
-- `self.status`: `package_name`, `package_version`, `release_origin`,
-  `manifest_version`, `status`, `changed_core_count`, `changed_core_paths`,
-  `changed_core_paths_truncated`, `unknown_reasons`, and `suggested_action`.
-- `db.init`: `created`, `migrations_applied`, `schema_version`.
-- `db.status`: `exists`, `needs_init`, `needs_migration`, `schema_version`,
-  `counts`.
-- `task.add`: `task`, `event`.
-- `task.list`: `tasks`, `count`, `limit`.
-- `task.next`: `tasks`, `count`, `limit`, `selection_rules`.
-- `task.current`: `tasks`, `count`, `limit`, `statuses`.
-- `task.show`: `task`, `events`, `suggested_next_action`, and
-  `review_evidence` after schema version 5.
-- `task.edit`: `task`, `changed_fields`, `event`.
-- `review.target.set`: `task`, `changed_fields`, `event`.
-- `review.receipt.add`: `receipt`, `event`.
-- `review.finding.add`: `finding`, `event`.
-- `review.finding.resolve`: `finding`, `event`.
-
-Task objects in JSON must use the same field names as the task model. The
-`review_tier` value must be an integer, not a string.
-At schema version 6, the task object returned by `review.target.set` and the
-expanded task object returned by `task.show` include
-`review_target_base_revision`. Compact list/current/next task objects, review
-receipts, bounded `review_evidence`, and Viewer snapshot v3 omit that internal
-binding component.
-
-In `db.status`, `counts.active` means tasks with status `ready`,
-`in_progress`, `paused`, `blocked`, or `review_pending`. It
-excludes `done` and `cancelled`.
-
-After TG-M9 implementation, `db.status.counts.paused` is an additive exact
-project count. Existing meanings of `active`, `blocked`, `review_pending`,
-`done`, and `next_actionable` are unchanged.
-
-Required error codes:
-
-- `invalid_argument`
-- `invalid_status`
-- `invalid_kind`
-- `invalid_priority`
-- `invalid_review_tier`
-- `blocked_reason_required`
-- `pause_reason_required`
-- `initial_done_forbidden`
-- `initial_paused_forbidden`
-- `invalid_status_transition`
-- `sequential_predecessor_incomplete`
-- `done_task_requires_reopen`
-- `review_tier_downgrade_forbidden`
-- `privacy_rejected`
-- `not_found`
-- `db_not_initialized`
-- `migration_required`
-- `project_mismatch`
-- `unsupported_journal_mode`
-- `database_busy`
-- `review_target_required`
-- `review_changes_requested`
-- `review_receipts_insufficient`
-- `review_finding_unresolved`
-- `review_receipt_mismatch`
-- `review_receipt_already_recorded`
-- `review_target_mismatch`
-- `invalid_review_evidence`
-- `verification_required`
-- `review_required`
-- `commit_required`
-- `completion_commit_conflict`
-- `completion_evidence_conflict`
-- `git_commit_not_found_or_ambiguous`
-- `external_revision_approval_required`
-- `internal_error`
-
-Required TG-M9 warning code:
-
-- `paused_tasks_present`
-
-Required TG-M12.O2 advisory warning codes:
-
-- `package_core_modified`
-- `package_status_unknown`
-
-## Privacy And Safety
-
-The MVP must:
-
-- Write only to the task-governance-tool SQLite database by default.
-- Never modify target project source files, Git state, issues, PRs, or external
-  services.
-- Treat project-scoped installation and generated state creation as explicit
-  user-approved setup/write actions. Generated state under
-  `.agents/skills/task-governance-tool/state/` must be ignored or kept out of
-  commits.
-- Never store API keys, tokens, cookies, authorization headers, raw provider
-  bodies, full private prompts, full chat logs, large raw diffs, raw stdout, raw
-  stderr, stack traces, or environment dumps.
-- Treat `state/` as generated local runtime state.
-- Keep root copied reference material non-authoritative.
-
-Free-form fields are allowed only as concise sanitized task metadata. The CLI
-must reject obvious secret, log, or diff content before storing user text.
-Warnings may be used only for non-stored borderline content or non-blocking
-normalization notes.
-
-MVP size limits:
-
-- `title`: 200 characters.
-- `description`: 4000 characters.
-- `verification`: 500 characters.
-- `tags`: 500 characters.
-- `--add-note`: 2000 characters.
-- event `summary`: 1000 characters.
-- review target value, external revision value, and reviewer key: 500
-  characters each.
-- pause reason, review receipt summary, review finding summary, and finding
-  resolution summary: 1000 characters each.
-
-The CLI must reject obvious secrets and raw dump patterns, including bearer
-tokens, authorization headers, private key blocks, `password=`, `token=`,
-`api_key=`, raw stack traces, raw stdout/stderr dumps, and large raw diffs.
-
-## Historical MVP Acceptance Criteria
-
-The MVP is acceptable when:
-
-- The skill package metadata validates or passes the documented self-check.
-- `taskgov db status` inspects a project database without creating or migrating
-  it.
-- `taskgov db init` creates or migrates a project database safely.
-- `taskgov task add/list/show/edit/next` work against a temporary database.
-- `task next` correctly works around blocked sequential lanes.
-- JSON outputs are tested for shape and key fields.
-- Free-form privacy rejection and size-limit behavior are tested.
-- No command mutates target project source files or Git state.
-- Generated SQLite databases and root copied references are ignored by Git.
-
-TG-M8 is acceptable only when automated tests additionally prove:
-
-- initial `task add --status done` fails without storing a task or event;
-- initial `task add --status paused` fails, and invalid pause/resume source
-  transitions return a stable error without mutation;
-- a later sequential task cannot be started, reviewed, or completed while an
-  earlier same-lane task is incomplete, including when it is paused;
-- task registration and combined kind/lane/order/status edits cannot insert or
-  reorder an incomplete predecessor ahead of active, review-pending, or done
-  same-lane work;
-- `task current` rediscovers active, review-pending, paused, and blocked work
-  without writing the database or Git state;
-- Tier 2 completion requires two distinct `PASS` receipts for the same current
-  target and fails with any unresolved high or medium finding;
-- resolving a high or medium finding without advancing the target generation
-  remains blocked; a newer target plus fresh required PASS receipts succeeds;
-- one reviewer cannot replace or contradict a receipt in the same target
-  generation; re-review requires a new target generation;
-- `task show` exposes the current review gate and bounded sanitized evidence so
-  a new session can diagnose completion readiness without a write or LLM call;
-- nonexistent or ambiguous Git commit evidence is rejected and a valid short
-  hash is stored canonically;
-- missing or old-schema databases are not created or migrated by task writes;
-- schema migrations retain a realistic fixture with 12 tasks, 191 events, and
-  all historical completion hashes;
-- privacy rejection covers all new free-form fields;
-- concurrent updates retain SQLite integrity; and
-- the existing project-identity, `task next`, compact JSON-envelope, viewer,
-  and `--read-only` contracts do not regress.
-
-TG-M9 is acceptable only when automated tests additionally prove:
-
-- `db status.counts.paused` is exact, including when more paused tasks exist
-  than `task current` can return in one bounded response, while
-  `counts.active` retains its existing meaning;
-- successful `task next` emits no paused warning at count zero and exactly one
-  `paused_tasks_present` warning at a positive count with the count and
-  suggested command;
-- paused warnings do not alter ready candidates, selection rules, filters,
-  ordering, success exit status, or JSON `data`;
-- `task current --status paused` returns only paused tasks with latest event,
-  pause reason, deterministic suggested action, and `statuses=["paused"]`;
-- unfiltered `task current` preserves its TG-M8 behavior, and unsupported
-  current-status filters fail with `invalid_status` without mutation;
-- successful and failing `db status`, `task next`, and `task current` reads do
-  not change database contents, SQLite sidecars, task/tool events, or Git
-  state;
-- project identity separation and missing/migration-required behavior remain
-  unchanged; and
-- warnings expose no task title, pause reason, event text, secret, raw output,
-  prompt, stack trace, or diff.
+| M19.3 `m19.3-approval-v1` | `authority="confirmed"`, `license="Apache-2.0"`, exact string values for `holder`, `scope`, `excluded`, `employer`, `contractor`, `third_party`, and `oss_policy` |
+| M19.7 `m19.7-approval-v1` | `remote`, `repo`, `rc`, `branch`, `branch_head`, `main`, `tag`, `tag_kind`, `zip`, `zip_sha256`, `sum`, `sum_sha256`, `workflow`, `workflow_name`, `job`, `python`, positive integer `dispatch_authorization` (initially 1), `completion_source="github_actions_run"`, `action="push_and_dispatch"` |
+| M19.8 `m19.8-approval-v1` | `remote`, `repo`, `rc`, `main`, `ref="refs/heads/main"`, `action="fast_forward"` |
+| M19.10 `m19.10-approval-v1` | `remote`, `repo`, `rc`, `version`, `tag`, `tag_kind`, `title`, `notes_sha256`, `final_state="release"|"prerelease"`, Boolean `draft_staging`, `zip`, `zip_sha256`, `sum`, `sum_sha256`, `completion_source="github_release"`, `action="publish"` |
+
+Missing/overflow/noncanonical source, metadata drift, or content mismatch stops
+before implementation write. This transcription adds no requirement choice,
+question, unsupported layout, or fallback.
+
+## Deferred Boundaries
+
+The current product deliberately excludes pagination/search in CLI history,
+parent/child Tasks, acceptance checklists, verification-run receipts, generic
+result/receipt-file import, action aliases, general/manual backup or restore,
+custom export, browser launch/server, durable/general browser persistence
+beyond the one-shot envelope, external Issue lifecycle/sync until its intake
+contract, cross-project profiles, daily network update checks, reviewer
+identity/signatures/attestation, and a generic workflow engine.
+
+Deferred features never change current acceptance, add a normal-loop command,
+or authorize target/external mutation until a separately approved contract and
+implementation gate complete.

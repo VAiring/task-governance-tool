@@ -229,7 +229,8 @@ The product must not become:
 - Historical and audit projections never satisfy a current verification,
   review, or completion gate. Use current Task state and evidence bound to the
   current review-target generation; preserve older evidence only as history.
-- An indexed historical document is non-authoritative even when its preserved
+- `docs/history/README.md` is the sole historical-document index. Every
+  document routed through it is non-authoritative even when its preserved
   wording says `current`, `approved`, or `implemented`. Every contract required
   for supported current behavior must remain in the active governing
   documents; history may preserve lineage, rationale, and old evidence but

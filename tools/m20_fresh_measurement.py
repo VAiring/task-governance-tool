@@ -36,6 +36,7 @@ MAX_GIT_OUTPUT_BYTES = 8_388_608
 MAX_SOURCE_BYTES = 4_194_304
 MAX_CHANGED_PATHS = 4_096
 MAX_TASKGOV_OPERATIONS = 64
+MAX_VERIFICATION_STEPS = 16
 CHECKER_TIMEOUT_SECONDS = 300
 PROCESS_TREE_TERMINATION_SECONDS = 10
 WINDOWS_CREATE_SUSPENDED = 0x00000004
@@ -148,6 +149,7 @@ class BoundarySnapshot:
     metric_unknowns: tuple[tuple[str, str], ...]
     task_states: tuple[tuple[str, str, int, int], ...]
     observer_log_position: int
+    observer_verification_position: int = 0
 
 
 class _MetricUnavailable(Exception):
@@ -1462,6 +1464,7 @@ def capture_boundary_snapshot(
     boundary_id: str,
     slot_envelopes: Mapping[str, Mapping[str, Any]],
     observer_log_position: int,
+    observer_verification_position: int = 0,
 ) -> BoundarySnapshot:
     """Capture one safe M20.4 boundary from public state and Git material."""
 
@@ -1524,6 +1527,9 @@ def capture_boundary_snapshot(
         metric_unknowns=tuple(unknowns),
         task_states=tuple(states),
         observer_log_position=_integer(observer_log_position),
+        observer_verification_position=_integer(
+            observer_verification_position, maximum=MAX_VERIFICATION_STEPS
+        ),
     )
 
 

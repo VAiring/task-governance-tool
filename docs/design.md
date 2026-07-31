@@ -2162,6 +2162,26 @@ launch; after that comparison, each arm has an independent deletion lifecycle
 and retains no bytes for the other arm. A launch failure destroys the affected
 bytes and remains an excluded attempt.
 
+Before an M20.4 attempt enters `started`, its no-rerun journal state binds the
+reviewed launch to exact `workload_digest`, `control_digest`,
+`observer_config_digest`, `trial_root_digest`, `trial_root_parent_digest`, and
+`trial_root_identity_digest` values. The root digests contain no raw path.
+All nine trial roots must be distinct immediate children of the same committed
+parent, which prevents cross-attempt ancestor/descendant reuse without storing
+that parent path.
+The baseline HEAD preflight uses the same allowlisted process environment as
+measurement Git calls, so ambient `GIT_*` routing cannot redirect it.
+Generic uncommitted M20.4 start is invalid; boundary capture and the one
+reduction compare the live isolated root, control, and observer config to this
+commitment before using them. Finalization requires the exact nine committed
+root digests as absent cleanup targets, so omitting an external trial root
+cannot close the collection while its raw material might remain.
+
+M20.4 start, boundary capture, reduction, and recovery share one bounded
+per-attempt lock order. Recovery acquires all nine locks before inspecting the
+journal, so it fails busy instead of terminalizing an attempt whose raw source
+is still being captured or reduced.
+
 Raw trial work and its control bundle are removed immediately after the single
 reduction attempt regardless of whether the candidate record passes
 schema/privacy validation. On failure, the candidate reduced bytes are also

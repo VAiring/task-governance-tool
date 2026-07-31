@@ -19,15 +19,18 @@ from tools.m20_fresh_collection import (
     ASSESSMENT_SCHEMA,
     OBSERVER_SNAPSHOT_SCHEMA,
     FreshCollectionController,
+    _require_baseline_head,
     build_attestation_observation,
     main,
 )
-from tools.m20_fresh_lifecycle import FreshCollectionLifecycle
+from tools.m20_fresh_lifecycle import FreshCollectionLifecycle, trial_root_digest
+from tools.m20_fresh_measurement import BoundarySnapshot
 from tools.m20_observation import (
     M20ObservationError,
     _excluded_rows,
     canonical_json_bytes,
     derive_inventory,
+    load_m20_4_episode_plan,
     load_protocol,
 )
 from tools.m20_trial_observer import CONFIG_SCHEMA, LOG_SCHEMA
@@ -37,6 +40,7 @@ class FreshCollectionControllerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.protocol = load_protocol(ROOT)
+        cls.m20_4_episode_plan = load_m20_4_episode_plan(cls.protocol, ROOT)
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -220,6 +224,485 @@ class FreshCollectionControllerTests(unittest.TestCase):
             before_state_path="before.json",
             after_state_path="after.json",
         )
+
+    def m20_4_plan(self, scenario_id, arm):
+        return next(item for item in self.m20_4_episode_plan["plans"] if item["scenario_id"] == scenario_id and item["arm"] == arm)
+
+    def m20_4_control(self, scenario_id, arm, workload="paired workload"):
+        bundle = self.control()
+        bundle.update(workload=workload, delivered_request=f"{arm} request")
+        bundle["reducer_manifest"].update(scenario_id=scenario_id, arm=arm)
+        return bundle
+
+    def m20_4_config(self, scenario_id, arm):
+        plan = self.m20_4_plan(scenario_id, arm)
+        config = self.observer_config()
+        config.update(unit="M20.4", scenario_id=scenario_id, trial_id=plan["trial_id"], arm=arm)
+        config["task_slots"] = [
+            {"task_slot": slot, "task_id": f"tg_task_{index:016x}"}
+            for index, slot in enumerate(plan["task_slots"], start=1)
+        ]
+        return config
+
+    def write_m20_4_json(self, root, trial_id, leaf, value):
+        path = root / ".git" / "m20" / trial_id / leaf
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(canonical_json_bytes(value))
+        return path
+
+    def m20_4_pair_sources(self, scenario_id, workload="paired workload"):
+        roots = {arm: self.trial_root / f"{scenario_id}-{arm}" for arm in ("broad", "bounded")}
+        controls = {}
+        for arm, root in roots.items():
+            root.mkdir(parents=True)
+            trial_id = f"{scenario_id}.{arm}.01"
+            controls[arm] = self.m20_4_control(scenario_id, arm, workload=workload)
+            self.write_m20_4_json(root, trial_id, "control.json", controls[arm])
+            self.write_m20_4_json(
+                root, trial_id, "observer-config.json", self.m20_4_config(scenario_id, arm)
+            )
+            taskgov = root / "task-governance-tool" / "scripts" / "taskgov.py"
+            taskgov.parent.mkdir(parents=True)
+            taskgov.write_text("# isolated fixture\n", encoding="utf-8")
+        return roots, controls
+
+    def start_m20_4_pair(self, controller, scenario_id):
+        roots, controls = self.m20_4_pair_sources(scenario_id)
+        pair = dict(scenario_id=scenario_id, broad_root=roots["broad"], bounded_root=roots["bounded"])
+        with patch("tools.m20_fresh_collection._require_baseline_head"):
+            digests = controller.validate_m20_4_pair(**pair)
+            controller.start_m20_4_pair(
+                reviewed_broad_digest=digests["broad_control_digest"],
+                reviewed_bounded_digest=digests["bounded_control_digest"],
+                **pair,
+            )
+        return roots, controls, digests
+
+    def m20_4_excluded_records(self, trial_id):
+        rows = [row for row in derive_inventory(self.protocol, "M20.4") if row[2] == trial_id]
+        return {
+            record["record_key"]: record
+            for record in _excluded_rows(self.protocol, rows, "source_missing")
+        }
+
+    def reduce_m20_4(self, controller, root, scenario_id, arm):
+        return controller.reduce_m20_4(trial_root=root, scenario_id=scenario_id, trial_id=f"{scenario_id}.{arm}.01", arm=arm)
+
+    def assert_m20_4_excluded(self, controller, trial_id, count, reason):
+        state = controller.lifecycle._read_journal(self.protocol)["attempts"][trial_id]
+        self.assertEqual(state["status"], "reduced")
+        self.assertEqual(len(state["records"]), count)
+        self.assertEqual(
+            {tuple(record["unknown_reasons"]) for record in state["records"]},
+            {(reason,)},
+        )
+
+    def m20_4_reduce_inputs(self, scenario_id, arm, episode_ids=None):
+        plan = self.m20_4_plan(scenario_id, arm)
+        trial_id = plan["trial_id"]
+        config = self.m20_4_config(scenario_id, arm)
+        task_ids = {item["task_slot"]: item["task_id"] for item in config["task_slots"]}
+        observer = MagicMock()
+        observer.config = config
+        assessed_ids = episode_ids or tuple(item["episode_id"] for item in plan["episodes"])
+        identity = dict(unit="M20.4", scenario_id=scenario_id, trial_id=trial_id, arm=arm)
+        handoff = scenario_id == "sp_handoff_control"
+        episodes = [{"episode_id": item} for item in assessed_ids]
+        if handoff:
+            episodes[0].update(
+                phase="implementation", cause="out_of_scope_control",
+                current_response="handoff", acceptance_independent="yes",
+                verification_independent="yes", commit_independent="yes",
+                completion_independent="yes",
+            )
+        taskgov = [] if not handoff else [{
+            "command_leaf": "handoff.record", "task_slot": "source_task",
+            "duration_ms": 1, "result": "success",
+        }]
+        snapshot = {} if not handoff else {
+            "schema": OBSERVER_SNAPSHOT_SCHEMA, **identity, "outcome": "handed_off",
+            "reference_opens": 1, "clarification_turns": 0, "manual_inputs": 0,
+            "reviewer_invocations": 0, "unknowns": [],
+        }
+        inputs = {
+            f".git/m20/{trial_id}/control.json": self.m20_4_control(scenario_id, arm),
+            f".git/m20/{trial_id}/observer-config.json": config,
+            f".git/m20/{trial_id}/observer-log.json": {
+                "schema": LOG_SCHEMA, **identity, "taskgov": taskgov, "verifications": []
+            },
+            f".git/m20/{trial_id}/observer-snapshot.json": snapshot,
+            f".git/m20/{trial_id}/assessment.json": {
+                "schema": ASSESSMENT_SCHEMA,
+                **identity,
+                "assessment_kind": "split_pressure",
+                "assessment": {"episodes": episodes},
+                "unknowns": [],
+            },
+        }
+        observer.report.return_value = inputs[f".git/m20/{trial_id}/observer-log.json"]
+        for boundary_id in plan["boundaries"]:
+            inputs[f".git/m20/{trial_id}/boundaries/{boundary_id}.json"] = {}
+        if handoff:
+            from tests.test_m20_fresh_measurement import task_show_envelope
+
+            slot = plan["task_slots"][0]
+            states = [task_show_envelope(
+                contract_revision=1, review_generation=0, task_id=task_ids[slot]
+            ) for _boundary in plan["boundaries"]]
+            states[-1]["data"]["handoff_summary"]["pending_handoff"] = 1
+            for boundary_id, state in zip(plan["boundaries"], states):
+                inputs[f".git/m20/{trial_id}/states/{boundary_id}.{slot}.json"] = state
+        return observer, task_ids, inputs
+
+    def m20_4_handoff_case(self):
+        scenario = "sp_handoff_control"
+        trial_id = f"{scenario}.broad.01"
+        root = self.trial_root / "handoff-control"
+        root.mkdir()
+        control = self.m20_4_control(scenario, "broad")
+        self.write_m20_4_json(root, trial_id, "control.json", control)
+        self.write_m20_4_json(
+            root, trial_id, "observer-config.json", self.m20_4_config(scenario, "broad")
+        )
+        taskgov = root / "task-governance-tool" / "scripts" / "taskgov.py"
+        taskgov.parent.mkdir(parents=True)
+        taskgov.write_text("# fixture\n", encoding="utf-8")
+        controller = FreshCollectionController(self.repo_root, "M20.4")
+        validated = controller.validate_control(
+            trial_root=root, scenario_id=scenario, trial_id=trial_id, arm="broad",
+            control_path=f".git/m20/{trial_id}/control.json",
+        )
+        with patch("tools.m20_fresh_collection._require_baseline_head"):
+            controller.start_m20_4_control(
+                trial_root=root, reviewed_control_digest=validated["control_digest"]
+            )
+        observer, task_ids, inputs = self.m20_4_reduce_inputs(scenario, "broad")
+        boundaries = tuple(BoundarySnapshot(
+            scenario_id=scenario, trial_id=trial_id, boundary_id=boundary_id,
+            files=0, modules=0, lines=0, metric_unknowns=(),
+            task_states=(("source_task", task_ids["source_task"], 1, 0),),
+            observer_log_position=index, observer_verification_position=0,
+        ) for index, boundary_id in enumerate(self.m20_4_plan(scenario, "broad")["boundaries"]))
+        return controller, root, trial_id, observer, inputs, boundaries
+
+    def reduce_m20_4_handoff(self, controller, root, observer, inputs, boundaries):
+        with patch(
+            "tools.m20_fresh_collection._canonical_object",
+            side_effect=lambda _root, path, _maximum: inputs[path],
+        ), patch(
+            "tools.m20_fresh_collection.TrialObserver", return_value=observer,
+        ), patch(
+            "tools.m20_fresh_collection._boundary_snapshot", side_effect=boundaries,
+        ):
+            return self.reduce_m20_4(
+                controller, root, "sp_handoff_control", "broad"
+            )
+
+    def test_m20_4_pair_validation_binds_workload_digests_and_separate_roots(self):
+        controller = FreshCollectionController(self.repo_root, "M20.4")
+        outer = self.trial_root / "root-boundary"
+        nested = outer / "nested"
+        nested.mkdir(parents=True)
+        for broad_root, bounded_root in ((outer, outer), (outer, nested)):
+            with self.subTest(roots=(broad_root.name, bounded_root.name)):
+                self.assert_m20_error(
+                    lambda broad_root=broad_root, bounded_root=bounded_root: controller.validate_m20_4_pair(
+                        scenario_id="sp_multi_outcome_intake",
+                        broad_root=broad_root,
+                        bounded_root=bounded_root,
+                    ),
+                    "contaminated",
+                )
+
+        self.enterContext(patch("tools.m20_fresh_collection._require_baseline_head"))
+        scenario_id = "sp_multi_outcome_intake"
+        roots, controls = self.m20_4_pair_sources(scenario_id)
+        pair = dict(
+            scenario_id=scenario_id,
+            broad_root=roots["broad"],
+            bounded_root=roots["bounded"],
+        )
+        bounded_trial = f"{scenario_id}.bounded.01"
+        controls["bounded"]["workload"] = "different workload"
+        self.write_m20_4_json(roots["bounded"], bounded_trial, "control.json", controls["bounded"])
+        self.assert_m20_error(
+            lambda: controller.validate_m20_4_pair(**pair), "source_drift"
+        )
+        controls["bounded"]["workload"] = controls["broad"]["workload"]
+        self.write_m20_4_json(
+            roots["bounded"], bounded_trial, "control.json", controls["bounded"]
+        )
+        digests = controller.validate_m20_4_pair(**pair)
+        self.assert_m20_error(
+            lambda: controller.start_m20_4_pair(
+                reviewed_broad_digest="0" * 64,
+                reviewed_bounded_digest=digests["bounded_control_digest"],
+                **pair,
+            ),
+            "source_drift",
+        )
+        controller.start_m20_4_pair(
+            reviewed_broad_digest=digests["broad_control_digest"],
+            reviewed_bounded_digest=digests["bounded_control_digest"],
+            **pair,
+        )
+        commitment = controller.lifecycle.attempt_commitment(f"{scenario_id}.broad.01")
+        self.assertEqual(commitment["workload_digest"], digests["workload_digest"])
+
+    def test_m20_4_baseline_check_scrubs_ambient_git_environment(self):
+        result = MagicMock(returncode=0, stdout=b"f" * 40)
+        with patch.dict(
+            os.environ,
+            {
+                "GIT_DIR": "foreign-git-dir",
+                "GIT_WORK_TREE": "foreign-worktree",
+                "GIT_OBJECT_DIRECTORY": "foreign-objects",
+                "GIT_CONFIG_COUNT": "1",
+            },
+            clear=False,
+        ), patch(
+            "tools.m20_fresh_collection.subprocess.run", return_value=result
+        ) as run:
+            _require_baseline_head(self.trial_root, "f" * 40)
+
+        environment = run.call_args.kwargs["env"]
+        for key in (
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_CONFIG_COUNT",
+        ):
+            self.assertNotIn(key, environment)
+        self.assertEqual(environment["GIT_TERMINAL_PROMPT"], "0")
+
+    def test_m20_4_boundary_uses_fixed_git_paths_and_rejects_dirty_b00(self):
+        scenario = "sp_multi_outcome_intake"
+        controller = FreshCollectionController(self.repo_root, "M20.4")
+        roots, _controls, _digests = self.start_m20_4_pair(controller, scenario)
+        self.enterContext(patch("tools.m20_fresh_collection._require_baseline_head"))
+        observers = []
+        snapshots = []
+        for arm, files in (("broad", 0), ("bounded", 1)):
+            plan = self.m20_4_plan(scenario, arm)
+            trial_id = plan["trial_id"]
+            config = self.m20_4_config(scenario, arm)
+            observer = MagicMock()
+            observer.config = config
+            observer.snapshot_task.return_value = {"private": "Task body"}
+            observers.append(observer)
+            log = {
+                "schema": LOG_SCHEMA, "unit": "M20.4", "scenario_id": scenario,
+                "trial_id": trial_id, "arm": arm, "taskgov": [], "verifications": [],
+            }
+            self.write_m20_4_json(
+                roots[arm], trial_id, "observer-log.json",
+                log,
+            )
+            observer.report.return_value = log
+            (roots[arm] / ".git" / "m20" / trial_id / "boundaries").mkdir()
+            snapshots.append(
+                BoundarySnapshot(
+                    scenario_id=scenario, trial_id=trial_id, boundary_id="b00_start",
+                    files=files, modules=0, lines=0, metric_unknowns=(),
+                    task_states=tuple(
+                        (item["task_slot"], item["task_id"], 1, 0)
+                        for item in config["task_slots"]
+                    ),
+                    observer_log_position=0, observer_verification_position=0,
+                )
+            )
+
+        with patch(
+            "tools.m20_fresh_collection.TrialObserver", side_effect=observers,
+        ), patch(
+            "tools.m20_fresh_collection.capture_boundary_snapshot", side_effect=snapshots,
+        ):
+            broad_trial = f"{scenario}.broad.01"
+            result = controller.capture_m20_4_boundary(
+                trial_root=roots["broad"], scenario_id=scenario, trial_id=broad_trial,
+                arm="broad", boundary_id="b00_start",
+            )
+            self.assertEqual(
+                result, {"status": "written", "boundary_id": "b00_start"}
+            )
+            bounded_trial = f"{scenario}.bounded.01"
+            self.assert_m20_error(
+                lambda: controller.capture_m20_4_boundary(
+                    trial_root=roots["bounded"], scenario_id=scenario,
+                    trial_id=bounded_trial, arm="bounded", boundary_id="b00_start",
+                ),
+                "contaminated",
+            )
+
+        observers[0].snapshot_task.assert_called_once_with(
+            "broad_task", f".git/m20/{broad_trial}/states/b00_start.broad_task.json"
+        )
+        output = roots["broad"] / ".git" / "m20" / broad_trial / "boundaries" / "b00_start.json"
+        self.assertEqual(json.loads(output.read_bytes())["files"], 0)
+
+    def test_m20_4_trial_objects_are_created_exclusively(self):
+        from tools import m20_fresh_collection
+
+        root = self.trial_root / "exclusive"
+        relative = ".git/m20/sp_handoff_control.broad.01/boundaries/b00_start.json"
+        (root / Path(relative).parent).mkdir(parents=True)
+        with patch(
+            "tools.m20_fresh_collection.os.open", side_effect=FileExistsError
+        ) as create:
+            self.assert_m20_error(
+                lambda: m20_fresh_collection._write_trial_object(
+                    root, relative, {"writer": 1}
+                ),
+                "artifact_exists",
+            )
+        self.assertTrue(create.call_args.args[1] & os.O_EXCL)
+
+    def test_m20_4_reduce_rechecks_commitments_plan_and_claim_before_read(self):
+        controller = FreshCollectionController(self.repo_root, "M20.4")
+        scenario = "sp_multi_outcome_intake"
+        roots, controls, _digests = self.start_m20_4_pair(controller, scenario)
+        controls["broad"]["delivered_request"] = "changed after start"
+        broad = f"{scenario}.broad.01"
+        self.write_m20_4_json(roots["broad"], broad, "control.json", controls["broad"])
+        self.assert_m20_error(
+            lambda: self.reduce_m20_4(controller, roots["broad"], scenario, "broad"),
+            "source_drift",
+        )
+        self.assert_m20_4_excluded(controller, broad, 2, "source_drift")
+
+        scenario = "sp_in_scope_discovery"
+        roots, _controls, _digests = self.start_m20_4_pair(controller, scenario)
+        observer, _task_ids, inputs = self.m20_4_reduce_inputs(
+            scenario, "broad", ("wrong_episode",)
+        )
+        reader = lambda _root, path, _maximum: inputs[path]
+        with patch(
+            "tools.m20_fresh_collection._canonical_object", side_effect=reader
+        ), patch(
+            "tools.m20_fresh_collection.TrialObserver", return_value=observer
+        ):
+            self.assert_m20_error(
+                lambda: self.reduce_m20_4(controller, roots["broad"], scenario, "broad"),
+                "source_drift",
+            )
+        self.assert_m20_4_excluded(
+            controller, f"{scenario}.broad.01", 2, "source_drift"
+        )
+
+        bounded = f"{scenario}.bounded.01"
+        observed = []
+
+        def fail_after_claim(_lifecycle, _root):
+            journal = controller.lifecycle._read_journal(self.protocol)
+            observed.append(journal["attempts"][bounded]["status"])
+            raise M20ObservationError("source_missing")
+
+        with patch(
+            "tools.m20_fresh_collection._safe_trial_root", side_effect=fail_after_claim
+        ):
+            self.assert_m20_error(
+                lambda: self.reduce_m20_4(controller, roots["bounded"], scenario, "bounded"),
+                "source_missing",
+            )
+        self.assertEqual(observed, ["reducing"])
+        self.assert_m20_4_excluded(controller, bounded, 2, "source_missing")
+
+    def test_m20_4_handoff_reduce_routes_fixed_state_pair_and_three_rows(self):
+        controller, root, _trial_id, observer, inputs, boundaries = (
+            self.m20_4_handoff_case()
+        )
+        result = self.reduce_m20_4_handoff(
+            controller, root, observer, inputs, boundaries
+        )
+        self.assertEqual(result["record_count"], 3)
+        self.assertEqual(result["eligible_records"], 3)
+
+    def test_m20_4_handoff_conflict_terminalizes_and_can_still_finalize(self):
+        controller, root, trial_id, observer, inputs, boundaries = (
+            self.m20_4_handoff_case()
+        )
+        assessment = inputs[f".git/m20/{trial_id}/assessment.json"]
+        assessment["assessment"]["episodes"][0]["current_response"] = "keep_current"
+        self.assert_m20_error(
+            lambda: self.reduce_m20_4_handoff(
+                controller, root, observer, inputs, boundaries
+            ),
+            "source_drift",
+        )
+        self.assert_m20_4_excluded(controller, trial_id, 3, "source_drift")
+
+        lifecycle = controller.lifecycle
+        journal = lifecycle._read_journal(self.protocol)
+        commitment = journal["attempts"][trial_id]["commitment"]
+        remaining = [item for item in lifecycle.expected_attempts() if item != trial_id]
+        commitments = {}
+        retired_roots = {}
+        for index, item in enumerate(remaining, start=1):
+            retired_roots[item] = self.trial_root / f"retired-{index}"
+            commitments[item] = dict(commitment)
+            commitments[item]["trial_root_digest"] = trial_root_digest(retired_roots[item])
+            commitments[item]["trial_root_identity_digest"] = f"{index + 16:064x}"
+        for scenario in sorted({item.rsplit(".", 2)[0] for item in remaining}):
+            attempts = tuple(item for item in remaining if item.startswith(f"{scenario}."))
+            lifecycle.start_many(
+                attempts, commitments={item: commitments[item] for item in attempts}
+            )
+            for attempt in attempts:
+                rows = [row for row in derive_inventory(self.protocol, "M20.4") if row[2] == attempt]
+                lifecycle.claim(attempt)
+                lifecycle.finish(
+                    attempt, _excluded_rows(self.protocol, rows, "source_missing")
+                )
+        shutil.rmtree(root)
+        self.assertEqual(
+            controller.finalize((root, *retired_roots.values()))["status"], "closed"
+        )
+
+    def test_m20_4_resume_fails_busy_during_boundary_capture(self):
+        controller, root, trial_id, _observer, _inputs, _boundaries = (
+            self.m20_4_handoff_case()
+        )
+        entered = threading.Event()
+        release = threading.Event()
+
+        def hold_capture(**_kwargs):
+            entered.set()
+            if not release.wait(timeout=10):
+                raise AssertionError("capture release timed out")
+            return {"status": "written", "boundary_id": "b00_start"}
+
+        with patch.object(
+            controller, "_capture_m20_4_boundary_locked", side_effect=hold_capture
+        ), ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                controller.capture_m20_4_boundary,
+                trial_root=root,
+                scenario_id="sp_handoff_control",
+                trial_id=trial_id,
+                arm="broad",
+                boundary_id="b00_start",
+            )
+            self.assertTrue(entered.wait(timeout=10))
+            try:
+                self.assert_m20_error(controller.resume, "collection_busy")
+                state = controller.lifecycle._read_journal(self.protocol)["attempts"][
+                    trial_id
+                ]
+                self.assertEqual(state["status"], "started")
+            finally:
+                release.set()
+            self.assertEqual(
+                future.result(timeout=10),
+                {"status": "written", "boundary_id": "b00_start"},
+            )
+
+        state = controller.lifecycle._read_journal(self.protocol)["attempts"][trial_id]
+        self.assertEqual(state["status"], "started")
+        self.assertEqual(
+            controller.resume(), {"unit": "M20.4", "terminalized_attempts": 1}
+        )
+        state = controller.lifecycle._read_journal(self.protocol)["attempts"][trial_id]
+        self.assertEqual(state["status"], "reduced")
 
     def test_reduce_builds_attestation_and_finishes_exact_attempt(self):
         self.write_inputs()
@@ -763,7 +1246,7 @@ class FreshCollectionControllerTests(unittest.TestCase):
         self.assertTrue((self.trial_root / "control.json").exists())
         self.assertTrue((self.trial_root / "observer-log.json").exists())
 
-    def test_controller_has_no_runner_network_or_delete_surface(self):
+    def test_controller_has_no_network_or_delete_surface(self):
         source = (ROOT / "tools" / "m20_fresh_collection.py").read_text(
             encoding="utf-8"
         )
@@ -779,14 +1262,17 @@ class FreshCollectionControllerTests(unittest.TestCase):
             for node in ast.walk(tree)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
         }
+        runs = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "run"]
+        self.assertEqual(len(runs), 1)
+        self.assertIs(next(item.value.value for item in runs[0].keywords if item.arg == "shell"), False)
         self.assertTrue(
             imported.isdisjoint(
-                {"http", "requests", "shutil", "socket", "subprocess", "urllib"}
+                {"http", "requests", "shutil", "socket", "urllib"}
             )
         )
         self.assertTrue(
             calls.isdisjoint(
-                {"Popen", "remove", "rmdir", "rmtree", "run", "unlink"}
+                {"Popen", "remove", "rmdir", "rmtree", "unlink"}
             )
         )
 

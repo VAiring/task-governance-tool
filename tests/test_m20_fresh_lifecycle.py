@@ -16,6 +16,8 @@ from tools import m20_fresh_lifecycle
 from tools.m20_fresh_lifecycle import (
     FreshCollectionLifecycle,
     check_fresh_collection,
+    trial_root_digest,
+    trial_root_parent_digest,
 )
 from tools.m20_observation import (
     M20ObservationError,
@@ -62,6 +64,26 @@ class FreshLifecycleTests(unittest.TestCase):
             result.setdefault(row[2], []).append(row)
         return result
 
+    def trial_path(self, attempt_id):
+        return (self.root / "trials" / attempt_id).resolve()
+
+    def commitments(self, attempt_ids):
+        return {
+            attempt_id: {
+                "workload_digest": "1" * 64,
+                "control_digest": "2" * 64,
+                "observer_config_digest": "3" * 64,
+                "trial_root_digest": trial_root_digest(
+                    self.trial_path(attempt_id)
+                ),
+                "trial_root_parent_digest": trial_root_parent_digest(
+                    self.trial_path(attempt_id)
+                ),
+                "trial_root_identity_digest": "4" * 64,
+            }
+            for attempt_id in attempt_ids
+        }
+
     def finish_all_excluded(self, lifecycle, unit):
         rows = self.rows_by_attempt(unit)
         for attempt_id in lifecycle.expected_attempts():
@@ -70,7 +92,8 @@ class FreshLifecycleTests(unittest.TestCase):
             if unit == "M20.4" and not attempt_id.startswith("sp_handoff_control"):
                 scenario = rows[attempt_id][0][1]
                 bounded = f"{scenario}.bounded.01"
-                lifecycle.start_many((attempt_id, bounded))
+                pair = (attempt_id, bounded)
+                lifecycle.start_many(pair, commitments=self.commitments(pair))
                 for paired_id in (attempt_id, bounded):
                     lifecycle.claim(paired_id)
                     lifecycle.finish(
@@ -82,7 +105,13 @@ class FreshLifecycleTests(unittest.TestCase):
                         ),
                     )
             else:
-                lifecycle.start(attempt_id)
+                if unit == "M20.4":
+                    lifecycle.start(
+                        attempt_id,
+                        commitment=self.commitments((attempt_id,))[attempt_id],
+                    )
+                else:
+                    lifecycle.start(attempt_id)
                 lifecycle.claim(attempt_id)
                 lifecycle.finish(
                     attempt_id,
@@ -126,7 +155,13 @@ class FreshLifecycleTests(unittest.TestCase):
             "paired_start_required",
         )
         self.finish_all_excluded(lifecycle, "M20.4")
-        receipt = lifecycle.finalize()
+        self.assert_m20_error(lifecycle.finalize, "raw_material_present")
+        receipt = lifecycle.finalize(
+            extra_source_roots=tuple(
+                self.trial_path(attempt_id)
+                for attempt_id in lifecycle.expected_attempts()
+            )
+        )
 
         self.assertEqual(receipt["record_count"], 19)
         self.assertEqual(receipt["excluded_records"], 19)
@@ -137,13 +172,40 @@ class FreshLifecycleTests(unittest.TestCase):
         checked = check_fresh_collection(self.root, "M20.4")
         self.assertEqual(checked["record_count"], 19)
 
+    def test_m20_4_rejects_nested_root_namespace_across_attempts(self):
+        lifecycle = FreshCollectionLifecycle(self.root, "M20.4")
+        first = (
+            "sp_multi_outcome_intake.broad.01",
+            "sp_multi_outcome_intake.bounded.01",
+        )
+        lifecycle.start_many(first, commitments=self.commitments(first))
+
+        second = (
+            "sp_in_scope_discovery.broad.01",
+            "sp_in_scope_discovery.bounded.01",
+        )
+        nested_parent = self.trial_path(first[0]) / "nested"
+        nested_commitments = self.commitments(second)
+        for attempt_id in second:
+            nested_root = nested_parent / attempt_id
+            nested_commitments[attempt_id]["trial_root_digest"] = trial_root_digest(
+                nested_root
+            )
+            nested_commitments[attempt_id]["trial_root_parent_digest"] = (
+                trial_root_parent_digest(nested_root)
+            )
+        self.assert_m20_error(
+            lambda: lifecycle.start_many(second, commitments=nested_commitments),
+            "contaminated",
+        )
+
     def test_resume_terminalizes_started_and_reducing_pair_without_relaunch(self):
         lifecycle = FreshCollectionLifecycle(self.root, "M20.4")
         pair = (
             "sp_in_scope_discovery.broad.01",
             "sp_in_scope_discovery.bounded.01",
         )
-        lifecycle.start_many(pair)
+        lifecycle.start_many(pair, commitments=self.commitments(pair))
         lifecycle.claim(pair[0])
 
         reopened = FreshCollectionLifecycle(self.root, "M20.4")
@@ -158,7 +220,7 @@ class FreshLifecycleTests(unittest.TestCase):
             )
         self.assertEqual(reopened.resume_started(), ())
         self.assert_m20_error(
-            lambda: reopened.start_many(pair),
+            lambda: reopened.start_many(pair, commitments=self.commitments(pair)),
             "attempt_already_started",
         )
 
@@ -330,7 +392,7 @@ class FreshLifecycleTests(unittest.TestCase):
             "sp_user_expansion.broad.01",
             "sp_user_expansion.bounded.01",
         )
-        lifecycle.start_many(pair)
+        lifecycle.start_many(pair, commitments=self.commitments(pair))
         journal = json.loads(lifecycle.journal_path.read_text(encoding="utf-8"))
         invalid_cases = []
         wrong_unit = copy.deepcopy(journal)

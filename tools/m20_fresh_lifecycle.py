@@ -10,7 +10,9 @@ from __future__ import annotations
 import hashlib
 import itertools
 import os
+import re
 from collections import Counter
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -42,6 +44,69 @@ from tools.m20_observation import (
 JOURNAL_SCHEMA = "m20-fresh-attempt-journal-v1"
 SUPPORTED_UNITS = frozenset({"M20.3", "M20.4"})
 _UNIT_STEMS = {"M20.3": "m20.3", "M20.4": "m20.4"}
+_HEX_64 = re.compile(r"[0-9a-f]{64}\Z")
+_ATTEMPT_ID = re.compile(r"[a-z0-9._-]{1,64}\Z")
+_COMMITMENT_KEYS = frozenset(
+    {
+        "workload_digest",
+        "control_digest",
+        "observer_config_digest",
+        "trial_root_digest",
+        "trial_root_parent_digest",
+        "trial_root_identity_digest",
+    }
+)
+
+
+def trial_root_digest(path: Path) -> str:
+    """Hash one normalized absolute trial path without retaining the path."""
+
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        _fail("unsafe_source_root")
+    normalized = os.path.normcase(str(candidate.resolve(strict=False)))
+    return hashlib.sha256(
+        b"m20-trial-root-v1\0" + normalized.encode("utf-8", errors="strict")
+    ).hexdigest()
+
+
+def trial_root_parent_digest(path: Path) -> str:
+    """Hash the normalized parent shared by every M20.4 trial root."""
+
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        _fail("unsafe_source_root")
+    return trial_root_digest(candidate.resolve(strict=False).parent)
+
+
+def trial_root_identity_digest(path: Path) -> str:
+    """Bind a live trial root to its normalized path and directory identity."""
+
+    candidate = Path(path).resolve(strict=True)
+    try:
+        info = candidate.stat()
+    except OSError:
+        _fail("source_missing")
+    if not candidate.is_dir():
+        _fail("unsafe_source_root")
+    payload = canonical_json_bytes(
+        {
+            "path_digest": trial_root_digest(candidate),
+            "device": info.st_dev,
+            "inode": info.st_ino,
+        }
+    )
+    return hashlib.sha256(b"m20-trial-identity-v1\0" + payload).hexdigest()
+
+
+def _commitment(value: Any) -> dict[str, str]:
+    item = _exact_keys(value, _COMMITMENT_KEYS)
+    if any(
+        not isinstance(item[key], str) or _HEX_64.fullmatch(item[key]) is None
+        for key in _COMMITMENT_KEYS
+    ):
+        _fail("source_drift")
+    return dict(item)
 _RECEIPT_CORE_KEYS = frozenset(
     {
         "schema",
@@ -196,7 +261,14 @@ class FreshCollectionLifecycle:
         for attempt_id, raw_state in root["attempts"].items():
             if attempt_id not in rows_by_attempt:
                 _fail("source_drift")
-            state = _exact_keys(raw_state, {"status", "records"})
+            state_keys = (
+                {"status", "records", "commitment"}
+                if self.unit == "M20.4"
+                else {"status", "records"}
+            )
+            state = _exact_keys(raw_state, state_keys)
+            if self.unit == "M20.4":
+                _commitment(state["commitment"])
             if state["status"] in ("started", "reducing"):
                 if state["records"] != []:
                     _fail("source_drift")
@@ -212,6 +284,17 @@ class FreshCollectionLifecycle:
             actual = [record["observation_id"] for record in records]
             if len(actual) != len(expected) or set(actual) != expected:
                 _fail("source_drift")
+        if self.unit == "M20.4":
+            commitments = [
+                _commitment(state["commitment"])
+                for state in root["attempts"].values()
+            ]
+            root_digests = [item["trial_root_digest"] for item in commitments]
+            parent_digests = {
+                item["trial_root_parent_digest"] for item in commitments
+            }
+            if len(root_digests) != len(set(root_digests)) or len(parent_digests) > 1:
+                _fail("source_drift")
         return dict(root)
 
     def _write_journal(self, journal: Mapping[str, Any]) -> None:
@@ -225,6 +308,31 @@ class FreshCollectionLifecycle:
         return tuple(
             sorted(self._rows_by_attempt(protocol), key=lambda value: value.encode("ascii"))
         )
+
+    def attempt_lock_path(self, attempt_id: str) -> Path:
+        """Return the fixed per-attempt lock shared by start, capture, and resume."""
+
+        if (
+            not isinstance(attempt_id, str)
+            or _ATTEMPT_ID.fullmatch(attempt_id) is None
+            or attempt_id not in self._rows_by_attempt(self._protocol())
+        ):
+            _fail("source_drift")
+        return self.lock_path.with_name(f"{self.lock_path.name}.{attempt_id}.capture")
+
+    def attempt_commitment(self, attempt_id: str) -> dict[str, str]:
+        """Return one safe M20.4 launch commitment for internal controller use."""
+
+        if self.unit != "M20.4":
+            _fail("source_drift")
+        self._ensure_open()
+        protocol = self._protocol()
+        self._paths()
+        journal = self._read_journal(protocol)
+        state = journal["attempts"].get(attempt_id)
+        if state is None or state["status"] not in {"started", "reducing"}:
+            _fail("attempt_not_started")
+        return _commitment(state["commitment"])
 
     def _validate_start_group(
         self,
@@ -254,27 +362,84 @@ class FreshCollectionLifecycle:
         if set(attempt_ids) != expected:
             _fail("paired_start_required")
 
-    def start(self, attempt_id: str) -> None:
-        self.start_many((attempt_id,))
+    def start(
+        self,
+        attempt_id: str,
+        *,
+        commitment: Mapping[str, str] | None = None,
+    ) -> None:
+        commitments = None if commitment is None else {attempt_id: commitment}
+        self.start_many((attempt_id,), commitments=commitments)
 
-    def start_many(self, attempt_ids: Iterable[str]) -> None:
+    def start_many(
+        self,
+        attempt_ids: Iterable[str],
+        *,
+        commitments: Mapping[str, Mapping[str, str]] | None = None,
+    ) -> None:
         self._ensure_open()
         identifiers = tuple(attempt_ids)
         protocol = self._protocol()
         self._paths()
         rows_by_attempt = self._rows_by_attempt(protocol)
         self._validate_start_group(identifiers, rows_by_attempt)
-        with CollectionLock(self.lock_path):
-            self._ensure_open()
-            journal = self._read_journal(protocol)
-            if any(item in journal["attempts"] for item in identifiers):
-                _fail("attempt_already_started")
-            for attempt_id in identifiers:
-                journal["attempts"][attempt_id] = {
-                    "status": "started",
-                    "records": [],
-                }
-            self._write_journal(journal)
+        if self.unit == "M20.4":
+            if not isinstance(commitments, Mapping) or set(commitments) != set(
+                identifiers
+            ):
+                _fail("control_commitment_required")
+            validated_commitments = {
+                attempt_id: _commitment(commitments[attempt_id])
+                for attempt_id in identifiers
+            }
+        else:
+            if commitments is not None:
+                _fail("source_drift")
+            validated_commitments = {}
+        with ExitStack() as attempt_locks:
+            if self.unit == "M20.4":
+                for attempt_id in sorted(identifiers, key=lambda value: value.encode("ascii")):
+                    attempt_locks.enter_context(
+                        CollectionLock(self.attempt_lock_path(attempt_id))
+                    )
+            with CollectionLock(self.lock_path):
+                self._ensure_open()
+                journal = self._read_journal(protocol)
+                if any(item in journal["attempts"] for item in identifiers):
+                    _fail("attempt_already_started")
+                if self.unit == "M20.4":
+                    candidate_roots = [
+                        validated_commitments[attempt_id]["trial_root_digest"]
+                        for attempt_id in identifiers
+                    ]
+                    candidate_parents = {
+                        validated_commitments[attempt_id]["trial_root_parent_digest"]
+                        for attempt_id in identifiers
+                    }
+                    existing_roots = {
+                        state["commitment"]["trial_root_digest"]
+                        for state in journal["attempts"].values()
+                    }
+                    existing_parents = {
+                        state["commitment"]["trial_root_parent_digest"]
+                        for state in journal["attempts"].values()
+                    }
+                    if (
+                        len(set(candidate_roots)) != len(candidate_roots)
+                        or set(candidate_roots) & existing_roots
+                        or len(candidate_parents) != 1
+                        or (existing_parents and candidate_parents != existing_parents)
+                    ):
+                        _fail("contaminated")
+                for attempt_id in identifiers:
+                    state = {
+                        "status": "started",
+                        "records": [],
+                    }
+                    if self.unit == "M20.4":
+                        state["commitment"] = validated_commitments[attempt_id]
+                    journal["attempts"][attempt_id] = state
+                self._write_journal(journal)
 
     def resume_started(self) -> tuple[str, ...]:
         """Terminalize interrupted starts or reductions without relaunching."""
@@ -283,31 +448,44 @@ class FreshCollectionLifecycle:
         protocol = self._protocol()
         self._paths()
         rows_by_attempt = self._rows_by_attempt(protocol)
-        with CollectionLock(self.lock_path):
-            self._ensure_open()
-            journal = self._read_journal(protocol)
-            interrupted = tuple(
-                sorted(
-                    (
-                        attempt_id
-                        for attempt_id, state in journal["attempts"].items()
-                        if state["status"] in ("started", "reducing")
-                    ),
-                    key=lambda value: value.encode("ascii"),
+        with ExitStack() as attempt_locks:
+            if self.unit == "M20.4":
+                for attempt_id in sorted(
+                    rows_by_attempt, key=lambda value: value.encode("ascii")
+                ):
+                    attempt_locks.enter_context(
+                        CollectionLock(self.attempt_lock_path(attempt_id))
+                    )
+            with CollectionLock(self.lock_path):
+                self._ensure_open()
+                journal = self._read_journal(protocol)
+                interrupted = tuple(
+                    sorted(
+                        (
+                            attempt_id
+                            for attempt_id, state in journal["attempts"].items()
+                            if state["status"] in ("started", "reducing")
+                        ),
+                        key=lambda value: value.encode("ascii"),
+                    )
                 )
-            )
-            for attempt_id in interrupted:
-                journal["attempts"][attempt_id] = {
-                    "status": "reduced",
-                    "records": _excluded_rows(
-                        protocol,
-                        rows_by_attempt[attempt_id],
-                        "source_missing",
-                    ),
-                }
-            if interrupted:
-                self._write_journal(journal)
-            return interrupted
+                for attempt_id in interrupted:
+                    replacement = {
+                        "status": "reduced",
+                        "records": _excluded_rows(
+                            protocol,
+                            rows_by_attempt[attempt_id],
+                            "source_missing",
+                        ),
+                    }
+                    if self.unit == "M20.4":
+                        replacement["commitment"] = journal["attempts"][attempt_id][
+                            "commitment"
+                        ]
+                    journal["attempts"][attempt_id] = replacement
+                if interrupted:
+                    self._write_journal(journal)
+                return interrupted
 
     def claim(self, attempt_id: str) -> None:
         """Atomically claim one started attempt before opening trial sources."""
@@ -324,10 +502,13 @@ class FreshCollectionLifecycle:
             state = journal["attempts"].get(attempt_id)
             if state is None or state["status"] != "started":
                 _fail("attempt_not_started")
-            journal["attempts"][attempt_id] = {
+            replacement = {
                 "status": "reducing",
                 "records": [],
             }
+            if self.unit == "M20.4":
+                replacement["commitment"] = state["commitment"]
+            journal["attempts"][attempt_id] = replacement
             self._write_journal(journal)
 
     def finish(
@@ -356,10 +537,13 @@ class FreshCollectionLifecycle:
                 rows_by_attempt[attempt_id],
                 bounded_records,
             )
-            journal["attempts"][attempt_id] = {
+            replacement = {
                 "status": "reduced",
                 "records": retained,
             }
+            if self.unit == "M20.4":
+                replacement["commitment"] = state["commitment"]
+            journal["attempts"][attempt_id] = replacement
             self._write_journal(journal)
         return tuple(retained)
 
@@ -494,6 +678,7 @@ class FreshCollectionLifecycle:
     ) -> dict[str, Any]:
         """Close a complete unit after all raw/control sources were removed."""
 
+        supplied_roots = tuple(extra_source_roots)
         self._ensure_open()
         protocol = self._protocol()
         self._paths()
@@ -506,7 +691,21 @@ class FreshCollectionLifecycle:
                 for state in journal["attempts"].values()
             ):
                 _fail("collection_incomplete")
-            self._sources_absent(extra_source_roots)
+            if self.unit == "M20.4":
+                committed_roots = {
+                    state["commitment"]["trial_root_digest"]
+                    for state in journal["attempts"].values()
+                }
+                supplied_digests = {
+                    trial_root_digest(path) for path in supplied_roots
+                }
+                if (
+                    len(supplied_roots) != len(journal["attempts"])
+                    or len(supplied_digests) != len(supplied_roots)
+                    or supplied_digests != committed_roots
+                ):
+                    _fail("raw_material_present")
+            self._sources_absent(supplied_roots)
             records: list[dict[str, Any]] = []
             for attempt_id in sorted(
                 journal["attempts"], key=lambda value: value.encode("ascii")
@@ -601,4 +800,7 @@ __all__ = [
     "FreshCollectionLifecycle",
     "JOURNAL_SCHEMA",
     "check_fresh_collection",
+    "trial_root_digest",
+    "trial_root_identity_digest",
+    "trial_root_parent_digest",
 ]

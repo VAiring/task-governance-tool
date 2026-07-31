@@ -197,3 +197,17 @@ when an older index sentence describes it in future tense.
   post-release execution sequence before TG-M20 authority activation.
 - Current replacement:
   [docs/implementation-roadmap.md](../implementation-roadmap.md)
+
+## TG-M20 Operational-Baseline Study Lineage
+
+### TG-M20 synthesis and retired evidence boundary
+
+- Immutable history:
+  [v0.10.0/m20-operational-baseline.md](v0.10.0/m20-operational-baseline.md)
+- Capture unit: `TG-M20.5`
+- Capture purpose: preserve the stratified aggregate, denominators,
+  exclusions, frozen-rule decisions, limitations, and bounded follow-up
+  observation proposals before the reduced corpora and temporary study
+  scaffolding were retired.
+- Current replacement: [docs/implementation-roadmap.md](../implementation-roadmap.md)
+  and [plan.md](../../plan.md)

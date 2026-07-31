@@ -9,7 +9,8 @@ independently blocked. The approved operational-baseline sequence is
 TG-M20.1 through TG-M20.5. TG-M20.1 is complete at
 `a77afbe0140fef416cceeee529e9ff2c985a8e4d`, TG-M20.2 is complete at
 `e49e5aca68a7bf1c9829afb50d2c6a38835a4f03`, TG-M20.3 is complete at
-`800ed153dc9671f011ea4715f50d92ea464bc12b`, and TG-M20.4 is the active
+`800ed153dc9671f011ea4715f50d92ea464bc12b`, TG-M20.4 is complete at
+`ed15a85b6d1c328a9d1ac9b6a1448b50c1389481`, and TG-M20.5 is the active
 source-revision unit.
 
 This active roadmap owns approved execution order, verification gates, review
@@ -87,6 +88,7 @@ commit-not-required fingerprint is shown instead of inventing a Git commit.
 | TG-M20.1 | `tg_task_43fd4b96c9ca92a1` | `a77afbe0140fef416cceeee529e9ff2c985a8e4d` | Frozen operational-baseline authority, inventory, privacy boundary, and decision rules. |
 | TG-M20.2 | `tg_task_2885725486bec173` | `e49e5aca68a7bf1c9829afb50d2c6a38835a4f03` | Offline repository-only observation harness and sanitized retrospective baseline. |
 | TG-M20.3 | `tg_task_8efb270f74360308` | `800ed153dc9671f011ea4715f50d92ea464bc12b` | Fresh-agent verification-proportionality baseline and terminal no-rerun receipt. |
+| TG-M20.4 | `tg_task_787f976a5e9daa7e` | `ed15a85b6d1c328a9d1ac9b6a1448b50c1389481` | Fresh-agent Task-boundary/split-pressure baseline and terminal no-rerun receipt. |
 
 Every M19 Task in the completion index above has a satisfied final Tier 2 gate
 and no unresolved High or Medium finding in any recorded generation. Some
@@ -193,10 +195,12 @@ repository-development study, not taskgov telemetry or a product subsystem.
 Its evidence is non-authoritative and cannot satisfy a Task verification,
 review, completion, release, or product-acceptance gate.
 
-The repository-only schema and collection boundaries are owned by
-[the implementation design](design.md#tg-m20-repository-only-observation-design).
-[Root plan.md](../plan.md#m20-frozen-decision-rules) owns the frozen
-go/no-go rules. No unit activates Verification Receipts, test-strategy
+The completed study boundary is summarized by
+[the implementation design](design.md#completed-tg-m20-study-boundary), and
+the detailed stratified aggregate is preserved as
+[non-authoritative history](history/v0.10.0/m20-operational-baseline.md).
+[Root plan.md](../plan.md#m20-recorded-decisions) owns the recorded
+go/no-go decisions. No unit activates Verification Receipts, test-strategy
 ownership, runtime Task splitting, parent/child Tasks, a new Skill trigger, or
 a public command.
 
@@ -313,7 +317,8 @@ Task: `tg_task_787f976a5e9daa7e`
 Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 40
 Review tier: Tier 1
 Depends on: completed TG-M20.3
-Source-revision state: active
+Source-revision state: complete at
+`ed15a85b6d1c328a9d1ac9b6a1448b50c1389481`
 
 Intended outcome:
 
@@ -353,6 +358,7 @@ Task: `tg_task_f6c19be1c10ad3ab`
 Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 50
 Review tier: Tier 2
 Depends on: completed TG-M20.4
+Source-revision state: active
 
 Intended outcome:
 
@@ -371,6 +377,20 @@ Write scope:
   retaining tracked terminal collection receipts as no-rerun tombstones;
 - no chosen solution implementation and no follow-up implementation Task
   registration without current explicit user approval.
+
+Recorded frozen-rule decisions:
+
+| Candidate | Decision |
+|---|---|
+| TG-M21 Verification Receipts | `proceed_to_design` |
+| Skill-only proportional-verification guardrail | `observe_more` |
+| Bounded user-approved Task decomposition | `observe_more` |
+| Bounded further observation for the two inconclusive candidates | `proceed_to_design` |
+
+The supporting denominators, exclusions, channel comparisons, limitations,
+and proposed fixed follow-up inventories are preserved in the
+[TG-M20 synthesis](history/v0.10.0/m20-operational-baseline.md). No design or
+follow-up Task is activated or registered by these decisions.
 
 Verification:
 

@@ -168,6 +168,8 @@ ARCHIVES = {
     },
 }
 
+STUDY_HISTORIES = {"m20-operational-baseline.md"}
+
 
 def git_blob_sha1(data: bytes) -> str:
     header = f"blob {len(data)}\0".encode("ascii")
@@ -234,7 +236,7 @@ class DocumentHistoryTests(unittest.TestCase):
                 self.assertIn(expected["replacement"], section)
                 self.assertEqual(section.count(f"](v0.10.0/{relative})"), 1)
 
-        indexed_archives = set(ARCHIVES)
+        indexed_archives = set(ARCHIVES) | STUDY_HISTORIES
         actual_archives = {
             path.relative_to(HISTORY_ROOT / "v0.10.0").as_posix()
             for path in (HISTORY_ROOT / "v0.10.0").rglob("*.md")
@@ -249,6 +251,7 @@ class DocumentHistoryTests(unittest.TestCase):
             ROOT / "docs" / "design.md",
             ROOT / "docs" / "implementation-roadmap.md",
             HISTORY_ROOT / "README.md",
+            HISTORY_ROOT / "v0.10.0" / "m20-operational-baseline.md",
         ]
         link_pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
         checked = 0
@@ -362,18 +365,32 @@ class DocumentHistoryTests(unittest.TestCase):
         normalized_combined = " ".join(combined.split())
         self.assertNotIn("TG-M19.14 is active", normalized_combined)
         design = active["docs/design.md"]
-        for observation_contract_marker in (
+        self.assertIn("Completed TG-M20 Study Boundary", design)
+        self.assertIn("history/v0.10.0/m20-operational-baseline.md", design)
+        for retired_contract_marker in (
             "m20-operational-observation-v1",
-            "machine_observed",
-            "historically_reconstructed",
-            "observer_attested",
-            "gov_tier1_commitless",
-            "vp_cli_contract",
-            "sp_handoff_control",
             "m20-observation-v1\\0",
             "There is no rerun, replacement subject",
         ):
-            self.assertIn(observation_contract_marker, design)
+            self.assertNotIn(retired_contract_marker, design)
+
+        m20_history = (
+            HISTORY_ROOT / "v0.10.0" / "m20-operational-baseline.md"
+        ).read_text(encoding="utf-8")
+        for synthesis_marker in (
+            "NON-AUTHORITATIVE STUDY HISTORY",
+            CAPTURE_M20_BASELINE,
+            "machine_observed",
+            "historically_reconstructed",
+            "observer_attested",
+            "vp_cli_contract",
+            "sp_handoff_control",
+            "E=1`, `Q=1`, and `U=3",
+            "TG-M21 Verification Receipts | `proceed_to_design`",
+            "Skill-only proportional-verification guardrail | `observe_more`",
+            "Bounded user-approved Task decomposition | `observe_more`",
+        ):
+            self.assertIn(synthesis_marker, m20_history)
 
         plan = active["plan.md"]
         handoff_scan = combined + "\n" + (ROOT / "AGENTS.md").read_text(

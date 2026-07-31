@@ -9,7 +9,8 @@ complete. TG-M19.11 through TG-M19.14 are also complete. TG-M20.1 through
 TG-M20.5 form the approved operational-baseline sequence. TG-M20.1 is
 complete at `a77afbe0140fef416cceeee529e9ff2c985a8e4d`, TG-M20.2 is
 complete at `e49e5aca68a7bf1c9829afb50d2c6a38835a4f03`, TG-M20.3 is
-complete at `800ed153dc9671f011ea4715f50d92ea464bc12b`, and TG-M20.4 is
+complete at `800ed153dc9671f011ea4715f50d92ea464bc12b`, TG-M20.4 is
+complete at `ed15a85b6d1c328a9d1ac9b6a1448b50c1389481`, and TG-M20.5 is
 active. TG-M12.3 remains separately blocked.
 
 This file owns current decisions, explicit open issues, and user-decision
@@ -161,99 +162,52 @@ gates. It is not the product contract, execution ledger, or evidence store:
 - One contaminated incident, an unreconstructable historical absence, timing
   or size alone, and the context-rich parent conversation cannot establish
   causation or justify a positive decision.
+- The reviewed stratified aggregate, exact denominators, exclusions,
+  limitations, and retired observation details are preserved only as
+  [non-authoritative TG-M20 history](docs/history/v0.10.0/m20-operational-baseline.md).
 
-### M20 Frozen Decision Rules
+### M20 Recorded Decisions
 
-TG-M20.5 records each feature decision as `proceed_to_design`,
-`no_follow_up`, or `observe_more`.
+TG-M20.5 applied the frozen rules to the fixed M20.2-M20.4 corpus. The
+detailed aggregate, arithmetic, exclusions, and decision basis are
+preserved in
+[non-authoritative study history](docs/history/v0.10.0/m20-operational-baseline.md);
+they are no longer an active collection or rerun contract.
 
-An eligible M20.3 scenario bundle contains one eligible
-`fresh_agent_trial`, one eligible `verification_proportionality`
-`trial_measurement`, and its eligible state pair for the same scenario/trial.
-An eligible non-control M20.4 pair contains the attestation and
-`split_pressure` measurement records for both fixed arms in the same cohort
-with the same `workload_digest`; it has no arm-level state pair because a
-bounded arm may use multiple Tasks. The Handoff control alone additionally
-requires its sole arm's state pair.
+| Candidate | Decision | Current boundary |
+|---|---|---|
+| TG-M21 Verification Receipts | `proceed_to_design` | Two eligible M20.3 bundles supported all five material facts: `command_label`, `result`, `source_revision`, `duration`, and `scope_coverage`. |
+| Skill-only proportional-verification guardrail | `observe_more` | 0 bundles satisfied both the observer pattern and frozen machine mapping; one of three planned bundles was permanently excluded. |
+| Bounded user-approved Task decomposition | `observe_more` | The four-pair denominator produced `E=1,Q=1,U=3`; the separate Handoff control was eligible. |
+| Bounded further observation | `proceed_to_design` | Only fixed successor observation for the two inconclusive candidates is justified; no Task is registered. |
 
-Two evidence channels materially support a predicate only when an
-observer-attested code/classification and the exact machine-observed field
-specified below both satisfy it for the same eligible bundle; mere channel
-presence is insufficient. A critical unknown is a partial, excluded, missing,
-capped, or `unknown` field that participates in the predicate and could change
-whether its threshold is met. A conflict is a state/measurement mismatch for
-the same revision, generation, count, or episode identity, or a disagreement
-between paired cohort or workload-digest facts. A conflict or critical unknown
-always produces `observe_more`.
+The TG-M21 result authorizes only the smallest separately reviewed design
+proposal for a bounded sanitized receipt. It does not select storage, schema,
+CLI, Viewer, or Skill behavior and does not authorize implementation.
 
-A verification fact code is material only when it was needed to judge
-verification sufficiency, reproduce the result, or resume safely; a
-nice-to-have detail is excluded. The following rules are then mechanical.
+A later verification-guardrail observation proposal may use
+`vp_cli_parser_followup`, `vp_viewer_contract_followup`, and
+`vp_migration_contract_followup`, one attempt per scenario with no rerun. Its
+approved contract must define a successor denominator because the original
+excluded CLI bundle cannot be made eligible. It should stop at the first
+satisfied successor positive/negative rule or fixed-inventory exhaustion; two
+qualifying bundles remain necessary for positive support.
 
-- TG-M21 is `proceed_to_design` only when the same material code—one of
-  `command_label`, `result`, `source_revision`, `duration`, or
-  `scope_coverage`—appears in `verification_fact_codes` for at least two
-  distinct eligible M20.3
-  bundles, each corresponding after-state has
-  `verification_detail="absent"`, and each attestation has
-  `minimal_receipt_fit="yes"`. Manual re-entry is supporting evidence only
-  when that code is also in `manual_reentry_fact_codes`.
-- The Skill-only proportional-verification guardrail is
-  `proceed_to_design` only when the same responsibility-pattern code appears
-  in at least two distinct eligible M20.3 bundles, both have
-  `instruction_fit="yes"`, and the machine mapping is satisfied in each:
-  `duplicate_contract_assertion` requires
-  `duplicate_contract_locations>=2`;
-  `duplicate_inventory_owner` requires
-  `inventory_owner_fanout>=2`; `fixture_copy` requires
-  `fixture_copy_groups>=1`; `nondetecting_regression` requires
-  `target_change_result="not_detected"`; and
-  `unbounded_verification_escalation` requires
-  `verification_escalation` to be `all_first` or `repeated_all`.
-- One M20.4 pair qualifies for decomposition only when its broad and bounded
-  records have identical ordered episode IDs, every bounded-arm episode has
-  all four independence fields `yes`, and at least one exact improvement
-  holds. For each arm define, over all of its ordered episodes,
-  `contract_revision_delta_sum=sum(contract_revision_after-contract_revision_before)`
-  and `review_cycle_sum=sum(review_cycles)`. The three improvements are:
-  a same-ID broad episode has at least one independence field `no` and at
-  least one position in its design-defined machine delta vector is greater
-  than the same bounded episode's vector position;
-  `bounded.contract_revision_delta_sum <= broad.contract_revision_delta_sum - 1`;
-  or `bounded.review_cycle_sum <= broad.review_cycle_sum - 1`.
-- The Handoff control is eligible support only when its attestation has cause
-  `out_of_scope_control` and response `handoff`, its state pair has
-  `before.task_status=after.task_status="in_progress"`,
-  `after.handoffs_pending=before.handoffs_pending+1` with delivered and
-  withdrawn counts unchanged and completion cycles unchanged, and its sole
-  split episode has zero file, module, line, Contract-revision, and
-  review-generation delta, `governance_cycles=1`, and `review_cycles=0`.
-  Task decomposition is `proceed_to_design` only with two qualifying
-  non-control pairs and that eligible machine-and-observer-supported Handoff
-  control.
+A later decomposition observation proposal may use
+`sp_user_expansion_alternate`, `sp_in_scope_discovery_alternate`, and
+`sp_cross_module_failure_alternate`, one broad and one bounded attempt per
+scenario with no rerun. Its approved contract must define those cases as
+replacements for the three unavailable category slots. With the existing
+qualifying pair, one new eligible qualifying pair reaches the positive
+threshold. Three eligible nonqualifying replacements yield
+`E=4,Q=1,U=0` and reach the negative threshold. Exhaustion without either
+condition remains `observe_more`.
 
-Adequate negative evidence is also fixed:
-
-- TG-M21 and the Skill guardrail may be `no_follow_up` only when all three
-  planned M20.3 bundles are eligible, no conflict exists, and the applicable
-  positive predicate is satisfied in fewer than two bundles.
-- For decomposition let `E` be the eligible count among the four planned
-  non-control pairs, `Q` the qualifying count among those eligible pairs, and
-  `U=4-E`. It may be `no_follow_up` only when the Handoff control is eligible,
-  no conflict exists, `E>=3`, and `Q+U<2`. Thus with one unavailable pair,
-  zero eligible pairs may qualify; one qualifying pair requires the fourth
-  pair to be eligible before a negative decision.
-- Any decision that meets neither its positive nor negative rule is
-  `observe_more`. M20.5 must name the missing record/field or conflict,
-  propose 1-3 new scenario IDs with one attempt each in a separately approved
-  observation unit, and state the stop condition as the first satisfied
-  positive/negative rule or exhaustion of that fixed inventory.
-
-Size, line, case, and timing values never satisfy a predicate by themselves.
-The current conversation and earlier reported incident are excluded samples,
-not extra support. `proceed_to_design` authorizes only the smallest separately
-reviewed design proposal; it does not authorize implementation, behavior
-activation, or Task registration.
+These inventories are proposals, not execution authority. Current explicit
+user approval is required before registering a design or observation Task.
+Timing, size, line, and test-count values remain supporting context only, and
+the context-rich parent conversation and earlier incident remain excluded
+samples. A positive decision never authorizes behavior activation.
 
 ## Current Blocker And User Decision
 
@@ -272,9 +226,12 @@ or changed acceptance also requires explicit authority.
 These items are not implementation authority. Each needs a separately approved
 contract and execution unit.
 
-- TG-M20.5 must decide separately whether evidence supports detailed TG-M21
-  Verification Receipt design, a small Skill-only proportional-verification
-  guardrail, bounded Task-decomposition design, or further observation.
+- Design the smallest TG-M21 Verification Receipt design around the five
+  supported fact classes only after separate user approval; no implementation
+  Task is registered by the M20 decision.
+- Decide whether to approve one or both bounded successor-observation
+  inventories recorded above before reconsidering the Skill-only guardrail or
+  Task decomposition. The proposed inventories are not executable authority.
 - Decide whether later product scope should add project-profile detection,
   dependency graphs, or Git integration beyond the current read-only snapshot,
   completion validation, and bounded Review Packet.
@@ -283,7 +240,7 @@ contract and execution unit.
 - Reassess stale warnings and event-history or current/list pagination only
   after operational evidence shows the current bounded checkpoint and
   projections are insufficient. Checklist/child execution units remain
-  inactive while M20 evaluates a narrower decomposition boundary.
+  inactive pending a separately approved successor observation or design.
 - Revisit a once-daily GitHub update check only as a separately approved,
   opt-in local-cache/network feature. Normal Skill use remains offline and
   must not contact GitHub.

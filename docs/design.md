@@ -2181,6 +2181,19 @@ through TG-M20.5 and removed by that unit after synthesis. Tracked terminal
 collection receipts remain afterward as no-rerun tombstones and record the
 corpus retirement state; they do not become study evidence or product state.
 
+Each tracked terminal collection receipt uses
+`schema="m20-collection-receipt-v1"` and the exact common keys
+`schema`, `unit`, `authority_revision`, `baseline_revision`,
+`protocol_sha256`, `status`, `artifact_status`, `retirement_revision`,
+`record_count`, `corpus_bytes`, `corpus_sha256`, `eligible_records`,
+`partial_records`, `excluded_records`, and `outcome`. M20.4 alone adds the
+exact key `episode_plan_canonical_sha256`. A closed fresh collection uses
+`outcome="collection_complete"`; it records no semantic feature verdict.
+While its ignored corpus exists, `artifact_status` is `retained` and
+`retirement_revision` is null. TG-M20.5 changes those values to `retired` and
+the exact 40-hex retirement-anchor commit only after removing the bound
+corpus; a retired receipt fails closed if that corpus is still present.
+
 Existing Task DB rows own normal execution and completion evidence. TG-M20.5
 routes its reviewed aggregate and limitations to one newly indexed
 non-authoritative history document, promotes only durable decisions to the

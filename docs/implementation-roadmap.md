@@ -7,7 +7,8 @@ lightweight tag `v0.10.0` resolve to that commit, and GitHub Release
 TG-M19.14, including TG-M19.6A and TG-M19.6B, are complete. TG-M12.3 remains
 independently blocked. The approved operational-baseline sequence is
 TG-M20.1 through TG-M20.5. TG-M20.1 is complete at
-`a77afbe0140fef416cceeee529e9ff2c985a8e4d`, and TG-M20.2 is the active
+`a77afbe0140fef416cceeee529e9ff2c985a8e4d`, TG-M20.2 is complete at
+`e49e5aca68a7bf1c9829afb50d2c6a38835a4f03`, and TG-M20.3 is the active
 source-revision unit.
 
 This active roadmap owns approved execution order, verification gates, review
@@ -83,6 +84,7 @@ commit-not-required fingerprint is shown instead of inventing a Git commit.
 | TG-M19.13 | `tg_task_704ecd1d1e2f7552` | `27e7ef08c70c1434b9aac8474b3006dbbc6ec3b8` | Deterministic test lanes and CI event/version policy. |
 | TG-M19.14 | `tg_task_0f76a52915987511` | `43c91d5987b0c35c66f834789aea782e98dcaff7` | Legacy release-vocabulary compatibility and neutral future-operation boundary. |
 | TG-M20.1 | `tg_task_43fd4b96c9ca92a1` | `a77afbe0140fef416cceeee529e9ff2c985a8e4d` | Frozen operational-baseline authority, inventory, privacy boundary, and decision rules. |
+| TG-M20.2 | `tg_task_2885725486bec173` | `e49e5aca68a7bf1c9829afb50d2c6a38835a4f03` | Offline repository-only observation harness and sanitized retrospective baseline. |
 
 Every M19 Task in the completion index above has a satisfied final Tier 2 gate
 and no unresolved High or Medium finding in any recorded generation. Some
@@ -232,7 +234,8 @@ Task: `tg_task_2885725486bec173`
 Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 20
 Review tier: Tier 2
 Depends on: completed TG-M20.1
-Source-revision state: active
+Source-revision state: complete at
+`e49e5aca68a7bf1c9829afb50d2c6a38835a4f03`
 
 Intended outcome:
 
@@ -271,6 +274,7 @@ Task: `tg_task_8efb270f74360308`
 Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 30
 Review tier: Tier 1
 Depends on: completed TG-M20.2
+Source-revision state: active
 
 Intended outcome:
 

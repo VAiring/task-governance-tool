@@ -1074,6 +1074,89 @@ class M20ObservationTests(unittest.TestCase):
                     "parse_failed",
                 )
 
+    def test_m20_3_target_change_cap_uses_unknown_enum_only(self):
+        measurement_row = next(
+            row
+            for row in derive_inventory(self.protocol, "M20.3")
+            if row[1] == "vp_cli_contract" and row[4] == "trial_measurement"
+        )
+        target_path = "data.target_change_result"
+        capped_target = self.verification_measurement_payload()
+        capped_target["data"]["target_change_result"] = "unknown"
+        partial = build_observation(
+            self.protocol,
+            unit=measurement_row[0],
+            scenario_id=measurement_row[1],
+            trial_id=measurement_row[2],
+            evidence_class=measurement_row[3],
+            channel=measurement_row[4],
+            record_key=measurement_row[5],
+            payload=capped_target,
+            unknowns=[{"field": target_path, "reasons": ["cap_exceeded"]}],
+        )
+        self.assertEqual(partial["eligibility"], "partial")
+        self.assertEqual(partial["unknown_reasons"], ["cap_exceeded"])
+        self.assertEqual(validate_observation(self.protocol, partial), partial)
+
+        invalid_targets = (
+            ("detected", ["cap_exceeded"]),
+            ("not_run", ["cap_exceeded"]),
+            ("unknown", ["cap_exceeded", "timeout"]),
+        )
+        for value, reasons in invalid_targets:
+            payload = self.verification_measurement_payload()
+            payload["data"]["target_change_result"] = value
+            with self.subTest(value=value, reasons=reasons):
+                self.assert_m20_error(
+                    lambda payload=payload, reasons=reasons: build_observation(
+                        self.protocol,
+                        unit=measurement_row[0],
+                        scenario_id=measurement_row[1],
+                        trial_id=measurement_row[2],
+                        evidence_class=measurement_row[3],
+                        channel=measurement_row[4],
+                        record_key=measurement_row[5],
+                        payload=payload,
+                        unknowns=[{"field": target_path, "reasons": reasons}],
+                    ),
+                    "parse_failed",
+                )
+
+        count_path = "data.product_lines"
+        exact_cap = self.verification_measurement_payload()
+        exact_cap["data"]["product_lines"] = m20_observation.MAX_SIGNED_32
+        self.assertEqual(
+            build_observation(
+                self.protocol,
+                unit=measurement_row[0],
+                scenario_id=measurement_row[1],
+                trial_id=measurement_row[2],
+                evidence_class=measurement_row[3],
+                channel=measurement_row[4],
+                record_key=measurement_row[5],
+                payload=exact_cap,
+                unknowns=[{"field": count_path, "reasons": ["cap_exceeded"]}],
+            )["eligibility"],
+            "partial",
+        )
+
+        below_cap = self.verification_measurement_payload()
+        below_cap["data"]["product_lines"] = m20_observation.MAX_SIGNED_32 - 1
+        self.assert_m20_error(
+            lambda: build_observation(
+                self.protocol,
+                unit=measurement_row[0],
+                scenario_id=measurement_row[1],
+                trial_id=measurement_row[2],
+                evidence_class=measurement_row[3],
+                channel=measurement_row[4],
+                record_key=measurement_row[5],
+                payload=below_cap,
+                unknowns=[{"field": count_path, "reasons": ["cap_exceeded"]}],
+            ),
+            "parse_failed",
+        )
+
     def test_cli_result_timeout_and_shape_boundaries_are_validated(self):
         cli_row = next(row for row in self.inventory if row[4] == "cli_invocation")
         timeout_payload = self.payload_for_row(cli_row)

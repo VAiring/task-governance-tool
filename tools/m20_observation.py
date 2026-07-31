@@ -951,6 +951,7 @@ def _validate_unknown_values(
                     else reasons
                 )
                 if value == "unknown" and reasons not in (
+                    {"cap_exceeded"},
                     {"not_observable"},
                     {"timeout"},
                 ):
@@ -963,8 +964,15 @@ def _validate_unknown_values(
                 )
             if reasons != expected:
                 _fail("parse_failed")
+        enum_cap_unknown = (
+            channel == "trial_measurement"
+            and path == "data.target_change_result"
+            and value == "unknown"
+        )
         if "cap_exceeded" in reasons:
-            if reasons != {"cap_exceeded"} or cap_paths.get(path) != value:
+            if reasons != {"cap_exceeded"} or (
+                not enum_cap_unknown and cap_paths.get(path) != value
+            ):
                 _fail("parse_failed")
         elif value not in (None, "unknown", "not_run"):
             _fail("parse_failed")

@@ -1799,10 +1799,13 @@ because no response body is trusted. Every other result requires
 result/`ok`/exit/error disagreement or any other exit code is excluded with
 `parse_failed`; it is never coerced. Warning/error arrays each contain at most
 16 unique ASCII-byte-sorted stable codes matching
-`[a-z][a-z0-9_]{0,63}`. Stream byte counts are integers
-capped at 1,048,576; a larger stream stores the cap and makes the record
-partial with `cap_exceeded`. Bodies are parsed only in bounded memory and
-discarded immediately.
+`[a-z][a-z0-9_]{0,63}`. Stream byte counts are integers capped at 1,048,576.
+A larger stderr stores the cap and makes the record partial with
+`cap_exceeded`. A larger stdout does the same only when the complete JSON
+envelope ends within the retained prefix and every discarded byte is JSON
+whitespace. Otherwise the bounded reader cannot validate the envelope and the
+attempt is excluded with `parse_failed`; it never trusts a truncated object.
+Bodies are parsed only in bounded memory and discarded immediately.
 
 `state_projection.payload` has exactly `before` and `after`, preventing
 separate phase identities. Each state object has exactly:
@@ -1958,6 +1961,27 @@ distinct `(task_slot, positive_review_generation)` pairs first established in
 the interval. Any overlap, unmapped Task, or cross-slot attribution makes the
 affected field `source_drift`, preventing double counting when a bounded arm
 uses multiple Tasks with the same generation number.
+
+The machine-readable owner of those safe codes is the tracked
+`fixtures/m20/m20.4-episode-plan-v1.json` supplement. It binds its exact
+unit/scenario/arm/trial inventory, baseline, authority revision, and base
+M20.2 protocol SHA-256 without changing the receipt-pinned collection
+protocol. Both its raw and canonical SHA-256 digests are fixed by the root
+harness. It contains only task-slot, boundary, and episode codes; it contains
+no request, selector, prompt, path, or other shared raw control material.
+Validation requires every slot and boundary to be referenced, each interval
+to have `start < end`, stored intervals not to overlap, episode IDs to be
+unique, paired arms to have identical ordered episode IDs, and the Handoff
+control to have one episode. Reduced measurement and attestation ID sequences
+must equal the selected plan. The control-bundle validator also receives the
+expected unit/scenario/arm/trial and rejects any inventory mismatch or
+cross-trial bundle substitution.
+
+The M20.4 terminal receipt and M20.5 aggregate retain the exact canonical
+episode-plan digest so later synthesis cannot silently select different
+boundaries. The supplement remains temporary study scaffolding and follows
+the TG-M20.5 retirement lifecycle; the retained receipt preserves the digest
+after removal.
 
 For exact paired comparison, an episode's machine delta vector is ordered as
 `files_after-files_before`, `modules_after-modules_before`,
@@ -2143,18 +2167,26 @@ reduction attempt regardless of whether the candidate record passes
 schema/privacy validation. On failure, the candidate reduced bytes are also
 discarded and only a newly constructed sanitized excluded/failure envelope
 with stable codes and no copied raw value is retained; the raw source is never
-reopened for a second reduction. For a fresh trial, only the two control
-digests survive in the reduced attestation. Reduced M20.2-M20.4 records remain
-under ignored `dist/`
+reopened for a second reduction. Schema-valid reduced records pass the same
+privacy check before the no-rerun journal can persist them; final-corpus
+validation is a second check, not the first privacy boundary. For a fresh
+trial, only the two control digests survive in the reduced attestation.
+Reduced M20.2-M20.4 records remain under ignored `dist/`
 only until TG-M20.5. The project does not claim deletion from
 platform/provider service logs; it guarantees only that raw material is not
 retained in the repository, taskgov state, Viewer, or M20 evidence artifact.
+The root-only M20 collector and reconstruction tools, their dedicated tests,
+and the M20 study protocol fixtures are temporary study scaffolding retained
+through TG-M20.5 and removed by that unit after synthesis. Tracked terminal
+collection receipts remain afterward as no-rerun tombstones and record the
+corpus retirement state; they do not become study evidence or product state.
 
 Existing Task DB rows own normal execution and completion evidence. TG-M20.5
 routes its reviewed aggregate and limitations to one newly indexed
 non-authoritative history document, promotes only durable decisions to the
-active roadmap/plan, and removes the temporary memo and reduced corpus. Study
-evidence never satisfies a current or historical product gate.
+active roadmap/plan, removes the temporary memo and reduced corpus, and retires
+the temporary study scaffolding above. Study evidence never satisfies a
+current or historical product gate.
 
 The design deliberately does not add an `observe` command, configuration,
 telemetry, SQLite table, Viewer field, Skill behavior, Verification Receipt,

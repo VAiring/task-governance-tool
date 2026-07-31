@@ -6,7 +6,9 @@ lightweight tag `v0.10.0` resolve to that commit, and GitHub Release
 `362617903` contains the accepted archive and checksum. TG-M19.0 through
 TG-M19.14, including TG-M19.6A and TG-M19.6B, are complete. TG-M12.3 remains
 independently blocked. The approved operational-baseline sequence is
-TG-M20.1 through TG-M20.5, and TG-M20.1 is the active source-revision unit.
+TG-M20.1 through TG-M20.5. TG-M20.1 is complete at
+`a77afbe0140fef416cceeee529e9ff2c985a8e4d`, and TG-M20.2 is the active
+source-revision unit.
 
 This active roadmap owns approved execution order, verification gates, review
 tiers, and the concise completion index. The project-local Task database owns
@@ -80,6 +82,7 @@ commit-not-required fingerprint is shown instead of inventing a Git commit.
 | TG-M19.12 | `tg_task_d0e8ac1287bd07a4` | `f3f1945916f99e32b66c9bb15d3a673dbff61c5a` | Offline release-contract checker consolidation. |
 | TG-M19.13 | `tg_task_704ecd1d1e2f7552` | `27e7ef08c70c1434b9aac8474b3006dbbc6ec3b8` | Deterministic test lanes and CI event/version policy. |
 | TG-M19.14 | `tg_task_0f76a52915987511` | `43c91d5987b0c35c66f834789aea782e98dcaff7` | Legacy release-vocabulary compatibility and neutral future-operation boundary. |
+| TG-M20.1 | `tg_task_43fd4b96c9ca92a1` | `a77afbe0140fef416cceeee529e9ff2c985a8e4d` | Frozen operational-baseline authority, inventory, privacy boundary, and decision rules. |
 
 Every M19 Task in the completion index above has a satisfied final Tier 2 gate
 and no unresolved High or Medium finding in any recorded generation. Some
@@ -179,12 +182,12 @@ roadmap is preserved by the
 [post-release history capture](history/v0.10.0/post-release/implementation-roadmap.md).
 
 The product baseline under observation is exact commit
-`43c91d5987b0c35c66f834789aea782e98dcaff7`. The eventual TG-M20.1
-completion revision owns the observation contract; it does not replace or
-modify that product baseline. TG-M20 is a one-time repository-development
-study, not taskgov telemetry or a product subsystem. Its evidence is
-non-authoritative and cannot satisfy a Task verification, review, completion,
-release, or product-acceptance gate.
+`43c91d5987b0c35c66f834789aea782e98dcaff7`. TG-M20.1 completion revision
+`a77afbe0140fef416cceeee529e9ff2c985a8e4d` owns the observation contract;
+it does not replace or modify that product baseline. TG-M20 is a one-time
+repository-development study, not taskgov telemetry or a product subsystem.
+Its evidence is non-authoritative and cannot satisfy a Task verification,
+review, completion, release, or product-acceptance gate.
 
 The repository-only schema and collection boundaries are owned by
 [the implementation design](design.md#tg-m20-repository-only-observation-design).
@@ -198,7 +201,8 @@ a public command.
 Task: `tg_task_43fd4b96c9ca92a1`
 Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 10
 Review tier: Tier 2
-Source-revision state: active
+Source-revision state: completed at
+`a77afbe0140fef416cceeee529e9ff2c985a8e4d`
 
 Intended outcome:
 
@@ -228,6 +232,7 @@ Task: `tg_task_2885725486bec173`
 Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 20
 Review tier: Tier 2
 Depends on: completed TG-M20.1
+Source-revision state: active
 
 Intended outcome:
 
@@ -253,6 +258,9 @@ Verification:
   schema, digest preimages, and deletion lifecycle. Exact request, neutral
   clarification, and selector bytes are never persisted as a shared control
   master.
+- Bind every fresh control bundle to its exact frozen unit/scenario/arm/trial.
+  Pin the separate M20.4 episode-plan supplement to the immutable M20.2
+  protocol, authority, and baseline without rewriting collection provenance.
 - Validate the sanitized M19 reconstruction against Task DB and Git, run
   applicable test lanes and diff check, and obtain two exact-target Tier 2
   reviews.
@@ -324,6 +332,9 @@ Verification:
   bounded episode evidence, the Handoff-control state pair, and privacy;
   independently review the classifications and obtain the required
   current-target Tier 1 review.
+- Bind every M20.4 terminal receipt and later aggregate to the exact pinned
+  episode-plan digest, and require reduced measurement and attestation episode
+  IDs to match that plan.
 - Immediately before launch, independently review each exact ephemeral control
   bundle and its digest; paired arms share the same workload digest, and no raw
   control bytes survive the design-defined boundary.
@@ -347,6 +358,9 @@ Write scope:
 
 - sanitized M20 evidence, aggregate analysis, a non-authoritative history
   capture, and only the durable decisions that survive in active roadmap/plan;
+- retirement of the root-only M20 collector and reconstruction tools, their
+  dedicated tests, and the M20 study protocol fixtures after synthesis, while
+  retaining tracked terminal collection receipts as no-rerun tombstones;
 - no chosen solution implementation and no follow-up implementation Task
   registration without current explicit user approval.
 
@@ -358,8 +372,9 @@ Verification:
 - Confirm each trial's raw material and ephemeral control bundle were removed
   immediately after its single reduction attempt regardless of validation
   result and that no shared control master exists. Then delete the ignored
-  `dist/M20_TEMPORARY_CONTEXT.md` and reduced corpus after reviewed decisions
-  have been routed.
+  `dist/M20_TEMPORARY_CONTEXT.md` and reduced corpus, retire the temporary M20
+  study scaffolding named above, and mark the retained terminal receipts with
+  the corpus retirement state after reviewed decisions have been routed.
 
 ## Roadmap Completion Criteria
 

@@ -6,7 +6,8 @@ lightweight tag `v0.10.0` resolve to that commit. GitHub Release
 `362617903` has prerelease visibility and contains the accepted archive and
 checksum. TG-M19.0 through TG-M19.10, including TG-M19.6A and TG-M19.6B, are
 complete. TG-M19.11 through TG-M19.14 are also complete. TG-M20.1 through
-TG-M20.5 form the approved operational-baseline sequence, and TG-M20.1 is
+TG-M20.5 form the approved operational-baseline sequence. TG-M20.1 is
+complete at `a77afbe0140fef416cceeee529e9ff2c985a8e4d`, and TG-M20.2 is
 active. TG-M12.3 remains separately blocked.
 
 This file owns current decisions, explicit open issues, and user-decision

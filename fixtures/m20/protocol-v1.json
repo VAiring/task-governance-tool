@@ -1,0 +1,377 @@
+{
+  "schema": "m20-repository-protocol-v1",
+  "authority": {
+    "contract_id": "TG-M20-OPERATIONAL-BASELINE",
+    "contract_revision": 1,
+    "baseline_revision": "43c91d5987b0c35c66f834789aea782e98dcaff7",
+    "authority_revision": "a77afbe0140fef416cceeee529e9ff2c985a8e4d"
+  },
+  "canonical_json": {
+    "encoding": "utf-8",
+    "ensure_ascii": false,
+    "sort_keys": true,
+    "separators": [
+      ",",
+      ":"
+    ],
+    "trailing_newline": false,
+    "surrogates": "reject"
+  },
+  "bounds": {
+    "record_bytes": 32768,
+    "unit_corpus_bytes": 262144,
+    "unit_record_counts": {
+      "M20.2": 46,
+      "M20.3": 9,
+      "M20.4": 19
+    }
+  },
+  "failure_policy": {
+    "non_cap_invalid": "fail_without_corpus",
+    "invalid_state_read": "exclude_attempt",
+    "legacy_history_incomplete": "partial_completion_cycles_and_reopens",
+    "replay": "reduction_only",
+    "started_attempt": "never_rerun"
+  },
+  "m20_2": {
+    "corpus_path": "dist/m20/m20.2-observations.json",
+    "journal_path": "dist/m20/m20.2-attempt-journal.json",
+    "lock_path": "dist/m20/m20.2-collector.lock",
+    "receipt_path": "fixtures/m20/m20.2-collection-receipt.json",
+    "receipt_lifecycle": "retain_closed_tombstone_after_m20_5",
+    "harness_scenarios": [
+      {
+        "scenario_id": "gov_tier1_commitless",
+        "arm": "harness",
+        "trial_id": "gov_tier1_commitless.harness.01",
+        "operations": [
+          ["setup", "setup"],
+          ["execute", "task.add"],
+          ["diagnose", "task.show"],
+          ["review", "review.target.set"],
+          ["review", "review.receipt.add"],
+          ["complete", "task.complete"],
+          ["complete", "task.complete"],
+          ["diagnose", "task.show"]
+        ],
+        "before": {
+          "task_status": "in_progress",
+          "contract_revision": 1,
+          "review_generation": 0,
+          "receipts_current": 0,
+          "qualifying_passes": 0,
+          "completion_cycles": 0,
+          "verification_attestation": null,
+          "verification_detail": "absent"
+        },
+        "after": {
+          "task_status": "done",
+          "contract_revision": 1,
+          "review_generation": 1,
+          "receipts_current": 1,
+          "qualifying_passes": 1,
+          "completion_cycles": 1,
+          "verification_attestation": true,
+          "verification_detail": "absent"
+        }
+      },
+      {
+        "scenario_id": "gov_tier2_snapshot",
+        "arm": "harness",
+        "trial_id": "gov_tier2_snapshot.harness.01",
+        "operations": [
+          ["setup", "setup"],
+          ["execute", "task.add"],
+          ["diagnose", "task.show"],
+          ["review", "review.target.set"],
+          ["review", "review.receipt.add"],
+          ["review", "review.receipt.add"],
+          ["complete", "task.complete"],
+          ["complete", "task.complete"],
+          ["diagnose", "task.show"]
+        ],
+        "before": {
+          "task_status": "in_progress",
+          "contract_revision": 1,
+          "review_generation": 0,
+          "receipts_current": 0,
+          "qualifying_passes": 0,
+          "completion_cycles": 0,
+          "verification_attestation": null,
+          "verification_detail": "absent"
+        },
+        "after": {
+          "task_status": "done",
+          "contract_revision": 1,
+          "review_generation": 1,
+          "receipts_current": 2,
+          "qualifying_passes": 2,
+          "completion_cycles": 1,
+          "verification_attestation": true,
+          "verification_detail": "absent"
+        }
+      },
+      {
+        "scenario_id": "gov_pause_resume",
+        "arm": "harness",
+        "trial_id": "gov_pause_resume.harness.01",
+        "operations": [
+          ["setup", "setup"],
+          ["execute", "task.add"],
+          ["execute", "task.edit"],
+          ["diagnose", "task.show"],
+          ["activate", "task.edit"],
+          ["diagnose", "task.show"]
+        ],
+        "before": {
+          "task_status": "paused",
+          "contract_revision": 1,
+          "review_generation": 0,
+          "completion_cycles": 0,
+          "verification_attestation": null,
+          "verification_detail": "absent"
+        },
+        "after": {
+          "task_status": "in_progress",
+          "contract_revision": 1,
+          "review_generation": 0,
+          "completion_cycles": 0,
+          "verification_attestation": null,
+          "verification_detail": "absent"
+        }
+      },
+      {
+        "scenario_id": "gov_handoff_continue",
+        "arm": "harness",
+        "trial_id": "gov_handoff_continue.harness.01",
+        "operations": [
+          ["setup", "setup"],
+          ["execute", "task.add"],
+          ["diagnose", "task.show"],
+          ["execute", "handoff.record"],
+          ["execute", "task.edit"],
+          ["diagnose", "task.show"]
+        ],
+        "before": {
+          "task_status": "in_progress",
+          "contract_revision": 1,
+          "handoffs_pending": 0,
+          "completion_cycles": 0,
+          "verification_attestation": null,
+          "verification_detail": "absent"
+        },
+        "after": {
+          "task_status": "in_progress",
+          "contract_revision": 1,
+          "handoffs_pending": 1,
+          "completion_cycles": 0,
+          "verification_attestation": null,
+          "verification_detail": "absent"
+        }
+      },
+      {
+        "scenario_id": "gov_reopen_rereview",
+        "arm": "harness",
+        "trial_id": "gov_reopen_rereview.harness.01",
+        "operations": [
+          ["setup", "setup"],
+          ["execute", "task.add"],
+          ["review", "review.target.set"],
+          ["review", "review.receipt.add"],
+          ["complete", "task.complete"],
+          ["complete", "task.complete"],
+          ["diagnose", "task.show"],
+          ["activate", "task.edit"],
+          ["review", "review.target.set"],
+          ["review", "review.receipt.add"],
+          ["complete", "task.complete"],
+          ["complete", "task.complete"],
+          ["diagnose", "task.show"]
+        ],
+        "before": {
+          "task_status": "done",
+          "contract_revision": 1,
+          "review_generation": 1,
+          "receipts_current": 1,
+          "qualifying_passes": 1,
+          "completion_cycles": 1,
+          "verification_attestation": true,
+          "verification_detail": "absent"
+        },
+        "after": {
+          "task_status": "done",
+          "contract_revision": 1,
+          "review_generation": 3,
+          "receipts_current": 1,
+          "qualifying_passes": 1,
+          "completion_cycles": 2,
+          "verification_attestation": true,
+          "verification_detail": "absent"
+        }
+      }
+    ],
+    "retrospective_cohorts": [
+      {
+        "scenario_id": "m19_preparation_reconstruction",
+        "tasks": [
+          ["TG-M19.0", "tg_task_2b95de205e3f92e3", "1ac8c001073b1a4cb29e9de3f0281d8ff2d9aca1", "completion_revision"],
+          ["TG-M19.1", "tg_task_ba59e260cc2c58a6", "cbf75372617e90ca0b54746ae27f24a4e67cb292", "completion_revision"],
+          ["TG-M19.2", "tg_task_20fd398141755a65", "2af0382c54615640fbd8475a59f374b1b71804c4", "completion_revision"],
+          ["TG-M19.3", "tg_task_b71ac20177aae41a", "4040e923cfdbd8b3f65d8883187a57578d64c092", "completion_revision"],
+          ["TG-M19.4", "tg_task_7cc967fc224440cb", "639bc74adfd1f5e15996d1416bd064f1b9303edc", "completion_revision"],
+          ["TG-M19.5", "tg_task_bd93525dc71f4dcd", "fe9fdafd207cab9d0966785f4b340fe3224397fa", "completion_revision"]
+        ]
+      },
+      {
+        "scenario_id": "m19_publication_reconstruction",
+        "tasks": [
+          ["TG-M19.6A", "tg_task_2fc57c401dd2855d", "5ce64e1eae239d78e185d68349784cfe0c069f00", "completion_revision"],
+          ["TG-M19.6B", "tg_task_cacf382b827c58d5", "a9b80ce177a6dead10d51a070b76ff01f7af0294", "completion_revision"],
+          ["TG-M19.6", "tg_task_67a3f3e73b913bfb", "a9b80ce177a6dead10d51a070b76ff01f7af0294", "completion_revision"],
+          ["TG-M19.7", "tg_task_5b8796de20a32d39", "github-actions-run:VAiring/task-governance-tool:30561916953:1", "completion_revision"],
+          ["TG-M19.8", "tg_task_79791addafcf0e00", "a9b80ce177a6dead10d51a070b76ff01f7af0294", "completion_revision"],
+          ["TG-M19.9", "tg_task_418792bf98f211af", "sha256:ed79ea10ff9e07dd44f86c6ef9e3979bd296c1fc731b06148d2f01f70ae763ac", "review_target"],
+          ["TG-M19.10", "tg_task_9807bdc4ddc5ba37", "github-release:VAiring/task-governance-tool:362617903", "completion_revision"]
+        ]
+      },
+      {
+        "scenario_id": "m19_postrelease_reconstruction",
+        "tasks": [
+          ["TG-M19.11", "tg_task_e452e6eb7dcf0e08", "f5d7ed4706eac41c422690f16e5791893fdb1989", "completion_revision"],
+          ["TG-M19.12", "tg_task_d0e8ac1287bd07a4", "f3f1945916f99e32b66c9bb15d3a673dbff61c5a", "completion_revision"],
+          ["TG-M19.13", "tg_task_704ecd1d1e2f7552", "27e7ef08c70c1434b9aac8474b3006dbbc6ec3b8", "completion_revision"],
+          ["TG-M19.14", "tg_task_0f76a52915987511", "43c91d5987b0c35c66f834789aea782e98dcaff7", "completion_revision"]
+        ]
+      }
+    ]
+  },
+  "inventory": [
+    ["M20.2", "gov_tier1_commitless", "gov_tier1_commitless.harness.01", "machine_observed", "cli_invocation", "cli"],
+    ["M20.2", "gov_tier1_commitless", "gov_tier1_commitless.harness.01", "machine_observed", "state_projection", "state_pair"],
+    ["M20.2", "gov_tier2_snapshot", "gov_tier2_snapshot.harness.01", "machine_observed", "cli_invocation", "cli"],
+    ["M20.2", "gov_tier2_snapshot", "gov_tier2_snapshot.harness.01", "machine_observed", "state_projection", "state_pair"],
+    ["M20.2", "gov_pause_resume", "gov_pause_resume.harness.01", "machine_observed", "cli_invocation", "cli"],
+    ["M20.2", "gov_pause_resume", "gov_pause_resume.harness.01", "machine_observed", "state_projection", "state_pair"],
+    ["M20.2", "gov_handoff_continue", "gov_handoff_continue.harness.01", "machine_observed", "cli_invocation", "cli"],
+    ["M20.2", "gov_handoff_continue", "gov_handoff_continue.harness.01", "machine_observed", "state_projection", "state_pair"],
+    ["M20.2", "gov_reopen_rereview", "gov_reopen_rereview.harness.01", "machine_observed", "cli_invocation", "cli"],
+    ["M20.2", "gov_reopen_rereview", "gov_reopen_rereview.harness.01", "machine_observed", "state_projection", "state_pair"],
+    ["M20.3", "vp_cli_contract", "vp_cli_contract.baseline.01", "machine_observed", "state_projection", "state_pair"],
+    ["M20.3", "vp_cli_contract", "vp_cli_contract.baseline.01", "machine_observed", "trial_measurement", "verification_measurement"],
+    ["M20.3", "vp_cli_contract", "vp_cli_contract.baseline.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.3", "vp_state_transition", "vp_state_transition.baseline.01", "machine_observed", "state_projection", "state_pair"],
+    ["M20.3", "vp_state_transition", "vp_state_transition.baseline.01", "machine_observed", "trial_measurement", "verification_measurement"],
+    ["M20.3", "vp_state_transition", "vp_state_transition.baseline.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.3", "vp_release_contract", "vp_release_contract.baseline.01", "machine_observed", "state_projection", "state_pair"],
+    ["M20.3", "vp_release_contract", "vp_release_contract.baseline.01", "machine_observed", "trial_measurement", "verification_measurement"],
+    ["M20.3", "vp_release_contract", "vp_release_contract.baseline.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.4", "sp_multi_outcome_intake", "sp_multi_outcome_intake.broad.01", "machine_observed", "trial_measurement", "split_measurement"],
+    ["M20.4", "sp_multi_outcome_intake", "sp_multi_outcome_intake.broad.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.4", "sp_multi_outcome_intake", "sp_multi_outcome_intake.bounded.01", "machine_observed", "trial_measurement", "split_measurement"],
+    ["M20.4", "sp_multi_outcome_intake", "sp_multi_outcome_intake.bounded.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.4", "sp_in_scope_discovery", "sp_in_scope_discovery.broad.01", "machine_observed", "trial_measurement", "split_measurement"],
+    ["M20.4", "sp_in_scope_discovery", "sp_in_scope_discovery.broad.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.4", "sp_in_scope_discovery", "sp_in_scope_discovery.bounded.01", "machine_observed", "trial_measurement", "split_measurement"],
+    ["M20.4", "sp_in_scope_discovery", "sp_in_scope_discovery.bounded.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.4", "sp_user_expansion", "sp_user_expansion.broad.01", "machine_observed", "trial_measurement", "split_measurement"],
+    ["M20.4", "sp_user_expansion", "sp_user_expansion.broad.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.4", "sp_user_expansion", "sp_user_expansion.bounded.01", "machine_observed", "trial_measurement", "split_measurement"],
+    ["M20.4", "sp_user_expansion", "sp_user_expansion.bounded.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.4", "sp_cross_module_failure", "sp_cross_module_failure.broad.01", "machine_observed", "trial_measurement", "split_measurement"],
+    ["M20.4", "sp_cross_module_failure", "sp_cross_module_failure.broad.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.4", "sp_cross_module_failure", "sp_cross_module_failure.bounded.01", "machine_observed", "trial_measurement", "split_measurement"],
+    ["M20.4", "sp_cross_module_failure", "sp_cross_module_failure.bounded.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.4", "sp_handoff_control", "sp_handoff_control.broad.01", "machine_observed", "trial_measurement", "split_measurement"],
+    ["M20.4", "sp_handoff_control", "sp_handoff_control.broad.01", "observer_attested", "fresh_agent_trial", "attestation"],
+    ["M20.4", "sp_handoff_control", "sp_handoff_control.broad.01", "machine_observed", "state_projection", "state_pair"]
+  ],
+  "retrospective_metrics": [
+    "completion_cycles",
+    "reopens",
+    "contract_revisions",
+    "review_receipts",
+    "changes_requested_receipts",
+    "findings_open_high",
+    "findings_open_medium",
+    "findings_open_low",
+    "handoffs_pending",
+    "handoffs_delivered",
+    "handoffs_withdrawn",
+    "git_wall_clock_span_ms"
+  ],
+  "control_bundle": {
+    "exact_keys": [
+      "workload",
+      "delivered_request",
+      "neutral_clarification",
+      "reducer_manifest"
+    ],
+    "canonicalization": "canonical_json",
+    "workload_digest_preimage": "exact_utf8_workload_bytes",
+    "control_digest_preimage": "canonical_bundle_utf8_bytes",
+    "paired_comparison": "workload_digest_before_launch",
+    "deletion": "independent_per_arm_after_one_reduction_attempt",
+    "max_bundle_bytes": 262144,
+    "max_workload_bytes": 65536,
+    "max_delivered_request_bytes": 65536,
+    "max_neutral_clarification_bytes": 16384
+  },
+  "reducer_manifest": {
+    "schema": "m20-reducer-manifest-v1",
+    "exact_keys": [
+      "schema",
+      "scenario_id",
+      "arm",
+      "owner_slots",
+      "contract_probes",
+      "inventory_probes",
+      "maintenance_selectors",
+      "fixture_probes",
+      "verification_labels",
+      "target_change"
+    ],
+    "max_entries_per_list": 64,
+    "max_selector_bytes": 240,
+    "max_probe_bytes": 4096,
+    "max_target_change_bytes": 16384,
+    "list_shapes": {
+      "contract_probes": [
+        "probe_id",
+        "owner_slot",
+        "selector",
+        "needle_lf"
+      ],
+      "fixture_probes": [
+        "probe_id",
+        "selector",
+        "qualified_name"
+      ],
+      "inventory_probes": [
+        "probe_id",
+        "owner_slot",
+        "selector",
+        "needle_lf"
+      ],
+      "maintenance_selectors": [
+        "owner_slot",
+        "selector"
+      ],
+      "verification_labels": [
+        "label",
+        "kind"
+      ]
+    },
+    "target_change_keys": [
+      "selector",
+      "before_lf",
+      "after_lf",
+      "verification_label"
+    ],
+    "verification_kinds": [
+      "focused",
+      "lane",
+      "all",
+      "other"
+    ]
+  }
+}

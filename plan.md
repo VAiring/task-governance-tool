@@ -6,9 +6,8 @@ lightweight tag `v0.10.0` resolve to that commit. GitHub Release
 `362617903` has prerelease visibility and contains the accepted archive and
 checksum. TG-M19.0 through TG-M19.10, including TG-M19.6A and TG-M19.6B, are
 complete. TG-M19.11 through TG-M19.14 form the approved post-release
-correctness sequence. TG-M19.11 and TG-M19.12 are complete, TG-M19.13 is
-active, and TG-M19.14 remains approved next. TG-M12.3 remains separately
-blocked.
+correctness sequence. TG-M19.11 through TG-M19.13 are complete, and TG-M19.14
+is active. TG-M12.3 remains separately blocked.
 
 This file owns current decisions, explicit open issues, and user-decision
 gates. It is not the product contract, execution ledger, or evidence store:
@@ -122,6 +121,21 @@ gates. It is not the product contract, execution ledger, or evidence store:
   policy validation and both full-version jobs. This repository CI policy
   grants no push, dispatch, tag, Release, or other external mutation
   authority.
+
+### Release Vocabulary And Legacy Read Boundary
+
+- New caller input uses `operation_sequence=<positive canonical integer>` only
+  as neutral correlation or idempotency evidence. It never grants authority,
+  and current approval for an external operation remains separate.
+- Exact stored TG-M19.7 `dispatch_authorization` counter forms remain readable
+  only in legacy Contract constraints and checkpoint summaries. The reader
+  preserves their original bytes and grants no write, dispatch, or other
+  authority; all new input and completion-history public text use the normal
+  strict privacy boundary.
+- Omitting constraints during an otherwise valid Contract revision continues
+  to carry forward the already-validated prior constraints bytes, including
+  bounded legacy lineage. This is preservation, not acceptance of caller-
+  supplied legacy vocabulary.
 
 ## Current Blocker And User Decision
 

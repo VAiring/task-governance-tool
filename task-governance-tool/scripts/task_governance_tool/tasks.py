@@ -145,10 +145,13 @@ KNOWN_ENV_NAME_PATTERN = (
 )
 ENV_NAME_PATTERN = rf"(?:{UPPER_ENV_NAME_PATTERN}|{KNOWN_ENV_NAME_PATTERN})"
 
-SAFE_DISPATCH_AUTHORIZATION_COUNTER_PATTERN = re.compile(
+LEGACY_M19_7_DISPATCH_ASSIGNMENT_PATTERN = re.compile(
     r"(?<![^\s`])dispatch_authorization=[1-9][0-9]*(?=$|[\s`;,)\]])"
 )
-SAFE_DISPATCH_AUTHORIZATION_COUNTER_SENTINEL = "taskgov_dispatch_counter"
+LEGACY_M19_7_DISPATCH_JSON_PATTERN = re.compile(
+    r'"dispatch_authorization"\s*:\s*[1-9][0-9]*(?=\s*(?:$|[,}]))'
+)
+LEGACY_M19_7_DISPATCH_SENTINEL = "taskgov_legacy_operation_sequence"
 
 PRIVACY_PATTERNS = (
     re.compile(r"Authorization\s*[:=]\s*\S+", re.IGNORECASE),
@@ -157,6 +160,10 @@ PRIVACY_PATTERNS = (
     re.compile(r"\b(Set-)?Cookie\s*:", re.IGNORECASE),
     re.compile(
         r"\b[A-Z0-9_.-]*(Password|Passwd|Pwd|Token|Secret|Cookie|Credential|Credentials|Api[-_]?Key|ApiKey|Access[-_]?Key|AccessKey|Private[-_]?Key|PrivateKey)[A-Z0-9_.-]*\s*[:=]\s*\S+",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"[\"'][A-Z0-9_.-]*dispatch_authorization[A-Z0-9_.-]*[\"']\s*:",
         re.IGNORECASE,
     ),
     re.compile(
@@ -387,11 +394,7 @@ def ensure_string(field: str, value: Any, *, default: str = "") -> str:
     return value
 
 
-def reject_private_or_raw_content(field: str, value: str) -> None:
-    guard_value = SAFE_DISPATCH_AUTHORIZATION_COUNTER_PATTERN.sub(
-        SAFE_DISPATCH_AUTHORIZATION_COUNTER_SENTINEL,
-        value,
-    )
+def _reject_private_or_raw_content_value(field: str, guard_value: str) -> None:
     for pattern in PRIVACY_PATTERNS:
         if pattern.search(guard_value):
             raise validation_error(
@@ -409,6 +412,21 @@ def reject_private_or_raw_content(field: str, value: str) -> None:
             f"{field} appears to contain a secret, raw log, or dump content",
             field,
         )
+
+
+def reject_private_or_raw_content(field: str, value: str) -> None:
+    _reject_private_or_raw_content_value(field, value)
+
+
+def _legacy_m19_7_stored_guard_value(value: str) -> str:
+    guard_value = LEGACY_M19_7_DISPATCH_ASSIGNMENT_PATTERN.sub(
+        LEGACY_M19_7_DISPATCH_SENTINEL,
+        value,
+    )
+    return LEGACY_M19_7_DISPATCH_JSON_PATTERN.sub(
+        f'"{LEGACY_M19_7_DISPATCH_SENTINEL}":1',
+        guard_value,
+    )
 
 
 def contains_basic_auth_value(value: str) -> bool:
@@ -455,6 +473,35 @@ def contains_raw_output_value(field: str, value: str) -> bool:
     return False
 
 
+def _validate_text(
+    field: str,
+    value: Any,
+    *,
+    required: bool = False,
+    limit: int | None = None,
+    default: str = "",
+    legacy_m19_7_stored: bool = False,
+) -> str:
+    text = ensure_string(field, value, default=default)
+    if required:
+        text = text.strip()
+        if not text:
+            raise validation_error("invalid_argument", f"{field} is required", field)
+    guard_value = (
+        _legacy_m19_7_stored_guard_value(text)
+        if legacy_m19_7_stored
+        else text
+    )
+    _reject_private_or_raw_content_value(field, guard_value)
+    if limit is not None and len(text) > limit:
+        raise validation_error(
+            "invalid_argument",
+            f"{field} must be {limit} characters or fewer",
+            field,
+        )
+    return text
+
+
 def validate_text(
     field: str,
     value: Any,
@@ -463,19 +510,33 @@ def validate_text(
     limit: int | None = None,
     default: str = "",
 ) -> str:
-    text = ensure_string(field, value, default=default)
-    if required:
-        text = text.strip()
-        if not text:
-            raise validation_error("invalid_argument", f"{field} is required", field)
-    reject_private_or_raw_content(field, text)
-    if limit is not None and len(text) > limit:
-        raise validation_error(
-            "invalid_argument",
-            f"{field} must be {limit} characters or fewer",
-            field,
-        )
-    return text
+    return _validate_text(
+        field,
+        value,
+        required=required,
+        limit=limit,
+        default=default,
+    )
+
+
+def validate_legacy_m19_7_stored_text(
+    field: str,
+    value: Any,
+    *,
+    required: bool = False,
+    limit: int | None = None,
+    default: str = "",
+) -> str:
+    """Validate one already-stored M19.7 text field without changing bytes."""
+
+    return _validate_text(
+        field,
+        value,
+        required=required,
+        limit=limit,
+        default=default,
+        legacy_m19_7_stored=True,
+    )
 
 
 def validate_choice(field: str, value: Any, allowed: tuple[str, ...], code: str) -> str:

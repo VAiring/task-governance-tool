@@ -349,6 +349,20 @@ Contracts, checkpoints, and bounded maintenance facts. It does not store raw
 stdout/stderr, stack traces, environment dumps, full prompts or conversations,
 authorization material, large raw diffs, or raw review transcripts.
 
+New task input strictly rejects both `dispatch_authorization=<value>` and the
+JSON key `"dispatch_authorization":<value>`. For future external-operation
+records, use `operation_sequence=<positive canonical integer>` only as
+correlation or idempotency evidence; it never grants permission to dispatch,
+push, publish, or perform another external action.
+
+One read-only compatibility seam preserves the original bytes of already
+stored M19.7 Contract constraints and checkpoint summaries. It creates no
+write or authority. Omitted Contract constraints retain already-validated
+prior bytes under the existing carry-forward rule, while explicit new
+constraints use the strict input guard. Completion-history public text has no
+legacy exception and is strictly revalidated before `task show` or Viewer
+output.
+
 It is local-first and uses no network service. It does not mutate target-project
 files or Git state, run project-specific verification automatically, or create
 external Issues/PRs. SQLite remains helper state; governing project documents
@@ -395,6 +409,9 @@ CI consumes the same repository-only policy:
 
 The manual matrix is the complete future release-candidate gate; its aggregate
 job fails unless policy validation and both full-version jobs succeed.
+An `operation_sequence` value may correlate separately authorized candidate
+work, but neither that value nor a successful gate authorizes workflow
+dispatch, push, tag, or publication.
 
 The repository-only release checker is offline and read-only. It derives the
 CLI leaves and runtime release versions from their owning Python modules, uses

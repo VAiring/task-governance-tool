@@ -369,6 +369,20 @@ class CheckpointRepositoryTests(unittest.TestCase):
                 "field": "summary",
             },
             {
+                "summary": "dispatch_authorization=1",
+                "next_action": "continue",
+                "unresolved_risks": None,
+                "field": "summary",
+                "code": "privacy_rejected",
+            },
+            {
+                "summary": '{"dispatch_authorization":3}',
+                "next_action": "continue",
+                "unresolved_risks": None,
+                "field": "summary",
+                "code": "privacy_rejected",
+            },
+            {
                 "summary": "raw stdout: build completed",
                 "next_action": "continue",
                 "unresolved_risks": None,
@@ -399,11 +413,25 @@ class CheckpointRepositoryTests(unittest.TestCase):
                         unresolved_risks=case["unresolved_risks"],
                     )
                 self.assertEqual(raised.exception.field, case["field"])
+                if "code" in case:
+                    self.assertEqual(raised.exception.code, case["code"])
                 self.assertFalse(connection.in_transaction)
         self.assertEqual(
             connection.execute("SELECT COUNT(*) FROM task_checkpoints").fetchone()[0],
             0,
         )
+
+        neutral_summary = "operation_sequence=1"
+        neutral = record_checkpoint(
+            connection,
+            self.project,
+            "tg_task_checkpoint",
+            summary=neutral_summary,
+            next_action="continue",
+        )
+        connection.commit()
+        self.assertTrue(neutral.created)
+        self.assertEqual(neutral.checkpoint["summary"], neutral_summary)
 
         boundary = record_checkpoint(
             connection,

@@ -210,6 +210,15 @@ canonically unchanged Contract is a write-free replay. A semantic revision
 invalidates current completion/review eligibility so fresh gates apply without
 another scope question.
 
+Any explicitly supplied constraints use strict normal privacy validation.
+Omitting later constraints preserves the already-validated prior bytes,
+including bounded M19.7 legacy lineage; that carry-forward is not acceptance
+of caller-supplied legacy vocabulary and grants no authority. For future
+external-operation intent or evidence, use
+`operation_sequence=<positive canonical integer>` only as correlation or
+idempotency metadata. Current explicit authority for the operation remains
+separate.
+
 ## Optional Effort Advisory
 
 The default JSON `task show` result always supplies
@@ -250,6 +259,9 @@ A checkpoint is optional. Never require it for pause, resume, review, or
 completion. It does not change task status, selection, gates, or
 `tasks.updated_at`. Default `task current` and `task show` expose only the
 latest checkpoint; compact selection intentionally omits its content.
+New checkpoint content uses strict normal privacy validation. The bounded
+legacy reader exists only to return an already-stored M19.7 checkpoint summary
+unchanged; it creates no Task or external-operation authority.
 
 ## Pause, Resume, And Block
 
@@ -448,6 +460,10 @@ lane/order fields and return them.
 - Keep secrets, tokens, authorization data, raw stdout/stderr, stack traces,
   environment dumps, private prompts/reasoning, full chats/reviews, and large
   diffs out of local task inputs.
+- Do not submit `dispatch_authorization=<value>` or a
+  `"dispatch_authorization":<value>` JSON key. Both are rejected for new
+  input. Use neutral `operation_sequence` only as non-authorizing correlation
+  or idempotency evidence.
 - Use concise summaries, reasons, notes, checkpoints, findings, and receipts.
 - Do not let inspection authorize target-file, Git, Issue, PR, network, or
   external-service mutation.

@@ -6,8 +6,8 @@ lightweight tag `v0.10.0` resolve to that commit, and GitHub Release
 `362617903` contains the accepted archive and checksum. TG-M19.0 through
 TG-M19.10, including TG-M19.6A and TG-M19.6B, are complete. The approved
 post-release sequence is TG-M19.11 through TG-M19.14. TG-M12.3 remains
-independently blocked. TG-M19.11 and TG-M19.12 are complete; TG-M19.13 is the
-active source-revision unit.
+independently blocked. TG-M19.11 through TG-M19.13 are complete; TG-M19.14 is
+the active source-revision unit.
 
 This active roadmap owns approved execution order, verification gates, review
 tiers, and the concise completion index. The project-local Task database owns
@@ -79,6 +79,7 @@ commit-not-required fingerprint is shown instead of inventing a Git commit.
 | TG-M19.10 | `tg_task_9807bdc4ddc5ba37` | `github-release:VAiring/task-governance-tool:362617903` | Lightweight tag and GitHub prerelease publication. |
 | TG-M19.11 | `tg_task_e452e6eb7dcf0e08` | `f5d7ed4706eac41c422690f16e5791893fdb1989` | Post-release active-authority and history reconciliation. |
 | TG-M19.12 | `tg_task_d0e8ac1287bd07a4` | `f3f1945916f99e32b66c9bb15d3a673dbff61c5a` | Offline release-contract checker consolidation. |
+| TG-M19.13 | `tg_task_704ecd1d1e2f7552` | `27e7ef08c70c1434b9aac8474b3006dbbc6ec3b8` | Deterministic test lanes and CI event/version policy. |
 
 Every M19 Task in the completion index above has a satisfied final Tier 2 gate
 and no unresolved High or Medium finding in any recorded generation. Some
@@ -244,7 +245,8 @@ Verification:
 Task: `tg_task_704ecd1d1e2f7552`
 Lane/order: `TG-M19-RELEASE-CORRECTNESS` / 140
 Review tier: Tier 2
-Source-revision state: active
+Source-revision state: complete at
+`27e7ef08c70c1434b9aac8474b3006dbbc6ec3b8`
 
 Intended outcome:
 
@@ -276,7 +278,7 @@ Verification:
 Task: `tg_task_0f76a52915987511`
 Lane/order: `TG-M19-RELEASE-CORRECTNESS` / 150
 Review tier: Tier 2
-Source-revision state: approved, pending TG-M19.13
+Source-revision state: active
 
 Intended outcome:
 

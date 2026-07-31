@@ -304,13 +304,13 @@ class TaskContractCliTests(unittest.TestCase):
                     0,
                 )
 
-    def test_m19_7_dispatch_authorization_constraint_is_not_a_header(self):
+    def test_new_contract_rejects_legacy_counter_and_accepts_neutral_sequence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
             init_db(db, repo)
-            constraints = (
+            legacy_constraints = (
                 "Required user approval:\n"
                 "- The initial approval names `dispatch_authorization=1`; "
                 "every later fresh dispatch approval increments it by exactly one.\n"
@@ -318,7 +318,7 @@ class TaskContractCliTests(unittest.TestCase):
                 '{"dispatch_authorization":1,"schema":"m19.7-approval-v1"}'
             )
 
-            result, payload = add_task(
+            rejected, rejected_payload = add_task(
                 db,
                 repo,
                 "M19.7 contract",
@@ -327,13 +327,45 @@ class TaskContractCliTests(unittest.TestCase):
                 "--contract-acceptance",
                 "The exact candidate CI run passes.",
                 "--contract-constraints",
-                constraints,
+                legacy_constraints,
+            )
+            self.assertEqual(rejected.returncode, 1)
+            self.assertEqual(
+                rejected_payload["errors"][0]["code"],
+                "privacy_rejected",
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM tasks"
+                    ).fetchone()[0],
+                    0,
+                )
+
+            neutral_constraints = (
+                "Current user approval remains separate from stored evidence.\n"
+                "The release operation uses operation_sequence=1 only for "
+                "correlation and idempotency."
+            )
+            result, payload = add_task(
+                db,
+                repo,
+                "Future release contract",
+                "--contract-scope",
+                "Prepare one bounded future release operation.",
+                "--contract-acceptance",
+                "The approved operation is correlated deterministically.",
+                "--contract-constraints",
+                neutral_constraints,
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
             task_id = payload["data"]["task"]["task_id"]
             _, revisions, _ = durable_contract_state(db, task_id)
-            self.assertEqual(revisions[0]["constraints_text"], constraints)
+            self.assertEqual(
+                revisions[0]["constraints_text"],
+                neutral_constraints,
+            )
             shown_result, shown = json_command(
                 "task",
                 "show",
@@ -344,7 +376,10 @@ class TaskContractCliTests(unittest.TestCase):
                 task_id,
             )
             self.assertEqual(shown_result.returncode, 0, shown_result.stderr)
-            self.assertEqual(shown["data"]["contract"]["constraints"], constraints)
+            self.assertEqual(
+                shown["data"]["contract"]["constraints"],
+                neutral_constraints,
+            )
 
     def test_revision_zero_edit_requires_exact_start_boundary(self):
         with tempfile.TemporaryDirectory() as tmp:

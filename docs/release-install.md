@@ -392,6 +392,15 @@ envelopes expose bounded allow-listed projections only. Completion cycles copy
 only already accepted bounded fields and receipt IDs and never satisfy a
 current gate.
 
+Normal and new input rejects both `dispatch_authorization=<value>` and the JSON
+key `"dispatch_authorization":<value>`. The only compatibility is a read-only,
+original-text projection for already-stored M19.7 Contract constraints and
+checkpoint summaries. Omitted Contract constraints may retain those
+already-validated bytes under the existing carry-forward contract; explicit
+input cannot use the compatibility reader. Completion-history public text has
+no exception and is strictly revalidated before `task show` or Viewer output.
+None of these read boundaries changes SQLite schema or authorizes a write.
+
 SQLite is helper state, not authority over project decisions. The target
 project's governing documents and current user decisions remain authoritative.
 
@@ -436,6 +445,10 @@ approval object, or historical gate never satisfies a future candidate.
 Pushing, dispatching external CI, changing `main`, creating or changing a tag,
 or publishing a Release always requires separate exact current authorization.
 The completed v0.10.0 approvals authorize no later operation.
+Future intent/evidence may use
+`operation_sequence=<positive canonical integer>` as neutral correlation or
+idempotency metadata, but the sequence is not an approval token and never
+supplies that authorization.
 
 ## Release Summary
 

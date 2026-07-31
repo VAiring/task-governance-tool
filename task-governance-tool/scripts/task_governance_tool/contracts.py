@@ -16,6 +16,7 @@ from task_governance_tool.tasks import (
     bounded_transition_summary,
     create_task_event,
     row_to_task,
+    validate_legacy_m19_7_stored_text,
     validate_sqlite_int64,
     validate_text,
     validation_error,
@@ -92,6 +93,15 @@ def _canonical_text(
         value,
         required=required,
         limit=CONTRACT_LIMITS[field],
+    )
+    return text.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def _canonical_legacy_m19_7_stored_constraints(value: Any) -> str:
+    text = validate_legacy_m19_7_stored_text(
+        "contract_constraints",
+        value,
+        limit=CONTRACT_LIMITS["contract_constraints"],
     )
     return text.replace("\r\n", "\n").replace("\r", "\n").strip()
 
@@ -250,8 +260,7 @@ def _validate_stored_contract(
                 row["acceptance"],
                 required=True,
             ),
-            "constraints_text": _canonical_text(
-                "contract_constraints",
+            "constraints_text": _canonical_legacy_m19_7_stored_constraints(
                 row["constraints_text"],
             ),
             "authority_ref": _validate_authority_ref(

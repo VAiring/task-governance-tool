@@ -532,6 +532,12 @@ audit-only and never satisfy the current verification, review, or completion
 gate. Text output reports only bounded counts and the latest cycle's
 non-content fields.
 
+Stored public completion-evidence and review-target text is strictly
+privacy-revalidated before projection. Completion history has no M19.7
+compatibility exception; rejected or corrupt stored text returns
+`completion_history_inconsistent` without exposing the value. `task show` and
+Viewer use the same bounded projection.
+
 Revision-zero Contract data is:
 
 ```json
@@ -576,6 +582,10 @@ Exact replay of the latest checkpoint for the same Contract revision returns
 
 Checkpoint use is never automatic or required. It does not change task status,
 selection, gates, or `tasks.updated_at`. Done tasks remain immutable.
+Only an already-stored M19.7 checkpoint summary may use the bounded legacy
+numeric `dispatch_authorization` JSON reader. It returns the original summary
+unchanged and authorizes no write or external operation. New checkpoint input
+and every other checkpoint field use strict normal validation.
 
 ### `task edit`
 
@@ -606,6 +616,10 @@ Task Contract activation is allowed only on an exact revision-zero
 Contract-only, require explicit later authority and a reason, invalidate
 current completion/review eligibility, and use immutable successive revisions.
 Canonically unchanged input is a write-free replay.
+Omitted later constraints retain the byte-identical, already-validated prior
+value, including bounded M19.7 legacy lineage; explicit constraints use strict
+normal validation. Carry-forward does not accept caller-supplied legacy
+vocabulary or grant authority.
 
 Only `in_progress|review_pending -> paused` is valid and requires
 `--pause-reason`. Resume explicitly to `in_progress`. Sequential transitions
@@ -961,3 +975,12 @@ environment dumps, private prompts/reasoning, full chats/reviews, or large raw
 diffs. If handoff input is rejected, never repeat, quote, log, store, or
 forward the rejected raw content. Make at most one new attempt using a newly
 written concise sanitized abstraction.
+
+Normal/new input rejects the equality form
+`dispatch_authorization=<value>` and JSON key
+`"dispatch_authorization":<value>`, including numeric values. Use
+`operation_sequence=<positive canonical integer>` for future
+external-operation correlation or idempotency evidence. It is not authority.
+The sole legacy reader is confined to already-stored M19.7 Contract
+constraints and checkpoint summaries, preserves their original text, performs
+no write, and leaves compound credentials or tokens rejected.

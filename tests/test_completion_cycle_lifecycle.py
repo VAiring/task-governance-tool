@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sqlite3
 import sys
@@ -1061,6 +1062,207 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
 
             record_effort.assert_called_once()
             self.assertEqual(database_dump(), before_failure)
+
+    def test_m19_7_legacy_content_is_read_unchanged_without_database_write(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "taskgov.sqlite"
+            repo.mkdir()
+            initialize_taskgov_internal(repo=repo, db=db)
+            external_revision = (
+                "github-actions-run:VAiring/task-governance-tool:"
+                "30561916953:1"
+            )
+            legacy_constraints = (
+                "Required user approval:\n"
+                "- The initial approval names `dispatch_authorization=1`; "
+                "every later fresh dispatch approval increments it by exactly "
+                "one.\n"
+                "Approval:\n"
+                '{"action":"push_and_dispatch","dispatch_authorization":3,'
+                '"schema":"m19.7-approval-v1"}'
+            )
+            legacy_checkpoint_summary = (
+                '{"branch":"codex/project-scoped-install-guidance",'
+                '"branch_head":"a9b80ce177a6dead10d51a070b76ff01f7af0294",'
+                '"dispatch_authorization":3,'
+                '"gen":"tg_gate_c61b9e41063a7767","job":"test",'
+                '"py312":"success","py314":"success",'
+                '"rc":"a9b80ce177a6dead10d51a070b76ff01f7af0294",'
+                '"remote":"origin","repo":"VAiring/task-governance-tool",'
+                '"run_attempt":1,"run_event":"workflow_dispatch",'
+                '"run_head":"a9b80ce177a6dead10d51a070b76ff01f7af0294",'
+                '"run_id":30561916953,"schema":"m19.7-evidence-v1",'
+                '"workflow":".github/workflows/ci.yml",'
+                '"workflow_name":"CI"}'
+            )
+
+            added, added_payload = run_json(
+                "task",
+                "add",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                "--title",
+                "TG-M19.7 legacy read fixture",
+                "--status",
+                "in_progress",
+                "--review-tier",
+                "2",
+                "--contract-scope",
+                "Publish only the accepted candidate.",
+                "--contract-acceptance",
+                "The exact candidate CI run passes.",
+                "--contract-constraints",
+                "Temporary safe fixture content.",
+                "--contract-authority-ref",
+                "roadmap:TG-M19.7",
+                "--json",
+            )
+            self.assertEqual(added.returncode, 0, added.stdout)
+            task_id = added_payload["data"]["task"]["task_id"]
+
+            checkpoint, checkpoint_payload = run_json(
+                "task",
+                "checkpoint",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task_id,
+                "--summary",
+                "Temporary safe checkpoint.",
+                "--next-action",
+                "Bind this evidence, pass both reviews, and complete TG-M19.7.",
+                "--json",
+            )
+            self.assertEqual(checkpoint.returncode, 0, checkpoint.stdout)
+            checkpoint_id = checkpoint_payload["data"]["checkpoint"][
+                "checkpoint_id"
+            ]
+
+            seed_review_evidence(
+                db,
+                task_id,
+                target_kind="external_revision",
+                target_value=external_revision,
+            )
+            completed, _ = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    task_id,
+                    command="task.complete",
+                    kind="external_revision",
+                    revision=external_revision,
+                    reason=(
+                        "Exact approved candidate-branch CI run is the durable "
+                        "external revision."
+                    ),
+                )
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    """
+                    UPDATE task_contract_revisions
+                       SET constraints_text = ?
+                     WHERE task_id = ? AND revision = 1
+                    """,
+                    (legacy_constraints, task_id),
+                )
+                connection.execute(
+                    """
+                    UPDATE task_checkpoints
+                       SET summary = ?
+                     WHERE checkpoint_id = ?
+                    """,
+                    (legacy_checkpoint_summary, checkpoint_id),
+                )
+                connection.commit()
+
+            def stored_rows():
+                with closing(sqlite3.connect(db)) as connection:
+                    return (
+                        connection.execute(
+                            """
+                            SELECT * FROM task_contract_revisions
+                             WHERE task_id = ? ORDER BY revision
+                            """,
+                            (task_id,),
+                        ).fetchall(),
+                        connection.execute(
+                            """
+                            SELECT * FROM task_checkpoints
+                             WHERE task_id = ? ORDER BY created_at, rowid
+                            """,
+                            (task_id,),
+                        ).fetchall(),
+                        connection.execute(
+                            """
+                            SELECT * FROM task_completion_cycles
+                             WHERE task_id = ?
+                             ORDER BY saved_cycle_ordinal
+                            """,
+                            (task_id,),
+                        ).fetchall(),
+                    )
+
+            sidecars = tuple(
+                Path(str(db) + suffix)
+                for suffix in ("-journal", "-wal", "-shm")
+            )
+            before_rows = stored_rows()
+            before_hash = hashlib.sha256(db.read_bytes()).digest()
+            self.assertTrue(all(not sidecar.exists() for sidecar in sidecars))
+
+            shown, shown_payload = run_json(
+                "task",
+                "show",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task_id,
+                "--read-only",
+                "--json",
+            )
+
+            self.assertEqual(shown.returncode, 0, shown.stdout)
+            self.assertEqual(
+                shown_payload["data"]["contract"]["constraints"].encode(
+                    "utf-8"
+                ),
+                legacy_constraints.encode("utf-8"),
+            )
+            self.assertEqual(
+                shown_payload["data"]["latest_checkpoint"]["summary"].encode(
+                    "utf-8"
+                ),
+                legacy_checkpoint_summary.encode("utf-8"),
+            )
+            history = shown_payload["data"]["completion_history"]
+            self.assertEqual(history["total"], 1)
+            self.assertEqual(history["returned_count"], 1)
+            self.assertFalse(history["truncated"])
+            self.assertEqual(len(history["cycles"]), 1)
+            self.assertEqual(
+                history["cycles"][0]["completion_evidence"]["revision"],
+                external_revision,
+            )
+            self.assertEqual(
+                history["cycles"][0]["review_target"]["value"],
+                external_revision,
+            )
+
+            self.assertEqual(
+                hashlib.sha256(db.read_bytes()).digest(),
+                before_hash,
+            )
+            self.assertEqual(stored_rows(), before_rows)
+            self.assertTrue(all(not sidecar.exists() for sidecar in sidecars))
 
     def test_check_privacy_and_injected_event_failure_write_no_cycle(self):
         with tempfile.TemporaryDirectory() as temp:

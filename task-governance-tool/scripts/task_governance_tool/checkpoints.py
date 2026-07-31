@@ -22,6 +22,7 @@ from task_governance_tool.tasks import (
     create_task_event,
     generate_id,
     reject_done_task_write,
+    validate_legacy_m19_7_stored_text,
     validate_task_id,
     validate_text,
 )
@@ -76,8 +77,14 @@ def _canonical_content(
     summary: Any,
     next_action: Any,
     unresolved_risks: Sequence[Any] | None,
+    legacy_m19_7_stored_summary: bool = False,
 ) -> tuple[str, str, tuple[str, ...]]:
-    normalized_summary = validate_text(
+    summary_validator = (
+        validate_legacy_m19_7_stored_text
+        if legacy_m19_7_stored_summary
+        else validate_text
+    )
+    normalized_summary = summary_validator(
         "summary",
         summary,
         required=True,
@@ -173,6 +180,7 @@ def _row_to_checkpoint(row: sqlite3.Row) -> dict[str, Any]:
             summary=row["summary"],
             next_action=row["next_action"],
             unresolved_risks=risks,
+            legacy_m19_7_stored_summary=True,
         )
         checkpoint_id = validate_text(
             "checkpoint_id",

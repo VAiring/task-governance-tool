@@ -10,6 +10,7 @@ try:
     from task_governance_tool.tasks import (
         TEXT_LIMITS,
         TaskValidationError,
+        validate_legacy_m19_7_stored_text,
         validate_event_summary,
         validate_task_input,
     )
@@ -204,6 +205,12 @@ class TaskValidationTests(unittest.TestCase):
             "HTTP_AUTHORIZATION=credential-value",
             "PROXY_AUTHORIZATION=opaque-value",
             "client_authorization=secret-value",
+            "dispatch_authorization=1",
+            "`dispatch_authorization=1`",
+            "M19.7 records dispatch_authorization=2 before dispatch.",
+            '{"dispatch_authorization":1}',
+            '{"dispatch_authorization":null}',
+            '{"dispatch_authorization":"1"}',
             "dispatch_authorization=secret-value",
             "dispatch_authorization=0",
             "dispatch_authorization=01",
@@ -213,6 +220,9 @@ class TaskValidationTests(unittest.TestCase):
             "object.dispatch_authorization=1",
             "Authorization=dispatch_authorization=1",
             "token=dispatch_authorization=1",
+            "Authorization=operation_sequence=1",
+            "token=operation_sequence=1",
+            "operation_sequence=1 token=secret",
             "Authorization Basic dXNlcjpwYXNz",
             "Authorization Bearer=secret",
             "authorization basic=abc",
@@ -436,16 +446,65 @@ class TaskValidationTests(unittest.TestCase):
                 validated = validate_task_input(title=title)
                 self.assertEqual(validated["title"], title)
 
-    def test_privacy_guard_allows_bounded_dispatch_authorization_counter(self):
+    def test_privacy_guard_allows_neutral_operation_sequence_without_exception(self):
         for note in (
-            "dispatch_authorization=1",
-            "`dispatch_authorization=1`",
-            "dispatch_authorization=2; continue observation",
-            "M19.7 records dispatch_authorization=1 before dispatch.",
+            "operation_sequence=1",
+            "`operation_sequence=1`",
+            "operation_sequence=2; continue observation",
+            "Future release evidence uses operation_sequence=3.",
+            '{"operation_sequence":4}',
         ):
             with self.subTest(note=note):
                 validated = validate_task_input(title="Task", add_note=note)
                 self.assertEqual(validated["add_note"], note)
+
+    def test_privacy_guard_preserves_non_secret_json_schema_values(self):
+        for note in (
+            '{"token":null}',
+            '{"authorization":false}',
+            '{"password":0}',
+        ):
+            with self.subTest(note=note):
+                validated = validate_task_input(title="Task", add_note=note)
+                self.assertEqual(validated["add_note"], note)
+
+    def test_legacy_m19_7_stored_guard_is_exact_and_preserves_original_bytes(self):
+        accepted = (
+            "dispatch_authorization=1",
+            "`dispatch_authorization=2`",
+            "M19.7 records dispatch_authorization=3 before dispatch.",
+            '{"dispatch_authorization": 4, "schema":"m19.7-approval-v1"}',
+        )
+        for value in accepted:
+            with self.subTest(value=value):
+                self.assertEqual(
+                    validate_legacy_m19_7_stored_text("stored", value),
+                    value,
+                )
+
+        rejected = (
+            "dispatch_authorization=0",
+            "dispatch_authorization=01",
+            "dispatch_authorization=1suffix",
+            '{"dispatch_authorization":"1"}',
+            '{"dispatch_authorization":1 true}',
+            '{"dispatch_authorization":1]',
+            '{"dispatch_authorization":1.0}',
+            '{"dispatch_authorization":1e3}',
+            '{"dispatch_authorization":1suffix}',
+            "Authorization=dispatch_authorization=1",
+            "token=dispatch_authorization=1",
+            '{"dispatch_authorization":1,"token":"secret"}',
+        )
+        for value in rejected:
+            with self.subTest(value=value):
+                self.assert_validation_error(
+                    "privacy_rejected",
+                    validate_legacy_m19_7_stored_text,
+                    "stored",
+                    value,
+                    field="stored",
+                )
 
 
 if __name__ == "__main__":

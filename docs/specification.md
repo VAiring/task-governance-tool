@@ -544,7 +544,11 @@ explicit empty value clears it. The exact
 `user_instruction:<task-id>:<revision>` form is validated mechanically.
 Semantic change accepts only the locked next revision placeholder; exact replay
 may accept an older same-Task positive placeholder. A caller-supplied authority
-label never creates a revision when Contract content did not change.
+label never creates a revision when Contract content did not change. Omission
+may therefore carry forward byte-identical, already-validated legacy M19.7
+constraints as immutable lineage; it does not validate caller-supplied legacy
+vocabulary or grant new authority. Any explicitly supplied constraints use the
+normal strict input guard.
 
 A semantic revision appends immutable history, advances the pointer, clears
 completion evidence, preserves generation 0 if review never began or otherwise
@@ -864,6 +868,12 @@ Exact replay against the latest same-Contract checkpoint is write-free with
 and change no status, scope, acceptance, selection, review, evidence, or gate.
 `task show`/default current expose only the latest object.
 
+The stored-summary read path alone retains bounded compatibility for the
+already-recorded M19.7 numeric `dispatch_authorization` JSON field and returns
+the original summary unchanged. New checkpoint input uses the normal strict
+guard, and the compatibility read neither records nor authorizes an external
+operation.
+
 Command data is exactly `checkpoint`, `created`, `replayed`, and `event`.
 Checkpoint keys are `checkpoint_id`, `task_id`, `contract_revision`,
 `summary`, `next_action`, `unresolved_risks`, and `created_at`. New event
@@ -959,6 +969,13 @@ counts and exactly one qualifying ID for Tier-0/Tier-1/fallback or two for
 Tier-2 independent basis. Attestation is true or null, never false. Public
 events remain only `task_event_id`, `task_id`, `project_id`, `event_type`,
 `summary`, and `created_at`; internal cycle link is never emitted.
+
+Before a cycle is emitted, every public free-form completion-evidence and
+review-target text field is revalidated with the normal strict privacy guard.
+Completion history has no M19.7 compatibility exception. Private or corrupt
+stored text fails with the existing sanitized
+`completion_history_inconsistent` result rather than being redacted or
+returned.
 
 Text show prints history returned/total/truncation/incompleteness and only the
 latest cycle's ordinal, origin/completeness, time, evidence kind, target
@@ -1539,14 +1556,26 @@ character limit and still use the common privacy guard and state validation.
 `lane` is canonicalized by trimming outer whitespace; `blocked_reason` is
 retained as supplied after string/privacy checks.
 
-The sole assignment exception is the exact lowercase release-gate field
-`dispatch_authorization=<positive canonical integer>` at start-of-text or
-after whitespace or its Markdown code delimiter, and followed by end-of-text
-or a bounded text delimiter. Taskgov replaces only that complete counter with
-a non-secret sentinel before running every existing privacy pattern. Prefixed
-names, zero, leading-zero, decimal, suffixed, credential-valued, differently
-named/cased, or nested Authorization assignments remain rejected, as do all
-independent credential, token, and raw-content patterns.
+Normal and new caller input has no release- or project-specific privacy
+exception. Both the lowercase equality form
+`dispatch_authorization=<value>` and a JSON
+`"dispatch_authorization":<value>` key are rejected, including positive
+numeric values. Future external-operation records use the neutral
+`operation_sequence=<positive canonical integer>` vocabulary. That value is
+only correlation or idempotency evidence: it neither contains nor grants
+authority, and the exact current approval for any external operation remains
+separate.
+
+One read-only compatibility path preserves exact already-stored M19.7 text.
+Only stored Contract constraints and stored checkpoint summary reads may
+replace the bounded lowercase `dispatch_authorization` equality or numeric
+JSON counter with a non-secret sentinel while running every other privacy
+detector, then return the original stored text unchanged. The path performs no
+rewrite, schema change, Task write, dispatch, or other external operation.
+Stored Contract fields other than constraints, checkpoint fields other than
+summary, completion history, and all caller input use the normal strict guard.
+Prefixed, nested, differently cased, noncanonical, credential-valued, or
+compound credential/token forms remain rejected in every path.
 
 Stable domain codes include:
 

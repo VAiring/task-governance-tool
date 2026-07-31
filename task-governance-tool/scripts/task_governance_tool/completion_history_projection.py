@@ -80,6 +80,20 @@ def _is_json_integer(value: object) -> bool:
     return type(value) is int
 
 
+def _validate_public_text_privacy(field: str, value: object) -> None:
+    if not isinstance(value, str):
+        raise completion_history_inconsistent()
+    from task_governance_tool.tasks import (
+        TaskValidationError,
+        reject_private_or_raw_content,
+    )
+
+    try:
+        reject_private_or_raw_content(field, value)
+    except TaskValidationError as exc:
+        raise completion_history_inconsistent() from exc
+
+
 def _format_gate_basis(
     basis: CompletionGateBasis,
     *,
@@ -154,6 +168,26 @@ def _format_cycle(cycle: CompletionCycle) -> dict[str, Any]:
             raise completion_history_inconsistent()
     else:
         raise completion_history_inconsistent()
+    for field, value in (
+        (
+            "completion_revision",
+            cycle.completion_evidence_revision,
+        ),
+        (
+            "completion_evidence_reason",
+            cycle.completion_evidence_reason,
+        ),
+        (
+            "completion_commit_hash",
+            cycle.completion_commit_hash,
+        ),
+        ("review_target_value", cycle.review_target_value),
+        (
+            "review_target_base_revision",
+            cycle.review_target_base_revision,
+        ),
+    ):
+        _validate_public_text_privacy(field, value)
     public_cycle = {
         "completion_cycle_id": cycle.completion_cycle_id,
         "saved_cycle_ordinal": cycle.saved_cycle_ordinal,

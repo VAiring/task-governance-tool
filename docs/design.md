@@ -890,6 +890,13 @@ non-fitting newest-first row. Version-0 basis uses JSON nulls and no receipt
 IDs; version 1 uses integers and the stored one/two IDs without null
 placeholders. Text prints only counts, flags, and newest non-content fields.
 
+The formatter revalidates stored completion revision, evidence reason,
+completion-hash, target value, and target-base text through the ordinary
+privacy matcher before building a public cycle. It has no legacy M19.7
+projection. A rejection maps to the fixed
+`completion_history_inconsistent` error and never exposes the offending field
+or value; `task show` and Viewer use this same formatter.
+
 Viewer batch history is grouped/windowed for at most 500 selected Tasks and 10
 cycles each, not one query per cycle. Snapshot v4 uses the identical wrapper.
 Source schemas v5-v14 synthesize empty/incomplete history; v15-v16 use stored
@@ -936,6 +943,13 @@ completion evidence, clears/advances any started review target, moves
 review-pending to in-progress, updates time, and appends a content-free
 `contract_revised` event atomically. Old Contracts and review history remain.
 
+Stored Contract projection has one narrow legacy M19.7 seam: only
+`constraints_text` is validated through the bounded legacy reader and returned
+unchanged. Normal Contract input never selects that reader. When later
+constraints are omitted, the established carry-forward rule may copy those
+already-validated bytes into the new immutable revision; this preserves
+lineage and supplies neither caller-input acceptance nor authority.
+
 Concurrent identical input records once and replays; different valid input
 serializes into successive revisions. Current-or-next user-instruction
 placeholders are rebound to the locked allocation. A lost-response retry with
@@ -956,6 +970,11 @@ Exact replay of the latest same-Contract checkpoint is no-write. Done Tasks
 reject it. Current/show expose only the latest checkpoint; Viewer excludes
 checkpoint content. A checkpoint is optional and changes no Task status,
 scope, selection, review, evidence, or completion gate.
+
+Only stored checkpoint `summary` projection may use the bounded M19.7 reader
+for the former numeric `dispatch_authorization` JSON field. It returns the
+original canonical stored summary and writes nothing. New summaries and all
+other checkpoint fields use the ordinary privacy path.
 
 ### Local Handoff Outbox
 
@@ -1441,14 +1460,23 @@ including authorization/Bearer headers, private-key blocks, password/token/API
 key assignments, Python traceback headers, raw stdout/stderr headings, and
 repeated raw Git diffs.
 
-Before privacy matching, one case-sensitive bounded recognizer substitutes
-only the complete lowercase release counter
-`dispatch_authorization=<positive canonical integer>` at start-of-text or
-after whitespace/its Markdown code delimiter with a fixed non-secret sentinel.
-Every existing privacy detector then runs on that substituted text, so a
-prefixed name or surrounding/nested credential assignment remains visible.
-Other Authorization names/values, zero/leading-zero/decimal/suffixed forms,
-JSON credential keys, and token detectors remain unchanged and rejected.
+The ordinary matcher receives caller text unchanged. It rejects both
+`dispatch_authorization=<value>` and the JSON key
+`"dispatch_authorization":<value>`, including numeric values; no generic
+allow-list or mode exists. Neutral `operation_sequence=<positive canonical
+integer>` passes without preprocessing and represents correlation or
+idempotency evidence only. External authority remains an independent current
+user/Contract decision.
+
+The singular legacy M19.7 stored-text helper creates a privacy-only guard view:
+it substitutes bounded lowercase positive-canonical-integer equality and
+numeric JSON counter forms with a fixed non-secret sentinel, runs the complete
+ordinary detector set, and returns the original text. Call sites are limited
+to stored Contract constraints and stored checkpoint summary projection.
+Completion history deliberately uses only the ordinary matcher. The helper
+does not rewrite a row, broaden a schema or writer, or authorize a Task,
+dispatch, Git, network, or other external mutation. Compound credential/token
+content remains visible after substitution and fails closed.
 
 Stored or emitted data excludes secrets, cookies, provider bodies,
 authorization material, raw stdout/stderr, stack traces, environment dumps,

@@ -355,6 +355,50 @@ class CompletionHistoryProjectionTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "completion_history_inconsistent")
 
+    def test_private_evidence_reason_and_review_target_fail_sanitized(self):
+        cases = (
+            (
+                "completion_evidence_reason",
+                "token=private-history-evidence",
+                replace(
+                    native_cycle(),
+                    completion_evidence_reason=(
+                        "token=private-history-evidence"
+                    ),
+                ),
+            ),
+            (
+                "review_target_value",
+                "Authorization: Bearer private-review-target",
+                replace(
+                    native_cycle(),
+                    review_target_value=(
+                        "Authorization: Bearer private-review-target"
+                    ),
+                ),
+            ),
+        )
+        for field, private_value, cycle in cases:
+            with self.subTest(field=field):
+                with self.assertRaises(StorageError) as raised:
+                    format_completion_history(
+                        CompletionHistory(
+                            total=1,
+                            legacy_history_incomplete=False,
+                            cycles=(cycle,),
+                        )
+                    )
+
+                self.assertEqual(
+                    raised.exception.code,
+                    "completion_history_inconsistent",
+                )
+                self.assertEqual(
+                    raised.exception.message,
+                    "stored completion history is inconsistent",
+                )
+                self.assertNotIn(private_value, str(raised.exception))
+
     def test_task_show_reports_sanitized_history_error_with_exit_two(self):
         project = ProjectIdentity(
             project_id="tg_project_projection",

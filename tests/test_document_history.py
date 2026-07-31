@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 import subprocess
 import unittest
@@ -11,6 +12,8 @@ CAPTURE_M19_1 = "1ac8c001073b1a4cb29e9de3f0281d8ff2d9aca1"
 CAPTURE_M19_2 = "cbf75372617e90ca0b54746ae27f24a4e67cb292"
 CAPTURE_M19_PUBLICATION = "a9b80ce177a6dead10d51a070b76ff01f7af0294"
 CAPTURE_M20_BASELINE = "43c91d5987b0c35c66f834789aea782e98dcaff7"
+M20_RETIREMENT_ANCHOR = "dd662a861f3a224bc17f021e0dc0ed6f20be6bc1"
+M20_HISTORY_SHA256 = "1164c65d0270aeef35311a061064c23cf14c1726ad647568598e0fcb2718405d"
 
 
 ARCHIVES = {
@@ -242,6 +245,48 @@ class DocumentHistoryTests(unittest.TestCase):
             for path in (HISTORY_ROOT / "v0.10.0").rglob("*.md")
         }
         self.assertEqual(actual_archives, indexed_archives)
+
+    def test_m20_study_is_retired_to_no_rerun_tombstones(self):
+        receipt_root = ROOT / "fixtures" / "m20"
+        receipt_paths = sorted(receipt_root.glob("*.json"))
+        self.assertEqual(
+            [path.name for path in receipt_paths],
+            [
+                "m20.2-collection-receipt.json",
+                "m20.3-collection-receipt.json",
+                "m20.4-collection-receipt.json",
+            ],
+        )
+        for path in receipt_paths:
+            with self.subTest(receipt=path.name):
+                receipt = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(receipt["status"], "closed")
+                self.assertEqual(receipt["artifact_status"], "retired")
+                self.assertEqual(
+                    receipt["retirement_revision"],
+                    M20_RETIREMENT_ANCHOR,
+                )
+
+        anchor = subprocess.run(
+            ["git", "cat-file", "-e", f"{M20_RETIREMENT_ANCHOR}^{{commit}}"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(anchor.returncode, 0)
+        history = HISTORY_ROOT / "v0.10.0" / "m20-operational-baseline.md"
+        self.assertEqual(
+            hashlib.sha256(history.read_bytes()).hexdigest(),
+            M20_HISTORY_SHA256,
+        )
+
+        self.assertFalse((ROOT / "dist" / "m20").exists())
+        self.assertFalse((ROOT / "dist" / "M20_TEMPORARY_CONTEXT.md").exists())
+        self.assertFalse((ROOT / "dist" / "m20.4-trials-800ed1").exists())
+        self.assertFalse(any((ROOT / "tools").glob("m20_*.py")))
+        self.assertFalse(any((ROOT / "tests").glob("test_m20_*.py")))
+        self.assertFalse(any((ROOT / "tools" / "__pycache__").glob("*m20*.pyc")))
+        self.assertFalse(any((ROOT / "tests" / "__pycache__").glob("*m20*.pyc")))
 
     def test_governing_and_historical_markdown_links_resolve(self):
         documents = [

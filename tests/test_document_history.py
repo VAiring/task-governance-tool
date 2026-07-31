@@ -10,6 +10,7 @@ HISTORY_ROOT = ROOT / "docs" / "history"
 CAPTURE_M19_1 = "1ac8c001073b1a4cb29e9de3f0281d8ff2d9aca1"
 CAPTURE_M19_2 = "cbf75372617e90ca0b54746ae27f24a4e67cb292"
 CAPTURE_M19_PUBLICATION = "a9b80ce177a6dead10d51a070b76ff01f7af0294"
+CAPTURE_M20_BASELINE = "43c91d5987b0c35c66f834789aea782e98dcaff7"
 
 
 ARCHIVES = {
@@ -153,6 +154,17 @@ ARCHIVES = {
         "body_size": 21_372,
         "body_sha256": "ea799a0f9538fdc08849cc0f39ad79ddb311cd1eca8c18442c34c956aa4118ba",
         "archive_sha256": "24e43ff9129299d529658ab7267e986bf9f773aa491661e956e33292bd587a03",
+    },
+    "post-release/implementation-roadmap.md": {
+        "source": "docs/implementation-roadmap.md",
+        "replacement": "docs/implementation-roadmap.md",
+        "capture": CAPTURE_M20_BASELINE,
+        "index_heading": (
+            "Post-release capture of `docs/implementation-roadmap.md`"
+        ),
+        "body_size": 16_980,
+        "body_sha256": "96e4bf4d4827e2797a12928b6297b1afd83d447f716cfd777b5f15bdaaaf5537",
+        "archive_sha256": "d3ff9d64f1d1cd85b859082822a1d82c85b19f2722339dac000e2adc4112821e",
     },
 }
 
@@ -326,6 +338,43 @@ class DocumentHistoryTests(unittest.TestCase):
         ):
             self.assertIn(task_id, roadmap)
 
+        m20_units = (
+            ("tg_task_43fd4b96c9ca92a1", 10, 2),
+            ("tg_task_2885725486bec173", 20, 2),
+            ("tg_task_8efb270f74360308", 30, 1),
+            ("tg_task_787f976a5e9daa7e", 40, 1),
+            ("tg_task_f6c19be1c10ad3ab", 50, 2),
+        )
+        positions = []
+        for task_id, lane_order, review_tier in m20_units:
+            positions.append(roadmap.index(task_id))
+            self.assertRegex(
+                roadmap,
+                (
+                    rf"Task: `{task_id}`\n"
+                    rf"Lane/order: `TG-M20-OPERATIONAL-BASELINE` / "
+                    rf"{lane_order}\n"
+                    rf"Review tier: Tier {review_tier}\n"
+                ),
+            )
+        self.assertEqual(positions, sorted(positions))
+
+        normalized_combined = " ".join(combined.split())
+        self.assertNotIn("TG-M19.14 is active", normalized_combined)
+        design = active["docs/design.md"]
+        for observation_contract_marker in (
+            "m20-operational-observation-v1",
+            "machine_observed",
+            "historically_reconstructed",
+            "observer_attested",
+            "gov_tier1_commitless",
+            "vp_cli_contract",
+            "sp_handoff_control",
+            "m20-observation-v1\\0",
+            "There is no rerun, replacement subject",
+        ):
+            self.assertIn(observation_contract_marker, design)
+
         plan = active["plan.md"]
         handoff_scan = combined + "\n" + (ROOT / "AGENTS.md").read_text(
             encoding="utf-8"
@@ -351,7 +400,7 @@ class DocumentHistoryTests(unittest.TestCase):
         )
         for candidate in (
             "project-profile detection",
-            "verification-run recording",
+            "Verification Receipt design",
             "dependency graphs",
             "default-browser launch",
             "event-history or current/list pagination",
@@ -363,7 +412,7 @@ class DocumentHistoryTests(unittest.TestCase):
         specification = " ".join(
             active["docs/specification.md"].lower().split()
         )
-        design = " ".join(active["docs/design.md"].lower().split())
+        design = " ".join(design.lower().split())
         self.assertIn(
             "current-generation changes-requested receipt",
             specification,
@@ -498,6 +547,18 @@ class DocumentHistoryTests(unittest.TestCase):
             "TG-M19.11": (
                 "tg_task_e452e6eb7dcf0e08",
                 "f5d7ed4706eac41c422690f16e5791893fdb1989",
+            ),
+            "TG-M19.12": (
+                "tg_task_d0e8ac1287bd07a4",
+                "f3f1945916f99e32b66c9bb15d3a673dbff61c5a",
+            ),
+            "TG-M19.13": (
+                "tg_task_704ecd1d1e2f7552",
+                "27e7ef08c70c1434b9aac8474b3006dbbc6ec3b8",
+            ),
+            "TG-M19.14": (
+                "tg_task_0f76a52915987511",
+                CAPTURE_M20_BASELINE,
             ),
         }
         lines = roadmap.splitlines()

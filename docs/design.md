@@ -1561,6 +1561,607 @@ design. The exact publication-commit form is indexed by
 [the historical documentation index](history/README.md); no active product or
 release guarantee depends on that historical copy.
 
+## TG-M20 Repository-Only Observation Design
+
+This section defines a planned one-time repository-development study. TG-M20.1
+records the contract only; it does not implement collection. The design is not
+a taskgov output contract, product telemetry, a public command, a SQLite
+extension, a Viewer field, a Skill trigger, or a normal-loop call.
+
+The product baseline is exact commit
+`43c91d5987b0c35c66f834789aea782e98dcaff7`. The completed TG-M20.1 commit
+becomes the observation-authority revision, but never replaces or modifies
+that product baseline. Every prospective trial uses a clean isolated
+materialization of the baseline. The canonical project Task database,
+uncommitted or ignored local material, temporary M20 notes, and prior trial
+output are outside the trial subject.
+
+### Frozen Collection Inventory And Adjudication
+
+The study launches each listed attempt exactly once. The prose below fixes
+scenario semantics without retaining the subject's delivered prompt text.
+
+| Unit | Scenario ID | Arm(s) | Planned attempts |
+|---|---|---|---:|
+| M20.2 | `gov_tier1_commitless` | `harness` | 1 |
+| M20.2 | `gov_tier2_snapshot` | `harness` | 1 |
+| M20.2 | `gov_pause_resume` | `harness` | 1 |
+| M20.2 | `gov_handoff_continue` | `harness` | 1 |
+| M20.2 | `gov_reopen_rereview` | `harness` | 1 |
+| M20.2 | `m19_preparation_reconstruction` | `retrospective` | 1 |
+| M20.2 | `m19_publication_reconstruction` | `retrospective` | 1 |
+| M20.2 | `m19_postrelease_reconstruction` | `retrospective` | 1 |
+| M20.3 | `vp_cli_contract` | `baseline` | 1 |
+| M20.3 | `vp_state_transition` | `baseline` | 1 |
+| M20.3 | `vp_release_contract` | `baseline` | 1 |
+| M20.4 | `sp_multi_outcome_intake` | `broad`, `bounded` | 2 |
+| M20.4 | `sp_in_scope_discovery` | `broad`, `bounded` | 2 |
+| M20.4 | `sp_user_expansion` | `broad`, `bounded` | 2 |
+| M20.4 | `sp_cross_module_failure` | `broad`, `bounded` | 2 |
+| M20.4 | `sp_handoff_control` | `broad` | 1 |
+
+Every M20.2 harness and M20.3/M20.4 fresh-agent `trial_id` is exactly
+`<scenario_id>.<arm>.01`. Every record for the three retrospective scenarios
+has `trial_id=null`; a formatted retrospective trial ID is invalid. The
+fresh-agent cohort code is `fresh_baseline_v1` for every M20.3/M20.4 attempt.
+Channel record keys are exactly `cli`, `state_pair`,
+`verification_measurement`, `split_measurement`, the reconstruction metric
+code, or `attestation` as applicable.
+
+Record cardinality is fixed. Each M20.2 harness attempt emits one `cli` and
+one `state_pair` record; each retrospective scenario emits one record for each
+of the 12 listed reconstruction metrics. Each M20.3 attempt emits one
+`state_pair`, one `verification_measurement`, and one `attestation`. Each
+non-control M20.4 arm emits one `split_measurement` and one `attestation`; the
+Handoff control arm additionally emits one `state_pair`. An excluded
+source-level envelope replaces its intended record and never adds another.
+
+The M20.2 scenarios cover respectively a Tier-1 commit-not-required path, a
+Tier-2 Git-snapshot/commit path, pause and resume, local Handoff while accepted
+work continues, and complete/reopen/re-review/recomplete. They are deterministic
+CLI fixtures, not LLM subjects.
+
+The three retrospective cohorts are also fixed: preparation is TG-M19.0
+through TG-M19.5; publication is TG-M19.6A, TG-M19.6B, TG-M19.6, and
+TG-M19.7 through TG-M19.10; post-release is TG-M19.11 through TG-M19.14.
+Their exact Task IDs and completion revisions are the active roadmap's concise
+completion-index rows. No other M19 Task enters an aggregate.
+
+M20.3 gives a fresh subject one normal localized change in each of three
+fixture classes: CLI/output contract with an existing checker, Task
+state-transition behavior with existing state fixtures, and release metadata
+consistency with the existing release checker. Every trial requires the
+target-change/revert sensitivity check and the fixed reduced fields below.
+
+M20.4 fixes four paired cases: multiple independently completable intake
+outcomes; in-scope independently completable work discovered during execution;
+explicit user expansion; and repeated-failure cross-module expansion. In each
+`bounded` arm the same work is separately authorized at intake. The unpaired
+control is truly out of scope and must use Handoff.
+
+A trial is excluded before semantic scoring when its baseline differs, context
+is inherited, state is not isolated, another trial's artifact is visible, the
+paired model/tool/permission cohort differs, mid-trial coaching occurs, or the
+required reduced record fails schema/privacy validation. A valid protocol with
+a capped required measurement is partial. Exclusion and mechanically
+determined partiality are locked before the parent applies the outcome rubric.
+An observer record becomes partial only when the frozen rubric yields
+an `unknown` required field with `observer_uncertain`, a successfully observed
+common-count source cannot provide its count and uses `not_observable`, or a
+mechanically counted common field exceeds its fixed cap with `cap_exceeded`;
+it is never excluded or rerun because its semantic outcome is unfavorable.
+
+There is no rerun, replacement subject, agent reuse, adaptive scenario,
+optional arm, or early stop in M20.2-M20.4. A failed or excluded attempt remains
+in its denominator. Unit tests may repeat synthetic/injected inputs but are not
+study attempts. Insufficient eligible attempts produce `observe_more` at
+M20.5; any additional subject belongs to a separately approved bounded
+observation unit.
+
+### Reduced Observation Envelope And Identity
+
+One reduced observation is canonical compact sorted-key UTF-8 JSON with exact
+top-level keys:
+
+```text
+schema, contract_id, contract_revision, baseline_revision,
+authority_revision, observation_id, scenario_id, trial_id, record_key, unit,
+evidence_class, channel, eligibility, unknown_reasons, unknowns, payload
+```
+
+The fixed values and bounds are:
+
+- `schema="m20-operational-observation-v1"`;
+- `contract_id="TG-M20-OPERATIONAL-BASELINE"` and
+  `contract_revision=1`;
+- `baseline_revision` is the exact 40-hex product baseline above;
+- `authority_revision` is the exact 40-hex TG-M20.1 completion commit;
+- `scenario_id`, non-null `trial_id`, and `record_key` are
+  non-identifying lowercase ASCII `[a-z0-9._-]` strings of 1-64 characters;
+  `trial_id` is null only for a retrospective record;
+- `unit` is `M20.2`, `M20.3`, or `M20.4`;
+- `evidence_class` is `machine_observed`,
+  `historically_reconstructed`, or `observer_attested`;
+- `machine_observed` permits `cli_invocation`, `state_projection`, and
+  `trial_measurement`; `historically_reconstructed` permits only
+  `task_git_reconstruction`; `observer_attested` permits only
+  `fresh_agent_trial`; and
+- `eligibility` is `eligible`, `partial`, or `excluded`. A channel that
+  is not applicable emits no record.
+
+Observation identity uses ASCII bytes exactly:
+
+```text
+"m20-observation-v1\0"
++ contract_id + "\0"
++ decimal contract_revision + "\0"
++ baseline_revision + "\0"
++ authority_revision + "\0"
++ unit + "\0"
++ scenario_id + "\0"
++ (trial_id or "") + "\0"
++ evidence_class + "\0"
++ channel + "\0"
++ record_key + "\0"
+```
+
+`observation_id` is `m20obs_` plus the complete 64-lowercase-hex SHA-256
+of that preimage; it is therefore exactly 71 ASCII characters. No suffix,
+random value, or truncation is allowed. A corpus may contain each ID once.
+Any duplicate ID, whether bytes agree or disagree, invalidates the corpus as
+`source_drift`; collection never silently deduplicates or resolves a
+collision.
+
+`unknown_reasons` is the sorted unique union of every per-field reason and
+has at most nine values from `not_observable`, `not_reconstructable`,
+`source_missing`, `source_drift`, `parse_failed`, `timeout`,
+`cap_exceeded`, `observer_uncertain`, and `contaminated`. `unknowns`
+is a field-name-sorted array of at most 128 objects with exact keys `field`
+and `reasons`; field is a payload-relative lowercase dotted path matching
+`[a-z][a-z0-9_.]{0,95}`, and reasons is a nonempty sorted unique subset of
+the same enum. Each field occurs exactly once. Array elements use a zero-based
+decimal component, for example `operations.0.stdout_bytes` or
+`data.episodes.0.files_before`. A semantically known null such as a timed-out
+operation's `exit_code` has no unknown entry.
+
+Reason applicability is exact. `not_reconstructable` is historical-only and
+`observer_uncertain` is observer-only. `timeout` is machine-only;
+`cap_exceeded` applies to a machine field or a mechanically counted observer
+common field. `not_observable` may describe a machine or observer field that
+the frozen source boundary does not expose. `source_missing`, `source_drift`,
+`parse_failed`, and `contaminated` invalidate every evidence class. A
+source-level failure uses the single path `payload`; a field-level reason uses
+the most specific leaf path. The 128-entry bound covers the largest valid
+shape, the 96 nullable numeric leaves of eight split-pressure episodes, as
+well as the 64 independently capped CLI stream counters and 30 state leaves.
+An attempted shape beyond a declared channel maximum is not grouped or
+truncated: it yields only a sanitized excluded record with
+`unknowns=[{"field":"payload","reasons":["parse_failed"]}]`.
+
+An eligible record has empty `unknown_reasons` and `unknowns` and every
+required measurement in its channel-specific complete form. A partial record
+has at least one declared nullable/unknown field, a matching `unknowns`
+entry, and the exact union in `unknown_reasons`. An excluded record has at
+least one reason that invalidates the trial protocol or record
+(`source_missing`, `source_drift`, `parse_failed`, or `contaminated`)
+and no field may be used in a decision. Unknown and null never mean zero.
+Only a source-level excluded record may use `payload=null`, paired with the
+single `payload` unknown entry; every other record uses its complete
+channel-specific payload shape.
+
+One record is at most 32,768 UTF-8 bytes and one unit's complete reduced corpus
+is at most 262,144 bytes. Unless narrowed below, a count is a JSON integer from
+0 through 2,147,483,647; a product revision/generation/count may use 0 through
+9,223,372,036,854,775,807. JSON booleans are used only where declared. Floats
+are forbidden. Every named key is always present; only fields explicitly
+declared nullable may be null. Arrays preserve declared order; set-like arrays
+are unique and ASCII-byte sorted.
+
+For the unit cap, all candidate observation objects are sorted by ASCII
+`observation_id` and serialized as one compact sorted-key UTF-8 JSON array with
+no BOM or trailing newline. The array bytes are the sole measured corpus.
+The fixed maximum record counts are 46 for M20.2, 9 for M20.3, and 19 for
+M20.4. When the array exceeds 262,144 bytes, no record is truncated, dropped,
+or selected: the candidate array is discarded and replaced by one small
+non-evidence failure object with exact keys `schema`, `unit`, `reason`,
+`record_count`, and `candidate_bytes`. Its schema is
+`m20-operational-corpus-failure-v1`, unit is the owning unit code, reason is
+`cap_exceeded`, and the final two values are nonnegative integers. That unit
+contributes no eligible bundle and therefore
+forces `observe_more` for every dependent decision. When within the cap, the
+exact array is the only retained unit corpus.
+
+### Machine-Observed Channels
+
+`cli_invocation.payload` has exactly `operations`. Only the five M20.2
+harness scenarios use it. Each has 1-32 operations, so the study maximum is
+160. Every operation has exactly:
+
+```text
+ordinal, phase, command_leaf, duration_ms, duration_capped, result,
+exit_code, warning_codes, error_codes, stdout_bytes, stderr_bytes
+```
+
+Ordinal is contiguous from 1. Phase is `setup`, `rediscover`, `select`,
+`activate`, `execute`, `verify`, `review`, `complete`, or
+`diagnose`. Command leaf is one of the 20 current leaves owned by the active
+specification and uses dotted repository spelling. Duration is monotonic whole
+milliseconds from 0 through 300,000. Result is `success`, `input_error`,
+`service_error`, or `timeout`. A valid parsed response maps `success` to raw
+envelope `ok=true`, `exit_code=0`, and an empty error-code array;
+`input_error` to `ok=false`, `exit_code=1`, and at least one error code; and
+`service_error` to `ok=false`, `exit_code=2`, and at least one error code. The
+raw `ok` value is validated but not retained. Timeout requires
+`duration_ms=300000`,
+`duration_capped=true`, `exit_code=null`, and empty warning/error-code arrays
+because no response body is trusted. Every other result requires
+`duration_ms` from 0 through 299,999 and `duration_capped=false`. A parsed
+result/`ok`/exit/error disagreement or any other exit code is excluded with
+`parse_failed`; it is never coerced. Warning/error arrays each contain at most
+16 unique ASCII-byte-sorted stable codes matching
+`[a-z][a-z0-9_]{0,63}`. Stream byte counts are integers
+capped at 1,048,576; a larger stream stores the cap and makes the record
+partial with `cap_exceeded`. Bodies are parsed only in bounded memory and
+discarded immediately.
+
+`state_projection.payload` has exactly `before` and `after`, preventing
+separate phase identities. Each state object has exactly:
+
+```text
+task_status, contract_revision, review_generation, receipts_current,
+qualifying_passes, changes_requested_current, findings_open_high,
+findings_open_medium, findings_open_low, handoffs_pending,
+handoffs_delivered, handoffs_withdrawn, completion_cycles,
+verification_attestation, verification_detail
+```
+
+Status uses the current Task enum. Revisions, generations, and counts are
+nonnegative signed-64-bit integers. Each state is derived from exactly one
+successful `task show --json` response. The mapping is exact:
+`task_status=data.task.status`;
+`contract_revision=data.contract.revision`;
+`review_generation=data.task.review_target_generation`;
+`receipts_current=data.review_evidence.counts.receipts_current_generation`;
+`qualifying_passes=data.review_evidence.gate.qualifying_independent_passes`;
+`changes_requested_current=data.review_evidence.counts.changes_requested_current_generation`;
+the three finding counts map to the corresponding `open_high`, `open_medium`,
+and `open_low`; the three Handoff counts map respectively to
+`pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user`; and
+`completion_cycles=data.completion_history.total`.
+`verification_attestation` is the newest completion cycle's public attestation
+only when `task_status="done"` and a cycle exists; a reopened or otherwise
+non-done Task uses null so historical evidence cannot satisfy current state.
+
+`verification_detail` is `absent` when that valid public response contains no
+structured current-verification object with command label, result, source
+revision, duration, or scope coverage. The exact baseline output has no such
+object, so `present` is not a valid M20 value. A failed, truncated, or
+schema-invalid read yields `unknown`, a matching unknown entry, and cannot be
+eligible. An eligible state object permits null attestation but requires
+`verification_detail="absent"`; any other unavailable value is null and makes
+the record partial with its dotted field path. No private database fallback is
+allowed. No Task or Contract prose, event/checkpoint text, review body, path,
+or Viewer material is retained.
+
+`trial_measurement.payload` has exact keys `measurement_kind` and `data`.
+For `measurement_kind="verification_proportionality"`, data has exactly:
+
+```text
+product_files, test_files, product_lines, test_lines, test_cases,
+contract_owner_fanout, inventory_owner_fanout, maintenance_fanout,
+duplicate_contract_locations, fixture_copy_groups,
+verification_escalation, target_change_result, verification_steps
+```
+
+The first ten fields are counts derived once from the frozen scenario reducer
+manifest and the isolated final materialization. A changed file differs from
+the exact baseline Git tree by mode or bytes, including a new or deleted
+regular file. Test files are changed paths matching `tests/test_*.py`; all
+other managed changed files are product files. Lines are added plus deleted
+text lines from the no-renames baseline comparison. Binary, symlink, oversize,
+or unreadable input is never guessed: binary or symlink line/case fields use
+`not_observable`, an oversize field uses `cap_exceeded`, and an unreadable
+required source is excluded with `source_missing`. `test_cases` is the union
+of baseline and final Python `test_*` function/method AST nodes whose source
+span intersects an old- or new-side changed line. The occurrence key is the
+canonical slash-separated repository-relative path, dot-qualified enclosing
+class/function name, and zero-based ordinal among same-qualified-name nodes
+ordered by `(lineno, col_offset)`. The baseline/final union deduplicates one
+logical occurrence with the same key; a rename or move creates distinct old
+and new keys and therefore counts two.
+
+M20.2 freezes the reducer-manifest schema and its deterministic construction
+and validation. Each ephemeral fresh-trial control bundle materializes safe
+logical owner-slot codes, exact repository-relative selectors, LF-normalized
+UTF-8 contract and inventory byte probes, fixture-probe AST fingerprints,
+verification-label-to-kind mappings, and one reversible target-change
+mutation. The raw selector material is trial control data and is not copied
+into reduced evidence.
+`contract_owner_fanout`, `inventory_owner_fanout`, and `maintenance_fanout`
+are respectively the number of distinct manifest owner slots whose exact
+contract-probe occurrence intersects a changed hunk, whose exact
+inventory-probe occurrence intersects a changed hunk, or whose selector maps
+any changed file. For each contract probe let `B` and `F` be the sets of
+distinct managed UTF-8 text files containing it in the baseline and final
+trees. `duplicate_contract_locations` is the largest `|F|` among probes for
+which `|F|>=2` and `|F|>|B|`, or zero when no probe qualifies. Existing or
+merely relocated baseline duplication with no net increase therefore
+contributes zero.
+`fixture_copy_groups` is the number of manifest fixture fingerprints that
+have at least two distinct final test-case occurrences and a larger final than
+baseline occurrence count. A fingerprint is SHA-256 of UTF-8
+`ast.dump(node, annotate_fields=True, include_attributes=False)` for the
+manifest-selected fixture node. No fuzzy matching, semantic inference, or
+unlisted selector contributes to a count.
+
+`verification_steps` contains the subject-selected commands in occurrence
+order, excluding reducer, privacy-validation, and target-change sensitivity
+commands. It has 0-16 items with exact keys `ordinal`, `kind`, `duration_ms`,
+`duration_capped`, and `result`; ordinal is contiguous, kind comes only from
+the frozen label mapping as `focused`, `lane`, `all`, or `other`, and result is
+`success`, `failure`, or `timeout`. Exit zero is success, any completed
+nonzero exit is failure, and reaching the cap is timeout. Success/failure uses
+0-299,999 and false; timeout uses 300,000 and true.
+From the ordered executed steps, `verification_escalation` is
+`repeated_all` when at least two have kind `all`; otherwise `all_first` when
+the first executed step is `all`; otherwise `proportional` when at least one
+step exists. An empty sequence makes it `unknown` and the record partial with
+`not_observable` for `data.verification_escalation`; the observed
+`data.verification_steps=[]` itself has no unknown entry. Missing or invalid step
+provenance also makes it `unknown`.
+
+The frozen sensitivity command first passes on the accepted trial result and
+then runs once against the manifest's reversible target mutation.
+`target_change_result` is `detected` only when the first run passes and the
+mutated run fails, `not_detected` only when both pass, `not_run` when the
+frozen check was not attempted, and `unknown` for every other outcome. The
+mutation is reverted before reduction. `not_run` makes the record partial with
+`not_observable` for `data.target_change_result`; `unknown` has the applicable
+machine reason. An eligible M20.3 record requires
+target change to be `detected` or `not_detected` and escalation other than
+`unknown`. In a partial/excluded record, any unavailable count or
+`verification_steps` may be null, and an unavailable enum is `unknown`; every
+such field has a matching `unknowns` entry.
+
+For `measurement_kind="split_pressure"`, data has exactly `episodes`, with
+1-8 items in occurrence order. Each has exact keys:
+
+```text
+episode_id, files_before, files_after, modules_before, modules_after,
+lines_before, lines_after, contract_revision_before, contract_revision_after,
+review_generation_before, review_generation_after, governance_cycles,
+review_cycles
+```
+
+Episode ID is a 1-64-character lowercase ASCII code fixed by the scenario
+manifest. A paired broad/bounded scenario uses identical IDs one-for-one in
+the same order; an ID mismatch is `source_drift`. File/module/line and cycle
+fields are nonnegative signed-32-bit integers; revisions and generations are
+nonnegative signed-64-bit integers. Within every episode,
+`contract_revision_after>=contract_revision_before` and
+`review_generation_after>=review_generation_before`; violation is a conflict,
+not a favorable delta. A partial record may use null only for an unavailable
+numeric field and must name it in `unknowns`. An absent/invalid episode list
+excludes the record with `parse_failed`.
+
+The scenario manifest fixes each episode's arm-local logical `task_slot` and
+half-open start/end boundary codes before either arm runs. Intervals are
+non-overlapping and occur in the stored episode order. At a boundary, files
+are the count of managed files whose mode or bytes differ from baseline;
+modules are the count of distinct manifest owner slots selected by those
+files; and lines are the total added-plus-deleted LF-normalized text lines
+against baseline. Contract revision and review generation come from the same
+boundary's valid public read for that `task_slot`.
+`governance_cycles` is the number of successful taskgov write invocations
+bound to that slot inside the interval. `review_cycles` is the cardinality of
+distinct `(task_slot, positive_review_generation)` pairs first established in
+the interval. Any overlap, unmapped Task, or cross-slot attribution makes the
+affected field `source_drift`, preventing double counting when a bounded arm
+uses multiple Tasks with the same generation number.
+
+For exact paired comparison, an episode's machine delta vector is ordered as
+`files_after-files_before`, `modules_after-modules_before`,
+`lines_after-lines_before`,
+`contract_revision_after-contract_revision_before`,
+`review_generation_after-review_generation_before`, `governance_cycles`, and
+`review_cycles`. The first three differences may be negative; revision and
+generation differences cannot be. Every comparison uses the same vector
+position for the same manifest-fixed episode ID.
+
+M20.3 permits only `verification_proportionality` with record key
+`verification_measurement`; M20.4 permits only `split_pressure` with record
+key `split_measurement`. Their eligible measurement and attestation records
+must share the same scenario/trial ID (which encodes the arm) and
+authority/baseline identity.
+
+### Historically Reconstructed Channel
+
+One `task_git_reconstruction` record contains one metric:
+`payload` has exactly `metric`, `value`, `coverage`, and `references`;
+`record_key` equals metric. Metric is one of:
+
+```text
+completion_cycles, reopens, contract_revisions, review_receipts,
+changes_requested_receipts, findings_open_high, findings_open_medium,
+findings_open_low, handoffs_pending, handoffs_delivered, handoffs_withdrawn,
+git_wall_clock_span_ms
+```
+
+M20.2 takes one coherent read-only repository-layer transaction over the
+canonical schema-v16 Task database. Before aggregation, every fixed cohort
+Task must exist in the owning project, be `done`, match the Task ID and exact
+completion revision in the active roadmap index, and satisfy current
+Contract, completion-cycle, event, review, finding, and Handoff relational
+invariants. The transaction is the sampling point for every database metric;
+later state never changes a reduced value.
+
+Database metrics use all rows and all review generations visible at that
+sampling point:
+
+- `completion_cycles` is the sum of completion-cycle row counts for the cohort
+  Tasks.
+- `reopens` is the count of their `task_reopened` events, after validating the
+  completion-cycle/event links.
+- `contract_revisions` is the sum of each Task's
+  `current_contract_revision`; for every positive revision, stored revisions
+  must be contiguous from 1 through that value.
+- `review_receipts` is the count of all review receipts for the cohort Tasks,
+  and `changes_requested_receipts` is the subset whose verdict is
+  `changes_requested`.
+- Each `findings_open_<severity>` metric counts findings with
+  `status="open"` and that exact severity, without restricting generation.
+- Each `handoffs_<state>` metric counts Handoff rows whose source Task is in
+  the cohort and whose state is respectively `pending_handoff`, `handed_off`,
+  or `handoff_withdrawn_by_user`.
+
+For `git_wall_clock_span_ms`, the reducer takes the unique exact completion
+commits from the roadmap index, requires each to resolve to a commit ancestor
+of the product baseline, reads the commit object's integer committer timestamp
+in seconds, and computes
+`1000 * (maximum_timestamp - minimum_timestamp)`. A one-commit cohort is zero.
+Author timestamps, filesystem times, Task/event times, and commit traversal
+order are not used.
+
+References are exact and complete: database metrics use all cohort Task IDs in
+ASCII-byte order; the Git metric uses the unique completion commits in
+ASCII-byte order. Each fixed cohort has at most eight references. Eligible
+requires `coverage="complete"`, a nonnegative signed-64-bit integer value, and
+no unknown. A source boundary that is valid but cannot reconstruct the metric
+uses `coverage="partial"`, `value=null`, and `not_reconstructable` for
+`value`. Missing, inconsistent, unresolvable, out-of-range, or parse-invalid
+required source data excludes the record with its exact source-level reason;
+it never emits a guessed partial value. Historical timestamp difference is
+wall-clock span, never active labor.
+
+Historical evidence cannot reconstruct taskgov read counts, per-call latency,
+verification commands/results, active labor, user wait, reviewer invocations,
+clarification turns, or exact retries. M20.2 records those limits as partial
+metrics only when an allowed metric represents them; otherwise the M20.5
+limitations table names the unavailable category without inventing a metric.
+
+### Observer-Attested Channel
+
+`fresh_agent_trial.payload` has exact common keys `cohort`, `arm`,
+`workload_digest`, `control_digest`, `outcome`, `reference_opens`,
+`clarification_turns`, `manual_inputs`, `governance_invocations`,
+`reviewer_invocations`, `assessment_kind`, and `assessment`. Cohort and arm
+are fixed non-identifying scenario codes. Both digests are exactly 64
+lowercase hexadecimal SHA-256 characters.
+
+Immediately before a fresh trial, its ephemeral control bundle is canonical
+compact sorted-key UTF-8 JSON with exact keys `workload`,
+`delivered_request`, `neutral_clarification`, and `reducer_manifest`.
+`workload_digest` hashes the exact UTF-8 workload string and `control_digest`
+hashes the complete canonical bundle bytes. The bundle is independently
+reviewed before delivery. Paired arms require the same `workload_digest`;
+different arm authorization may produce different `control_digest` values.
+Any digest/readback mismatch is `source_drift`.
+
+Counts are capped respectively at 256, 16, 32, 64, and 8. Outcome is
+`completed`, `blocked`, `paused`, `handed_off`, `failed`, or
+`inconclusive`. When an otherwise successful observer source cannot provide a
+common count, the field is null and the record is partial with
+`not_observable`; a missing required source instead excludes the record with
+`source_missing`. A count above its cap stores the cap and makes the record
+partial with `cap_exceeded`.
+
+For `assessment_kind="verification_proportionality"`, assessment has exactly:
+
+```text
+distinct_risks, new_cases, redundant_responsibilities,
+verification_fact_codes, manual_reentry_fact_codes,
+responsibility_pattern_codes, reuse, instruction_fit, minimal_receipt_fit
+```
+
+The first three are counts. Fact-code arrays are unique ASCII-byte-sorted
+subsets of `command_label`, `result`, `source_revision`, `duration`,
+and `scope_coverage`; manual-reentry codes must be a subset of verification
+fact codes. Responsibility-pattern codes are a unique sorted subset of
+`duplicate_contract_assertion`, `duplicate_inventory_owner`,
+`fixture_copy`, `nondetecting_regression`, and
+`unbounded_verification_escalation`. Reuse is `reused`, `mixed`,
+`copied`, `new_justified`, or `unknown`; each fit field is
+`yes`, `no`, or `unknown`. Eligible requires no unknown enum.
+The three counts and three code arrays may be null only in a partial/excluded
+record with matching `unknowns`.
+
+For `assessment_kind="split_pressure"`, assessment has exactly `episodes`,
+with 1-8 items in occurrence order. Each item has exact keys:
+
+```text
+episode_id, phase, cause, current_response, acceptance_independent,
+verification_independent, commit_independent, completion_independent
+```
+
+Episode IDs must match the corresponding machine-observed episode set
+one-for-one and in the same order, and paired arms must therefore share the
+scenario manifest's identical ordered IDs. Phase is `intake`, `implementation`,
+`verification`, or `review`. Cause is `multiple_outcomes`,
+`in_scope_discovery`, `user_expansion`, `repeated_failure`,
+`cross_module`, or `out_of_scope_control`. Current response is
+`keep_current`, `block`, or `handoff`; independence fields are `yes`,
+`no`, or `unknown`. Eligible requires no unknown independence. The Handoff
+control requires cause `out_of_scope_control`, response `handoff`, and no
+decomposition-success classification.
+
+M20.3 permits only `assessment_kind="verification_proportionality"` and M20.4
+only `assessment_kind="split_pressure"`; both use record key `attestation`.
+
+### Privacy, Neutrality, Isolation, And Evidence Routing
+
+No reduced or tracked artifact retains raw argv, filesystem paths,
+environment, stdout/stderr content, prompt text, chat, private reasoning,
+review body, provider payload, credential, secret, Task/Contract prose, raw
+diff, stack trace, or per-event wall-clock timestamp. It stores only safe IDs,
+exact authority/baseline commits, command leaves, codes, enums, counts,
+durations, and bounded aggregates.
+
+Fresh subjects receive no inherited conversation, M20 memo, hypothesis,
+rubric, expected answer, suspected failure, or preferred solution. They
+receive only a normal request, exact baseline, isolated fixture, and ordinary
+baseline authority. Paired arms use the same model/tool/permission cohort.
+Agents are not reused, receive no cross-trial artifact, feedback, or mid-trial
+coaching, and do not score themselves. Clarification replies use a frozen
+neutral script. The context-rich parent and prior user-reported conversation
+are contaminated design context and never scored evidence.
+
+The harness is root repository-only, offline, shell-free, and limited to the
+fixed isolated scenarios and predefined safe verification labels. It does not
+enter the installable package, instrument product state, invoke an arbitrary
+command, or mutate a real consuming project or the canonical Task database.
+
+There is no persisted shared control master. Exact control-bundle bytes exist
+only in memory or the isolated trial-local temporary area from their immediate
+pre-launch review through that arm's one reduction attempt. Paired bundles are
+prepared together and their workload digests are compared before either
+launch; after that comparison, each arm has an independent deletion lifecycle
+and retains no bytes for the other arm. A launch failure destroys the affected
+bytes and remains an excluded attempt.
+
+Raw trial work and its control bundle are removed immediately after the single
+reduction attempt regardless of whether the candidate record passes
+schema/privacy validation. On failure, the candidate reduced bytes are also
+discarded and only a newly constructed sanitized excluded/failure envelope
+with stable codes and no copied raw value is retained; the raw source is never
+reopened for a second reduction. For a fresh trial, only the two control
+digests survive in the reduced attestation. Reduced M20.2-M20.4 records remain
+under ignored `dist/`
+only until TG-M20.5. The project does not claim deletion from
+platform/provider service logs; it guarantees only that raw material is not
+retained in the repository, taskgov state, Viewer, or M20 evidence artifact.
+
+Existing Task DB rows own normal execution and completion evidence. TG-M20.5
+routes its reviewed aggregate and limitations to one newly indexed
+non-authoritative history document, promotes only durable decisions to the
+active roadmap/plan, and removes the temporary memo and reduced corpus. Study
+evidence never satisfies a current or historical product gate.
+
+The design deliberately does not add an `observe` command, configuration,
+telemetry, SQLite table, Viewer field, Skill behavior, Verification Receipt,
+test-strategy engine, Task-splitting operation, or parent/child model. A
+positive TG-M20.5 decision authorizes only a separately approved design
+proposal.
+
 ## Validation And Test Design
 
 The suite is standard-library-first, offline, and isolated. It must not mutate

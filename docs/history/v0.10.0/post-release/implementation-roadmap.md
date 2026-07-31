@@ -1,12 +1,23 @@
+> [!CAUTION]
+> **NON-AUTHORITATIVE HISTORY**
+>
+> This file captures `docs/implementation-roadmap.md` at exact commit
+> `43c91d5987b0c35c66f834789aea782e98dcaff7` before TG-M20 authority
+> activation. Its internal words such as current, approved, active, or
+> complete describe only that captured revision. It cannot satisfy a current
+> verification, review, completion, release, or product gate. Use the active
+> [docs/implementation-roadmap.md](../../../implementation-roadmap.md).
+
 # task-governance-tool Current Implementation Roadmap
 
 Status: v0.10.0 is published with prerelease visibility from exact commit
 `a9b80ce177a6dead10d51a070b76ff01f7af0294`. Remote `main` and the
 lightweight tag `v0.10.0` resolve to that commit, and GitHub Release
 `362617903` contains the accepted archive and checksum. TG-M19.0 through
-TG-M19.14, including TG-M19.6A and TG-M19.6B, are complete. TG-M12.3 remains
-independently blocked. The approved operational-baseline sequence is
-TG-M20.1 through TG-M20.5, and TG-M20.1 is the active source-revision unit.
+TG-M19.10, including TG-M19.6A and TG-M19.6B, are complete. The approved
+post-release sequence is TG-M19.11 through TG-M19.14. TG-M12.3 remains
+independently blocked. TG-M19.11 through TG-M19.13 are complete; TG-M19.14 is
+the active source-revision unit.
 
 This active roadmap owns approved execution order, verification gates, review
 tiers, and the concise completion index. The project-local Task database owns
@@ -79,7 +90,6 @@ commit-not-required fingerprint is shown instead of inventing a Git commit.
 | TG-M19.11 | `tg_task_e452e6eb7dcf0e08` | `f5d7ed4706eac41c422690f16e5791893fdb1989` | Post-release active-authority and history reconciliation. |
 | TG-M19.12 | `tg_task_d0e8ac1287bd07a4` | `f3f1945916f99e32b66c9bb15d3a673dbff61c5a` | Offline release-contract checker consolidation. |
 | TG-M19.13 | `tg_task_704ecd1d1e2f7552` | `27e7ef08c70c1434b9aac8474b3006dbbc6ec3b8` | Deterministic test lanes and CI event/version policy. |
-| TG-M19.14 | `tg_task_0f76a52915987511` | `43c91d5987b0c35c66f834789aea782e98dcaff7` | Legacy release-vocabulary compatibility and neutral future-operation boundary. |
 
 Every M19 Task in the completion index above has a satisfied final Tier 2 gate
 and no unresolved High or Medium finding in any recorded generation. Some
@@ -170,205 +180,143 @@ Verification:
 - Run the exact current documentation, package, privacy, concurrency, offline
   suite, diff, and two-current-target Tier 2 review gates.
 
-## Approved Operational Baseline Sequence
+## Approved Post-Release Sequence
 
-These five units are one sequential lane in lane-order sequence. The
-project-local Task database remains the live operational record. The detailed
-TG-M19.11 through TG-M19.14 execution narrative removed from this active
-roadmap is preserved by the
-[post-release history capture](history/v0.10.0/post-release/implementation-roadmap.md).
+These four units are one sequential lane in lane-order sequence. The state
+labels below describe this source revision; the public Task database remains
+the operational record and receives completion evidence after each reviewed
+commit.
 
-The product baseline under observation is exact commit
-`43c91d5987b0c35c66f834789aea782e98dcaff7`. The eventual TG-M20.1
-completion revision owns the observation contract; it does not replace or
-modify that product baseline. TG-M20 is a one-time repository-development
-study, not taskgov telemetry or a product subsystem. Its evidence is
-non-authoritative and cannot satisfy a Task verification, review, completion,
-release, or product-acceptance gate.
+### TG-M19.11 Post-Release Authority And Documentation Reconciliation
 
-The repository-only schema and collection boundaries are owned by
-[the implementation design](design.md#tg-m20-repository-only-observation-design).
-[Root plan.md](../plan.md#m20-frozen-decision-rules) owns the frozen
-go/no-go rules. No unit activates Verification Receipts, test-strategy
-ownership, runtime Task splitting, parent/child Tasks, a new Skill trigger, or
-a public command.
+Task: `tg_task_e452e6eb7dcf0e08`
+Lane/order: `TG-M19-RELEASE-CORRECTNESS` / 120
+Review tier: Tier 2
+Source-revision state: complete at
+`f5d7ed4706eac41c422690f16e5791893fdb1989`
 
-### TG-M20.1 Operational Baseline Contract And Authority Activation
+Intended outcome:
 
-Task: `tg_task_43fd4b96c9ca92a1`
-Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 10
+- Synchronize active authority and public guidance with the completed v0.10.0
+  release while preserving durable product contracts.
+- Move one-time M19 execution detail to append-only history and establish a
+  clean baseline before later design work.
+
+Write scope:
+
+- active specification, design, roadmap, plan, public guidance, history index
+  and new captures, plus directly coupled document/history tests;
+- no runtime, schema, CLI, package behavior, existing history body, published
+  Release body, Git remote, or other external-state change.
+
+Verification:
+
+- Confirm M19.0-M19.10 including M19.6A/6B against public completion evidence.
+- Verify exact published commit/main/tag/Release, Apache-2.0 wording,
+  all-generation unresolved High/Medium semantics, history immutability/links,
+  and removal of volatile handoff mirroring.
+- Run focused document/history tests, full offline suite, `git diff --check`,
+  and two exact-target Tier 2 reviews.
+
+### TG-M19.12 Release Contract Checker Consolidation
+
+Task: `tg_task_d0e8ac1287bd07a4`
+Lane/order: `TG-M19-RELEASE-CORRECTNESS` / 130
+Review tier: Tier 2
+Source-revision state: complete at
+`f3f1945916f99e32b66c9bb15d3a673dbff61c5a`
+
+Intended outcome:
+
+- Centralize duplicated release, package, CLI, license, and documentation
+  consistency checks in one offline read-only checker shared by tests and CI.
+- Preserve installed-CLI, no-write, isolation, and release-acceptance coverage
+  without changing public product behavior.
+
+Write scope:
+
+- deterministic checker, focused fixtures/tests, CI test wiring, and directly
+  coupled documentation;
+- no public command, runtime state, schema, network, installation, or target
+  mutation behavior.
+
+Verification:
+
+- Derive parser leaves/runtime versions from owning code and package inventory
+  from the release manifest; remove duplicated CI inventories and fragile
+  source-regex matrices.
+- Prove manifest missing/extra/hash mismatch, license mismatch, metadata
+  invalidity, CLI/document drift, and generated-artifact detection.
+- Run focused and complete offline coverage, diff check, and two exact-target
+  Tier 2 reviews.
+
+### TG-M19.13 Deterministic Test Lanes And CI Policy
+
+Task: `tg_task_704ecd1d1e2f7552`
+Lane/order: `TG-M19-RELEASE-CORRECTNESS` / 140
+Review tier: Tier 2
+Source-revision state: complete at
+`27e7ef08c70c1434b9aac8474b3006dbbc6ec3b8`
+
+Intended outcome:
+
+- Partition the existing offline suite into deterministic fast, integration,
+  release, and all lanes.
+- Route CI events and Python versions through an explicit policy while
+  preserving the complete test set and release-candidate assurance.
+
+Write scope:
+
+- test-lane manifests or selectors, deterministic runner/policy, CI wiring,
+  focused tests, and directly coupled documentation;
+- no removal or weakening of an existing test and no product behavior,
+  network, target-project, or generated-state change.
+
+Verification:
+
+- Map every discovered test to exactly one lane and prove `all` equals prior
+  full discovery.
+- Fast covers parser, validation, state, and small repositories; integration
+  covers setup, recovery, relocation, backup, Viewer, and normal migration;
+  release covers legacy migration, upgrade/rollback, performance, package,
+  license, docs, and workflow acceptance.
+- Verify event/Python matrix and full candidate gate; run all lanes, diff
+  check, and two exact-target Tier 2 reviews.
+
+### TG-M19.14 Release Vocabulary Boundary And Legacy Privacy Compatibility
+
+Task: `tg_task_0f76a52915987511`
+Lane/order: `TG-M19-RELEASE-CORRECTNESS` / 150
 Review tier: Tier 2
 Source-revision state: active
 
 Intended outcome:
 
-- Close TG-M19.14 with its exact Task and completion commit.
-- Freeze all five M20 units, the bounded observation schema, privacy and
-  missing-data semantics, evidence routing, fresh-agent neutrality, and
-  decision rules before collecting data.
+- Contain the repository-specific v0.10.0 release-counter exception at the
+  generic privacy boundary.
+- Preserve legacy stored Contract/checkpoint/history reads while using neutral
+  future release vocabulary that needs no new project-specific exception.
 
 Write scope:
 
-- active roadmap, design, plan, append-only history routing, one exact
-  historical capture, and directly coupled document-history tests;
-- no harness, runtime, package, Skill, CLI, SQLite, Viewer, release artifact,
-  network, or target-project behavior change.
+- privacy validation and legacy-read compatibility boundary, focused fixtures
+  and tests, specification/design/reference synchronization, and directly
+  coupled public guidance;
+- no rewrite of stored legacy evidence, schema change, credential relaxation,
+  or new project-specific exception.
 
 Verification:
 
-- Confirm TG-M19.14 Task `tg_task_0f76a52915987511` completed at
-  `43c91d5987b0c35c66f834789aea782e98dcaff7`.
-- Verify the five Task IDs, lane order, review tiers, historical capture,
-  schema bounds, privacy exclusions, unchanged product surfaces, focused
-  document/release checks, diff check, and two exact-target Tier 2 reviews.
-
-### TG-M20.2 Repository-Only Observation Harness And Retrospective Baseline
-
-Task: `tg_task_2885725486bec173`
-Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 20
-Review tier: Tier 2
-Depends on: completed TG-M20.1
-
-Intended outcome:
-
-- Implement an offline deterministic repository-only harness for fixed,
-  isolated scenarios and the M20 schema.
-- Separate prospective machine measurements from mechanically reconstructable
-  M19 quantities and explicitly unavailable history.
-
-Write scope:
-
-- root repository tools, focused tests, isolated fixtures, and ignored
-  reduced observation artifacts defined by TG-M20.1;
-- no installable-package, public-runtime, product-state instrumentation,
-  arbitrary command runner, or real consuming-project mutation.
-
-Verification:
-
-- Prove canonical serialization, bounds, privacy, timeouts, no shell, no
-  network, no product or canonical-state write, deterministic replay, and
-  readback through existing public boundaries. Validate every record and each
-  complete fixed-unit corpus against the frozen byte caps.
-- Freeze and review the request/control construction protocol, reducer-manifest
-  schema, digest preimages, and deletion lifecycle. Exact request, neutral
-  clarification, and selector bytes are never persisted as a shared control
-  master.
-- Validate the sanitized M19 reconstruction against Task DB and Git, run
-  applicable test lanes and diff check, and obtain two exact-target Tier 2
-  reviews.
-
-### TG-M20.3 Verification Proportionality Fresh-Agent Baseline
-
-Task: `tg_task_8efb270f74360308`
-Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 30
-Review tier: Tier 1
-Depends on: completed TG-M20.2
-
-Intended outcome:
-
-- Use the unchanged Skill in fresh, isolated trials to measure distinct risk
-  coverage, responsibility-level redundancy, owner fanout, target-change
-  sensitivity, fixture/checker reuse, verification escalation, maintenance
-  fanout, and supporting size/time deltas.
-- Produce enough stratified evidence to decide whether a later small
-  Skill-only guardrail or Verification Receipt design is justified.
-
-Mandatory constraints:
-
-- Fresh subjects receive no parent conversation, temporary M20 memo,
-  hypothesis, rubric, expected verdict, suspected failure, or preferred
-  solution. The context-rich parent designs and scores but is not a subject.
-- Fewer tests are never rewarded mechanically. Raw prompts, chats, reasoning,
-  reviews, diffs, paths, and stream bodies are not retained.
-
-Verification:
-
-- Run the frozen scenario set against the exact baseline with fresh agents,
-  validate source identity and bounded records, independently assess
-  classifications/privacy, and confirm no Skill, product, canonical Task DB,
-  or live-project mutation.
-- Immediately before launch, independently review each exact ephemeral control
-  bundle and its digest; destroy its bytes at the design-defined boundary and
-  retain only the digest in reduced evidence.
-- Obtain the required current-target Tier 1 review with no blocking finding.
-
-### TG-M20.4 Task Boundary And Split-Pressure Fresh-Agent Baseline
-
-Task: `tg_task_787f976a5e9daa7e`
-Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 40
-Review tier: Tier 1
-Depends on: completed TG-M20.3
-
-Intended outcome:
-
-- Compare paired broad versus pre-authorized bounded Tasks and a Handoff
-  control for multi-outcome intake, in-scope discovery, user expansion, and
-  mid-task implementation/verification/review pressure.
-- Measure whether candidate work remains independently acceptable,
-  verifiable, committable, and completable, together with Contract, review,
-  footprint, and cycle effects.
-
-Mandatory constraints:
-
-- This conversation and the earlier reported incident are design context only,
-  never scored fresh-agent evidence.
-- The bounded arm is authorized at intake; no runtime splitting, automatic
-  Task creation, parent/child schema, unauthorized acceptance revision, or
-  live canonical-state mutation is introduced.
-- An out-of-scope Handoff control must remain a Handoff and is not counted as
-  successful or failed Task splitting.
-
-Verification:
-
-- Execute the frozen paired and control cases with fresh agents, validate
-  bounded episode evidence, the Handoff-control state pair, and privacy;
-  independently review the classifications and obtain the required
-  current-target Tier 1 review.
-- Immediately before launch, independently review each exact ephemeral control
-  bundle and its digest; paired arms share the same workload digest, and no raw
-  control bytes survive the design-defined boundary.
-
-### TG-M20.5 Operational Baseline Synthesis And Follow-Up Decisions
-
-Task: `tg_task_f6c19be1c10ad3ab`
-Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 50
-Review tier: Tier 2
-Depends on: completed TG-M20.4
-
-Intended outcome:
-
-- Reproduce bounded aggregates while keeping machine-observed,
-  historically-reconstructed, and observer-attested evidence stratified.
-- Decide separately whether to proceed to design for TG-M21 Verification
-  Receipts, a small Skill-only verification-proportionality guardrail, bounded
-  user-approved Task decomposition, or a bounded further-observation unit.
-
-Write scope:
-
-- sanitized M20 evidence, aggregate analysis, a non-authoritative history
-  capture, and only the durable decisions that survive in active roadmap/plan;
-- no chosen solution implementation and no follow-up implementation Task
-  registration without current explicit user approval.
-
-Verification:
-
-- Validate provenance, denominators, exclusions, unknowns, aggregate
-  reproducibility, privacy, scenario limitations, active-document consistency,
-  applicable focused checks, diff check, and two exact-target Tier 2 reviews.
-- Confirm each trial's raw material and ephemeral control bundle were removed
-  immediately after its single reduction attempt regardless of validation
-  result and that no shared control master exists. Then delete the ignored
-  `dist/M20_TEMPORARY_CONTEXT.md` and reduced corpus after reviewed decisions
-  have been routed.
+- Read the legacy M19.7 Contract, checkpoint, and completion history unchanged.
+- Prove future release vocabulary needs no exception while credential,
+  Authorization header, token assignment, and compound forms remain rejected.
+- Run focused privacy and complete offline suites, diff check, and two
+  exact-target Tier 2 reviews.
 
 ## Roadmap Completion Criteria
 
-The approved M20 sequence is complete only when TG-M20.1 through TG-M20.5 each
-has exact verification evidence, its declared current-target review gate, no
-unresolved High or Medium finding in any generation, and typed completion
-evidence. Study observations never replace those gates.
-
-A positive M20.5 result authorizes only the smallest separately approved design
-proposal named by the frozen decision rules. It does not activate or register
-an implementation Task. TG-M12.3 remains blocked until all of its separate
-authority prerequisites exist; it is not implied by completion of M20.
+The approved post-release sequence is complete only when TG-M19.11 through
+TG-M19.14 each has exact verification evidence, its required two independent
+Tier 2 passes, no unresolved High or Medium finding in any generation, and
+typed completion evidence. TG-M12.3 remains blocked until all of its separate
+authority prerequisites exist; it is not implied by completion of this lane.

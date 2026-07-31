@@ -185,3 +185,15 @@ when an older index sentence describes it in future tense.
 - Capture purpose: preserve the exact pre-publication checklist and artifact
   decision before conversion to the published record.
 - Current replacement: [docs/release-install.md](../release-install.md)
+
+## v0.10.0 Post-Release Correctness Lineage
+
+### Post-release capture of `docs/implementation-roadmap.md`
+
+- Immutable history:
+  [v0.10.0/post-release/implementation-roadmap.md](v0.10.0/post-release/implementation-roadmap.md)
+- Capture commit: `43c91d5987b0c35c66f834789aea782e98dcaff7`
+- Capture purpose: preserve the completed TG-M19.11 through TG-M19.14
+  post-release execution sequence before TG-M20 authority activation.
+- Current replacement:
+  [docs/implementation-roadmap.md](../implementation-roadmap.md)

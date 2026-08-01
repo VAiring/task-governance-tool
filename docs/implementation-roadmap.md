@@ -14,9 +14,10 @@ TG-M20.1 through TG-M20.5. TG-M20.1 is complete at
 `e5167e2d9d54493900b9d88672f1e53304cfa5b1`. TG-M21.1 is complete at
 `fc2e0870ad9bf70830a082df168ad1992e07b51d`. The TG-M20S successor
 observation has reached its frozen `proceed_to_design` result and no-rerun
-retirement boundary. TG-M21.1A, TG-M21.1B, TG-M21.2, and TG-M21.3 are
-approved and registered behind their declared predecessor gates. The Task
-database, not this status paragraph, owns their live state.
+retirement boundary. A later explicit user decision registered TG-M20S.3 as
+an inactive Tier 2 decomposition-design unit. TG-M21.1A, TG-M21.1B, TG-M21.2,
+and TG-M21.3 are approved and registered behind their declared predecessor
+gates. The Task database, not this status paragraph, owns their live state.
 
 This active roadmap owns approved execution order, verification gates, review
 tiers, and the concise completion index. The project-local Task database owns
@@ -97,6 +98,7 @@ commit-not-required fingerprint is shown instead of inventing a Git commit.
 | TG-M20.5 | `tg_task_f6c19be1c10ad3ab` | `e5167e2d9d54493900b9d88672f1e53304cfa5b1` | Reviewed synthesis, separate follow-up decisions, and no-rerun study retirement. |
 | TG-M21.1 | `tg_task_cf03643f368c2c1a` | `fc2e0870ad9bf70830a082df168ad1992e07b51d` | Approved inactive Verification Receipt contract and bounded activation sequence. |
 | TG-M20S.1 | `tg_task_ddfbf721eced8c58` | `33948e3dd1c805e04eda0873c764dad15363175d` | Frozen successor observation contract and one-shot root harness; no collection. |
+| TG-M20S.2 | `tg_task_e591f30d546ba69e` | `e02bea975b4dc6503107e56fad88561f7243bbdf` | Closed successor observation, `proceed_to_design` decision, and no-rerun retirement. |
 
 Every M19 Task in the completion index above has a satisfied final Tier 2 gate
 and no unresolved High or Medium finding in any recorded generation. Some
@@ -432,14 +434,73 @@ delta sum was zero versus one for the broad arm. The frozen denominator moved
 from `E=1,Q=1,U=3` to `E=2,Q=2,U=2`, yielding
 `proceed_to_design`. The two later pairs remained unlaunched.
 
-This result activates no behavior and registers no design Task. A Task-
-decomposition design still requires separate explicit approval and a Tier 2
-contract. Temporary study machinery and reduced evidence are retired; the
-receipt is a no-rerun tombstone and the aggregate decision and limitations are
-preserved in
+The study result itself activated no behavior and did not automatically
+register a design Task. A later explicit user decision separately registered
+TG-M20S.3 under the Tier 2 contract below. Temporary study machinery and
+reduced evidence are retired; the receipt is a no-rerun tombstone and the
+aggregate decision and limitations are preserved in
 [non-authoritative TG-M20S history](history/v0.10.0/m20s-task-decomposition.md).
-The Task database owns exact review and completion state. Once TG-M20S.2 is
-accepted, TG-M21.1A is the next registered unit by static dependency.
+The Task database owns exact review and completion state. TG-M20S.3 is a
+separate design lane; TG-M21.1A remains the next unit in the registered M21
+dependency chain.
+
+### TG-M20S.3 Bounded Task Registration And Scope-Addition Decomposition Design
+
+Task: `tg_task_286129dbca4d25ab`
+Lane/order: `TG-M20S-TASK-DECOMPOSITION` / 30
+Review tier: Tier 2
+Depends on: accepted TG-M20S.2, Task `tg_task_e591f30d546ba69e`
+
+This subsection is the approved registration contract, not the completed
+decision table. TG-M20S.3 remains unaccepted until the six branch conditions,
+negative and unknown fallbacks, exact later synchronization inventory, and
+forward-test design pass its own verification and review gates.
+
+Intended outcome:
+
+- Freeze an inactive decision table for bounded decomposition when the user
+  explicitly asks to register or taskize authorized work.
+- Cover an explicit user scope addition to an in-progress or review-pending
+  Task when the added outcome can be judged independently acceptable,
+  verifiable, committable, and completable.
+- Distinguish keep-current, revise-current, propose-successor, handoff, pause,
+  and block without reducing or expanding the user's authorized outcome.
+
+Mandatory boundaries:
+
+- Explicit taskization authority may support bounded registration of multiple
+  Tasks without repeated confirmation only when scope, order, and permissions
+  remain unchanged.
+- A mid-Task successor remains only a proposal and requires explicit user
+  approval before registration through the existing `task add` path. At most
+  one proposal is allowed per explicit scope-addition event; recursive and
+  size-only splitting are forbidden.
+- A successor proposal leaves the current Task Contract, review target, and
+  completed evidence unchanged. A revise-current outcome instead uses the
+  existing Contract-revision and review-evidence invalidation rules; it never
+  treats stale review or completion evidence as current.
+- Add no automatic Task creation, public command leaf, schema or Viewer field,
+  parent/child model, background LLM work, network behavior, target-project
+  mutation, current Skill guidance, or implementation Task. In-scope discovery
+  and cross-module failure remain outside this evidence-backed design.
+
+Verification:
+
+- Trace every positive rule to the accepted TG-M20S observation and cover the
+  complete six-outcome decision table, including negative and unknown cases.
+- Prove the public command inventory, schema, installable package, Viewer, and
+  unchanged green-path governance call count remain unchanged.
+- Define neutral positive, negative, and unknown forward-test scenarios for a
+  separately approved activation unit. Freeze its exact synchronization scope,
+  including `task-governance-tool/SKILL.md`,
+  `task-governance-tool/references/task_workflow.md`, and directly coupled
+  Skill/forward tests, without editing those surfaces in this design unit.
+- Run focused documentation consistency checks and two independent Tier 2
+  reviews of the exact design revision.
+
+Registration of TG-M20S.3 neither activates this design nor changes the
+approved TG-M21 dependency order. The Task database owns live selection and
+status.
 
 ## Approved Registered TG-M21 Sequence
 
@@ -531,8 +592,12 @@ exist; it is not implied by completion of M20.
 
 TG-M20S.1 and TG-M20S.2 each require exact verification, two current-target
 Tier 2 PASS reviews, and no unresolved High or Medium finding. The retired
-study result never activates behavior or registers the possible design
-follow-up; exact completion evidence remains in the Task database.
+study result never activates behavior or automatically registers a follow-up;
+the later user decision separately registered TG-M20S.3. That design unit is
+complete only after its inactive decision table, boundaries, forward-test
+plan, focused verification, and two current-target Tier 2 PASS reviews are
+accepted. It cannot activate behavior or register an implementation Task as a
+design side effect. Exact completion evidence remains in the Task database.
 
 TG-M21.1 is complete at the indexed revision. TG-M21.1A through TG-M21.3 may
 proceed in their registered order once their declared predecessors are

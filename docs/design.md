@@ -11,8 +11,10 @@ published baseline. TG-M20.1 through TG-M20.5 are complete. TG-M21.1 is
 complete at `fc2e0870ad9bf70830a082df168ad1992e07b51d`; its inactive design
 below does not alter current runtime or package behavior. The TG-M20S
 successor observation reached its frozen `proceed_to_design` result and
-no-rerun retirement boundary. Registered TG-M21 follow-up units remain
-inactive behind their own predecessor and synchronization gates.
+no-rerun retirement boundary. A later explicit user decision registered
+TG-M20S.3 as an inactive Tier 2 decomposition-design Task; it changes no
+current runtime, package, or agent behavior. Registered TG-M21 follow-up units
+remain inactive behind their own predecessor and synchronization gates.
 
 This document is the current implementation design for the behavior specified
 in `docs/specification.md`. Historical design captures under `docs/history/`
@@ -1871,8 +1873,8 @@ remaining pairs.
 This is narrow evidence from one repository, scenario, pair, and model/tool
 cohort. Supporting counts and footprint measures do not establish population
 causality, authenticated reviewer independence, or a general automatic
-self-splitting rule. The result permits only a separately approved Tier 2
-design proposal and changes no current product or agent behavior.
+self-splitting rule. The result itself permitted only a separately approved
+Tier 2 design proposal and did not register or activate one.
 
 All raw work, controls, candidate records, reduced corpus, journal, roots, and
 temporary harness assets are retired. The retained receipt records only the
@@ -1880,6 +1882,24 @@ closed corpus identity, aggregate counts, decision, and exact retirement
 anchor; it cannot reproduce or rescore the study. The complete aggregate
 interpretation and limitations are preserved in
 [non-authoritative study history](history/v0.10.0/m20s-task-decomposition.md).
+
+## Registered But Not Yet Accepted TG-M20S.3 Decomposition Design Task
+
+A later explicit user decision registered TG-M20S.3, Task
+`tg_task_286129dbca4d25ab`, as a design-only unit. It will define a bounded
+decision table for explicit taskization at registration and for an explicit
+user scope addition during an in-progress or review-pending Task. The four
+independence predicates are acceptable, verifiable, committable, and
+completable scope. The table must distinguish keeping or revising the current
+Task, proposing one successor, handoff, pause, and block; a mid-Task successor
+requires explicit approval before the existing `task add` path is used.
+
+This section is the registered work boundary, not the completed decision table
+or accepted design authority. Registration adds no automatic Task creation,
+recursive or size-only splitting, public command, schema, Viewer field,
+parent/child model, network work, target-project mutation, or current Skill
+instruction. It does not cover in-scope discovery or cross-module failure and
+does not register an implementation Task.
 
 ## Validation And Test Design
 
@@ -1960,8 +1980,9 @@ stale detection, parent/child/checklist execution units, manual backup/restore/
 export, generic browser-state persistence, live server, browser launch,
 network synchronization, and update checking.
 
-Any extension, including the inactive M21 design, must preserve local-first
-operation, current privacy and target-project safety, explicit authority for
-mutation, narrow repository boundaries, and concise Skill guidance. It
-requires synchronized specification, design, roadmap, tests, and review rather
-than reuse of a historical design capture.
+Any extension, including the registered but not yet accepted TG-M20S.3 design
+Task and the inactive M21 design, must preserve local-first operation, current
+privacy and target-project safety, explicit authority for mutation, narrow
+repository boundaries, and concise Skill guidance. It requires synchronized
+specification, design, roadmap, tests, and review rather than reuse of a
+historical design capture.

@@ -17,6 +17,8 @@ M20_HISTORY_SHA256 = "1164c65d0270aeef35311a061064c23cf14c1726ad647568598e0fcb27
 M20_COMPLETION = "e5167e2d9d54493900b9d88672f1e53304cfa5b1"
 M20S_RETIREMENT_ANCHOR = "0eaeb9691c0ca4c316ad541ee4dd634287f1ccef"
 M20S_HISTORY_SHA256 = "9f7064d5fb74fe4e6a10c44d4e9ebb70b1b2b6a3969843d7e68775e26668432d"
+M20S2_COMPLETION = "e02bea975b4dc6503107e56fad88561f7243bbdf"
+M20S3_TASK = "tg_task_286129dbca4d25ab"
 
 
 ARCHIVES = {
@@ -195,6 +197,7 @@ class DocumentHistoryTests(unittest.TestCase):
             encoding="utf-8-sig"
         )
         plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
+        roadmap_flat = " ".join(roadmap.split())
 
         self.assertIn(
             "| TG-M20.5 | `tg_task_f6c19be1c10ad3ab` | "
@@ -206,6 +209,44 @@ class DocumentHistoryTests(unittest.TestCase):
         self.assertIn("TG-M20S Closed Successor Observation", roadmap)
         self.assertIn("`tg_task_ddfbf721eced8c58`", roadmap)
         self.assertIn("`tg_task_e591f30d546ba69e`", roadmap)
+        self.assertIn(
+            "| TG-M20S.2 | `tg_task_e591f30d546ba69e` | "
+            f"`{M20S2_COMPLETION}` |",
+            roadmap,
+        )
+        for document in (specification, design, roadmap, plan):
+            self.assertIn(M20S3_TASK, document)
+        for document in (specification, design):
+            document_flat = " ".join(document.split())
+            self.assertIn(
+                "Registered But Not Yet Accepted TG-M20S.3 "
+                "Decomposition Design Task",
+                document_flat,
+            )
+            self.assertIn("not the completed decision table", document_flat)
+            self.assertIn("automatic Task creation", document_flat)
+        self.assertIn(
+            "TG-M20S.3 Bounded Task Registration And Scope-Addition "
+            "Decomposition Design",
+            roadmap,
+        )
+        self.assertIn("approved registration contract", roadmap)
+        for marker in (
+            "register or taskize authorized work",
+            "explicit user scope addition",
+            "independently acceptable",
+            "verifiable",
+            "committable",
+            "completable",
+            "propose-successor",
+            "explicit user approval",
+            "At most one proposal",
+            "In-scope discovery",
+            "cross-module failure",
+        ):
+            self.assertIn(marker, roadmap_flat)
+        self.assertNotIn("registers no design Task", roadmap)
+        self.assertNotIn("does not register such a Task", specification)
         self.assertIn("E=2,Q=2,U=2", specification + design + roadmap + plan)
         self.assertIn(
             "history/v0.10.0/m20s-task-decomposition.md",
@@ -215,7 +256,10 @@ class DocumentHistoryTests(unittest.TestCase):
             "Approved Temporary TG-M20S",
             specification + design + roadmap + plan,
         )
-        self.assertIn("TG-M21.1A, TG-M21.1B, TG-M21.2, and TG-M21.3", roadmap)
+        self.assertIn(
+            "TG-M21.1A, TG-M21.1B, TG-M21.2, and TG-M21.3",
+            roadmap_flat,
+        )
         self.assertIn("approved and registered", roadmap)
 
         for document in (specification, design):

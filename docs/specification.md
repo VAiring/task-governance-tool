@@ -11,7 +11,9 @@ TG-M20.5 are complete. TG-M21.1 is complete at
 `fc2e0870ad9bf70830a082df168ad1992e07b51d`; its explicitly inactive
 acceptance contract below changes no current v0.10.0 behavior. The approved
 TG-M20S successor observation has reached its frozen terminal
-`proceed_to_design` result and no-rerun retirement boundary. TG-M21.1A
+`proceed_to_design` result and no-rerun retirement boundary. A later explicit
+user decision registered TG-M20S.3 as an inactive Tier 2 decomposition-design
+Task; registration changes no current product or agent behavior. TG-M21.1A
 through TG-M21.3 are approved and registered but remain governed by their own
 dependency and synchronization gates; the Task database owns live state.
 
@@ -1014,10 +1016,8 @@ with the frozen prior input changed the denominator from `E=1,Q=1,U=3` to
 `E=2,Q=2,U=2`, selected `proceed_to_design`, and stopped collection before
 either later replacement pair launched.
 
-The result authorizes only a separately approved Tier 2 design proposal. It
-does not register such a Task or activate Skill guidance, public commands,
-SQLite or Viewer behavior, automatic Task creation, runtime Task splitting,
-parent/child Tasks, network behavior, or target-project mutation.
+The result itself authorized only a separately approved Tier 2 design proposal
+and did not automatically register or activate one.
 
 The temporary harness, tests, protocol, episode plan, reduced corpus, controls,
 journals, trial roots, and raw work are retired. The bounded receipt at
@@ -1026,6 +1026,23 @@ tombstone, not study evidence, current verification evidence, or authority to
 reconstruct or rescore the deleted corpus. Aggregate reasoning, limitations,
 and the retirement boundary are preserved only as
 [non-authoritative study history](history/v0.10.0/m20s-task-decomposition.md).
+
+## Registered But Not Yet Accepted TG-M20S.3 Decomposition Design Task
+
+A later explicit user decision registered TG-M20S.3, Task
+`tg_task_286129dbca4d25ab`, to freeze an inactive design for two user-authority
+events: an explicit instruction to register or taskize authorized work, and an
+explicit scope addition to an in-progress or review-pending Task. The latter
+may propose a successor only when the added outcome is independently
+acceptable, verifiable, committable, and completable, and requires explicit
+approval before registration.
+
+This section records authorized design work and its boundary, not the
+completed decision table, accepted design authority, or current behavior.
+TG-M20S.3 activates no current Skill guidance, public command, SQLite or
+Viewer behavior, automatic Task creation, runtime Task splitting, parent/child
+Tasks, network behavior, or target-project mutation. In-scope discovery and
+cross-module failure remain outside this evidence-backed design boundary.
 
 ## Approved But Inactive TG-M21 Verification Receipt Contract
 
@@ -2016,8 +2033,8 @@ beyond the one-shot envelope, external Issue lifecycle/sync until its intake
 contract, cross-project profiles, daily network update checks, reviewer
 identity/signatures/attestation, and a generic workflow engine.
 
-Deferred features, the retired TG-M20S study result, and the inactive TG-M21
-implementation never change current
-acceptance, add a normal-loop command, or authorize target/external mutation
-until their separately approved implementation and synchronization gates
-complete.
+Deferred features, the retired TG-M20S study result, the registered but not
+yet accepted TG-M20S.3 design Task, and the inactive TG-M21 implementation
+never change current acceptance, add a normal-loop command, or authorize
+target/external mutation until their separately approved implementation and
+synchronization gates complete.

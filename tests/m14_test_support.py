@@ -296,7 +296,6 @@ def make_source_self_host(root: Path) -> PhysicalInstall:
         Path("AGENTS.md"),
         Path("docs/specification.md"),
         Path("docs/design.md"),
-        Path("docs/implementation-roadmap.md"),
         Path("plan.md"),
     ):
         destination = repo / relative

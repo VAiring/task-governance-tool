@@ -20,13 +20,15 @@ workspace.
 - The intended repository root is `C:\WorkSpace\task-governance-tool`.
 - The installable package, CLI, migrations, tests, and formal documents already
   exist; inspect them before changing an established contract.
-- Current release/runtime state, the concise completion index, and approved or
-  pending execution units are maintained in
-  `docs/implementation-roadmap.md`. Current decisions, open issues, and future
-  candidates belong in `plan.md`; completed milestone narratives and
-  superseded evidence are indexed as non-authoritative lineage by
-  `docs/history/README.md`. Consult those owning documents instead of mirroring
-  volatile status here.
+- Supported product behavior belongs in `docs/specification.md`, implementation
+  structure in `docs/design.md`, and approved static execution contracts,
+  current decisions, open issues, and future candidates in `plan.md`. The
+  project-local Task database, inspected through the public CLI, owns live Task
+  state and evidence. Published artifact and install identity belongs in
+  `docs/release-install.md`; completed milestone narratives and superseded
+  evidence are indexed as non-authoritative lineage by
+  `docs/history/README.md`. Consult those owners instead of mirroring volatile
+  status here.
 - The workspace is Git-managed. The checked-out committed lineage determines
   which revision of the active governing documents applies locally; a default
   or legacy branch name is not authority by itself. Continue to verify Git
@@ -62,21 +64,22 @@ Before design or implementation work, read and follow:
 1. `AGENTS.md`
 2. `docs/specification.md`
 3. `docs/design.md`
-4. `docs/implementation-roadmap.md`
-5. `plan.md`
-6. directly coupled code, config, schemas, tests, examples, and fixtures
-7. files under root `references/` as reference only
+4. `plan.md`
+5. directly coupled code, config, schemas, tests, examples, and fixtures
+6. files under root `references/` as reference only
 
 If these documents conflict:
 
 - Follow `AGENTS.md` for agent behavior, safety, and workflow discipline.
 - For product behavior, prefer `docs/specification.md`.
 - For implementation structure, prefer `docs/design.md`.
-- For implementation order, execution-unit boundaries, verification gates, and
-  review gates, prefer `docs/implementation-roadmap.md`.
-- Use `plan.md` for current roadmap candidates, decisions not yet promoted to
-  formal docs, and open issues. It is not the execution-status or historical
-  milestone log.
+- For approved execution-unit purpose, scope, dependency order, permission
+  boundaries, and verification, review, and completion gates, prefer
+  `plan.md`.
+- Use `plan.md` for those static execution contracts, future candidates,
+  current decisions, and open issues. It is not the execution-status, evidence,
+  or historical milestone log. Inspect live Task state and evidence through
+  the public CLI.
 - If a required product decision is missing, record it as an open issue in
   `plan.md` or ask the user before hard-coding behavior.
 
@@ -85,8 +88,7 @@ If these documents conflict:
 - Re-read `AGENTS.md` at the start of each new task.
 - Re-read `AGENTS.md` at the start of every milestone and execution unit before
   planning, editing, verification, or review.
-- Re-read `docs/specification.md`, `docs/design.md`,
-  `docs/implementation-roadmap.md`, and `plan.md` before
+- Re-read `docs/specification.md`, `docs/design.md`, and `plan.md` before
   implementation-affecting decisions.
 - If remembered context and current documents differ, follow the current
   documents.
@@ -212,10 +214,11 @@ The product must not become:
 - Do not duplicate release- or milestone-specific product contracts, status,
   command inventories, schemas, constants, truth tables, acceptance matrices,
   or history in this file. Product behavior belongs in `docs/specification.md`,
-  implementation structure in `docs/design.md`, active execution order/status
-  and the concise completion index in `docs/implementation-roadmap.md`,
-  decisions or open issues in `plan.md`, and immutable non-authoritative
-  lineage behind `docs/history/README.md`.
+  implementation structure in `docs/design.md`, approved static execution
+  purpose, scope, dependency order, permission boundaries, and gates together
+  with current decisions and open issues in `plan.md`, live Task state and
+  evidence in the project-local Task database through the public CLI, and
+  immutable non-authoritative lineage behind `docs/history/README.md`.
 - Treat the current CLI, storage, setup/doctor, maintenance, Viewer, and output
   contracts as established. Read their exact current formal sections and
   directly coupled code and tests before changing them; do not reconstruct them
@@ -353,11 +356,11 @@ The product must not become:
   trigger behavior, privacy behavior, or target-project mutation semantics
   without updating governing docs in the same task.
 
-## Roadmap Before Substantial Implementation
+## Execution Plan Before Substantial Implementation
 
-- Before broad implementation, create or update an implementation roadmap in
+- Before broad implementation, create or update an implementation plan in
   `plan.md` or a later formal implementation-task document.
-- The roadmap should define:
+- The execution plan should define:
   - milestones or phases
   - execution units categorized as sequential or optional
   - dependencies, ordering lanes, known blockers, and which tasks may be
@@ -366,14 +369,14 @@ The product must not become:
   - verification gates
   - required review gates
   - completion criteria
-- Present the roadmap to the user and obtain approval before consuming a
+- Present the execution plan to the user and obtain approval before consuming a
   multi-step implementation loop.
-- Narrow direct edits may proceed without a full roadmap when the user asks for
-  a specific edit and it does not start broad implementation.
+- Narrow direct edits may proceed without a full execution plan when the user
+  asks for a specific edit and it does not start broad implementation.
 
 ## Task Consumption Loop Rule
 
-- When the user approves an implementation roadmap or execution-unit set,
+- When the user approves an implementation plan or execution-unit set,
   continue through ready approved execution units by default.
 - Sequential tasks may block their own lane or dependency chain, but they should
   not stop unrelated ready optional tasks or ready tasks in other lanes.
@@ -408,8 +411,8 @@ The product must not become:
 - `Tier 2` changes require two independent review passes when review tooling is
   available. This applies to SQLite schema/migrations, JSON contracts, CLI
   write behavior, target-project mutation behavior, privacy/logging behavior,
-  skill trigger behavior, roadmap/milestone acceptance, and documentation that
-  changes implementation-facing rules.
+  skill trigger behavior, execution-plan/milestone acceptance, and
+  documentation that changes implementation-facing rules.
 - If Tier 2 review tooling is unavailable, do not silently downgrade the gate.
   Run the strongest feasible documented self-review and ask the user before
   treating the execution unit as complete or explicitly blocked.

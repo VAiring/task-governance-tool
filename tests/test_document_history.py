@@ -14,11 +14,23 @@ CAPTURE_M19_PUBLICATION = "a9b80ce177a6dead10d51a070b76ff01f7af0294"
 CAPTURE_M20_BASELINE = "43c91d5987b0c35c66f834789aea782e98dcaff7"
 M20_RETIREMENT_ANCHOR = "dd662a861f3a224bc17f021e0dc0ed6f20be6bc1"
 M20_HISTORY_SHA256 = "1164c65d0270aeef35311a061064c23cf14c1726ad647568598e0fcb2718405d"
-M20_COMPLETION = "e5167e2d9d54493900b9d88672f1e53304cfa5b1"
 M20S_RETIREMENT_ANCHOR = "0eaeb9691c0ca4c316ad541ee4dd634287f1ccef"
 M20S_HISTORY_SHA256 = "9f7064d5fb74fe4e6a10c44d4e9ebb70b1b2b6a3969843d7e68775e26668432d"
-M20S2_COMPLETION = "e02bea975b4dc6503107e56fad88561f7243bbdf"
 M20S3_TASK = "tg_task_286129dbca4d25ab"
+ROADMAP_SOURCE_COMMIT = "af5e19545e4f5b59817c70fbc5e2763c0dbf2e1e"
+RETIRED_ROADMAP = ROOT / "docs" / "implementation-roadmap.md"
+ROADMAP_RETIREMENT_RELATIVE = (
+    "roadmap-retirement/implementation-roadmap.md"
+)
+ROADMAP_RETIREMENT_CAPTURE = (
+    HISTORY_ROOT / "v0.10.0" / ROADMAP_RETIREMENT_RELATIVE
+)
+ROADMAP_REPLACEMENT_LINKS = (
+    "../../AGENTS.md",
+    "../specification.md",
+    "../design.md",
+    "../../plan.md",
+)
 
 
 ARCHIVES = {
@@ -182,39 +194,16 @@ STUDY_HISTORIES = {
 }
 
 
-def git_blob_sha1(data: bytes) -> str:
-    header = f"blob {len(data)}\0".encode("ascii")
-    return hashlib.sha1(header + data).hexdigest()
-
-
 class DocumentHistoryTests(unittest.TestCase):
-    def test_m21_design_and_m20s_closed_decision_are_indexed(self):
+    def test_m21_design_and_m20s_closed_decision_survive_roadmap_retirement(self):
         specification = (ROOT / "docs" / "specification.md").read_text(
             encoding="utf-8-sig"
         )
         design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8-sig")
-        roadmap = (ROOT / "docs" / "implementation-roadmap.md").read_text(
-            encoding="utf-8-sig"
-        )
         plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
-        roadmap_flat = " ".join(roadmap.split())
+        active = specification + design + plan
 
-        self.assertIn(
-            "| TG-M20.5 | `tg_task_f6c19be1c10ad3ab` | "
-            f"`{M20_COMPLETION}` |",
-            roadmap,
-        )
-        self.assertIn("TG-M21.1 Verification Receipt Design Contract", roadmap)
-        self.assertIn("Task: `tg_task_cf03643f368c2c1a`", roadmap)
-        self.assertIn("TG-M20S Closed Successor Observation", roadmap)
-        self.assertIn("`tg_task_ddfbf721eced8c58`", roadmap)
-        self.assertIn("`tg_task_e591f30d546ba69e`", roadmap)
-        self.assertIn(
-            "| TG-M20S.2 | `tg_task_e591f30d546ba69e` | "
-            f"`{M20S2_COMPLETION}` |",
-            roadmap,
-        )
-        for document in (specification, design, roadmap, plan):
+        for document in (specification, design, plan):
             self.assertIn(M20S3_TASK, document)
         specification_flat = " ".join(specification.split())
         design_flat = " ".join(design.split())
@@ -232,12 +221,6 @@ class DocumentHistoryTests(unittest.TestCase):
             "Nothing in this section is wired into the current package",
             design_flat,
         )
-        self.assertIn(
-            "TG-M20S.3 Bounded Task Registration And Scope-Addition "
-            "Decomposition Design",
-            roadmap,
-        )
-        self.assertIn("accepted inactive design boundary", roadmap)
         for marker in (
             "register-bounded-set",
             "register-single",
@@ -282,22 +265,17 @@ class DocumentHistoryTests(unittest.TestCase):
             "normal Task-loop call count",
         ):
             self.assertIn(marker, specification_flat)
-        self.assertNotIn("registers no design Task", roadmap)
         self.assertNotIn("does not register such a Task", specification)
-        self.assertIn("E=2,Q=2,U=2", specification + design + roadmap + plan)
+        self.assertIn("E=2,Q=2,U=2", active)
         self.assertIn(
             "history/v0.10.0/m20s-task-decomposition.md",
-            specification + design + roadmap + plan,
+            active,
         )
         self.assertNotIn(
             "Approved Temporary TG-M20S",
-            specification + design + roadmap + plan,
+            active,
         )
-        self.assertIn(
-            "TG-M21.1A, TG-M21.1B, TG-M21.2, and TG-M21.3",
-            roadmap_flat,
-        )
-        self.assertIn("approved and registered", roadmap)
+        self.assertIn("approved and registered", active)
 
         for document in (specification, design):
             self.assertIn("Approved But Inactive TG-M21 Verification Receipt", document)
@@ -322,7 +300,7 @@ class DocumentHistoryTests(unittest.TestCase):
             "TG-M21.2 atomic vertical activation",
             "TG-M21.3 integrated acceptance",
         ):
-            self.assertIn(marker, specification + design + plan)
+            self.assertIn(marker, active)
 
         self.assertIn(
             "The implementation sequence is approved and registered",
@@ -359,34 +337,24 @@ class DocumentHistoryTests(unittest.TestCase):
             ).exists()
         )
 
-    def test_m211a_freezes_inactive_atomic_roadmap_retirement(self):
+    def test_m211b_retires_roadmap_and_preserves_positive_authority(self):
+        specification = (ROOT / "docs" / "specification.md").read_text(
+            encoding="utf-8-sig"
+        )
+        design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8-sig")
         plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
-        heading = "### TG-M21.1A Inactive Authority-Layout Retirement Contract"
-        section = plan[plan.index(heading) :].split("\n## ", 1)[0]
-        section_flat = " ".join(section.split())
+        active = specification + design + plan
+        normalized_plan = " ".join(plan.split())
 
-        for owner in (
-            "`docs/specification.md`",
-            "`docs/design.md`",
-            "`AGENTS.md`",
-            "`plan.md`",
-            "Project-local Task database through the public CLI",
-            "`docs/release-install.md`",
-            "`docs/history/README.md`",
-        ):
-            self.assertIn(owner, section_flat)
-        for preserved in (
-            "Revision-zero TG-M12.3",
-            "intended outcome",
-            "authorized write scope",
-            "prerequisites and permission boundary",
-            "verification matrix",
-            "Tier 2 gate",
+        self.assertFalse(RETIRED_ROADMAP.exists())
+        for task_id in (
             "tg_task_a6f5ec3147440e53",
             "tg_task_8e30cf88c9018824",
             "tg_task_2f6fd712dd83f250",
             "tg_task_a42cb5d0383980bd",
-            "tg_task_1f7503aca5e32cdc",
+        ):
+            self.assertIn(task_id, plan)
+        for marker in (
             "TG-M21-VERIFICATION-RECEIPTS",
             "TG-M21.1A / 12",
             "TG-M21.1B / 14",
@@ -396,77 +364,26 @@ class DocumentHistoryTests(unittest.TestCase):
             "execute no project command or network/external mutation",
             "bounded fixes only",
         ):
-            self.assertIn(preserved, section_flat)
-
-        capture = (
-            "docs/history/v0.10.0/roadmap-retirement/"
-            "implementation-roadmap.md"
+            self.assertIn(marker, normalized_plan)
+        self.assertIn("Approved But Inactive TG-M21 Verification Receipt", active)
+        self.assertIn(
+            "project-local Task database, inspected through the public CLI",
+            normalized_plan,
         )
-        self.assertIn(capture, section_flat)
-        self.assertIn("TG-M21.1A completion commit", section_flat)
-        self.assertIn("first parent of the atomic", section_flat)
-        self.assertIn("No older archived file", section_flat)
-        self.assertIn("historical tombstones", section_flat)
-        self.assertIn("same exact replacement set", section_flat)
-        self.assertIn("there is no per-entry inference", section_flat)
-        for target in (
-            "../../AGENTS.md",
-            "../specification.md",
-            "../design.md",
-            "../../plan.md",
-            "../../../../AGENTS.md",
-            "../../../specification.md",
-            "../../../design.md",
-            "../../../../plan.md",
+        for m12_marker in (
+            "tg_task_1f7503aca5e32cdc",
+            "Task Contract: revision zero",
+            "SCOPE-CONTROL` / 40",
+            "fixed bounded retry",
+            "bounded receiver acceptance receipt",
+            "zero additional LLM decisions",
+            "two current-target Tier 2 review gates",
         ):
-            self.assertIn(target, section_flat)
-
-        exact_write_inventory = (
-            "AGENTS.md",
-            "docs/specification.md",
-            "docs/design.md",
-            "plan.md",
-            "README.md",
-            "docs/history/README.md",
-            "task-governance-tool/scripts/task_governance_tool/project_scope.py",
-            "task-governance-tool/release-manifest.json",
-            "tests/m14_test_support.py",
-            "tests/test_document_history.py",
-            "tests/test_skill_self_containment.py",
-        )
-        for relative in exact_write_inventory:
-            self.assertIn(relative, section_flat)
-        for atomic_rule in (
-            "one commit",
-            "physically deleted together",
-            "no intermediate commit",
-            "redirect stub",
-            "generated progress table",
-            "no active document, code, package, or test may require or link",
-            "negative absence assertions remain permitted",
-            "two independent exact-target Tier 2 reviews",
-        ):
-            self.assertIn(atomic_rule, section_flat)
-
-        roadmap = ROOT / "docs" / "implementation-roadmap.md"
-        self.assertTrue(roadmap.is_file())
-        current_routing = (
-            (ROOT / "AGENTS.md").read_text(encoding="utf-8"),
-            (ROOT / "docs" / "specification.md").read_text(encoding="utf-8"),
-            (ROOT / "docs" / "design.md").read_text(encoding="utf-8"),
-            (HISTORY_ROOT / "README.md").read_text(encoding="utf-8"),
-        )
-        for document in current_routing:
-            self.assertIn("implementation-roadmap.md", document)
-        project_scope = (
-            ROOT
-            / "task-governance-tool"
-            / "scripts"
-            / "task_governance_tool"
-            / "project_scope.py"
-        ).read_text(encoding="utf-8")
-        self.assertIn('Path("docs/implementation-roadmap.md")', project_scope)
-        self.assertFalse((ROOT / capture).exists())
+            self.assertIn(m12_marker, normalized_plan)
+        self.assertNotIn("(docs/implementation-roadmap.md)", active)
+        self.assertNotIn("## Concise Completion Index", plan)
+        self.assertNotIn("## Implementation Execution Status", plan)
+        self.assertNotIn("| Unit | Task | Current gate |", plan)
 
     def test_archives_are_fixed_exact_captures_with_non_authority_banners(self):
         version_root = HISTORY_ROOT / "v0.10.0"
@@ -500,16 +417,52 @@ class DocumentHistoryTests(unittest.TestCase):
                 self.assertIn(expected["capture"], banner)
                 self.assertIn(expected["replacement"], banner)
 
-    def test_history_index_preserves_old_prefix_and_indexes_every_capture(self):
-        index_bytes = (HISTORY_ROOT / "README.md").read_bytes()
-        captured_prefix = index_bytes[:5477]
-        self.assertEqual(
-            git_blob_sha1(captured_prefix),
-            "3d90c4da97e65b895e6a904defce171ae84b6b62",
+    def test_final_roadmap_capture_has_exact_source_body_and_retirement_prefix(self):
+        captured = subprocess.run(
+            [
+                "git",
+                "show",
+                f"{ROADMAP_SOURCE_COMMIT}:docs/implementation-roadmap.md",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
         )
-        index = index_bytes.decode("utf-8")
+        self.assertEqual(captured.returncode, 0)
+        self.assertEqual(len(captured.stdout), 34_165)
+        self.assertEqual(
+            hashlib.sha256(captured.stdout).hexdigest(),
+            "8e436273cc37371f26aee595f6d5f76e9c31a7825d0ebe1d3b9ec79319d7a139",
+        )
+
+        data = ROADMAP_RETIREMENT_CAPTURE.read_bytes()
+        self.assertTrue(data.endswith(captured.stdout))
+        body = data[-len(captured.stdout) :]
+        self.assertEqual(body, captured.stdout)
+        prefix = data[: -len(captured.stdout)].decode("utf-8")
+        for marker in (
+            "NON-AUTHORITATIVE HISTORY",
+            "FINAL ROADMAP RETIREMENT CAPTURE",
+            "docs/implementation-roadmap.md",
+            ROADMAP_SOURCE_COMMIT,
+            "Retired from the active governing set",
+            "public CLI for live Task state and evidence",
+            "Captured body begins below.",
+        ):
+            self.assertIn(marker, prefix)
+        for target in (
+            "../../../../AGENTS.md",
+            "../../../specification.md",
+            "../../../design.md",
+            "../../../../plan.md",
+        ):
+            self.assertIn(target, prefix)
+
+    def test_history_index_routes_retired_entries_and_indexes_every_capture(self):
+        index = (HISTORY_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("not current", index)
         self.assertIn("append-only", index)
+        self.assertNotIn("](../implementation-roadmap.md)", index)
         for relative, expected in ARCHIVES.items():
             with self.subTest(relative=relative):
                 heading = expected.get(
@@ -523,11 +476,49 @@ class DocumentHistoryTests(unittest.TestCase):
                 )
                 self.assertEqual(len(sections), 1)
                 section = sections[0]
+                normalized_section = " ".join(section.split())
                 self.assertIn(expected["capture"], section)
-                self.assertIn(expected["replacement"], section)
                 self.assertEqual(section.count(f"](v0.10.0/{relative})"), 1)
+                if expected["replacement"] == "docs/implementation-roadmap.md":
+                    for target in ROADMAP_REPLACEMENT_LINKS:
+                        self.assertEqual(section.count(f"]({target})"), 1)
+                    self.assertIn(
+                        "public CLI for live Task state and evidence",
+                        normalized_section,
+                    )
+                else:
+                    self.assertIn(expected["replacement"], section)
 
-        indexed_archives = set(ARCHIVES) | STUDY_HISTORIES
+        final_heading = (
+            "Final retirement capture of `docs/implementation-roadmap.md`"
+        )
+        final_sections = re.findall(
+            rf"^### {re.escape(final_heading)}\n(.*?)(?=^### |^## |\Z)",
+            index,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertEqual(len(final_sections), 1)
+        final_section = final_sections[0]
+        normalized_final_section = " ".join(final_section.split())
+        self.assertIn(ROADMAP_SOURCE_COMMIT, final_section)
+        self.assertEqual(
+            final_section.count(
+                "](v0.10.0/roadmap-retirement/implementation-roadmap.md)"
+            ),
+            1,
+        )
+        for target in ROADMAP_REPLACEMENT_LINKS:
+            self.assertEqual(final_section.count(f"]({target})"), 1)
+        self.assertIn(
+            "public CLI for live Task state and evidence",
+            normalized_final_section,
+        )
+
+        indexed_archives = (
+            set(ARCHIVES)
+            | STUDY_HISTORIES
+            | {ROADMAP_RETIREMENT_RELATIVE}
+        )
         actual_archives = {
             path.relative_to(HISTORY_ROOT / "v0.10.0").as_posix()
             for path in (HISTORY_ROOT / "v0.10.0").rglob("*.md")
@@ -659,19 +650,17 @@ class DocumentHistoryTests(unittest.TestCase):
         )
 
     def test_governing_and_historical_markdown_links_resolve(self):
-        documents = [
+        active_documents = [
             ROOT / "AGENTS.md",
+            ROOT / "README.md",
             ROOT / "plan.md",
             ROOT / "docs" / "specification.md",
             ROOT / "docs" / "design.md",
-            ROOT / "docs" / "implementation-roadmap.md",
             HISTORY_ROOT / "README.md",
-            HISTORY_ROOT / "v0.10.0" / "m20-operational-baseline.md",
-            HISTORY_ROOT / "v0.10.0" / "m20s-task-decomposition.md",
         ]
         link_pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
         checked = 0
-        for document in documents:
+        for document in active_documents:
             text = document.read_text(encoding="utf-8")
             for target in link_pattern.findall(text):
                 path_text = target.split("#", 1)[0]
@@ -684,6 +673,26 @@ class DocumentHistoryTests(unittest.TestCase):
                     f"{document.relative_to(ROOT)} -> {target}",
                 )
 
+        immutable_documents = (
+            HISTORY_ROOT / "v0.10.0" / "m20-operational-baseline.md",
+            HISTORY_ROOT / "v0.10.0" / "m20s-task-decomposition.md",
+        )
+        for document in immutable_documents:
+            text = document.read_text(encoding="utf-8")
+            for target in link_pattern.findall(text):
+                path_text = target.split("#", 1)[0]
+                if not path_text or "://" in path_text:
+                    continue
+                checked += 1
+                resolved = (document.parent / path_text).resolve()
+                if resolved == RETIRED_ROADMAP.resolve():
+                    self.assertFalse(resolved.exists())
+                else:
+                    self.assertTrue(
+                        resolved.is_file(),
+                        f"{document.relative_to(ROOT)} -> {target}",
+                    )
+
         for relative, expected in ARCHIVES.items():
             document = HISTORY_ROOT / "v0.10.0" / relative
             data = document.read_bytes()
@@ -694,27 +703,50 @@ class DocumentHistoryTests(unittest.TestCase):
                     continue
                 checked += 1
                 resolved = (document.parent / path_text).resolve()
-                self.assertTrue(
-                    resolved.is_file(),
-                    f"{document.relative_to(ROOT)} banner -> {target}",
-                )
+                if resolved == RETIRED_ROADMAP.resolve():
+                    self.assertFalse(resolved.exists())
+                else:
+                    self.assertTrue(
+                        resolved.is_file(),
+                        f"{document.relative_to(ROOT)} banner -> {target}",
+                    )
+
+        retirement_data = ROADMAP_RETIREMENT_CAPTURE.read_bytes()
+        source_body = subprocess.run(
+            [
+                "git",
+                "show",
+                f"{ROADMAP_SOURCE_COMMIT}:docs/implementation-roadmap.md",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+        retirement_prefix = retirement_data[: -len(source_body)].decode("utf-8")
+        for target in link_pattern.findall(retirement_prefix):
+            path_text = target.split("#", 1)[0]
+            if not path_text or "://" in path_text:
+                continue
+            checked += 1
+            resolved = (ROADMAP_RETIREMENT_CAPTURE.parent / path_text).resolve()
+            self.assertTrue(
+                resolved.is_file(),
+                f"{ROADMAP_RETIREMENT_CAPTURE.relative_to(ROOT)} -> {target}",
+            )
         self.assertGreaterEqual(checked, 40)
 
     def test_active_authority_is_concise_and_forward_evidence_is_historical(self):
-        roadmap = (ROOT / "docs" / "implementation-roadmap.md").read_text(
-            encoding="utf-8-sig"
-        )
         plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
-        self.assertLess(len(roadmap.splitlines()), 1_500)
         self.assertLess(len(plan.splitlines()), 500)
-        self.assertNotIn("## Milestone TG-M1:", roadmap)
+        self.assertFalse(RETIRED_ROADMAP.exists())
+        self.assertTrue(ROADMAP_RETIREMENT_CAPTURE.is_file())
         self.assertNotIn("## Implementation Execution Status", plan)
+        self.assertNotIn("| Unit | Task | Current gate |", plan)
         self.assertFalse(any((ROOT / "docs" / "forward-tests").glob("*.md")))
         self.assertIn("docs/history/README.md", agents)
         self.assertIn("non-authoritative", agents)
-        self.assertIn("docs/history/README.md", roadmap)
         self.assertIn("docs/history/README.md", plan)
 
     def test_post_release_authority_is_synchronized_and_plan_avoids_handoff_mirror(
@@ -723,7 +755,6 @@ class DocumentHistoryTests(unittest.TestCase):
         active_paths = (
             ROOT / "docs" / "specification.md",
             ROOT / "docs" / "design.md",
-            ROOT / "docs" / "implementation-roadmap.md",
             ROOT / "plan.md",
             ROOT / "README.md",
             ROOT / "docs" / "release-install.md",
@@ -748,7 +779,8 @@ class DocumentHistoryTests(unittest.TestCase):
         ):
             self.assertNotIn(stale, combined)
 
-        roadmap = active["docs/implementation-roadmap.md"]
+        retirement_data = ROADMAP_RETIREMENT_CAPTURE.read_bytes()
+        roadmap = retirement_data[-34_165:].decode("utf-8-sig")
         for task_id in (
             "tg_task_e452e6eb7dcf0e08",
             "tg_task_d0e8ac1287bd07a4",
@@ -862,10 +894,9 @@ class DocumentHistoryTests(unittest.TestCase):
             "aaa118a3fbbb261ec6a24f7a80f50f161e606a86857f99e17f957f34ba044a03",
         )
 
-    def test_completion_index_keeps_full_revisions_and_exact_older_blocker(self):
-        roadmap = (ROOT / "docs" / "implementation-roadmap.md").read_text(
-            encoding="utf-8-sig"
-        )
+    def test_retired_completion_index_preserves_pre_task_db_lineage(self):
+        retirement_data = ROADMAP_RETIREMENT_CAPTURE.read_bytes()
+        roadmap = retirement_data[-34_165:].decode("utf-8-sig")
         expected_rows = {
             "TG-M1.1-TG-M4.3 MVP": (
                 "pre-Task-DB",

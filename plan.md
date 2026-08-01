@@ -1,32 +1,22 @@
 # task-governance-tool Current Decisions And Open Issues
 
-Status: v0.10.0 is published from exact commit
-`a9b80ce177a6dead10d51a070b76ff01f7af0294`. Remote `main` and the
-lightweight tag `v0.10.0` resolve to that commit. GitHub Release
-`362617903` has prerelease visibility and contains the accepted archive and
-checksum. TG-M19.0 through TG-M19.10, including TG-M19.6A and TG-M19.6B, are
-complete. TG-M19.11 through TG-M19.14 are also complete. TG-M20.1 through
-TG-M20.5 form the approved operational-baseline sequence. TG-M20.1 is
-complete at `a77afbe0140fef416cceeee529e9ff2c985a8e4d`, TG-M20.2 is
-complete at `e49e5aca68a7bf1c9829afb50d2c6a38835a4f03`, TG-M20.3 is
-complete at `800ed153dc9671f011ea4715f50d92ea464bc12b`, TG-M20.4 is
-complete at `ed15a85b6d1c328a9d1ac9b6a1448b50c1389481`, and TG-M20.5 is
-complete at `e5167e2d9d54493900b9d88672f1e53304cfa5b1`. TG-M21.1 is complete
-at `fc2e0870ad9bf70830a082df168ad1992e07b51d`. The TG-M20S successor
-observation has reached its frozen `proceed_to_design` result and no-rerun
-retirement boundary. TG-M20S.3 now freezes an accepted but inactive Tier 2
-decomposition design. TG-M21.1A through TG-M21.3 are
-approved and registered behind their static predecessor chain. TG-M12.3
-remains separately blocked; live status remains solely in the Task database.
+Decision baseline: v0.10.0 is published from exact commit
+`a9b80ce177a6dead10d51a070b76ff01f7af0294`; remote `main` and lightweight
+tag `v0.10.0` resolve to that commit, and GitHub Release `362617903` has
+prerelease visibility. The M20 studies selected the accepted but inactive
+TG-M20S.3 decomposition and TG-M21 Verification Receipt designs. The approved
+M21 activation sequence and revision-zero TG-M12.3 prerequisites are retained
+below. The Task database, queried through the public CLI, is the sole owner of
+live execution status and evidence.
 
 This file owns current decisions, explicit open issues, and user-decision
 gates. It is not the product contract, execution ledger, or evidence store:
 
 - [`docs/specification.md`](docs/specification.md) owns product behavior.
 - [`docs/design.md`](docs/design.md) owns implementation structure.
-- [`docs/implementation-roadmap.md`](docs/implementation-roadmap.md) owns
-  approved execution units, order, blockers, verification, review gates, and
-  the concise completion index.
+- This plan owns approved static execution purpose, scope, dependency order,
+  permission boundaries, verification/review/completion gates, current
+  decisions, and open issues. It is not a progress table.
 - The project-local Task database owns live Task, handoff, review, checkpoint,
   and completion state. This file does not mirror volatile handoff IDs or
   counts; inspect them through the public CLI.
@@ -114,8 +104,10 @@ gates. It is not the product contract, execution ledger, or evidence store:
   write. Any future release, push, tag, Release, or CI dispatch needs its own
   exact current authority.
 - Exact artifact identities and install/upgrade boundaries live in
-  [`docs/release-install.md`](docs/release-install.md); the active roadmap
-  owns completion evidence routing and post-release execution order.
+  [`docs/release-install.md`](docs/release-install.md). This plan owns only
+  approved static execution gates; the Task database owns live completion
+  evidence and [`docs/history/README.md`](docs/history/README.md) indexes
+  completed lineage.
 
 ### Repository Verification Policy
 
@@ -334,128 +326,93 @@ until the authority-layout predecessors complete:
    counts, package/release consistency, and realistic forward tests before
    declaring M21 complete.
 
-TG-M21.1A (`tg_task_a6f5ec3147440e53`) first designs the authority-layout
-retirement after accepted TG-M20S.2, and TG-M21.1B
-(`tg_task_8e30cf88c9018824`) performs the reviewed atomic switch before
-TG-M21.2. The registered activation and acceptance Tasks are respectively
-`tg_task_2f6fd712dd83f250` and `tg_task_a42cb5d0383980bd`. Registration alone
-does not activate the inactive design; a semantic change or expansion still
-requires separate authority.
+### Current Authority Layout And Approved M21 Sequence
 
-### TG-M21.1A Inactive Authority-Layout Retirement Contract
+TG-M21.1A `tg_task_a6f5ec3147440e53` and TG-M21.1B
+`tg_task_8e30cf88c9018824` established the current authority layout without
+changing product behavior. Product behavior remains in the specification,
+implementation structure in the design, durable agent rules in `AGENTS.md`,
+and approved static execution contracts in this plan. The project-local Task
+database, inspected through the public CLI, owns current, ready, blocked,
+review, and completion state and evidence but is not project-decision
+authority.
 
-This design freezes the exact TG-M21.1B transition. It does not switch current
-authority: through completion of TG-M21.1A,
-`docs/implementation-roadmap.md` remains required and retains all ownership
-assigned to it by `AGENTS.md` and the active formal documents.
+All four M21 units are sequential Tier 2 work in lane
+`TG-M21-VERIFICATION-RECEIPTS`. Their retained static contracts are:
 
-After the one-revision TG-M21.1B switch, ownership is retained or retired as
-follows:
+| Unit/order | Task | Dependency | Purpose, bounded scope, permission, and completion gate |
+|---|---|---|---|
+| TG-M21.1A / 12 | `tg_task_a6f5ec3147440e53` | accepted TG-M20S.2 | Design the ownership map in `plan.md` plus documentation validation only; switch no routing or behavior; require inventory checks and two Tier 2 reviews. |
+| TG-M21.1B / 14 | `tg_task_8e30cf88c9018824` | accepted TG-M21.1A | Use the user's physical-deletion authority for the closed repository inventory only; atomically preserve positive authority and final history without a progress mirror; require self-host/focused/full offline checks and two Tier 2 reviews. |
+| TG-M21.2 / 20 | `tg_task_2f6fd712dd83f250` | accepted TG-M21.1B | Atomically activate the exact schema-v17 Receipt storage, gate, CLI/show, cycle-link, Viewer-compatibility, Skill/reference, package, documentation, and test contract in the specification/design; execute no project command or network/external mutation; require focused/full/release checks and two Tier 2 reviews. |
+| TG-M21.3 / 30 | `tg_task_a42cb5d0383980bd` | accepted TG-M21.2 | Accept that exact activation with migration, privacy, concurrency, stale/current, recovery, package, release, and realistic offline scenarios plus bounded fixes only; add no redesign or new surface; require the full suite and two Tier 2 reviews. |
 
-| Information | Positive owner after TG-M21.1B | Roadmap treatment |
-|---|---|---|
-| Supported product behavior and acceptance | `docs/specification.md` | Retire every duplicate or routing claim. |
-| Implementation structure and synchronization boundaries | `docs/design.md` | Retire every duplicate or routing claim. |
-| Durable agent behavior, safety, and workflow gates | `AGENTS.md` | Replace roadmap-specific routing with owner-neutral execution-unit wording. |
-| Approved purpose, scope, dependency order, permission boundaries, verification/review/completion gates, current decisions, and open issues | `plan.md` | Preserve only positive static authority; do not recreate a status or completion table. |
-| Current/ready/blocked/review/done state, blocker detail, targets, evidence, and completion commits | Project-local Task database through the public CLI | Retire all live-state and concise-completion-index copies. SQLite remains helper state, never project-decision authority. |
-| Published artifact and install identity | `docs/release-install.md` and the immutable release body | Retire the roadmap acceptance-index copy. |
-| Completed pre-Task-DB execution lineage and the final roadmap body | `docs/history/README.md` and immutable captures | Preserve as non-authoritative lineage only; it never satisfies a current gate. |
+The final retired source body is indexed as
+[non-authoritative roadmap history](docs/history/v0.10.0/roadmap-retirement/implementation-roadmap.md),
+captured from exact commit `af5e19545e4f5b59817c70fbc5e2763c0dbf2e1e`.
+It supplies lineage only and never fills an active-contract gap or satisfies a
+current gate. Completed execution details, current/ready/blocked/review/done
+state, blocker detail, targets, evidence, and completion commits are queried
+through the public CLI rather than mirrored in Git documents.
 
-The positive static preservation set is exact. The approved-but-inactive M21
-Receipt contract remains in the specification and design, while this plan
-retains TG-M21.1A `tg_task_a6f5ec3147440e53`, TG-M21.1B
-`tg_task_8e30cf88c9018824`, TG-M21.2 `tg_task_2f6fd712dd83f250`, and TG-M21.3
-`tg_task_a42cb5d0383980bd`, with their lane order, dependencies, activation
-boundary, and integrated-acceptance gate. Revision-zero TG-M12.3
-`tg_task_1f7503aca5e32cdc` must gain a positive active section in this plan
-containing its existing intended outcome, authorized write scope,
-prerequisites and permission boundary, mandatory constraints, verification
-matrix, Tier 2 gate, and Task ID. Only its volatile status and blocker detail
-remain Task-DB-owned. No current behavior may depend on the final history
-capture.
+### TG-M12.3 Approved Static Contract
 
-All four retained units are sequential Tier 2 work in lane
-`TG-M21-VERIFICATION-RECEIPTS`. Their static execution contracts are:
+Task: `tg_task_1f7503aca5e32cdc`
+Kind/lane/order: sequential / `SCOPE-CONTROL` / 40
+Review tier: Tier 2
+Task Contract: revision zero; this section is its positive static authority
+Depends on: TG-M12.2, a separately approved versioned Issue Skill intake
+contract, governing permission updates, and explicit user approval of the
+integration boundary
 
-| Unit/order | Dependency | Purpose, bounded scope, permission, and completion gate |
-|---|---|---|
-| TG-M21.1A / 12 | accepted TG-M20S.2 | Design this ownership map in `plan.md` plus documentation validation only; do not switch routing or change behavior; complete with inventory checks and two Tier 2 reviews. |
-| TG-M21.1B / 14 | accepted TG-M21.1A | Use the user's physical-deletion authority for the closed repository write inventory only; atomically preserve positive authority and final history, remove the roadmap with zero active dangling references or progress mirror, pass self-host/focused/full offline checks, and obtain two Tier 2 reviews. |
-| TG-M21.2 / 20 | accepted TG-M21.1B | Atomically activate the exact schema-v17 Receipt storage, gate, CLI/show, cycle-link, Viewer-compatibility, Skill/reference, package, documentation, and test contract in the specification/design; execute no project command or network/external mutation; pass all focused/full/release checks and two Tier 2 reviews. |
-| TG-M21.3 / 30 | accepted TG-M21.2 | Accept that exact activation with migration, privacy, concurrency, stale/current, recovery, package, release, and realistic offline scenarios plus bounded fixes only; add no redesign or new surface; pass the full suite and two Tier 2 reviews. |
+Intended outcome:
 
-The final capture is exactly
-`docs/history/v0.10.0/roadmap-retirement/implementation-roadmap.md`. Its body
-is the byte-exact `docs/implementation-roadmap.md` from the TG-M21.1A
-completion commit, which must also be the first parent of the atomic
-TG-M21.1B commit. A conspicuous prefix records that source path and commit,
-marks every captured status word non-authoritative, and links to
-`AGENTS.md`, `docs/specification.md`, `docs/design.md`, and `plan.md` as the
-positive replacements. TG-M21.1B appends one index entry and a retirement
-routing note to `docs/history/README.md`; it updates the index preamble and
-every existing `Current replacement` field that points at the retired path.
-Each such field uses the same exact replacement set: `AGENTS.md`,
-`docs/specification.md`, `docs/design.md`, and `plan.md`, followed by the
-public-CLI direction for live Task state and evidence; there is no per-entry
-inference. From `docs/history/README.md`, the exact link targets are
-`../../AGENTS.md`, `../specification.md`, `../design.md`, and `../../plan.md`.
-From the new final capture, they are `../../../../AGENTS.md`,
-`../../../specification.md`, `../../../design.md`, and `../../../../plan.md`.
-That routing-metadata update is the sole authorized exception to the index's
-ordinary append-only rule. No older archived file, including its banner, may
-change. Links to the retired path inside those immutable files remain
-historical tombstones. Link validation may exempt only that exact retired
-target inside immutable archived files; every index link, active-document
-link, and new capture link must resolve.
+- Connect existing and new pending handoffs through one future explicitly
+  enabled, versioned local Issue intake boundary.
+- Add claim/lease safety, fixed bounded retry, acknowledgement reconciliation,
+  and deterministic due processing without importing Issue lifecycle into the
+  Task Skill.
 
-TG-M21.1B has this closed write inventory:
+Write scope after every prerequisite is separately satisfied:
 
-- authority and navigation: `AGENTS.md`, `docs/specification.md`,
-  `docs/design.md`, `plan.md`, `README.md`, `docs/history/README.md`, the new
-  final capture above, and deletion of `docs/implementation-roadmap.md`;
-- self-host/package coupling:
-  `task-governance-tool/scripts/task_governance_tool/project_scope.py` and
-  its digest in `task-governance-tool/release-manifest.json`;
-- directly coupled validation: `tests/m14_test_support.py`,
-  `tests/test_document_history.py`, and
-  `tests/test_skill_self_containment.py`.
+- one concrete local adapter and explicit project-scoped configuration;
+- claim, acknowledgement, fixed retry, due processing, crash reconciliation,
+  and bounded delivery-status projection;
+- synchronized specification, design, Skill/reference, README, release, and
+  offline integration tests; and
+- no public command becomes active until its contract, implementation, and
+  package synchronization complete.
 
-No other runtime, schema, CLI, Skill workflow, Viewer, release identity, or
-target-project behavior is in scope. The retirement must land as one commit:
-the final capture and index are added, positive authority is preserved,
-routing and self-host requirements are switched, coupled tests and the
-manifest are synchronized, and the roadmap is physically deleted together.
-There may be no intermediate commit, renamed roadmap, redirect stub, generated
-progress table, or Task-state mirror. Acceptance requires the retired path to
-be absent; no active document, code, package, or test may require or link to
-it. Exact source-path metadata in non-authoritative history and negative
-absence assertions remain permitted. The exact capture must match its
-declared parent source, self-host detection plus focused and full offline
-checks must pass, and two independent exact-target Tier 2 reviews may have no
-unresolved High or Medium finding.
+Mandatory constraints:
 
-## Registered Work, Static Gates, And User Decisions
+- Do not start until the exact Issue intake/transport/version contract and
+  governing permission update exist.
+- Keep the current local handoff-recording workflow regardless of receiver
+  presence. Pending delivery never expands the source Task's acceptance.
+- Never open, initialize, migrate, or edit an Issue database directly; never
+  use a shell, URL, network, GitHub, or arbitrary dynamic project code.
+- Store only a bounded receiver acceptance receipt. Exclude semantic duplicate
+  handling, priority, triage, resolution, resulting Task creation, Issue
+  import/lifecycle sync, and reverse synchronization.
+- Exact lease duration, batch bound, retry stages, and acknowledgement
+  transport must come from the separately approved receiver contract.
 
-| Unit | Task | Current gate |
-|---|---|---|
-| TG-M20S.1 | `tg_task_ddfbf721eced8c58` | Protocol and harness freeze completed at `33948e3dd1c805e04eda0873c764dad15363175d`. |
-| TG-M20S.2 | `tg_task_e591f30d546ba69e` | Closed study; `proceed_to_design`; Task DB owns exact review and completion evidence. |
-| TG-M20S.3 | `tg_task_286129dbca4d25ab` | Accepted inactive design; Task DB owns exact review and completion state. |
-| TG-M21.1A | `tg_task_a6f5ec3147440e53` | Statically depends on accepted TG-M20S.2; then proceeds without another decision. |
-| TG-M21.1B | `tg_task_8e30cf88c9018824` | Depends on accepted TG-M21.1A. |
-| TG-M21.2 | `tg_task_2f6fd712dd83f250` | Depends on accepted TG-M21.1B; remains inactive until atomic activation. |
-| TG-M21.3 | `tg_task_a42cb5d0383980bd` | Depends on accepted TG-M21.2; owns integrated M21 acceptance. |
-| TG-M12.3 | `tg_task_1f7503aca5e32cdc` | Blocked until a separately approved versioned Issue Skill intake contract, governing permission update, and explicit integration approval exist. |
+Verification and completion gate:
 
-The approved TG-M20.1-TG-M20.5 sequence and TG-M21.1 design are complete.
-TG-M20S has its closed terminal decision, and TG-M20S.3 freezes accepted but
-inactive design authority. The registered M21 follow-up
-chain may proceed in the order above without another decision. This table
-records static gates only; the Task database owns current, ready, blocked,
-review, and completion state.
-A materially different write, external operation, scope expansion, or changed
-acceptance still requires explicit authority.
+- Cover absent, disabled, success, retryable-result stages independent of
+  claim count, permanent, exhausted, pending drain, crash reconciliation,
+  claim/withdraw race, receiver idempotency, permission, version, privacy, no
+  shell/network, zero additional LLM decisions, and the full integration suite.
+- Prove one receiver item under concurrent claim/acknowledgement, deterministic
+  due state, no local-withdrawn plus receiver-accepted race, and fail-closed
+  pending behavior for permission or version mismatch.
+- Run the exact current documentation, package, privacy, concurrency, offline
+  suite, diff, and two current-target Tier 2 review gates.
+
+Only these static prerequisites and gates live here. The Task database owns
+TG-M12.3's current state, blocker detail, review evidence, and completion
+history. A materially different write, external operation, scope expansion,
+or changed acceptance still requires explicit authority.
 
 ## Open Issues And Deferred Candidates
 

@@ -1,3 +1,26 @@
+> [!CAUTION]
+> **NON-AUTHORITATIVE HISTORY — FINAL ROADMAP RETIREMENT CAPTURE**
+>
+> This file preserves the exact final body of
+> `docs/implementation-roadmap.md` from source commit
+> `af5e19545e4f5b59817c70fbc5e2763c0dbf2e1e`.
+> Retired from the active governing set by the atomic TG-M21.1B
+> authority-layout transition. Words
+> such as current, approved, active, blocked, or complete below describe only
+> that captured revision and grant no present authority.
+>
+> Current positive replacements are root [AGENTS.md](../../../../AGENTS.md),
+> the active [specification](../../../specification.md), active
+> [design](../../../design.md), and root [plan.md](../../../../plan.md). Use
+> the public CLI for live Task state and evidence. History never satisfies a
+> current verification, review, or completion gate.
+>
+> Source path: `docs/implementation-roadmap.md`
+>
+> Source commit: `af5e19545e4f5b59817c70fbc5e2763c0dbf2e1e`
+>
+> Captured body begins below.
+
 # task-governance-tool Current Implementation Roadmap
 
 Status: v0.10.0 is published with prerelease visibility from exact commit

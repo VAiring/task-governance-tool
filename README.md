@@ -127,7 +127,8 @@ the complete boundary.
 
 ## Minimal Task Workflow
 
-Register only work already approved by the user or an approved roadmap:
+Register only work already approved by the user or an approved execution plan
+or execution-unit set:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py task add --title "Example task" --json
@@ -423,7 +424,13 @@ coverage.
 
 ## Project Docs
 
+- `AGENTS.md`: durable agent behavior, safety, and workflow gates.
 - `docs/specification.md`: product contract.
 - `docs/design.md`: implementation design and boundaries.
-- `docs/implementation-roadmap.md`: approved execution units and review gates.
+- `plan.md`: approved static execution contracts, current decisions, and open
+  issues.
 - `docs/release-install.md`: release artifact and installation decision.
+- `docs/history/README.md`: non-authoritative lineage index.
+
+Inspect live Task state and evidence through the public CLI; project documents
+do not mirror that volatile state.

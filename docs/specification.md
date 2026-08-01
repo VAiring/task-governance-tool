@@ -18,17 +18,19 @@ through TG-M21.3 are approved and registered but remain governed by their own
 dependency and synchronization gates; the Task database owns live state.
 
 This document specifies supported product behavior. `docs/design.md` owns
-implementation structure, `docs/implementation-roadmap.md` owns execution
-order and gates, root `AGENTS.md` owns durable agent behavior, and `plan.md`
-holds current decisions and open issues. Indexed files under
+implementation structure, root `AGENTS.md` owns durable agent behavior, and
+`plan.md` owns approved static execution purpose, scope, dependency order,
+permission boundaries, verification/review/completion gates, current decisions,
+and open issues. The project-local Task database, inspected through the public
+CLI, owns live Task state and evidence. Indexed files under
 [`docs/history/`](history/README.md) are non-authoritative lineage only.
 Required current behavior never depends on historical text.
 
 ## Documentation Authority And History
 
 The active governing set is exactly root `AGENTS.md`, this specification,
-`docs/design.md`, `docs/implementation-roadmap.md`, and root `plan.md` in the
-repository authority order. History is indexed by `docs/history/README.md`.
+`docs/design.md`, and root `plan.md` in the repository authority order.
+History is indexed by `docs/history/README.md`.
 Each captured body is immutable after its capture commit; later history work
 may append a new file and index entry but never revise an archived body.
 
@@ -86,7 +88,7 @@ Ordinary stateful use supports exactly one physical project-scoped package:
 User-wide, symlink, junction, reparse-point, and competing project-scoped
 installations are unsupported. This repository alone has a development
 self-host exception at `<repo>/task-governance-tool`: it requires explicit
-`--repo`, a physical package and repository, all five governing files, a valid
+`--repo`, a physical package and repository, all four governing files, a valid
 manifest/package boundary, and no competing ordinary install. It reuses the
 source package's canonical state and is not install guidance for consumers.
 
@@ -513,9 +515,9 @@ Successful change appends `review_tier_changed` with old/new tier and reason.
 
 The optional Task Contract copies already-explicit authority and adds no
 question or heuristic. Revision 1 is allowed only when scope and acceptance
-are explicit in the current user instruction, approved roadmap, or explicit
-registration input. Supplying any of `--contract-scope`,
-`--contract-acceptance`, `--contract-constraints`,
+are explicit in the current user instruction, approved execution plan or
+execution-unit set, or explicit registration input. Supplying any of
+`--contract-scope`, `--contract-acceptance`, `--contract-constraints`,
 `--contract-authority-ref`, or `--contract-change-reason` supplies the group;
 partial explicit input fails `invalid_argument`.
 
@@ -1451,12 +1453,12 @@ also preserves the pre-existing sole compatibility bridge's exact
 `legacy_current_done` partial version-0/null/null shape while rejecting every
 other new version-0 cycle.
 
-TG-M21.2 implementation must synchronize specification, design, roadmap, CLI help and
-JSON/text contracts, completion check, Skill/reference guidance, schema and
-migration validation, Viewer source compatibility, package manifest, release
-checker, and focused offline tests in the approved activation unit. It must
-retain the present 20-leaf and schema-v16 behavior until that activation unit
-completes. The proportional-verification guardrail remains `observe_more`.
+TG-M21.2 implementation must synchronize specification, design, plan, CLI help
+and JSON/text contracts, completion check, Skill/reference guidance, schema
+and migration validation, Viewer source compatibility, package manifest,
+release checker, and focused offline tests in the approved activation unit. It
+must retain the present 20-leaf and schema-v16 behavior until that activation
+unit completes. The proportional-verification guardrail remains `observe_more`.
 The completed TG-M20S Task-decomposition observation was a separate
 predecessor, not M21 content, and its result activates no decomposition
 behavior.
@@ -2155,9 +2157,9 @@ candidate staging mechanics, and ordered mutation evidence are one-time
 execution lineage, not active normal-loop product behavior. Their exact
 publication-commit forms are indexed by
 [the historical documentation index](history/README.md). Final completion
-evidence remains in the project-local Task database and the active roadmap's
-concise completion index. Current product, privacy, review, migration, and
-artifact requirements above do not depend on historical text.
+state and evidence remain solely in the project-local Task database and are
+inspected through the public CLI. Current product, privacy, review, migration,
+and artifact requirements above do not depend on historical text.
 
 ## Deferred Boundaries
 

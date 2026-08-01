@@ -50,7 +50,6 @@ AGENTS.md
 docs/
   specification.md
   design.md
-  implementation-roadmap.md
   history/
 plan.md
 tools/
@@ -81,7 +80,7 @@ Normal stateful use supports exactly one physical package at:
 User-wide, symlink, junction, and other reparse-point installs are unsupported.
 The source repository has one development-only self-host exception: an
 explicit `--repo` may use the physical package at
-`<repo>/task-governance-tool` when the five governing source documents and the
+`<repo>/task-governance-tool` when the four governing source documents and the
 fixed package entry/manifest files identify that source shape and no competing
 project-scoped install exists. It uses the same package-local state resolver;
 it is not a second state mode or install recommendation.
@@ -2021,8 +2020,8 @@ one reviewed revision:
 - update `task-governance-tool/release-manifest.json` for the changed package
   digests and apply the repository's then-current version/release rules;
 - switch the inactive markers and implementation-facing routing in
-  `docs/specification.md`, `docs/design.md`, `plan.md`, and whichever active
-  execution-authority document has replaced or retained this roadmap; and
+  `docs/specification.md` and `docs/design.md`, and synchronize the approved
+  static execution contract in `plan.md`; and
 - update `tests/test_skill_self_containment.py`,
   `tests/test_m14_integrated_acceptance.py`, and
   `tests/test_document_history.py`, adding a focused test module only if those
@@ -2153,5 +2152,5 @@ Any extension, including the accepted but inactive TG-M20S.3 design and the
 inactive M21 design, must preserve local-first operation, current
 privacy and target-project safety, explicit authority for mutation, narrow
 repository boundaries, and concise Skill guidance. It requires synchronized
-specification, design, roadmap, tests, and review rather than reuse of a
+specification, design, plan, tests, and review rather than reuse of a
 historical design capture.

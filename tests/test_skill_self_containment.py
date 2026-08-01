@@ -482,9 +482,6 @@ class SkillSelfContainmentTests(unittest.TestCase):
             encoding="utf-8"
         )
         design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8")
-        roadmap = (ROOT / "docs" / "implementation-roadmap.md").read_text(
-            encoding="utf-8"
-        )
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
@@ -505,7 +502,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("nine governance subprocess", release_note)
         self.assertIn("or ten when", release_note)
 
-        for authority in (specification, design, roadmap):
+        for authority in (specification, design):
             normalized_authority = " ".join(authority.split())
             self.assertIn("TG-M16.4", normalized_authority)
             self.assertIn(
@@ -520,10 +517,6 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "TG-M16.4 package synchronization remains pending",
                 normalized_authority,
             )
-        self.assertIn(
-            "e0b109d67074015b5494757fa64cf7524ebaa92d",
-            roadmap,
-        )
         self.assertIn("references/reconciliation.md", manifest["core_files"])
 
     def test_tg_m11_snapshot_reopen_and_release_metadata_are_synchronized(self):

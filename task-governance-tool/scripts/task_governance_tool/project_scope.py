@@ -74,7 +74,6 @@ SOURCE_REQUIRED_FILES = (
     Path("AGENTS.md"),
     Path("docs/specification.md"),
     Path("docs/design.md"),
-    Path("docs/implementation-roadmap.md"),
     Path("plan.md"),
 )
 PACKAGE_REQUIRED_FILES = (

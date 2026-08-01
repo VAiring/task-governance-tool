@@ -3,13 +3,14 @@
 > [!CAUTION]
 > Files indexed here are preserved implementation history, not current
 > authority. Use the active [specification](../specification.md),
-> [design](../design.md), [implementation roadmap](../implementation-roadmap.md),
-> root [AGENTS.md](../../AGENTS.md), and root [plan.md](../../plan.md)
-> according to the repository authority order.
+> [design](../design.md), root [AGENTS.md](../../AGENTS.md), and root
+> [plan.md](../../plan.md) according to the repository authority order. Use
+> the public CLI for live Task state and evidence.
 
-Historical files and their index entries are append-only after the capture
-commit. A later history operation may add a new immutable file and a new index
-entry, but must not revise an existing archived body or entry.
+Historical capture bodies are immutable after the capture commit. Index
+entries are normally append-only; an atomic active-source retirement may
+update only their `Current replacement` routing metadata while adding the
+final immutable capture and retirement entry in the same revision.
 
 ## v0.10.0 Pre-Consolidation Lineage
 
@@ -41,8 +42,10 @@ to this index. It must not alter the two archived bodies above.
 - Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
 - Capture purpose: preserve the implementation roadmap before its active
   milestone-history consolidation.
-- Current replacement:
-  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ### `plan.md`
 
@@ -59,8 +62,10 @@ to this index. It must not alter the two archived bodies above.
 - Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
 - Capture purpose: preserve superseded forward-test evidence for the completion
   commit flow.
-- Current replacement:
-  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ### `docs/forward-tests/static-task-viewer.md`
 
@@ -69,8 +74,10 @@ to this index. It must not alter the two archived bodies above.
 - Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
 - Capture purpose: preserve superseded forward-test evidence for the static
   Task Viewer.
-- Current replacement:
-  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ### `docs/forward-tests/tg-m11-git-snapshot-completion.md`
 
@@ -79,8 +86,10 @@ to this index. It must not alter the two archived bodies above.
 - Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
 - Capture purpose: preserve superseded TG-M11 Git-snapshot completion
   forward-test evidence.
-- Current replacement:
-  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ### `docs/forward-tests/tg-m12-local-handoff.md`
 
@@ -89,8 +98,10 @@ to this index. It must not alter the two archived bodies above.
 - Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
 - Capture purpose: preserve superseded TG-M12 local-handoff forward-test
   evidence.
-- Current replacement:
-  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ### `docs/forward-tests/tg-m12-task-contract.md`
 
@@ -99,8 +110,10 @@ to this index. It must not alter the two archived bodies above.
 - Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
 - Capture purpose: preserve superseded TG-M12 Task Contract forward-test
   evidence.
-- Current replacement:
-  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ### `docs/forward-tests/tg-m16-loop-discipline.md`
 
@@ -109,8 +122,10 @@ to this index. It must not alter the two archived bodies above.
 - Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
 - Capture purpose: preserve superseded TG-M16 loop-discipline forward-test
   evidence.
-- Current replacement:
-  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ### `docs/forward-tests/tg-m18-completion-history.md`
 
@@ -119,8 +134,10 @@ to this index. It must not alter the two archived bodies above.
 - Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
 - Capture purpose: preserve superseded TG-M18 completion-history forward-test
   evidence.
-- Current replacement:
-  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ### `docs/forward-tests/tg-m8-resume-and-completion.md`
 
@@ -129,8 +146,10 @@ to this index. It must not alter the two archived bodies above.
 - Capture commit: `cbf75372617e90ca0b54746ae27f24a4e67cb292`
 - Capture purpose: preserve superseded TG-M8 resume-and-completion forward-test
   evidence.
-- Current replacement:
-  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ## v0.10.0 Publication-State Lineage
 
@@ -165,8 +184,10 @@ when an older index sentence describes it in future tense.
 - Capture commit: `a9b80ce177a6dead10d51a070b76ff01f7af0294`
 - Capture purpose: preserve completed M19 execution contracts, approvals,
   verification gates, and pre-reconciliation status.
-- Current replacement:
-  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ### Publication capture of `plan.md`
 
@@ -195,8 +216,10 @@ when an older index sentence describes it in future tense.
 - Capture commit: `43c91d5987b0c35c66f834789aea782e98dcaff7`
 - Capture purpose: preserve the completed TG-M19.11 through TG-M19.14
   post-release execution sequence before TG-M20 authority activation.
-- Current replacement:
-  [docs/implementation-roadmap.md](../implementation-roadmap.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ## TG-M20 Operational-Baseline Study Lineage
 
@@ -209,8 +232,10 @@ when an older index sentence describes it in future tense.
   exclusions, frozen-rule decisions, limitations, and bounded follow-up
   observation proposals before the reduced corpora and temporary study
   scaffolding were retired.
-- Current replacement: [docs/implementation-roadmap.md](../implementation-roadmap.md)
-  and [plan.md](../../plan.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
 
 ## TG-M20S Task-Decomposition Study Lineage
 
@@ -222,5 +247,28 @@ when an older index sentence describes it in future tense.
 - Capture purpose: preserve the aggregate qualification, terminal decision,
   limitations, and no-rerun retirement boundary after temporary study
   machinery and reduced evidence were retired.
-- Current replacement: [docs/implementation-roadmap.md](../implementation-roadmap.md)
-  and [plan.md](../../plan.md)
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
+
+## Roadmap Retirement Lineage
+
+The former active source path `docs/implementation-roadmap.md` is physically
+retired. Older immutable captures may retain links to that former path in
+their frozen banners or bodies; those links are historical tombstones, not
+current routing. Every index entry above that previously pointed to the
+retired path now uses the same positive authority set, and live Task state and
+evidence remain available only through the public CLI.
+
+### Final retirement capture of `docs/implementation-roadmap.md`
+
+- Immutable history:
+  [v0.10.0/roadmap-retirement/implementation-roadmap.md](v0.10.0/roadmap-retirement/implementation-roadmap.md)
+- Capture commit: `af5e19545e4f5b59817c70fbc5e2763c0dbf2e1e`
+- Capture purpose: preserve the exact final active roadmap body before its
+  atomic physical retirement.
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.

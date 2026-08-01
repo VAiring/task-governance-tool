@@ -23,7 +23,7 @@
     "scripts/task_governance_tool/handoffs.py": "sha256:46216eae8d9df56111e7eef23cfe7e11fe693d3dce01c81e686cb9a263854921",
     "scripts/task_governance_tool/maintenance.py": "sha256:57c74eb8ccf577add8e1f7510d5d25fc1ec63bd9c64c98b4b380823d436cf884",
     "scripts/task_governance_tool/ordering.py": "sha256:3dbc5ca110a4cfa4c9092f404629a53779577c40e7b667e9ad989a7feb193740",
-    "scripts/task_governance_tool/project_scope.py": "sha256:38a9d926fbd4da2a5ae8307bc71f15851de7b520ee230c165bdddb219867aaf3",
+    "scripts/task_governance_tool/project_scope.py": "sha256:9cc36001f8c3bc55a968aad90b03e575ad91bac48fcd8eee347dd45f27c0c527",
     "scripts/task_governance_tool/relocation.py": "sha256:aa165ab79f37c191f718b894494571e4075297e9e7107459f9c409330c239558",
     "scripts/task_governance_tool/review_packet.py": "sha256:e01840ac7be81ffebd27e5ad0932afed19b0b5cdd03ce1b34f7e5fae9ee0993d",
     "scripts/task_governance_tool/reviews.py": "sha256:c8fe7d5982abb215c463e8d644adfdec0bfae71d8fb7ee3ed10fd73d4b115cac",

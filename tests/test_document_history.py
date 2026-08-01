@@ -359,6 +359,115 @@ class DocumentHistoryTests(unittest.TestCase):
             ).exists()
         )
 
+    def test_m211a_freezes_inactive_atomic_roadmap_retirement(self):
+        plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
+        heading = "### TG-M21.1A Inactive Authority-Layout Retirement Contract"
+        section = plan[plan.index(heading) :].split("\n## ", 1)[0]
+        section_flat = " ".join(section.split())
+
+        for owner in (
+            "`docs/specification.md`",
+            "`docs/design.md`",
+            "`AGENTS.md`",
+            "`plan.md`",
+            "Project-local Task database through the public CLI",
+            "`docs/release-install.md`",
+            "`docs/history/README.md`",
+        ):
+            self.assertIn(owner, section_flat)
+        for preserved in (
+            "Revision-zero TG-M12.3",
+            "intended outcome",
+            "authorized write scope",
+            "prerequisites and permission boundary",
+            "verification matrix",
+            "Tier 2 gate",
+            "tg_task_a6f5ec3147440e53",
+            "tg_task_8e30cf88c9018824",
+            "tg_task_2f6fd712dd83f250",
+            "tg_task_a42cb5d0383980bd",
+            "tg_task_1f7503aca5e32cdc",
+            "TG-M21-VERIFICATION-RECEIPTS",
+            "TG-M21.1A / 12",
+            "TG-M21.1B / 14",
+            "TG-M21.2 / 20",
+            "TG-M21.3 / 30",
+            "physical-deletion authority",
+            "execute no project command or network/external mutation",
+            "bounded fixes only",
+        ):
+            self.assertIn(preserved, section_flat)
+
+        capture = (
+            "docs/history/v0.10.0/roadmap-retirement/"
+            "implementation-roadmap.md"
+        )
+        self.assertIn(capture, section_flat)
+        self.assertIn("TG-M21.1A completion commit", section_flat)
+        self.assertIn("first parent of the atomic", section_flat)
+        self.assertIn("No older archived file", section_flat)
+        self.assertIn("historical tombstones", section_flat)
+        self.assertIn("same exact replacement set", section_flat)
+        self.assertIn("there is no per-entry inference", section_flat)
+        for target in (
+            "../../AGENTS.md",
+            "../specification.md",
+            "../design.md",
+            "../../plan.md",
+            "../../../../AGENTS.md",
+            "../../../specification.md",
+            "../../../design.md",
+            "../../../../plan.md",
+        ):
+            self.assertIn(target, section_flat)
+
+        exact_write_inventory = (
+            "AGENTS.md",
+            "docs/specification.md",
+            "docs/design.md",
+            "plan.md",
+            "README.md",
+            "docs/history/README.md",
+            "task-governance-tool/scripts/task_governance_tool/project_scope.py",
+            "task-governance-tool/release-manifest.json",
+            "tests/m14_test_support.py",
+            "tests/test_document_history.py",
+            "tests/test_skill_self_containment.py",
+        )
+        for relative in exact_write_inventory:
+            self.assertIn(relative, section_flat)
+        for atomic_rule in (
+            "one commit",
+            "physically deleted together",
+            "no intermediate commit",
+            "redirect stub",
+            "generated progress table",
+            "no active document, code, package, or test may require or link",
+            "negative absence assertions remain permitted",
+            "two independent exact-target Tier 2 reviews",
+        ):
+            self.assertIn(atomic_rule, section_flat)
+
+        roadmap = ROOT / "docs" / "implementation-roadmap.md"
+        self.assertTrue(roadmap.is_file())
+        current_routing = (
+            (ROOT / "AGENTS.md").read_text(encoding="utf-8"),
+            (ROOT / "docs" / "specification.md").read_text(encoding="utf-8"),
+            (ROOT / "docs" / "design.md").read_text(encoding="utf-8"),
+            (HISTORY_ROOT / "README.md").read_text(encoding="utf-8"),
+        )
+        for document in current_routing:
+            self.assertIn("implementation-roadmap.md", document)
+        project_scope = (
+            ROOT
+            / "task-governance-tool"
+            / "scripts"
+            / "task_governance_tool"
+            / "project_scope.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('Path("docs/implementation-roadmap.md")', project_scope)
+        self.assertFalse((ROOT / capture).exists())
+
     def test_archives_are_fixed_exact_captures_with_non_authority_banners(self):
         version_root = HISTORY_ROOT / "v0.10.0"
         for relative, expected in ARCHIVES.items():

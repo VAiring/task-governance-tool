@@ -342,6 +342,99 @@ TG-M21.2. The registered activation and acceptance Tasks are respectively
 does not activate the inactive design; a semantic change or expansion still
 requires separate authority.
 
+### TG-M21.1A Inactive Authority-Layout Retirement Contract
+
+This design freezes the exact TG-M21.1B transition. It does not switch current
+authority: through completion of TG-M21.1A,
+`docs/implementation-roadmap.md` remains required and retains all ownership
+assigned to it by `AGENTS.md` and the active formal documents.
+
+After the one-revision TG-M21.1B switch, ownership is retained or retired as
+follows:
+
+| Information | Positive owner after TG-M21.1B | Roadmap treatment |
+|---|---|---|
+| Supported product behavior and acceptance | `docs/specification.md` | Retire every duplicate or routing claim. |
+| Implementation structure and synchronization boundaries | `docs/design.md` | Retire every duplicate or routing claim. |
+| Durable agent behavior, safety, and workflow gates | `AGENTS.md` | Replace roadmap-specific routing with owner-neutral execution-unit wording. |
+| Approved purpose, scope, dependency order, permission boundaries, verification/review/completion gates, current decisions, and open issues | `plan.md` | Preserve only positive static authority; do not recreate a status or completion table. |
+| Current/ready/blocked/review/done state, blocker detail, targets, evidence, and completion commits | Project-local Task database through the public CLI | Retire all live-state and concise-completion-index copies. SQLite remains helper state, never project-decision authority. |
+| Published artifact and install identity | `docs/release-install.md` and the immutable release body | Retire the roadmap acceptance-index copy. |
+| Completed pre-Task-DB execution lineage and the final roadmap body | `docs/history/README.md` and immutable captures | Preserve as non-authoritative lineage only; it never satisfies a current gate. |
+
+The positive static preservation set is exact. The approved-but-inactive M21
+Receipt contract remains in the specification and design, while this plan
+retains TG-M21.1A `tg_task_a6f5ec3147440e53`, TG-M21.1B
+`tg_task_8e30cf88c9018824`, TG-M21.2 `tg_task_2f6fd712dd83f250`, and TG-M21.3
+`tg_task_a42cb5d0383980bd`, with their lane order, dependencies, activation
+boundary, and integrated-acceptance gate. Revision-zero TG-M12.3
+`tg_task_1f7503aca5e32cdc` must gain a positive active section in this plan
+containing its existing intended outcome, authorized write scope,
+prerequisites and permission boundary, mandatory constraints, verification
+matrix, Tier 2 gate, and Task ID. Only its volatile status and blocker detail
+remain Task-DB-owned. No current behavior may depend on the final history
+capture.
+
+All four retained units are sequential Tier 2 work in lane
+`TG-M21-VERIFICATION-RECEIPTS`. Their static execution contracts are:
+
+| Unit/order | Dependency | Purpose, bounded scope, permission, and completion gate |
+|---|---|---|
+| TG-M21.1A / 12 | accepted TG-M20S.2 | Design this ownership map in `plan.md` plus documentation validation only; do not switch routing or change behavior; complete with inventory checks and two Tier 2 reviews. |
+| TG-M21.1B / 14 | accepted TG-M21.1A | Use the user's physical-deletion authority for the closed repository write inventory only; atomically preserve positive authority and final history, remove the roadmap with zero active dangling references or progress mirror, pass self-host/focused/full offline checks, and obtain two Tier 2 reviews. |
+| TG-M21.2 / 20 | accepted TG-M21.1B | Atomically activate the exact schema-v17 Receipt storage, gate, CLI/show, cycle-link, Viewer-compatibility, Skill/reference, package, documentation, and test contract in the specification/design; execute no project command or network/external mutation; pass all focused/full/release checks and two Tier 2 reviews. |
+| TG-M21.3 / 30 | accepted TG-M21.2 | Accept that exact activation with migration, privacy, concurrency, stale/current, recovery, package, release, and realistic offline scenarios plus bounded fixes only; add no redesign or new surface; pass the full suite and two Tier 2 reviews. |
+
+The final capture is exactly
+`docs/history/v0.10.0/roadmap-retirement/implementation-roadmap.md`. Its body
+is the byte-exact `docs/implementation-roadmap.md` from the TG-M21.1A
+completion commit, which must also be the first parent of the atomic
+TG-M21.1B commit. A conspicuous prefix records that source path and commit,
+marks every captured status word non-authoritative, and links to
+`AGENTS.md`, `docs/specification.md`, `docs/design.md`, and `plan.md` as the
+positive replacements. TG-M21.1B appends one index entry and a retirement
+routing note to `docs/history/README.md`; it updates the index preamble and
+every existing `Current replacement` field that points at the retired path.
+Each such field uses the same exact replacement set: `AGENTS.md`,
+`docs/specification.md`, `docs/design.md`, and `plan.md`, followed by the
+public-CLI direction for live Task state and evidence; there is no per-entry
+inference. From `docs/history/README.md`, the exact link targets are
+`../../AGENTS.md`, `../specification.md`, `../design.md`, and `../../plan.md`.
+From the new final capture, they are `../../../../AGENTS.md`,
+`../../../specification.md`, `../../../design.md`, and `../../../../plan.md`.
+That routing-metadata update is the sole authorized exception to the index's
+ordinary append-only rule. No older archived file, including its banner, may
+change. Links to the retired path inside those immutable files remain
+historical tombstones. Link validation may exempt only that exact retired
+target inside immutable archived files; every index link, active-document
+link, and new capture link must resolve.
+
+TG-M21.1B has this closed write inventory:
+
+- authority and navigation: `AGENTS.md`, `docs/specification.md`,
+  `docs/design.md`, `plan.md`, `README.md`, `docs/history/README.md`, the new
+  final capture above, and deletion of `docs/implementation-roadmap.md`;
+- self-host/package coupling:
+  `task-governance-tool/scripts/task_governance_tool/project_scope.py` and
+  its digest in `task-governance-tool/release-manifest.json`;
+- directly coupled validation: `tests/m14_test_support.py`,
+  `tests/test_document_history.py`, and
+  `tests/test_skill_self_containment.py`.
+
+No other runtime, schema, CLI, Skill workflow, Viewer, release identity, or
+target-project behavior is in scope. The retirement must land as one commit:
+the final capture and index are added, positive authority is preserved,
+routing and self-host requirements are switched, coupled tests and the
+manifest are synchronized, and the roadmap is physically deleted together.
+There may be no intermediate commit, renamed roadmap, redirect stub, generated
+progress table, or Task-state mirror. Acceptance requires the retired path to
+be absent; no active document, code, package, or test may require or link to
+it. Exact source-path metadata in non-authoritative history and negative
+absence assertions remain permitted. The exact capture must match its
+declared parent source, self-host detection plus focused and full offline
+checks must pass, and two independent exact-target Tier 2 reviews may have no
+unresolved High or Medium finding.
+
 ## Registered Work, Static Gates, And User Decisions
 
 | Unit | Task | Current gate |

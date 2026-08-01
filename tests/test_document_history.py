@@ -216,35 +216,72 @@ class DocumentHistoryTests(unittest.TestCase):
         )
         for document in (specification, design, roadmap, plan):
             self.assertIn(M20S3_TASK, document)
+        specification_flat = " ".join(specification.split())
+        design_flat = " ".join(design.split())
         for document in (specification, design):
             document_flat = " ".join(document.split())
             self.assertIn(
-                "Registered But Not Yet Accepted TG-M20S.3 "
-                "Decomposition Design Task",
+                "Accepted But Inactive TG-M20S.3",
                 document_flat,
             )
-            self.assertIn("not the completed decision table", document_flat)
-            self.assertIn("automatic Task creation", document_flat)
+        self.assertIn(
+            "not current Skill or product behavior",
+            specification_flat,
+        )
+        self.assertIn(
+            "Nothing in this section is wired into the current package",
+            design_flat,
+        )
         self.assertIn(
             "TG-M20S.3 Bounded Task Registration And Scope-Addition "
             "Decomposition Design",
             roadmap,
         )
-        self.assertIn("approved registration contract", roadmap)
+        self.assertIn("accepted inactive design boundary", roadmap)
         for marker in (
-            "register or taskize authorized work",
-            "explicit user scope addition",
-            "independently acceptable",
-            "verifiable",
-            "committable",
-            "completable",
+            "register-bounded-set",
+            "register-single",
+            "no-write",
+            "acceptance_independent=yes",
+            "verification_independent=yes",
+            "commit_independent=yes",
+            "completion_independent=yes",
+            "keep-current",
+            "revise-current",
             "propose-successor",
-            "explicit user approval",
+            "handoff",
+            "pause",
+            "block",
             "At most one proposal",
+            "scope disposition occurs before any continuation status",
+            "Handoff is not lossless proposal storage",
+            "summarized in Handoff first",
+            "each at most 1,000 characters",
+        ):
+            self.assertIn(marker, specification_flat)
+        for marker in (
+            "register_bounded_set",
+            "register_single",
+            "no_write",
+            "one-to-one, explicitly accepted outcomes",
+            "Contract-only edit is performed first",
+            "task-governance-tool/SKILL.md",
+            "task-governance-tool/references/task_workflow.md",
+            "task-governance-tool/release-manifest.json",
+            "Neutral Forward-Test Boundary",
+            "unchanged 20 command leaves and schema",
+            "failure after one successful `task add`",
+            "Handoff/resume in a fresh session",
+            "valid proposed Contract fields exceed Handoff bounds",
+        ):
+            self.assertIn(marker, design_flat)
+        for marker in (
+            "automatic Task creation",
             "In-scope discovery",
             "cross-module failure",
+            "normal Task-loop call count",
         ):
-            self.assertIn(marker, roadmap_flat)
+            self.assertIn(marker, specification_flat)
         self.assertNotIn("registers no design Task", roadmap)
         self.assertNotIn("does not register such a Task", specification)
         self.assertIn("E=2,Q=2,U=2", specification + design + roadmap + plan)

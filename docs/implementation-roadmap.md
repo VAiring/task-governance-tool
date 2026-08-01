@@ -14,8 +14,8 @@ TG-M20.1 through TG-M20.5. TG-M20.1 is complete at
 `e5167e2d9d54493900b9d88672f1e53304cfa5b1`. TG-M21.1 is complete at
 `fc2e0870ad9bf70830a082df168ad1992e07b51d`. The TG-M20S successor
 observation has reached its frozen `proceed_to_design` result and no-rerun
-retirement boundary. A later explicit user decision registered TG-M20S.3 as
-an inactive Tier 2 decomposition-design unit. TG-M21.1A, TG-M21.1B, TG-M21.2,
+retirement boundary. TG-M20S.3 now freezes an accepted but inactive Tier 2
+decomposition design. TG-M21.1A, TG-M21.1B, TG-M21.2,
 and TG-M21.3 are approved and registered behind their declared predecessor
 gates. The Task database, not this status paragraph, owns their live state.
 
@@ -451,10 +451,12 @@ Lane/order: `TG-M20S-TASK-DECOMPOSITION` / 30
 Review tier: Tier 2
 Depends on: accepted TG-M20S.2, Task `tg_task_e591f30d546ba69e`
 
-This subsection is the approved registration contract, not the completed
-decision table. TG-M20S.3 remains unaccepted until the six branch conditions,
-negative and unknown fallbacks, exact later synchronization inventory, and
-forward-test design pass its own verification and review gates.
+This subsection records the accepted inactive design boundary. The exact live
+review and completion evidence remains in the Task database; this roadmap does
+not mirror that volatile state. The complete six-outcome contract and
+negative/unknown fallbacks are in `docs/specification.md`; the activation
+adapter, exact later synchronization inventory, and neutral forward-test
+boundary are in `docs/design.md`.
 
 Intended outcome:
 
@@ -498,7 +500,7 @@ Verification:
 - Run focused documentation consistency checks and two independent Tier 2
   reviews of the exact design revision.
 
-Registration of TG-M20S.3 neither activates this design nor changes the
+Acceptance of TG-M20S.3 neither activates this design nor changes the
 approved TG-M21 dependency order. The Task database owns live selection and
 status.
 

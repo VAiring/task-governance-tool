@@ -11,9 +11,9 @@ TG-M20.5 are complete. TG-M21.1 is complete at
 `fc2e0870ad9bf70830a082df168ad1992e07b51d`; its explicitly inactive
 acceptance contract below changes no current v0.10.0 behavior. The approved
 TG-M20S successor observation has reached its frozen terminal
-`proceed_to_design` result and no-rerun retirement boundary. A later explicit
-user decision registered TG-M20S.3 as an inactive Tier 2 decomposition-design
-Task; registration changes no current product or agent behavior. TG-M21.1A
+`proceed_to_design` result and no-rerun retirement boundary. TG-M20S.3 now
+freezes an accepted but inactive Tier 2 decomposition contract; it changes no
+current product or agent behavior. TG-M21.1A
 through TG-M21.3 are approved and registered but remain governed by their own
 dependency and synchronization gates; the Task database owns live state.
 
@@ -1027,22 +1027,159 @@ reconstruct or rescore the deleted corpus. Aggregate reasoning, limitations,
 and the retirement boundary are preserved only as
 [non-authoritative study history](history/v0.10.0/m20s-task-decomposition.md).
 
-## Registered But Not Yet Accepted TG-M20S.3 Decomposition Design Task
+## Accepted But Inactive TG-M20S.3 Decomposition Contract
 
-A later explicit user decision registered TG-M20S.3, Task
-`tg_task_286129dbca4d25ab`, to freeze an inactive design for two user-authority
-events: an explicit instruction to register or taskize authorized work, and an
-explicit scope addition to an in-progress or review-pending Task. The latter
-may propose a successor only when the added outcome is independently
-acceptable, verifiable, committable, and completable, and requires explicit
-approval before registration.
+TG-M20S.3, Task `tg_task_286129dbca4d25ab`, freezes design authority for two
+and only two explicit user-authority events: an instruction to register or
+taskize already-authorized work, and an explicit scope addition to an
+`in_progress` or `review_pending` Task. This is an acceptance boundary for a
+separately approved activation unit, not current Skill or product behavior.
+The supporting M20S observation covered one repository, scenario, pair, and
+model/tool cohort, so it does not justify automatic self-splitting or any
+broader discovery trigger.
 
-This section records authorized design work and its boundary, not the
-completed decision table, accepted design authority, or current behavior.
-TG-M20S.3 activates no current Skill guidance, public command, SQLite or
-Viewer behavior, automatic Task creation, runtime Task splitting, parent/child
-Tasks, network behavior, or target-project mutation. In-scope discovery and
-cross-module failure remain outside this evidence-backed design boundary.
+### Independence And Boundedness
+
+A candidate boundary has four independently assessed fields:
+
+- `acceptance_independent=yes` means its outcome and acceptance can be stated
+  and accepted without silently accepting another candidate's outcome.
+- `verification_independent=yes` means bounded verification can attribute a
+  pass or failure to that candidate. Reusing a command or fixture is allowed;
+  sharing one indivisible acceptance result is not.
+- `commit_independent=yes` means it can form a coherent reviewed revision
+  without landing a partial or unaccepted part of another candidate. Touching
+  the same file is not by itself a failure; an inseparable atomic change is.
+- `completion_independent=yes` means that, after any predecessor expressible
+  by existing lane ordering completes, the candidate can satisfy its own
+  Contract, review, and evidence gates without revising another active Task or
+  borrowing that Task's current evidence.
+
+Each field is `yes`, `no`, or `unknown`. `yes` requires explicit authority and
+concrete project evidence, `no` records a concrete coupling, and `unknown`
+records missing or ambiguous information. Aggregate independence is `yes` only
+for the single all-`yes` combination, `no` whenever any field is `no`, and
+`unknown` otherwise; a concrete `no` dominates simultaneous unknowns.
+Decomposition is eligible only when
+every field for every candidate is `yes`, the candidates are a disjoint and
+complete partition of the user's authorized outcome, their order is
+representable with the existing sequential/optional lane model, and their
+permissions do not exceed the original authority. File count, line count,
+estimated effort, duration, risk, or a general impression that work is large
+never supplies a `yes` value.
+
+One explicit event permits only one non-recursive assessment pass. Candidate
+count is bounded by, and mapped one-to-one to, the finite independently
+accepted outcomes actually present in that authority; one outcome cannot be
+split by file, step, test, or implementation detail unless the user already
+accepted those as separate outcomes. The agent cannot invent a parent Task,
+descendant Tasks, acceptance clauses, or additional work to improve the
+partition.
+
+### Explicit Registration Decision
+
+An explicit request to register or taskize authorized work permits the
+following bounded result without asking once per Task:
+
+| Condition | Result | Write boundary |
+|---|---|---|
+| Every candidate satisfies all four fields, the partition is complete and non-overlapping, order is representable, and permissions are unchanged | `register-bounded-set` | Use the existing `task add` path once per candidate in the single approved pass. |
+| Any field is `no` or `unknown`, or the proposed order or partition is not representable, but one truthful Contract can contain the whole authorized outcome and the user did not mandate incompatible separate boundaries | `register-single` | Use the existing `task add` path once for the complete outcome. |
+| Authority is insufficient to state even one truthful Contract, or the write would expand scope or permissions | `no-write` | Do not invent a Task or acceptance. Apply the existing clarification, handoff, pause, or blocking rule only where its normal preconditions already exist. |
+
+The taskization instruction authorizes these bounded Task-registration writes;
+it does not authorize implementation, target-project mutation, external work,
+or changed permissions. A failed multi-Task assessment therefore collapses to
+one honest Task when possible, not to omitted scope or repeated clarification
+merely to optimize decomposition.
+
+If the user mandated exact separate Task boundaries and any boundary is `no` or
+`unknown`, the result is `no-write`, not a silent merge; report the conflict and
+request changed authority only when it is needed to proceed. If a bounded
+multi-add fails after a strict subset was registered, stop the pass, inspect
+the exact registrations through existing reads, and report or durably preserve
+the authorized remainder. Retry only an unambiguously missing candidate after
+the ordinary failure is resolved; never duplicate, repartition, or widen it.
+
+### Explicit Mid-Task Scope-Addition Decision
+
+For one explicit scope addition to an `in_progress` or `review_pending` Task,
+first select one of the first four scope dispositions below, then evaluate the
+continuation state. `pause` and `block` are status outcomes layered after scope
+is preserved; they never substitute for placing the authorized addition. The
+six outcomes therefore cover scope and continuation without treating them as
+one lossy axis.
+
+| Outcome | Exact condition | Required effect |
+|---|---|---|
+| `keep-current` | The stated addition is already wholly covered by the current Contract and no explicit repartition was authorized. | Make no Contract or Task write. Do not create overlapping duplicate acceptance. An unchanged Contract preserves current review evidence only while its exact target still covers the material; changed target material requires the normal fresh target and review. |
+| `revise-current` | The addition is new and the user directs it to remain current, or decomposition is ineligible but the complete addition can be safely and exactly incorporated. | Use the existing semantic Contract-revision path. A `review_pending` Task returns to `in_progress`, and stale target, review, and completion evidence do not remain current. |
+| `propose-successor` | The addition is outside the current Contract, all four fields are `yes`, the partition/order/permissions tests pass, and the user has not directed it to remain current. | Present one exact successor proposal and leave the current Contract, review target, receipts, findings, and completion evidence unchanged. Register nothing until approval. An explicit instruction in the same user message to register the addition separately is that approval, so no duplicate confirmation is required. |
+| `handoff` | The addition is explicitly deferred or cannot safely enter the current Contract or a successor decision yet, and remains authorized work worth preserving. | Use the existing local Handoff path for its bounded sanitized summary and rationale fields, each at most 1,000 characters. They identify the unresolved outcome and pending decision; they do not expand current acceptance or prove a successor Contract. Nonblocking work may continue; an acceptance-preventing addition must then receive the applicable pause/block status and cannot be used to claim the user's total requested outcome is complete. |
+| `pause` | After the required scope disposition, a temporary missing decision or external state prevents safe progress on the active/review-pending Task, while later continuation remains expected. | Use the existing pause transition and concrete pause reason; do not create a Task. |
+| `block` | After the required scope disposition, missing authority, safety, dependency, or decision prevents acceptance and no safe authorized progress or narrower preservation route remains. | Use the existing blocker transition as the last resort; do not create a Task. |
+
+An explicit placement direction controls only an otherwise valid disjoint
+partition. It cannot authorize duplicated acceptance or override a `no` or
+`unknown` independence result. Moving work already covered by the current
+Contract into a successor requires an explicit repartition and the existing
+semantic Contract-revision consequences.
+
+When no placement direction exists, all four `yes` values select one
+`propose-successor`; any `no` or `unknown` forbids a split. If the addition can
+still be incorporated exactly, select `revise-current`. Otherwise use
+`handoff` as the scope-preservation disposition, then select continue, `pause`,
+or `block` strictly by the existing nonblocking, temporary, and acceptance-
+preventing meanings. Unknown information never becomes inferred acceptance and
+never triggers a decomposition-only question while safe current work can
+continue.
+
+When an accepted addition must be revised into the current Contract and then
+paused or blocked, perform the existing Contract-only semantic revision before
+the separate status transition. The latter must not erase or replace the scope
+disposition. A successor-approval wait does not pause or block a current Task
+that can still progress within its unchanged Contract. An acceptance-
+preventing addition that cannot yet enter a Contract is summarized in Handoff
+first and then pauses or blocks the owning Task; a nonblocking Handoff never
+hides a mandatory unresolved part of the user's overall request.
+
+The one successor proposal must state its proposed Contract, review tier,
+kind/lane/order, exact added scope, and what remains in the current Task. A
+current-before-successor relationship uses the next available order in the
+same sequential lane; `optional` is allowed only for genuinely independent
+work. If existing ordering cannot express the relationship, splitting is
+ineligible. Approval invokes only the existing `task add` path. Rejection or a
+direction to keep the addition current selects `revise-current` when safe;
+withdrawal requires explicit user direction.
+
+At most one proposal may be produced from one explicit addition event, and it
+cannot be recursively subdivided during that event. A rejection, paraphrase,
+clarification, or reply about the same added outcome remains the same event;
+only a materially changed user instruction for scope, order, or permission can
+start a new assessment. Before the session ends, the current Task completes,
+or an unresolved proposal is otherwise left behind, the existing Handoff path
+must record a bounded sanitized summary of every added outcome and, in the
+rationale, that a user decision is pending. Handoff is not lossless proposal
+storage: it does not preserve the full proposed Contract, review tier,
+lane/order, or partition and
+must never be used to reconstruct or register them. A resumed agent surfaces
+the unresolved Handoff without generating an alternative proposal; it requires
+current explicit authority for any missing exact fields. No persisted proposal
+counter or event schema is introduced. Across every branch, scope disposition
+occurs before any continuation status: all authorized scope remains in the
+unchanged or revised current Contract, an approved successor, or a pending
+proposal/Handoff summary, with any pause/block recorded only afterward. It is
+never silently discarded.
+
+### Inactive Boundary
+
+TG-M20S.3 changes no current `SKILL.md`, package reference, public command,
+normal Task-loop call count, SQLite schema, JSON contract, Viewer field,
+automatic Task creation, runtime Task splitting, parent/child model, background
+LLM work, network behavior, or target-project mutation. In-scope discovery,
+test-driven cross-module failure, and unrequested work remain governed by the
+current keep/block/Handoff rules and cannot invoke this future decomposition
+policy.
 
 ## Approved But Inactive TG-M21 Verification Receipt Contract
 
@@ -2033,8 +2170,8 @@ beyond the one-shot envelope, external Issue lifecycle/sync until its intake
 contract, cross-project profiles, daily network update checks, reviewer
 identity/signatures/attestation, and a generic workflow engine.
 
-Deferred features, the retired TG-M20S study result, the registered but not
-yet accepted TG-M20S.3 design Task, and the inactive TG-M21 implementation
+Deferred features, the retired TG-M20S study result, the accepted but inactive
+TG-M20S.3 design, and the inactive TG-M21 implementation
 never change current acceptance, add a normal-loop command, or authorize
 target/external mutation until their separately approved implementation and
 synchronization gates complete.

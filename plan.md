@@ -14,8 +14,8 @@ complete at `ed15a85b6d1c328a9d1ac9b6a1448b50c1389481`, and TG-M20.5 is
 complete at `e5167e2d9d54493900b9d88672f1e53304cfa5b1`. TG-M21.1 is complete
 at `fc2e0870ad9bf70830a082df168ad1992e07b51d`. The TG-M20S successor
 observation has reached its frozen `proceed_to_design` result and no-rerun
-retirement boundary. A later explicit user decision registered TG-M20S.3 as
-an inactive Tier 2 decomposition-design Task. TG-M21.1A through TG-M21.3 are
+retirement boundary. TG-M20S.3 now freezes an accepted but inactive Tier 2
+decomposition design. TG-M21.1A through TG-M21.3 are
 approved and registered behind their static predecessor chain. TG-M12.3
 remains separately blocked; live status remains solely in the Task database.
 
@@ -166,8 +166,8 @@ gates. It is not the product contract, execution ledger, or evidence store:
   three separate decisions. None is bundled into another. TG-M21.1 completed
   its inactive design; the M21 implementation sequence is now separately
   approved and registered. The bounded decomposition successor is separately
-  approved as TG-M20S.3 design work, not yet accepted design authority or
-  current product behavior.
+  approved and accepted as TG-M20S.3 inactive design authority, not current
+  product behavior.
 - One contaminated incident, an unreconstructable historical absence, timing
   or size alone, and the context-rich parent conversation cannot establish
   causation or justify a positive decision.
@@ -233,7 +233,7 @@ authenticated reviewer independence. The no-rerun receipt and
 preserve the bounded decision and limitations after temporary assets and the
 reduced corpus are retired.
 
-### Registered TG-M20S.3 Decomposition Design Task
+### TG-M20S.3 Accepted Inactive Decomposition Design
 
 The later explicit user decision registered TG-M20S.3, Task
 `tg_task_286129dbca4d25ab`, in lane `TG-M20S-TASK-DECOMPOSITION` at order 30,
@@ -241,14 +241,18 @@ dependent on accepted TG-M20S.2. It is a Tier 2 design-only unit for two
 explicit authority events: a request to register or taskize authorized work,
 and an explicit scope addition to an in-progress or review-pending Task.
 
-The design must use independently acceptable, verifiable, committable, and
-completable scope to distinguish keep-current, revise-current,
-propose-successor, handoff, pause, and block. Explicit taskization may permit a
-bounded multi-Task registration when scope, order, and permissions are
+The accepted design uses independently acceptable, verifiable, committable,
+and completable scope to distinguish keep-current, revise-current,
+propose-successor, handoff, pause, and block. Explicit taskization permits one
+non-recursive bounded multi-Task registration pass when the candidates map
+one-to-one to accepted outcomes and scope, order, and permissions are
 unchanged. A proposed mid-Task successor still requires explicit user approval
 before registration, and only one proposal is allowed per explicit addition.
+Unknown or negative independence forbids decomposition rather than generating
+more questions; exact whole-scope registration or current-Contract revision is
+the safe fallback when authorized.
 
-Registration activates no current behavior and adds no automatic Task
+Design acceptance activates no current behavior and adds no automatic Task
 creation, recursive or size-only split, command, schema, Viewer field,
 parent/child model, background LLM work, network use, target-project mutation,
 or implementation Task. In-scope discovery and cross-module failure remain
@@ -344,7 +348,7 @@ requires separate authority.
 |---|---|---|
 | TG-M20S.1 | `tg_task_ddfbf721eced8c58` | Protocol and harness freeze completed at `33948e3dd1c805e04eda0873c764dad15363175d`. |
 | TG-M20S.2 | `tg_task_e591f30d546ba69e` | Closed study; `proceed_to_design`; Task DB owns exact review and completion evidence. |
-| TG-M20S.3 | `tg_task_286129dbca4d25ab` | Approved design Task; inactive until accepted; depends on accepted TG-M20S.2; Task DB owns live state. |
+| TG-M20S.3 | `tg_task_286129dbca4d25ab` | Accepted inactive design; Task DB owns exact review and completion state. |
 | TG-M21.1A | `tg_task_a6f5ec3147440e53` | Statically depends on accepted TG-M20S.2; then proceeds without another decision. |
 | TG-M21.1B | `tg_task_8e30cf88c9018824` | Depends on accepted TG-M21.1A. |
 | TG-M21.2 | `tg_task_2f6fd712dd83f250` | Depends on accepted TG-M21.1B; remains inactive until atomic activation. |
@@ -352,8 +356,8 @@ requires separate authority.
 | TG-M12.3 | `tg_task_1f7503aca5e32cdc` | Blocked until a separately approved versioned Issue Skill intake contract, governing permission update, and explicit integration approval exist. |
 
 The approved TG-M20.1-TG-M20.5 sequence and TG-M21.1 design are complete.
-TG-M20S has its closed terminal decision, and TG-M20S.3 is registered design
-work but is not yet accepted design authority. The registered M21 follow-up
+TG-M20S has its closed terminal decision, and TG-M20S.3 freezes accepted but
+inactive design authority. The registered M21 follow-up
 chain may proceed in the order above without another decision. This table
 records static gates only; the Task database owns current, ready, blocked,
 review, and completion state.

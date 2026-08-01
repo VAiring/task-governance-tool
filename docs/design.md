@@ -11,9 +11,9 @@ published baseline. TG-M20.1 through TG-M20.5 are complete. TG-M21.1 is
 complete at `fc2e0870ad9bf70830a082df168ad1992e07b51d`; its inactive design
 below does not alter current runtime or package behavior. The TG-M20S
 successor observation reached its frozen `proceed_to_design` result and
-no-rerun retirement boundary. A later explicit user decision registered
-TG-M20S.3 as an inactive Tier 2 decomposition-design Task; it changes no
-current runtime, package, or agent behavior. Registered TG-M21 follow-up units
+no-rerun retirement boundary. TG-M20S.3 now freezes an accepted but inactive
+Tier 2 decomposition design; it changes no current runtime, package, or agent
+behavior. Registered TG-M21 follow-up units
 remain inactive behind their own predecessor and synchronization gates.
 
 This document is the current implementation design for the behavior specified
@@ -1883,23 +1883,192 @@ anchor; it cannot reproduce or rescore the study. The complete aggregate
 interpretation and limitations are preserved in
 [non-authoritative study history](history/v0.10.0/m20s-task-decomposition.md).
 
-## Registered But Not Yet Accepted TG-M20S.3 Decomposition Design Task
+## Accepted But Inactive TG-M20S.3 Activation Design
 
-A later explicit user decision registered TG-M20S.3, Task
-`tg_task_286129dbca4d25ab`, as a design-only unit. It will define a bounded
-decision table for explicit taskization at registration and for an explicit
-user scope addition during an in-progress or review-pending Task. The four
-independence predicates are acceptable, verifiable, committable, and
-completable scope. The table must distinguish keeping or revising the current
-Task, proposing one successor, handoff, pause, and block; a mid-Task successor
-requires explicit approval before the existing `task add` path is used.
+TG-M20S.3, Task `tg_task_286129dbca4d25ab`, freezes the instruction-layer
+design for the accepted decomposition contract in `docs/specification.md`.
+Nothing in this section is wired into the current package. A later separately
+approved activation changes Skill guidance and package references while the
+deterministic CLI, repository interfaces, schema, Viewer, and command inventory
+remain unchanged.
 
-This section is the registered work boundary, not the completed decision table
-or accepted design authority. Registration adds no automatic Task creation,
-recursive or size-only splitting, public command, schema, Viewer field,
-parent/child model, network work, target-project mutation, or current Skill
-instruction. It does not cover in-scope discovery or cross-module failure and
-does not register an implementation Task.
+### Instruction-Layer Classifier
+
+The future Skill treats one explicit user message as one session-local event
+and classifies it as either `registration` or `mid_task_scope_addition` before
+considering decomposition. An in-scope discovery, test failure, Effort result,
+cross-module failure, inferred dependency, or model preference does not create
+either event.
+
+For that event the agent forms a bounded worksheet containing only:
+
+- the total authorized outcome and unchanged permission boundary;
+- candidate outcome/acceptance partitions already supported by authority;
+- `acceptance_independent`, `verification_independent`,
+  `commit_independent`, and `completion_independent`, each as
+  `yes|no|unknown` with a concrete reason;
+- the existing `kind`, `lane`, `order`, and review tier capable of expressing
+  the proposed sequence; and
+- any explicit user placement direction.
+
+The worksheet is transient reasoning, not a database record, JSON contract,
+Task field, or prompt-log artifact. Aggregate independence is `yes` only when
+all four fields are `yes`, `no` when any field is `no`, and `unknown` otherwise.
+A known `no` therefore dominates any simultaneous unknown. The scope-
+conservation check is separate: the candidate union must equal the authorized
+outcome exactly, with no overlap, omission, new permission, or inferred work.
+
+The classifier performs one pass. It cannot classify the result again,
+subdivide a proposed successor, invent a parent, or use size/effort metrics as
+predicate evidence. Candidate count cannot exceed the one-to-one, explicitly
+accepted outcomes in the initiating authority; an outcome cannot be expanded
+into candidates by file, step, test, or implementation detail. This makes the
+number of potential writes finite without an arbitrary repository-wide cap.
+
+### Registration Adapter
+
+For explicit taskization, the classifier returns one of
+`register_bounded_set`, `register_single`, or `no_write`:
+
+1. `register_bounded_set` requires aggregate `yes` for every candidate, proven
+   conservation, representable order, and unchanged permissions. The existing
+   `task add` leaf is invoked once per candidate; the initiating request is the
+   approval for the finite set and no per-Task confirmation is inserted.
+2. `register_single` is the negative and unknown fallback only when one exact
+   Contract can truthfully preserve the whole authorized outcome and the user
+   did not mandate incompatible separate boundaries. It invokes `task add`
+   once and does not ask a decomposition-only question.
+3. `no_write` applies when even the whole Contract is not authorized or
+   expressible, or when the user mandated exact separate Tasks but a boundary
+   is `no` or `unknown`. The agent reports the missing fact or conflict without
+   inventing, silently merging, or partially redefining Tasks.
+
+If a repeated existing `task add` sequence fails after a strict subset was
+written, the agent stops the pass, inspects the exact registered set through
+existing reads, and reports or durably preserves the still-authorized
+remainder. It adds only unambiguously missing candidates after the ordinary
+failure is resolved; it never blindly retries, duplicates a Task, expands the
+partition, or starts a recursive decomposition pass.
+
+Registration changes governance state only. It grants no implementation,
+target-project, Git, network, or external-system permission.
+
+### Mid-Task Adapter And State Effects
+
+For an explicit addition to an `in_progress` or `review_pending` Task, the
+future Skill first chooses the scope disposition, then its continuation state:
+
+1. recognize a semantic no-op as `keep-current`;
+2. honor an explicit keep-current placement as `revise-current` when the
+   addition is new and can be incorporated safely;
+3. with aggregate `yes` and proven conservation/order, either register the one
+   successor when the same message explicitly approves separate registration,
+   or emit one write-free `propose-successor`;
+4. with aggregate `no` or `unknown`, forbid splitting and use
+   `revise-current` when one exact safe Contract can hold the addition; and
+5. otherwise use `handoff` as the bounded scope-preservation disposition;
+   after it, continue for a nonblocking addition or overlay `pause` or `block`
+   under the existing temporary or acceptance-preventing rules and only after
+   safe authorized work is exhausted.
+
+The proposal contains the exact proposed Contract, review tier, lane/order,
+permission boundary, and current-versus-successor partition. A proposal does
+not call taskgov. While it is unresolved, safe work within the unchanged
+current Contract continues. If the session or current Task would end first,
+the existing `handoff record` path stores only its at-most-1,000-character
+sanitized summary covering every added outcome and an at-most-1,000-character
+pending-decision rationale. It is deliberately not an
+encoding of the full proposed Contract, review tier, lane/order, partition, or
+event identity. A resumed agent surfaces the unresolved Handoff but neither
+reconstructs nor registers a successor from it; missing exact fields require
+current explicit authority. Rejection, paraphrase, clarification, or a direct
+answer about that proposal does not reset the one-proposal allowance; only
+materially changed user authority for scope, order, or permission creates a
+new event. No persisted event ID, proposal counter, or new state is added.
+
+An approved successor uses one existing `task add`. A successor that must
+follow the current Task uses the next available order in its sequential lane;
+`optional` is used only when the outcome is genuinely independent. An
+unrepresentable relationship fails decomposition instead of creating an
+implicit dependency. An explicit instruction to keep the work current uses the
+existing Contract-only `task edit` path. Its current revision, target,
+receipts, findings, completion evidence, and `review_pending -> in_progress`
+effects remain exactly those of the existing semantic-revision contract.
+
+`keep-current` and a pending proposal perform no Contract write. Their current
+target and evidence remain valid only for unchanged target material; ordinary
+target replacement and fresh review still apply after later material changes.
+Handoff preserves but does not expand acceptance or satisfy the total user
+request. If an addition cannot safely enter a Contract but prevents acceptance,
+the Handoff write occurs first and the applicable pause/block status write
+second. Pause and block never replace the scope disposition or create a Task.
+When `revise-current` must be followed by a pause or blocker, the Contract-only
+edit is performed first and the separate status edit second, preserving
+existing CLI validation. The normal current/next/execution/review/completion
+green path adds no governance call; only the two explicit event paths can
+invoke the already-public writes described above.
+
+### Atomic Future Synchronization Boundary
+
+A later separately approved Tier 2 activation must change these surfaces in
+one reviewed revision:
+
+- add only the concise trigger gate and disposition rules to
+  `task-governance-tool/SKILL.md`;
+- place the full predicates, decision tables, ordering examples, restart
+  preservation rule, and negative/unknown cases in
+  `task-governance-tool/references/task_workflow.md`;
+- update `task-governance-tool/release-manifest.json` for the changed package
+  digests and apply the repository's then-current version/release rules;
+- switch the inactive markers and implementation-facing routing in
+  `docs/specification.md`, `docs/design.md`, `plan.md`, and whichever active
+  execution-authority document has replaced or retained this roadmap; and
+- update `tests/test_skill_self_containment.py`,
+  `tests/test_m14_integrated_acceptance.py`, and
+  `tests/test_document_history.py`, adding a focused test module only if those
+  owning suites cannot express the behavioral cases without duplication.
+
+`task-governance-tool/agents/openai.yaml` is in the synchronization review set
+but is expected to remain byte-identical because its current registration and
+scope-preservation metadata already covers the two triggers. Scripts,
+migrations, repositories, CLI parsing/output, Viewer code/template, and public
+command leaves are outside the write set and must be proven unchanged. The
+activation must be proposed and approved separately; TG-M20S.3 registers no
+implementation Task.
+
+### Neutral Forward-Test Boundary
+
+Activation acceptance uses fresh, minimal-context agents that receive the
+candidate Skill and neutral workloads, not the expected branch or M20S study
+result. A separate evaluator checks both the response and resulting Task DB.
+The fixed matrix includes:
+
+- registration: an eligible multi-outcome partition, a large but atomically
+  coupled outcome, an unknown verification/commit boundary, and user-mandated
+  separate boundaries that are not independently valid; plus an injected
+  failure after one successful `task add`, followed by exact-set inspection,
+  explicit or durable remainder preservation, and retry of only the
+  unambiguously missing candidate with no duplicate or repartition;
+- mid-Task positive paths: already-covered scope, explicit keep-current,
+  independently eligible addition without placement, and an explicit separate-
+  Task instruction;
+- mid-Task fallbacks: concrete coupling, incomplete evidence, nonblocking
+  preservation, revise-then-pause, revise-then-block, a temporary no-safe-
+  progress wait, and an acceptance-preventing authority or safety failure; and
+- invariants: one proposal per event, no Task write before approval, no
+  recursive or size-only split, exact scope conservation, correct Contract and
+  review invalidation/preservation, unchanged 20 command leaves and schema,
+  fresh review when changed material escapes an unchanged Contract's prior
+  target, Handoff/resume in a fresh session without reconstructing or emitting
+  a second proposal even when valid proposed Contract fields exceed Handoff
+  bounds, and no invocation from discovery, test failure, Effort, or cross-
+  module failure alone.
+
+Positive, negative, and unknown cases use parallel wording and equal available
+authority so the prompt does not reveal the expected result. A valid result
+must match the specification branch and actual stored effects; self-reported
+intent alone is insufficient. Current behavior is not forward-tested against
+these expectations because activation has not occurred.
 
 ## Validation And Test Design
 
@@ -1980,8 +2149,8 @@ stale detection, parent/child/checklist execution units, manual backup/restore/
 export, generic browser-state persistence, live server, browser launch,
 network synchronization, and update checking.
 
-Any extension, including the registered but not yet accepted TG-M20S.3 design
-Task and the inactive M21 design, must preserve local-first operation, current
+Any extension, including the accepted but inactive TG-M20S.3 design and the
+inactive M21 design, must preserve local-first operation, current
 privacy and target-project safety, explicit authority for mutation, narrow
 repository boundaries, and concise Skill guidance. It requires synchronized
 specification, design, roadmap, tests, and review rather than reuse of a

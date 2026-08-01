@@ -20,7 +20,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 SQLITE_INT64_MAX = (1 << 63) - 1
 IDENTITY_SCHEMES = {"legacy_path_v1", "uuid_v1"}
 BINDING_REASONS = {
@@ -35,6 +35,48 @@ LEGACY_PROJECT_ID_PATTERN = re.compile(
 UUID_PROJECT_ID_PATTERN = re.compile(r"^tg_project_([0-9a-f]{32})$")
 COMPLETION_CYCLE_ID_PATTERN = re.compile(
     r"^tg_completion_cycle_[0-9a-f]{16}$"
+)
+VERIFICATION_RECEIPT_ID_PATTERN = re.compile(
+    r"^tg_verification_receipt_[0-9a-f]{16}$"
+)
+VERIFICATION_EXPECTATION_DIGEST_DOMAIN = (
+    b"taskgov-verification-expectation-v1\0"
+)
+VERIFICATION_SPECIFIED_SQL_FUNCTION = "taskgov_verification_specified"
+VERIFICATION_COMMAND_OPTION_PATTERN = re.compile(
+    r"(?:^|\s)(?:--?[A-Za-z0-9][^\s]*|/(?:c|command)(?:\s|$))",
+    re.IGNORECASE,
+)
+VERIFICATION_SHELL_CONTROL_PATTERN = re.compile(
+    r"(?:[&|;<>`]|\$\(|^\.\s+)"
+)
+VERIFICATION_PATH_COMMAND_PATTERN = re.compile(
+    r"^(?:[A-Za-z]:[\\/]|\\\\|\.{1,2}[\\/]|/)"
+)
+VERIFICATION_SCRIPT_COMMAND_PATTERN = re.compile(
+    r"^\S+\.(?:exe|cmd|bat|ps1|py|sh)(?:\s|$)",
+    re.IGNORECASE,
+)
+VERIFICATION_RUNNER_COMMAND_PATTERN = re.compile(
+    r"^(?:"
+    r"(?:python(?:3(?:\.\d+)*)?|py)(?:\.exe)?(?:\s|$)|"
+    r"(?:pytest|unittest|tox|nox|npx)(?:\.exe|\.cmd|\.bat)?(?:\s|$)|"
+    r"uv(?:\.exe)?(?:\s|$)|"
+    r"(?:npm|pnpm|yarn)(?:\.exe|\.cmd|\.bat)?(?:\s|$)|"
+    r"pip(?:3(?:\.\d+)*)?(?:\.exe)?(?:\s|$)|"
+    r"(?:node|deno|bun)(?:\.exe|\.cmd|\.bat)?(?:\s|$)|"
+    r"(?:poetry|pipenv|pdm|hatch)(?:\.exe|\.cmd|\.bat)?(?:\s|$)|"
+    r"cargo(?:\.exe)?(?:\s|$)|"
+    r"go(?:\.exe)?(?:\s|$)|"
+    r"dotnet(?:\.exe)?(?:\s|$)|"
+    r"(?:mvn|gradle|gradlew|make)(?:\.exe|\.cmd|\.bat)?(?:\s|$)|"
+    r"(?:msbuild|vstest\.console)(?:\.exe)?(?:\s|$)|"
+    r"(?:ruff|mypy|flake8)(?:\.exe)?(?:\s|$)|"
+    r"coverage(?:\.exe)?(?:\s|$)|"
+    r"git(?:\.exe)?(?:\s|$)|"
+    r"(?:powershell|pwsh|cmd|bash|sh)(?:\.exe|\.cmd|\.bat)?(?:\s|$)"
+    r")",
+    re.IGNORECASE,
 )
 COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE = 400
 MANAGED_BACKUP_FILENAME_PATTERN = re.compile(
@@ -261,6 +303,12 @@ class CompletionCycle:
     review_target_base_revision: str = field(repr=False)
     review_target_generation: int
     gate_basis: CompletionGateBasis
+    verification_basis_version: int = 0
+    verification_expectation_digest: str | None = field(
+        default=None,
+        repr=False,
+    )
+    verification_receipt_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -276,6 +324,14 @@ class CompletionHistory:
     @property
     def truncated(self) -> bool:
         return self.returned_count < self.total
+
+
+@dataclass(frozen=True)
+class VerificationReceiptSnapshot:
+    total: int
+    same_generation: tuple[dict[str, Any], ...]
+    exact_current: tuple[dict[str, Any], ...]
+    recent: tuple[dict[str, Any], ...]
 
 
 def skill_root_from_script(script_path: str | os.PathLike[str]) -> Path:
@@ -406,6 +462,74 @@ def resolve_database_target(
 
 def utc_now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _verification_expectation_digest(exact_text: str) -> str:
+    if not isinstance(exact_text, str):
+        raise TypeError("verification expectation must be text")
+    return hashlib.sha256(
+        VERIFICATION_EXPECTATION_DIGEST_DOMAIN + exact_text.encode("utf-8")
+    ).hexdigest()
+
+
+def verification_expectation_digest(exact_text: str) -> str:
+    """Return the v1 domain-separated digest for exact stored verification text."""
+
+    return _verification_expectation_digest(exact_text)
+
+
+def verification_expectation_is_specified(exact_text: object) -> int:
+    """Mirror the public Python whitespace classification inside SQLite."""
+
+    return int(isinstance(exact_text, str) and bool(exact_text.strip()))
+
+
+def verification_command_label_is_summary(value: object) -> bool:
+    """Reject secrets and obvious executable command/argument syntax."""
+
+    if (
+        not isinstance(value, str)
+        or not 1 <= len(value) <= 200
+        or value != value.strip()
+        or any(
+            ord(character) < 0x20 or ord(character) == 0x7F
+            for character in value
+        )
+        or VERIFICATION_COMMAND_OPTION_PATTERN.search(value) is not None
+        or VERIFICATION_SHELL_CONTROL_PATTERN.search(value) is not None
+        or VERIFICATION_PATH_COMMAND_PATTERN.search(value) is not None
+        or VERIFICATION_SCRIPT_COMMAND_PATTERN.search(value) is not None
+        or VERIFICATION_RUNNER_COMMAND_PATTERN.search(value) is not None
+    ):
+        return False
+    try:
+        from task_governance_tool.tasks import TaskValidationError, validate_text
+
+        return (
+            validate_text(
+                "command_label",
+                value,
+                required=True,
+                limit=200,
+            )
+            == value
+        )
+    except (TaskValidationError, TypeError, ValueError):
+        return False
+
+
+def _completion_cycle_matches_exact_verification(
+    cycle: CompletionCycle,
+    exact_text: object,
+) -> bool:
+    if not isinstance(exact_text, str):
+        return False
+    return (
+        cycle.verification_expectation_digest
+        == _verification_expectation_digest(exact_text)
+        and cycle.verification_expectation
+        == ("specified" if exact_text.strip() else "unspecified")
+    )
 
 
 def validate_utc_timestamp(value: str, *, field: str) -> str:
@@ -641,6 +765,12 @@ def configure_connection(connection: sqlite3.Connection) -> sqlite3.Connection:
         LANE_SQL_FUNCTION,
         1,
         canonical_lane,
+        deterministic=True,
+    )
+    connection.create_function(
+        VERIFICATION_SPECIFIED_SQL_FUNCTION,
+        1,
+        verification_expectation_is_specified,
         deterministic=True,
     )
     connection.execute("PRAGMA foreign_keys = ON")
@@ -967,6 +1097,7 @@ _SCHEMA_TABLE_INTRODUCED_VERSION = {
     "viewer_maintenance_state": 13,
     "project_path_binding_history": 14,
     "task_completion_cycles": 15,
+    "verification_receipts": 17,
 }
 
 _SCHEMA_INDEX_INTRODUCED_VERSION = {
@@ -990,6 +1121,9 @@ _SCHEMA_INDEX_INTRODUCED_VERSION = {
     "idx_review_receipts_completion_cycle_reference": 15,
     "idx_task_completion_cycles_task_ordinal": 15,
     "idx_task_events_completion_cycle": 15,
+    "idx_verification_receipts_task_generation": 17,
+    "idx_verification_receipts_exact_basis": 17,
+    "idx_verification_receipts_recent": 17,
 }
 
 _SCHEMA_TRIGGER_INTRODUCED_VERSION = {
@@ -1005,6 +1139,10 @@ _SCHEMA_TRIGGER_INTRODUCED_VERSION = {
     "trg_task_completion_cycles_no_delete": 15,
     "trg_tasks_completion_history_coverage_immutable": 15,
     "trg_task_events_completion_cycle_link_immutable": 15,
+    "trg_verification_receipts_no_update": 17,
+    "trg_verification_receipts_no_delete": 17,
+    "trg_verification_receipts_locked_basis_insert": 17,
+    "trg_task_completion_cycles_verification_basis_insert": 17,
 }
 
 _SCHEMA_COLUMN_INTRODUCED_VERSION = {
@@ -1031,6 +1169,9 @@ _SCHEMA_COLUMN_INTRODUCED_VERSION = {
     "column:project_meta.legacy_cleanup_fingerprint": 14,
     "column:tasks.completion_history_coverage": 15,
     "column:task_events.completion_cycle_id": 15,
+    "column:task_completion_cycles.verification_basis_version": 17,
+    "column:task_completion_cycles.verification_expectation_digest": 17,
+    "column:task_completion_cycles.verification_receipt_id": 17,
 }
 
 def _schema_requirement_introduced_version(requirement: str) -> int:
@@ -1198,6 +1339,9 @@ def required_schema_objects_missing(
             "review_tier",
             "verification_expectation",
             "verification_attestation",
+            "verification_basis_version",
+            "verification_expectation_digest",
+            "verification_receipt_id",
             "completion_evidence_kind",
             "completion_evidence_revision",
             "completion_evidence_reason",
@@ -1222,6 +1366,33 @@ def required_schema_objects_missing(
         missing.extend(
             f"column:task_completion_cycles.{name}"
             for name in sorted(required_cycle_columns - cycle_columns)
+        )
+    if "verification_receipts" in tables:
+        receipt_columns = {
+            str(row["name"])
+            for row in connection.execute(
+                "PRAGMA table_info(verification_receipts)"
+            ).fetchall()
+        }
+        required_receipt_columns = {
+            "verification_receipt_id",
+            "project_id",
+            "task_id",
+            "contract_revision",
+            "verification_expectation_digest",
+            "command_label",
+            "result",
+            "duration_ms",
+            "scope_coverage",
+            "target_kind",
+            "target_value",
+            "target_base_revision",
+            "target_generation",
+            "created_at",
+        }
+        missing.extend(
+            f"column:verification_receipts.{name}"
+            for name in sorted(required_receipt_columns - receipt_columns)
         )
     if "project_meta" in tables:
         project_column_rows = connection.execute("PRAGMA table_info(project_meta)").fetchall()
@@ -3473,6 +3644,229 @@ def completion_cycle_history_schema_statements() -> tuple[str, ...]:
     )
 
 
+def verification_receipt_schema_statements() -> tuple[str, ...]:
+    """Return the exact schema-v17 Receipt objects in migration order."""
+
+    return (
+        """
+        CREATE TABLE verification_receipts (
+          verification_receipt_id TEXT PRIMARY KEY
+            CHECK (
+              length(verification_receipt_id) = 40
+              AND substr(verification_receipt_id, 1, 24) =
+                    'tg_verification_receipt_'
+              AND substr(verification_receipt_id, 25)
+                    NOT GLOB '*[^0-9a-f]*'
+            ),
+          project_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          contract_revision INTEGER NOT NULL
+            CHECK (contract_revision >= 0),
+          verification_expectation_digest TEXT NOT NULL
+            CHECK (
+              length(verification_expectation_digest) = 64
+              AND verification_expectation_digest
+                    NOT GLOB '*[^0-9a-f]*'
+            ),
+          command_label TEXT NOT NULL
+            CHECK (
+              length(command_label) BETWEEN 1 AND 200
+              AND command_label = trim(command_label)
+            ),
+          result TEXT NOT NULL
+            CHECK (result IN ('pass', 'fail', 'timeout')),
+          duration_ms INTEGER NOT NULL
+            CHECK (duration_ms >= 0),
+          scope_coverage TEXT NOT NULL
+            CHECK (scope_coverage IN ('full', 'partial')),
+          target_kind TEXT NOT NULL
+            CHECK (target_kind IN (
+              'git_commit', 'diff_fingerprint',
+              'external_revision', 'git_snapshot'
+            )),
+          target_value TEXT NOT NULL
+            CHECK (length(target_value) BETWEEN 1 AND 500),
+          target_base_revision TEXT NOT NULL
+            CHECK (length(target_base_revision) <= 500),
+          target_generation INTEGER NOT NULL
+            CHECK (target_generation >= 1),
+          created_at TEXT NOT NULL,
+
+          FOREIGN KEY (project_id, task_id)
+            REFERENCES tasks(project_id, task_id),
+
+          CHECK (
+            (target_kind = 'git_snapshot'
+              AND target_base_revision != '')
+            OR
+            (target_kind IN (
+                'git_commit', 'diff_fingerprint', 'external_revision'
+              )
+              AND target_base_revision = '')
+          )
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX idx_verification_receipts_task_generation
+          ON verification_receipts(project_id, task_id, target_generation)
+        """,
+        """
+        CREATE INDEX idx_verification_receipts_exact_basis
+          ON verification_receipts(
+            project_id, task_id, contract_revision,
+            verification_expectation_digest,
+            target_kind, target_value, target_base_revision,
+            target_generation
+          )
+        """,
+        """
+        CREATE INDEX idx_verification_receipts_recent
+          ON verification_receipts(
+            project_id, task_id, created_at DESC,
+            verification_receipt_id DESC
+          )
+        """,
+        """
+        ALTER TABLE task_completion_cycles
+          ADD COLUMN verification_basis_version INTEGER NOT NULL DEFAULT 0
+            CHECK (verification_basis_version IN (0, 1))
+        """,
+        """
+        ALTER TABLE task_completion_cycles
+          ADD COLUMN verification_expectation_digest TEXT
+            CHECK (
+              verification_expectation_digest IS NULL
+              OR (
+                length(verification_expectation_digest) = 64
+                AND verification_expectation_digest
+                      NOT GLOB '*[^0-9a-f]*'
+              )
+            )
+        """,
+        """
+        ALTER TABLE task_completion_cycles
+          ADD COLUMN verification_receipt_id TEXT
+            REFERENCES verification_receipts(verification_receipt_id)
+        """,
+        """
+        CREATE TRIGGER trg_verification_receipts_no_update
+        BEFORE UPDATE ON verification_receipts
+        BEGIN
+          SELECT RAISE(ABORT, 'immutable_verification_receipt');
+        END
+        """,
+        """
+        CREATE TRIGGER trg_verification_receipts_no_delete
+        BEFORE DELETE ON verification_receipts
+        BEGIN
+          SELECT RAISE(ABORT, 'immutable_verification_receipt');
+        END
+        """,
+        """
+        CREATE TRIGGER trg_verification_receipts_locked_basis_insert
+        BEFORE INSERT ON verification_receipts
+        WHEN NOT EXISTS (
+          SELECT 1
+            FROM tasks AS task
+           WHERE task.project_id = NEW.project_id
+             AND task.task_id = NEW.task_id
+             AND task.status IN ('in_progress', 'review_pending')
+             AND taskgov_verification_specified(task.verification) = 1
+             AND task.current_contract_revision = NEW.contract_revision
+             AND task.review_target_kind = NEW.target_kind
+             AND task.review_target_value = NEW.target_value
+             AND task.review_target_base_revision = NEW.target_base_revision
+             AND task.review_target_generation = NEW.target_generation
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'verification_receipt_basis_mismatch');
+        END
+        """,
+        """
+        CREATE TRIGGER trg_task_completion_cycles_verification_basis_insert
+        BEFORE INSERT ON task_completion_cycles
+        WHEN NOT (
+          (
+            NEW.verification_basis_version = 0
+            AND NEW.verification_expectation_digest IS NULL
+            AND NEW.verification_receipt_id IS NULL
+            AND NEW.origin = 'legacy_current_done'
+            AND NEW.completeness = 'partial'
+            AND EXISTS (
+              SELECT 1
+                FROM tasks AS task
+               WHERE task.project_id = NEW.project_id
+                 AND task.task_id = NEW.task_id
+                 AND task.status = 'done'
+                 AND task.completion_history_coverage = 'legacy_unknown'
+            )
+            AND NOT EXISTS (
+              SELECT 1
+                FROM task_completion_cycles AS earlier
+               WHERE earlier.project_id = NEW.project_id
+                 AND earlier.task_id = NEW.task_id
+            )
+          )
+          OR
+          (
+            NEW.verification_basis_version = 1
+            AND NEW.verification_expectation_digest IS NOT NULL
+            AND NEW.origin = 'native_done'
+            AND EXISTS (
+              SELECT 1
+                FROM tasks AS task
+               WHERE task.project_id = NEW.project_id
+                 AND task.task_id = NEW.task_id
+                 AND task.current_contract_revision = NEW.contract_revision
+                 AND task.review_target_kind = NEW.review_target_kind
+                 AND task.review_target_value = NEW.review_target_value
+                 AND task.review_target_base_revision =
+                       NEW.review_target_base_revision
+                 AND task.review_target_generation =
+                       NEW.review_target_generation
+                 AND (
+                   (
+                     taskgov_verification_specified(task.verification) = 0
+                     AND NEW.verification_expectation = 'unspecified'
+                     AND NEW.verification_receipt_id IS NULL
+                   )
+                   OR
+                   (
+                     taskgov_verification_specified(task.verification) = 1
+                     AND NEW.verification_expectation = 'specified'
+                     AND NEW.verification_receipt_id IS NOT NULL
+                     AND EXISTS (
+                       SELECT 1
+                         FROM verification_receipts AS receipt
+                        WHERE receipt.verification_receipt_id =
+                              NEW.verification_receipt_id
+                          AND receipt.project_id = NEW.project_id
+                          AND receipt.task_id = NEW.task_id
+                          AND receipt.contract_revision =
+                                NEW.contract_revision
+                          AND receipt.verification_expectation_digest =
+                                NEW.verification_expectation_digest
+                          AND receipt.target_kind = NEW.review_target_kind
+                          AND receipt.target_value = NEW.review_target_value
+                          AND receipt.target_base_revision =
+                                NEW.review_target_base_revision
+                          AND receipt.target_generation =
+                                NEW.review_target_generation
+                          AND receipt.result = 'pass'
+                          AND receipt.scope_coverage = 'full'
+                     )
+                   )
+                 )
+            )
+          )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'invalid_completion_verification_basis');
+        END
+        """,
+    )
+
+
 def _normalized_schema_sql(statement: str) -> str:
     return " ".join(statement.strip().removesuffix(";").split())
 
@@ -3495,6 +3889,27 @@ def _completion_history_trigger_definitions() -> dict[str, str]:
             definitions[match.group(1)] = _normalized_schema_sql(statement)
     if set(definitions) != expected_names:
         raise AssertionError("completion history trigger inventory is incomplete")
+    return definitions
+
+
+def _verification_receipt_trigger_definitions() -> dict[str, str]:
+    expected_names = {
+        "trg_verification_receipts_no_update",
+        "trg_verification_receipts_no_delete",
+        "trg_verification_receipts_locked_basis_insert",
+        "trg_task_completion_cycles_verification_basis_insert",
+    }
+    definitions: dict[str, str] = {}
+    for statement in verification_receipt_schema_statements():
+        match = re.match(
+            r"\s*CREATE\s+TRIGGER\s+([a-z0-9_]+)\b",
+            statement,
+            flags=re.IGNORECASE,
+        )
+        if match is not None and match.group(1) in expected_names:
+            definitions[match.group(1)] = _normalized_schema_sql(statement)
+    if set(definitions) != expected_names:
+        raise AssertionError("verification Receipt trigger inventory is incomplete")
     return definitions
 
 
@@ -3571,6 +3986,115 @@ def completion_history_inconsistent() -> StorageError:
     )
 
 
+def invalid_verification_evidence() -> StorageError:
+    return StorageError(
+        "invalid_verification_evidence",
+        "stored verification evidence is inconsistent",
+    )
+
+
+def _verification_receipt_int(
+    value: object,
+    *,
+    minimum: int = 0,
+) -> int:
+    if type(value) is not int or not minimum <= value <= SQLITE_INT64_MAX:
+        raise invalid_verification_evidence()
+    return value
+
+
+def _validate_verification_receipt_row(
+    row: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate one complete stored Receipt and return its fixed storage shape."""
+
+    required_fields = (
+        "verification_receipt_id",
+        "project_id",
+        "task_id",
+        "contract_revision",
+        "verification_expectation_digest",
+        "command_label",
+        "result",
+        "duration_ms",
+        "scope_coverage",
+        "target_kind",
+        "target_value",
+        "target_base_revision",
+        "target_generation",
+        "created_at",
+    )
+    if any(field_name not in row for field_name in required_fields):
+        raise invalid_verification_evidence()
+    receipt_id = row["verification_receipt_id"]
+    project_id = row["project_id"]
+    task_id = row["task_id"]
+    digest = row["verification_expectation_digest"]
+    command_label = row["command_label"]
+    result = row["result"]
+    scope_coverage = row["scope_coverage"]
+    target_kind = row["target_kind"]
+    target_value = row["target_value"]
+    target_base_revision = row["target_base_revision"]
+    created_at = row["created_at"]
+    if (
+        not isinstance(receipt_id, str)
+        or VERIFICATION_RECEIPT_ID_PATTERN.fullmatch(receipt_id) is None
+        or not isinstance(project_id, str)
+        or not project_id
+        or not isinstance(task_id, str)
+        or not task_id
+        or not isinstance(digest, str)
+        or LOWER_HEX_64_PATTERN.fullmatch(digest) is None
+        or not isinstance(command_label, str)
+        or not 1 <= len(command_label) <= 200
+        or command_label != command_label.strip()
+        or not verification_command_label_is_summary(command_label)
+        or result not in {"pass", "fail", "timeout"}
+        or scope_coverage not in {"full", "partial"}
+        or not isinstance(target_kind, str)
+        or not isinstance(target_value, str)
+        or not isinstance(target_base_revision, str)
+        or not isinstance(created_at, str)
+    ):
+        raise invalid_verification_evidence()
+    contract_revision = _verification_receipt_int(row["contract_revision"])
+    duration_ms = _verification_receipt_int(row["duration_ms"])
+    target_generation = _verification_receipt_int(
+        row["target_generation"],
+        minimum=1,
+    )
+    try:
+        _validate_completion_target(
+            kind=target_kind,
+            value=target_value,
+            base_revision=target_base_revision,
+            generation=target_generation,
+        )
+        validate_utc_timestamp(
+            created_at,
+            field="verification Receipt creation time",
+        )
+    except StorageError as exc:
+        raise invalid_verification_evidence() from exc
+    return {
+        "verification_receipt_id": receipt_id,
+        "project_id": project_id,
+        "task_id": task_id,
+        "contract_revision": contract_revision,
+        "verification_expectation_digest": digest,
+        "command_label": command_label,
+        "result": result,
+        "duration_ms": duration_ms,
+        "scope_coverage": scope_coverage,
+        "target_kind": target_kind,
+        "target_value": target_value,
+        "target_base_revision": target_base_revision,
+        "target_generation": target_generation,
+        "created_at": created_at,
+    }
+
+
 def _completion_int(
     value: object,
     *,
@@ -3624,6 +4148,259 @@ def _validate_completion_target(
             raise completion_history_inconsistent()
     elif kind != "external_revision":
         raise completion_history_inconsistent()
+
+
+def read_verification_receipt_snapshot(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    contract_revision: int,
+    verification_expectation_digest: str,
+    target_kind: str,
+    target_value: str,
+    target_base_revision: str,
+    target_generation: int,
+    recent_limit: int = 10,
+) -> VerificationReceiptSnapshot:
+    """Read one Task's bounded audit rows and exact current Receipt basis."""
+
+    if (
+        not isinstance(project_id, str)
+        or not project_id
+        or not isinstance(task_id, str)
+        or not task_id
+        or not isinstance(verification_expectation_digest, str)
+        or LOWER_HEX_64_PATTERN.fullmatch(
+            verification_expectation_digest
+        )
+        is None
+        or type(recent_limit) is not int
+        or not 0 <= recent_limit <= 10
+    ):
+        raise invalid_verification_evidence()
+    contract_revision = _verification_receipt_int(contract_revision)
+    if target_kind == "":
+        if (
+            target_value != ""
+            or target_base_revision != ""
+        ):
+            raise invalid_verification_evidence()
+        target_generation = _verification_receipt_int(target_generation)
+    else:
+        try:
+            _validate_completion_target(
+                kind=target_kind,
+                value=target_value,
+                base_revision=target_base_revision,
+                generation=target_generation,
+            )
+        except StorageError as exc:
+            raise invalid_verification_evidence() from exc
+    if not table_exists(connection, "verification_receipts"):
+        if current_schema_version(connection) < 17:
+            return VerificationReceiptSnapshot(
+                total=0,
+                same_generation=(),
+                exact_current=(),
+                recent=(),
+            )
+        raise invalid_verification_evidence()
+
+    total_row = connection.execute(
+        """
+        SELECT COUNT(*)
+          FROM verification_receipts
+         WHERE project_id = ? AND task_id = ?
+        """,
+        (project_id, task_id),
+    ).fetchone()
+    if total_row is None:
+        raise invalid_verification_evidence()
+    total = _verification_receipt_int(total_row[0])
+    same_generation_rows = connection.execute(
+        """
+        SELECT *
+          FROM verification_receipts
+         WHERE project_id = ?
+           AND task_id = ?
+           AND target_generation = ?
+         ORDER BY created_at DESC,
+                  verification_receipt_id DESC
+        """,
+        (project_id, task_id, target_generation),
+    ).fetchall()
+    exact_rows = connection.execute(
+        """
+        SELECT *
+          FROM verification_receipts
+         WHERE project_id = ?
+           AND task_id = ?
+           AND contract_revision = ?
+           AND verification_expectation_digest = ?
+           AND target_kind = ?
+           AND target_value = ?
+           AND target_base_revision = ?
+           AND target_generation = ?
+         ORDER BY created_at DESC,
+                  verification_receipt_id DESC
+        """,
+        (
+            project_id,
+            task_id,
+            contract_revision,
+            verification_expectation_digest,
+            target_kind,
+            target_value,
+            target_base_revision,
+            target_generation,
+        ),
+    ).fetchall()
+    recent_rows = connection.execute(
+        """
+        SELECT *
+          FROM verification_receipts
+         WHERE project_id = ? AND task_id = ?
+         ORDER BY created_at DESC,
+                  verification_receipt_id DESC
+         LIMIT ?
+        """,
+        (project_id, task_id, recent_limit),
+    ).fetchall()
+    same_generation = tuple(
+        _validate_verification_receipt_row(dict(row))
+        for row in same_generation_rows
+    )
+    exact_current = tuple(
+        _validate_verification_receipt_row(dict(row))
+        for row in exact_rows
+    )
+    recent = tuple(
+        _validate_verification_receipt_row(dict(row))
+        for row in recent_rows
+    )
+    if len(same_generation) > 1 or len(exact_current) > 1:
+        raise invalid_verification_evidence()
+    return VerificationReceiptSnapshot(
+        total=total,
+        same_generation=same_generation,
+        exact_current=exact_current,
+        recent=recent,
+    )
+
+
+def insert_verification_receipt_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    contract_revision: int,
+    verification_expectation_digest: str,
+    command_label: str,
+    result: str,
+    duration_ms: int,
+    scope_coverage: str,
+    target_kind: str,
+    target_value: str,
+    target_base_revision: str,
+    target_generation: int,
+) -> dict[str, Any]:
+    """Append one tool-owned Receipt against the exact locked Task basis."""
+
+    _require_completion_cycle_writer(connection)
+    if (
+        current_schema_version(connection) != SCHEMA_VERSION
+        or missing_migration_versions(connection, SCHEMA_VERSION)
+        or required_schema_objects_missing(
+            connection,
+            schema_version=SCHEMA_VERSION,
+        )
+    ):
+        raise StorageError(
+            "migration_required",
+            "verification receipt recording requires schema version 17",
+        )
+    locked = connection.execute(
+        """
+        SELECT status, verification, current_contract_revision,
+               review_target_kind, review_target_value,
+               review_target_base_revision, review_target_generation
+          FROM tasks
+         WHERE project_id = ? AND task_id = ?
+        """,
+        (project_id, task_id),
+    ).fetchone()
+    if locked is None:
+        raise invalid_verification_evidence()
+    expectation = locked["verification"]
+    if not isinstance(expectation, str):
+        raise invalid_verification_evidence()
+    if (
+        str(locked["status"]) not in {"in_progress", "review_pending"}
+        or not expectation.strip()
+        or locked["current_contract_revision"] != contract_revision
+        or verification_expectation_digest
+        != _verification_expectation_digest(expectation)
+        or locked["review_target_kind"] != target_kind
+        or locked["review_target_value"] != target_value
+        or locked["review_target_base_revision"] != target_base_revision
+        or locked["review_target_generation"] != target_generation
+    ):
+        raise invalid_verification_evidence()
+    row = _validate_verification_receipt_row(
+        {
+            "verification_receipt_id": (
+                f"tg_verification_receipt_{secrets.token_hex(8)}"
+            ),
+            "project_id": project_id,
+            "task_id": task_id,
+            "contract_revision": contract_revision,
+            "verification_expectation_digest": (
+                verification_expectation_digest
+            ),
+            "command_label": command_label,
+            "result": result,
+            "duration_ms": duration_ms,
+            "scope_coverage": scope_coverage,
+            "target_kind": target_kind,
+            "target_value": target_value,
+            "target_base_revision": target_base_revision,
+            "target_generation": target_generation,
+            "created_at": utc_now(),
+        }
+    )
+    connection.execute(
+        """
+        INSERT INTO verification_receipts(
+          verification_receipt_id, project_id, task_id,
+          contract_revision, verification_expectation_digest,
+          command_label, result, duration_ms, scope_coverage,
+          target_kind, target_value, target_base_revision,
+          target_generation, created_at
+        ) VALUES (
+          :verification_receipt_id, :project_id, :task_id,
+          :contract_revision, :verification_expectation_digest,
+          :command_label, :result, :duration_ms, :scope_coverage,
+          :target_kind, :target_value, :target_base_revision,
+          :target_generation, :created_at
+        )
+        """,
+        row,
+    )
+    stored = connection.execute(
+        """
+        SELECT *
+          FROM verification_receipts
+         WHERE verification_receipt_id = ?
+        """,
+        (row["verification_receipt_id"],),
+    ).fetchone()
+    if stored is None:
+        raise invalid_verification_evidence()
+    persisted = _validate_verification_receipt_row(dict(stored))
+    if persisted != row:
+        raise invalid_verification_evidence()
+    return persisted
 
 
 def _validate_completion_evidence(
@@ -3739,6 +4516,7 @@ def _validate_completion_gate_basis(
 
 
 def _cycle_from_row(row: sqlite3.Row) -> CompletionCycle:
+    row_fields = set(row.keys())
     receipt_ids = tuple(
         str(row[field_name])
         for field_name in (
@@ -3807,6 +4585,30 @@ def _cycle_from_row(row: sqlite3.Row) -> CompletionCycle:
         review_tier=_completion_int(row["review_tier"], maximum=2),
         verification_expectation=str(row["verification_expectation"]),
         verification_attestation=attestation,
+        verification_basis_version=(
+            _completion_int(
+                row["verification_basis_version"],
+                maximum=1,
+            )
+            if "verification_basis_version" in row_fields
+            else 0
+        ),
+        verification_expectation_digest=(
+            str(row["verification_expectation_digest"])
+            if (
+                "verification_expectation_digest" in row_fields
+                and row["verification_expectation_digest"] is not None
+            )
+            else None
+        ),
+        verification_receipt_id=(
+            str(row["verification_receipt_id"])
+            if (
+                "verification_receipt_id" in row_fields
+                and row["verification_receipt_id"] is not None
+            )
+            else None
+        ),
         completion_evidence_kind=str(row["completion_evidence_kind"]),
         completion_evidence_revision=str(row["completion_evidence_revision"]),
         completion_evidence_reason=str(row["completion_evidence_reason"]),
@@ -3851,6 +4653,34 @@ def _validate_completion_cycle(cycle: CompletionCycle) -> None:
         raise completion_history_inconsistent() from exc
     if cycle.verification_expectation not in {"specified", "unspecified"}:
         raise completion_history_inconsistent()
+    _completion_int(cycle.verification_basis_version, maximum=1)
+    if cycle.verification_basis_version == 0:
+        if (
+            cycle.verification_expectation_digest is not None
+            or cycle.verification_receipt_id is not None
+        ):
+            raise completion_history_inconsistent()
+    else:
+        if (
+            cycle.origin != "native_done"
+            or cycle.verification_expectation_digest is None
+            or LOWER_HEX_64_PATTERN.fullmatch(
+                cycle.verification_expectation_digest
+            )
+            is None
+        ):
+            raise completion_history_inconsistent()
+        if cycle.verification_expectation == "specified":
+            if (
+                cycle.verification_receipt_id is None
+                or VERIFICATION_RECEIPT_ID_PATTERN.fullmatch(
+                    cycle.verification_receipt_id
+                )
+                is None
+            ):
+                raise completion_history_inconsistent()
+        elif cycle.verification_receipt_id is not None:
+            raise completion_history_inconsistent()
     _validate_completion_evidence(cycle)
     _validate_completion_target(
         kind=cycle.review_target_kind,
@@ -3883,10 +4713,89 @@ def _validate_completion_cycle(cycle: CompletionCycle) -> None:
         raise completion_history_inconsistent()
 
 
+def _validate_cycle_verification_receipt_projection(
+    cycle: CompletionCycle,
+    receipt: dict[str, Any] | None,
+    *,
+    validate_complete_receipt: bool = True,
+) -> None:
+    if cycle.verification_basis_version == 0:
+        if receipt is not None:
+            raise completion_history_inconsistent()
+        return
+    if cycle.verification_expectation == "unspecified":
+        if receipt is not None or cycle.verification_receipt_id is not None:
+            raise completion_history_inconsistent()
+        return
+    if receipt is None:
+        raise completion_history_inconsistent()
+    if validate_complete_receipt:
+        try:
+            validated = _validate_verification_receipt_row(receipt)
+        except StorageError as exc:
+            raise completion_history_inconsistent() from exc
+    else:
+        validated = receipt
+    required_link_fields = {
+        "verification_receipt_id",
+        "project_id",
+        "task_id",
+        "contract_revision",
+        "verification_expectation_digest",
+        "result",
+        "scope_coverage",
+        "target_kind",
+        "target_value",
+        "target_base_revision",
+        "target_generation",
+    }
+    if not required_link_fields <= set(validated):
+        raise completion_history_inconsistent()
+    if (
+        validated["verification_receipt_id"]
+        != cycle.verification_receipt_id
+        or validated["project_id"] != cycle.project_id
+        or validated["task_id"] != cycle.task_id
+        or validated["contract_revision"] != cycle.contract_revision
+        or validated["verification_expectation_digest"]
+        != cycle.verification_expectation_digest
+        or validated["target_kind"] != cycle.review_target_kind
+        or validated["target_value"] != cycle.review_target_value
+        or validated["target_base_revision"]
+        != cycle.review_target_base_revision
+        or validated["target_generation"]
+        != cycle.review_target_generation
+        or validated["result"] != "pass"
+        or validated["scope_coverage"] != "full"
+    ):
+        raise completion_history_inconsistent()
+
+
+def _validate_cycle_verification_receipt(
+    connection: sqlite3.Connection,
+    cycle: CompletionCycle,
+) -> None:
+    receipt: dict[str, Any] | None = None
+    if cycle.verification_receipt_id is not None:
+        row = connection.execute(
+            """
+            SELECT *
+              FROM verification_receipts
+             WHERE verification_receipt_id = ?
+            """,
+            (cycle.verification_receipt_id,),
+        ).fetchone()
+        if row is not None:
+            receipt = dict(row)
+    _validate_cycle_verification_receipt_projection(cycle, receipt)
+
+
 def _validate_cycle_receipts(
     connection: sqlite3.Connection,
     cycle: CompletionCycle,
 ) -> None:
+    if cycle.verification_basis_version == 1:
+        _validate_cycle_verification_receipt(connection, cycle)
     basis = cycle.gate_basis
     if basis.version == 0:
         return
@@ -4042,6 +4951,134 @@ def _validate_cycle_receipts_batch(
     project_id: str,
     cycles: tuple[CompletionCycle, ...],
 ) -> None:
+    verification_cycles = tuple(
+        cycle
+        for cycle in cycles
+        if cycle.verification_basis_version == 1
+    )
+    for offset in range(
+        0,
+        len(verification_cycles),
+        COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE,
+    ):
+        chunk = verification_cycles[
+            offset : offset + COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE
+        ]
+        placeholders = ", ".join("?" for _ in chunk)
+        cycle_ids = tuple(cycle.completion_cycle_id for cycle in chunk)
+        rows = connection.execute(
+            f"""
+            SELECT cycle.completion_cycle_id,
+                   receipt.verification_receipt_id AS receipt_id,
+                   receipt.project_id AS receipt_project_id,
+                   receipt.task_id AS receipt_task_id,
+                   receipt.contract_revision AS receipt_contract_revision,
+                   receipt.verification_expectation_digest AS receipt_digest,
+                   receipt.result AS receipt_result,
+                   receipt.scope_coverage AS receipt_scope_coverage,
+                   receipt.target_kind AS receipt_target_kind,
+                   receipt.target_value AS receipt_target_value,
+                   receipt.target_base_revision AS receipt_target_base_revision,
+                   receipt.target_generation AS receipt_target_generation
+              FROM task_completion_cycles AS cycle
+              LEFT JOIN verification_receipts AS receipt
+                ON receipt.verification_receipt_id =
+                   cycle.verification_receipt_id
+             WHERE cycle.project_id = ?
+               AND cycle.completion_cycle_id IN ({placeholders})
+             ORDER BY cycle.completion_cycle_id COLLATE BINARY
+            """,
+            (project_id, *cycle_ids),
+        ).fetchall()
+        rows_by_cycle = {
+            str(row["completion_cycle_id"]): row for row in rows
+        }
+        if len(rows_by_cycle) != len(chunk):
+            raise completion_history_inconsistent()
+        for cycle in chunk:
+            row = rows_by_cycle.get(cycle.completion_cycle_id)
+            if row is None or cycle.project_id != project_id:
+                raise completion_history_inconsistent()
+            receipt = None
+            if row["receipt_id"] is not None:
+                receipt = {
+                    "verification_receipt_id": row["receipt_id"],
+                    "project_id": row["receipt_project_id"],
+                    "task_id": row["receipt_task_id"],
+                    "contract_revision": row[
+                        "receipt_contract_revision"
+                    ],
+                    "verification_expectation_digest": row[
+                        "receipt_digest"
+                    ],
+                    "result": row["receipt_result"],
+                    "scope_coverage": row["receipt_scope_coverage"],
+                    "target_kind": row["receipt_target_kind"],
+                    "target_value": row["receipt_target_value"],
+                    "target_base_revision": row[
+                        "receipt_target_base_revision"
+                    ],
+                    "target_generation": row[
+                        "receipt_target_generation"
+                    ],
+                }
+            _validate_cycle_verification_receipt_projection(
+                cycle,
+                receipt,
+                validate_complete_receipt=False,
+            )
+
+    latest_by_task: dict[str, CompletionCycle] = {}
+    for cycle in cycles:
+        latest = latest_by_task.get(cycle.task_id)
+        if (
+            latest is None
+            or cycle.saved_cycle_ordinal > latest.saved_cycle_ordinal
+        ):
+            latest_by_task[cycle.task_id] = cycle
+    exact_basis = {
+        task_id: cycle
+        for task_id, cycle in latest_by_task.items()
+        if cycle.verification_basis_version == 1
+    }
+    rows_by_task: dict[str, sqlite3.Row] = {}
+    task_ids = tuple(sorted(exact_basis))
+    for offset in range(
+        0,
+        len(task_ids),
+        COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE,
+    ):
+        chunk = task_ids[
+            offset : offset + COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE
+        ]
+        placeholders = ", ".join("?" for _ in chunk)
+        task_rows = connection.execute(
+            f"""
+            SELECT task_id, status, verification
+              FROM tasks
+             WHERE project_id = ?
+               AND task_id IN ({placeholders})
+             ORDER BY task_id COLLATE BINARY
+            """,
+            (project_id, *chunk),
+        ).fetchall()
+        rows_by_task.update(
+            {str(row["task_id"]): row for row in task_rows}
+        )
+    if len(rows_by_task) != len(exact_basis):
+        raise completion_history_inconsistent()
+    for task_id, cycle in exact_basis.items():
+        row = rows_by_task.get(task_id)
+        if row is None:
+            raise completion_history_inconsistent()
+        if str(row["status"]) == "done" and not (
+            _completion_cycle_matches_exact_verification(
+                cycle,
+                row["verification"],
+            )
+        ):
+            raise completion_history_inconsistent()
+
     native_cycles = tuple(
         cycle for cycle in cycles if cycle.gate_basis.version == 1
     )
@@ -4245,6 +5282,16 @@ def _validate_completion_capture_activation_marker(
         raise completion_history_inconsistent()
 
 
+def _validate_verification_receipt_marker(
+    connection: sqlite3.Connection,
+) -> None:
+    row = connection.execute(
+        "SELECT name FROM schema_migrations WHERE version = 17"
+    ).fetchone()
+    if row is None or str(row["name"]) != "verification_receipts":
+        raise invalid_verification_evidence()
+
+
 def _foreign_key_signatures(
     connection: sqlite3.Connection,
     table_name: str,
@@ -4284,8 +5331,7 @@ def _validate_completion_history_schema_contract(
         ("review_target_base_revision", "target_base_revision"),
         ("review_target_generation", "target_generation"),
     )
-    expected_cycle_foreign_keys = sorted(
-        [
+    expected_cycle_foreign_keys = [
             (
                 "tasks",
                 (
@@ -4310,7 +5356,19 @@ def _validate_completion_history_schema_contract(
                 "NO ACTION",
                 "NONE",
             ),
-        ],
+        ]
+    if current_schema_version(connection) >= 17:
+        expected_cycle_foreign_keys.append(
+            (
+                "verification_receipts",
+                (("verification_receipt_id", "verification_receipt_id"),),
+                "NO ACTION",
+                "NO ACTION",
+                "NONE",
+            )
+        )
+    expected_cycle_foreign_keys = sorted(
+        expected_cycle_foreign_keys,
         key=repr,
     )
     expected_event_foreign_keys = sorted(
@@ -4416,6 +5474,239 @@ def _validate_completion_history_schema_contract(
         raise completion_history_inconsistent()
 
 
+def _validate_verification_receipt_schema_contract(
+    connection: sqlite3.Connection,
+) -> None:
+    table_row = connection.execute(
+        """
+        SELECT sql
+          FROM sqlite_master
+         WHERE type = 'table' AND name = 'verification_receipts'
+        """
+    ).fetchone()
+    expected_table_sql = _normalized_schema_sql(
+        verification_receipt_schema_statements()[0]
+    )
+    if (
+        table_row is None
+        or table_row["sql"] is None
+        or _normalized_schema_sql(str(table_row["sql"]))
+        != expected_table_sql
+    ):
+        raise invalid_verification_evidence()
+
+    expected_receipt_foreign_keys = [
+        (
+            "tasks",
+            (
+                ("project_id", "project_id"),
+                ("task_id", "task_id"),
+            ),
+            "NO ACTION",
+            "NO ACTION",
+            "NONE",
+        )
+    ]
+    if (
+        _foreign_key_signatures(connection, "verification_receipts")
+        != expected_receipt_foreign_keys
+    ):
+        raise invalid_verification_evidence()
+
+    expected_indexes = {
+        "idx_verification_receipts_task_generation": (
+            1,
+            0,
+            ("project_id", "task_id", "target_generation"),
+        ),
+        "idx_verification_receipts_exact_basis": (
+            0,
+            0,
+            (
+                "project_id",
+                "task_id",
+                "contract_revision",
+                "verification_expectation_digest",
+                "target_kind",
+                "target_value",
+                "target_base_revision",
+                "target_generation",
+            ),
+        ),
+        "idx_verification_receipts_recent": (
+            0,
+            0,
+            (
+                "project_id",
+                "task_id",
+                "created_at",
+                "verification_receipt_id",
+            ),
+        ),
+    }
+    receipt_indexes = connection.execute(
+        "PRAGMA index_list(verification_receipts)"
+    ).fetchall()
+    for index_name, (
+        expected_unique,
+        expected_partial,
+        expected_columns,
+    ) in expected_indexes.items():
+        index_row = next(
+            (
+                row
+                for row in receipt_indexes
+                if str(row["name"]) == index_name
+            ),
+            None,
+        )
+        columns = tuple(
+            str(row["name"])
+            for row in connection.execute(
+                f"PRAGMA index_info({_quoted_identifier(index_name)})"
+            ).fetchall()
+        )
+        if (
+            index_row is None
+            or int(index_row["unique"]) != expected_unique
+            or int(index_row["partial"]) != expected_partial
+            or columns != expected_columns
+        ):
+            raise invalid_verification_evidence()
+
+    cycle_columns = {
+        str(row["name"]): row
+        for row in connection.execute(
+            "PRAGMA table_info(task_completion_cycles)"
+        ).fetchall()
+    }
+    basis_column = cycle_columns.get("verification_basis_version")
+    digest_column = cycle_columns.get("verification_expectation_digest")
+    receipt_column = cycle_columns.get("verification_receipt_id")
+    if (
+        basis_column is None
+        or str(basis_column["type"]).upper() != "INTEGER"
+        or int(basis_column["notnull"]) != 1
+        or str(basis_column["dflt_value"]) not in {"0", "'0'"}
+        or digest_column is None
+        or str(digest_column["type"]).upper() != "TEXT"
+        or int(digest_column["notnull"]) != 0
+        or digest_column["dflt_value"] is not None
+        or receipt_column is None
+        or str(receipt_column["type"]).upper() != "TEXT"
+        or int(receipt_column["notnull"]) != 0
+        or receipt_column["dflt_value"] is not None
+    ):
+        raise invalid_verification_evidence()
+
+    cycle_table_row = connection.execute(
+        """
+        SELECT sql
+          FROM sqlite_master
+         WHERE type = 'table' AND name = 'task_completion_cycles'
+        """
+    ).fetchone()
+    if cycle_table_row is None or cycle_table_row["sql"] is None:
+        raise invalid_verification_evidence()
+    normalized_cycle_table_sql = _normalized_schema_sql(
+        str(cycle_table_row["sql"])
+    )
+    for statement in verification_receipt_schema_statements()[4:7]:
+        normalized_statement = _normalized_schema_sql(statement)
+        _prefix, separator, column_definition = normalized_statement.partition(
+            " ADD COLUMN "
+        )
+        if not separator or column_definition not in normalized_cycle_table_sql:
+            raise invalid_verification_evidence()
+
+    expected_triggers = _verification_receipt_trigger_definitions()
+    actual_triggers = {
+        str(row["name"]): _normalized_schema_sql(str(row["sql"]))
+        for row in connection.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'trigger'"
+        ).fetchall()
+        if str(row["name"]) in expected_triggers and row["sql"] is not None
+    }
+    if actual_triggers != expected_triggers:
+        raise invalid_verification_evidence()
+
+
+def _validate_verification_receipt_rows(
+    connection: sqlite3.Connection,
+) -> None:
+    task_bases = {
+        (str(row["project_id"]), str(row["task_id"])): row
+        for row in connection.execute(
+            """
+            SELECT project_id, task_id, verification,
+                   current_contract_revision,
+                   review_target_kind, review_target_value,
+                   review_target_base_revision, review_target_generation
+              FROM tasks
+             ORDER BY project_id COLLATE BINARY, task_id COLLATE BINARY
+            """
+        ).fetchall()
+    }
+    seen_generations: set[tuple[str, str, int]] = set()
+    for row in connection.execute(
+        """
+        SELECT *
+          FROM verification_receipts
+         ORDER BY project_id COLLATE BINARY,
+                  task_id COLLATE BINARY,
+                  target_generation,
+                  verification_receipt_id COLLATE BINARY
+        """
+    ).fetchall():
+        receipt = _validate_verification_receipt_row(dict(row))
+        generation_key = (
+            receipt["project_id"],
+            receipt["task_id"],
+            receipt["target_generation"],
+        )
+        if generation_key in seen_generations:
+            raise invalid_verification_evidence()
+        seen_generations.add(generation_key)
+        task_basis = task_bases.get(
+            (receipt["project_id"], receipt["task_id"])
+        )
+        if task_basis is None:
+            raise invalid_verification_evidence()
+        try:
+            current_generation = _verification_receipt_int(
+                task_basis["review_target_generation"]
+            )
+        except StorageError as exc:
+            raise invalid_verification_evidence() from exc
+        if receipt["target_generation"] == current_generation:
+            exact_verification = task_basis["verification"]
+            if (
+                not isinstance(exact_verification, str)
+                or not exact_verification.strip()
+                or receipt["contract_revision"]
+                != task_basis["current_contract_revision"]
+                or receipt["verification_expectation_digest"]
+                != _verification_expectation_digest(exact_verification)
+                or receipt["target_kind"] != task_basis["review_target_kind"]
+                or receipt["target_value"] != task_basis["review_target_value"]
+                or receipt["target_base_revision"]
+                != task_basis["review_target_base_revision"]
+            ):
+                raise invalid_verification_evidence()
+    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+        raise invalid_verification_evidence()
+
+
+def validate_verification_receipt_storage(
+    connection: sqlite3.Connection,
+) -> None:
+    """Validate schema-v17 Receipt structure and all immutable rows."""
+
+    _validate_verification_receipt_marker(connection)
+    _validate_verification_receipt_schema_contract(connection)
+    _validate_verification_receipt_rows(connection)
+
+
 def _validate_completion_history_structure(
     connection: sqlite3.Connection,
 ) -> None:
@@ -4425,6 +5716,9 @@ def _validate_completion_history_structure(
     if current_schema_version(connection) >= 16:
         _validate_completion_capture_activation_marker(connection)
     _validate_completion_history_schema_contract(connection)
+    if current_schema_version(connection) >= 17:
+        _validate_verification_receipt_marker(connection)
+        _validate_verification_receipt_schema_contract(connection)
 
 
 def validate_completion_cycle_storage(
@@ -4433,9 +5727,12 @@ def validate_completion_cycle_storage(
     """Validate immutable-cycle matrices without replaying migration assertions."""
 
     _validate_completion_history_structure(connection)
+    if current_schema_version(connection) >= 17:
+        _validate_verification_receipt_rows(connection)
     task_rows = connection.execute(
         """
-        SELECT project_id, task_id, completion_history_coverage
+        SELECT project_id, task_id, status, verification,
+               completion_history_coverage
           FROM tasks
          ORDER BY project_id COLLATE BINARY, task_id COLLATE BINARY
         """
@@ -4466,6 +5763,7 @@ def validate_completion_cycle_storage(
     expected_ordinals: dict[tuple[str, str], int] = {}
     cycle_owners: dict[str, tuple[str, str, str]] = {}
     cycles_by_project: dict[str, list[CompletionCycle]] = {}
+    latest_cycles: dict[tuple[str, str], CompletionCycle] = {}
     for row in rows:
         cycle = _cycle_from_row(row)
         if task_owners.get(cycle.task_id) != cycle.project_id:
@@ -4475,6 +5773,7 @@ def validate_completion_cycle_storage(
         if cycle.saved_cycle_ordinal != expected:
             raise completion_history_inconsistent()
         expected_ordinals[owner] = expected + 1
+        latest_cycles[owner] = cycle
         cycles_by_project.setdefault(cycle.project_id, []).append(cycle)
         cycle_owners[cycle.completion_cycle_id] = (
             cycle.project_id,
@@ -4487,6 +5786,19 @@ def validate_completion_cycle_storage(
             project_id=project_id,
             cycles=tuple(cycles),
         )
+    for row in task_rows:
+        owner = (str(row["project_id"]), str(row["task_id"]))
+        latest = latest_cycles.get(owner)
+        if (
+            str(row["status"]) == "done"
+            and latest is not None
+            and latest.verification_basis_version == 1
+        ):
+            if not _completion_cycle_matches_exact_verification(
+                latest,
+                row["verification"],
+            ):
+                raise completion_history_inconsistent()
 
     event_rows = connection.execute(
         """
@@ -4859,6 +6171,9 @@ def _legacy_completion_cycle_from_task_projection(
             else "unspecified"
         ),
         verification_attestation=None,
+        verification_basis_version=0,
+        verification_expectation_digest=None,
+        verification_receipt_id=None,
         completion_evidence_kind=str(
             task_projection.get("completion_evidence_kind", "")
         ),
@@ -4921,6 +6236,11 @@ def _persist_completion_cycle_locked(
             if cycle.verification_attestation is not None
             else None
         ),
+        "verification_basis_version": cycle.verification_basis_version,
+        "verification_expectation_digest": (
+            cycle.verification_expectation_digest
+        ),
+        "verification_receipt_id": cycle.verification_receipt_id,
         "completion_evidence_kind": cycle.completion_evidence_kind,
         "completion_evidence_revision": cycle.completion_evidence_revision,
         "completion_evidence_reason": cycle.completion_evidence_reason,
@@ -4952,9 +6272,32 @@ def _persist_completion_cycle_locked(
         "qualifying_receipt_id_1": receipt_ids[0],
         "qualifying_receipt_id_2": receipt_ids[1],
     }
+    has_verification_basis = column_exists(
+        connection,
+        "task_completion_cycles",
+        "verification_basis_version",
+    )
+    if not has_verification_basis and (
+        cycle.verification_basis_version != 0
+        or cycle.verification_expectation_digest is not None
+        or cycle.verification_receipt_id is not None
+    ):
+        raise completion_history_inconsistent()
+    verification_columns = (
+        ", verification_basis_version, verification_expectation_digest, "
+        "verification_receipt_id"
+        if has_verification_basis
+        else ""
+    )
+    verification_values = (
+        ", :verification_basis_version, :verification_expectation_digest, "
+        ":verification_receipt_id"
+        if has_verification_basis
+        else ""
+    )
     try:
         connection.execute(
-            """
+            f"""
             INSERT INTO task_completion_cycles(
               completion_cycle_id, project_id, task_id, saved_cycle_ordinal,
               origin, completeness, completed_at, recorded_at,
@@ -4968,7 +6311,7 @@ def _persist_completion_cycle_locked(
               required_independent_passes, qualifying_independent_passes,
               changes_requested_count, open_high_count, open_medium_count,
               fresh_review_required_count, qualifying_receipt_id_1,
-              qualifying_receipt_id_2
+              qualifying_receipt_id_2{verification_columns}
             ) VALUES (
               :completion_cycle_id, :project_id, :task_id,
               :saved_cycle_ordinal, :origin, :completeness, :completed_at,
@@ -4983,7 +6326,7 @@ def _persist_completion_cycle_locked(
               :required_independent_passes, :qualifying_independent_passes,
               :changes_requested_count, :open_high_count, :open_medium_count,
               :fresh_review_required_count, :qualifying_receipt_id_1,
-              :qualifying_receipt_id_2
+              :qualifying_receipt_id_2{verification_values}
             )
             """,
             parameters,
@@ -5037,14 +6380,17 @@ def _require_completion_capture_activation_locked(
     connection: sqlite3.Connection,
 ) -> None:
     if (
-        current_schema_version(connection) != 16
-        or missing_migration_versions(connection, 16)
+        current_schema_version(connection) != SCHEMA_VERSION
+        or missing_migration_versions(connection, SCHEMA_VERSION)
     ):
         raise StorageError(
             "migration_required",
-            "completion capture requires schema version 16",
+            "completion capture requires schema version 17",
         )
-    if required_schema_objects_missing(connection, schema_version=15):
+    if required_schema_objects_missing(
+        connection,
+        schema_version=SCHEMA_VERSION,
+    ):
         raise completion_history_inconsistent()
     _validate_completion_history_structure(connection)
 
@@ -5056,6 +6402,8 @@ def insert_native_completion_cycle_locked(
     task_id: str,
     task_projection: dict[str, Any],
     recorded_at: str,
+    verification_expectation_digest: str,
+    verification_receipt_id: str | None,
 ) -> CompletionCycle:
     """Capture one service-validated proposed completion under the Task writer."""
 
@@ -5082,6 +6430,7 @@ def insert_native_completion_cycle_locked(
         "review_target_value",
         "review_target_base_revision",
         "review_target_generation",
+        "verification",
     )
     if any(
         proposed.get(field_name) != locked_task.get(field_name)
@@ -5097,6 +6446,32 @@ def insert_native_completion_cycle_locked(
     )
     completed_at = proposed.get("completed_at")
     if completed_at is None:
+        raise completion_history_inconsistent()
+    exact_verification = proposed.get("verification")
+    if (
+        not isinstance(exact_verification, str)
+        or not isinstance(verification_expectation_digest, str)
+        or LOWER_HEX_64_PATTERN.fullmatch(
+            verification_expectation_digest
+        )
+        is None
+        or verification_expectation_digest
+        != _verification_expectation_digest(exact_verification)
+        or (
+            bool(exact_verification.strip())
+            and (
+                verification_receipt_id is None
+                or VERIFICATION_RECEIPT_ID_PATTERN.fullmatch(
+                    verification_receipt_id
+                )
+                is None
+            )
+        )
+        or (
+            not exact_verification.strip()
+            and verification_receipt_id is not None
+        )
+    ):
         raise completion_history_inconsistent()
     cycle = CompletionCycle(
         completion_cycle_id=(
@@ -5126,6 +6501,11 @@ def insert_native_completion_cycle_locked(
             else "unspecified"
         ),
         verification_attestation=True,
+        verification_basis_version=1,
+        verification_expectation_digest=(
+            verification_expectation_digest
+        ),
+        verification_receipt_id=verification_receipt_id,
         completion_evidence_kind=str(
             proposed.get("completion_evidence_kind", "")
         ),
@@ -5193,11 +6573,11 @@ def _match_current_done_completion_cycle_locked(
     if validate_structure:
         version = current_schema_version(connection)
         if (
-            version not in {15, 16}
+            version not in {15, 16, 17}
             or missing_migration_versions(connection, version)
             or required_schema_objects_missing(
                 connection,
-                schema_version=15,
+                schema_version=version,
             )
         ):
             raise completion_history_inconsistent()
@@ -5242,6 +6622,12 @@ def _match_current_done_completion_cycle_locked(
         and _completion_projection_signature(projection)
         == _completion_projection_signature(latest)
     )
+    if latest is not None and latest.verification_basis_version == 1:
+        if not _completion_cycle_matches_exact_verification(
+            latest,
+            task_projection.get("verification"),
+        ):
+            projection_matches = False
     reopen_linked = False
     if latest is not None:
         completion_event_types = {"task_updated", "review_tier_changed"}
@@ -5731,11 +7117,11 @@ def apply_completion_cycle_capture_activation_migration(
         connection.execute("BEGIN")
         try:
             if (
-                version != 16
+                version not in {16, 17}
                 or missing_migration_versions(connection, version)
                 or required_schema_objects_missing(
                     connection,
-                    schema_version=15,
+                    schema_version=version,
                 )
             ):
                 raise StorageError(
@@ -5897,6 +7283,211 @@ def apply_completion_cycle_capture_activation_migration(
         raise
 
 
+def _completion_cycle_projection_snapshot(
+    connection: sqlite3.Connection,
+    *,
+    columns: tuple[str, ...] | None = None,
+) -> tuple[tuple[str, ...], int, str]:
+    selected_columns = columns or tuple(
+        str(row["name"])
+        for row in connection.execute(
+            "PRAGMA table_info(task_completion_cycles)"
+        ).fetchall()
+    )
+    if not selected_columns:
+        raise completion_history_inconsistent()
+    projection = ", ".join(
+        _quoted_identifier(column) for column in selected_columns
+    )
+    rows = [
+        list(row)
+        for row in connection.execute(
+            f"SELECT {projection} FROM task_completion_cycles ORDER BY rowid"
+        ).fetchall()
+    ]
+    payload = json.dumps(
+        rows,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return (
+        selected_columns,
+        len(rows),
+        hashlib.sha256(payload).hexdigest(),
+    )
+
+
+def apply_verification_receipts_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Atomically add schema-v17 immutable Verification Receipts."""
+
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "verification-Receipt migration requires no active transaction",
+        )
+    version = current_schema_version(connection)
+    if version >= 17:
+        connection.execute("BEGIN")
+        try:
+            if (
+                version != 17
+                or missing_migration_versions(connection, version)
+                or required_schema_objects_missing(
+                    connection,
+                    schema_version=17,
+                )
+            ):
+                raise StorageError(
+                    "migration_required",
+                    "verification-Receipt migration is incomplete",
+                )
+            validate_completion_cycle_storage(connection)
+            quick_rows = [
+                str(row[0])
+                for row in connection.execute("PRAGMA quick_check").fetchall()
+            ]
+            if quick_rows != ["ok"]:
+                raise invalid_verification_evidence()
+            connection.commit()
+        except StorageError as exc:
+            connection.rollback()
+            if exc.code in {
+                "completion_history_inconsistent",
+                "invalid_verification_evidence",
+            }:
+                raise _unreadable_project_state() from exc
+            raise
+        except Exception:
+            connection.rollback()
+            raise
+        return
+    if (
+        version != 16
+        or missing_migration_versions(connection, 16)
+        or schema_objects_inconsistent_with_version(connection, 16)
+    ):
+        raise StorageError(
+            "migration_required",
+            "verification-Receipt migration requires complete schema version 16",
+        )
+    connection.execute("PRAGMA foreign_keys = ON")
+    if int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 1:
+        raise StorageError(
+            "internal_error",
+            "verification-Receipt migration requires foreign key enforcement",
+        )
+
+    before = _migration_preservation_snapshot(connection)
+    column_basis = {
+        table_name: snapshot[0]
+        for table_name, snapshot in before.items()
+    }
+    cycle_before = _completion_cycle_projection_snapshot(connection)
+    migration_time = utc_now()
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        statements = verification_receipt_schema_statements()
+        for statement in statements[:4]:
+            connection.execute(statement)
+        if fail_stage == "after_receipt_schema":
+            raise StorageError(
+                "internal_error",
+                "injected verification-Receipt migration failure",
+            )
+        for statement in statements[4:7]:
+            connection.execute(statement)
+        if fail_stage == "after_cycle_columns":
+            raise StorageError(
+                "internal_error",
+                "injected verification-Receipt migration failure",
+            )
+        for statement in statements[7:]:
+            connection.execute(statement)
+        if fail_stage == "after_triggers":
+            raise StorageError(
+                "internal_error",
+                "injected verification-Receipt migration failure",
+            )
+
+        receipt_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM verification_receipts"
+            ).fetchone()[0]
+        )
+        nonlegacy_cycle_count = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                  FROM task_completion_cycles
+                 WHERE verification_basis_version != 0
+                    OR verification_expectation_digest IS NOT NULL
+                    OR verification_receipt_id IS NOT NULL
+                """
+            ).fetchone()[0]
+        )
+        after = _migration_preservation_snapshot(
+            connection,
+            column_basis=column_basis,
+        )
+        cycle_after = _completion_cycle_projection_snapshot(
+            connection,
+            columns=cycle_before[0],
+        )
+        if (
+            receipt_count
+            or nonlegacy_cycle_count
+            or after != before
+            or cycle_after != cycle_before
+        ):
+            raise invalid_verification_evidence()
+
+        connection.execute(
+            """
+            INSERT INTO schema_migrations(version, name, applied_at)
+            VALUES (17, 'verification_receipts', ?)
+            """,
+            (migration_time,),
+        )
+        if fail_stage == "after_marker":
+            raise StorageError(
+                "internal_error",
+                "injected verification-Receipt migration failure",
+            )
+        validate_completion_cycle_storage(connection)
+        quick_rows = [
+            str(row[0])
+            for row in connection.execute("PRAGMA quick_check").fetchall()
+        ]
+        if quick_rows != ["ok"]:
+            raise invalid_verification_evidence()
+        if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            raise invalid_verification_evidence()
+        if fail_stage == "before_commit":
+            raise StorageError(
+                "internal_error",
+                "injected verification-Receipt migration failure",
+            )
+        connection.commit()
+    except StorageError as exc:
+        connection.rollback()
+        if exc.code in {
+            "completion_history_inconsistent",
+            "invalid_verification_evidence",
+        }:
+            raise _unreadable_project_state() from exc
+        raise
+    except sqlite3.IntegrityError as exc:
+        connection.rollback()
+        raise _unreadable_project_state() from exc
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def apply_migrations(
     connection: sqlite3.Connection,
     *,
@@ -6001,8 +7592,14 @@ def apply_migrations(
     if version < 16:
         apply_completion_cycle_capture_activation_migration(connection)
         applied.append(16)
+        version = 16
     else:
         apply_completion_cycle_capture_activation_migration(connection)
+    if version < 17:
+        apply_verification_receipts_migration(connection)
+        applied.append(17)
+    else:
+        apply_verification_receipts_migration(connection)
     return applied, warnings
 
 
@@ -7912,7 +9509,7 @@ def validate_snapshot_database(
     if version >= 15:
         if required_schema_objects_missing(
             connection,
-            schema_version=15,
+            schema_version=version,
         ):
             raise StorageError(
                 "migration_required",
@@ -8237,9 +9834,12 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
         with closing(connect_readonly(db_path)) as connection:
             version = current_schema_version(connection)
             if (
-                version not in {15, 16}
+                version not in {15, 16, 17}
                 or missing_migration_versions(connection, version)
-                or required_schema_objects_missing(connection)
+                or required_schema_objects_missing(
+                    connection,
+                    schema_version=version,
+                )
             ):
                 return False
             _validate_completion_history_structure(connection)
@@ -8254,11 +9854,20 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
                     """
                 ).fetchall()
             }
-            if object_counts != {
-                "index": 20,
-                "table": 17,
-                "trigger": 12,
-            }:
+            expected_object_counts = (
+                {
+                    "index": 23,
+                    "table": 18,
+                    "trigger": 16,
+                }
+                if version == 17
+                else {
+                    "index": 20,
+                    "table": 17,
+                    "trigger": 12,
+                }
+            )
+            if object_counts != expected_object_counts:
                 return False
             if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 return False

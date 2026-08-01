@@ -162,6 +162,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertNotIn(b"\r", release_body_bytes)
         self.assertTrue(release_body_bytes.endswith(b"\n"))
         self.assertEqual(
+            hashlib.sha256(release_body_bytes).hexdigest(),
+            "aaa118a3fbbb261ec6a24f7a80f50f161e606a86857f99e17f957f34ba044a03",
+        )
+        self.assertEqual(
             release_body.splitlines()[0],
             "# task-governance-tool v0.10.0",
         )
@@ -215,6 +219,46 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("matched pre-migration package", normalized)
             self.assertIn("git checkout alone", normalized)
 
+    def test_v011_candidate_is_local_and_separate_from_published_v010(self):
+        candidate_bytes = (
+            ROOT / "docs" / "releases" / "v0.11.0.md"
+        ).read_bytes()
+        candidate = candidate_bytes.decode("utf-8")
+        release_guide = (ROOT / "docs" / "release-install.md").read_text(
+            encoding="utf-8"
+        )
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertFalse(candidate_bytes.startswith(b"\xef\xbb\xbf"))
+        self.assertNotIn(b"\r", candidate_bytes)
+        self.assertTrue(candidate_bytes.endswith(b"\n"))
+        self.assertEqual(
+            candidate.splitlines()[0],
+            "# task-governance-tool v0.11.0",
+        )
+        for text in (candidate, release_guide, readme):
+            normalized = " ".join(text.lower().split())
+            self.assertIn("unpublished local candidate", normalized)
+            self.assertIn("v0.10.0", normalized)
+        for published_identity in (
+            "a9b80ce177a6dead10d51a070b76ff01f7af0294",
+            "362617903",
+            "task-governance-tool-0.10.0.zip",
+            "task-governance-tool-0.10.0.zip.sha256",
+        ):
+            self.assertNotIn(published_identity, candidate)
+            self.assertIn(published_identity, release_guide)
+        for candidate_identity_row in (
+            "| Candidate commit / `main` | not fixed; unpublished local candidate |",
+            "| Tag | none; unpublished local candidate |",
+            "| GitHub Release | none; unpublished local candidate |",
+            "| Archive | not produced |",
+            "| Checksum | not produced |",
+        ):
+            self.assertIn(candidate_identity_row, release_guide)
+        self.assertIn("docs/releases/v0.11.0.md", release_guide)
+        self.assertIn("docs/releases/v0.11.0.md", readme)
+
     def test_core_task_and_review_guidance_is_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
@@ -244,8 +288,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
             " ".join(skill_md.lower().split()),
         )
         self.assertIn("snapshot v4", contracts.lower())
-        self.assertIn("schema v16", release_note.lower())
-        self.assertIn("0.10.0", release_note)
+        self.assertIn("schema v17", release_note.lower())
+        self.assertIn("0.11.0", release_note)
         self.assertIn("verification and review gates", skill_md.lower())
         self.assertIn("current governed task", openai_yaml.lower())
 
@@ -280,10 +324,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "fresh user approval",
             ):
                 self.assertIn(phrase, normalized)
-        self.assertIn("schema v16", contracts.lower())
-        self.assertIn("source schemas 5 through 16", readme.lower())
-        self.assertIn("source schemas v5-v16", release_note.lower())
-        self.assertEqual(manifest["package_version"], "0.10.0")
+        self.assertIn("schema v17", contracts.lower())
+        self.assertIn("source schemas 5 through 17", readme.lower())
+        self.assertIn("source schemas v5-v17", release_note.lower())
+        self.assertEqual(manifest["package_version"], "0.11.0")
         documented_uuid = re.search(
             r'"project_id": "(tg_project_[0-9a-f]{32})"',
             contracts,
@@ -498,9 +542,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
             ):
                 self.assertIn(phrase, normalized)
         self.assertIn("three one-level Skill references", release_note)
-        self.assertIn("20 command leaves", release_note)
-        self.assertIn("nine governance subprocess", release_note)
-        self.assertIn("or ten when", release_note)
+        self.assertIn("21 command leaves", release_note)
+        self.assertIn("ten governance subprocess", release_note)
+        self.assertIn("or eleven when", release_note)
 
         for authority in (specification, design):
             normalized_authority = " ".join(authority.split())
@@ -562,7 +606,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertIn("0.10.0", version.stdout)
+        self.assertIn("0.11.0", version.stdout)
 
     def test_tg_m12_local_handoff_guidance_and_isolated_flow_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -586,8 +630,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("rejected raw", text.lower())
         for text in (workflow, contracts):
             self.assertIn("handoff_not_persisted", text)
-        self.assertIn("schema v16", release_note.lower())
-        self.assertIn("0.10.0", release_note)
+        self.assertIn("schema v17", release_note.lower())
+        self.assertIn("0.11.0", release_note)
         for text in (workflow, contracts, readme, release_note):
             self.assertIn("Effort Advisory", text)
         self.assertIn("effort_advisory_enabled", skill_md)
@@ -604,7 +648,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
             initialized = run("setup")
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
-            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 16)
+            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 17)
             added = run(
                 "task",
                 "add",
@@ -849,7 +893,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                     canonical_test_path(install.skill_root / "state")
                 )
             )
-            self.assertEqual(payload["data"]["schema_to"], 16)
+            self.assertEqual(payload["data"]["schema_to"], 17)
 
             from_skill_root = install.run(
                 "doctor",
@@ -867,7 +911,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "ready",
             )
 
-    def test_m14_spec_routing_contract_has_fixed_nine_or_ten_calls(self):
+    def test_m14_spec_routing_contract_has_fixed_ten_or_eleven_calls(self):
         specification = (ROOT / "docs" / "specification.md").read_text(
             encoding="utf-8"
         )
@@ -876,13 +920,15 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn(graph_start, specification)
         self.assertIn(graph_end, specification)
         graph = specification.split(graph_start, 1)[1].split(graph_end, 1)[0]
+        normalized_graph = " ".join(graph.split()).lower()
         route_counts = (
             ("one compact `task current` call", 1, 1),
             ("one compact `task next` call", 1, 1),
             ("one `task show` call", 1, 1),
             ("one task edit", 1, 1),
-            ("one existing\n  `task effort` observation", 0, 1),
+            ("one existing `task effort` observation", 0, 1),
             ("one review target set call", 1, 1),
+            ("verification receipt add", 1, 1),
             ("one `review prepare` call", 1, 1),
             ("one receipt write per actual receipt", 2, 2),
             ("one thin complete call", 1, 1),
@@ -890,18 +936,19 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
         positions = []
         for phrase, _, _ in route_counts:
-            self.assertEqual(graph.count(phrase), 1)
-            positions.append(graph.index(phrase))
+            self.assertEqual(normalized_graph.count(phrase), 1)
+            positions.append(normalized_graph.index(phrase))
         self.assertEqual(positions, sorted(positions))
-        self.assertEqual(sum(item[1] for item in route_counts), 9)
-        self.assertEqual(sum(item[2] for item in route_counts), 10)
-        self.assertIn(
-            "at most nine governance\nsubprocess calls",
-            graph,
+        self.assertEqual(sum(item[1] for item in route_counts), 10)
+        self.assertEqual(sum(item[2] for item in route_counts), 11)
+        self.assertRegex(
+            normalized_graph,
+            r"(?:at most|bound(?:ed)? to) (?:ten|10) "
+            r"(?:governance subprocess )?calls?",
         )
-        self.assertIn(
-            "profile-enabled path has at most ten",
-            graph,
+        self.assertRegex(
+            normalized_graph,
+            r"(?:profile|effort advisory)[^.]{0,100}(?:eleven|11)",
         )
         self.assertIn(
             "instead of separate task, Contract, target, and Git",
@@ -998,6 +1045,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "state_paths.py",
                 "state_resolver.py",
                 "state_transition.py",
+                "verification_receipts.py",
             ):
                 self.assertTrue(
                     (
@@ -1131,6 +1179,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "state_paths.py",
             "state_resolver.py",
             "state_transition.py",
+            "verification_receipts.py",
         ):
             self.assertIn(
                 f"task-governance-tool/scripts/task_governance_tool/{module}",
@@ -1150,6 +1199,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "state_paths.py",
             "state_resolver.py",
             "state_transition.py",
+            "verification_receipts.py",
         ):
             self.assertIn(
                 f"scripts/task_governance_tool/{module}",

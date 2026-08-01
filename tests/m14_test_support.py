@@ -470,7 +470,8 @@ def remove_v10_maintenance_for_test(connection) -> None:
     """Downgrade a current test database before exercising an older migration."""
 
     connection.execute(
-        "DELETE FROM schema_migrations WHERE version IN (10, 11, 12, 13, 14, 15, 16)"
+        "DELETE FROM schema_migrations "
+        "WHERE version IN (10, 11, 12, 13, 14, 15, 16, 17)"
     )
     for trigger in (
         "trg_task_events_completion_cycle_link_immutable",
@@ -490,6 +491,7 @@ def remove_v10_maintenance_for_test(connection) -> None:
         "ALTER TABLE task_events DROP COLUMN completion_cycle_id"
     )
     connection.execute("DROP TABLE task_completion_cycles")
+    connection.execute("DROP TABLE verification_receipts")
     connection.execute(
         "ALTER TABLE tasks DROP COLUMN completion_history_coverage"
     )

@@ -16,6 +16,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool.storage import (  # noqa: E402
+    SCHEMA_VERSION,
     DatabaseTarget,
     StorageError,
     apply_completion_cycle_capture_activation_migration,
@@ -772,7 +773,10 @@ class CompletionCycleHistoryTests(unittest.TestCase):
                         target,
                         generated_at="2026-07-30T03:10:00Z",
                     )
-                self.assertEqual(snapshot.snapshot["source_schema_version"], 16)
+                self.assertEqual(
+                    snapshot.snapshot["source_schema_version"],
+                    SCHEMA_VERSION,
+                )
                 full_validator.assert_not_called()
 
             full_validator = storage_module.validate_completion_cycle_storage
@@ -829,17 +833,33 @@ class CompletionCycleHistoryTests(unittest.TestCase):
                     target.project,
                     title="Semantic validation sentinel",
                 ).task["task_id"]
+                coverage_trigger_sql = str(
+                    connection.execute(
+                        """
+                        SELECT sql
+                          FROM sqlite_master
+                         WHERE type = 'trigger'
+                           AND name =
+                             'trg_tasks_completion_history_coverage_immutable'
+                        """
+                    ).fetchone()["sql"]
+                )
+                connection.execute(
+                    "DROP TRIGGER trg_tasks_completion_history_coverage_immutable"
+                )
                 connection.execute(
                     """
                     UPDATE tasks
                        SET status = 'done',
                            completed_at = '2026-07-30T03:16:00Z',
-                           updated_at = '2026-07-30T03:16:00Z'
+                           updated_at = '2026-07-30T03:16:00Z',
+                           completion_history_coverage = 'legacy_unknown'
                      WHERE project_id = ?
                        AND task_id = ?
                     """,
                     (target.project.project_id, task_id),
                 )
+                connection.execute(coverage_trigger_sql)
                 connection.commit()
                 connection.execute("BEGIN IMMEDIATE")
                 insert_completion_cycle_locked(

@@ -245,6 +245,7 @@ RAW_OUTPUT_VALUE_PATTERN = re.compile(
     r"(?im)\b((?:raw\s+)?(?:stdout|stderr)(?:\s+dump)?|command\s+(?:output|log)|standard\s+(?:output|error)|log\s+output|raw\s+log)\s*[:=-]\s*(\S.*)$"
 )
 STRICT_RAW_OUTPUT_FIELDS = {
+    "command_label",
     "description",
     "verification",
     "tags",
@@ -340,6 +341,7 @@ class TaskShowResult:
     latest_checkpoint: dict[str, Any] | None
     completion_history: dict[str, Any]
     completion_history_latest_summary: dict[str, Any] | None
+    verification_evidence: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -369,6 +371,7 @@ class EditTaskResult:
 class CompletionBasis:
     task: dict[str, Any] = field(repr=False)
     review_evidence: dict[str, Any] | None = field(repr=False)
+    verification_gate: Any = field(repr=False)
     review_error: tuple[str, str, str | None] | None
     predecessor_incomplete: bool
     lane_order_conflict: bool
@@ -1570,6 +1573,19 @@ def show_task(
         project_id=project.project_id,
         task_id=normalized_task_id,
     )
+    from task_governance_tool.verification_receipts import (
+        read_verification_evidence,
+    )
+
+    verification_evidence = read_verification_evidence(
+        connection,
+        task=task_row,
+        completion_cycle=(
+            raw_completion_history.cycles[0]
+            if raw_completion_history.cycles
+            else None
+        ),
+    )
     return TaskShowResult(
         task=task,
         events=[row_to_event(row) for row in event_rows],
@@ -1582,6 +1598,7 @@ def show_task(
         completion_history_latest_summary=_completion_history_latest_summary(
             raw_completion_history
         ),
+        verification_evidence=verification_evidence,
     )
 
 
@@ -1875,6 +1892,15 @@ def capture_completion_basis(
         review_evidence = None
         review_error = (exc.code, exc.message, exc.field)
 
+    from task_governance_tool.verification_receipts import (
+        current_verification_gate,
+    )
+
+    verification_gate = current_verification_gate(
+        connection,
+        task=task,
+    )
+
     semantic_token = _completion_semantic_token(
         {
             "task": task,
@@ -1883,11 +1909,13 @@ def capture_completion_basis(
             "contract": contract,
             "review_evidence": review_evidence,
             "review_error": review_error,
+            "verification_gate": verification_gate.to_public(),
         }
     )
     return CompletionBasis(
         task=task,
         review_evidence=review_evidence,
+        verification_gate=verification_gate,
         review_error=review_error,
         predecessor_incomplete=predecessor_incomplete,
         lane_order_conflict=lane_order_conflict,
@@ -1931,6 +1959,34 @@ def validate_completion_database_basis(
         verification_complete=verification_complete,
         review_complete=review_complete,
     )
+    from task_governance_tool.reviews import first_review_gate_error
+
+    if (
+        int(basis.task["review_target_generation"]) <= 0
+        or not str(basis.task["review_target_kind"])
+        or not str(basis.task["review_target_value"])
+    ):
+        raise validation_error(
+            "review_target_required",
+            "task completion requires a current structured review target",
+            "review_target_kind",
+        )
+    if basis.verification_gate.blocking_code == "verification_receipt_required":
+        raise validation_error(
+            "verification_receipt_required",
+            "current verification evidence is required",
+        )
+    if basis.verification_gate.blocking_code == "verification_receipt_blocking":
+        raise validation_error(
+            "verification_receipt_blocking",
+            "current verification evidence does not satisfy the required result and coverage",
+        )
+    if not basis.verification_gate.satisfied:
+        raise TaskRepositoryError(
+            "invalid_verification_evidence",
+            "stored verification evidence is inconsistent",
+        )
+
     if basis.review_error is not None:
         code, message, field = basis.review_error
         raise validation_error(code, message, field)
@@ -1939,8 +1995,6 @@ def validate_completion_database_basis(
             "internal_error",
             "completion review evidence was not available",
         )
-
-    from task_governance_tool.reviews import first_review_gate_error
 
     gate_error = first_review_gate_error(basis.review_evidence)
     if gate_error is not None:
@@ -2602,6 +2656,56 @@ def edit_task(
     order_was_provided = "lane_order" in normalized
     for field, value in normalized.items():
         updated[field] = value
+    verification_changed_after_target = (
+        "verification" in normalized
+        and updated["verification"] != existing["verification"]
+        and int(existing["review_target_generation"]) > 0
+    )
+    if verification_changed_after_target:
+        if status_was_provided and updated["status"] not in {
+            "in_progress",
+            "paused",
+            "blocked",
+            "cancelled",
+        }:
+            raise validation_error(
+                "invalid_status_transition",
+                "verification changes require a fresh target before review or completion",
+                "status",
+            )
+        evidence_companions = {
+            "completion_commit_hash",
+            "completion_evidence_kind",
+            "completion_revision",
+            "completion_evidence_reason",
+            "external_revision_approved",
+            "commit_not_required",
+        }
+        if provided_fields & evidence_companions:
+            raise validation_error(
+                "completion_evidence_conflict",
+                "verification changes cannot be combined with completion evidence options",
+                "verification",
+            )
+        updated.update(
+            {
+                "completion_evidence_kind": "none",
+                "completion_evidence_revision": "",
+                "completion_evidence_reason": "",
+                "external_revision_approved": 0,
+                "completion_commit_required": 1,
+                "completion_commit_hash": "",
+                "review_target_kind": "",
+                "review_target_value": "",
+                "review_target_base_revision": "",
+                "review_target_generation": validate_sqlite_int64(
+                    int(existing["review_target_generation"]) + 1,
+                    field="review_target_generation",
+                ),
+            }
+        )
+        if not status_was_provided and existing["status"] == "review_pending":
+            updated["status"] = "in_progress"
     review_tier_changed = (
         "review_tier" in normalized
         and int(updated["review_tier"]) != int(existing["review_tier"])
@@ -2820,6 +2924,10 @@ def edit_task(
         "completion_evidence_revision",
         "completion_evidence_reason",
         "external_revision_approved",
+        "review_target_kind",
+        "review_target_value",
+        "review_target_base_revision",
+        "review_target_generation",
     )
     changed_fields = [
         field for field in comparable_fields if updated[field] != existing[field]
@@ -2917,6 +3025,15 @@ def edit_task(
                         "sequential_predecessor_incomplete",
                         "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
                     )
+            from task_governance_tool.verification_receipts import (
+                enforce_verification_gate,
+                verification_expectation_digest,
+            )
+
+            verification_gate = enforce_verification_gate(
+                connection,
+                task=proposed_done,
+            )
             enforce_done_review_gate(
                 connection,
                 proposed_done,
@@ -2928,6 +3045,14 @@ def edit_task(
                 task_id=normalized_task_id,
                 task_projection=proposed_done,
                 recorded_at=now,
+                verification_expectation_digest=verification_expectation_digest(
+                    str(proposed_done["verification"])
+                ),
+                verification_receipt_id=(
+                    verification_gate.qualifying_receipt_id
+                    if str(proposed_done["verification"]).strip()
+                    else None
+                ),
             )
             completion_cycle_id = cycle.completion_cycle_id
 

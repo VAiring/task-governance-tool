@@ -104,6 +104,10 @@ from task_governance_tool.tasks import (
     validate_current_status_filter,
     validate_task_id,
 )
+from task_governance_tool.verification_receipts import (
+    VerificationReceiptError,
+    add_verification_receipt,
+)
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
 EXIT_TOOL_ERROR = 2
@@ -680,6 +684,35 @@ def build_parser() -> argparse.ArgumentParser:
     review_finding_resolve_parser.add_argument("finding_id")
     review_finding_resolve_parser.add_argument("--resolution", required=True)
 
+    verification_parser = subparsers.add_parser(
+        "verification",
+        help="verification evidence commands",
+    )
+    verification_subparsers = verification_parser.add_subparsers(
+        dest="verification_entity"
+    )
+    verification_receipt_parser = verification_subparsers.add_parser(
+        "receipt",
+        help="verification receipt commands",
+    )
+    verification_receipt_subparsers = verification_receipt_parser.add_subparsers(
+        dest="verification_action"
+    )
+    verification_receipt_add_parser = verification_receipt_subparsers.add_parser(
+        "add",
+        help="record sanitized verification evidence",
+    )
+    add_common_options(verification_receipt_add_parser)
+    verification_receipt_add_parser.add_argument("task_id")
+    verification_receipt_add_parser.add_argument("--command-label", required=True)
+    verification_receipt_add_parser.add_argument("--result", required=True)
+    verification_receipt_add_parser.add_argument("--duration-ms", required=True)
+    verification_receipt_add_parser.add_argument("--scope-coverage", required=True)
+    verification_receipt_add_parser.add_argument(
+        "--expected-target-generation",
+        required=True,
+    )
+
     return parser
 
 
@@ -693,6 +726,12 @@ def command_name(args: argparse.Namespace) -> str:
             return "review.prepare"
         if args.review_action:
             return f"review.{args.review_entity}.{args.review_action}"
+    if args.command == "verification" and args.verification_entity:
+        if args.verification_action:
+            return (
+                f"verification.{args.verification_entity}."
+                f"{args.verification_action}"
+            )
     if args.command:
         return args.command
     return "help"
@@ -770,6 +809,8 @@ def state_resolution_failure_result(
         data = handoff_empty_data(command)
     elif command.startswith("review."):
         data = review_empty_data(command)
+    elif command == "verification.receipt.add":
+        data = verification_receipt_empty_data()
     else:
         data = {}
     return CommandResult(
@@ -883,6 +924,8 @@ def dispatch_stateful_command(context: CommandContext) -> CommandResult:
         return handle_review_prepare(context)
     elif context.command.startswith("review."):
         return handle_review_command(context)
+    elif context.command == "verification.receipt.add":
+        return handle_verification_receipt_add(context)
     return error_result(
         context.command,
         "internal_error",
@@ -1715,6 +1758,7 @@ def task_show_empty_data() -> dict[str, Any]:
         "events": [],
         "suggested_next_action": "",
         "review_evidence": None,
+        "verification_evidence": None,
         "handoff_summary": None,
         "contract": None,
         "latest_checkpoint": None,
@@ -1746,17 +1790,27 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         with context_read_connection(context, target) as connection:
             result = show_task(connection, target.project, getattr(context.args, "task_id", ""))
     except TaskValidationError as exc:
-        return validation_failure_result(
+        return task_show_failure_result(
             context,
             project_id=target.project.project_id,
-            exc=exc,
+            code=exc.code,
+            message=exc.message,
+            exit_code=(
+                EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE
+            ),
         )
     except TaskRepositoryError as exc:
         if exc.code != "not_found":
-            return validation_failure_result(
+            return task_show_failure_result(
                 context,
                 project_id=target.project.project_id,
-                exc=exc,
+                code=exc.code,
+                message=exc.message,
+                exit_code=(
+                    EXIT_TOOL_ERROR
+                    if exc.code == "internal_error"
+                    else EXIT_USAGE
+                ),
             )
         return task_show_failure_result(
             context,
@@ -1764,6 +1818,14 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             code=exc.code,
             message=exc.message,
             exit_code=EXIT_USAGE,
+        )
+    except VerificationReceiptError as exc:
+        return task_show_failure_result(
+            context,
+            project_id=target.project.project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_TOOL_ERROR,
         )
     except HandoffError:
         return task_show_failure_result(
@@ -1800,6 +1862,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         "events": result.events,
         "suggested_next_action": result.suggested_next_action,
         "review_evidence": result.review_evidence,
+        "verification_evidence": result.verification_evidence,
         "handoff_summary": result.handoff_summary,
         "contract": result.contract,
         "latest_checkpoint": result.latest_checkpoint,
@@ -2072,13 +2135,29 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
             exit_code=EXIT_USAGE,
         )
     except TaskRepositoryError as exc:
-        exit_code = EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE
+        exit_code = (
+            EXIT_TOOL_ERROR
+            if exc.code in {"internal_error", "invalid_verification_evidence"}
+            else EXIT_USAGE
+        )
         return task_edit_failure_result(
             context,
             project_id=target.project.project_id,
             code=exc.code,
             message=exc.message,
             exit_code=exit_code,
+        )
+    except VerificationReceiptError as exc:
+        return task_edit_failure_result(
+            context,
+            project_id=target.project.project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=(
+                EXIT_TOOL_ERROR
+                if exc.code in {"internal_error", "invalid_verification_evidence"}
+                else EXIT_USAGE
+            ),
         )
     except StorageError as exc:
         return task_edit_failure_result(
@@ -2238,7 +2317,8 @@ def completion_domain_error_result(
 ) -> CommandResult:
     exit_code = (
         EXIT_TOOL_ERROR
-        if isinstance(exc, TaskRepositoryError) and exc.code == "internal_error"
+        if isinstance(exc, TaskRepositoryError)
+        and exc.code in {"internal_error", "invalid_verification_evidence"}
         else EXIT_USAGE
     )
     return task_complete_failure_result(
@@ -2342,6 +2422,19 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
             project_id=target.project.project_id,
             task_id=request.task_id,
             exc=exc,
+        )
+    except VerificationReceiptError as exc:
+        return task_complete_failure_result(
+            context,
+            project_id=target.project.project_id,
+            task_id=request.task_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=(
+                EXIT_TOOL_ERROR
+                if exc.code in {"internal_error", "invalid_verification_evidence"}
+                else EXIT_USAGE
+            ),
         )
     except StorageError as exc:
         return task_complete_failure_result(
@@ -2962,6 +3055,135 @@ def handle_review_command(context: CommandContext) -> CommandResult:
     )
 
 
+def verification_receipt_empty_data() -> dict[str, Any]:
+    return {"receipt": None}
+
+
+def verification_receipt_failure_result(
+    context: CommandContext,
+    *,
+    project_id: str,
+    code: str,
+    message: str,
+    exit_code: int,
+) -> CommandResult:
+    return CommandResult(
+        ok=False,
+        command=context.command,
+        project_id=project_id,
+        data=verification_receipt_empty_data(),
+        errors=[{"code": code, "message": message}],
+        exit_code=exit_code,
+    )
+
+
+def verification_receipt_text(receipt: dict[str, Any]) -> str:
+    source_revision = receipt["source_revision"]
+    return (
+        "Verification receipt recorded: "
+        f"{receipt['verification_receipt_id']}\n"
+        f"Result: {receipt['result']}  Coverage: {receipt['scope_coverage']}\n"
+        f"Source: {source_revision['kind']}/generation "
+        f"{source_revision['generation']}"
+    )
+
+
+def handle_verification_receipt_add(context: CommandContext) -> CommandResult:
+    target = resolve_context_target(context)
+    project_id = target.project.project_id
+    if context.read_only:
+        return verification_receipt_failure_result(
+            context,
+            project_id=project_id,
+            code="invalid_argument",
+            message=(
+                "verification receipt add cannot run with --read-only because "
+                "it writes the database"
+            ),
+            exit_code=EXIT_USAGE,
+        )
+
+    try:
+        with closing(connect_initialized(target)) as connection:
+            with connection:
+                result = add_verification_receipt(
+                    connection,
+                    target.project,
+                    getattr(context.args, "task_id", ""),
+                    command_label=getattr(context.args, "command_label", ""),
+                    result=getattr(context.args, "result", ""),
+                    duration_ms=getattr(context.args, "duration_ms", ""),
+                    scope_coverage=getattr(context.args, "scope_coverage", ""),
+                    expected_target_generation=getattr(
+                        context.args,
+                        "expected_target_generation",
+                        "",
+                    ),
+                    database_target=target,
+                )
+    except (TaskValidationError, VerificationReceiptError) as exc:
+        invalid_stored_receipt = (
+            isinstance(exc, VerificationReceiptError)
+            and exc.code == "invalid_verification_evidence"
+            and exc.field is None
+        )
+        return verification_receipt_failure_result(
+            context,
+            project_id=project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=(
+                EXIT_TOOL_ERROR
+                if exc.code == "internal_error" or invalid_stored_receipt
+                else EXIT_USAGE
+            ),
+        )
+    except TaskRepositoryError as exc:
+        return verification_receipt_failure_result(
+            context,
+            project_id=project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=(
+                EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE
+            ),
+        )
+    except StorageError as exc:
+        return verification_receipt_failure_result(
+            context,
+            project_id=project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+    except sqlite3.Error as exc:
+        mapped = operational_sqlite_error(
+            exc,
+            fallback_message="could not record verification evidence",
+        )
+        return verification_receipt_failure_result(
+            context,
+            project_id=project_id,
+            code=mapped.code,
+            message=mapped.message,
+            exit_code=EXIT_TOOL_ERROR,
+        )
+
+    receipt = result.receipt
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=project_id,
+        data={"receipt": receipt},
+        text=verification_receipt_text(receipt),
+        exit_code=EXIT_SUCCESS,
+        mutation_outcome=MutationOutcome(
+            state_changed=True,
+            viewer_relevant=False,
+        ),
+    )
+
+
 def bounded_json_limit_from_args(args: argparse.Namespace) -> int | None:
     if not bool(getattr(args, "json", False)):
         return None
@@ -3101,6 +3323,14 @@ def main(
             raise CommandLineError(
                 "invalid_argument",
                 "review requires prepare, target set, receipt add, finding add, or finding resolve",
+            )
+        if args.command == "verification" and (
+            getattr(args, "verification_entity", None) is None
+            or getattr(args, "verification_action", None) is None
+        ):
+            raise CommandLineError(
+                "invalid_argument",
+                "verification requires receipt add",
             )
         if (
             args.command == "review"

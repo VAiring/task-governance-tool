@@ -392,6 +392,7 @@ class TaskShowTests(unittest.TestCase):
                 "contract": None,
                 "latest_checkpoint": None,
                 "completion_history": None,
+                "verification_evidence": None,
             })
 
     def test_task_show_missing_db_does_not_create_files(self):
@@ -423,6 +424,7 @@ class TaskShowTests(unittest.TestCase):
                 "contract": None,
                 "latest_checkpoint": None,
                 "completion_history": None,
+                "verification_evidence": None,
             })
             self.assertFalse(db.exists())
             self.assertFalse(db.parent.exists())

@@ -223,6 +223,7 @@ def _documented_commands(section: Iterable[str]) -> tuple[str, ...]:
             "task",
             "handoff",
             "review",
+            "verification",
         }:
             return ()
         fenced.append(stripped)

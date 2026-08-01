@@ -379,7 +379,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             connection.execute(
                 "SELECT MAX(version) FROM schema_migrations"
             ).fetchone()[0],
-            16,
+            17,
         )
         generations = connection.execute(
             """
@@ -460,7 +460,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(migrated)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 2)
-            self.assertEqual(payload["data"]["schema_to"], 16)
+            self.assertEqual(payload["data"]["schema_to"], 17)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 [
@@ -641,7 +641,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 )
                 self.assert_single_seeded_managed_backup(connection, db_path)
 
-    def test_v5_v6_v12_and_v13_setup_migrate_to_v16_with_review_evidence_intact(self):
+    def test_v5_v6_v12_and_v13_setup_migrate_to_v17_with_review_evidence_intact(self):
         fixture = load_fixture()
         for source_version in (5, 6, 12, 13):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
@@ -664,7 +664,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 payload = json_payload(migrated)
                 self.assertEqual(payload["data"]["schema_from"], source_version)
-                self.assertEqual(payload["data"]["schema_to"], 16)
+                self.assertEqual(payload["data"]["schema_to"], 17)
                 self.assertEqual(
                     payload["data"]["completed_writes"],
                     [
@@ -877,7 +877,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(recovered)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 12)
-            self.assertEqual(payload["data"]["schema_to"], 16)
+            self.assertEqual(payload["data"]["schema_to"], 17)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 [

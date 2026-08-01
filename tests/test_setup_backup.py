@@ -9,7 +9,11 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import create_v10_target, create_v9_target
+from tests.m14_test_support import (
+    create_v10_target,
+    create_v14_target,
+    create_v9_target,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -415,7 +419,16 @@ class SetupBackupTests(unittest.TestCase):
     def test_v11_setup_reconciliation_accepts_supported_older_source_schema(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = make_target(Path(tmp))
-            initialize_database(target)
+            create_v14_target(target)
+            with closing(storage_service.connect(target.db_path)) as connection:
+                storage_service.apply_completion_cycle_history_migration(connection)
+                storage_service.apply_completion_cycle_capture_activation_migration(
+                    connection
+                )
+                self.assertEqual(
+                    storage_service.current_schema_version(connection),
+                    16,
+                )
             first = publish(target, 2, 1)
 
             with mock.patch.object(

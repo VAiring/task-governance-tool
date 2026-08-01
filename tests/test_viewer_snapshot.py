@@ -30,6 +30,7 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_review_evidence_migration,
     apply_task_contract_migration,
     apply_task_checkpoints_migration,
+    apply_verification_receipts_migration,
     apply_viewer_maintenance_migration,
     apply_effort_advisory_migration,
     connect,
@@ -67,8 +68,8 @@ def table_count(db: Path, table: str) -> int:
 
 
 class ViewerSnapshotTests(unittest.TestCase):
-    def test_snapshot_v4_reads_schema_v5_through_v16_with_honest_history(self):
-        for source_version in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
+    def test_snapshot_v4_reads_schema_v5_through_v17_with_honest_history(self):
+        for source_version in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 db = Path(tmp) / "taskgov.sqlite"
                 repo = Path(tmp) / "repo"
@@ -108,6 +109,8 @@ class ViewerSnapshotTests(unittest.TestCase):
                         apply_completion_cycle_capture_activation_migration(
                             connection
                         )
+                    if source_version >= 17:
+                        apply_verification_receipts_migration(connection)
                     with connection:
                         ensure_project_meta(connection, target.project)
                         if source_version >= 13:
@@ -528,7 +531,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
             snapshot = result.snapshot
             self.assertEqual(snapshot["snapshot_version"], 4)
-            self.assertEqual(snapshot["source_schema_version"], 16)
+            self.assertEqual(snapshot["source_schema_version"], 17)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {

@@ -1,6 +1,6 @@
 ---
 name: task-governance-tool
-description: Project-scoped local-first task execution for Codex using the bundled taskgov CLI and canonical project-local state. Use when setting up or diagnosing task tracking, registering explicit tasks, rediscovering current or held work, selecting next actionable work, preserving explicit scope and acceptance, recording optional continuation checkpoints, handing off out-of-scope discoveries locally, or completing work through deterministic review and evidence gates.
+description: Project-scoped local-first task execution for Codex using the bundled taskgov CLI and canonical project-local state. Use when setting up or diagnosing task tracking, registering explicit tasks, rediscovering current or held work, selecting next actionable work, preserving explicit scope and acceptance, recording bounded verification attestations or optional continuation checkpoints, handing off out-of-scope discoveries locally, or completing work through deterministic review and evidence gates.
 ---
 
 # Task Governance Tool
@@ -27,7 +27,7 @@ When launching from inside the Skill directory, add
 directory is the governed project; taskgov never re-roots it to an enclosing
 Git worktree, and a non-Git directory is valid.
 
-Use only these 20 public command leaves:
+Use only these 21 public command leaves:
 
 - `setup`, `doctor`
 - task `add`, `list`, `next`, `current`, `effort`, `show`, `edit`, `complete`,
@@ -35,6 +35,7 @@ Use only these 20 public command leaves:
 - handoff `record`, `list`, `show`, `withdraw`
 - review `prepare`, target `set`, receipt `add`, finding `add`, finding
   `resolve`
+- verification receipt `add`
 
 Do not invent aliases, alternate state locations, maintenance commands, or
 admin operations.
@@ -98,15 +99,21 @@ Use this normal flow:
    context only and never satisfies a current gate.
 4. If selecting ready work, start it with
    `task edit <task-id> --status in_progress --json`.
-5. Execute and verify against current authority. Record out-of-scope
+5. Finish the exact material against current authority. Record out-of-scope
    discoveries with `handoff record`; use `task checkpoint` only at a genuine
    continuation boundary.
 6. Only when `task show.data.effort_advisory_enabled` is `true`, run one
    `task effort <task-id> --read-only --json` at the verification/review
    boundary. This is a mechanical route, not an LLM choice.
-7. Set the exact review target, run `review prepare` once, obtain the required
-   reviews, and record their receipts and findings.
-8. Complete through `task complete` after verification and review gates pass.
+7. Set the exact review target and retain its returned generation. Run the
+   Task's verification outside taskgov against that target. When the Task has
+   nonempty verification text, attest the aggregate result once with
+   `verification receipt add <task-id> --command-label <label> --result
+   <pass|fail|timeout> --duration-ms <milliseconds> --scope-coverage
+   <full|partial> --expected-target-generation <generation> --json`.
+8. Run `review prepare` once, obtain the required reviews, and record their
+   receipts and findings.
+9. Complete through `task complete` after verification and review gates pass.
 
 Read [references/reconciliation.md](references/reconciliation.md) only when
 the Effort result returns `data.suggested_action=reconcile_scope`, or when a
@@ -115,7 +122,7 @@ result as one non-blocking episode, not one episode per exceeded metric.
 Neither trigger adds a green-path command, question, or stop.
 
 For a no-finding Tier 2 task that must select new work, this graph uses at most
-nine governance subprocess calls with the advisory disabled and ten when an
+ten governance subprocess calls with the advisory disabled and eleven when an
 existing valid profile enables it. `doctor`, completion `--check`, and
 `task checkpoint` are absent from the default success path. This flow adds no
 mandatory question, judgment, or user-return stop.
@@ -162,8 +169,13 @@ mandatory question, judgment, or user-return stop.
 
 ## Review And Completion
 
-Set a review target only after the exact material is ready. For review before a
-Git completion commit, stage exactly the intended files and set
+Set a review target only after the exact material is ready. Retain its returned
+generation, run the governed verification outside taskgov against that exact
+target, and, for nonempty Task verification, record one aggregate attestation
+with `verification receipt add` before preparing review. Taskgov does not run
+the command or retain its body or output. A `fail`, `timeout`, or `partial`
+Receipt requires a fresh target generation before another run can become
+current. For review before a Git completion commit, stage exactly the intended files and set
 `--kind git_snapshot` without a revision. Unstaged and untracked files are
 excluded. Use the single bounded `review prepare` packet for the independent
 reviewers; follow its exact-target instruction rather than ambient Git or

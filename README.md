@@ -5,8 +5,10 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.10.0` uses SQLite schema v16 and Viewer snapshot v4 with source
-schemas 5 through 16.
+Release `0.11.0` uses SQLite schema v17 and Viewer snapshot v4 with source
+schemas 5 through 17 as the current unpublished local candidate contract. It
+has not been pushed, tagged, or published. The immutable published release
+remains v0.10.0 at its recorded commit, tag, and GitHub prerelease.
 
 ## License
 
@@ -69,7 +71,7 @@ the old legacy primary. A moved legacy backup-only source is not a relocation
 candidate and fails no-write as `project_state_unreadable`. It does not add a
 recovery command or accept a recovery path.
 
-Release 0.10.0 retains one immutable project identity in the fixed
+The 0.11.0 candidate retains one immutable project identity in the fixed
 package-local `state/current/` layout and keeps the governed-directory binding
 separately.
 Fresh setup creates a UUID-backed identity. Explicit setup mechanically moves
@@ -78,7 +80,9 @@ stored binding still matches the current project.
 
 Existing fixed state migrates transactionally through append-only completion
 cycle storage in schema v15 and marker-only native-capture activation in schema
-v16. Legacy gaps remain marked incomplete rather than being inferred.
+v16. Schema v17 adds immutable Verification Receipts and an explicit
+completion-cycle verification basis. Legacy gaps remain marked incomplete
+rather than being inferred.
 
 A binding mismatch is an exceptional relocation flow, not a normal Task-loop
 step. Normal commands and `doctor` never rebind state. Run
@@ -118,12 +122,14 @@ renders, backs up, or runs project tests. For a Git-candidate target, only its
 single bounded effective-ignore preflight may inspect Git. Doctor is optional
 and is not a prerequisite for setup or normal task work.
 
-Release validation rehearses the isolated transition from the exact legacy
-v0.1.0/schema-v2 baseline to v0.10.0/schema v16. Paired rollback restores the
+Candidate validation rehearses the isolated transition from the exact legacy
+v0.1.0/schema-v2 baseline to v0.11.0/schema v17. Paired rollback restores the
 matched pre-migration package, database, and managed artifacts together; it
-never runs legacy code against schema v16 or treats a Git checkout alone as
-state rollback. See [Release And Install Decision](docs/release-install.md) for
-the complete boundary.
+never runs legacy code against schema v17 or treats a Git checkout alone as
+state rollback. The published v0.10.0/schema-v16 rehearsal remains immutable
+historical evidence and does not satisfy the candidate gate. See
+[Release And Install Decision](docs/release-install.md) for the complete
+boundary.
 
 ## Minimal Task Workflow
 
@@ -161,13 +167,14 @@ Only when a ready task was selected, start it:
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --json
 ```
 
-`task show` is the mandatory detailed read before work. The same call supplies
-bounded completion-cycle audit history and exposes whether the optional
-Effort Advisory is enabled. Historical cycles never satisfy a current gate.
-The default-off flow needs no extra LLM choice or command. The normal no-finding
-Tier 2 graph remains bounded to nine governance subprocess calls, or ten when
-the existing boolean enables `task effort`. `task current` rediscovers paused,
-blocked, review-pending, and in-progress work.
+`task show` is the mandatory detailed read before work. The same JSON call
+supplies bounded completion-cycle audit history, current Verification Receipt
+readiness, and whether the optional Effort Advisory is enabled. Historical
+cycles never satisfy a current gate. The default-off flow needs no extra LLM
+choice or command. The normal no-finding Tier 2 graph remains bounded to ten
+governance subprocess calls, or eleven when the existing boolean enables
+`task effort`. `task current` rediscovers paused, blocked, review-pending, and
+in-progress work.
 
 When that deterministic flag is enabled, run `task effort` once at the existing
 verification/review boundary. `suggested_action=continue` proceeds normally;
@@ -205,12 +212,15 @@ prioritize, synchronize, or create external Issues.
 ## Review And Completion
 
 For a review-before-commit Git workflow, stage exactly the intended project
-changes through the project's own Git process, capture the staged target, and
-prepare one bounded review packet:
+changes through the project's own Git process, capture the staged target, run
+the exact project verification outside Taskgov, record its bounded attestation,
+and prepare one bounded review packet:
 
 ```powershell
 git add <intended-project-paths>
 python .agents/skills/task-governance-tool/scripts/taskgov.py review target set <task-id> --kind git_snapshot --json
+# Run the exact approved project verification here; taskgov never executes it.
+python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --command-label "Focused and full offline checks" --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
 python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare <task-id> --json
 python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
 python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --json
@@ -218,11 +228,13 @@ git commit -m "<project-approved message>"
 python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --completion-evidence-kind git_commit --completion-revision <hash> --verification-complete --review-complete --json
 ```
 
-The staged snapshot excludes unstaged and untracked content. The completion
-commit must have exactly one parent equal to the captured base and the same
-tree. Meaningful target changes require a new target and fresh receipts. The
-Skill validates Git evidence read-only; it never stages, commits, branches,
-pushes, opens a PR, or creates an Issue.
+The staged snapshot excludes unstaged and untracked content. Taskgov records
+only the caller's bounded verification facts; it never executes the command or
+stores its body, arguments, exit code, output, logs, or environment. The
+completion commit must have exactly one parent equal to the captured base and
+the same tree. Meaningful target changes require a new target and fresh
+verification and review receipts. The Skill validates Git evidence read-only;
+it never stages, commits, branches, pushes, opens a PR, or creates an Issue.
 
 The packet tells each reviewer how to inspect the exact target rather than
 ambient `HEAD` or worktree content. The independent reviewer returns the
@@ -273,7 +285,7 @@ reported only as bounded sanitized warnings.
 Taskgov starts no daemon, timer, background process, queue, service, browser,
 or maintenance command. The generated Viewer and managed backups remain
 projections/runtime artifacts under the ignored Skill `state/` directory.
-Viewer snapshot v4 reads source schemas 5 through 16 and includes the same
+Viewer snapshot v4 reads source schemas 5 through 17 and includes the same
 bounded newest-first completion history as `task show`. Sources 5-14 are shown
 honestly as empty legacy-incomplete history. The Viewer contains only sanitized
 task/review/audit projections and has no write controls or network dependency.
@@ -314,7 +326,7 @@ plus the existing sanitized Viewer warning.
 
 ## Public Commands
 
-Release 0.10.0 exposes exactly these 20 command leaves:
+The 0.11.0 local candidate exposes exactly these 21 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -336,6 +348,7 @@ Release 0.10.0 exposes exactly these 20 command leaves:
 18. `taskgov review receipt add`
 19. `taskgov review finding add`
 20. `taskgov review finding resolve`
+21. `taskgov verification receipt add`
 
 Applicable commands accept `--repo`, `--json`, and `--read-only`; the root also
 accepts `--version`. Storage paths and maintenance internals are not public CLI
@@ -346,9 +359,15 @@ automatically maintained Viewer supply the bounded projection.
 
 The Skill stores sanitized task metadata, compact events, completion evidence,
 bounded completion-cycle audit rows, review evidence, handoffs, optional
-Contracts, checkpoints, and bounded maintenance facts. It does not store raw
-stdout/stderr, stack traces, environment dumps, full prompts or conversations,
-authorization material, large raw diffs, or raw review transcripts.
+Contracts, checkpoints, bounded maintenance facts, and exact allow-listed
+Verification Receipt facts. A Receipt contains only a sanitized command label,
+closed result, duration, full/partial coverage, ownership, current Contract and
+target basis, and recording time. The label must be descriptive prose; obvious
+shell controls, options, paths, executable/script suffixes, and command-runner
+prefixes are rejected. It stores no verification command body or arguments,
+exit code, stdout/stderr, stack trace, environment, logs,
+exceptions, prompts, diffs, credentials, arbitrary coverage prose, or debug
+variant.
 
 New task input strictly rejects both `dispatch_authorization=<value>` and the
 JSON key `"dispatch_authorization":<value>`. For future external-operation
@@ -369,7 +388,7 @@ files or Git state, run project-specific verification automatically, or create
 external Issues/PRs. SQLite remains helper state; governing project documents
 and current user decisions remain authoritative.
 
-## Release Artifact
+## Immutable Published v0.10.0 Artifact
 
 Version 0.10.0 is published from exact commit
 `a9b80ce177a6dead10d51a070b76ff01f7af0294`; remote `main` and lightweight
@@ -380,6 +399,10 @@ visibility. Its title is `task-governance-tool v0.10.0`, archive
 [docs/releases/v0.10.0.md](docs/releases/v0.10.0.md). The exact
 `git-archive-v1` recipe, checksum format, workflow identity, and runtime matrix
 are fixed in [docs/release-install.md](docs/release-install.md).
+
+The current v0.11.0 package is an unpublished local candidate described by
+[docs/releases/v0.11.0.md](docs/releases/v0.11.0.md). No commit, tag, archive,
+checksum, GitHub Release, push, or publication is claimed or authorized for it.
 
 ## Development Checks
 
@@ -408,7 +431,7 @@ CI consumes the same repository-only policy:
 | push to `main` | `fast`, `integration`, `release` | `fast`, `integration`, `release` |
 | manual `workflow_dispatch` | `all` | `all` |
 
-The manual matrix is the complete future release-candidate gate; its aggregate
+The manual matrix is the complete release-candidate gate; its aggregate
 job fails unless policy validation and both full-version jobs succeed.
 An `operation_sequence` value may correlate separately authorized candidate
 work, but neither that value nor a successful gate authorizes workflow
@@ -429,7 +452,8 @@ coverage.
 - `docs/design.md`: implementation design and boundaries.
 - `plan.md`: approved static execution contracts, current decisions, and open
   issues.
-- `docs/release-install.md`: release artifact and installation decision.
+- `docs/release-install.md`: current candidate, immutable published artifact,
+  and installation identity.
 - `docs/history/README.md`: non-authoritative lineage index.
 
 Inspect live Task state and evidence through the public CLI; project documents

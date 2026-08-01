@@ -36,7 +36,7 @@ ENVELOPE_KEYS = {
     "errors",
 }
 HELP_CHOICES = {
-    (): ("setup", "doctor", "task", "handoff", "review"),
+    (): ("setup", "doctor", "task", "handoff", "review", "verification"),
     ("task",): (
         "add",
         "list",
@@ -53,6 +53,8 @@ HELP_CHOICES = {
     ("review", "target"): ("set",),
     ("review", "receipt"): ("add",),
     ("review", "finding"): ("add", "resolve"),
+    ("verification",): ("receipt",),
+    ("verification", "receipt"): ("add",),
 }
 REMOVED_OR_REPLACEMENT_ROOTS = (
     "self",
@@ -134,6 +136,7 @@ def routed_governance_graph(*, effort_advisory_enabled: bool) -> list[str]:
     graph.extend(
         [
             "review.target.set",
+            "verification.receipt.add",
             "review.prepare",
             "review.receipt.add",
             "review.receipt.add",
@@ -282,14 +285,14 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         ):
             text = path.read_text(encoding="utf-8")
             self.assertIn(__version__, text, path)
-            self.assertRegex(text, r"(?i)schema(?: version)? v?16")
+            self.assertRegex(text, r"(?i)schema(?: version)? v?17")
             self.assertRegex(text, r"(?i)(?:viewer )?snapshot v4")
 
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("effort_advisory_enabled", skill)
         self.assertIn("task effort", skill)
-        self.assertRegex(skill, r"(?i)\bnine\b")
         self.assertRegex(skill, r"(?i)\bten\b")
+        self.assertRegex(skill, r"(?i)\beleven\b")
 
         metadata = (SKILL_ROOT / "agents" / "openai.yaml").read_text(
             encoding="utf-8"
@@ -644,6 +647,25 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
             )
             graph_payloads.append(target)
 
+            verification_receipt, _ = self.run_json(
+                install,
+                "verification",
+                "receipt",
+                "add",
+                task_id,
+                "--command-label",
+                "Bounded integrated acceptance",
+                "--result",
+                "pass",
+                "--duration-ms",
+                "1",
+                "--scope-coverage",
+                "full",
+                "--expected-target-generation",
+                str(target["data"]["task"]["review_target_generation"]),
+            )
+            graph_payloads.append(verification_receipt)
+
             packet, _ = self.run_json(
                 install,
                 "review",
@@ -692,11 +714,11 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
                 [payload["command"] for payload in graph_payloads],
                 routed_governance_graph(effort_advisory_enabled=False),
             )
-            self.assertEqual(len(graph_payloads), 9)
+            self.assertEqual(len(graph_payloads), 10)
             enabled_graph = routed_governance_graph(
                 effort_advisory_enabled=True,
             )
-            self.assertEqual(len(enabled_graph), 10)
+            self.assertEqual(len(enabled_graph), 11)
             self.assertEqual(
                 [command for command in enabled_graph if command == "task.effort"],
                 ["task.effort"],

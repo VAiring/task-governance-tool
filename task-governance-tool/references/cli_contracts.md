@@ -3,8 +3,9 @@
 Use this reference when exact public commands, arguments, JSON fields, bounds,
 or error behavior matter.
 
-Release `0.10.0` uses task schema v16 and offline snapshot v4 with source
-schemas v5 through v16.
+The current package uses task schema v17 and offline snapshot v4 with source
+schemas v5 through v17. The published v0.10.0 release remains the immutable
+schema-v16 predecessor.
 
 ## Contents
 
@@ -22,6 +23,7 @@ schemas v5 through v16.
   - [`task checkpoint`](#task-checkpoint)
   - [`task edit`](#task-edit)
   - [`task complete`](#task-complete)
+- [Verification Receipt](#verification-receipt)
 - [Local Handoff Commands](#local-handoff-commands)
 - [Review Commands](#review-commands)
   - [`review prepare`](#review-prepare)
@@ -51,7 +53,7 @@ one physical project-scoped package only; user-wide, symbolic-link, and
 Windows junction layouts are unsupported. The verified runtime is Windows
 with Python 3.12 or later.
 
-The complete public command inventory is exactly these 20 leaves:
+The complete public command inventory is exactly these 21 leaves:
 
 1. `setup`
 2. `doctor`
@@ -73,6 +75,7 @@ The complete public command inventory is exactly these 20 leaves:
 18. `review receipt add`
 19. `review finding add`
 20. `review finding resolve`
+21. `verification receipt add`
 
 There are no public aliases, alternate state locations, storage-management
 commands, projection-management commands, repair commands, or admin commands.
@@ -125,8 +128,8 @@ never emitted. Git observation occurs outside SQLite transactions. Write
 commands revalidate their task/Contract/review basis under a short write
 transaction before one atomic business update.
 
-The normal no-finding Tier 2 Skill graph is bounded to nine governance
-subprocess calls when the Effort Advisory is off and ten when the mandatory
+The normal no-finding Tier 2 Skill graph is bounded to ten governance
+subprocess calls when the Effort Advisory is off and eleven when the mandatory
 `task show` boolean enables it. No command asks an LLM to choose that branch.
 
 ## `setup`
@@ -171,7 +174,7 @@ rollback-journal entry remains for the missing fixed primary; setup neither
 applies nor changes that journal. A moved legacy backup-only source is not a
 relocation candidate and fails no-write as `project_state_unreadable`.
 
-Release 0.10.0 stores the database in the fixed package-local
+The current package stores the database in the fixed package-local
 `state/current/` layout. Fresh write-mode setup creates one UUID-backed
 immutable project identity; same-binding schema-v1-through-v13 legacy state is
 published into the fixed layout by explicit setup without an LLM choice.
@@ -285,7 +288,7 @@ A ready result has this structure:
   "components": {
     "package": {
       "package_name": "task-governance-tool",
-      "package_version": "0.10.0",
+      "package_version": "0.11.0",
       "release_origin": "github:VAiring/task-governance-tool",
       "manifest_version": 1,
       "status": "clean",
@@ -484,8 +487,9 @@ python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 
 Data keys are exactly `task`, `events`, `suggested_next_action`,
 `review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`,
-`effort_advisory_enabled`, and `completion_history`.
-A task-show failure uses `completion_history=null` in its bounded empty data.
+`effort_advisory_enabled`, `completion_history`, and `verification_evidence`.
+A task-show failure uses both `completion_history=null` and
+`verification_evidence=null` in its bounded empty data.
 
 `effort_advisory_enabled` is a deterministic boolean routing field. Invalid
 profile content returns `false` plus
@@ -537,6 +541,18 @@ privacy-revalidated before projection. Completion history has no M19.7
 compatibility exception; rejected or corrupt stored text returns
 `completion_history_inconsistent` without exposing the value. `task show` and
 Viewer use the same bounded projection.
+
+`verification_evidence` has exactly `expectation`, `contract_revision`,
+`source_revision`, `gate`, `counts`, and `recent_receipts`. `source_revision`
+is null without a target; otherwise it contains exactly `kind`, `value`,
+nullable `base_revision`, and positive `generation`. Gate has exactly
+`required`, `satisfied`, nullable `blocking_code`, and nullable
+`qualifying_receipt_id`. Counts has exactly `receipts_total`,
+`receipts_exact_current`, `qualifying_exact_current`, and
+`blocking_exact_current`. At most ten newest-first rows use the fixed public
+Receipt fields and never expose the internal expectation digest. Text
+`task show` is unchanged. Invalid stored Receipt evidence returns the
+sanitized `invalid_verification_evidence` failure.
 
 Revision-zero Contract data is:
 
@@ -671,7 +687,10 @@ token and never authorizes the later write.
 
 Write success emits `command=task.complete` and data keys `task`,
 `changed_fields`, and `event`. Both check and write require verification,
-current matching review target, qualifying receipts, no current
+current matching review target, an exact-current `pass/full` Verification
+Receipt when the Task verification expectation is nonempty after trimming,
+qualifying review
+receipts, no current
 changes-requested receipt, no unresolved high/medium finding, valid typed
 completion evidence, sequential readiness, and exact Git/snapshot binding when
 applicable.
@@ -679,6 +698,63 @@ applicable.
 Git evidence resolves to a canonical full commit ID. External evidence requires
 an explicit reason and approval. `commit_not_required` requires a matching
 `diff_fingerprint` target. taskgov does not create commits or mutate Git.
+
+## Verification Receipt
+
+After setting the exact review target and running the governed verification
+outside taskgov, record one caller-attested aggregate result for a Task with a
+verification expectation that is nonempty after trimming:
+
+```powershell
+python scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --command-label "Full offline verification" --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
+```
+
+The five options are required. `result` is `pass`, `fail`, or `timeout`;
+`scope-coverage` is `full` or `partial`; duration is a nonnegative signed-
+64-bit millisecond value; and expected generation is the positive generation
+returned by target set. The label is a sanitized nonempty summary of at most
+200 characters, not a command line. Use a descriptive noun phrase: shell
+controls/redirection, standalone options, path-prefixed invocations, leading
+executable/script suffixes, and recognized runner/interpreter/build/VCS/shell
+prefixes (including Windows forms) are rejected. Taskgov
+copies the locked Contract, verification digest, and complete target tuple; it
+owns ID and timestamp.
+
+Receipt recording is allowed only for `in_progress` or `review_pending`,
+requires verification that is nonempty after trimming and a current target,
+writes no Task event or
+timestamp, and permits one immutable row per target generation. A retry after
+`fail`, `timeout`, or `partial` requires an explicitly fresh target. Taskgov
+does not execute a command, infer coverage, authenticate the runner, or retain
+a command body, arguments, exit code, stdout/stderr, log, exception,
+environment, or result file.
+
+A semantic `task edit --verification` after targeting clears target and old
+completion evidence and advances generation. Without `--status`, a
+review-pending Task returns to in-progress. Explicit in-progress, pause, block,
+or cancellation follows normal transition rules; explicit review-pending/done
+is rejected until a fresh target exists. Do not combine that semantic edit
+with completion-evidence options; the command fails
+`completion_evidence_conflict` rather than discarding them.
+
+Success data is exactly `receipt`, whose fields are exactly:
+
+```text
+verification_receipt_id, project_id, task_id, contract_revision,
+command_label, result, duration_ms, scope_coverage, source_revision, created_at
+```
+
+Success text is exactly:
+
+```text
+Verification receipt recorded: <verification_receipt_id>
+Result: <result>  Coverage: <scope_coverage>
+Source: <kind>/generation <generation>
+```
+
+The write is backup-eligible but Viewer-ineligible. `--read-only` and every
+failed call perform no business or maintenance write. There is no Receipt
+list, show, import, export, runner, or Viewer panel.
 
 ## Local Handoff Commands
 
@@ -956,6 +1032,9 @@ Important task/review/handoff errors include:
 - `contract_activation_forbidden`, `contract_authority_required`,
   `contract_write_conflict`
 - `verification_required`, `review_required`, `commit_required`
+- `verification_expectation_required`, `verification_basis_stale`,
+  `verification_receipt_required`, `verification_receipt_blocking`,
+  `verification_receipt_already_recorded`, `invalid_verification_evidence`
 - `completion_evidence_conflict`,
   `external_revision_approval_required`,
   `git_commit_not_found_or_ambiguous`
@@ -968,6 +1047,9 @@ Important task/review/handoff errors include:
 
 `completion_history_inconsistent` uses exit 2 and the fixed sanitized message
 `stored completion history is inconsistent`.
+`invalid_verification_evidence` likewise fails closed with exit 2 and
+`stored verification evidence is inconsistent` when stored Receipt structure
+or binding is malformed.
 
 Privacy validation is deny-by-default for stored free-form input. Never submit
 secrets, tokens, authorization headers, raw stdout/stderr, stack traces,

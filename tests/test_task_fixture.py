@@ -77,10 +77,50 @@ class TaskStatusFixtureTests(unittest.TestCase):
                 initial = dict(task)
                 target_status = initial.get("status", "ready")
                 if target_status == "done":
-                    initial["status"] = "ready"
+                    initial["status"] = "in_progress"
                 stored = add_fixture_task(db, repo, initial)
                 if target_status == "done":
                     seed_review_evidence(db, stored["task_id"])
+                    shown = run_taskgov(
+                        "task",
+                        "show",
+                        "--repo",
+                        str(repo),
+                        "--db",
+                        str(db),
+                        stored["task_id"],
+                        "--json",
+                    )
+                    self.assertEqual(shown.returncode, 0, shown.stderr)
+                    target_generation = json.loads(shown.stdout)["data"]["task"][
+                        "review_target_generation"
+                    ]
+                    verification_receipt = run_taskgov(
+                        "verification",
+                        "receipt",
+                        "add",
+                        stored["task_id"],
+                        "--repo",
+                        str(repo),
+                        "--db",
+                        str(db),
+                        "--command-label",
+                        "Fixture verification",
+                        "--result",
+                        "pass",
+                        "--duration-ms",
+                        "1",
+                        "--scope-coverage",
+                        "full",
+                        "--expected-target-generation",
+                        str(target_generation),
+                        "--json",
+                    )
+                    self.assertEqual(
+                        verification_receipt.returncode,
+                        0,
+                        verification_receipt.stderr or verification_receipt.stdout,
+                    )
                     completed = run_taskgov(
                         "task",
                         "edit",

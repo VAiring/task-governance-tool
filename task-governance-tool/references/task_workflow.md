@@ -138,20 +138,37 @@ Use this deterministic graph for a normal no-finding Tier 2 task:
    python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --json
    ```
 
-5. Execute and verify the task. Record real progress with bounded notes only
-   when useful. Record out-of-scope discoveries immediately with
+5. Finish the exact governed material. Record real progress with bounded notes
+   only when useful. Record out-of-scope discoveries immediately with
    `handoff record`.
 6. If and only if the mandatory `task show` result has
    `data.effort_advisory_enabled=true`, make one `task effort` observation at
    the verification/review boundary.
-7. Set the exact review target, prepare one bounded review packet, record the
-   required review receipts/findings, and complete the task.
+7. Set the exact review target and retain its returned generation.
+8. Run the Task's verification outside taskgov against that exact material.
+   When the Task verification text is nonempty, record the aggregate result:
 
-When step 2 is needed, this is at most nine governance subprocess calls with
-the Effort Advisory disabled and ten when an existing valid profile enables
+   ```powershell
+   python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --command-label "Focused offline checks" --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
+   ```
+
+   The label is a bounded descriptive noun phrase, not a command line. Shell
+   controls, standalone options, path-prefixed invocations, leading executable/
+   script suffixes, and recognized command-runner prefixes are rejected.
+   Taskgov executes no command and stores no command body or output. A `fail`,
+   `timeout`, or `partial` Receipt is
+   immutable; set a fresh target generation before a new run can become
+   current.
+9. Prepare one bounded review packet, record the required review
+   receipts/findings, and complete the task.
+
+When step 2 is needed, this is at most ten governance subprocess calls with
+the Effort Advisory disabled and eleven when an existing valid profile enables
 it. The conditional branch is a boolean route from `task show`, not an LLM
-choice. The count includes two actual Tier 2 receipt writes; it excludes the
-two independent review model decisions and real progress notes.
+choice. For a Task with specified verification, the count includes one
+verification Receipt and two actual Tier 2 review-receipt writes; it excludes the
+two independent review model decisions, the external verification process,
+and real progress notes.
 
 `doctor`, `task complete --check`, and `task checkpoint` are optional and
 absent from the default success path. Do not add them mechanically to every
@@ -350,6 +367,22 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 Unstaged and untracked files are outside that target. For already committed or
 non-Git material, use `git_commit`, `diff_fingerprint`, or
 `external_revision` with `--revision`.
+
+After target capture, run the governed verification outside taskgov against
+that exact target. If the Task verification expectation is nonempty after
+trimming, record one caller-attested aggregate Receipt using the returned
+target generation:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --command-label "Full offline verification" --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
+```
+
+Only an exact-current `pass/full` Receipt satisfies a verification expectation
+that is nonempty after trimming. A missing Receipt or a current `fail`,
+`timeout`, or `partial`
+Receipt blocks completion; explicitly set a fresh target before retrying.
+Taskgov does not execute or resolve the label, infer coverage, or retain a
+command body, exit code, output, exception, environment, or result file.
 
 Prepare one read-only packet after the target is set:
 

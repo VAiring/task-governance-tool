@@ -129,7 +129,7 @@ The product must not become:
   selection, blocker and pause handling, local handoff, bounded Review Packet
   preparation, evidence-gated completion, optional checkpoints, setup, and
   read-only diagnosis.
-- Do not advertise deferred behavior such as verification-run recording,
+- Do not advertise deferred behavior such as verification-command execution,
   external Issue delivery, cross-project profiles, automatic browser launch,
   browser mutation control, or network synchronization. Optional same-file
   reload inside an already opened generated Viewer is presentation behavior,
@@ -199,8 +199,8 @@ The product must not become:
 - Store SQLite schema version and migration history.
 - Prefer explicit JSON contracts for machine-readable command output.
 - Use stable IDs for records that cross boundaries, such as `project_id`,
-  `profile_id`, `task_id`, `execution_unit_id`, `verification_run_id`, and
-  `review_request_id`.
+  `profile_id`, `task_id`, `execution_unit_id`,
+  `verification_receipt_id`, and `review_request_id`.
 - Keep a stored project identity separate from its mutable filesystem binding.
   A path change never changes durable business-record IDs, and only the
   explicit setup confirmation flow defined by the current specification may
@@ -270,12 +270,13 @@ The product must not become:
   target project's decisions.
 - Store references to governing files, command names, hashes, timestamps,
   status codes, and sanitized summaries.
-- Verification command output retention is deny-by-default. Store only command
-  label, sanitized command summary, exit code, duration, status, timestamps,
-  and optional content hash unless the user explicitly enables debug retention.
-- Raw stdout/stderr, stack traces, environment dumps, and full command logs must
-  not be stored by default. Debug retention must be local-only, clearly marked,
-  and covered by redaction tests before it is treated as supported behavior.
+- Verification Receipt retention is deny-by-default. Store only the exact
+  bounded Receipt fields and structural binding metadata defined by the current
+  specification: sanitized command label, result, duration, scope coverage,
+  ownership, current Contract/target basis, and recording time.
+- Never store the verification command body or arguments, exit code,
+  stdout/stderr, stack trace, environment, log, exception, prompt, diff,
+  credential, arbitrary coverage prose, or debug-retention variant.
 - Do not store API keys, tokens, cookies, authorization headers, raw provider
   bodies, full private prompts, full chat logs, or large raw diffs by default.
 - Prefer deactivation, supersession, or history rows over hard deletion for

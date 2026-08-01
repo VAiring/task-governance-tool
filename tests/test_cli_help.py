@@ -21,7 +21,7 @@ except ModuleNotFoundError:
     from tests.m14_test_support import make_physical_install
 
 
-M14_6_STAGE_LEAVES = {
+PUBLIC_COMMAND_LEAVES = {
     "setup",
     "doctor",
     "task add",
@@ -42,12 +42,13 @@ M14_6_STAGE_LEAVES = {
     "review receipt add",
     "review finding add",
     "review finding resolve",
+    "verification receipt add",
 }
 
 
 class CliHelpTests(unittest.TestCase):
-    def test_m14_6_staged_parser_has_only_its_twenty_leaves(self):
-        self.assertEqual(parser_leaf_commands(build_parser()), M14_6_STAGE_LEAVES)
+    def test_parser_has_only_the_twenty_one_public_leaves(self):
+        self.assertEqual(parser_leaf_commands(build_parser()), PUBLIC_COMMAND_LEAVES)
 
     def test_root_help_is_read_only_and_hides_removed_storage_surface(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -213,6 +214,37 @@ class CliHelpTests(unittest.TestCase):
                 "authenticated provenance",
             ):
                 self.assertIn(phrase, normalized_receipt)
+
+    def test_verification_receipt_help_exposes_only_bounded_attestation_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = make_physical_install(Path(tmp)).run(
+                "verification",
+                "receipt",
+                "add",
+                "--help",
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for supported in (
+            "task_id",
+            "--command-label",
+            "--result",
+            "--duration-ms",
+            "--scope-coverage",
+            "--expected-target-generation",
+            "--repo",
+            "--json",
+            "--read-only",
+        ):
+            self.assertIn(supported, result.stdout)
+        for unsupported in (
+            "--output",
+            "--exit-code",
+            "--source-revision",
+            "--contract-revision",
+            "--file",
+            "--db",
+        ):
+            self.assertNotIn(unsupported, result.stdout)
 
     def test_removed_groups_are_not_compatibility_help_handlers(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -26,6 +26,7 @@ from task_governance_tool.relocation import (  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
     StorageError,
     apply_completion_cycle_capture_activation_migration,
+    apply_verification_receipts_migration,
     connect,
     connect_readonly,
     connect_snapshot_readonly,
@@ -33,6 +34,7 @@ from task_governance_tool.storage import (  # noqa: E402
     initialize_database,
     insert_native_completion_cycle_locked,
     validate_completion_cycle_storage,
+    verification_expectation_digest,
 )
 from task_governance_tool.tasks import add_task  # noqa: E402
 from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
@@ -318,6 +320,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 apply_completion_cycle_capture_activation_migration(
                     connection
                 )
+                apply_verification_receipts_migration(connection)
                 task_id = str(
                     add_task(
                         connection,
@@ -403,6 +406,10 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     task_id=task_id,
                     task_projection=proposed,
                     recorded_at="2026-07-30T05:31:00Z",
+                    verification_expectation_digest=(
+                        verification_expectation_digest("")
+                    ),
+                    verification_receipt_id=None,
                 )
                 connection.execute(
                     """
@@ -446,7 +453,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 )
                 validate_completion_cycle_storage(connection)
 
-    def test_v16_reentry_marker_v15_binary_viewer_v4_and_relocation_boundaries(
+    def test_v17_viewer_v16_marker_and_relocation_boundaries(
         self,
     ):
         with tempfile.TemporaryDirectory() as tmp:
@@ -462,7 +469,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 add_task(
                     connection,
                     target.project,
-                    title="Viewer source-16 task",
+                    title="Viewer source-17 task",
                 )
                 connection.commit()
             with closing(
@@ -474,7 +481,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     generated_at="2026-07-30T05:40:00Z",
                 ).snapshot
             self.assertEqual(snapshot["snapshot_version"], 4)
-            self.assertEqual(snapshot["source_schema_version"], 16)
+            self.assertEqual(snapshot["source_schema_version"], 17)
             self.assertEqual(
                 snapshot["tasks"][0]["completion_history"],
                 {
@@ -569,10 +576,10 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 15,
             )
             result = initialize_database(target)
-            self.assertEqual(result.migrations_applied, [16])
-            self.assertEqual(result.schema_version, 16)
+            self.assertEqual(result.migrations_applied, [16, 17])
+            self.assertEqual(result.schema_version, 17)
             with closing(connect_readonly(target.db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 16)
+                self.assertEqual(current_schema_version(connection), 17)
                 self.assertEqual(
                     connection.execute(
                         """
@@ -582,6 +589,16 @@ class CompletionCycleActivationTests(unittest.TestCase):
                         """
                     ).fetchone()[0],
                     "completion_cycle_capture_activation",
+                )
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT name
+                          FROM schema_migrations
+                         WHERE version = 17
+                        """
+                    ).fetchone()[0],
+                    "verification_receipts",
                 )
 
 

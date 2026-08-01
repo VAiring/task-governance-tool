@@ -252,7 +252,6 @@ class DocumentHistoryTests(unittest.TestCase):
             "task-governance-tool/references/task_workflow.md",
             "task-governance-tool/release-manifest.json",
             "Neutral Forward-Test Boundary",
-            "unchanged 20 command leaves and schema",
             "failure after one successful `task add`",
             "Handoff/resume in a fresh session",
             "valid proposed Contract fields exceed Handoff bounds",
@@ -275,13 +274,15 @@ class DocumentHistoryTests(unittest.TestCase):
             "Approved Temporary TG-M20S",
             active,
         )
-        self.assertIn("approved and registered", active)
+        self.assertIn("The retained static sequence", active)
 
+        self.assertIn("Current TG-M21 Verification Receipt Contract", specification)
+        self.assertIn("Current TG-M21 Verification Receipt Design", design)
         for document in (specification, design):
-            self.assertIn("Approved But Inactive TG-M21 Verification Receipt", document)
-            self.assertIn("schema v16", document)
-            self.assertTrue("20 command" in document or "20-leaf" in document)
-            self.assertIn("verification receipt add", document)
+            document_flat = " ".join(document.split())
+            self.assertIn("schema v17", document_flat)
+            self.assertIn("21 public command", document_flat)
+            self.assertIn("verification receipt add", document_flat)
 
         for marker in (
             "command_label",
@@ -303,10 +304,10 @@ class DocumentHistoryTests(unittest.TestCase):
             self.assertIn(marker, active)
 
         self.assertIn(
-            "The implementation sequence is approved and registered",
+            "The retained static sequence has one atomic activation boundary",
             plan,
         )
-        m21_section = plan[plan.index("### TG-M21.1") :]
+        m21_section = plan[plan.index("### Current Authority Layout") :]
         for task_id in (
             "tg_task_a6f5ec3147440e53",
             "tg_task_8e30cf88c9018824",
@@ -325,9 +326,9 @@ class DocumentHistoryTests(unittest.TestCase):
         skill = (ROOT / "task-governance-tool" / "SKILL.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("SCHEMA_VERSION = 16", storage)
-        self.assertNotIn("verification receipt add", skill)
-        self.assertFalse(
+        self.assertIn("SCHEMA_VERSION = 17", storage)
+        self.assertIn("verification receipt add", skill)
+        self.assertTrue(
             (
                 ROOT
                 / "task-governance-tool"
@@ -365,7 +366,7 @@ class DocumentHistoryTests(unittest.TestCase):
             "bounded fixes only",
         ):
             self.assertIn(marker, normalized_plan)
-        self.assertIn("Approved But Inactive TG-M21 Verification Receipt", active)
+        self.assertIn("Current TG-M21 Verification Receipt", active)
         self.assertIn(
             "project-local Task database, inspected through the public CLI",
             normalized_plan,
@@ -865,7 +866,6 @@ class DocumentHistoryTests(unittest.TestCase):
         )
         for candidate in (
             "project-profile detection",
-            "Verification Receipt design",
             "dependency graphs",
             "default-browser launch",
             "event-history or current/list pagination",

@@ -130,13 +130,10 @@ def extract_legacy_skill(destination: Path) -> Path:
     return destination / "task-governance-tool"
 
 
-def committed_package_paths() -> tuple[Path, ...]:
+def staged_package_paths() -> tuple[Path, ...]:
     raw = require_git(
-        "ls-tree",
-        "-r",
+        "ls-files",
         "-z",
-        "--name-only",
-        "HEAD",
         "--",
         "task-governance-tool",
     )
@@ -154,7 +151,7 @@ def committed_package_paths() -> tuple[Path, ...]:
             raise AssertionError("current package inventory is invalid")
         paths.append(Path(*relative.parts[1:]))
     if not paths:
-        raise AssertionError("current committed package inventory is empty")
+        raise AssertionError("current staged package inventory is empty")
     return tuple(paths)
 
 
@@ -167,10 +164,10 @@ def overlay_current_package(skill_root: Path) -> None:
             shutil.rmtree(child)
         else:
             child.unlink()
-    for relative in committed_package_paths():
+    for relative in staged_package_paths():
         source = CURRENT_SKILL_ROOT / relative
         if not source.is_file():
-            raise AssertionError("current committed package file is missing")
+            raise AssertionError("current staged package file is missing")
         destination = skill_root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
@@ -408,14 +405,14 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertEqual(overlay_state_snapshot, legacy_state_snapshot)
             version = run_cli(legacy_skill, project, "--version")
             self.assertEqual(version.returncode, 0)
-            self.assertEqual(version.stdout.strip(), "taskgov 0.10.0")
+            self.assertEqual(version.stdout.strip(), "taskgov 0.11.0")
 
             preview = self.invoke(
                 legacy_skill, project, "setup", "--repo", str(project),
                 "--read-only", "--json",
             )
             self.assertEqual(preview["data"]["schema_from"], 2)
-            self.assertEqual(preview["data"]["schema_to"], 16)
+            self.assertEqual(preview["data"]["schema_to"], 17)
             self.assertEqual(preview["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(preview["data"]["completed_writes"], [])
             self.assertEqual(
@@ -451,7 +448,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                 "--repo", str(project), "--json",
             )
             self.assertEqual(upgraded["data"]["schema_from"], 2)
-            self.assertEqual(upgraded["data"]["schema_to"], 16)
+            self.assertEqual(upgraded["data"]["schema_to"], 17)
             self.assertEqual(upgraded["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(upgraded["data"]["completed_writes"], LEGACY_SETUP_WRITES)
 
@@ -462,7 +459,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertTrue(current_db.is_file())
             self.assertTrue(viewer.is_file())
             self.assertFalse(legacy_db.exists())
-            self.assertEqual(sqlite_version(current_db), 16)
+            self.assertEqual(sqlite_version(current_db), 17)
             self.assertEqual(legacy_projection(current_db), pre_upgrade_projection)
 
             with closing(sqlite3.connect(current_db)) as connection:
@@ -530,7 +527,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             )
             self.assertEqual(
                 doctor["data"]["components"]["project_state"]["schema_version"],
-                16,
+                17,
             )
             self.assertEqual(
                 doctor["data"]["components"]["maintenance"]["viewer"]["code"],

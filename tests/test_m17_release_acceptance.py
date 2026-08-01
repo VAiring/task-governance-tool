@@ -67,6 +67,7 @@ def preserved_business_projection(connection: sqlite3.Connection) -> dict:
         "managed_backup_generations",
         "project_maintenance",
         "task_completion_cycles",
+        "verification_receipts",
         "viewer_maintenance_state",
     }
     excluded_columns = {
@@ -135,7 +136,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             )
             self.assertEqual(preview["data"]["completed_writes"], [])
             self.assertEqual(preview["data"]["schema_from"], 2)
-            self.assertEqual(preview["data"]["schema_to"], 16)
+            self.assertEqual(preview["data"]["schema_to"], 17)
             self.assertEqual(
                 preview["data"]["relocation"],
                 {
@@ -163,7 +164,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             migrated = json_payload(migrated_process)
             self.assertEqual(migrated["project_id"], project.project_id)
             self.assertEqual(migrated["data"]["schema_from"], 2)
-            self.assertEqual(migrated["data"]["schema_to"], 16)
+            self.assertEqual(migrated["data"]["schema_to"], 17)
             self.assertEqual(
                 migrated["data"]["completed_writes"],
                 PRE_V9_WRITES,
@@ -181,7 +182,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    16,
+                    17,
                 )
                 self.assertEqual(
                     connection.execute(
@@ -266,7 +267,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             self.assertEqual(preview["project_id"], project.project_id)
             self.assertEqual(preview["data"]["status"], "relocation_preview")
             self.assertEqual(preview["data"]["schema_from"], 13)
-            self.assertEqual(preview["data"]["schema_to"], 16)
+            self.assertEqual(preview["data"]["schema_to"], 17)
             self.assertEqual(
                 preview["data"]["planned_writes"],
                 MOVED_V13_WRITES,
@@ -325,7 +326,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    16,
+                    17,
                 )
                 self.assertEqual(
                     connection.execute(

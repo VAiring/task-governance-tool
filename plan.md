@@ -4,10 +4,13 @@ Decision baseline: v0.10.0 is published from exact commit
 `a9b80ce177a6dead10d51a070b76ff01f7af0294`; remote `main` and lightweight
 tag `v0.10.0` resolve to that commit, and GitHub Release `362617903` has
 prerelease visibility. The M20 studies selected the accepted but inactive
-TG-M20S.3 decomposition and TG-M21 Verification Receipt designs. The approved
-M21 activation sequence and revision-zero TG-M12.3 prerequisites are retained
-below. The Task database, queried through the public CLI, is the sole owner of
-live execution status and evidence.
+TG-M20S.3 decomposition design and the now-current TG-M21 Verification Receipt
+contract. The approved M21 activation/acceptance sequence and revision-zero
+TG-M12.3 prerequisites are retained below. The Task database, queried through
+the public CLI, is the sole owner of live execution status and evidence.
+The current unpublished local candidate identity is v0.11.0/schema v17/Viewer
+snapshot v4 with source compatibility v5-v17 and 21 public command leaves; it
+claims no tag, remote commit, or published Release.
 
 This file owns current decisions, explicit open issues, and user-decision
 gates. It is not the product contract, execution ledger, or evidence store:
@@ -155,11 +158,12 @@ gates. It is not the product contract, execution ledger, or evidence store:
   or product-acceptance gates.
 - TG-M21 Verification Receipts, a small Skill-only verification-
   proportionality guardrail, and bounded user-approved Task decomposition are
-  three separate decisions. None is bundled into another. TG-M21.1 completed
-  its inactive design; the M21 implementation sequence is now separately
-  approved and registered. The bounded decomposition successor is separately
-  approved and accepted as TG-M20S.3 inactive design authority, not current
-  product behavior.
+  three separate decisions. None is bundled into another. TG-M21.1 froze the
+  Receipt design and the atomic TG-M21.2 boundary activates it as current
+  post-publication product behavior; TG-M21.3 is its exact-target acceptance
+  unit. The bounded decomposition successor is separately approved and
+  accepted as TG-M20S.3 inactive design authority, not current product
+  behavior.
 - One contaminated incident, an unreconstructable historical absence, timing
   or size alone, and the context-rich parent conversation cannot establish
   causation or justify a positive decision.
@@ -250,13 +254,14 @@ parent/child model, background LLM work, network use, target-project mutation,
 or implementation Task. In-scope discovery and cross-module failure remain
 outside until separately supported. The exact Task DB record owns live state.
 
-### TG-M21.1 Approved Inactive Design Decisions
+### TG-M21 Current Verification Receipt Decision
 
-TG-M21.1 is design authority only. The current product remains schema v16 with
-20 command leaves, Boolean completion attestation, no Verification Receipt
-write, and the existing Skill call order until a later implementation and
-synchronization gate completes. This Verification Receipt design is therefore
-an inactive acceptance boundary, not current behavior.
+The current unpublished v0.11.0 candidate contract is schema v17 with 21 command
+leaves, the bounded caller-attested Verification Receipt write/readiness gate,
+versioned completion-cycle Receipt linkage, Viewer snapshot-v4 source
+compatibility through v17, and the synchronized Skill call order. This current
+contract neither rewrites the immutable v0.10.0 publication nor authorizes
+publishing, tagging, or pushing the candidate.
 
 The smallest selected contract is:
 
@@ -295,7 +300,7 @@ The smallest selected contract is:
   corrupt post-activation absence without expanding public completion history;
   existing attestations, events, and M20 observations receive no synthesized
   Receipt or strengthened history;
-- one future bounded `verification receipt add` write and one additive bounded
+- one bounded `verification receipt add` write and one additive bounded
   `task show.verification_evidence` projection are sufficient. There is no
   list/import/export surface and no initial Viewer Receipt projection; Viewer
   work is limited to accepting the new source schema while keeping its
@@ -310,10 +315,10 @@ structured required-label set, command orchestration, result-file import,
 Viewer receipt detail, authentication/signatures, the separate Skill
 proportionality guardrail, and Task decomposition.
 
-The implementation sequence is approved and registered but remains inactive
-until the authority-layout predecessors complete:
+The retained static sequence has one atomic activation boundary and one
+exact-target acceptance boundary; the Task database owns live state:
 
-1. **TG-M21.2 atomic vertical activation:** add schema v17 and its immutable
+1. **TG-M21.2 atomic vertical activation:** own schema v17 and its immutable
    Receipt storage, repository/gate services, Viewer source compatibility, the
    one write leaf, bounded Task-show projection, completion/check gate,
    expectation invalidation, versioned completion-cycle Receipt linkage,

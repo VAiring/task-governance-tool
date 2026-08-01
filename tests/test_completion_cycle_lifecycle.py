@@ -27,6 +27,7 @@ from task_governance_tool import tasks as task_service  # noqa: E402
 from task_governance_tool.completion import CompletionRequest  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
     apply_completion_cycle_capture_activation_migration,
+    apply_verification_receipts_migration,
     connect,
     resolve_database_target,
 )
@@ -245,8 +246,6 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             combined_args[-1:-1] = [
                 "--title",
                 "Combined final title",
-                "--verification",
-                "focused lifecycle verification",
                 "--review-tier",
                 "2",
                 "--review-tier-change-reason",
@@ -271,10 +270,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                 edit_payload["data"]["task"]["title"],
                 "Combined final title",
             )
-            self.assertEqual(
-                edit_payload["data"]["task"]["verification"],
-                "focused lifecycle verification",
-            )
+            self.assertEqual(edit_payload["data"]["task"]["verification"], "")
 
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
@@ -321,7 +317,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             )
             self.assertEqual(
                 cycles[combined["task_id"]]["verification_expectation"],
-                "specified",
+                "unspecified",
             )
             self.assertEqual(links[thin["task_id"]]["event_type"], "task_updated")
             self.assertEqual(
@@ -945,6 +941,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
 
             with closing(connect(db)) as connection:
                 apply_completion_cycle_capture_activation_migration(connection)
+                apply_verification_receipts_migration(connection)
 
             completed_at = {
                 successful["task_id"]: "2026-07-30T09:40:00Z",

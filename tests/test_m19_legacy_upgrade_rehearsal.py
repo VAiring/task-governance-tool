@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CURRENT_SKILL_ROOT = ROOT / "task-governance-tool"
 LEGACY_COMMIT = "f017ee228d435d892fb7136c5e79b3063320fac5"
 LEGACY_COMPLETION = "a" * 40
+POST_UPGRADE_VERIFICATION = "Run post-upgrade integrated acceptance"
+POST_UPGRADE_FINGERPRINT = "sha256:" + "b" * 64
 LEGACY_SETUP_WRITES = [
     "legacy_state_publish",
     "migration_backup",
@@ -489,7 +491,10 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                     SELECT task_id, saved_cycle_ordinal, origin, completeness,
                            completion_evidence_kind,
                            completion_evidence_revision,
-                           completion_commit_hash
+                           completion_commit_hash,
+                           verification_basis_version,
+                           verification_expectation_digest,
+                           verification_receipt_id
                       FROM task_completion_cycles WHERE task_id = ?
                     """,
                     (task_id,),
@@ -504,7 +509,16 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                         "legacy_unverified",
                         LEGACY_COMPLETION,
                         LEGACY_COMPLETION,
+                        0,
+                        None,
+                        None,
                     ),
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM verification_receipts"
+                    ).fetchone()[0],
+                    0,
                 )
 
             backups = sorted(
@@ -539,6 +553,149 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             )
             self.assertEqual(shown["data"]["task"]["task_id"], task_id)
             self.assertEqual(shown["data"]["task"]["status"], "done")
+
+            fresh = self.invoke(
+                legacy_skill, project, "task", "add",
+                "--repo", str(project),
+                "--title", "Post-upgrade Receipt completion",
+                "--status", "in_progress",
+                "--review-tier", "2",
+                "--verification", POST_UPGRADE_VERIFICATION,
+                "--json",
+            )
+            fresh_task_id = fresh["data"]["task"]["task_id"]
+            target = self.invoke(
+                legacy_skill, project, "review", "target", "set",
+                fresh_task_id, "--repo", str(project),
+                "--kind", "diff_fingerprint",
+                "--revision", POST_UPGRADE_FINGERPRINT,
+                "--json",
+            )
+            generation = target["data"]["task"]["review_target_generation"]
+            receipt = self.invoke(
+                legacy_skill, project, "verification", "receipt", "add",
+                fresh_task_id, "--repo", str(project),
+                "--command-label", "Post-upgrade integrated acceptance",
+                "--result", "pass",
+                "--duration-ms", "1",
+                "--scope-coverage", "full",
+                "--expected-target-generation", str(generation),
+                "--json",
+            )
+            receipt_id = receipt["data"]["receipt"]["verification_receipt_id"]
+            packet = self.invoke(
+                legacy_skill, project, "review", "prepare",
+                fresh_task_id, "--repo", str(project),
+                "--read-only", "--json",
+            )
+            self.assertEqual(
+                packet["data"]["review_target"],
+                {
+                    "kind": "diff_fingerprint",
+                    "value": POST_UPGRADE_FINGERPRINT,
+                    "base_revision": "",
+                    "generation": generation,
+                },
+            )
+            for reviewer in ("post-upgrade-review-a", "post-upgrade-review-b"):
+                self.invoke(
+                    legacy_skill, project, "review", "receipt", "add",
+                    fresh_task_id, "--repo", str(project),
+                    "--reviewer", reviewer,
+                    "--kind", "independent",
+                    "--verdict", "pass",
+                    "--summary", "Post-upgrade review passed",
+                    "--json",
+                )
+            fresh_completed = self.invoke(
+                legacy_skill, project, "task", "complete",
+                fresh_task_id, "--repo", str(project),
+                "--verification-complete",
+                "--review-complete",
+                "--commit-not-required",
+                "--json",
+            )
+            self.assertEqual(
+                fresh_completed["data"]["task"]["status"],
+                "done",
+            )
+            fresh_shown = self.invoke(
+                legacy_skill, project, "task", "show", fresh_task_id,
+                "--repo", str(project), "--read-only", "--json",
+            )
+            self.assertEqual(fresh_shown["data"]["task"]["status"], "done")
+            self.assertEqual(
+                fresh_shown["data"]["verification_evidence"]["gate"]
+                ["qualifying_receipt_id"],
+                receipt_id,
+            )
+            self.assertNotIn(
+                "verification_receipt_id",
+                json.dumps(
+                    fresh_shown["data"]["completion_history"],
+                    sort_keys=True,
+                ),
+            )
+
+            expected_digest = hashlib.sha256(
+                b"taskgov-verification-expectation-v1\0"
+                + POST_UPGRADE_VERIFICATION.encode("utf-8")
+            ).hexdigest()
+            with closing(sqlite3.connect(current_db)) as connection:
+                connection.row_factory = sqlite3.Row
+                fresh_cycle = connection.execute(
+                    """
+                    SELECT origin, completeness, verification_basis_version,
+                           verification_expectation_digest,
+                           verification_receipt_id
+                      FROM task_completion_cycles WHERE task_id = ?
+                    """,
+                    (fresh_task_id,),
+                ).fetchone()
+                self.assertEqual(
+                    tuple(fresh_cycle),
+                    (
+                        "native_done",
+                        "complete",
+                        1,
+                        expected_digest,
+                        receipt_id,
+                    ),
+                )
+                self.assertEqual(
+                    tuple(
+                        connection.execute(
+                            """
+                            SELECT verification_basis_version,
+                                   verification_expectation_digest,
+                                   verification_receipt_id
+                              FROM task_completion_cycles WHERE task_id = ?
+                            """,
+                            (task_id,),
+                        ).fetchone()
+                    ),
+                    (0, None, None),
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM verification_receipts"
+                    ).fetchone()[0],
+                    1,
+                )
+
+            final_doctor = self.invoke(
+                legacy_skill, project, "doctor", "--repo", str(project),
+                "--read-only", "--json",
+            )
+            self.assertEqual(
+                final_doctor["data"]["components"]["project_state"]["code"],
+                "ready",
+            )
+            self.assertEqual(
+                final_doctor["data"]["components"]["maintenance"]["viewer"]
+                ["code"],
+                "current",
+            )
 
             # Never invoke the legacy runtime until its matching package and
             # schema-v2 state have both been restored.

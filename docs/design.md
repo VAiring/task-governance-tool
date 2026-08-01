@@ -7,7 +7,9 @@ remote `main`, and lightweight tag `v0.10.0` are
 prerelease visibility. TG-M19.0 through TG-M19.10, including TG-M19.6A and
 TG-M19.6B, are complete. This post-release revision is the consolidated active
 implementation authority. TG-M16.4 behavioral acceptance remains part of the
-published baseline.
+published baseline. TG-M20.1 through TG-M20.5 are complete. TG-M21.1 is an
+active design-only unit; its inactive design below does not alter current
+runtime or package behavior.
 
 This document is the current implementation design for the behavior specified
 in `docs/specification.md`. Historical design captures under `docs/history/`
@@ -906,6 +908,243 @@ The only new stable error is
 `completion_history_inconsistent: stored completion history is inconsistent`.
 It exposes no IDs, counts, values, hashes, SQL, or paths.
 
+## Approved But Inactive TG-M21 Verification Receipt Design
+
+This design is an acceptance target for later separately approved units. It is
+not wired into schema v16, the 20-leaf parser, completion, Viewer, or Skill.
+Current code and package guidance remain authoritative until the atomic M21
+activation gate completes.
+
+### Ownership And Data Model
+
+A future `verification_receipts.py` module owns Receipt input validation,
+exact-current classification, gate evaluation, and the bounded public read
+model. `storage.py` alone owns schema, migration, append/read queries, and
+Receipt uniqueness. `tasks.py` and `completion_workflow.py` consume the gate
+result; neither opens raw SQLite or interprets verification prose.
+`cli.py` owns only parser/dispatch/formatting for the one proposed write leaf.
+
+Schema v17 adds an immutable `verification_receipts` table with:
+
+```text
+verification_receipt_id project_id task_id contract_revision
+verification_expectation_digest command_label result duration_ms
+scope_coverage target_kind target_value target_base_revision
+target_generation created_at
+```
+
+IDs use the `tg_verification_receipt_<16-lowercase-hex>` grammar. Result is
+`pass|fail|timeout`; coverage is `full|partial`; duration is a nonnegative
+signed-64-bit millisecond integer. The label is nonempty, privacy-validated,
+and at most 200 characters. Target fields reuse the existing four-way matrix.
+Composite indexes support project/Task/current Contract/expectation/target
+gate reads without one query per Receipt. Update/delete triggers preserve the
+append-only boundary. A unique project/Task/target-generation key permits one
+aggregate Receipt and makes retry require an explicit fresh target.
+
+The same migration adds three internal fields to `task_completion_cycles`:
+
+```text
+verification_basis_version verification_expectation_digest
+verification_receipt_id
+```
+
+Existing rows receive version 0 with null digest and null Receipt link. New
+native cycle insertion is constrained to version 1 and stores the same domain-
+separated digest of its exact Task verification text, including empty text.
+Version 1 requires a linked Receipt for a nonempty stored verification
+expectation and requires a null link for an empty expectation. The Receipt ID
+is a nullable foreign key; repository and projection validation additionally
+prove identical ownership, Contract, stored digest, target tuple, and
+`pass/full` qualification. Existing cycle immutability covers all three
+fields. A migration-owned insert guard permits version 0/null/null only for the
+existing sole `legacy_current_done` partial reopen bridge when a legacy-
+unknown done Task has no cycle; every normal native insert requires version 1.
+None of the internal fields is added to the public completion-history
+projection.
+
+The expectation digest is:
+
+```text
+sha256("taskgov-verification-expectation-v1\0" + exact stored UTF-8 verification)
+```
+
+It binds eligibility without storing another copy of verification prose. The
+public projection never emits the digest. The complete target tuple is copied
+from the locked Task; no caller target field exists. `created_at` and ID are
+allocated under the writer. Structural validation reuses the existing target,
+timestamp, privacy, signed-integer, and ownership validators.
+
+The activated Skill sequence is exact material, existing target set with its
+returned generation retained, external verification, Receipt add with that
+expected generation, review prepare/record, then completion. This moves target
+setting before verification and adds exactly one normal-path call, making the
+inactive target bound 10 or 11 with Effort Advisory. No current Skill
+instruction changes before the atomic activation unit.
+
+### Receipt Write And Freshness
+
+The write service first validates the four Receipt facts plus positive
+`expected_target_generation` without opening a
+writer, then starts one short immediate transaction and rereads schema,
+identity/binding, Task, Contract pointer, exact verification text, and target
+tuple. It permits only in-progress or review-pending Tasks with specified
+verification and a current target. Expected generation must equal the locked
+target generation; drift returns `verification_basis_stale` without storage.
+It computes the digest, appends the row without changing the Task or adding an
+event, commits, and only then invokes backup-eligible, Viewer-ineligible post-
+commit maintenance.
+
+The caller's add invocation attests that the external run exercised the copied
+target; taskgov does not prove that claim. The caller supplies no command body,
+source revision, Contract revision, timestamp, ID, exit code, output,
+exception, or arbitrary result document. A failed or timeout row records
+evidence only and performs no Task/status/Contract/target/review/completion/
+Handoff mutation. A second call in the same generation returns
+`verification_receipt_already_recorded`; the caller can inspect `task show`,
+then explicitly set a fresh target before another run.
+
+Parser and common state errors retain their existing owners. The Receipt
+service owns one ordered validator matching the specification: normalized
+caller fields, Task existence, done/disallowed status, nonempty expectation,
+stored target structure/presence, expected generation, then uniqueness. It is
+used before and after the writer lock so a concurrent status, Contract,
+expectation, or target change cannot select a different semantic ordering or
+bind the row to new material. CLI formatting owns the exact three-line success
+text and adds no synthetic Task event.
+
+One shared evaluator classifies a row as exact-current only when project,
+Task, Contract revision, expectation digest, and every target field equal the
+coherent current basis. The gate computes, in order:
+
+```text
+specified expectation + no exact-current Receipt
+  => verification_receipt_required
+specified expectation + Receipt other than pass/full
+  => verification_receipt_blocking
+specified expectation + pass/full
+  => satisfied
+unspecified expectation
+  => receipt gate not required; existing attestation remains required
+```
+
+Old-target, old-Contract, and old-expectation rows remain visible only in the
+bounded recent audit list and never affect that result. Any current non-
+qualifying Receipt is retired by an explicit fresh target generation, not by
+row update or delete.
+
+A semantic edit of `tasks.verification` with a started target uses the existing
+Contract-invalidation shape in the same Task transaction: clear typed
+completion evidence and target kind/value/base, increment generation with
+overflow protection, move review-pending to in-progress, update the Task, and
+append the normal bounded event. Receipts and review rows remain immutable and
+become historical. A same-content edit is a no-op under existing edit rules.
+
+### Completion And Read Integration
+
+The completion basis snapshot adds the current verification gate summary and
+Receipt ID. Outside-Git preflight and locked revalidation both run the same
+evaluator. Ordered validation keeps the explicit `verification_required` flag
+check and target validation first, then reports the missing or blocking
+Receipt, then evaluates current review findings/receipts. `task complete
+--check` adds the two Receipt codes to its bounded allow-list; check never
+writes or reserves a Receipt.
+
+For specified verification, native completion proves that the unique current
+Receipt is `pass/full`, then inserts a version-1 cycle with its Receipt foreign
+key and identical expectation digest, the Task update, and linked completion
+event in one transaction. A native completion with empty verification inserts
+version 1 with the empty-text digest and a null Receipt link. Any ownership,
+target, digest, link, or gate drift rolls everything back. Existing
+`verification_attestation=true` remains in the cycle, so the Receipt
+strengthens rather than silently replaces the current explicit assertion.
+Version-0/null/null marks only migrated cycles and the sole exact compatibility
+bridge; a version-1 nonempty cycle with no valid linked Receipt is
+`completion_history_inconsistent`, never an inferred legacy success.
+
+The one future command is `verification receipt add`. Its success data is
+exactly `receipt`. `task show` obtains Receipt totals, exact-current
+counts, gate, and newest 10 rows in the same query-only transaction as the
+Task and adds the fixed `verification_evidence` object. The formatter exposes
+only the specification's public allow-lists; no separate list/show/import/
+export command or pagination is added.
+
+The read model emits the exact types and nulls fixed by the specification.
+Empty expectation is not required and is satisfied. A nonempty active Task
+reports target-required, Receipt-required, Receipt-blocking, or satisfied in
+that order. A done Task backed by a matching version-0 cycle reports the
+explicit legacy exemption even when its target is absent, including the sole
+bridge-created cycle. A version-1 done cycle is validated against its linked
+Receipt before projection. Task-show failure data includes a null
+`verification_evidence`; text Task show remains unchanged. The Receipt write
+alone has the fixed three-line text projection.
+
+The initial completion-history JSON remains unchanged. The current done Task
+retains its target and Receipt, so `task show.verification_evidence` exposes
+the current qualifying basis; the cycle target tuple also identifies it.
+Reopen advances the target and makes it historical. A later history projection
+would require separate evidence and approval rather than silently changing
+Viewer snapshot v4.
+
+### Schema, Viewer, Packaging, And Tests
+
+Migration `verification_receipts` creates the Receipt table, indexes, triggers,
+the three completion-cycle basis columns and insert/link guards, and the schema-
+history row. Existing cycles receive only version 0/null-digest/null-link as a
+structural legacy discriminator. It never parses verification text or events
+to infer runs or create Receipt evidence. Reentry validates the exact objects,
+columns, constraints, immutable triggers, ownership/link relations, and
+absence of invented Receipt rows. Old binaries reject v17 normally; setup
+remains the sole migrator. The established reopen bridge remains the only
+post-migration writer of the exact version-0/null/null legacy shape.
+
+Viewer source compatibility expands from v5-v16 to v5-v17 in the atomic
+activation unit, but snapshot v4 fields and UI remain unchanged. Receipt
+writes are Viewer-ineligible. The existing bounded batch completion-history
+loader performs one internal join for selected version-1 cycle Receipt links,
+validates only ownership/digest/target/qualification, and discards every
+Receipt field before snapshot formatting. There is no Receipt dataset,
+snapshot field, panel, filter, or detail, and no per-Task Receipt query. This
+compatibility update must land with the schema bump so explicit setup and later
+unrelated Viewer maintenance cannot fail merely because the canonical state
+migrated.
+
+Focused tests reuse one matrix owner for result/coverage/current-binding gate
+cases and existing migration/completion/Task-show helpers. They cover all
+source schemas v1-v17, rollback/reentry, no legacy synthesis, exact target and
+Contract invalidation, semantic verification edit, failure-generation reset,
+unique per-generation ownership, version-0 legacy exemption, version-1
+Receipt-link enforcement, the sole post-v17 legacy bridge, cycle-target
+reconstruction, concurrent target/edit drift and expected-generation
+rejection, read-only no-write,
+privacy rejection, byte/count bounds, backup-only maintenance, Viewer v17
+compatibility including valid/corrupt link batch validation, parser/help/
+output, and unchanged unrelated projections. Test
+facts and command inventories must remain derived from their existing owners
+rather than copied into CI or multiple test modules.
+
+### Candidate Implementation Units
+
+These units are a proposed dependency chain, not registered execution
+authority:
+
+1. **TG-M21.2 atomic vertical activation** adds schema v17, immutable storage,
+   repository/evaluator services, Viewer source compatibility, the write leaf,
+   bounded Task-show projection, verification-edit invalidation,
+   completion/check gate and versioned cycle/Receipt basis validation,
+   backup-only maintenance integration, and synchronized concise Skill/
+   reference/formal contracts in one exact reviewed unit. `SCHEMA_VERSION=17`
+   and setup
+   migration activation must not land independently from those behaviors.
+2. **TG-M21.3 integrated acceptance** runs the full migration/privacy/
+   concurrency/package/release checks and fresh realistic pass, failure,
+   timeout, stale-evidence, and resume/complete scenarios before closing M21.
+
+Each unit is Tier 2. The user must approve the chain before Task registration.
+No partial unit activates the separate proportionality guardrail, project test
+strategy, command runner, approved exception, Viewer Receipt UI, or Task
+decomposition.
+
 ## Task Contracts, Checkpoints, Handoffs, And Effort
 
 ### Immutable Task Contract Revisions
@@ -1682,14 +1921,14 @@ loosening a deterministic bound or adding asynchronous architecture.
 
 ## Deferred Boundaries
 
-Deferred work includes profile authoring, verification-run recording,
+Deferred work includes profile authoring, active verification-run recording,
 external Issue delivery, dependency graphs, task import, pagination/search,
 stale detection, parent/child/checklist execution units, manual backup/restore/
 export, generic browser-state persistence, live server, browser launch,
 network synchronization, and update checking.
 
-Any extension must preserve local-first operation, current privacy and
-target-project safety, explicit authority for mutation, narrow repository
-boundaries, and concise Skill guidance. It requires synchronized
-specification, design, roadmap, tests, and review rather than reuse of a
-historical design capture.
+Any extension, including the inactive M21 design, must preserve local-first
+operation, current privacy and target-project safety, explicit authority for
+mutation, narrow repository boundaries, and concise Skill guidance. It
+requires synchronized specification, design, roadmap, tests, and review rather
+than reuse of a historical design capture.

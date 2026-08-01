@@ -10,8 +10,10 @@ TG-M20.1 through TG-M20.5. TG-M20.1 is complete at
 `a77afbe0140fef416cceeee529e9ff2c985a8e4d`, TG-M20.2 is complete at
 `e49e5aca68a7bf1c9829afb50d2c6a38835a4f03`, TG-M20.3 is complete at
 `800ed153dc9671f011ea4715f50d92ea464bc12b`, TG-M20.4 is complete at
-`ed15a85b6d1c328a9d1ac9b6a1448b50c1389481`, and TG-M20.5 is the active
-source-revision unit.
+`ed15a85b6d1c328a9d1ac9b6a1448b50c1389481`, and TG-M20.5 is complete at
+`e5167e2d9d54493900b9d88672f1e53304cfa5b1`. The separately approved
+design-only TG-M21.1 unit is active. No TG-M21 implementation unit is yet
+approved or registered.
 
 This active roadmap owns approved execution order, verification gates, review
 tiers, and the concise completion index. The project-local Task database owns
@@ -89,6 +91,7 @@ commit-not-required fingerprint is shown instead of inventing a Git commit.
 | TG-M20.2 | `tg_task_2885725486bec173` | `e49e5aca68a7bf1c9829afb50d2c6a38835a4f03` | Offline repository-only observation harness and sanitized retrospective baseline. |
 | TG-M20.3 | `tg_task_8efb270f74360308` | `800ed153dc9671f011ea4715f50d92ea464bc12b` | Fresh-agent verification-proportionality baseline and terminal no-rerun receipt. |
 | TG-M20.4 | `tg_task_787f976a5e9daa7e` | `ed15a85b6d1c328a9d1ac9b6a1448b50c1389481` | Fresh-agent Task-boundary/split-pressure baseline and terminal no-rerun receipt. |
+| TG-M20.5 | `tg_task_f6c19be1c10ad3ab` | `e5167e2d9d54493900b9d88672f1e53304cfa5b1` | Reviewed synthesis, separate follow-up decisions, and no-rerun study retirement. |
 
 Every M19 Task in the completion index above has a satisfied final Tier 2 gate
 and no unresolved High or Medium finding in any recorded generation. Some
@@ -179,7 +182,7 @@ Verification:
 - Run the exact current documentation, package, privacy, concurrency, offline
   suite, diff, and two-current-target Tier 2 review gates.
 
-## Approved Operational Baseline Sequence
+## Completed Operational Baseline Sequence
 
 These five units are one sequential lane in lane-order sequence. The
 project-local Task database remains the live operational record. The detailed
@@ -358,7 +361,8 @@ Task: `tg_task_f6c19be1c10ad3ab`
 Lane/order: `TG-M20-OPERATIONAL-BASELINE` / 50
 Review tier: Tier 2
 Depends on: completed TG-M20.4
-Source-revision state: active
+Source-revision state: complete at
+`e5167e2d9d54493900b9d88672f1e53304cfa5b1`
 
 Intended outcome:
 
@@ -404,6 +408,67 @@ Verification:
   study scaffolding named above, and mark the retained terminal receipts with
   the corpus retirement state after reviewed decisions have been routed.
 
+## Approved TG-M21 Design Unit
+
+Only the following design unit is approved. It may choose and document the
+smallest evidence-backed contract, but it may not implement or activate a
+schema, command, completion gate, Viewer projection, or Skill instruction.
+Candidate implementation units produced by this design require a later
+explicit user approval before Task registration or consumption.
+
+### TG-M21.1 Verification Receipt Design Contract
+
+Task: `tg_task_cf03643f368c2c1a`
+Lane/order: `TG-M21-VERIFICATION-RECEIPTS` / 10
+Review tier: Tier 2
+Depends on: completed TG-M20.5
+Source-revision state: active
+
+Intended outcome:
+
+- Define one minimal append-only, caller-attested Verification Receipt around
+  the five supported M20 fact classes: `command_label`, `result`,
+  `source_revision`, `duration`, and `scope_coverage`.
+- Bind current eligibility to the current Task Contract, verification
+  expectation, and exact existing review-target tuple without creating a
+  second target authority.
+- Distinguish migrated attestation-only completion lineage from
+  post-activation Receipt-backed completion with the smallest internal cycle
+  discriminator and link; do not infer lineage from row absence.
+- Decide the smallest honest completion-gate strengthening, privacy boundary,
+  migration and legacy behavior, read surface, non-goals, and separately
+  approvable implementation sequence.
+
+Write scope:
+
+- active specification, design, roadmap, plan, and directly coupled
+  documentation-consistency tests;
+- M20.5 completion-index closure and the inactive M21 acceptance design;
+- no runtime, SQLite schema, public CLI, Skill, Viewer, package, release,
+  network, Git, or target-project behavior change.
+
+Mandatory constraints:
+
+- Taskgov does not execute verification commands, retain command bodies or
+  output, authenticate the caller, choose project tests, or infer semantic
+  coverage.
+- Retain the explicit completion attestation during the initial design; a
+  Receipt supplements it with current structured evidence and never weakens
+  review, completion evidence, or target matching.
+- Keep the proportional-verification guardrail and Task-decomposition
+  candidates separate. Their M20 result remains `observe_more`.
+- Historical completions, M20 evidence, events, and prior attestations are
+  never converted into current Receipts.
+
+Verification:
+
+- Check active-document consistency, M20 decision traceability, exact current
+  20-leaf public CLI and schema-v16 behavior, package/runtime/Skill/Viewer
+  non-change, exact future CLI/read/legacy/cycle-basis semantics, focused
+  document and release-contract checks, and exact diff.
+- Obtain two independent exact-target Tier 2 reviews with no unresolved High
+  or Medium finding.
+
 ## Roadmap Completion Criteria
 
 The approved M20 sequence is complete only when TG-M20.1 through TG-M20.5 each
@@ -415,3 +480,9 @@ A positive M20.5 result authorizes only the smallest separately approved design
 proposal named by the frozen decision rules. It does not activate or register
 an implementation Task. TG-M12.3 remains blocked until all of its separate
 authority prerequisites exist; it is not implied by completion of M20.
+
+TG-M21.1 is complete only when its inactive design is coherent across the
+active governing documents, its candidate implementation sequence remains
+unregistered, exact current product surfaces are unchanged, verification
+passes, and two exact-target Tier 2 reviews have no blocking finding. Its
+completion does not itself authorize TG-M21 implementation.

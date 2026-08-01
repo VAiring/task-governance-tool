@@ -11,7 +11,9 @@ complete at `a77afbe0140fef416cceeee529e9ff2c985a8e4d`, TG-M20.2 is
 complete at `e49e5aca68a7bf1c9829afb50d2c6a38835a4f03`, TG-M20.3 is
 complete at `800ed153dc9671f011ea4715f50d92ea464bc12b`, TG-M20.4 is
 complete at `ed15a85b6d1c328a9d1ac9b6a1448b50c1389481`, and TG-M20.5 is
-active. TG-M12.3 remains separately blocked.
+complete at `e5167e2d9d54493900b9d88672f1e53304cfa5b1`. The approved
+design-only TG-M21.1 unit is active; no M21 implementation unit is approved or
+registered. TG-M12.3 remains separately blocked.
 
 This file owns current decisions, explicit open issues, and user-decision
 gates. It is not the product contract, execution ledger, or evidence store:
@@ -157,8 +159,9 @@ gates. It is not the product contract, execution ledger, or evidence store:
   or product-acceptance gates.
 - TG-M21 Verification Receipts, a small Skill-only verification-
   proportionality guardrail, and bounded user-approved Task decomposition are
-  three separate decisions. None is bundled into another, and no follow-up
-  implementation Task is registered without current explicit user approval.
+  three separate decisions. None is bundled into another. Current explicit
+  approval registered only the design-only TG-M21.1 Task; no follow-up
+  implementation Task is registered.
 - One contaminated incident, an unreconstructable historical absence, timing
   or size alone, and the context-rich parent conversation cannot establish
   causation or justify a positive decision.
@@ -209,26 +212,105 @@ Timing, size, line, and test-count values remain supporting context only, and
 the context-rich parent conversation and earlier incident remain excluded
 samples. A positive decision never authorizes behavior activation.
 
-## Current Blocker And User Decision
+### TG-M21.1 Approved Inactive Design Decisions
+
+TG-M21.1 is design authority only. The current product remains schema v16 with
+20 command leaves, Boolean completion attestation, no Verification Receipt
+write, and the existing Skill call order until a later implementation and
+synchronization gate completes. This Verification Receipt design is therefore
+an inactive acceptance boundary, not current behavior.
+
+The smallest selected contract is:
+
+- at most one append-only caller-attested aggregate Receipt per exact target
+  generation; a failed, timed-out, or partial result requires a fresh target
+  generation before another attempt;
+- exactly five material fact classes: `command_label`, `result`,
+  `source_revision`, `duration`, and `scope_coverage`; stable ownership IDs,
+  current Contract revision, a verification-expectation digest, and recording
+  time are structural binding metadata rather than extra observed facts;
+- `source_revision` is the exact existing review-target kind, value, base, and
+  generation copied by taskgov, never a second free-form target;
+- Receipt add requires the target-set result's generation as an explicit
+  optimistic concurrency guard, so a target, Contract, or verification change
+  between the external run and recording fails stale instead of rebinding the
+  result to untested material;
+- `result` is the closed `pass`, `fail`, or `timeout` value;
+- `scope_coverage` is the closed `full` or `partial` caller attestation, where
+  `full` refers only to the complete current Task `verification` text and does
+  not let taskgov choose or judge project tests;
+- the existing `--verification-complete` remains required. For a nonempty
+  verification expectation, completion additionally requires the unique
+  exact-current Receipt to be `pass/full`. Any other current result is retired
+  only by a fresh target generation, including an explicitly repeated
+  identical target;
+- changing the verification expectation after a target exists invalidates the
+  target generation just as a Contract revision does, so both verification
+  and review evidence must be fresh;
+- schema v17 gives completion cycles an internal basis version, expectation
+  digest, and nullable Receipt link: migrated cycles are version 0/null/null,
+  while every new native cycle is version 1 with the exact expectation digest
+  and links the qualifying Receipt whenever its verification expectation is
+  nonempty. The sole existing unknown-coverage done/no-cycle reopen bridge may
+  still create its exact partial legacy version-0/null/null cycle. This
+  distinguishes honest legacy absence from
+  corrupt post-activation absence without expanding public completion history;
+  existing attestations, events, and M20 observations receive no synthesized
+  Receipt or strengthened history;
+- one future bounded `verification receipt add` write and one additive bounded
+  `task show.verification_evidence` projection are sufficient. There is no
+  list/import/export surface and no initial Viewer Receipt projection; Viewer
+  work is limited to accepting the new source schema while keeping its
+  existing snapshot content;
+- taskgov does not execute commands, store a command body, exit code, stream,
+  log, environment, exception, prompt, diff, credential, or arbitrary coverage
+  prose, and does not prove result truth, provenance, coverage quality, or test
+  proportionality.
+
+This initial design intentionally omits an approved-exception Receipt,
+structured required-label set, command orchestration, result-file import,
+Viewer receipt detail, authentication/signatures, the separate Skill
+proportionality guardrail, and Task decomposition.
+
+The candidate implementation sequence is not yet execution authority:
+
+1. **TG-M21.2 atomic vertical activation:** add schema v17 and its immutable
+   Receipt storage, repository/gate services, Viewer source compatibility, the
+   one write leaf, bounded Task-show projection, completion/check gate,
+   expectation invalidation, versioned completion-cycle Receipt linkage,
+   backup-only maintenance behavior, and synchronized concise Skill/reference
+   guidance in one exact reviewed activation. Schema v17 must not become
+   reachable before all of those behaviors are coherent.
+2. **TG-M21.3 integrated acceptance:** exercise legacy migration, current and
+   stale target/Contract/expectation cases, pass/fail/timeout recovery, privacy,
+   no-write reads, completion history, Viewer compatibility, bounded call
+   counts, package/release consistency, and realistic forward tests before
+   declaring M21 complete.
+
+The user must separately approve this implementation sequence before any of
+these Tasks is registered or consumed.
+
+## Current Work, Blocker, And User Decision
 
 | Unit | Task | Current gate |
 |---|---|---|
+| TG-M21.1 | `tg_task_cf03643f368c2c1a` | Active design-only unit; implementation remains unapproved. |
 | TG-M12.3 | `tg_task_1f7503aca5e32cdc` | Blocked until a separately approved versioned Issue Skill intake contract, governing permission update, and explicit integration approval exist. |
 
-The approved TG-M20.1-TG-M20.5 sequence requires no additional product-scope
-decision within its recorded boundaries. A positive M20.5 result still needs
-explicit user approval before a follow-up design or implementation Task is
-registered. A materially different write, external operation, scope expansion,
-or changed acceptance also requires explicit authority.
+The approved TG-M20.1-TG-M20.5 sequence is complete. The user approved and
+registered TG-M21.1 only; completion of that design still needs a separate
+decision before any implementation Task is registered. A materially different
+write, external operation, scope expansion, or changed acceptance also
+requires explicit authority.
 
 ## Open Issues And Deferred Candidates
 
 These items are not implementation authority. Each needs a separately approved
 contract and execution unit.
 
-- Design the smallest TG-M21 Verification Receipt design around the five
-  supported fact classes only after separate user approval; no implementation
-  Task is registered by the M20 decision.
+- After TG-M21.1 passes its design gate, decide whether to approve the proposed
+  TG-M21.2-TG-M21.3 implementation sequence. The design Task itself registers
+  none of those units.
 - Decide whether to approve one or both bounded successor-observation
   inventories recorded above before reconsidering the Skill-only guardrail or
   Task decomposition. The proposed inventories are not executable authority.

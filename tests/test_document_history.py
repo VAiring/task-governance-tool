@@ -14,6 +14,7 @@ CAPTURE_M19_PUBLICATION = "a9b80ce177a6dead10d51a070b76ff01f7af0294"
 CAPTURE_M20_BASELINE = "43c91d5987b0c35c66f834789aea782e98dcaff7"
 M20_RETIREMENT_ANCHOR = "dd662a861f3a224bc17f021e0dc0ed6f20be6bc1"
 M20_HISTORY_SHA256 = "1164c65d0270aeef35311a061064c23cf14c1726ad647568598e0fcb2718405d"
+M20_COMPLETION = "e5167e2d9d54493900b9d88672f1e53304cfa5b1"
 
 
 ARCHIVES = {
@@ -180,6 +181,81 @@ def git_blob_sha1(data: bytes) -> str:
 
 
 class DocumentHistoryTests(unittest.TestCase):
+    def test_m21_design_is_inactive_and_m20_completion_is_indexed(self):
+        specification = (ROOT / "docs" / "specification.md").read_text(
+            encoding="utf-8-sig"
+        )
+        design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8-sig")
+        roadmap = (ROOT / "docs" / "implementation-roadmap.md").read_text(
+            encoding="utf-8-sig"
+        )
+        plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
+
+        self.assertIn(
+            "| TG-M20.5 | `tg_task_f6c19be1c10ad3ab` | "
+            f"`{M20_COMPLETION}` |",
+            roadmap,
+        )
+        self.assertIn("TG-M21.1 Verification Receipt Design Contract", roadmap)
+        self.assertIn("Task: `tg_task_cf03643f368c2c1a`", roadmap)
+        self.assertIn("No TG-M21 implementation unit is yet", roadmap)
+
+        for document in (specification, design):
+            self.assertIn("Approved But Inactive TG-M21 Verification Receipt", document)
+            self.assertIn("schema v16", document)
+            self.assertTrue("20 command" in document or "20-leaf" in document)
+            self.assertIn("verification receipt add", document)
+
+        for marker in (
+            "command_label",
+            "result",
+            "source_revision",
+            "duration",
+            "scope_coverage",
+            "verification_receipt_required",
+            "verification_receipt_blocking",
+            "expected-target-generation",
+            "verification_basis_version",
+            "verification_expectation_digest",
+            "verification_receipt_id",
+            "no per-Task Receipt query",
+            "pass/full",
+            "TG-M21.2 atomic vertical activation",
+            "TG-M21.3 integrated acceptance",
+        ):
+            self.assertIn(marker, specification + design + plan)
+
+        self.assertIn(
+            "The user must separately approve this implementation sequence",
+            plan,
+        )
+        self.assertEqual(
+            re.findall(r"tg_task_[0-9a-f]{16}", plan[plan.index("### TG-M21.1") :]),
+            ["tg_task_cf03643f368c2c1a", "tg_task_1f7503aca5e32cdc"],
+        )
+
+        storage = (
+            ROOT
+            / "task-governance-tool"
+            / "scripts"
+            / "task_governance_tool"
+            / "storage.py"
+        ).read_text(encoding="utf-8")
+        skill = (ROOT / "task-governance-tool" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("SCHEMA_VERSION = 16", storage)
+        self.assertNotIn("verification receipt add", skill)
+        self.assertFalse(
+            (
+                ROOT
+                / "task-governance-tool"
+                / "scripts"
+                / "task_governance_tool"
+                / "verification_receipts.py"
+            ).exists()
+        )
+
     def test_archives_are_fixed_exact_captures_with_non_authority_banners(self):
         version_root = HISTORY_ROOT / "v0.10.0"
         for relative, expected in ARCHIVES.items():

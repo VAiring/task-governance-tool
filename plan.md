@@ -6,8 +6,9 @@ tag `v0.10.0` resolve to that commit, and GitHub Release `362617903` has
 prerelease visibility. The M20 studies selected the accepted but inactive
 TG-M20S.3 decomposition design and the now-current TG-M21 Verification Receipt
 contract. The approved M21 activation/acceptance sequence, the accepted but
-inactive TG-M22 Evidence Ledger design and activation sequence, and the
-revision-zero TG-M12.3 prerequisites are retained below. The Task database,
+inactive TG-M21.4 Verification Subject correction, the accepted but inactive
+TG-M22 Evidence Ledger design and activation sequence, and the revision-zero
+TG-M12.3 prerequisites are retained below. The Task database,
 queried through the public CLI, is the sole owner of live execution status and evidence.
 The current unpublished local candidate identity is v0.11.0/schema v17/Viewer
 snapshot v4 with source compatibility v5-v17 and 21 public command leaves; it
@@ -361,42 +362,42 @@ current gate. Completed execution details, current/ready/blocked/review/done
 state, blocker detail, targets, evidence, and completion commits are queried
 through the public CLI rather than mirrored in Git documents.
 
+### TG-M21.4 Accepted Inactive Verification Subject Correction
+
+TG-M21.4 `tg_task_6ae822dd1a77c095` is a Tier 2 design-only interrupt after accepted TG-M22.1 and before schema-v18 activation.
+Current schema-v17 Receipts, caller-authored `command_label` bytes, linked cycles, CLI, Skill, and Task-show projection remain unchanged.
+Schema v18 instead derives an immutable taskgov-owned subject from each fresh target's nonempty verification criterion.
+New input retains result, duration, coverage, and expected generation but drops label composition; v17 rows remain explicit legacy labels and never enter a native M22 bundle.
+Exact contracts live in the active specification and design.
+
 ### TG-M22 Accepted Inactive Evidence Ledger Decision
 
-TG-M22 freezes a canonical local Evidence Ledger, one immutable bundle per
-future native completion cycle, and a fixed one-way DB-to-JSON projection.
-The exact assurance/producer vocabulary, whole-field criteria, Git-derived
-manifest, bundle, legacy, repair, privacy, and future-producer contracts live
-in the active specification and design; this plan owns only the sequence and
-gates below.
+TG-M22 freezes a canonical local Evidence Ledger, one immutable bundle per future native completion cycle, and a fixed one-way DB-to-JSON projection.
+Exact assurance/producer, criterion, manifest, bundle, legacy, repair, privacy, and future-producer contracts live in the specification/design; this plan owns only sequence and gates.
 
-TG-M22.1 changes no behavior. TG-M22.2 advances the unpublished v0.12.0
-candidate to schema v18 for capture; TG-M22.3 retains v0.12.0 and advances to
-schema v19 for bundles and JSON. Both retain 21 leaves and the normal Skill
-call bound. Earlier cycles remain explicitly `legacy_unknown`; M21 caller and
-review evidence stays `bound_attestation`; later M23/M24 producers cannot
-rewrite or strengthen it. SQLite remains helper state and fixed generated JSON
-is a digest-bound projection, not authority, import, custom export, or a
-published/tagged/remote identity.
+TG-M22.1 changes no behavior. TG-M21.4 corrects its inactive Receipt projection before TG-M22.2 advances v0.12.0 to schema v18 subject/ledger capture; TG-M22.3 retains v0.12.0 at schema v19.
+All retain 21 leaves/call bounds; old rows/cycles remain legacy, caller attestations stay `bound_attestation`, and JSON remains a non-authoritative one-way projection.
 
 ### Approved TG-M22 Sequence
 
-All four units are sequential Tier 2 work in lane
+All six units, including the two M21 additions, are sequential Tier 2 work in lane
 `TG-M22-EVIDENCE-LEDGER`. Live status, targets, evidence, blockers, and
 completion commits remain solely in the Task database.
 
 | Unit/order | Task | Dependency | Purpose, bounded scope, permission, and completion gate |
 |---|---|---|---|
 | TG-M22.1 / 10 | `tg_task_0a3c0d361da10f49` | accepted TG-M21.3 | Freeze the Evidence Ledger, assurance/producer, authority/criterion, artifact, bundle, JSON, legacy, repair, and future-producer design in `plan.md`, `docs/specification.md`, and `docs/design.md` only. Change no runtime, schema, CLI, Skill, Viewer, package, generated artifact, or network behavior. Require active-document consistency, exact diff, current Verification Receipt, and two exact-target Tier 2 reviews. |
-| TG-M22.2 / 20 | `tg_task_88bfe19eb6cffe2e` | accepted TG-M22.1 | Activate schema v18 authority snapshots, whole-field criteria, evidence references, and complete deterministic artifact manifests through existing Task, Contract, verification/review, completion, and target writes, rejecting new evidence on legacy capture-v0 targets until retargeted. Preserve 21 leaves and the normal call graph; add no bundle sealing, Evidence JSON, analyzer, Runner, caller artifact enumeration, raw retained content, or project-decision authority. Synchronize formal docs, concise Skill/reference guidance, Viewer-v4 source compatibility through v18, package metadata, migrations, and focused/full offline tests; require exact diff, a current Verification Receipt, and two Tier 2 reviews. |
-| TG-M22.3 / 30 | `tg_task_ae6f52c4f7b25549` | accepted TG-M22.2 | Activate schema v19 native completion bundles, immutable criterion links and finding snapshots, independent projection generation, fixed Evidence JSON files and index-last publication, setup repair, and bounded post-commit maintenance. Forbid JSON-to-DB import, custom path/output, service/network behavior, report narrative, analyzer, Runner, Viewer evidence UI, raw retained content, a new public leaf, or a new normal-loop LLM call. Synchronize governing/Skill/package/setup/maintenance/Viewer-compatibility contracts and require migration, failure-recovery, full offline, exact-diff, Verification Receipt, and two-review gates. |
-| TG-M22.4 / 40 | `tg_task_0a90b4caf566a8fd` | accepted TG-M22.3 | Accept the exact M22.2/M22.3 target with realistic migration/reentry, Task/Contract/target/verification/review/completion/reopen, Git artifact, bundle immutability, DB/JSON equivalence, stale/corrupt repair, privacy/size/no-write, command-count, separate local consumer, package/release, full offline, and fresh forward scenarios. Permit only bounded corrections within this design; add no M23 analyzer, remote model, M24 Runner, Viewer evidence UI, new command, unrelated refactor, or weakened test. Require exact-target Verification Receipt and two Tier 2 reviews. |
+| TG-M21.4 / 15 | `tg_task_6ae822dd1a77c095` | accepted TG-M22.1 | Freeze the inactive tool-owned verification-subject correction, preserve v17 rows/cycles and behavior, allocate its v18/v19 transition, revise dependent Task Contracts, and require exact diff, current Receipt, and two reviews. |
+| TG-M22.2 / 20 | `tg_task_88bfe19eb6cffe2e` | accepted TG-M21.4 | Activate schema v18 authority snapshots, criteria, verification subjects, evidence references, and deterministic manifests. Preserve v17 Receipt/cycle bytes as subject-basis zero; fresh targets create basis one, Receipt input drops caller labels, and capture-v0 evidence writes fail closed. Preserve 21 leaves/call graph; add no bundle/JSON, analyzer, Runner, caller artifact list, raw content, or decision authority. Synchronize `AGENTS.md` retention, docs, Skill/reference, Viewer/package/migrations, split focused/full tests, self-host retarget/reverification/review, exact-target Receipt, and two reviews. |
+| TG-M21.5 / 25 | `tg_task_e7701fb907020905` | accepted TG-M22.2 | Raise only Task verification capacity from 500 to 1,000 characters at schema v18, preserving exact-byte binding, privacy and output caps, with no migration, backfill, other field limit, subject redesign, leaf, or call; require focused/full tests, exact-target Receipt, and two reviews. |
+| TG-M22.3 / 30 | `tg_task_ae6f52c4f7b25549` | accepted TG-M21.5 | Activate schema v19 native bundles, criterion links/finding snapshots, projection generation, subject-based Evidence JSON and index-last publication, setup repair, and bounded maintenance. Native output contains the tool-owned subject and caller-attested result/coverage but no legacy caller label. Forbid import, custom output, service/network, narrative, analyzer, Runner, Viewer evidence UI, raw content, new leaf, or new LLM call; require synchronized contracts, migration/recovery/full-offline/exact-diff Receipt, and two reviews. |
+| TG-M22.4 / 40 | `tg_task_0a90b4caf566a8fd` | accepted TG-M22.3 | Accept M22.2/M21.5/M22.3 across unchanged v17 rows/cycles, capture-v0 rejection, fresh subject binding, Task/Contract/target/verification/review/completion/reopen, Git artifacts, immutable bundles, DB/JSON equivalence, repair, privacy/size/no-write, command counts, local consumer, package/release, full offline, and forward scenarios. Permit only bounded corrections; add no M23/M24 activation, Viewer evidence UI, command, unrelated refactor, or weakened test. Require exact-target Receipt and two reviews. |
 
-The sequence may advance only in that order. M22.2 and M22.3 each land a
-coherent supported intermediate state; neither may expose a reachable schema
-whose owning behavior, Viewer compatibility, package inventory, and current
-formal contracts are unsynchronized. M22 grants no publish, tag, Release,
-push, external-service, or target-project mutation authority.
+The sequence may advance only in that order. M22.2, M21.5, and M22.3 each land
+a coherent supported intermediate state; none may expose reachable behavior
+whose Viewer compatibility, package inventory, or current formal contracts
+are unsynchronized. M22 grants no publish, tag, Release, push, external-
+service, or target-project mutation authority.
 
 ### TG-M12.3 Approved Static Contract
 

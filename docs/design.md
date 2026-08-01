@@ -9,7 +9,10 @@ prerelease visibility. The current unpublished local candidate is v0.11.0 with
 SQLite schema v17, Viewer snapshot v4 accepting source schemas v5-v17, and 21
 public command leaves; it activates the bounded TG-M21 Verification Receipt
 design below without claiming a tag, remote commit, or published Release.
-TG-M16.4 behavioral acceptance remains part of the published baseline. The TG-M20S
+TG-M21.4 now freezes an accepted but inactive schema-v18 correction from
+caller-authored labels to a taskgov-owned verification subject; current v17
+runtime and package behavior remain unchanged. TG-M16.4 behavioral acceptance
+remains part of the published baseline. The TG-M20S
 successor observation reached its frozen `proceed_to_design` result and
 no-rerun retirement boundary. TG-M20S.3 now freezes an accepted but inactive
 Tier 2 decomposition design; it changes no current runtime, package, or agent
@@ -1193,17 +1196,164 @@ partial unit activates the separate proportionality guardrail, project test
 strategy, command runner, approved exception, Viewer Receipt UI, or Task
 decomposition.
 
+## Accepted But Inactive TG-M21.4 Verification Subject Design
+
+TG-M21.4 changes no current module, schema, parser, package, Skill, Viewer, or
+generated artifact. It defines the schema-v18 vertical transition that
+TG-M22.2 must implement before any evidence bundle exists.
+
+### Additive Storage And Legacy Preservation
+
+`verification_receipts.py` continues to own Receipt gate semantics and public
+projection. At schema v18 it will replace caller label normalization with one
+subject builder that consumes only the locked target's capture version,
+authority snapshot ID, verification criterion ID, current Contract revision,
+and complete target tuple. This compound structural binding is the
+`verification_subject`; it is not another free-form record and therefore adds
+no table, random ID, caller field, or command.
+
+`storage.py` adds these columns independently to `verification_receipts` and
+`task_completion_cycles`:
+
+```text
+verification_subject_basis_version INTEGER NOT NULL DEFAULT 0
+  CHECK (verification_subject_basis_version IN (0, 1))
+subject_authority_snapshot_id TEXT NULL
+  REFERENCES authority_snapshots(authority_snapshot_id)
+subject_verification_criterion_id TEXT NULL
+  REFERENCES contract_criteria(criterion_id)
+```
+
+The authority/criterion tables are created first, then the additions use
+`ALTER TABLE ... ADD COLUMN` plus version-aware indexes and insert guards.
+The scalar foreign keys prove existence. Insert triggers and the shared read
+validator enforce the closed version/null matrix, snapshot-to-verification-
+criterion membership, project/Task ownership, and the exact locked target
+binding; the cycle trigger additionally permits basis zero only for the
+existing exact partial-reopen bridge. They do not rebuild either table or
+execute an `UPDATE` over a v17 business row. Existing update/delete denial
+triggers protect the new columns automatically. Every old Receipt and cycle
+consequently reads as subject basis 0/null/null while every original column,
+ID, label, target, timestamp, Receipt link, cycle relationship, and ordering
+remains unchanged.
+
+The existing cycle `verification_basis_version` remains independent. A v17
+native cycle keeps verification basis 1 and receives subject basis 0; the
+legacy partial bridge keeps verification basis 0 and subject basis 0. Every
+new schema-v18 native cycle uses subject basis 1, with matching non-null
+snapshot/criterion IDs and the same subject-v1 Receipt when verification is
+nonempty, or both IDs and the Receipt link null when it is trimmed-empty. No
+new subject-basis-zero Receipt or native cycle is permitted.
+
+The physical v17 `command_label TEXT NOT NULL` column remains to avoid a table
+rewrite. A new subject-v1 writer stores only the exact internal constant
+`taskgov-owned-verification-subject-v1`; it never accepts that value from a
+caller. Version-aware row validation applies the legacy label predicate only
+to basis-zero rows and requires the constant only for basis one. Public
+formatters and Evidence digest builders never read that constant.
+
+Migration fingerprints every pre-existing Receipt/cycle projection over its
+exact v17 columns before the additive DDL and proves that projection and count
+unchanged afterward; it does not compare `SELECT *` or database-file bytes.
+The M22.1-approved current-basis authority snapshots and criteria are still
+created, but the subject addition synthesizes no subject, Evidence Reference,
+target binding, or cycle relation for an old target, Receipt, or cycle. It then
+validates the zero/one null matrix, ownership triggers, quick check, and foreign
+keys before recording migration 18. Reentry performs validation only. Injected
+failures before the history row roll back the DDL and leave v17 usable.
+
+### Target, CLI, Projection, And Gate Integration
+
+The schema-v18 target transaction already planned by M22 binds capture version
+1, authority snapshot, acceptance/verification criteria, and artifact
+manifest. That tuple is the sole source of a subject-v1 binding. An omitted
+verification criterion yields no subject. Capture-version-zero targets keep
+null bindings and return `evidence_basis_stale` for active Receipt or
+completion writes.
+
+`cli.py` removes `--command-label` from the existing leaf and passes only
+result, duration, coverage, and expected target generation. No subject option
+or compatibility alias is added. The successful text formatter remains
+unchanged. The parser/help, concise Skill, and workflow reference switch in
+the same schema-v18 package commit so an active instruction can never request
+an option the runtime no longer accepts.
+
+The schema-v18 Receipt allow-list replaces `command_label` with exactly one
+`verification_subject` object. Its keys are `basis_version`, `kind`,
+`authority_snapshot_id`, `verification_criterion_id`, and
+`legacy_caller_label`. A basis-zero row projects its preserved label and null
+IDs as `legacy_caller_label`; a basis-one row projects the two IDs, null legacy
+label, and `task_verification_criterion`. The parent Receipt's existing
+Contract revision and source-revision tuple complete the binding.
+
+`task show.verification_evidence` adds `current_verification_subject`, derived
+from the current capture binding, and uses the same versioned object for recent
+rows. With nonempty verification, active capture-zero work reports
+`evidence_basis_stale` before missing or blocking Receipt status. Empty
+verification preserves the existing satisfied Task-show verification gate and
+null subject, although review/completion source writes still reject capture
+zero. A done subject-basis-zero cycle is instead validated under the exact v17
+linked-Receipt rules and remains readable. Reopen always requires a fresh
+capture-version-1 target; only a resulting nonempty verification requires a
+subject-v1 Receipt, while trimmed-empty verification creates neither and later
+closes with the defined basis-v1/null/null cycle.
+
+The Task-show gate enum adds `evidence_basis_stale` only to that nonempty branch.
+The `task complete --check` readiness-code allow-list adds it after target
+absence for every capture-zero target and before verification/review evidence,
+because completion creates ledger sources even when verification is empty.
+Completion-check formatting keeps the generic fixed suggestion
+`resolve evidence_basis_stale before completing the task`; no other ordering,
+key, or formatter changes.
+
+Result, duration, coverage, expected-generation concurrency, expectation
+digest, one-Receipt-per-generation, `pass/full`, and explicit completion
+attestation remain owned by the existing evaluator. Receipt assurance remains
+`bound_attestation/trusted_caller/1`. The subject only proves taskgov's
+deterministic choice of an existing authority binding; it does not upgrade the
+reported run or authenticate a caller, process, environment, or result.
+
+Focused schema-v18 tests do not accumulate the new matrix in the already large
+`test_verification_receipts.py`. That owner receives only edits to its existing
+result/gate compatibility cases. A dedicated
+`test_m22_verification_subjects.py` owns subject migration/reentry/corruption,
+CLI/Task-show shape, stale/fresh binding, recovery, and done/reopen cases; M22
+ledger integration remains in its own focused module. Shared builders live in
+a non-discovered test-support module instead of being copied. Every new test
+module is explicitly assigned to the integration lane in `tools/test_lanes.py`.
+Together the focused tests cover exact old-column fingerprints, label-option
+removal, target/Contract/criterion drift, Viewer validation, privacy, parser/
+help, 21 leaves, and the ten-or-eleven-call limit.
+
+For this repository's self-hosted M22.2 run, schema-v18 setup leaves all
+pre-activation target, Receipt, and review rows at capture version zero. The
+normal workflow must retarget the exact post-migration material, rerun checks,
+record a subject-v1 Receipt, prepare review once, and collect fresh Tier 2
+reviews. No migration repair, compatibility alias, or completion bypass
+qualifies the old evidence.
+
+### Bounded Downstream Split
+
+TG-M22.2 owns this subject activation together with the schema-v18 criterion
+and target foundation. TG-M21.5 follows at the same schema/package identity
+and changes only verification capacity from 500 to 1,000 characters. TG-M22.3
+then owns subject-only bundle/JSON projection, and TG-M22.4 owns integrated
+legacy/current acceptance. No unit adds a public leaf, normal-loop call,
+Runner, analyzer, or raw retained content.
+
 ## Accepted But Inactive TG-M22 Evidence Ledger Design
 
-TG-M22.1 defines two later atomic implementation slices without activating
-either. TG-M22.2 will establish schema v18 capture foundations. TG-M22.3 will
-establish schema v19 completion bundles and generated JSON. Until those units
+TG-M22.1 plus the TG-M21.4 correction define three later atomic implementation
+slices without activating them. TG-M22.2 will establish schema v18 subject and
+capture foundations, TG-M21.5 will change only verification-text capacity at
+schema v18, and TG-M22.3 will establish schema v19 completion bundles and
+generated JSON. Until those units
 complete, the module list, schema-v17 runtime, state resolver, setup and
 maintenance shapes, Viewer source range, package manifest, Skill call graph,
 and public 21-leaf parser remain exactly current.
 
 TG-M22.2 advances the unpublished package candidate to v0.12.0 with schema
-v18. TG-M22.3 retains that unpublished package version and advances schema to
+v18. TG-M21.5 retains that identity; TG-M22.3 then advances schema to
 v19. This development sequence makes no published-version, tag, Release,
 remote-commit, or artifact-identity claim.
 
@@ -1225,11 +1375,11 @@ The activation design introduces three narrow package modules:
 
 `storage.py` remains the only SQLite owner. `tasks.py` and `contracts.py`
 invoke authority capture inside their existing savepoints;
-`verification_receipts.py` and `reviews.py` create typed evidence references
-inside their own existing writes; the target service creates one manifest and
-binding atomically; and the completion workflow passes a fully prepared bundle
-basis into the existing native-cycle savepoint. Feature modules never open raw
-SQLite connections.
+`verification_receipts.py` derives subject-v1 bindings and it and `reviews.py`
+create typed evidence references inside their own existing writes; the target
+service creates one manifest and subject-capable binding atomically;
+the completion workflow passes a fully prepared bundle basis into the existing
+native-cycle savepoint. Feature modules never open raw SQLite connections.
 
 `state_resolver.py` and `state_paths.py` will become the sole owners of the
 fixed Evidence directory, index, bundle directory, and lock. `state_transition.py`
@@ -1287,8 +1437,11 @@ artifact_manifest_entries
 evidence_references
 ```
 
-and the minimum current-pointer and target-binding columns needed to connect
-them to Tasks. All record IDs use their specification prefixes plus 16 random
+and the minimum current-pointer, target-binding, and TG-M21.4 subject columns
+needed to connect them to Tasks, Receipts, and cycles. The subject columns are
+the additive three-field set defined in the preceding section; no separate
+subject table or caller-authored value exists. All record IDs use their
+specification prefixes plus 16 random
 lowercase hexadecimal characters. Every owned table includes project and Task
 keys, composite foreign keys, deterministic uniqueness, canonical timestamp
 and digest checks, and update/delete denial triggers.
@@ -1324,17 +1477,24 @@ stored basis for each Task and reusable criteria only for actual stored
 values. It does not claim or reconstruct an earlier basis. Existing nonempty
 review targets retain their current tuple but get capture version 0 and null
 snapshot/manifest bindings; existing Receipts, findings, cycles, and events get
-no synthesized evidence reference. A new target set is capture version 1 and
-is required before a schema-v19 native bundle can close.
+no synthesized evidence reference or subject. Existing Receipts and cycles
+receive only the additive subject-basis-zero/null/null defaults without row
+updates or a table rebuild. A new target set is capture version 1, binds the
+current snapshot/criteria, and is required before a schema-v19 native bundle
+can close.
 
 The v18 service guard treats capture version 0 as read-only lineage. It runs
 inside the locked basis check for Verification Receipt add, Review Receipt
 add, Review Finding add, and completion, returning `evidence_basis_stale`
 before any source, event, or maintenance write. Review preparation and
 existing-Finding resolution do not create a reference and remain allowed.
+For a nonempty verification criterion, Receipt add copies the target's exact
+snapshot and criterion IDs as subject basis one, writes only the fixed internal
+compatibility value to the legacy label column, and emits the versioned public
+subject. It accepts no label or subject argument.
 Every new native completion at v18 inserts its closed completion-evidence
-reference and cycle together with deferred ownership in the existing
-completion savepoint; it creates no bundle or Evidence JSON.
+reference and subject-basis-one cycle together with deferred ownership in the
+existing completion savepoint; it creates no bundle or Evidence JSON.
 
 An `evidence_reference` stores one closed source kind/state and stable source
 ID or canonical closed completion value, assurance, producer/version,
@@ -1441,10 +1601,12 @@ and closed relation. One repository constant enforces the specification
 matrix: acceptance receives current manifest and completion evidence as
 `completion_basis`, gate-selected Review Receipts as `review_assessment`, and
 current-generation Findings as `review_finding`; verification receives only
-the unique current qualifying Receipt as `verification_attestation`. Missing
-criteria produce no link, while the source reference remains a member. All
-other M22 pairings and cardinalities are rejected. Reserved analyzer/Runner
-pairings remain feature-disabled.
+the unique current qualifying Receipt as `verification_attestation`. When an
+acceptance criterion is absent, otherwise required manifest, review, Finding,
+or completion references remain members without an acceptance link. When the
+verification criterion is absent, no Verification Receipt, reference, or link
+is invented. All other M22 pairings and cardinalities are rejected. Reserved
+analyzer/Runner pairings remain feature-disabled.
 
 `completion_bundle_members` freezes the exact link and source-reference set
 used by one bundle. Finding selection takes all current-generation Findings
@@ -1464,9 +1626,11 @@ Before `BEGIN IMMEDIATE`, the completion workflow prepares the exact Git
 completion plan and canonical JSON-shaped bundle basis without writing a file.
 Under the existing short writer it rereads Task, Contract, current authority
 snapshot, criterion bindings, target/capture version, manifest, current M21
-Receipt, review receipts/findings, and completion proposal; reevaluates all
-current gates; selects the same deterministic Receipt basis as the cycle; then
-computes the complete bundle payload and size. The savepoint inserts links,
+nullable subject-v1 Receipt, review receipts/findings, and completion proposal;
+reevaluates all
+current gates; selects the same deterministic nullable Receipt basis as the
+cycle; then computes the complete bundle payload and size. The savepoint
+inserts links,
 finding snapshots, bundle, cycle, Task update, completion event, and Evidence
 source-generation increment atomically. Any drift, invalid reference,
 assurance mismatch, digest mismatch, or bundle over 16 MiB rolls everything
@@ -1580,12 +1744,14 @@ completion-history reader validates the added cycle discriminator internally
 and discards the bundle ID. Evidence projection generation is independent of
 Viewer source generation.
 
-M22.2 and M22.3 each update the unpublished package candidate, manifest,
-release checker, setup/recovery/staging allow-lists, Skill/reference wording,
-formal docs, and migration/Viewer compatibility in the same commit as their
-reachable schema. M22.3 also updates durable `AGENTS.md` routing so the fixed
-Evidence projection joins DB, backup, and Viewer as an allowed generated-state
-artifact. Neither unit publishes a tag, Release, or remote mutation.
+M22.2, M21.5, and M22.3 each synchronize the unpublished package candidate,
+manifest, release checker, Skill/reference wording, formal docs, and applicable
+setup/recovery/staging, migration, and Viewer compatibility in the same commit
+as their reachable behavior. M22.2 updates the durable `AGENTS.md` Receipt
+retention allow-list from the current label-only rule to the versioned legacy
+label and tool-owned structural-subject boundary. M22.3 updates its generated
+artifact routing so the fixed Evidence projection joins DB, backup, and Viewer.
+None publishes a tag, Release, or remote mutation.
 
 Pre-v19 cycles remain visible only as index entries with
 `bundle_state=legacy_unknown`; there is no bundle file and no attempted Git or
@@ -1593,8 +1759,13 @@ prose reconstruction. The legacy reopen bridge remains version 0/null and
 advances Evidence source generation when it inserts that cycle. A selected
 pre-v18 high/medium Finding is represented only by the nullable-reference
 legacy snapshot and omission defined above. A post-v19 recompletion creates
-only a new version-1 bundle for the new cycle. M21 Receipts retain their exact
-row, target, result/coverage, caller-attested class, and current-gate rules.
+only a new version-1 bundle for the new cycle. V17 Receipts retain their exact
+row, caller label, target, result/coverage, caller-attested class, and v17
+done-cycle rules but receive no reference or bundle. A native bundle accepts
+only subject basis one and serializes exactly `basis_version`, `kind`,
+`authority_snapshot_id`, and `verification_criterion_id`. The schema-v18
+read-model union's `legacy_caller_label` key and the internal compatibility
+value are both absent; result/coverage remain caller-attested.
 
 ### Future M23 And M24 Seams
 
@@ -1615,23 +1786,30 @@ rewrite existing cycles, bundles, links, or digests.
 ### Implementation And Acceptance Units
 
 1. **TG-M22.2** owns schema v18, authority/criterion/reference repositories,
-   Git manifest capture, Task/Contract/target/Receipt/Finding/completion
-   integration including capture-v0 rejection and native-cycle completion
-   references, migration, Viewer-v4 v18 compatibility, synchronized
-   docs/Skill/package, focused and full offline tests, exact diff, Verification
-   Receipt, and two Tier 2 reviews. It must not create bundles or Evidence JSON.
-2. **TG-M22.3** owns schema v19, native bundle sealing, immutable criterion
+   subject-basis Receipt/cycle fields, label-free CLI/Task-show transition, Git
+   manifest capture, Task/Contract/target/Receipt/Finding/completion integration
+   including capture-v0 rejection and native-cycle references, migration,
+   self-host retarget/reverification/review, Viewer-v4 v18 compatibility,
+   synchronized `AGENTS.md` retention, docs/Skill/package, split focused/full
+   tests, exact diff, Verification Receipt, and two Tier 2 reviews. It creates
+   no bundle or Evidence JSON.
+2. **TG-M21.5** owns only the 500-to-1,000-character verification capacity
+   change after schema v18, with no migration, subject redesign, leaf, or
+   normal-loop call.
+3. **TG-M22.3** owns schema v19, native bundle sealing, immutable criterion
    links and finding snapshots, projection state/resolver/staging/setup/
-   maintenance, index-last JSON publication, Viewer-v4 v19 compatibility,
-   synchronized governing/Skill/package surfaces, full offline tests, exact
-   diff, Verification Receipt, and two Tier 2 reviews.
-3. **TG-M22.4** owns realistic integrated acceptance and only bounded repairs
-   inside the accepted design. It does not activate M23, M24, remote inference,
-   Viewer Evidence UI, another command, or another Skill-loop call.
+   maintenance, subject-based index-last JSON publication, Viewer-v4 v19
+   compatibility, synchronized governing/Skill/package surfaces, full tests,
+   exact diff, Verification Receipt, and two Tier 2 reviews.
+4. **TG-M22.4** owns realistic legacy/current, subject, 1,000-character, and
+   Evidence integrated acceptance plus only bounded repairs inside the accepted
+   design. It does not activate M23, M24, remote inference, Viewer Evidence UI,
+   another command, or another Skill-loop call.
 
-Every unit is Tier 2 and lands as a coherent completion commit. Schema v18 and
-v19 are not reachable until their exact owning code, migrations, Viewer source
-range, package inventory, tests, and current formal contracts agree.
+Every unit is Tier 2 and lands as a coherent completion commit. Schema v18,
+the capacity transition, and schema v19 are not reachable until their exact
+owning code, migrations where applicable, Viewer source range, package
+inventory, tests, and current formal contracts agree.
 
 ## Task Contracts, Checkpoints, Handoffs, And Effort
 

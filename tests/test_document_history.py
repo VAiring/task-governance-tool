@@ -181,7 +181,7 @@ def git_blob_sha1(data: bytes) -> str:
 
 
 class DocumentHistoryTests(unittest.TestCase):
-    def test_m21_design_is_inactive_and_m20_completion_is_indexed(self):
+    def test_m21_design_and_m20s_interrupt_are_indexed(self):
         specification = (ROOT / "docs" / "specification.md").read_text(
             encoding="utf-8-sig"
         )
@@ -198,7 +198,11 @@ class DocumentHistoryTests(unittest.TestCase):
         )
         self.assertIn("TG-M21.1 Verification Receipt Design Contract", roadmap)
         self.assertIn("Task: `tg_task_cf03643f368c2c1a`", roadmap)
-        self.assertIn("No TG-M21 implementation unit is yet", roadmap)
+        self.assertIn("TG-M20S.1 Successor Decomposition Observation", roadmap)
+        self.assertIn("Task: `tg_task_ddfbf721eced8c58`", roadmap)
+        self.assertIn("Task: `tg_task_e591f30d546ba69e`", roadmap)
+        self.assertIn("TG-M21.1A, TG-M21.1B, TG-M21.2, and TG-M21.3", roadmap)
+        self.assertIn("approved and registered", roadmap)
 
         for document in (specification, design):
             self.assertIn("Approved But Inactive TG-M21 Verification Receipt", document)
@@ -226,13 +230,17 @@ class DocumentHistoryTests(unittest.TestCase):
             self.assertIn(marker, specification + design + plan)
 
         self.assertIn(
-            "The user must separately approve this implementation sequence",
+            "The implementation sequence is approved and registered",
             plan,
         )
-        self.assertEqual(
-            re.findall(r"tg_task_[0-9a-f]{16}", plan[plan.index("### TG-M21.1") :]),
-            ["tg_task_cf03643f368c2c1a", "tg_task_1f7503aca5e32cdc"],
-        )
+        m21_section = plan[plan.index("### TG-M21.1") :]
+        for task_id in (
+            "tg_task_a6f5ec3147440e53",
+            "tg_task_8e30cf88c9018824",
+            "tg_task_2f6fd712dd83f250",
+            "tg_task_a42cb5d0383980bd",
+        ):
+            self.assertIn(task_id, m21_section)
 
         storage = (
             ROOT
@@ -361,8 +369,10 @@ class DocumentHistoryTests(unittest.TestCase):
         self.assertFalse((ROOT / "dist" / "m20.4-trials-800ed1").exists())
         self.assertFalse(any((ROOT / "tools").glob("m20_*.py")))
         self.assertFalse(any((ROOT / "tests").glob("test_m20_*.py")))
-        self.assertFalse(any((ROOT / "tools" / "__pycache__").glob("*m20*.pyc")))
-        self.assertFalse(any((ROOT / "tests" / "__pycache__").glob("*m20*.pyc")))
+        self.assertFalse(any((ROOT / "tools" / "__pycache__").glob("m20_*.pyc")))
+        self.assertFalse(
+            any((ROOT / "tests" / "__pycache__").glob("test_m20_*.pyc"))
+        )
 
     def test_governing_and_historical_markdown_links_resolve(self):
         documents = [

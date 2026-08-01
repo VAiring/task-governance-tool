@@ -1,0 +1,99 @@
+{
+  "schema": "m20s-decomposition-protocol-v1",
+  "authority_task_id": "tg_task_ddfbf721eced8c58",
+  "authority_contract_revision": 1,
+  "authority_ref": "conversation_decision:2026-08-01:interrupt-successor-task-decomposition-observation",
+  "baseline_revision": "43c91d5987b0c35c66f834789aea782e98dcaff7",
+  "package_tree": "529abf7ac4e4ed778b383c90b6ac5f2fedc71615",
+  "inherited": {
+    "source": "m20_retired_aggregate_v1",
+    "denominator": 4,
+    "eligible_pairs": 1,
+    "qualifying_pairs": 1,
+    "unavailable_pairs": 3,
+    "handoff_control_eligible": true,
+    "conflict": false
+  },
+  "replacements": [
+    {
+      "order": 1,
+      "scenario_id": "sp_user_expansion_alternate",
+      "replaces": "sp_user_expansion"
+    },
+    {
+      "order": 2,
+      "scenario_id": "sp_in_scope_discovery_alternate",
+      "replaces": "sp_in_scope_discovery"
+    },
+    {
+      "order": 3,
+      "scenario_id": "sp_cross_module_failure_alternate",
+      "replaces": "sp_cross_module_failure"
+    }
+  ],
+  "records": {
+    "schema": "m20s-decomposition-observation-v1",
+    "per_arm": [
+      [
+        "split_measurement",
+        "machine_observed"
+      ],
+      [
+        "attestation",
+        "observer_attested"
+      ]
+    ],
+    "machine_vector": [
+      "files",
+      "modules",
+      "lines",
+      "contract_revision",
+      "review_generation",
+      "governance_cycles",
+      "review_cycles"
+    ],
+    "arm_commitment_keys": [
+      "workload_digest",
+      "control_digest",
+      "observer_config_digest",
+      "trial_root_digest",
+      "cohort"
+    ]
+  },
+  "bounds": {
+    "fixture_bytes": 32768,
+    "record_bytes": 16384,
+    "corpus_bytes": 65536,
+    "journal_bytes": 65536,
+    "receipt_bytes": 4096,
+    "max_unknowns": 8,
+    "max_metric": 2147483647
+  },
+  "stop_rules": {
+    "positive_min_qualifying": 2,
+    "negative_min_eligible": 3,
+    "negative_q_plus_u_below": 2,
+    "exhaustion_pairs": 3,
+    "stop_at_first_decision": true
+  },
+  "runtime_boundary": {
+    "accepts": "sanitized_arm_records_only",
+    "launch_subject": false,
+    "shell": false,
+    "network": false,
+    "canonical_db_write": false,
+    "real_target_mutation": false
+  },
+  "retention": {
+    "raw_prompt": false,
+    "raw_chat": false,
+    "raw_reasoning": false,
+    "raw_review": false,
+    "raw_diff": false,
+    "raw_stream": false,
+    "raw_path": false,
+    "raw_control": false,
+    "retirement_owner": "TG-M20S.2",
+    "retained_after_retirement": "terminal_receipt_only"
+  }
+}

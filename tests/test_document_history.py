@@ -15,6 +15,8 @@ CAPTURE_M20_BASELINE = "43c91d5987b0c35c66f834789aea782e98dcaff7"
 M20_RETIREMENT_ANCHOR = "dd662a861f3a224bc17f021e0dc0ed6f20be6bc1"
 M20_HISTORY_SHA256 = "1164c65d0270aeef35311a061064c23cf14c1726ad647568598e0fcb2718405d"
 M20_COMPLETION = "e5167e2d9d54493900b9d88672f1e53304cfa5b1"
+M20S_RETIREMENT_ANCHOR = "0eaeb9691c0ca4c316ad541ee4dd634287f1ccef"
+M20S_HISTORY_SHA256 = "9f7064d5fb74fe4e6a10c44d4e9ebb70b1b2b6a3969843d7e68775e26668432d"
 
 
 ARCHIVES = {
@@ -386,7 +388,7 @@ class DocumentHistoryTests(unittest.TestCase):
             any((ROOT / "tests" / "__pycache__").glob("test_m20_*.pyc"))
         )
 
-    def test_m20s_study_is_closed_and_temporary_assets_are_removed(self):
+    def test_m20s_study_is_retired_to_a_no_rerun_tombstone(self):
         receipt_root = ROOT / "fixtures" / "m20s"
         receipt_paths = sorted(receipt_root.glob("*.json"))
         self.assertEqual(
@@ -394,10 +396,16 @@ class DocumentHistoryTests(unittest.TestCase):
             ["decomposition-collection-receipt.json"],
         )
         receipt = json.loads(receipt_paths[0].read_text(encoding="utf-8"))
-        self.assertEqual(receipt["schema"], "m20s-decomposition-collection-receipt-v1")
+        self.assertEqual(
+            receipt["schema"],
+            "m20s-decomposition-collection-receipt-v1",
+        )
         self.assertEqual(receipt["status"], "closed")
-        self.assertEqual(receipt["artifact_status"], "retained")
-        self.assertIsNone(receipt["retirement_revision"])
+        self.assertEqual(receipt["artifact_status"], "retired")
+        self.assertEqual(
+            receipt["retirement_revision"],
+            M20S_RETIREMENT_ANCHOR,
+        )
         self.assertEqual(receipt["attempted_pairs"], 1)
         self.assertEqual(receipt["attempted_arms"], 2)
         self.assertEqual(receipt["record_count"], 4)
@@ -405,10 +413,32 @@ class DocumentHistoryTests(unittest.TestCase):
         self.assertEqual(receipt["qualifying_pairs"], 2)
         self.assertEqual(receipt["unavailable_pairs"], 2)
         self.assertEqual(receipt["decision"], "proceed_to_design")
+        self.assertEqual(receipt["corpus_bytes"], 6308)
+        self.assertEqual(
+            receipt["corpus_sha256"],
+            "07c365b4008c387073f5dfe70fa8ac00c0aa6fca7033796db0698b5b910cd664",
+        )
 
-        history = (
+        anchor = subprocess.run(
+            [
+                "git",
+                "cat-file",
+                "-e",
+                f"{M20S_RETIREMENT_ANCHOR}^{{commit}}",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(anchor.returncode, 0)
+        history_path = (
             HISTORY_ROOT / "v0.10.0" / "m20s-task-decomposition.md"
-        ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            hashlib.sha256(history_path.read_bytes()).hexdigest(),
+            M20S_HISTORY_SHA256,
+        )
+        history = history_path.read_text(encoding="utf-8")
         for marker in (
             "NON-AUTHORITATIVE STUDY HISTORY",
             "sp_user_expansion_alternate",

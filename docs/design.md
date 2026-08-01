@@ -9,9 +9,10 @@ TG-M19.6B, are complete. This post-release revision is the consolidated active
 implementation authority. TG-M16.4 behavioral acceptance remains part of the
 published baseline. TG-M20.1 through TG-M20.5 are complete. TG-M21.1 is
 complete at `fc2e0870ad9bf70830a082df168ad1992e07b51d`; its inactive design
-below does not alter current runtime or package behavior. The approved TG-M20S
-successor observation now interrupts before TG-M21.1A. Registered TG-M21
-follow-up units remain inactive behind that study and their own gates.
+below does not alter current runtime or package behavior. The TG-M20S
+successor observation reached its frozen `proceed_to_design` result and
+no-rerun retirement boundary. Registered TG-M21 follow-up units remain
+inactive behind their own predecessor and synchronization gates.
 
 This document is the current implementation design for the behavior specified
 in `docs/specification.md`. Historical design captures under `docs/history/`
@@ -1127,8 +1128,8 @@ rather than copied into CI or multiple test modules.
 
 ### Registered Implementation Units
 
-These units are approved and registered but remain inactive until the TG-M20S
-interrupt and TG-M21.1A/TG-M21.1B authority-layout predecessors complete:
+These units are approved and registered but remain inactive until
+TG-M21.1A/TG-M21.1B authority-layout predecessors complete:
 
 1. **TG-M21.2 atomic vertical activation** adds schema v17, immutable storage,
    repository/evaluator services, Viewer source compatibility, the write leaf,
@@ -1843,205 +1844,42 @@ canonical episode-plan digest. A receipt is provenance for the deleted study
 input, not study evidence, current verification evidence, product state, or
 authority to reconstruct, rerun, or rescore the corpus.
 
-The TG-M20S Task-decomposition successor is separately approved below. Any
+The completed TG-M20S Task-decomposition successor is summarized below. Any
 other Verification Receipt design, Skill-only guardrail observation, or Task-
 decomposition observation still requires new explicit user approval and a
 separate bounded execution contract. Historical candidate inventories remain
-non-authoritative and cannot add an attempt or change the approved successor.
+non-authoritative and cannot add an attempt or change the recorded result.
 
-## Approved Temporary TG-M20S Successor Observation Design
+## Completed TG-M20S Successor Observation Boundary
 
-### Authority, Comparison Baseline, And Inventory
+The retired study was bound to Task `tg_task_ddfbf721eced8c58`, Contract
+revision 1, authority reference
+`conversation_decision:2026-08-01:interrupt-successor-task-decomposition-observation`,
+baseline `43c91d5987b0c35c66f834789aea782e98dcaff7`, and installable package
+tree `529abf7ac4e4ed778b383c90b6ac5f2fedc71615`. TG-M20S.1 froze the
+root-only one-shot harness and protocol; none of that machinery entered the
+installable package.
 
-The observation authority is not a self-referential Git revision. It is the
-immutable tuple:
+TG-M20S.2 launched only `sp_user_expansion_alternate`. Both isolated arms
+were eligible. Every bounded episode had independently acceptable, verifiable,
+committable, and completable scope. Its Contract-revision delta sum was zero,
+compared with one for the broad arm, so the pair qualified under the frozen
+predicate. The inherited `E=1,Q=1,U=3` became `E=2,Q=2,U=2`; the first
+positive rule selected `proceed_to_design` and prevented launch of the two
+remaining pairs.
 
-```text
-authority_task_id=tg_task_ddfbf721eced8c58
-authority_contract_revision=1
-authority_ref=conversation_decision:2026-08-01:interrupt-successor-task-decomposition-observation
-```
+This is narrow evidence from one repository, scenario, pair, and model/tool
+cohort. Supporting counts and footprint measures do not establish population
+causality, authenticated reviewer independence, or a general automatic
+self-splitting rule. The result permits only a separately approved Tier 2
+design proposal and changes no current product or agent behavior.
 
-Every protocol, episode plan, launch commitment, reduced record, corpus, and
-terminal receipt binds that complete tuple. The exact comparison baseline is
-`43c91d5987b0c35c66f834789aea782e98dcaff7`; its installable
-`task-governance-tool/` subtree and the same subtree at TG-M21.1 completion
-`fc2e0870ad9bf70830a082df168ad1992e07b51d` both resolve to tree
-`529abf7ac4e4ed778b383c90b6ac5f2fedc71615`. A trial checks both the baseline
-commit and package tree before launch. The equal later tree establishes
-comparability only and never changes the baseline or observation authority.
-
-The fixed order is `sp_user_expansion_alternate`,
-`sp_in_scope_discovery_alternate`, then
-`sp_cross_module_failure_alternate`. Each scenario has exactly `broad` and
-`bounded` arms with trial IDs `<scenario_id>.<arm>.01`. Each complete pair uses
-one workload digest and the same model, tool, and permission cohort. The
-bounded request separately authorizes at intake the independently acceptable,
-verifiable, committable, and completable work represented by the broad
-request's later pressure. These are new replacement IDs; no retired M20 trial
-or scenario is reopened.
-
-TG-M20S.1 owns the protocol and lean-harness freeze. No trial may launch until
-its exact final target, including the protocol and episode-plan digests, has
-passed two independent Tier 2 reviews. TG-M20S.2, Task
-`tg_task_e591f30d546ba69e`, owns every launch, reduction, aggregate decision,
-history routing, and retirement.
-
-### Minimal Root-Only Harness And Reduced Schemas
-
-The temporary harness is offline, shell-free, root-repository-only, and
-limited to the six fixed arms and their predefined safe checks. It may reuse
-reviewed pure M20.4 concepts, but it does not restore M20.2 reconstruction,
-M20.3 verification-proportionality collection, a generic observer, or any
-retired corpus. It neither enters the installable package nor instruments the
-product, canonical Task database, Viewer, network, or a real target project.
-
-One reduced record is canonical compact sorted-key UTF-8 JSON with exactly:
-
-```text
-schema, authority_task_id, authority_contract_revision, authority_ref,
-baseline_revision, package_tree, protocol_sha256, episode_plan_sha256,
-observation_id, scenario_id, arm, trial_id, record_key, evidence_class,
-eligibility, unknown_reasons, unknowns, payload
-```
-
-`schema` is `m20s-decomposition-observation-v1`. `record_key` is
-`split_measurement` or `attestation`; the matching evidence class is
-`machine_observed` or `observer_attested`. `eligibility` is `eligible`,
-`partial`, or `excluded`. IDs are lowercase ASCII codes of at most 64
-characters, the two digests and package tree are complete lowercase SHA-256 or
-Git-tree hex as applicable, and `observation_id` is `m20sobs_` plus the full
-SHA-256 of the domain-separated authority, baseline, package-tree, protocol,
-episode-plan, scenario, arm, trial, and record-key tuple. IDs are unique and
-never deduplicated.
-
-Each arm emits one record of each kind. A source-level failure emits a newly
-constructed sanitized excluded envelope for each intended record; it does not
-copy rejected input. The complete corpus therefore has at most 12 records.
-Protocol and episode-plan fixtures are each capped at 32,768 UTF-8 bytes; each
-record at 16,384; the journal and canonical sorted-array corpus at 65,536; and
-the terminal receipt at 4,096. Exceeding a bound fails closed without
-truncation or selection. `unknown_reasons` has at most eight values and is the
-sorted unique union of bounded per-field `unknowns`, using only
-`not_observable`, `source_missing`, `source_drift`, `parse_failed`, `timeout`,
-`cap_exceeded`, `observer_uncertain`, or `contaminated`. Unknown and null never
-mean zero. A partial record has only declared nullable fields and exact
-unknown entries; `source_missing`, `source_drift`, `parse_failed`, or
-`contaminated` excludes the record and makes all of its payload unusable for a
-decision.
-
-`split_measurement.payload` contains only `episodes`, with 1-8 items in the
-episode-plan order and these exact keys:
-
-```text
-episode_id, files_before, files_after, modules_before, modules_after,
-lines_before, lines_after, contract_revision_before, contract_revision_after,
-review_generation_before, review_generation_after, governance_cycles,
-review_cycles
-```
-
-The episode plan fixes each task slot and half-open measurement boundary.
-Revision and generation deltas cannot be negative. For same-ID comparison the
-machine vector is, in order, file, module, line, Contract-revision, review-
-generation, governance-cycle, and review-cycle delta.
-
-`attestation.payload` has exactly `cohort`, `workload_digest`,
-`control_digest`, `outcome`, `reference_opens`, `clarification_turns`,
-`manual_inputs`, `governance_invocations`, `reviewer_invocations`, and
-`episodes`. The five supporting counts are capped at 256, 16, 32, 64, and 8
-respectively and never satisfy a decision predicate. Each 1-8 item episode has
-exactly:
-
-```text
-episode_id, phase, cause, current_response, acceptance_independent,
-verification_independent, commit_independent, completion_independent
-```
-
-Phase is `intake`, `implementation`, `verification`, or `review`; cause is
-`in_scope_discovery`, `user_expansion`, `repeated_failure`, or
-`cross_module`; response is `keep_current`, `block`, or `handoff`; and each
-independence value is `yes`, `no`, or `unknown`. An eligible attestation has no
-unknown independence value and its episode IDs exactly equal the paired
-measurement and opposite arm in the same order.
-
-### Eligibility, Qualification, And Decision
-
-A trial is excluded before semantic scoring when its authority, baseline,
-package tree, protocol, episode plan, workload/control commitment, isolation,
-or required schema/privacy boundary differs; context is inherited; another
-trial's artifact is visible; the paired cohort differs; mid-trial coaching
-occurs; or a required source is missing or invalid. A bounded declared unknown
-makes a record partial. Exclusion and partiality are fixed before applying the
-outcome rubric, and an unfavorable outcome is never a reason to relabel or
-rerun an arm.
-
-A pair is eligible only when all four required records are eligible and both
-arms have identical frozen identity, workload digest, cohort, and ordered
-episode IDs. An eligible pair qualifies only when every bounded episode has
-all four independence fields `yes` and at least one condition holds:
-
-1. a same-ID broad episode has an independence field `no` and at least one
-   machine-vector position greater than the bounded position;
-2. `sum(bounded contract_revision delta) <= sum(broad contract_revision
-   delta) - 1`; or
-3. `sum(bounded review_cycles) <= sum(broad review_cycles) - 1`.
-
-The active decision authority carries forward, without reconstruction or
-rescoring, the reviewed eligible and qualifying `sp_multi_outcome_intake` pair
-and eligible M20.4 Handoff control. Initially `E=1`, `Q=1`, and `U=3`; after
-each complete replacement pair, `E=1+eligible replacements`,
-`Q=1+qualifying replacements`, and `U=4-E`. With no conflict and the retained
-Handoff control:
-
-- `Q>=2` is positive `proceed_to_design` and stops before another pair;
-- `E>=3 && Q+U<2` is negative `no_follow_up`; from the initial values it
-  requires all three replacements to be eligible and nonqualifying, yielding
-  `E=4,Q=1,U=0`; and
-- exhaustion without either rule is `observe_more`.
-
-An arm already started reaches exactly one terminal eligible, partial, or
-excluded outcome. A pair is evaluated only after both arms terminalize. An
-unlaunched arm after a positive stop is not a failed attempt. Timing, size,
-line, invocation, and count values are supporting context only.
-
-### Neutrality, No-Rerun, Receipt, And Retirement
-
-Fresh agents receive no parent conversation, temporary memo, hypothesis,
-rubric, expected verdict, suspected failure, preferred solution, earlier arm
-output, or mid-trial feedback. Paired control bundles are prepared together,
-share an exact workload digest, and receive independent pre-launch review.
-Their exact bytes exist only in memory or an isolated trial-local temporary
-area. Before an arm enters `started`, a no-rerun journal binds its workload,
-control, observer-config, and sanitized trial-root digests. Every started arm
-gets one reduction attempt; success, failure, timeout, privacy rejection, or
-cleanup failure never authorizes a rerun or replacement.
-
-No reduced or tracked artifact retains raw paths, requests, prompts, chats,
-reasoning, review bodies, provider payloads, credentials, Task/Contract prose,
-diffs, streams, logs, stack traces, or environment. Raw work, control bytes,
-and candidate reduced bytes are destroyed immediately after the one reduction
-attempt; a rejected candidate is replaced only by a new safe excluded
-envelope.
-
-The sole retained tombstone is canonical
-`m20s-decomposition-collection-receipt-v1` JSON with exactly `schema`, `unit`,
-`authority_task_id`, `authority_contract_revision`, `authority_ref`,
-`baseline_revision`, `package_tree`, `protocol_sha256`,
-`episode_plan_sha256`, `status`, `artifact_status`, `retirement_revision`,
-`attempted_pairs`, `attempted_arms`, `record_count`, `corpus_bytes`,
-`corpus_sha256`, `eligible_pairs`, `qualifying_pairs`, `unavailable_pairs`,
-and `decision`. Decision is `proceed_to_design`,
-`no_follow_up`, or `observe_more`. It records no raw material and is not enough
-to reconstruct or rerun a trial.
-
-TG-M20S.2 routes the reviewed result and limitations to active decision
-authority and one indexed non-authoritative history capture, then removes the
-temporary protocol, episode plan, harness, tests, fixtures, controls, corpus,
-locks, journals, and trial remnants. Only after that removal may the receipt
-be `artifact_status="retired"` with its exact retirement anchor. A positive
-decision authorizes only a separately approved Tier 2 design Task. No outcome
-changes current Skill, CLI, schema, Viewer, completion, Task-creation, or Task-
-splitting behavior.
+All raw work, controls, candidate records, reduced corpus, journal, roots, and
+temporary harness assets are retired. The retained receipt records only the
+closed corpus identity, aggregate counts, decision, and exact retirement
+anchor; it cannot reproduce or rescore the study. The complete aggregate
+interpretation and limitations are preserved in
+[non-authoritative study history](history/v0.10.0/m20s-task-decomposition.md).
 
 ## Validation And Test Design
 

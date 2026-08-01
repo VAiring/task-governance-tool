@@ -12,11 +12,11 @@ TG-M20.1 through TG-M20.5. TG-M20.1 is complete at
 `800ed153dc9671f011ea4715f50d92ea464bc12b`, TG-M20.4 is complete at
 `ed15a85b6d1c328a9d1ac9b6a1448b50c1389481`, and TG-M20.5 is complete at
 `e5167e2d9d54493900b9d88672f1e53304cfa5b1`. TG-M21.1 is complete at
-`fc2e0870ad9bf70830a082df168ad1992e07b51d`. The approved and registered
-TG-M20S.1-TG-M20S.2 successor observation is an interrupt before TG-M21.1A.
-TG-M21.1A, TG-M21.1B, TG-M21.2, and TG-M21.3 are approved and registered, but
-remain inactive behind that interrupt and their declared predecessor gates.
-The Task database, not this status paragraph, owns their live state.
+`fc2e0870ad9bf70830a082df168ad1992e07b51d`. The TG-M20S successor
+observation has reached its frozen `proceed_to_design` result and no-rerun
+retirement boundary. TG-M21.1A, TG-M21.1B, TG-M21.2, and TG-M21.3 are
+approved and registered behind their declared predecessor gates. The Task
+database, not this status paragraph, owns their live state.
 
 This active roadmap owns approved execution order, verification gates, review
 tiers, and the concise completion index. The project-local Task database owns
@@ -96,6 +96,7 @@ commit-not-required fingerprint is shown instead of inventing a Git commit.
 | TG-M20.4 | `tg_task_787f976a5e9daa7e` | `ed15a85b6d1c328a9d1ac9b6a1448b50c1389481` | Fresh-agent Task-boundary/split-pressure baseline and terminal no-rerun receipt. |
 | TG-M20.5 | `tg_task_f6c19be1c10ad3ab` | `e5167e2d9d54493900b9d88672f1e53304cfa5b1` | Reviewed synthesis, separate follow-up decisions, and no-rerun study retirement. |
 | TG-M21.1 | `tg_task_cf03643f368c2c1a` | `fc2e0870ad9bf70830a082df168ad1992e07b51d` | Approved inactive Verification Receipt contract and bounded activation sequence. |
+| TG-M20S.1 | `tg_task_ddfbf721eced8c58` | `33948e3dd1c805e04eda0873c764dad15363175d` | Frozen successor observation contract and one-shot root harness; no collection. |
 
 Every M19 Task in the completion index above has a satisfied final Tier 2 gate
 and no unresolved High or Medium finding in any recorded generation. Some
@@ -416,111 +417,36 @@ Verification:
   study scaffolding named above, and mark the retained terminal receipts with
   the corpus retirement state after reviewed decisions have been routed.
 
-## Approved Temporary TG-M20S Successor Observation
+## TG-M20S Closed Successor Observation
 
-This is a bounded interrupt lane, not an M20 rerun or product feature. It uses
-Task Contract identity rather than a Git commit as observation authority and
-must complete before the registered TG-M21.1A authority-layout work resumes.
+TG-M20S.1, Task `tg_task_ddfbf721eced8c58`, completed its Tier 2 protocol
+and lean-harness freeze at
+`33948e3dd1c805e04eda0873c764dad15363175d`. TG-M20S.2, Task
+`tg_task_e591f30d546ba69e`, owned the one-shot collection, aggregate
+decision, history routing, and retirement.
 
-### TG-M20S.1 Successor Decomposition Observation Contract And Lean Harness
+Only the first fixed replacement pair, `sp_user_expansion_alternate`, was
+launched. Both arms were eligible and the pair qualified because every bounded
+episode satisfied all four independence predicates and its Contract-revision
+delta sum was zero versus one for the broad arm. The frozen denominator moved
+from `E=1,Q=1,U=3` to `E=2,Q=2,U=2`, yielding
+`proceed_to_design`. The two later pairs remained unlaunched.
 
-Task: `tg_task_ddfbf721eced8c58`
-Lane/order: `TG-M20S-TASK-DECOMPOSITION` / 10
-Review tier: Tier 2
-Depends on: completed TG-M20.5 and TG-M21.1
-Authority: Task Contract revision 1 with
-`authority_ref=conversation_decision:2026-08-01:interrupt-successor-task-decomposition-observation`
-
-Intended outcome:
-
-- Freeze before collection the exact successor protocol, episode plan,
-  identity and receipt schemas, replacement denominator, qualification and
-  stop rules, privacy boundary, neutral controls, one-shot lifecycle, and
-  retirement owner.
-- Add only the root-only offline M20.4-derived harness, fixtures, and focused
-  tests needed to validate that frozen contract; collect no trial data.
-
-Write scope:
-
-- active specification, design, roadmap, and plan;
-- one minimal temporary root-only protocol, episode plan, harness, fixture set,
-  and focused offline test set owned by TG-M20S.2 retirement;
-- no installable-package, Skill, public CLI, SQLite, Viewer, release, network,
-  canonical Task-state, or target-project behavior change.
-
-Mandatory constraints:
-
-- Bind every future record to Task `tg_task_ddfbf721eced8c58`, Contract
-  revision 1, its exact conversation authority reference, baseline
-  `43c91d5987b0c35c66f834789aea782e98dcaff7`, and package tree
-  `529abf7ac4e4ed778b383c90b6ac5f2fedc71615`.
-- Fix, in order, `sp_user_expansion_alternate`,
-  `sp_in_scope_discovery_alternate`, and
-  `sp_cross_module_failure_alternate`, with at most one new broad and bounded
-  arm per pair. Preserve the retained M20.4 inputs at `E=1,Q=1,U=3` without
-  reconstructing, rescoring, or rerunning them.
-- Do not restore unrelated M20.2/M20.3 machinery, launch a fresh subject,
-  score an outcome, or activate runtime Task splitting, parent/child Tasks, or
-  automatic Task creation.
-
-Verification:
-
-- Validate exact authority/baseline/tree identity; fixed inventory and trial
-  IDs; record cardinality and byte bounds; pair eligibility and qualification;
-  positive, negative, and exhaustion truth tables; one-shot journal and
-  receipt lifecycle; fresh-agent neutrality; privacy; no shell/network/
-  canonical-state/target write; and exact diff.
-- Obtain two independent exact-target Tier 2 reviews with no unresolved High
-  or Medium finding before any TG-M20S.2 launch.
-
-### TG-M20S.2 Fixed Fresh Observation, Decision, And Retirement
-
-Task: `tg_task_e591f30d546ba69e`
-Lane/order: `TG-M20S-TASK-DECOMPOSITION` / 20
-Review tier: Tier 2
-Depends on: completed TG-M20S.1
-
-Intended outcome:
-
-- Run each authorized replacement pair through the frozen lean harness, once
-  per started arm, and combine eligible results only with the retained eligible
-  and qualifying `sp_multi_outcome_intake` pair and eligible Handoff control.
-- Apply the first-satisfied decision rule, route the reviewed result without
-  activating behavior, and retire every temporary study surface.
-
-Mandatory constraints:
-
-- Launch pairs only in the frozen order. Evaluate a pair only after both arms
-  terminalize; stop before another pair after the first qualifying replacement.
-  Never rerun, substitute, adapt, or add a scenario or arm.
-- Positive is `Q>=2` and yields `proceed_to_design`. Negative requires
-  `E>=3 && Q+U<2`, which here requires all three replacements eligible and
-  nonqualifying and yields `E=4,Q=1,U=0` and `no_follow_up`. Exhaustion without
-  either is `observe_more`.
-- A positive result authorizes only a separately approved Tier 2 design Task.
-  No result changes the Skill, package, CLI, schema, Viewer, canonical Task DB,
-  target project, or external state.
-
-Verification:
-
-- Validate every attempted arm's authority, baseline, package-tree, protocol,
-  episode-plan, workload, control, cohort, isolation, terminal eligibility, and
-  one-shot reduction; reproduce `E/Q/U` and the stopping result without
-  imputing unknowns.
-- Confirm immediate raw/control destruction, final removal of the temporary
-  harness, tests, fixtures, protocol, episode plan, corpus, locks, journals,
-  and trial remnants, and retain only the approved no-rerun receipt and indexed
-  non-authoritative history.
-- Verify unchanged product surfaces, active-document consistency, exact diff,
-  and two independent exact-target Tier 2 reviews with no unresolved High or
-  Medium finding.
+This result activates no behavior and registers no design Task. A Task-
+decomposition design still requires separate explicit approval and a Tier 2
+contract. Temporary study machinery and reduced evidence are retired; the
+receipt is a no-rerun tombstone and the aggregate decision and limitations are
+preserved in
+[non-authoritative TG-M20S history](history/v0.10.0/m20s-task-decomposition.md).
+The Task database owns exact review and completion state. Once TG-M20S.2 is
+accepted, TG-M21.1A is the next registered unit by static dependency.
 
 ## Approved Registered TG-M21 Sequence
 
 TG-M21.1 completed the design without changing runtime behavior. Its follow-up
-units are approved and registered, but the temporary TG-M20S interrupt and the
-authority-layout predecessors run first. Registration does not activate a
-schema, command, completion gate, Viewer projection, or Skill instruction.
+units are approved and registered behind the authority-layout predecessors.
+Registration does not activate a schema, command, completion gate, Viewer
+projection, or Skill instruction.
 
 ### TG-M21.1 Verification Receipt Design Contract
 
@@ -563,7 +489,7 @@ Mandatory constraints:
   Receipt supplements it with current structured evidence and never weakens
   review, completion evidence, or target matching.
 - Keep the proportional-verification guardrail and Task-decomposition work
-  separate. TG-M21.1 contains neither; the later TG-M20S observation changes
+  separate. TG-M21.1 contains neither; the completed TG-M20S result changes
   no Verification Receipt acceptance.
 - Historical completions, M20 evidence, events, and prior attestations are
   never converted into current Receipts.
@@ -604,12 +530,12 @@ TG-M12.3 remains blocked until all of its separate authority prerequisites
 exist; it is not implied by completion of M20.
 
 TG-M20S.1 and TG-M20S.2 each require exact verification, two current-target
-Tier 2 PASS reviews, and no unresolved High or Medium finding. M20S.1 cannot
-complete after a trial launch; M20S.2 cannot complete before retirement. The
+Tier 2 PASS reviews, and no unresolved High or Medium finding. The retired
 study result never activates behavior or registers the possible design
-follow-up.
+follow-up; exact completion evidence remains in the Task database.
 
 TG-M21.1 is complete at the indexed revision. TG-M21.1A through TG-M21.3 may
-proceed in their registered order after the TG-M20S interrupt without another
-approval, but no Verification Receipt behavior becomes current until the
-atomic activation and integrated acceptance gates complete.
+proceed in their registered order once their declared predecessors are
+accepted, without another approval, but no Verification Receipt behavior
+becomes current until the atomic activation and integrated acceptance gates
+complete.

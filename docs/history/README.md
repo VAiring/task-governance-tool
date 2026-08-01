@@ -211,3 +211,16 @@ when an older index sentence describes it in future tense.
   scaffolding were retired.
 - Current replacement: [docs/implementation-roadmap.md](../implementation-roadmap.md)
   and [plan.md](../../plan.md)
+
+## TG-M20S Task-Decomposition Study Lineage
+
+### TG-M20S decision and retired evidence boundary
+
+- Immutable history:
+  [v0.10.0/m20s-task-decomposition.md](v0.10.0/m20s-task-decomposition.md)
+- Capture unit: `TG-M20S.2`
+- Capture purpose: preserve the aggregate qualification, terminal decision,
+  limitations, and no-rerun retirement boundary after temporary study
+  machinery and reduced evidence were retired.
+- Current replacement: [docs/implementation-roadmap.md](../implementation-roadmap.md)
+  and [plan.md](../../plan.md)

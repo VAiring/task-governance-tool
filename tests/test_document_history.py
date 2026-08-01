@@ -172,7 +172,10 @@ ARCHIVES = {
     },
 }
 
-STUDY_HISTORIES = {"m20-operational-baseline.md"}
+STUDY_HISTORIES = {
+    "m20-operational-baseline.md",
+    "m20s-task-decomposition.md",
+}
 
 
 def git_blob_sha1(data: bytes) -> str:
@@ -181,7 +184,7 @@ def git_blob_sha1(data: bytes) -> str:
 
 
 class DocumentHistoryTests(unittest.TestCase):
-    def test_m21_design_and_m20s_interrupt_are_indexed(self):
+    def test_m21_design_and_m20s_closed_decision_are_indexed(self):
         specification = (ROOT / "docs" / "specification.md").read_text(
             encoding="utf-8-sig"
         )
@@ -198,9 +201,18 @@ class DocumentHistoryTests(unittest.TestCase):
         )
         self.assertIn("TG-M21.1 Verification Receipt Design Contract", roadmap)
         self.assertIn("Task: `tg_task_cf03643f368c2c1a`", roadmap)
-        self.assertIn("TG-M20S.1 Successor Decomposition Observation", roadmap)
-        self.assertIn("Task: `tg_task_ddfbf721eced8c58`", roadmap)
-        self.assertIn("Task: `tg_task_e591f30d546ba69e`", roadmap)
+        self.assertIn("TG-M20S Closed Successor Observation", roadmap)
+        self.assertIn("`tg_task_ddfbf721eced8c58`", roadmap)
+        self.assertIn("`tg_task_e591f30d546ba69e`", roadmap)
+        self.assertIn("E=2,Q=2,U=2", specification + design + roadmap + plan)
+        self.assertIn(
+            "history/v0.10.0/m20s-task-decomposition.md",
+            specification + design + roadmap + plan,
+        )
+        self.assertNotIn(
+            "Approved Temporary TG-M20S",
+            specification + design + roadmap + plan,
+        )
         self.assertIn("TG-M21.1A, TG-M21.1B, TG-M21.2, and TG-M21.3", roadmap)
         self.assertIn("approved and registered", roadmap)
 
@@ -374,6 +386,58 @@ class DocumentHistoryTests(unittest.TestCase):
             any((ROOT / "tests" / "__pycache__").glob("test_m20_*.pyc"))
         )
 
+    def test_m20s_study_is_closed_and_temporary_assets_are_removed(self):
+        receipt_root = ROOT / "fixtures" / "m20s"
+        receipt_paths = sorted(receipt_root.glob("*.json"))
+        self.assertEqual(
+            [path.name for path in receipt_paths],
+            ["decomposition-collection-receipt.json"],
+        )
+        receipt = json.loads(receipt_paths[0].read_text(encoding="utf-8"))
+        self.assertEqual(receipt["schema"], "m20s-decomposition-collection-receipt-v1")
+        self.assertEqual(receipt["status"], "closed")
+        self.assertEqual(receipt["artifact_status"], "retained")
+        self.assertIsNone(receipt["retirement_revision"])
+        self.assertEqual(receipt["attempted_pairs"], 1)
+        self.assertEqual(receipt["attempted_arms"], 2)
+        self.assertEqual(receipt["record_count"], 4)
+        self.assertEqual(receipt["eligible_pairs"], 2)
+        self.assertEqual(receipt["qualifying_pairs"], 2)
+        self.assertEqual(receipt["unavailable_pairs"], 2)
+        self.assertEqual(receipt["decision"], "proceed_to_design")
+
+        history = (
+            HISTORY_ROOT / "v0.10.0" / "m20s-task-decomposition.md"
+        ).read_text(encoding="utf-8")
+        for marker in (
+            "NON-AUTHORITATIVE STUDY HISTORY",
+            "sp_user_expansion_alternate",
+            "E=2",
+            "Q=2",
+            "U=2",
+            "proceed_to_design",
+            "never launched",
+            "separately approved Tier 2",
+            "insufficient material to reconstruct, rerun, or rescore",
+        ):
+            self.assertIn(marker, history)
+
+        self.assertFalse((ROOT / "dist" / "m20s").exists())
+        for retired in (
+            ROOT / "tools" / "m20s_decomposition_harness.py",
+            ROOT / "tests" / "test_m20s_decomposition_harness.py",
+            ROOT / "fixtures" / "m20s" / "protocol-v1.json",
+            ROOT / "fixtures" / "m20s" / "episode-plan-v1.json",
+        ):
+            self.assertFalse(retired.exists())
+        self.assertFalse(
+            any(
+                (ROOT / "tests" / "__pycache__").glob(
+                    "test_m20s_decomposition_harness*.pyc"
+                )
+            )
+        )
+
     def test_governing_and_historical_markdown_links_resolve(self):
         documents = [
             ROOT / "AGENTS.md",
@@ -383,6 +447,7 @@ class DocumentHistoryTests(unittest.TestCase):
             ROOT / "docs" / "implementation-roadmap.md",
             HISTORY_ROOT / "README.md",
             HISTORY_ROOT / "v0.10.0" / "m20-operational-baseline.md",
+            HISTORY_ROOT / "v0.10.0" / "m20s-task-decomposition.md",
         ]
         link_pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
         checked = 0

@@ -12,11 +12,11 @@ complete at `e49e5aca68a7bf1c9829afb50d2c6a38835a4f03`, TG-M20.3 is
 complete at `800ed153dc9671f011ea4715f50d92ea464bc12b`, TG-M20.4 is
 complete at `ed15a85b6d1c328a9d1ac9b6a1448b50c1389481`, and TG-M20.5 is
 complete at `e5167e2d9d54493900b9d88672f1e53304cfa5b1`. TG-M21.1 is complete
-at `fc2e0870ad9bf70830a082df168ad1992e07b51d`. The approved and registered
-TG-M20S.1-TG-M20S.2 successor observation interrupts before TG-M21.1A.
-TG-M21.1A through TG-M21.3 are approved and registered but remain inactive
-behind that interrupt and their static predecessor chain. TG-M12.3 remains
-separately blocked; live status remains solely in the Task database.
+at `fc2e0870ad9bf70830a082df168ad1992e07b51d`. The TG-M20S successor
+observation has reached its frozen `proceed_to_design` result and no-rerun
+retirement boundary. TG-M21.1A through TG-M21.3 are approved and registered
+behind their static predecessor chain. TG-M12.3 remains separately blocked;
+live status remains solely in the Task database.
 
 This file owns current decisions, explicit open issues, and user-decision
 gates. It is not the product contract, execution ledger, or evidence store:
@@ -186,7 +186,7 @@ they are no longer an active collection or rerun contract.
 | TG-M21 Verification Receipts | `proceed_to_design` | Two eligible M20.3 bundles supported all five material facts: `command_label`, `result`, `source_revision`, `duration`, and `scope_coverage`. |
 | Skill-only proportional-verification guardrail | `observe_more` | 0 bundles satisfied both the observer pattern and frozen machine mapping; one of three planned bundles was permanently excluded. |
 | Bounded user-approved Task decomposition | `observe_more` | The four-pair denominator produced `E=1,Q=1,U=3`; the separate Handoff control was eligible. |
-| Bounded further observation | `proceed_to_design` | Only fixed successor observation for the two inconclusive candidates is justified; no Task is registered. |
+| Bounded further observation | `proceed_to_design` | M20 itself registered no Task; a later explicit user decision separately registered the now-closed TG-M20S study. |
 
 The M20 decision for TG-M21 by itself authorized only the smallest separately
 reviewed design proposal for a bounded sanitized receipt. It did not select
@@ -201,69 +201,37 @@ excluded CLI bundle cannot be made eligible. It should stop at the first
 satisfied successor positive/negative rule or fixed-inventory exhaustion; two
 qualifying bundles remain necessary for positive support.
 
-The decomposition inventory is now governed by the separately approved TG-M20S
-contract below. The verification-guardrail inventory remains a proposal, not
-execution authority, and still requires explicit user approval. Timing, size,
-line, and test-count values remain supporting context only. The context-rich
-parent conversation and earlier incident remain excluded samples. A positive
-decision never authorizes behavior activation.
+The completed decomposition successor decision is recorded below and in its
+non-authoritative history. The verification-guardrail inventory remains a
+proposal, not execution authority, and still requires explicit user approval.
+Timing, size, line, and test-count values remain supporting context only. The
+context-rich parent conversation and earlier incident remain excluded
+samples. A positive decision never authorizes behavior activation.
 
-### Approved TG-M20S Successor Decomposition Observation
+### TG-M20S Recorded Successor Decision
 
-TG-M20S is an interrupt study with two registered Tier 2 Tasks:
+The separately approved TG-M20S study has a closed terminal result. It used
+Task `tg_task_ddfbf721eced8c58`, Contract revision 1,
+`conversation_decision:2026-08-01:interrupt-successor-task-decomposition-observation`,
+baseline `43c91d5987b0c35c66f834789aea782e98dcaff7`, and package tree
+`529abf7ac4e4ed778b383c90b6ac5f2fedc71615`.
 
-| Unit | Task | Static gate |
-|---|---|---|
-| TG-M20S.1 contract and lean harness | `tg_task_ddfbf721eced8c58` | Freeze and review the protocol before any collection. |
-| TG-M20S.2 observation, decision, and retirement | `tg_task_e591f30d546ba69e` | Depends on accepted TG-M20S.1; owns all launches and retirement. |
+Only `sp_user_expansion_alternate` launched. Both fresh arms were eligible,
+the bounded episodes satisfied all four independence predicates, and the
+bounded Contract-revision delta sum was zero versus one for the broad arm. The
+pair qualified, moving `E=1,Q=1,U=3` to `E=2,Q=2,U=2` and selecting
+`proceed_to_design`. The two later fixed pairs were not launched.
 
-Its authority is Task `tg_task_ddfbf721eced8c58`, Contract revision 1, and
-`conversation_decision:2026-08-01:interrupt-successor-task-decomposition-observation`.
-Its comparison baseline remains
-`43c91d5987b0c35c66f834789aea782e98dcaff7`, whose installable package tree is
-`529abf7ac4e4ed778b383c90b6ac5f2fedc71615`. The same tree at the later
-TG-M21.1 completion revision establishes package comparability but is neither
-the comparison baseline nor observation authority.
-
-The fixed pair order is:
-
-1. `sp_user_expansion_alternate`;
-2. `sp_in_scope_discovery_alternate`; and
-3. `sp_cross_module_failure_alternate`.
-
-Each pair has at most one new `broad` and one new `bounded` arm, with both arms
-terminal before that pair is scored. The reviewed M20.4
-`sp_multi_outcome_intake` result and eligible Handoff control are retained only
-as frozen prior decision inputs. They are not reconstructed, rescored, or
-rerun. The three alternate pairs replace the three unavailable slots, so the
-combined denominator begins at `E=1,Q=1,U=3` and always uses
-`E=1+eligible replacements`, `Q=1+qualifying replacements`, and `U=4-E`.
-
-A pair is eligible only when all required records in both arms are eligible,
-their frozen authority/baseline/package/protocol/cohort/workload and ordered
-episode identities match, and no required predicate field is unknown. A pair
-qualifies only when every bounded episode has all four independence fields
-`yes` and the exact design-owned broad-versus-bounded machine-vector,
-Contract-revision-sum, or review-cycle-sum improvement predicate is satisfied.
-
-With the retained eligible Handoff control and no conflict, the first new
-qualifying pair produces `Q>=2`, yields `proceed_to_design`, and stops further
-launches. The negative predicate is `E>=3 && Q+U<2`; from the inherited values
-it requires all three replacements eligible and nonqualifying, producing
-`E=4,Q=1,U=0` and `no_follow_up`. Inventory exhaustion without either result
-yields `observe_more`. Missing, partial, excluded, conflicting, or unlaunched
-data is never imputed.
-
-Fresh agents receive no parent context, rubric, hypothesis, preferred result,
-or prior-arm material. Each started arm has one attempt and one reduction;
-raw prompts, chats, reasoning, reviews, diffs, paths, streams, controls, and
-credentials are not retained. TG-M20S.2 removes all temporary study machinery
-and corpus at its retirement boundary and retains only the bounded no-rerun
-receipt plus indexed non-authoritative history. No result changes current
-Skill, CLI, schema, Viewer, Task status semantics, automatic Task creation, or
-runtime decomposition. `proceed_to_design` still requires a new separately
-approved design Task.
-
+The result supports considering a separately approved Tier 2 design for
+bounded user-approved Task decomposition. It does not itself register a Task,
+activate automatic Task creation or splitting, or change the Skill, CLI,
+schema, Viewer, or target-project behavior. Evidence is limited to one
+repository, scenario, pair, and model/tool cohort; it does not establish a
+general causal effect or authenticated reviewer independence. The no-rerun
+receipt and
+[non-authoritative history](docs/history/v0.10.0/m20s-task-decomposition.md)
+preserve the bounded decision and limitations after temporary assets and the
+reduced corpus are retired.
 ### TG-M21.1 Approved Inactive Design Decisions
 
 TG-M21.1 is design authority only. The current product remains schema v16 with
@@ -325,7 +293,7 @@ Viewer receipt detail, authentication/signatures, the separate Skill
 proportionality guardrail, and Task decomposition.
 
 The implementation sequence is approved and registered but remains inactive
-until the TG-M20S interrupt and authority-layout predecessors complete:
+until the authority-layout predecessors complete:
 
 1. **TG-M21.2 atomic vertical activation:** add schema v17 and its immutable
    Receipt storage, repository/gate services, Viewer source compatibility, the
@@ -348,22 +316,23 @@ TG-M21.2. The registered activation and acceptance Tasks are respectively
 does not activate the inactive design; a semantic change or expansion still
 requires separate authority.
 
-## Current Work, Blocker, And User Decision
+## Registered Work, Static Gates, And User Decisions
 
 | Unit | Task | Current gate |
 |---|---|---|
-| TG-M20S.1 | `tg_task_ddfbf721eced8c58` | Approved interrupt contract/harness unit; consult Task DB for live state. |
-| TG-M20S.2 | `tg_task_e591f30d546ba69e` | Sequentially depends on accepted TG-M20S.1. |
-| TG-M21.1A | `tg_task_a6f5ec3147440e53` | Dependency-only hold through accepted TG-M20S.2; then resumes without another decision. |
+| TG-M20S.1 | `tg_task_ddfbf721eced8c58` | Protocol and harness freeze completed at `33948e3dd1c805e04eda0873c764dad15363175d`. |
+| TG-M20S.2 | `tg_task_e591f30d546ba69e` | Closed study; `proceed_to_design`; Task DB owns exact review and completion evidence. |
+| TG-M21.1A | `tg_task_a6f5ec3147440e53` | Statically depends on accepted TG-M20S.2; then proceeds without another decision. |
 | TG-M21.1B | `tg_task_8e30cf88c9018824` | Depends on accepted TG-M21.1A. |
 | TG-M21.2 | `tg_task_2f6fd712dd83f250` | Depends on accepted TG-M21.1B; remains inactive until atomic activation. |
 | TG-M21.3 | `tg_task_a42cb5d0383980bd` | Depends on accepted TG-M21.2; owns integrated M21 acceptance. |
 | TG-M12.3 | `tg_task_1f7503aca5e32cdc` | Blocked until a separately approved versioned Issue Skill intake contract, governing permission update, and explicit integration approval exist. |
 
 The approved TG-M20.1-TG-M20.5 sequence and TG-M21.1 design are complete.
-TG-M20S.1-TG-M20S.2 and the registered M21 follow-up chain may proceed in the
-order above without another decision. This table records static gates only;
-the Task database owns current, ready, blocked, review, and completion state.
+TG-M20S has its closed terminal decision; the registered M21 follow-up chain
+may proceed in the order above without another decision. This table records
+static gates only; the Task database owns current, ready, blocked, review, and
+completion state.
 A materially different write, external operation, scope expansion, or changed
 acceptance still requires explicit authority.
 
@@ -372,7 +341,7 @@ acceptance still requires explicit authority.
 These items are not implementation authority. Each needs a separately approved
 contract and execution unit.
 
-- After TG-M20S.2, use only its frozen result to decide whether to approve a
+- Use only the frozen TG-M20S.2 result to decide whether to approve a
   separate bounded Task-decomposition design. Never register that design as a
   study side effect.
 - Decide separately whether to approve the still-proposed verification-

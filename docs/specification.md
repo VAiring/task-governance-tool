@@ -10,9 +10,10 @@ reconciliation is the active current-product authority. TG-M20.1 through
 TG-M20.5 are complete. TG-M21.1 is complete at
 `fc2e0870ad9bf70830a082df168ad1992e07b51d`; its explicitly inactive
 acceptance contract below changes no current v0.10.0 behavior. The approved
-TG-M20S successor observation interrupts before TG-M21.1A. TG-M21.1A through
-TG-M21.3 are approved and registered, but remain inactive behind that bounded
-study and their own dependency and synchronization gates.
+TG-M20S successor observation has reached its frozen terminal
+`proceed_to_design` result and no-rerun retirement boundary. TG-M21.1A
+through TG-M21.3 are approved and registered but remain governed by their own
+dependency and synchronization gates; the Task database owns live state.
 
 This document specifies supported product behavior. `docs/design.md` owns
 implementation structure, `docs/implementation-roadmap.md` owns execution
@@ -994,87 +995,44 @@ absence, projection mismatch, reused reopen link, ordinal overflow, invalid
 gate relationship, and cycle/event ownership conflict; it is not a completion
 check blocker code.
 
-## Approved Temporary TG-M20S Task-Decomposition Observation Boundary
+## Completed TG-M20S Task-Decomposition Observation Boundary
 
-TG-M20S is a repository-development observation, not product behavior. Its
-authority is Task `tg_task_ddfbf721eced8c58`, Contract revision 1, with exact
-authority reference
+TG-M20S was a repository-development observation, not product behavior. Its
+frozen authority was Task `tg_task_ddfbf721eced8c58`, Contract revision 1,
+and
 `conversation_decision:2026-08-01:interrupt-successor-task-decomposition-observation`.
-It compares against product baseline
-`43c91d5987b0c35c66f834789aea782e98dcaff7` and requires the installable
-package subtree to equal Git tree
-`529abf7ac4e4ed778b383c90b6ac5f2fedc71615`. The matching package tree at the
-later TG-M21.1 completion revision does not change the comparison baseline or
-make that Git revision observation authority.
+It compared against baseline
+`43c91d5987b0c35c66f834789aea782e98dcaff7` and installable package tree
+`529abf7ac4e4ed778b383c90b6ac5f2fedc71615`.
 
-TG-M20S.1 freezes and validates the temporary protocol and minimal M20.4-only
-root harness before any trial. TG-M20S.2, Task
-`tg_task_e591f30d546ba69e`, may then launch only these replacement pairs, in
-this order, with at most one fresh `broad` and one fresh `bounded` arm per
-pair:
+TG-M20S.2 started only the first authorized pair,
+`sp_user_expansion_alternate`. Both fresh arms and all four required reduced
+records were eligible. Every bounded episode attested all four frozen
+independence fields as `yes`; the bounded Contract-revision delta sum was
+zero while the broad sum was one. The pair therefore qualified. Combining it
+with the frozen prior input changed the denominator from `E=1,Q=1,U=3` to
+`E=2,Q=2,U=2`, selected `proceed_to_design`, and stopped collection before
+either later replacement pair launched.
 
-1. `sp_user_expansion_alternate`;
-2. `sp_in_scope_discovery_alternate`; and
-3. `sp_cross_module_failure_alternate`.
+The result authorizes only a separately approved Tier 2 design proposal. It
+does not register such a Task or activate Skill guidance, public commands,
+SQLite or Viewer behavior, automatic Task creation, runtime Task splitting,
+parent/child Tasks, network behavior, or target-project mutation.
 
-They replace only the three unavailable category slots from M20.4. The
-reviewed `sp_multi_outcome_intake` pair and eligible Handoff control are fixed
-prior decision inputs and are neither reconstructed, rescored, nor rerun. The
-successor denominator therefore begins at `E=1`, `Q=1`, `U=3`, where `E` is
-the eligible count among the four conceptual non-control pairs, `Q` is the
-qualifying count among those eligible pairs, and `U=4-E`.
-
-A replacement pair is eligible only when both arms have the exact frozen
-authority, baseline, package tree, protocol, cohort, workload digest, and
-ordered episode identities, and every required machine measurement and
-observer attestation for both arms is eligible. A partial or excluded record,
-identity mismatch, inherited context, cross-trial visibility, coaching,
-privacy/schema failure, or unknown predicate field makes the pair unavailable;
-unknown and unavailable values are never zero or favorable evidence.
-
-An eligible pair qualifies only when every bounded-arm episode attests
-`acceptance_independent`, `verification_independent`,
-`commit_independent`, and `completion_independent` as `yes`, and at least one
-of these exact improvements holds:
-
-- a same-ID broad episode has at least one independence value `no` and at
-  least one position of its frozen machine delta vector is greater than the
-  bounded episode's corresponding position;
-- the bounded sum of Contract-revision deltas is at least one lower than the
-  broad sum; or
-- the bounded sum of review cycles is at least one lower than the broad sum.
-
-With the retained eligible Handoff control and no evidence conflict, the first
-new eligible qualifying pair makes `Q>=2` and yields
-`proceed_to_design`; collection stops after that complete pair. The negative
-rule is `E>=3` and `Q+U<2`; from the inherited values it can be reached only
-when all three replacements are eligible and nonqualifying, producing
-`E=4,Q=1,U=0` and `no_follow_up`. Fixed-inventory exhaustion without either
-rule yields `observe_more`. A positive result authorizes only a separately
-approved design proposal; no result registers a design Task or activates Task
-splitting.
-
-Fresh subjects receive no parent conversation, hypothesis, rubric, expected
-verdict, suspected failure, or preferred solution. Arms use isolated roots;
-paired arms use the same workload and model/tool/permission cohort; an agent is
-never reused. Raw requests, prompts, chats, reasoning, reviews, diffs, paths,
-streams, credentials, and control bytes are never retained. Every started arm
-has one reduction attempt and no rerun. TG-M20S.2 removes all raw and ephemeral
-material and the temporary harness, tests, fixtures, locks, and reduced corpus,
-retaining only the bounded terminal no-rerun receipt and non-authoritative
-history allowed by the design.
-
-TG-M20S adds no Skill instruction, public command, SQLite object, Viewer
-field, telemetry, automatic Task creation, runtime split, parent/child Task,
-network behavior, or target-project mutation. It cannot satisfy current
-verification, review, completion, or release gates.
+The temporary harness, tests, protocol, episode plan, reduced corpus, controls,
+journals, trial roots, and raw work are retired. The bounded receipt at
+`fixtures/m20s/decomposition-collection-receipt.json` is a no-rerun
+tombstone, not study evidence, current verification evidence, or authority to
+reconstruct or rescore the deleted corpus. Aggregate reasoning, limitations,
+and the retirement boundary are preserved only as
+[non-authoritative study history](history/v0.10.0/m20s-task-decomposition.md).
 
 ## Approved But Inactive TG-M21 Verification Receipt Contract
 
 This section is an approved implementation acceptance boundary, not current
 v0.10.0 behavior. The registered TG-M21.2 and TG-M21.3 units remain inactive
-until the TG-M20S interrupt, authority-layout predecessors, and their own
-synchronization gates complete. Until then, the product remains schema v16
+until their authority-layout predecessors and synchronization gates complete.
+Until then, the product remains schema v16
 with 20 command leaves, no Verification Receipt table or output, the existing
 `--verification-complete` gate, and the current Skill call order. Nothing in
 this section is invocable or advertised by the current package.
@@ -1345,8 +1303,9 @@ migration validation, Viewer source compatibility, package manifest, release
 checker, and focused offline tests in the approved activation unit. It must
 retain the present 20-leaf and schema-v16 behavior until that activation unit
 completes. The proportional-verification guardrail remains `observe_more`.
-The separately approved TG-M20S Task-decomposition observation is an interrupt
-predecessor, not M21 content, and activates no decomposition behavior.
+The completed TG-M20S Task-decomposition observation was a separate
+predecessor, not M21 content, and its result activates no decomposition
+behavior.
 
 ## SQLite, Migration, And Concurrency
 
@@ -2057,7 +2016,7 @@ beyond the one-shot envelope, external Issue lifecycle/sync until its intake
 contract, cross-project profiles, daily network update checks, reviewer
 identity/signatures/attestation, and a generic workflow engine.
 
-Deferred features, the temporary TG-M20S observation, and the inactive TG-M21
+Deferred features, the retired TG-M20S study result, and the inactive TG-M21
 implementation never change current
 acceptance, add a normal-loop command, or authorize target/external mutation
 until their separately approved implementation and synchronization gates

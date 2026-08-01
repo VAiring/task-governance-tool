@@ -13,7 +13,10 @@ TG-M16.4 behavioral acceptance remains part of the published baseline. The TG-M2
 successor observation reached its frozen `proceed_to_design` result and
 no-rerun retirement boundary. TG-M20S.3 now freezes an accepted but inactive
 Tier 2 decomposition design; it changes no current runtime, package, or agent
-behavior. The approved M21 execution contracts remain governed by their own
+behavior. TG-M22.1 now freezes the accepted but inactive Evidence Ledger,
+Completion Evidence Bundle, and deterministic JSON design below; it changes no
+current runtime, schema, package, generated artifact, or agent behavior. The
+approved M21 and M22 execution contracts remain governed by their own
 dependency and synchronization gates; the Task database owns their live state.
 
 This document is the current implementation design for the behavior specified
@@ -1189,6 +1192,446 @@ atomic TG-M21.2 boundary, and TG-M21.3 must accept that exact target. No
 partial unit activates the separate proportionality guardrail, project test
 strategy, command runner, approved exception, Viewer Receipt UI, or Task
 decomposition.
+
+## Accepted But Inactive TG-M22 Evidence Ledger Design
+
+TG-M22.1 defines two later atomic implementation slices without activating
+either. TG-M22.2 will establish schema v18 capture foundations. TG-M22.3 will
+establish schema v19 completion bundles and generated JSON. Until those units
+complete, the module list, schema-v17 runtime, state resolver, setup and
+maintenance shapes, Viewer source range, package manifest, Skill call graph,
+and public 21-leaf parser remain exactly current.
+
+TG-M22.2 advances the unpublished package candidate to v0.12.0 with schema
+v18. TG-M22.3 retains that unpublished package version and advances schema to
+v19. This development sequence makes no published-version, tag, Release,
+remote-commit, or artifact-identity claim.
+
+### Future Module Ownership
+
+The activation design introduces three narrow package modules:
+
+- `evidence_ledger.py` owns assurance/producer validation, authority-basis
+  canonicalization, whole-field criteria, evidence references, immutable link
+  rules, bundle assembly, omission codes, and canonical public allow-lists.
+- `artifact_manifest.py` owns bounded shell-free Git tree/index observation,
+  exact artifact entry normalization, deterministic rename pairing, and
+  canonical manifest digests. It reuses the safe process runner and stable
+  snapshot primitives from `git_snapshot.py` without routing complete
+  manifests through the truncated Review Packet projection.
+- `evidence_projection.py` owns coherent ledger capture, canonical bundle and
+  index JSON, digest validation, index-last atomic publication, generation
+  comparison, last-good preservation, and repair planning.
+
+`storage.py` remains the only SQLite owner. `tasks.py` and `contracts.py`
+invoke authority capture inside their existing savepoints;
+`verification_receipts.py` and `reviews.py` create typed evidence references
+inside their own existing writes; the target service creates one manifest and
+binding atomically; and the completion workflow passes a fully prepared bundle
+basis into the existing native-cycle savepoint. Feature modules never open raw
+SQLite connections.
+
+`state_resolver.py` and `state_paths.py` will become the sole owners of the
+fixed Evidence directory, index, bundle directory, and lock. `state_transition.py`
+will recognize only those generated files in a bounded setup stage.
+`maintenance.py` will add an Evidence-relevant flag and stage without
+conflating its generation with Viewer event generation. `setup.py` will own
+explicit repair. `cli.py` will add only the approved setup/doctor fields and
+warnings in M22.3; it adds no command or evidence-export parser branch.
+
+### Versioned Assurance And Producer Model
+
+The storage representation uses a closed `assurance_class` enum:
+
+```text
+machine_observed bound_attestation deterministically_derived
+external_reference legacy_unknown llm_derived
+```
+
+Producer identity is stored independently as `producer_class` plus a positive
+`producer_version`:
+
+```text
+taskgov_core taskgov_git trusted_caller legacy_migration external_system
+batch_analyzer verification_runner
+```
+
+Schema v18 admits the reserved future values structurally so a later migration
+does not need to reinterpret old records, while repository writers allow only
+the producers activated by their current schema/feature version. A producer
+class is not a user, reviewer, process, model, executable, machine, signature,
+or trust proof. Derived records preserve source IDs and classes; the validator
+rejects any assurance upgrade.
+
+The current mapping is implemented as the fixed source/state dispatch table in
+the specification, not caller input. A complete Git manifest reference is
+`machine_observed/taskgov_git/1`; its canonical digest is a structural seal,
+not a separately classed claim. An opaque diff-fingerprint manifest is
+`bound_attestation/trusted_caller/1`; an opaque external-revision manifest is
+`external_reference/external_system/1`. M21 Receipt and review inputs are
+`bound_attestation/trusted_caller/1`. Completion evidence dispatches by its
+closed kind to Git-observed, external-reference, or caller-attested exactly as
+specified. Migration-only absence is legacy unknown. M23 and M24 producer
+branches remain unreachable until their own schema and service activations.
+
+### Schema V18 Capture Foundation
+
+Migration 18 is named `evidence_ledger_capture`. It adds:
+
+```text
+authority_snapshots
+contract_criteria
+authority_snapshot_criteria
+artifact_manifests
+artifact_manifest_entries
+evidence_references
+```
+
+and the minimum current-pointer and target-binding columns needed to connect
+them to Tasks. All record IDs use their specification prefixes plus 16 random
+lowercase hexadecimal characters. Every owned table includes project and Task
+keys, composite foreign keys, deterministic uniqueness, canonical timestamp
+and digest checks, and update/delete denial triggers.
+
+An authority snapshot stores its Task-local positive generation, Task title
+and description, review tier, exact verification text and digest, Contract
+revision and exact scope/acceptance/constraints/authority reference, explicit
+specified/unspecified state, canonical basis digest, producer metadata, and
+creation time. The digest input is canonical sorted-key compact UTF-8 JSON
+under `taskgov-authority-snapshot-v1\0`; it excludes random row ID and creation
+time so semantically identical input is detectable before insert. The Task
+stores the current snapshot ID/generation.
+
+Task add inserts Task, initial Contract when supplied, criteria, snapshot, and
+the existing event in one savepoint. An authority-bearing edit first computes
+the complete resulting Task/Contract basis, reuses a same-content criterion,
+allocates a new snapshot only when that basis changes, and applies the current
+target invalidation in the same transaction. Concurrent writers serialize on
+the Task and snapshot generation; a replay produces no extra row or event.
+
+Criteria are immutable whole values, never parsed sections. The exact unique
+basis is Task, kind (`acceptance|verification`), and the SHA-256 of
+`taskgov-contract-criterion-v1\0`, kind, a NUL separator, and exact normalized
+UTF-8 text. Snapshot-to-criterion links record which acceptance and
+verification values applied. Contract revision zero and verification whose
+trimmed text is empty have no invented criterion and use fixed omission state
+in the snapshot/bundle basis. The snapshot and its digest still retain the
+exact verification bytes, including legacy whitespace; criterion selection
+never trims or rewrites stored authority.
+
+Migration 18 creates one `legacy_migration` snapshot of the exact current
+stored basis for each Task and reusable criteria only for actual stored
+values. It does not claim or reconstruct an earlier basis. Existing nonempty
+review targets retain their current tuple but get capture version 0 and null
+snapshot/manifest bindings; existing Receipts, findings, cycles, and events get
+no synthesized evidence reference. A new target set is capture version 1 and
+is required before a schema-v19 native bundle can close.
+
+The v18 service guard treats capture version 0 as read-only lineage. It runs
+inside the locked basis check for Verification Receipt add, Review Receipt
+add, Review Finding add, and completion, returning `evidence_basis_stale`
+before any source, event, or maintenance write. Review preparation and
+existing-Finding resolution do not create a reference and remain allowed.
+Every new native completion at v18 inserts its closed completion-evidence
+reference and cycle together with deferred ownership in the existing
+completion savepoint; it creates no bundle or Evidence JSON.
+
+An `evidence_reference` stores one closed source kind/state and stable source
+ID or canonical closed completion value, assurance, producer/version,
+ownership, exact Contract/snapshot/nullable-criterion/four-field-target
+binding, nullable cycle ID, source-content digest, and time. The repository
+uses one constant dispatch keyed by source kind/state and, for an opaque
+manifest, target kind; it materializes the exact required/null matrix and
+immutable source projections in the specification. It accepts no assurance,
+producer, binding, or relation from a caller. Current source kinds are
+`artifact_manifest`, `verification_receipt`,
+`review_receipt`, `review_finding`, and `completion_evidence`; reserved kinds
+`derived_analysis` and `runner_observation` remain writer-disabled.
+
+The stored state is `complete_git|opaque_target` for manifests, `recorded` for
+Receipt/Finding rows, and the exact closed completion kind for completion
+evidence. The source ID is the source-row ID or completion-cycle ID. These are
+repository constants, not caller fields.
+
+Reference creation shares the source write transaction. Its digest helper
+serializes exactly source kind/state, the specification source projection,
+all binding fields, and assurance/producer/version beneath
+`taskgov-evidence-reference-v1\0`; it excludes random reference ID and
+creation time. The Review Finding projection is only Finding ID, Receipt ID,
+severity, original summary, and creation time. Status, resolution summary, and
+resolution time are excluded, so later resolution cannot invalidate, mutate,
+or supersede that reference. Schema v19 captures the exact mutable state in a
+separate immutable seal-time snapshot. Validators recompute the dispatch and
+digest from source rows and fail on every class upgrade or invalid null.
+
+### Exact Git Manifest Capture
+
+`artifact_manifest.py` observes complete tree leaves, not Review Packet path
+summaries. It uses the existing safe Git environment, argument arrays, null
+stdin, bounded timeouts, disabled optional locks/fsmonitor/lazy fetch/external
+diff/text conversion, and pre/post stability observations. It never invokes a
+shell, hook, checkout, index write, object fetch, network, or caller command.
+
+For a staged target it derives the base tree from the exact HEAD and the target
+tree from the exact stage-0 index already accepted by Git snapshot capture.
+For a commit target it resolves the exact commit and its first parent, or the
+empty tree for a root. Tree leaves normalize to:
+
+```text
+relative_posix_path mode full_object_id
+```
+
+The merge of bytewise path-ordered before/after leaves produces add, delete,
+and modify entries. A second deterministic pass groups delete/add pairs by
+exact mode and object ID; only a one-delete/one-add group becomes rename.
+Ambiguous duplicate blobs and content-changing moves remain delete plus add.
+This classification is independent of Git rename heuristics and configuration.
+
+Each stored entry enforces the specification's four-row required/null matrix.
+After rename conversion, one pure sorter uses the exact old-or-new primary,
+new-or-old secondary, kind rank, mode, and object-ID tuple, with null first and
+unsigned UTF-8 byte comparison, then assigns contiguous zero-based ordinals.
+No SQLite, Git, grouping, or input iteration order reaches the digest. Paths
+must be safe UTF-8 relative POSIX names, at most 240 bytes, with no
+absolute, traversal, NUL, control, backslash, or platform-escape form. At most
+10,000 entries and 16 MiB of canonical manifest JSON are accepted. Overflow,
+unsafe path, missing object, or pre/post drift aborts target setting without a
+manifest, Task target, event, or maintenance effect. No truncation is valid.
+
+A fingerprint target stores one zero-entry `opaque_target` manifest with
+`bound_attestation/trusted_caller/1`; an external target stores the same state
+with `external_reference/external_system/1`. Both use omission
+`artifact_content_not_observed`. A Git target stores `complete_git`, the
+comparison base, object format, complete target tuple, authority snapshot,
+entry count, and SHA-256 over
+`taskgov-artifact-manifest-v1\0` plus canonical content. The target row stores
+capture version 1, authority snapshot ID, acceptance/verification criterion
+IDs, and manifest ID. All are revalidated in the short writer after Git closes.
+
+The capture service preserves existing precondition errors through initial
+repository/HEAD/index/commit validation. Its own result mapping is exhaustive:
+path decoding or safety failures use `artifact_manifest_path_unsafe`; count or
+canonical-size overflow uses `artifact_manifest_too_large`; object loss,
+object-format change, and pre/post observation drift use
+`artifact_manifest_stale`. Repository validation of stored manifests uses
+`evidence_ledger_inconsistent`. These branches return only the fixed sanitized
+messages and never partial entries or Git output.
+
+### Schema V19 Bundle Foundation
+
+Migration 19 is named `completion_evidence_bundles`. It adds:
+
+```text
+criterion_evidence_links
+completion_evidence_bundles
+completion_bundle_members
+completion_bundle_finding_snapshots
+evidence_projection_state
+```
+
+and internal `evidence_basis_version` plus nullable
+`completion_evidence_bundle_id` to `task_completion_cycles`. Existing cycles
+receive version 0/null. The only post-v19 version-0 insert remains the exact
+partial legacy reopen bridge. A normal native cycle requires version 1 and a
+same-project/same-Task bundle. Deferred composite foreign keys allow cycle and
+bundle rows to be inserted together without an update to either immutable row.
+
+Criterion links are append-only and unique by criterion, evidence reference,
+and closed relation. One repository constant enforces the specification
+matrix: acceptance receives current manifest and completion evidence as
+`completion_basis`, gate-selected Review Receipts as `review_assessment`, and
+current-generation Findings as `review_finding`; verification receives only
+the unique current qualifying Receipt as `verification_attestation`. Missing
+criteria produce no link, while the source reference remains a member. All
+other M22 pairings and cardinalities are rejected. Reserved analyzer/Runner
+pairings remain feature-disabled.
+
+`completion_bundle_members` freezes the exact link and source-reference set
+used by one bundle. Finding selection takes all current-generation Findings
+plus all earlier high/medium Findings, excludes earlier low Findings, and
+orders by generation, creation time, and ID. A post-v18 snapshot copies its
+reference and bound-attestation provenance. A selected pre-v18 Finding stores
+a null reference plus `legacy_unknown/legacy_migration/1`, creates no
+reference/link, and sets the fixed historical-Finding omission. The snapshot
+digest helper uses
+`taskgov-completion-bundle-finding-snapshot-v1\0` plus canonical JSON of the
+exact specification fields excluding only the digest. Only a referenced
+current-generation snapshot can link to current acceptance; older resolved
+high/medium snapshots remain unlinked gate history. No query later joins
+mutable Finding state to rewrite a sealed row or JSON file.
+
+Before `BEGIN IMMEDIATE`, the completion workflow prepares the exact Git
+completion plan and canonical JSON-shaped bundle basis without writing a file.
+Under the existing short writer it rereads Task, Contract, current authority
+snapshot, criterion bindings, target/capture version, manifest, current M21
+Receipt, review receipts/findings, and completion proposal; reevaluates all
+current gates; selects the same deterministic Receipt basis as the cycle; then
+computes the complete bundle payload and size. The savepoint inserts links,
+finding snapshots, bundle, cycle, Task update, completion event, and Evidence
+source-generation increment atomically. Any drift, invalid reference,
+assurance mismatch, digest mismatch, or bundle over 16 MiB rolls everything
+back.
+
+The bundle assembler emits the exact no-extra-key payload objects and array
+orders in the specification. Its omission list is the fixed ordered subset of
+`acceptance_criterion_absent`, `verification_criterion_absent`,
+`artifact_content_not_observed`, and
+`historical_finding_reference_absent`; no repository branch may add free-form
+or unknown omissions. The stored bundle digest is SHA-256 over
+`taskgov-completion-evidence-bundle-v1\0` and canonical payload bytes without
+LF and is identical to the later envelope and index-entry bundle digest. It
+contains no general row serializer, extension map, or publication-time value.
+
+Reopen checks the current cycle and bundle relation but never modifies either.
+The reopened Task clears current target and evidence through the existing
+path. Its later completion binds a new capture-version-1 target and creates the
+next cycle/bundle. Historical cycle/bundle rows are audit-only.
+
+### Evidence Projection State And Publication
+
+`CanonicalStatePaths` and `DatabaseTarget` gain only:
+
+```text
+evidence_root
+evidence_index
+evidence_bundles
+evidence_lock
+```
+
+All resolve beneath fixed `state/current/evidence`. The fixed bundle filename
+is `<bundle-id>.json`; no caller path exists. Resolution rejects links,
+reparse points, nonregular files, containment changes, DB aliases, unknown
+recognized names, and unsafe stage content. Generated files remain excluded
+from package manifests and source commits.
+
+`evidence_projection_state` stores nonnegative source generation, nullable
+published generation not above source, nullable index digest, and the same
+closed `succeeded|deferred|failed` outcome/time shape used by maintenance.
+Every completion-cycle insertion advances source generation exactly once in
+that same transaction. This includes a version-1 bundle/cycle and the sole
+version-0 partial legacy reopen bridge; the latter makes a new
+`legacy_unknown` index entry due without inventing a bundle. Authority,
+criteria, target, Receipt, review, and a reopen that inserts no bridge cycle do
+not advance it or publish an unsealed partial bundle.
+
+The projector uses one query-only transaction to capture project/schema,
+projection generation, every completion cycle, native bundle and members, and
+legacy state in bounded batches. It closes SQLite before rendering. One
+canonical encoder implements the specification's integer-only, exact-Unicode,
+sorted-key, compact UTF-8 rules and rejects every unsupported value. It renders
+the exact bundle and index envelopes with no extra keys. Bundle arrays use
+stored ordinal/matrix order; index entries use Task ID, cycle ordinal, and
+cycle ID order. Bundle payload digest equals the stored DB digest; file digest
+hashes the complete envelope plus LF; index payload digest equals projection
+state. There is no current clock input, so a same-basis repair is byte-identical.
+
+Publication under one zero-wait Evidence lock is:
+
+1. validate or atomically publish every bundle file required by the captured
+   generation through same-directory flushed temporaries;
+2. render, flush, and atomically replace the index last;
+3. conditionally record the captured published generation and index digest in
+   a short transaction; and
+4. recheck once, allowing at most one follow-up capture when a concurrent
+   completion advanced the generation.
+
+The index is the commit point. A bundle file not named by a valid index is not
+part of the public projection. A referenced file must match ID, project,
+format, and digest. Missing, behind, ahead, wrong-project, unknown-version,
+unsafe, or digest-mismatched state is never consumed by taskgov. The DB remains
+authoritative and setup can regenerate one-way. No JSON file is imported or
+used to repair DB state.
+
+The index is capped at 100,000 entries and 64 MiB and is never truncated; each
+bundle retains the 16-MiB cap. A bound violation leaves the prior index and
+records failure. A standalone report reader validates format/project/digests
+and reports the declared generation; only taskgov can compare that generation
+with the inaccessible canonical DB and prove freshness.
+
+The post-commit coordinator runs Evidence projection, Viewer refresh, then
+due backup, independently. Completion remains successful after Evidence lock
+contention or rendering failure and adds only the fixed deferred/failed
+warning. Any later eligible business mutation may retry one due Evidence
+refresh without an LLM decision. Setup directly repairs missing/stale/corrupt
+projection after migration/configuration and before Viewer publication;
+read-only setup reports the planned write and does nothing. Doctor reads the
+stored generation/outcome only.
+
+M22.3 will update setup data with `evidence_status`, add
+`evidence_projection_publish` to the ordered setup write vocabulary, add one
+fixed Evidence maintenance object to doctor, and synchronize the corresponding
+stable errors/warnings. These are additive changes to existing leaves, not a
+new leaf. Current M22.1 documentation does not activate them.
+
+### Migration, Viewer, Packaging, And Legacy Rules
+
+Migration 18 fingerprints and preserves every v17 business row before adding
+capture objects and one current-basis snapshot per Task. It creates no
+historical target binding, manifest, evidence reference, Receipt, finding, or
+cycle. Migration 19 adds only version-0/null bundle discriminators to existing
+cycles and an initial projection generation/state; it creates no historical
+bundle or criterion link. Reentry validates exact objects, triggers, ownership,
+digests, counts, and absence of invented evidence.
+
+Viewer snapshot v4 accepts source schema v18 at M22.2 and v19 at M22.3 while
+retaining its exact content and UI. It does not expose authority snapshots,
+criteria, artifacts, links, bundles, or Evidence projection state. Its
+completion-history reader validates the added cycle discriminator internally
+and discards the bundle ID. Evidence projection generation is independent of
+Viewer source generation.
+
+M22.2 and M22.3 each update the unpublished package candidate, manifest,
+release checker, setup/recovery/staging allow-lists, Skill/reference wording,
+formal docs, and migration/Viewer compatibility in the same commit as their
+reachable schema. M22.3 also updates durable `AGENTS.md` routing so the fixed
+Evidence projection joins DB, backup, and Viewer as an allowed generated-state
+artifact. Neither unit publishes a tag, Release, or remote mutation.
+
+Pre-v19 cycles remain visible only as index entries with
+`bundle_state=legacy_unknown`; there is no bundle file and no attempted Git or
+prose reconstruction. The legacy reopen bridge remains version 0/null and
+advances Evidence source generation when it inserts that cycle. A selected
+pre-v18 high/medium Finding is represented only by the nullable-reference
+legacy snapshot and omission defined above. A post-v19 recompletion creates
+only a new version-1 bundle for the new cycle. M21 Receipts retain their exact
+row, target, result/coverage, caller-attested class, and current-gate rules.
+
+### Future M23 And M24 Seams
+
+The M23 analyzer may later read one exact bundle file/digest through a bounded
+core-created packet and append a separate `llm_derived` analysis revision and
+criterion link. It may not update a bundle, create canonical evidence, change a
+Task or gate, or read SQLite directly. M22 activates no worker, outbox, remote
+model, report narrative, retry policy, or analyzer producer.
+
+The M24 Runner may later add a runner-observation table and a new tagged
+verification-basis/bundle version. A Runner can classify only its directly
+observed argv-plan execution facts as machine-observed; project test selection,
+environment authenticity, external effects, and old caller evidence do not
+inherit that class. Shadow evidence remains gate-ineligible. Later gate
+activation must retain the M21 Receipt path as an explicit fallback and never
+rewrite existing cycles, bundles, links, or digests.
+
+### Implementation And Acceptance Units
+
+1. **TG-M22.2** owns schema v18, authority/criterion/reference repositories,
+   Git manifest capture, Task/Contract/target/Receipt/Finding/completion
+   integration including capture-v0 rejection and native-cycle completion
+   references, migration, Viewer-v4 v18 compatibility, synchronized
+   docs/Skill/package, focused and full offline tests, exact diff, Verification
+   Receipt, and two Tier 2 reviews. It must not create bundles or Evidence JSON.
+2. **TG-M22.3** owns schema v19, native bundle sealing, immutable criterion
+   links and finding snapshots, projection state/resolver/staging/setup/
+   maintenance, index-last JSON publication, Viewer-v4 v19 compatibility,
+   synchronized governing/Skill/package surfaces, full offline tests, exact
+   diff, Verification Receipt, and two Tier 2 reviews.
+3. **TG-M22.4** owns realistic integrated acceptance and only bounded repairs
+   inside the accepted design. It does not activate M23, M24, remote inference,
+   Viewer Evidence UI, another command, or another Skill-loop call.
+
+Every unit is Tier 2 and lands as a coherent completion commit. Schema v18 and
+v19 are not reachable until their exact owning code, migrations, Viewer source
+range, package inventory, tests, and current formal contracts agree.
 
 ## Task Contracts, Checkpoints, Handoffs, And Effort
 

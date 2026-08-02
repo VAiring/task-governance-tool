@@ -21,6 +21,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 PROJECT_ID_HASH_LENGTH = 12
 SCHEMA_VERSION = 17
+VIEWER_MIN_SOURCE_SCHEMA_VERSION = 5
 STORED_TASK_VERIFICATION_LIMIT_V17 = 500
 SQLITE_INT64_MAX = (1 << 63) - 1
 IDENTITY_SCHEMES = {"legacy_path_v1", "uuid_v1"}
@@ -627,6 +628,14 @@ def _unreadable_project_state() -> StorageError:
         "project_state_unreadable",
         "project state could not be read safely",
     )
+
+
+def validate_sqlite_integer_storage_class(value: object) -> int:
+    """Require an exact SQLite INTEGER value without coercing its storage class."""
+
+    if type(value) is not int:
+        raise _unreadable_project_state()
+    return value
 
 
 def validate_lower_hex_64(value: str, *, field: str) -> str:
@@ -2769,12 +2778,15 @@ def apply_managed_backup_generations_migration(
                     ),
                     None,
                 )
+                applied_backup_generations = validate_sqlite_integer_storage_class(
+                    maintenance["applied_backup_generations"]
+                )
                 if (
                     latest is None
                     or latest.published_at
                     != str(maintenance["backup_last_success_at"])
                     or latest.publication_retention
-                    != int(maintenance["applied_backup_generations"])
+                    != applied_backup_generations
                 ):
                     raise StorageError(
                         "internal_error",
@@ -8075,17 +8087,21 @@ def read_project_maintenance(
             str(row["enabled_at"]) if row["enabled_at"] is not None else None
         ),
         backup_interval_minutes=(
-            int(row["backup_interval_minutes"])
+            validate_sqlite_integer_storage_class(
+                row["backup_interval_minutes"]
+            )
             if row["backup_interval_minutes"] is not None
             else None
         ),
         backup_generations=(
-            int(row["backup_generations"])
+            validate_sqlite_integer_storage_class(row["backup_generations"])
             if row["backup_generations"] is not None
             else None
         ),
         applied_backup_generations=(
-            int(row["applied_backup_generations"])
+            validate_sqlite_integer_storage_class(
+                row["applied_backup_generations"]
+            )
             if row["applied_backup_generations"] is not None
             else None
         ),
@@ -8629,7 +8645,9 @@ def _metadata_from_generation_row(
         MigrationBackupMetadata(
             generation_id=str(row["generation_id"]),
             published_at=str(row["published_at"]),
-            publication_retention=int(row["publication_retention"]),
+            publication_retention=validate_sqlite_integer_storage_class(
+                row["publication_retention"]
+            ),
         )
     )
 
@@ -9567,7 +9585,7 @@ def validate_snapshot_database(
         )
 
     version = current_schema_version(connection)
-    if version < 5 or version > SCHEMA_VERSION:
+    if version < VIEWER_MIN_SOURCE_SCHEMA_VERSION or version > SCHEMA_VERSION:
         raise StorageError(
             "migration_required",
             (

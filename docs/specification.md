@@ -1588,6 +1588,14 @@ must equal that predecessor's complete metadata, and only the first retained
 candidate may point to an older generation whose ID is absent from the complete
 physical candidate set. Candidate schemas need not be monotonic after an older
 fallback is recovered and backed up for migration.
+Every present SQLite value whose recovery metadata contract is `INTEGER`,
+including generation-row retention and maintenance backup policy/pointer
+integers, is checked at the shared storage-reader boundary before conversion
+or range validation. Only the Python value produced for SQLite storage class
+`INTEGER` is accepted; `REAL`, `TEXT`, `BLOB`, Boolean-like non-SQLite input,
+or another storage class is structural failure. It is set-fatal as
+`project_state_unreadable`, including with a present primary or an older valid
+candidate, and cannot reach private normalization or canonical publication.
 A candidate-derived `-journal`, `-wal`, or `-shm` entry, including a
 filesystem case alias, is set-fatal even when empty. The stored Task validator
 examines all rows for malformed storage values before returning a
@@ -1633,6 +1641,17 @@ applies the same observation to the source and copied stage and re-runs the
 full source resolution immediately before publishing the private stage.
 Any shallow inventory refresh precedes, and never follows, the final deep
 source-set comparison.
+
+`restore_managed_backup` returns only after the no-replace canonical link has
+succeeded. That return is the durable setup boundary: setup records
+`database_restore` immediately, before comparing the returned source schema or
+performing its post-link setup-state inspection. A later schema mismatch,
+inspection failure, or other restore-stage failure remains
+`setup_restore_failed` and returns `database_restore` in the exact durable
+`completed_writes` prefix. A failure before the link/return reports no restore
+write. Retry recomputes from the canonical state and the restore temporary is
+cleaned in either case; no later failure authorizes reselection or another
+canonical publication.
 
 The current schema-v17 implementation admits 500 and locally rejects 501;
 TG-M22.2 must extend the same classifier to admit 1,000 and reject 1,001 for a

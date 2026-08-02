@@ -473,6 +473,14 @@ refer to an older generation ID absent from the complete physical candidate
 set. Candidate schema versions are not required to be monotonic because an
 older fallback can produce a new pre-migration backup after a newer rejected
 head.
+The storage layer owns one raw SQLite integer-storage validator used by the
+resolver's generation-row and maintenance-pointer reads and by ordinary
+maintenance/managed-generation repository reads. It accepts only
+`type(value) is int` before semantic range validation; present `REAL`, `TEXT`,
+`BLOB`, or other non-`INTEGER` values are never normalized with `int(...)`.
+Resolver and setup paths translate that defect to the structural
+`project_state_unreadable` result before selection or publication, while the
+same helper keeps ordinary reader and setup-reentry behavior aligned.
 Candidate-derived rollback-journal, WAL, and SHM names, including filesystem
 case aliases, are rejected regardless of size. The storage classifier scans
 all Task rows so a later malformed SQLite value cannot be hidden by an earlier
@@ -521,6 +529,15 @@ staged validation still invoke the Task-verification classifier for every
 backup: local privacy/capacity results are ignored for selection, while a
 malformed stored value remains structural and set-fatal.
 
+The successful return from `restore_managed_backup` is the durable
+publication boundary because it occurs only after the canonical no-replace
+link. Setup appends `database_restore` immediately on that return, then checks
+the returned schema and reads post-link setup state. Failure in either later
+check keeps `setup_restore_failed` but carries the durable restore prefix;
+failure before return keeps the prefix empty. The restore primitive always
+removes its sibling temporary in `finally`, and a retry observes the canonical
+primary instead of reselecting or publishing another candidate.
+
 The recovery-specific backup scan uses the same storage validator and excludes
 only its privacy/capacity rejection from selection. A structurally coherent set
 with only local rejections has no eligible candidate and reaches
@@ -542,7 +559,10 @@ mixed-schema recovery in the release lane. Shared mutation helpers live in the
 non-discovered `m214b_test_support.py`, while the common tree snapshot helper
 captures complete managed-state names, kinds, sizes, and contents for no-write
 assertions. New recovery cases extend their owning module instead of restoring
-one mixed oversized file.
+one mixed oversized file. TOCTOU coverage observes the phase order around a
+drift injection, proves that the last deep resolver comparison follows the
+final shallow inventory refresh, and proves that the canonical publish call is
+not reached; it does not freeze a private helper call count.
 
 Other contained names are opaque user material and are preserved. A fixed
 primary always wins even when invalid; the resolver never falls back around

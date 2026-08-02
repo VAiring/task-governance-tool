@@ -82,6 +82,68 @@ def replace_maintenance_pointer(
         connection.commit()
 
 
+def replace_recovery_integer_storage(
+    path: Path,
+    *,
+    location: str,
+    value: object,
+) -> str:
+    """Replace one recovery integer with an exact SQLite storage-class fixture."""
+
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute("PRAGMA ignore_check_constraints = ON")
+        if location == "generation_row":
+            row = connection.execute(
+                """
+                SELECT generation_id
+                  FROM managed_backup_generations
+                 ORDER BY published_at, generation_id
+                 LIMIT 1
+                """
+            ).fetchone()
+            if row is None:
+                raise AssertionError("generation-row fixture is missing")
+            cursor = connection.execute(
+                """
+                UPDATE managed_backup_generations
+                   SET publication_retention = ?
+                 WHERE generation_id = ?
+                """,
+                (value, str(row[0])),
+            )
+            observed = connection.execute(
+                """
+                SELECT typeof(publication_retention)
+                  FROM managed_backup_generations
+                 WHERE generation_id = ?
+                """,
+                (str(row[0]),),
+            ).fetchone()
+        elif location in {
+            "maintenance_pointer",
+            "backup_interval",
+            "backup_generations",
+        }:
+            column = {
+                "maintenance_pointer": "applied_backup_generations",
+                "backup_interval": "backup_interval_minutes",
+                "backup_generations": "backup_generations",
+            }[location]
+            cursor = connection.execute(
+                f"UPDATE project_maintenance SET {column} = ?",
+                (value,),
+            )
+            observed = connection.execute(
+                f"SELECT typeof({column}) FROM project_maintenance"
+            ).fetchone()
+        else:
+            raise AssertionError("unknown recovery integer fixture")
+        if cursor.rowcount != 1 or observed is None:
+            raise AssertionError("recovery integer fixture was not updated")
+        connection.commit()
+        return str(observed[0])
+
+
 def inject_primary_candidate_metadata_conflict(target, artifact) -> None:
     generation_id = "tg_backup_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     with closing(sqlite3.connect(target.db_path)) as connection:

@@ -2800,6 +2800,7 @@ def run_setup(
                     current_candidate,
                     expected_recovery=locked_resolution.fixed_recovery,
                 )
+                completed.append("database_restore")
                 if restored_version != schema_from:
                     raise StorageError(
                         "setup_restore_failed",
@@ -2809,7 +2810,6 @@ def run_setup(
                 current_maintenance = bool(
                     restored_state.maintenance_enabled
                 )
-                completed.append("database_restore")
                 if plan.backup:
                     stage = "backup"
                     backup_metadata = publish_setup_backup(

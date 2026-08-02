@@ -11,6 +11,7 @@ from tests.m14_test_support import tree_snapshot
 from tests.m214b_test_support import (
     inject_primary_candidate_metadata_conflict as _inject_primary_candidate_metadata_conflict,
     publish_generations as _publish_generations,
+    replace_recovery_integer_storage as _replace_recovery_integer_storage,
     replace_verification as _replace_verification,
     restore_original_mtime as _restore_original_mtime,
     restore_temporaries as _restore_temporaries,
@@ -27,10 +28,111 @@ from task_governance_tool.state_resolver import (
     resolve_project_state,
     resolve_setup_project_state,
 )
-from task_governance_tool.storage import StorageError
+from task_governance_tool.storage import (
+    StorageError,
+    read_managed_backup_repository,
+    validate_sqlite_integer_storage_class,
+)
 
 
 class M214BRecoveryBoundaryTests(unittest.TestCase):
+    def test_recovery_integer_storage_class_fault_matrix_is_set_fatal(self):
+        for location in (
+            "generation_row",
+            "maintenance_pointer",
+            "backup_interval",
+            "backup_generations",
+        ):
+            for primary_present in (True, False):
+                with (
+                    self.subTest(
+                        location=location,
+                        primary_present=primary_present,
+                    ),
+                    tempfile.TemporaryDirectory() as tmp,
+                ):
+                    install, target, _ = _setup_current(Path(tmp))
+                    artifacts = _publish_generations(
+                        target,
+                        "2098-02-10T00:00:00Z",
+                        "2099-02-10T00:00:00Z",
+                    )
+                    corrupted_path = (
+                        target.db_path if primary_present else artifacts[-1].path
+                    )
+                    self.assertEqual(
+                        _replace_recovery_integer_storage(
+                            corrupted_path,
+                            location=location,
+                            value=4.5,
+                        ),
+                        "real",
+                    )
+                    if not primary_present:
+                        target.db_path.unlink()
+
+                    state_root = install.skill_root / "state"
+                    before_managed_state = tree_snapshot(state_root)
+                    if primary_present:
+                        with self.assertRaises(StorageError) as caught:
+                            read_managed_backup_repository(target)
+                        self.assertEqual(
+                            caught.exception.code,
+                            "project_state_unreadable",
+                        )
+
+                    result = setup_service.run_setup(
+                        repo=str(install.project_root),
+                        repo_explicit=True,
+                        script_path=install.entrypoint,
+                        read_only=False,
+                        backup_interval_minutes=None,
+                        backup_generations=None,
+                    )
+
+                    self.assertFalse(result.ok)
+                    self.assertEqual(
+                        result.error_code,
+                        "project_state_unreadable",
+                    )
+                    self.assertEqual(result.data["planned_writes"], [])
+                    self.assertEqual(result.data["completed_writes"], [])
+                    self.assertEqual(
+                        tree_snapshot(state_root),
+                        before_managed_state,
+                    )
+                    self.assertEqual(
+                        target.db_path.exists(),
+                        primary_present,
+                    )
+
+    def test_recovery_integer_validator_rejects_non_integer_storage_classes(self):
+        with closing(sqlite3.connect(":memory:")) as connection:
+            connection.execute("CREATE TABLE values_under_test(value)")
+            for label, value in (
+                ("real", 4.5),
+                ("text", "4"),
+                ("blob", sqlite3.Binary(b"4")),
+            ):
+                with self.subTest(storage_class=label):
+                    connection.execute("DELETE FROM values_under_test")
+                    connection.execute(
+                        "INSERT INTO values_under_test(value) VALUES (?)",
+                        (value,),
+                    )
+                    raw_value, storage_class = connection.execute(
+                        "SELECT value, typeof(value) FROM values_under_test"
+                    ).fetchone()
+                    self.assertEqual(storage_class, label)
+                    with self.assertRaises(StorageError) as caught:
+                        validate_sqlite_integer_storage_class(raw_value)
+                    self.assertEqual(
+                        caught.exception.code,
+                        "project_state_unreadable",
+                    )
+        with self.assertRaises(StorageError):
+            validate_sqlite_integer_storage_class(True)
+
     def test_fixed_primary_setup_rejects_structural_backup_task_value(self):
         with tempfile.TemporaryDirectory() as tmp:
             install, target, _ = _setup_current(Path(tmp))
@@ -274,7 +376,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             self.assertFalse(target.db_path.exists())
             self.assertEqual(_restore_temporaries(target), [])
 
-    def test_final_deep_validation_follows_weak_inventory_rescan(self):
+    def test_publication_inventory_precedes_final_deep_and_blocks_link(self):
         with tempfile.TemporaryDirectory() as tmp:
             install, target, _ = _setup_current(Path(tmp))
             artifacts = _publish_generations(
@@ -286,12 +388,33 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             selected_path = artifacts[-1].path
             target.db_path.unlink()
             real_inventory = backup_service._require_recovery_inventory
-            calls = 0
+            real_deep_validation = backup_service._require_fixed_recovery_state
+            real_prepare = backup_service._prepare_recovered_repository
+            events: list[str] = []
+            drift_injected = False
 
-            def corrupt_during_final_inventory(restore_target, candidate):
-                nonlocal calls
-                calls += 1
-                if calls == 3:
+            def observe_inventory(restore_target, candidate):
+                observed = real_inventory(restore_target, candidate)
+                if (
+                    drift_injected
+                    and restore_target.db_path == target.db_path
+                ):
+                    events.append("post_drift_shallow")
+                return observed
+
+            def prepare_then_drift(
+                restore_target,
+                candidate,
+                *,
+                expected_snapshot=None,
+            ):
+                nonlocal drift_injected
+                result = real_prepare(
+                    restore_target,
+                    candidate,
+                    expected_snapshot=expected_snapshot,
+                )
+                if not drift_injected:
                     before = selected_path.stat()
                     with closing(sqlite3.connect(selected_path)) as connection:
                         row = connection.execute(
@@ -313,12 +436,47 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                         self.assertEqual(cursor.rowcount, 1)
                         connection.commit()
                     _restore_original_mtime(selected_path, before)
-                return real_inventory(restore_target, candidate)
+                    drift_injected = True
+                    events.append("post_prepare_drift")
+                return result
 
-            with mock.patch.object(
-                backup_service,
-                "_require_recovery_inventory",
-                side_effect=corrupt_during_final_inventory,
+            def observe_deep_validation(
+                restore_target,
+                candidate,
+                expected_recovery,
+            ):
+                events.append(
+                    "post_drift_deep"
+                    if drift_injected
+                    else "entry_deep"
+                )
+                return real_deep_validation(
+                    restore_target,
+                    candidate,
+                    expected_recovery,
+                )
+
+            with (
+                mock.patch.object(
+                    backup_service,
+                    "_require_recovery_inventory",
+                    side_effect=observe_inventory,
+                ),
+                mock.patch.object(
+                    backup_service,
+                    "_prepare_recovered_repository",
+                    side_effect=prepare_then_drift,
+                ),
+                mock.patch.object(
+                    backup_service,
+                    "_require_fixed_recovery_state",
+                    side_effect=observe_deep_validation,
+                ),
+                mock.patch.object(
+                    backup_service.os,
+                    "link",
+                    wraps=backup_service.os.link,
+                ) as publish_link,
             ):
                 result = setup_service.run_setup(
                     repo=str(install.project_root),
@@ -332,7 +490,28 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(result.error_code, "setup_restore_failed")
             self.assertEqual(result.data["completed_writes"], [])
-            self.assertEqual(calls, 3)
+            self.assertTrue(drift_injected)
+            self.assertIn("entry_deep", events)
+            self.assertIn("post_prepare_drift", events)
+            self.assertIn("post_drift_shallow", events)
+            self.assertIn("post_drift_deep", events)
+            last_shallow = max(
+                index
+                for index, event in enumerate(events)
+                if event == "post_drift_shallow"
+            )
+            last_deep = max(
+                index
+                for index, event in enumerate(events)
+                if event == "post_drift_deep"
+            )
+            self.assertLess(
+                events.index("post_prepare_drift"),
+                last_shallow,
+            )
+            self.assertLess(last_shallow, last_deep)
+            self.assertEqual(last_deep, len(events) - 1)
+            publish_link.assert_not_called()
             self.assertFalse(target.db_path.exists())
             self.assertEqual(_restore_temporaries(target), [])
 

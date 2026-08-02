@@ -28,7 +28,15 @@ SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from task_governance_tool.storage import validate_identity_project_id  # noqa: E402
+from task_governance_tool.storage import (  # noqa: E402
+    SCHEMA_VERSION,
+    VIEWER_MIN_SOURCE_SCHEMA_VERSION,
+    validate_identity_project_id,
+)
+from task_governance_tool.viewer import (  # noqa: E402
+    SNAPSHOT_VERSION,
+    VIEWER_HISTORY_SCHEMA_VERSION,
+)
 try:  # noqa: E402
     from m14_test_support import canonical_test_path, make_physical_install
 except ModuleNotFoundError:  # noqa: E402
@@ -389,6 +397,76 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "--confirm-relocation cannot be used with --read-only",
         ):
             self.assertIn(message, contracts)
+
+    def test_cli_contract_schema_examples_follow_runtime_owners(self):
+        contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
+            encoding="utf-8"
+        )
+        setup_section, doctor_and_later = contracts.split("## `doctor`", 1)
+        doctor_section = doctor_and_later.split("## Task Commands", 1)[0]
+
+        setup_example_match = re.search(
+            r"`data` always has exactly:\s*```json\s*(.*?)\s*```",
+            setup_section,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(setup_example_match)
+        setup_example = json.loads(setup_example_match.group(1))
+        self.assertEqual(setup_example["schema_to"], SCHEMA_VERSION)
+        self.assertIn(f"`schema_to={SCHEMA_VERSION}`", setup_section)
+
+        doctor_example_match = re.search(
+            r"A ready result has this structure:\s*```json\s*(.*?)\s*```",
+            doctor_section,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(doctor_example_match)
+        doctor_example = json.loads(doctor_example_match.group(1))
+        project_state = doctor_example["components"]["project_state"]
+        self.assertEqual(project_state["schema_version"], SCHEMA_VERSION)
+        self.assertEqual(
+            project_state["required_schema_version"],
+            SCHEMA_VERSION,
+        )
+
+        snapshot_contract = re.search(
+            r"Snapshot v(?P<snapshot>\d+) reads source schemas\s+"
+            r"(?P<first>\d+) through (?P<last>\d+)\.\s+"
+            r"Sources (?P<legacy_first>\d+)-(?P<legacy_last>\d+) "
+            r"receive .*?; sources "
+            r"(?P<history_first>\d+)-(?P<history_last>\d+) use stored cycles\.",
+            contracts,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(snapshot_contract)
+        self.assertEqual(
+            int(snapshot_contract.group("snapshot")),
+            SNAPSHOT_VERSION,
+        )
+        self.assertEqual(
+            int(snapshot_contract.group("first")),
+            VIEWER_MIN_SOURCE_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            int(snapshot_contract.group("last")),
+            SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            int(snapshot_contract.group("legacy_first")),
+            int(snapshot_contract.group("first")),
+        )
+        self.assertEqual(
+            int(snapshot_contract.group("legacy_last")),
+            VIEWER_HISTORY_SCHEMA_VERSION - 1,
+        )
+        self.assertEqual(
+            int(snapshot_contract.group("history_first")),
+            VIEWER_HISTORY_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            int(snapshot_contract.group("history_last")),
+            SCHEMA_VERSION,
+        )
 
     def test_m16_reconciliation_guidance_is_conditional_and_bounded(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")

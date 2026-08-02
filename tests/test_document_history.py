@@ -256,6 +256,19 @@ class DocumentHistoryTests(unittest.TestCase):
             "`setup_restore_failed` before restore or canonical publication |",
             current_section_flat,
         )
+        self.assertIn(
+            "SQLite storage class `INTEGER` is accepted",
+            current_section_flat,
+        )
+        self.assertIn(
+            "setup records `database_restore` immediately",
+            current_section_flat,
+        )
+        self.assertIn(
+            "returns `database_restore` in the exact durable "
+            "`completed_writes` prefix",
+            current_section_flat,
+        )
         self.assertNotIn(
             "### TG-M21.4B Recovery Candidate Validity Matrix",
             specification,
@@ -281,6 +294,11 @@ class DocumentHistoryTests(unittest.TestCase):
         self.assertIn(
             "candidate plan exists, drift, copy, normalization, or no-clobber "
             "publication failure maps to `setup_restore_failed`",
+            design_flat,
+        )
+        self.assertIn("`type(value) is int`", design)
+        self.assertIn(
+            "does not freeze a private helper call count",
             design_flat,
         )
         self.assertIn(

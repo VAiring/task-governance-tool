@@ -45,6 +45,7 @@ from task_governance_tool.storage import (
     validate_lower_hex_64,
     validate_migration_backup_metadata,
     validate_operational_journal_state,
+    validate_sqlite_integer_storage_class,
     validate_stored_task_verification,
 )
 
@@ -1102,7 +1103,9 @@ def _read_generation_rows(
         metadata = MigrationBackupMetadata(
             generation_id=str(row["generation_id"]),
             published_at=str(row["published_at"]),
-            publication_retention=int(row["publication_retention"]),
+            publication_retention=validate_sqlite_integer_storage_class(
+                row["publication_retention"]
+            ),
         )
         try:
             validate_migration_backup_metadata(metadata)
@@ -1140,7 +1143,7 @@ def _read_maintenance_pointer(
     metadata = MigrationBackupMetadata(
         generation_id=str(values[0]),
         published_at=str(values[1]),
-        publication_retention=int(values[2]),
+        publication_retention=validate_sqlite_integer_storage_class(values[2]),
     )
     try:
         return validate_migration_backup_metadata(metadata)

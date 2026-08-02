@@ -219,7 +219,7 @@ Expired or stale context requires a fresh preview and fresh user approval.
     "viewer_publish"
   ],
   "schema_from": null,
-  "schema_to": 16,
+  "schema_to": 17,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -254,7 +254,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=16`. A later-stage failure reports only
+null observed values except `schema_to=17`. A later-stage failure reports only
 the durable ordered prefix.
 
 Setup is noninteractive and idempotent. It does not create a second
@@ -307,8 +307,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 16,
-      "required_schema_version": 16
+      "schema_version": 17,
+      "required_schema_version": 17
     },
     "task_summary": {
       "code": "ready",
@@ -959,8 +959,8 @@ command, or normal-loop decision is added.
 
 These operations add no Skill command or LLM judgment. Their artifacts and
 paths are absent from public command output. Snapshot v4 reads source schemas
-5 through 16. Sources 5-14 receive an empty, legacy-incomplete completion
-history; sources 15-16 use stored cycles. Every Task receives the same bounded
+5 through 17. Sources 5-14 receive an empty, legacy-incomplete completion
+history; sources 15-17 use stored cycles. Every Task receives the same bounded
 five-key projection as `task show` without exposing internal event links,
 maintenance data, or checkpoint content.
 

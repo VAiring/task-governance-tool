@@ -221,6 +221,95 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             )
             self.assertEqual(self._temporary_restore_paths(install), [])
 
+    def test_post_link_restore_failure_reports_durable_completed_prefix(self):
+        for failure in ("schema_mismatch", "inspect_failure"):
+            with (
+                self.subTest(failure=failure),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                install, _ = self._initialize_with_backed_up_task(Path(tmp))
+                install.db_path.unlink()
+                real_restore = setup_service.restore_managed_backup
+                real_inspect = setup_service.inspect_setup_state
+                published = False
+
+                def restore_then_fail(
+                    target,
+                    candidate,
+                    *,
+                    expected_recovery,
+                ):
+                    nonlocal published
+                    version = real_restore(
+                        target,
+                        candidate,
+                        expected_recovery=expected_recovery,
+                    )
+                    self.assertTrue(target.db_path.is_file())
+                    published = True
+                    return version - 1 if failure == "schema_mismatch" else version
+
+                def inspect_then_fail(target):
+                    if published and failure == "inspect_failure":
+                        raise StorageError(
+                            "project_state_unreadable",
+                            "project state could not be read safely",
+                        )
+                    return real_inspect(target)
+
+                with (
+                    mock.patch.object(
+                        setup_service,
+                        "restore_managed_backup",
+                        side_effect=restore_then_fail,
+                    ),
+                    mock.patch.object(
+                        setup_service,
+                        "inspect_setup_state",
+                        side_effect=inspect_then_fail,
+                    ),
+                ):
+                    result = setup_service.run_setup(
+                        repo=str(install.project_root),
+                        repo_explicit=True,
+                        script_path=install.entrypoint,
+                        read_only=False,
+                        backup_interval_minutes=None,
+                        backup_generations=None,
+                    )
+
+                self.assertFalse(result.ok)
+                self.assertEqual(result.error_code, "setup_restore_failed")
+                self.assertEqual(result.data["planned_writes"], RECOVERY_WRITES)
+                self.assertEqual(
+                    result.data["completed_writes"],
+                    ["database_restore"],
+                )
+                self.assertTrue(install.db_path.is_file())
+                self.assertEqual(self._temporary_restore_paths(install), [])
+
+                with mock.patch.object(
+                    setup_service,
+                    "restore_managed_backup",
+                    wraps=real_restore,
+                ) as retry_restore:
+                    retry = setup_service.run_setup(
+                        repo=str(install.project_root),
+                        repo_explicit=True,
+                        script_path=install.entrypoint,
+                        read_only=False,
+                        backup_interval_minutes=None,
+                        backup_generations=None,
+                    )
+
+                self.assertTrue(retry.ok, retry)
+                retry_restore.assert_not_called()
+                self.assertNotIn(
+                    "database_restore",
+                    retry.data["completed_writes"],
+                )
+                self.assertEqual(self._temporary_restore_paths(install), [])
+
     def test_existing_schema_zero_primary_never_triggers_recovery(self):
         with tempfile.TemporaryDirectory() as tmp:
             install, backup_path = self._initialize_with_backed_up_task(

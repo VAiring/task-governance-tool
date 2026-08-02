@@ -1,9 +1,15 @@
 # Root copied reference material is local-only unless explicitly approved.
 /references/
 
+# Local research notes.
+/research.md
+
 # Skill-local runtime state and databases.
 /task-governance-tool/state/
 /.agents/skills/task-governance-tool/state/
+
+# Project-local Skill configuration.
+/task-governance-tool/config/
 
 # Python caches and local environments.
 __pycache__/

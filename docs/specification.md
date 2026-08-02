@@ -14,7 +14,9 @@ TG-M19.6A and TG-M19.6B corrections, and TG-M20.1 through TG-M20.5 are
 completed lineage. The approved
 TG-M21.4 now freezes an accepted but inactive correction that replaces future
 caller-authored Receipt labels with a taskgov-owned verification subject at
-the schema-v18 boundary; current schema-v17 behavior remains unchanged. The
+the schema-v18 boundary. TG-M21.4A additionally freezes the compatible
+schema-v18 verification-capacity split described below; current schema-v17
+behavior remains unchanged. The
 TG-M20S successor observation has reached its frozen terminal
 `proceed_to_design` result and no-rerun retirement boundary. TG-M20S.3 now
 freezes an accepted but inactive Tier 2 decomposition contract; it changes no
@@ -1519,6 +1521,73 @@ candidate remains schema v17 with the exact caller-authored `command_label`
 input, storage, public Receipt, completion-cycle linkage, Skill guidance, and
 Task-show projection specified above.
 
+### TG-M21.4A Schema-v18 Capacity Compatibility Matrix
+
+TG-M21.4A, Task `tg_task_95c5e968c8fe7e4b`, corrects the activation split
+before M22.2 starts. Its authority reference is
+`conversation_decision:2026-08-02:schema-v18-verification-capacity-compatibility-correction`.
+It changes no current runtime, schema, CLI, Skill, Viewer, package, or
+generated artifact. The only accepted capacity states are:
+
+| Reachable state | Durable storage and stored-read/internal-derived capacity | Explicit public `task add` / `task edit --verification` admission |
+|---|---:|---:|
+| current v0.11.0 / schema v17 | 500 characters | 500 characters |
+| TG-M22.2 v0.12.0 / schema v18 | 1,000 characters | 500 characters |
+| TG-M21.5 v0.12.0 / schema v18 | 1,000 characters | 1,000 characters |
+
+The schema-v18 durable limit applies to the exact Task verification bytes and
+every value derived from or bound to them: authority snapshots, verification
+criteria, expectation digests, subjects, Receipts and reviews, completion and
+reopen/cycle history, Task-show and Review Packet reads, Viewer capture,
+setup/migration reentry, backup, recovery, and the schema-v19 Bundle/JSON
+consumer. M22.2 must accept and preserve valid stored values through exactly
+1,000 characters on every such path even though its two explicit public Task
+ingress points still reject 501 characters. A metadata-only or lifecycle
+write against a Task already containing 501-1,000 characters must not reuse
+the narrower public-input validator or partially write before failing.
+
+M22.2 therefore establishes the durable/read boundary with no schema or
+capability marker beyond schema v18. Because M21.5 retains the same package
+and schema identity, M22.2 code must safely open, validate, read, project,
+retarget, review, complete, reopen, set up, back up, and recover a database
+containing a valid 1,000-character verification value written after M21.5.
+Values over 1,000 remain invalid and fail closed without partial mutation.
+Existing privacy checks and aggregate output caps remain unchanged; exceeding
+an existing aggregate projection cap follows that projection's existing
+bounded failure contract and is not stored-state corruption.
+
+Stored validation is source-schema-aware before any migration or recovery
+write: a schema-v17 source permits at most 500 characters, while a schema-v18
+or later supported source permits at most 1,000. Setup must not migrate a
+schema-v17 501-1,000-character row and thereby legitimize invalid source
+state. Backup discovery validates each candidate against its own schema; an
+invalid newest candidate does not hide an older valid one, and no valid
+candidate yields the existing `setup_restore_failed` result without creating
+a canonical database. Migration, reentry, recovery, and schema-v19 activation
+reject invalid stored state before DDL/history, publication, or business rows
+can commit.
+
+At the M22.2 public ingress, even an explicit same-value verification replay
+of 501-1,000 characters is rejected before a transaction. The existing input
+order remains privacy before length. Conversely, a stored value over its
+schema limit or failing privacy is reported through the owning sanitized
+stored-state inconsistency result, never as caller `invalid_argument` or
+`privacy_rejected`, and leaves Task, event, generation, snapshot, criterion,
+reference, Receipt, finding, cycle, manifest, and generated artifacts
+unchanged.
+
+M21.5 changes only the two explicit public Task-ingress admission checks from
+500 to 1,000. It adds no migration, backfill, stored-reader change, schema or
+package identity, other field-limit change, new command, or normal-loop call.
+M22.2 owns stored/read compatibility tests using pre-admitted 501-, 1,000-,
+and rejecting 1,001-character state across all named paths. M21.5 owns the
+public 500/501/1,000/1,001 boundary and an offline compatibility replay of the
+exact complete M22.2 completion package against its newly admitted state; a
+mixed-revision package is not evidence. Both ASCII and multi-byte boundary
+values are covered without raising any existing UTF-8 aggregate output cap.
+M22.3 consumes the already-valid 1,000-character criterion; M22.4 accepts the
+full matrix.
+
 ### Tool-Owned Subject And Legacy Matrix
 
 At schema v18, one versioned verification subject is the deterministic
@@ -1691,10 +1760,11 @@ The bounded dependent sequence is:
 
 1. TG-M22.2 atomically activates the schema-v18 subject fields, target-owned
    subject derivation, label-free CLI, Task-show transition, cycle validation,
-   and Evidence Ledger capture foundation.
-2. TG-M21.5, after schema v18 and before schema v19, changes only the bounded
-   verification-text capacity from 500 to 1,000 characters under its separate
-   Contract; it performs no migration or subject redesign.
+   Evidence Ledger capture foundation, and 1,000-character durable/read
+   capacity while public Task add/edit admission remains 500.
+2. TG-M21.5, after schema v18 and before schema v19, changes only explicit
+   public Task add/edit verification admission from 500 to 1,000 characters;
+   it performs no migration, stored-reader change, or subject redesign.
 3. TG-M22.3 admits only subject-v1 qualifying Receipts to native bundles and
    Evidence JSON and includes no legacy caller label or internal compatibility
    value.
@@ -1719,7 +1789,7 @@ the separately bounded TG-M22.2, TG-M21.5, and TG-M22.3 units complete.
 
 TG-M22.2 will advance the unpublished package candidate to v0.12.0 at schema
 v18 with the accepted TG-M21.4 subject correction. TG-M21.5 will retain that
-schema/package identity while changing only verification-text capacity.
+schema/package identity while changing only public verification-text ingress.
 TG-M22.3 will retain the unpublished v0.12.0 package identity while
 advancing its schema to v19. Neither step claims a published tag, Release,
 remote commit, or immutable artifact identity.
@@ -2221,13 +2291,16 @@ The approved sequence is:
    criteria, subject-basis fields, label-free Receipt input, the versioned
    Task-show subject projection, evidence references, deterministic Git
    manifests, target capture bindings, native-cycle subject/completion
-   references, capture-version-0 write rejection, migration validation, and
+   references, capture-version-0 write rejection, the 1,000-character
+   durable/read boundary with 500-character public Task ingress, migration
+   validation, and
    Viewer snapshot-v4 compatibility through v18; synchronize the durable
    `AGENTS.md` Receipt-retention guardrail and perform the exact self-host
    reentry above. No bundle or Evidence JSON is written.
-2. **TG-M21.5 / schema v18:** raise only the verification-text limit from 500
-   to 1,000 characters after subject activation and before bundles, with no
-   migration, subject redesign, public leaf, or additional normal-loop call.
+2. **TG-M21.5 / schema v18:** raise only explicit public Task add/edit
+   verification admission from 500 to 1,000 characters after subject
+   activation and before bundles, with no stored-reader, migration, subject,
+   public-leaf, or normal-loop-call change.
 3. **TG-M22.3 / schema v19:** activate version-1 native bundles and criterion
    links, projection generation/state, fixed JSON publication, setup repair,
    subject-only Receipt projection, post-commit warnings, and Viewer snapshot-
@@ -2808,8 +2881,9 @@ Contract/expectation/target binding. It never stores a command body or
 arguments, exit code, result body, stream, log, environment, exception,
 arbitrary coverage prose, or debug-retention variant.
 
-Free-form limits not narrowed above are: title 200 characters; description
-4,000; verification 500; tags/reviewer/target/external revision/authority ref
+Current schema-v17 free-form limits not narrowed above are: title 200
+characters; description 4,000; verification 500; tags/reviewer/target/external
+revision/authority ref
 500; note 2,000; event/receipt/finding/resolution/pause/reopen/Contract
 change reason 1,000. Secret/header/private-key/password/token/api-key,
 traceback, raw stream dump, and large diff patterns are rejected with

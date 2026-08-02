@@ -10,9 +10,10 @@ SQLite schema v17, Viewer snapshot v4 accepting source schemas v5-v17, and 21
 public command leaves; it activates the bounded TG-M21 Verification Receipt
 design below without claiming a tag, remote commit, or published Release.
 TG-M21.4 now freezes an accepted but inactive schema-v18 correction from
-caller-authored labels to a taskgov-owned verification subject; current v17
-runtime and package behavior remain unchanged. TG-M16.4 behavioral acceptance
-remains part of the published baseline. The TG-M20S
+caller-authored labels to a taskgov-owned verification subject. TG-M21.4A
+also freezes the schema-v18 verification-capacity compatibility correction
+below; current v17 runtime and package behavior remain unchanged. TG-M16.4
+behavioral acceptance remains part of the published baseline. The TG-M20S
 successor observation reached its frozen `proceed_to_design` result and
 no-rerun retirement boundary. TG-M20S.3 now freezes an accepted but inactive
 Tier 2 decomposition design; it changes no current runtime, package, or agent
@@ -1332,21 +1333,101 @@ record a subject-v1 Receipt, prepare review once, and collect fresh Tier 2
 reviews. No migration repair, compatibility alias, or completion bypass
 qualifies the old evidence.
 
+### Verification Capacity Ownership And Same-schema Compatibility
+
+TG-M21.4A, Task `tg_task_95c5e968c8fe7e4b`, separates caller admission from
+durable/read validation before schema v18 activates. The implementation must
+not raise the current shared `TEXT_LIMITS["verification"]` value in M22.2,
+because that would expose the later M21.5 public behavior prematurely. M22.2
+instead introduces two explicit owners:
+
+```text
+TASK_VERIFICATION_INPUT_LIMIT = 500
+verification_stored_limit(schema <= 17) = 500
+verification_stored_limit(schema >= 18) = 1000
+```
+
+The input constant is used only when a caller explicitly supplies Task
+verification to `task add` or `task edit`. The schema-aware stored limit is
+used for database rows and every internal derivative. In particular,
+`verification_receipts.py` current-basis, Task-show, Receipt-add, and
+completion reads and `review_packet.py` must use stored validation rather than
+the caller-input helper. Untouched verification bytes on metadata, Contract,
+target, review, lifecycle, completion, or reopen writes are likewise stored
+state; those writes must never validate them against the narrower input cap.
+An explicit 501-1,000-character value at M22.2 is rejected even when equal to
+stored bytes, using the existing privacy-before-length input ordering and
+before opening the transaction.
+
+At M22.2, `storage.py`, authority-snapshot and criterion builders, digest and
+subject builders, Receipt/review repositories, completion planning and cycle
+validation, history projection, Task show, Review Packet, Viewer batching,
+setup/migration reentry, backup, recovery, and future Bundle inputs all accept
+and preserve 501-1,000 characters. SQLite constraints or triggers may reject
+values over 1,000 but may not encode a 500-character schema-v18 stored cap.
+The shared stored-text helper continues the ordinary privacy check and rejects
+over-1,000 or structurally inconsistent state with the owning fixed sanitized
+error before any mutation; it never truncates, normalizes, or rewrites bytes.
+Aggregate output caps keep their existing behavior and are not stored-field
+validators.
+
+Migration and recovery choose the stored limit from the source schema before
+any copy, DDL, history row, or canonical publication. Schema v17 permits 500;
+schema v18 and later supported sources permit 1,000. Thus invalid 501-1,000
+bytes in a v17 source are not laundered by migration. Backup discovery applies
+that rule per candidate, continues past an invalid newest candidate to an
+older valid one, and otherwise returns the existing restore failure without a
+canonical database. Stored overflow or privacy failure maps to the owning
+sanitized stored-context inconsistency result, not caller `invalid_argument`
+or `privacy_rejected`, with no partial business, evidence, generation, or
+artifact write.
+
+M21.5 changes only `TASK_VERIFICATION_INPUT_LIMIT` from 500 to 1,000 and the
+directly coupled public add/edit help, formal wording, package metadata, and
+boundary tests. It must not change the schema-aware stored limit, DDL,
+migration history, snapshot/criterion representation, Receipt/review gate,
+Viewer reader, setup/recovery logic, or another field limit. Both M22.2 and
+M21.5 therefore remain v0.12.0/schema v18 with no capability marker.
+
+M22.2 tests seed valid schema-v18 501- and 1,000-character Tasks through an
+internal storage fixture while proving public add/edit still reject 501,
+exercise every stored/read/internal path above, reject 1,001, and inject
+failures to prove atomic no-partial-write behavior. This matrix includes list,
+default and compact current/next, doctor, and Task-loading checkpoint, Handoff,
+and Effort paths even where verification is not projected. ASCII and
+multi-byte 1,000-code-point fixtures remain distinct from unchanged UTF-8
+aggregate output caps.
+
+M22.2 completion records its exact commit and complete package-tree identity
+as the later compatibility baseline. M21.5 tests prove public
+500/501/1,000/1,001 boundaries, materialize that exact complete M22.2 package
+offline into an isolated temporary project, and run it against a database
+produced by the complete M21.5 writer. A package assembled from mixed
+revisions or by changing only the input constant is invalid. The M22.2
+baseline must safely list, show, select, edit without verification, revise a
+Contract, set up, project, retarget, record Receipt/review/finding evidence,
+complete, reopen, back up, and recover that post-M21.5 database. M22.3 tests
+consume its 1,000-character criterion without changing capacity; M22.4
+repeats the three-state and cross-revision matrix.
+
 ### Bounded Downstream Split
 
 TG-M22.2 owns this subject activation together with the schema-v18 criterion
-and target foundation. TG-M21.5 follows at the same schema/package identity
-and changes only verification capacity from 500 to 1,000 characters. TG-M22.3
+and target foundation plus the 1,000-character durable/read boundary while
+public Task add/edit remains capped at 500. TG-M21.5 follows at the same
+schema/package identity and changes only that public admission to 1,000.
+TG-M22.3
 then owns subject-only bundle/JSON projection, and TG-M22.4 owns integrated
 legacy/current acceptance. No unit adds a public leaf, normal-loop call,
 Runner, analyzer, or raw retained content.
 
 ## Accepted But Inactive TG-M22 Evidence Ledger Design
 
-TG-M22.1 plus the TG-M21.4 correction define three later atomic implementation
-slices without activating them. TG-M22.2 will establish schema v18 subject and
-capture foundations, TG-M21.5 will change only verification-text capacity at
-schema v18, and TG-M22.3 will establish schema v19 completion bundles and
+TG-M22.1 plus the TG-M21.4/TG-M21.4A corrections define three later atomic
+implementation slices without activating them. TG-M22.2 will establish schema
+v18 subject and capture foundations plus 1,000-character durable/read
+capacity, TG-M21.5 will change only public verification-text ingress at schema
+v18, and TG-M22.3 will establish schema v19 completion bundles and
 generated JSON. Until those units
 complete, the module list, schema-v17 runtime, state resolver, setup and
 maintenance shapes, Viewer source range, package manifest, Skill call graph,
@@ -1482,6 +1563,11 @@ receive only the additive subject-basis-zero/null/null defaults without row
 updates or a table rebuild. A new target set is capture version 1, binds the
 current snapshot/criteria, and is required before a schema-v19 native bundle
 can close.
+
+Schema-v18 Task, authority-snapshot, criterion, and reentry validation use the
+TG-M21.4A schema-aware 1,000-character stored limit. Public Task add/edit input
+remains independently capped at 500 until M21.5; no capture object, trigger,
+migration validator, or read projection may reuse that narrower cap.
 
 The v18 service guard treats capture version 0 as read-only lineage. It runs
 inside the locked basis check for Verification Receipt add, Review Receipt
@@ -1788,14 +1874,16 @@ rewrite existing cycles, bundles, links, or digests.
 1. **TG-M22.2** owns schema v18, authority/criterion/reference repositories,
    subject-basis Receipt/cycle fields, label-free CLI/Task-show transition, Git
    manifest capture, Task/Contract/target/Receipt/Finding/completion integration
-   including capture-v0 rejection and native-cycle references, migration,
+   including capture-v0 rejection and native-cycle references, the 1,000-
+   character stored/read boundary with 500-character public Task ingress,
+   migration,
    self-host retarget/reverification/review, Viewer-v4 v18 compatibility,
    synchronized `AGENTS.md` retention, docs/Skill/package, split focused/full
    tests, exact diff, Verification Receipt, and two Tier 2 reviews. It creates
    no bundle or Evidence JSON.
-2. **TG-M21.5** owns only the 500-to-1,000-character verification capacity
-   change after schema v18, with no migration, subject redesign, leaf, or
-   normal-loop call.
+2. **TG-M21.5** owns only the public Task add/edit verification-admission
+   change from 500 to 1,000 after schema v18; stored readers and DDL remain
+   unchanged, with no migration, subject redesign, leaf, or normal-loop call.
 3. **TG-M22.3** owns schema v19, native bundle sealing, immutable criterion
    links and finding snapshots, projection state/resolver/staging/setup/
    maintenance, subject-based index-last JSON publication, Viewer-v4 v19

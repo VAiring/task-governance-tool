@@ -1564,7 +1564,7 @@ schema-v17 501-1,000-character row and thereby legitimize invalid source
 state. Migration, reentry, recovery, and schema-v19 activation reject invalid
 stored state before DDL/history, publication, or business rows can commit.
 
-### TG-M21.4B Recovery Candidate Validity Matrix
+## Current TG-M21.4B Recovery Candidate Validity Contract
 
 TG-M21.4B, Task `tg_task_9b746fbe5fe4927f`, owns the current recovery
 classification correction. Its authority reference is
@@ -1594,12 +1594,12 @@ examines all rows for malformed storage values before returning a
 candidate-local result; among local results, privacy has precedence over
 capacity.
 
-| Observation | Classification and selection | Initial setup result |
+| Observation | Classification and selection | Setup result |
 |---|---|---|
 | Structurally coherent, same-project candidate at the current recovery binding whose stored Task verification passes its source-schema rules | eligible; select the newest `(published_at, generation_id)` | continue recovery |
 | The same safe candidate whose stored Task verification alone fails privacy or source-schema capacity | candidate-local rejection; retain and observe the file but exclude it from selection | recover the newest older eligible candidate, or `setup_restore_failed` when none remains |
 | Corrupt/unreadable SQLite, unsafe file or sidecar, unsupported/newer/incomplete schema, failed quick/FK check, foreign identity, binding/lineage divergence, metadata/repository/retention/structure inconsistency, duplicate or overflow | set-fatal; never skip it to reach another candidate | the existing specific journal/busy/newer result where applicable, otherwise `project_state_unreadable` |
-| Any candidate addition, removal, replacement, stamp/order/content classification change, selected-candidate change, or canonical database/journal appearance after planning | TOCTOU set-fatal; never reselect under the established plan | `setup_restore_failed` before restore or canonical publication |
+| Any candidate addition, removal, replacement, stamp/order/content classification change, selected-candidate change, or canonical database/journal appearance after planning | post-plan recovery/restore/publication drift; fail closed and never reselect under the established plan | `setup_restore_failed` before restore or canonical publication |
 
 The mechanically newest candidate remains the structural head for lineage and
 generation-envelope validation even when it is candidate-local rejected.
@@ -1639,6 +1639,8 @@ TG-M22.2 must extend the same classifier to admit 1,000 and reject 1,001 for a
 schema-v18 candidate. It must not generalize local rejection to another field
 or to structural, identity, lineage, metadata, or TOCTOU failure.
 
+## Accepted But Inactive TG-M21.4A Capacity Compatibility Details
+
 At the M22.2 public ingress, even an explicit same-value verification replay
 of 501-1,000 characters is rejected before a transaction. The existing input
 order remains privacy before length. Conversely, a stored value over its
@@ -1659,6 +1661,8 @@ mixed-revision package is not evidence. Both ASCII and multi-byte boundary
 values are covered without raising any existing UTF-8 aggregate output cap.
 M22.3 consumes the already-valid 1,000-character criterion; M22.4 accepts the
 full matrix.
+
+## Accepted But Inactive TG-M21.4 Verification Subject Details
 
 ### Tool-Owned Subject And Legacy Matrix
 
@@ -2695,6 +2699,12 @@ only a Task-verification capacity/privacy rejection may expose an older
 eligible generation. Existing unreadable canonical state is never overwritten.
 If only locally rejected candidates remain, setup fails `setup_restore_failed`
 rather than initializing empty.
+A whole-set structural, identity, binding, lineage, metadata, repository,
+retention, sidecar, or set-envelope fault never exposes an older candidate and
+retains its specific resolver result where applicable, otherwise
+`project_state_unreadable`. After an eligible candidate and immutable plan are
+established, later drift or restore/publication failure remains the separate
+`setup_restore_failed` boundary.
 
 Recovery copies the selected artifact via SQLite backup API into a fresh
 sibling temporary database, normalizes schema-appropriate generation/pointer
@@ -2736,21 +2746,27 @@ Core setup outcomes are:
 | Stage/result | Stable error |
 |---|---|
 | invalid policy | `invalid_backup_policy` |
-| recognized recovery without valid candidate/publication failure | `setup_restore_failed` |
+| structurally coherent recovery set with every current-binding candidate locally rejected only for Task-verification privacy/capacity | `setup_restore_failed` |
+| post-plan recovery selection/copy/normalization/publication failure | `setup_restore_failed` |
+| recovery-set structural/set-fatal defect | the existing specific resolver error where applicable, otherwise `project_state_unreadable` |
 | migration backup failure | `setup_backup_failed` |
 | initialization failure | `setup_initialization_failed` |
 | migration failure after backup | `setup_migration_failed` |
 | configuration, Viewer, cleanup, or other later partial failure | `setup_incomplete` |
 
-Messages are respectively `backup policy is outside the supported range`,
+The fixed messages for invalid policy, restore, backup, initialization,
+migration, and later partial failure are respectively
+`backup policy is outside the supported range`,
 `managed backup could not be restored`,
 `setup backup could not be completed`,
 `project state could not be initialized`,
 `project state could not be migrated`, and
-`setup completed only partially; rerun setup`. Setup success has empty warnings
-and errors; failure has empty warnings and exactly one error. Rerun recomputes
-from durable state; a prior migration backup never substitutes for the new
-attempt's required backup.
+`setup completed only partially; rerun setup`. A resolver-originated recovery
+failure retains that resolver error's stable message, including
+`project state could not be read safely` for `project_state_unreadable`.
+Setup success has empty warnings and errors; failure has empty warnings and
+exactly one error. Rerun recomputes from durable state; a prior migration
+backup never substitutes for the new attempt's required backup.
 
 The shared backup primitive uses SQLite backup API, validates project identity,
 schema/history, regular physical paths, `quick_check`, and foreign keys,

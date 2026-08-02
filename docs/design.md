@@ -521,15 +521,28 @@ staged validation still invoke the Task-verification classifier for every
 backup: local privacy/capacity results are ignored for selection, while a
 malformed stored value remains structural and set-fatal.
 
-The recovery-specific backup scan uses the same storage validator, excludes
-only its privacy/capacity rejection from selection, and converts corrupt,
-foreign, unsafe, duplicate, overflow, or otherwise structurally invalid
-recognized material to the restore-failure boundary. Recovery normalization
+The recovery-specific backup scan uses the same storage validator and excludes
+only its privacy/capacity rejection from selection. A structurally coherent set
+with only local rejections has no eligible candidate and reaches
+`setup_restore_failed`; corrupt, foreign, unsafe, duplicate, overflow, or
+otherwise structurally invalid recognized material retains its specific
+resolver result where applicable and otherwise reaches
+`project_state_unreadable`. Recovery normalization
 keeps every structurally coherent artifact in the ordinary generation
 row/file/pointer envelope even when the copied candidate is older; local
 rejection never hides or legalizes a missing or mismatched relation. It does
 not rewrite rejected artifacts, while later ordinary retention keeps its
 existing authority over managed generations.
+
+Focused M21.4B ownership is split by behavior rather than accumulated in one
+module. `test_m214b_recovery_boundaries.py` owns current fixed-layout,
+selection, metadata, and TOCTOU behavior in the integration lane;
+`test_m214b_legacy_recovery_boundaries.py` owns legacy-primary, schema-v10, and
+mixed-schema recovery in the release lane. Shared mutation helpers live in the
+non-discovered `m214b_test_support.py`, while the common tree snapshot helper
+captures complete managed-state names, kinds, sizes, and contents for no-write
+assertions. New recovery cases extend their owning module instead of restoring
+one mixed oversized file.
 
 Other contained names are opaque user material and are preserved. A fixed
 primary always wins even when invalid; the resolver never falls back around
@@ -1462,11 +1475,16 @@ schema v18 and later supported sources permit 1,000. Thus invalid 501-1,000
 bytes in a v17 source are not laundered by migration. Backup discovery applies
 the specification's TG-M21.4B matrix per candidate: only stored Task-
 verification privacy/capacity rejection may expose an older eligible candidate;
-structural failure remains set-fatal. No eligible candidate returns the
-existing restore failure without a canonical database. Stored overflow or
-privacy failure maps to the owning sanitized stored-context inconsistency
-result, not caller `invalid_argument` or `privacy_rejected`, with no partial
-business, evidence, generation, or artifact write.
+structural failure remains set-fatal and retains its specific resolver result
+where applicable, otherwise `project_state_unreadable`. A structurally coherent
+set with no eligible candidate solely because every current-binding candidate
+is locally rejected returns `setup_restore_failed` without a canonical
+database; post-plan drift or restore/publication failure retains that separate
+restore boundary. Stored overflow or privacy failure in an authoritative
+primary or another non-selection context maps to the owning sanitized stored-
+context inconsistency result, not caller `invalid_argument` or
+`privacy_rejected`, with no partial business, evidence, generation, or artifact
+write.
 
 M21.5 changes only `TASK_VERIFICATION_INPUT_LIMIT` from 500 to 1,000 and the
 directly coupled public add/edit help, formal wording, package metadata, and
@@ -2263,12 +2281,20 @@ not removed CLI subprocesses.
 When canonical DB is absent, setup scans only canonical managed backups:
 
 - no managed name => fresh initialization;
-- at least one valid same-project generation => mechanically newest
-  `(published_at, generation_id)` recovery;
-- managed names but no valid same-project generation => fail closed.
+- at least one eligible same-project/current-binding generation => newest
+  eligible `(published_at, generation_id)` recovery while the mechanically
+  newest generation remains the structural head;
+- a structurally coherent set whose current-binding candidates are all locally
+  rejected only for stored Task-verification privacy/capacity =>
+  `setup_restore_failed` without initialization; and
+- a structural, identity, binding, lineage, metadata, repository, retention,
+  sidecar, or set-envelope failure => the specific resolver result where
+  applicable, otherwise `project_state_unreadable`.
 
-Invalid, foreign, linked, or unrelated files are preserved. Recovery holds the
-artifact lock, revalidates the candidate, copies it through SQLite backup to a
+Invalid, foreign, linked, or unrelated files are preserved. Once a recovery
+candidate plan exists, drift, copy, normalization, or no-clobber publication
+failure maps to `setup_restore_failed`. Recovery holds the artifact lock,
+revalidates the candidate, copies it through SQLite backup to a
 sibling temporary DB, reconciles only supported backup metadata, validates
 schema/identity/quick/FK/regular-file state, and publishes no-clobber. A
 lexical rollback journal beside a missing canonical DB is rejected before

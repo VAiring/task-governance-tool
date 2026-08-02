@@ -195,6 +195,123 @@ STUDY_HISTORIES = {
 
 
 class DocumentHistoryTests(unittest.TestCase):
+    def test_m214b_current_contract_and_setup_errors_are_routed_explicitly(self):
+        specification = (ROOT / "docs" / "specification.md").read_text(
+            encoding="utf-8-sig"
+        )
+        design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8-sig")
+        plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
+        cli_contracts = (
+            ROOT / "task-governance-tool" / "references" / "cli_contracts.md"
+        ).read_text(encoding="utf-8-sig")
+        specification_flat = " ".join(specification.split())
+        design_flat = " ".join(design.split())
+        plan_flat = " ".join(plan.split())
+        cli_contracts_flat = " ".join(cli_contracts.split())
+
+        current_heading = (
+            "## Current TG-M21.4B Recovery Candidate Validity Contract"
+        )
+        current_start = specification.index(current_heading)
+        next_h2_start = specification.index("\n## ", current_start + 1) + 1
+        current_section = specification[current_start:next_h2_start]
+        current_section_flat = " ".join(current_section.split())
+        next_h2 = specification[next_h2_start:].splitlines()[0]
+
+        self.assertEqual(
+            next_h2,
+            "## Accepted But Inactive TG-M21.4A Capacity Compatibility Details",
+        )
+        self.assertNotIn("At the M22.2 public ingress", current_section)
+        self.assertNotIn("M21.5 changes only", current_section)
+        self.assertIn("Task `tg_task_9b746fbe5fe4927f`", current_section)
+        self.assertIn(
+            "| Observation | Classification and selection | Setup result |",
+            current_section_flat,
+        )
+        self.assertIn(
+            "| The same safe candidate whose stored Task verification alone "
+            "fails privacy or source-schema capacity | candidate-local "
+            "rejection; retain and observe the file but exclude it from "
+            "selection | recover the newest older eligible candidate, or "
+            "`setup_restore_failed` when none remains |",
+            current_section_flat,
+        )
+        self.assertIn(
+            "| Corrupt/unreadable SQLite, unsafe file or sidecar, "
+            "unsupported/newer/incomplete schema, failed quick/FK check, "
+            "foreign identity, binding/lineage divergence, "
+            "metadata/repository/retention/structure inconsistency, duplicate "
+            "or overflow | set-fatal; never skip it to reach another "
+            "candidate | the existing specific journal/busy/newer result "
+            "where applicable, otherwise `project_state_unreadable` |",
+            current_section_flat,
+        )
+        self.assertIn(
+            "| Any candidate addition, removal, replacement, "
+            "stamp/order/content classification change, selected-candidate "
+            "change, or canonical database/journal appearance after planning "
+            "| post-plan recovery/restore/publication drift; fail closed and "
+            "never reselect under the established plan | "
+            "`setup_restore_failed` before restore or canonical publication |",
+            current_section_flat,
+        )
+        self.assertNotIn(
+            "### TG-M21.4B Recovery Candidate Validity Matrix",
+            specification,
+        )
+        self.assertIn(
+            "every current-binding candidate locally rejected only for "
+            "Task-verification privacy/capacity",
+            specification,
+        )
+        self.assertIn(
+            "recovery-set structural/set-fatal defect",
+            specification,
+        )
+        self.assertIn(
+            "with only local rejections has no eligible candidate and reaches "
+            "`setup_restore_failed`",
+            design_flat,
+        )
+        self.assertIn(
+            "otherwise reaches `project_state_unreadable`",
+            design_flat,
+        )
+        self.assertIn(
+            "candidate plan exists, drift, copy, normalization, or no-clobber "
+            "publication failure maps to `setup_restore_failed`",
+            design_flat,
+        )
+        self.assertIn(
+            "otherwise fail no-write as `project_state_unreadable`",
+            cli_contracts_flat,
+        )
+        self.assertIn(
+            "after a candidate plan is established remains "
+            "`setup_restore_failed`",
+            cli_contracts_flat,
+        )
+        self.assertIn(
+            "solely because every such candidate is locally rejected for "
+            "stored Task-verification privacy/capacity fails with "
+            "`setup_restore_failed`",
+            cli_contracts_flat,
+        )
+        self.assertNotIn(
+            "no valid matching generation fail with",
+            cli_contracts_flat,
+        )
+        self.assertIn("pre-selection structural faults", plan_flat)
+        self.assertIn("post-plan TOCTOU faults", plan_flat)
+        self.assertIn(
+            "| recovery-set structural/set-fatal defect | the existing "
+            "specific resolver error where applicable, otherwise "
+            "`project_state_unreadable` |",
+            specification_flat,
+        )
+        self.assertIn("test_m214b_legacy_recovery_boundaries.py", design)
+
     def test_m21_design_and_m20s_closed_decision_survive_roadmap_retirement(self):
         specification = (ROOT / "docs" / "specification.md").read_text(
             encoding="utf-8-sig"

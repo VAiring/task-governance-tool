@@ -166,13 +166,20 @@ staged and published into the fixed layout; backup-only recovery performs
 performs any required normal
 migration/configuration/Viewer publication. It never overwrites an existing
 database or accepts a caller path. Invalid, foreign, linked, unrecognized, and
-ambiguous artifacts are unchanged and fail closed. Recognized managed names
-in the fixed-layout recovery set with no valid matching generation fail with
-`setup_restore_failed` and message `managed backup could not be restored`;
-setup does not initialize empty state. The same fixed failure applies when a
-rollback-journal entry remains for the missing fixed primary; setup neither
-applies nor changes that journal. A moved legacy backup-only source is not a
-relocation candidate and fails no-write as `project_state_unreadable`.
+ambiguous artifacts are unchanged and fail closed. After the complete recovery
+set passes structural validation, a set with no eligible current-binding
+generation solely because every such candidate is locally rejected for stored
+Task-verification privacy/capacity fails with `setup_restore_failed` and
+message `managed backup could not be restored`; setup does not initialize
+empty state. Candidate corruption, foreign identity, binding/lineage
+divergence, metadata/repository/retention/sidecar inconsistency, and other
+discovery-time structural failures retain their specific resolver result where
+applicable and otherwise fail no-write as `project_state_unreadable`. A
+rollback-journal entry beside a missing fixed primary is such structural
+residue; setup neither applies nor changes it. Drift, copy, normalization, or
+no-clobber publication failure after a candidate plan is established remains
+`setup_restore_failed`. A moved legacy backup-only source is not a relocation
+candidate and fails no-write as `project_state_unreadable`.
 
 The current package stores the database in the fixed package-local
 `state/current/` layout. Fresh write-mode setup creates one UUID-backed

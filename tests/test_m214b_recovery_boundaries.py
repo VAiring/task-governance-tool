@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sqlite3
 import tempfile
 import unittest
@@ -8,12 +7,14 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import (
-    create_v10_target,
-    create_v14_target,
-    make_physical_install,
+from tests.m14_test_support import tree_snapshot
+from tests.m214b_test_support import (
+    inject_primary_candidate_metadata_conflict as _inject_primary_candidate_metadata_conflict,
+    publish_generations as _publish_generations,
+    replace_verification as _replace_verification,
+    restore_original_mtime as _restore_original_mtime,
+    restore_temporaries as _restore_temporaries,
 )
-from tests.test_db_init import insert_task
 from tests.test_m17_recovery_hardening import (
     _relocate_install,
     _run_setup,
@@ -26,128 +27,7 @@ from task_governance_tool.state_resolver import (
     resolve_project_state,
     resolve_setup_project_state,
 )
-from task_governance_tool.storage import DatabaseTarget, StorageError
-
-
-def _publish_generations(target, *timestamps: str, retention: int = 4):
-    for timestamp in timestamps:
-        with (
-            mock.patch.object(
-                backup_service,
-                "utc_now",
-                return_value=timestamp,
-            ),
-            backup_service.managed_backup_lock(target),
-        ):
-            backup_service.publish_setup_backup(target, retention)
-    return backup_service._discover(target)
-
-
-def _replace_verification(path: Path, title: str, value: object) -> None:
-    with closing(sqlite3.connect(path)) as connection:
-        cursor = connection.execute(
-            "UPDATE tasks SET verification = ? WHERE title = ?",
-            (value, title),
-        )
-        if cursor.rowcount != 1:
-            raise AssertionError("recovery test task was not updated")
-        connection.commit()
-
-
-def _restore_temporaries(target) -> list[Path]:
-    return list(target.db_path.parent.glob(".taskgov-restore-*.tmp"))
-
-
-def _restore_original_mtime(path: Path, before: os.stat_result) -> None:
-    changed = path.stat()
-    if changed.st_size != before.st_size:
-        raise AssertionError("test mutation changed the SQLite file size")
-    os.utime(path, ns=(changed.st_atime_ns, before.st_mtime_ns))
-    after = path.stat()
-    if (
-        after.st_dev,
-        after.st_ino,
-        after.st_size,
-        after.st_mtime_ns,
-    ) != (
-        before.st_dev,
-        before.st_ino,
-        before.st_size,
-        before.st_mtime_ns,
-    ):
-        raise AssertionError("test mutation did not preserve file identity")
-
-
-def _replace_maintenance_pointer(
-    path: Path,
-    *,
-    project_id: str,
-    generation_id: str,
-    published_at: str,
-    retention: int,
-) -> None:
-    with closing(sqlite3.connect(path)) as connection:
-        cursor = connection.execute(
-            """
-            UPDATE project_maintenance
-               SET latest_backup_generation_id = ?,
-                   backup_last_success_at = ?,
-                   applied_backup_generations = ?
-             WHERE project_id = ?
-            """,
-            (generation_id, published_at, retention, project_id),
-        )
-        if cursor.rowcount != 1:
-            raise AssertionError("maintenance pointer was not updated")
-        connection.commit()
-
-
-def _inject_primary_candidate_metadata_conflict(target, artifact) -> None:
-    generation_id = "tg_backup_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    with closing(sqlite3.connect(target.db_path)) as connection:
-        connection.execute(
-            """
-            INSERT INTO managed_backup_generations(
-              generation_id,
-              project_id,
-              published_at,
-              publication_retention
-            ) VALUES (?, ?, ?, ?)
-            """,
-            (
-                generation_id,
-                target.project.project_id,
-                "2097-02-01T00:00:00Z",
-                artifact.metadata.publication_retention,
-            ),
-        )
-        connection.commit()
-    conflicting_published_at = "2098-02-01T00:00:00Z"
-    with closing(sqlite3.connect(artifact.path)) as connection:
-        connection.execute(
-            """
-            INSERT INTO managed_backup_generations(
-              generation_id,
-              project_id,
-              published_at,
-              publication_retention
-            ) VALUES (?, ?, ?, ?)
-            """,
-            (
-                generation_id,
-                target.project.project_id,
-                conflicting_published_at,
-                artifact.metadata.publication_retention,
-            ),
-        )
-        connection.commit()
-    _replace_maintenance_pointer(
-        artifact.path,
-        project_id=target.project.project_id,
-        generation_id=generation_id,
-        published_at=conflicting_published_at,
-        retention=artifact.metadata.publication_retention,
-    )
+from task_governance_tool.storage import StorageError
 
 
 class M214BRecoveryBoundaryTests(unittest.TestCase):
@@ -171,6 +51,8 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 "Fixed structural backup task",
                 sqlite3.Binary(b"malformed"),
             )
+            state_root = install.skill_root / "state"
+            before_managed_state = tree_snapshot(state_root)
             primary_bytes = target.db_path.read_bytes()
             backup_bytes = artifact.path.read_bytes()
 
@@ -186,6 +68,8 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(result.error_code, "project_state_unreadable")
             self.assertEqual(result.data["planned_writes"], [])
+            self.assertEqual(result.data["completed_writes"], [])
+            self.assertEqual(tree_snapshot(state_root), before_managed_state)
             self.assertEqual(target.db_path.read_bytes(), primary_bytes)
             self.assertEqual(artifact.path.read_bytes(), backup_bytes)
 
@@ -227,47 +111,6 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 ).fetchone()[0]
             self.assertEqual(verification, "")
 
-    def test_legacy_primary_setup_rejects_structural_backup_task_value(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            install = make_physical_install(Path(tmp))
-            target = install.legacy_target
-            create_v14_target(target)
-            with closing(sqlite3.connect(target.db_path)) as connection:
-                insert_task(
-                    connection,
-                    task_id="tg_task_legacy_structural",
-                    project_id=target.project.project_id,
-                    title="Legacy structural backup task",
-                )
-                connection.commit()
-            artifact = _publish_generations(
-                target,
-                "2099-03-02T00:00:00Z",
-            )[-1]
-            _replace_verification(
-                artifact.path,
-                "Legacy structural backup task",
-                sqlite3.Binary(b"malformed"),
-            )
-            primary_bytes = target.db_path.read_bytes()
-            backup_bytes = artifact.path.read_bytes()
-
-            result = setup_service.run_setup(
-                repo=str(install.project_root),
-                repo_explicit=True,
-                script_path=install.entrypoint,
-                read_only=False,
-                backup_interval_minutes=None,
-                backup_generations=None,
-            )
-
-            self.assertFalse(result.ok)
-            self.assertEqual(result.error_code, "project_state_unreadable")
-            self.assertEqual(result.data["planned_writes"], [])
-            self.assertFalse(install.fixed_root.exists())
-            self.assertEqual(target.db_path.read_bytes(), primary_bytes)
-            self.assertEqual(artifact.path.read_bytes(), backup_bytes)
-
     def test_fixed_primary_rejects_candidate_metadata_conflict(self):
         with tempfile.TemporaryDirectory() as tmp:
             install, target, _ = _setup_current(Path(tmp))
@@ -276,6 +119,8 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 "2099-02-01T00:00:00Z",
             )[-1]
             _inject_primary_candidate_metadata_conflict(target, artifact)
+            state_root = install.skill_root / "state"
+            before_managed_state = tree_snapshot(state_root)
             primary_bytes = target.db_path.read_bytes()
             backup_bytes = artifact.path.read_bytes()
 
@@ -292,90 +137,9 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             self.assertEqual(result.error_code, "project_state_unreadable")
             self.assertEqual(result.data["planned_writes"], [])
             self.assertEqual(result.data["completed_writes"], [])
+            self.assertEqual(tree_snapshot(state_root), before_managed_state)
             self.assertEqual(target.db_path.read_bytes(), primary_bytes)
             self.assertEqual(artifact.path.read_bytes(), backup_bytes)
-
-    def test_legacy_primary_rejects_candidate_metadata_conflict(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            install = make_physical_install(Path(tmp))
-            target = install.legacy_target
-            create_v14_target(target)
-            artifact = _publish_generations(
-                target,
-                "2099-02-01T00:00:00Z",
-            )[-1]
-            _inject_primary_candidate_metadata_conflict(target, artifact)
-            primary_bytes = target.db_path.read_bytes()
-            backup_bytes = artifact.path.read_bytes()
-
-            result = setup_service.run_setup(
-                repo=str(install.project_root),
-                repo_explicit=True,
-                script_path=install.entrypoint,
-                read_only=False,
-                backup_interval_minutes=None,
-                backup_generations=None,
-            )
-
-            self.assertFalse(result.ok)
-            self.assertEqual(result.error_code, "project_state_unreadable")
-            self.assertEqual(result.data["planned_writes"], [])
-            self.assertEqual(result.data["completed_writes"], [])
-            self.assertFalse(install.fixed_root.exists())
-            self.assertEqual(target.db_path.read_bytes(), primary_bytes)
-            self.assertEqual(artifact.path.read_bytes(), backup_bytes)
-
-    def test_v10_legacy_primary_rejects_candidate_pointer_conflict(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            install = make_physical_install(Path(tmp))
-            target = install.legacy_target
-            create_v10_target(target)
-            artifacts = _publish_generations(
-                target,
-                "2098-03-01T00:00:00Z",
-                "2099-03-01T00:00:00Z",
-                retention=3,
-            )
-            generation_id = "tg_backup_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-            _replace_maintenance_pointer(
-                artifacts[0].path,
-                project_id=target.project.project_id,
-                generation_id=generation_id,
-                published_at="2097-03-01T00:00:00Z",
-                retention=3,
-            )
-            _replace_maintenance_pointer(
-                target.db_path,
-                project_id=target.project.project_id,
-                generation_id=generation_id,
-                published_at="2096-03-01T00:00:00Z",
-                retention=3,
-            )
-            primary_bytes = target.db_path.read_bytes()
-            backup_bytes = {
-                artifact.path: artifact.path.read_bytes()
-                for artifact in artifacts
-            }
-
-            result = setup_service.run_setup(
-                repo=str(install.project_root),
-                repo_explicit=True,
-                script_path=install.entrypoint,
-                read_only=False,
-                backup_interval_minutes=None,
-                backup_generations=None,
-            )
-
-            self.assertFalse(result.ok)
-            self.assertEqual(result.error_code, "project_state_unreadable")
-            self.assertEqual(result.data["planned_writes"], [])
-            self.assertEqual(result.data["completed_writes"], [])
-            self.assertFalse(install.fixed_root.exists())
-            self.assertEqual(target.db_path.read_bytes(), primary_bytes)
-            self.assertEqual(
-                {path: path.read_bytes() for path in backup_bytes},
-                backup_bytes,
-            )
 
     def test_selected_older_repository_corruption_is_set_fatal(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -912,259 +676,6 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 {path: path.read_bytes() for path in backup_bytes},
                 backup_bytes,
             )
-
-    def test_v10_older_fallback_points_to_mechanical_head(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            install = make_physical_install(Path(tmp))
-            target = DatabaseTarget(
-                project=install.legacy_target.project,
-                db_path=install.db_path,
-                explicit_db=True,
-            )
-            create_v10_target(target)
-            with closing(sqlite3.connect(target.db_path)) as connection:
-                insert_task(
-                    connection,
-                    task_id="tg_task_v10_older",
-                    project_id=target.project.project_id,
-                    title="V10 older task",
-                )
-                connection.commit()
-            _publish_generations(target, "2098-09-01T00:00:00Z", retention=2)
-            with closing(sqlite3.connect(target.db_path)) as connection:
-                insert_task(
-                    connection,
-                    task_id="tg_task_v10_newer",
-                    project_id=target.project.project_id,
-                    title="V10 newer task",
-                )
-                connection.commit()
-            artifacts = _publish_generations(
-                target,
-                "2099-09-01T00:00:00Z",
-                retention=2,
-            )
-            head = artifacts[-1]
-            _replace_verification(
-                head.path,
-                "V10 newer task",
-                "x" * 501,
-            )
-            target.db_path.unlink()
-            resolution = resolve_setup_project_state(
-                skill_root=install.skill_root,
-                repo=install.project_root,
-            )
-            candidate = backup_service.select_managed_backup_for_recovery(
-                resolution.target
-            )
-            self.assertIsNotNone(candidate)
-            self.assertIsNotNone(resolution.fixed_recovery)
-            real_record = backup_service.record_setup_backup
-
-            with mock.patch.object(
-                backup_service,
-                "record_setup_backup",
-                wraps=real_record,
-            ) as recorded:
-                restored_version = backup_service.restore_managed_backup(
-                    resolution.target,
-                    candidate,
-                    expected_recovery=resolution.fixed_recovery,
-                )
-
-            self.assertEqual(restored_version, 10)
-            recorded.assert_called_once()
-            self.assertEqual(recorded.call_args.args[1], head.metadata)
-            with closing(sqlite3.connect(target.db_path)) as connection:
-                pointer = connection.execute(
-                    """
-                    SELECT latest_backup_generation_id,
-                           backup_last_success_at,
-                           applied_backup_generations
-                      FROM project_maintenance
-                    """
-                ).fetchone()
-            self.assertEqual(
-                tuple(pointer),
-                (
-                    head.metadata.generation_id,
-                    head.metadata.published_at,
-                    head.metadata.publication_retention,
-                ),
-            )
-
-    def test_v10_phantom_predecessor_is_set_fatal(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            install = make_physical_install(Path(tmp))
-            target = DatabaseTarget(
-                project=install.legacy_target.project,
-                db_path=install.db_path,
-                explicit_db=True,
-            )
-            create_v10_target(target)
-            artifacts = _publish_generations(
-                target,
-                "2098-01-01T00:00:00Z",
-                "2099-01-01T00:00:00Z",
-                retention=3,
-            )
-            head = artifacts[-1]
-            with closing(sqlite3.connect(head.path)) as connection:
-                cursor = connection.execute(
-                    """
-                    UPDATE project_maintenance
-                       SET latest_backup_generation_id = ?,
-                           backup_last_success_at = ?,
-                           applied_backup_generations = ?
-                     WHERE project_id = ?
-                    """,
-                    (
-                        "tg_backup_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                        "2098-06-01T00:00:00Z",
-                        3,
-                        target.project.project_id,
-                    ),
-                )
-                self.assertEqual(cursor.rowcount, 1)
-                connection.commit()
-            backup_bytes = {
-                item.path: item.path.read_bytes()
-                for item in artifacts
-            }
-            target.db_path.unlink()
-
-            result = setup_service.run_setup(
-                repo=str(install.project_root),
-                repo_explicit=True,
-                script_path=install.entrypoint,
-                read_only=False,
-                backup_interval_minutes=None,
-                backup_generations=None,
-            )
-
-            self.assertFalse(result.ok)
-            self.assertEqual(result.error_code, "project_state_unreadable")
-            self.assertEqual(result.data["planned_writes"], [])
-            self.assertFalse(target.db_path.exists())
-            self.assertEqual(
-                {path: path.read_bytes() for path in backup_bytes},
-                backup_bytes,
-            )
-
-    def test_v10_absent_predecessor_id_cannot_collide_with_physical_set(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            install = make_physical_install(Path(tmp))
-            target = DatabaseTarget(
-                project=install.legacy_target.project,
-                db_path=install.db_path,
-                explicit_db=True,
-            )
-            create_v10_target(target)
-            artifacts = _publish_generations(
-                target,
-                "2098-02-01T00:00:00Z",
-                "2099-02-01T00:00:00Z",
-                retention=3,
-            )
-            first, later = artifacts
-            with closing(sqlite3.connect(first.path)) as connection:
-                cursor = connection.execute(
-                    """
-                    UPDATE project_maintenance
-                       SET latest_backup_generation_id = ?,
-                           backup_last_success_at = ?,
-                           applied_backup_generations = ?
-                     WHERE project_id = ?
-                    """,
-                    (
-                        later.metadata.generation_id,
-                        "2097-02-01T00:00:00Z",
-                        3,
-                        target.project.project_id,
-                    ),
-                )
-                self.assertEqual(cursor.rowcount, 1)
-                connection.commit()
-            backup_bytes = {
-                item.path: item.path.read_bytes()
-                for item in artifacts
-            }
-            target.db_path.unlink()
-
-            result = setup_service.run_setup(
-                repo=str(install.project_root),
-                repo_explicit=True,
-                script_path=install.entrypoint,
-                read_only=False,
-                backup_interval_minutes=None,
-                backup_generations=None,
-            )
-
-            self.assertFalse(result.ok)
-            self.assertEqual(result.error_code, "project_state_unreadable")
-            self.assertEqual(result.data["planned_writes"], [])
-            self.assertFalse(target.db_path.exists())
-            self.assertEqual(
-                {path: path.read_bytes() for path in backup_bytes},
-                backup_bytes,
-            )
-
-    def test_mixed_schema_older_fallback_can_complete_migration(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            install = make_physical_install(Path(tmp))
-            target = DatabaseTarget(
-                project=install.legacy_target.project,
-                db_path=install.db_path,
-                explicit_db=True,
-            )
-            create_v10_target(
-                target,
-                enabled=True,
-                generations=5,
-            )
-            _publish_generations(
-                target,
-                "2026-01-01T00:00:00Z",
-                retention=5,
-            )
-
-            migrated = install.run("setup", "--json")
-            self.assertEqual(migrated.returncode, 0, migrated.stderr)
-            added = install.run(
-                "task",
-                "add",
-                "--title",
-                "Mixed-schema rejected head",
-                "--json",
-            )
-            self.assertEqual(added.returncode, 0, added.stderr)
-            current_target = install.target
-            head = _publish_generations(
-                current_target,
-                "2099-10-01T00:00:00Z",
-                retention=5,
-            )[-1]
-            _replace_verification(
-                head.path,
-                "Mixed-schema rejected head",
-                "x" * 501,
-            )
-            install.db_path.unlink()
-
-            recovered = install.run("setup", "--json")
-
-            self.assertEqual(recovered.returncode, 0, recovered.stderr)
-            with closing(sqlite3.connect(install.db_path)) as connection:
-                schema_version = connection.execute(
-                    "SELECT MAX(version) FROM schema_migrations"
-                ).fetchone()[0]
-                rejected_title_count = connection.execute(
-                    "SELECT COUNT(*) FROM tasks WHERE title = ?",
-                    ("Mixed-schema rejected head",),
-                ).fetchone()[0]
-            self.assertEqual(schema_version, 17)
-            self.assertEqual(rejected_title_count, 0)
 
     def test_a_b_a_binding_history_does_not_reuse_old_a_candidate(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -221,20 +221,28 @@ class TaskValidationTests(unittest.TestCase):
                             validate_stored_task_verification(connection, 17)
                         self.assertEqual(caught.exception.reason, reason)
 
-            connection.execute("DELETE FROM tasks")
-            connection.executemany(
-                "INSERT INTO tasks(task_id, verification) VALUES (?, ?)",
-                (
-                    ("a_local", "x" * 501),
-                    ("z_structural", sqlite3.Binary(b"not-text")),
-                ),
-            )
-            with self.assertRaises(StorageError) as structural:
-                validate_stored_task_verification(connection, 17)
-            self.assertEqual(
-                structural.exception.code,
-                "project_state_unreadable",
-            )
+            for local_reason, local_value in (
+                ("capacity", "x" * 501),
+                ("privacy", "token=stored-secret"),
+            ):
+                with self.subTest(
+                    local_reason=local_reason,
+                    later_value="malformed",
+                ):
+                    connection.execute("DELETE FROM tasks")
+                    connection.executemany(
+                        "INSERT INTO tasks(task_id, verification) VALUES (?, ?)",
+                        (
+                            ("a_local", local_value),
+                            ("z_structural", sqlite3.Binary(b"not-text")),
+                        ),
+                    )
+                    with self.assertRaises(StorageError) as structural:
+                        validate_stored_task_verification(connection, 17)
+                    self.assertEqual(
+                        structural.exception.code,
+                        "project_state_unreadable",
+                    )
 
     def test_event_summary_is_required(self):
         self.assert_validation_error(

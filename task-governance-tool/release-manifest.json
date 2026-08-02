@@ -4,7 +4,7 @@
     "SKILL.md": "sha256:9cae1e83df2458f149e9e2d125f0c9585e1232159aca1c786572aba6f251d021",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
     "assets/task-viewer.template.html": "sha256:7f0868c39120f51016955df3d72d413ae0ccbd03ef52f67158b140c51ea9b563",
-    "references/cli_contracts.md": "sha256:afb1d5ab1a90612caebc272164a872019b800ba6ecee740c833f43e20a31149f",
+    "references/cli_contracts.md": "sha256:b18d6ed01befa9d2771a32a40e9eb54940039ec3314684a5c48ccdc4c87a6e93",
     "references/reconciliation.md": "sha256:8ab7b5e734034a8dc186b274de5c1ce65eb17496e7a5690011585292670688aa",
     "references/task_workflow.md": "sha256:209cc1651d0faab1ea89c9869cc553f13c282c252f27bf64d947e2e1a2cc25e9",
     "scripts/task_governance_tool/__init__.py": "sha256:affb7f7e1be52b36e574254814e661c18c85715d535e72c0a6c63551b1b9eec9",

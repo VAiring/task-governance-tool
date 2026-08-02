@@ -5,6 +5,7 @@ import io
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import threading
@@ -124,6 +125,34 @@ def file_snapshot(root: Path, *, exclude_state: bool = False) -> dict[str, str]:
             continue
         result[relative.as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     return result
+
+
+def tree_snapshot(root: Path) -> dict[str, tuple[object, ...]]:
+    """Capture names, kinds, sizes, and contents without following links."""
+
+    snapshot: dict[str, tuple[object, ...]] = {}
+    if not root.exists():
+        return snapshot
+    for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+        relative = path.relative_to(root).as_posix()
+        details = path.lstat()
+        if stat.S_ISLNK(details.st_mode):
+            snapshot[relative] = ("link", os.readlink(path))
+        elif stat.S_ISDIR(details.st_mode):
+            snapshot[relative] = ("directory",)
+        elif stat.S_ISREG(details.st_mode):
+            digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                while chunk := stream.read(1024 * 1024):
+                    digest.update(chunk)
+            snapshot[relative] = (
+                "file",
+                int(details.st_size),
+                digest.hexdigest(),
+            )
+        else:
+            snapshot[relative] = ("other", int(details.st_mode))
+    return snapshot
 
 
 def canonical_test_path(path: Path) -> Path:

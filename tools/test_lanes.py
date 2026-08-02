@@ -85,6 +85,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m17_recovery_hardening",
         "test_m17_relocation_setup",
         "test_m17_setup_regressions",
+        "test_m214b_recovery_boundaries",
         "test_post_commit_maintenance",
         "test_project_identity_bindings",
         "test_routine_backup",

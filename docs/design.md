@@ -12,7 +12,9 @@ design below without claiming a tag, remote commit, or published Release.
 TG-M21.4 now freezes an accepted but inactive schema-v18 correction from
 caller-authored labels to a taskgov-owned verification subject. TG-M21.4A
 also freezes the schema-v18 verification-capacity compatibility correction
-below; current v17 runtime and package behavior remain unchanged. TG-M16.4
+below. TG-M21.4B implements the current v17 recovery-candidate classifier and
+TOCTOU reconciliation without activating schema v18 or public-limit changes.
+TG-M16.4
 behavioral acceptance remains part of the published baseline. The TG-M20S
 successor observation reached its frozen `proceed_to_design` result and
 no-rerun retirement boundary. TG-M20S.3 now freezes an accepted but inactive
@@ -447,13 +449,96 @@ The candidate validator checks:
 - at most one bounded regular temporary for each exact restore, backup, and
   Viewer temporary-name grammar.
 
+Recovery classification is deliberately two-phase. The resolver opens every
+recognized candidate and completes the physical, SQLite, schema, identity,
+lineage, metadata, and whole-set checks above against the mechanically newest
+structural head. It then calls the storage-owned exact Task-verification
+validator with that candidate's source schema. The validator returns normally
+or raises a sanitized internal privacy/capacity rejection; every other storage
+failure remains structural and set-fatal. The current implementation accepts
+at most 500 characters for supported schema v17 and earlier. M22.2 changes the
+same stored validator for schema v18 rather than adding a recovery-only limit.
+
+The structural phase also validates each candidate as the immutable
+pre-publication repository snapshot for its ordered physical prefix. One
+set-wide generation registry requires every occurrence of a generation ID in
+a filename, embedded row, or maintenance pointer to carry identical complete
+metadata. A v11+
+candidate has its pointer at its last embedded generation row, exactly its own
+generation is file-only in that prefix, and bounded row-only generations are
+strictly older. A v10 candidate has no rows and its optional pointer is older
+than the candidate. With a retained physical predecessor, that pointer equals
+the predecessor's complete metadata; only the first retained candidate may
+refer to an older generation ID absent from the complete physical candidate
+set. Candidate schema versions are not required to be monotonic because an
+older fallback can produce a new pre-migration backup after a newer rejected
+head.
+Candidate-derived rollback-journal, WAL, and SHM names, including filesystem
+case aliases, are rejected regardless of size. The storage classifier scans
+all Task rows so a later malformed SQLite value cannot be hidden by an earlier
+local rejection; privacy wins over capacity only after that structural scan
+completes.
+
+Each internal managed-backup observation includes metadata, source schema,
+stored project/binding lineage, content eligibility, path, and the regular
+file's device/inode/size/mtime identity. Fixed and legacy backup-only
+resolution retain the complete ordered observation set, select the newest
+content-eligible candidate at the current binding, and expose both the
+selection and full set to setup. Setup requires its recovery selector to match
+that exact selected observation, then compares the complete observation again
+while holding the artifact lock. Any candidate or classification drift is a
+restore failure; there is no under-lock reselection.
+
+Content eligibility also requires exact identity scheme, binding generation,
+canonical path hash, and full binding lineage equality with the structural
+head. Earlier valid lineage-prefix artifacts remain structurally observable
+but cannot be selected across a binding generation, including an A-to-B-to-A
+path history.
+
+Fixed recovery carries that immutable ordered inventory into the restore
+service. The service reclassifies the complete set at entry, before private
+repository normalization, and immediately before its no-replace canonical
+link; both deep resolver results must equal the planned observation and the
+newest eligible member must still be the planned selection. Before
+normalization, the private SQLite copy must exactly retain the selected
+candidate's project/binding, source schema, generation rows, maintenance
+pointer, and content classification. After normalization it is opened again
+through the schema-aware resolver validator and must have every required
+object plus the exact all-artifact row set and mechanical-head pointer. Legacy
+backup-only publication pins the selected source identity and the same
+repository observation, validates both
+the source and copied stage, checks every copied backup against its planned
+identity, and resolves the complete legacy source again immediately before the
+no-replace stage rename. Any mismatch maps to `setup_restore_failed` and the
+private stage is removed without publishing fixed state.
+
+The shallow backup-service inventory refresh runs before each fixed deep
+resolver comparison. The publication-side deep comparison is the last
+source-set check before directory/canonical-destination guards and the
+no-replace link, so a weaker rescan cannot invalidate its conclusion. When a
+primary is present, ordinary reads keep primary precedence, but setup and
+staged validation still invoke the Task-verification classifier for every
+backup: local privacy/capacity results are ignored for selection, while a
+malformed stored value remains structural and set-fatal.
+
+The recovery-specific backup scan uses the same storage validator, excludes
+only its privacy/capacity rejection from selection, and converts corrupt,
+foreign, unsafe, duplicate, overflow, or otherwise structurally invalid
+recognized material to the restore-failure boundary. Recovery normalization
+keeps every structurally coherent artifact in the ordinary generation
+row/file/pointer envelope even when the copied candidate is older; local
+rejection never hides or legalizes a missing or mismatched relation. It does
+not rewrite rejected artifacts, while later ordinary retention keeps its
+existing authority over managed generations.
+
 Other contained names are opaque user material and are preserved. A fixed
 primary always wins even when invalid; the resolver never falls back around
-it. A fixed missing-primary recovery selects the newest valid generation and
-requires its binding head to match the current governed root. Earlier
+it. After whole-set validation, fixed missing-primary recovery selects the
+newest content-eligible current-binding generation and requires the
+mechanically newest binding head to match the governed root. Earlier
 generations may be exact lineage prefixes. A moved backup-only legacy source,
-foreign/divergent identity, corrupt primary, or unsupported journal is never a
-relocation fallback.
+foreign/divergent identity, corrupt primary, or unsupported journal is never
+a relocation fallback.
 
 Same-binding legacy primary or backup-only state is setup-publishable to fixed
 state. Normal commands report migration-required until that atomic
@@ -1375,12 +1460,13 @@ Migration and recovery choose the stored limit from the source schema before
 any copy, DDL, history row, or canonical publication. Schema v17 permits 500;
 schema v18 and later supported sources permit 1,000. Thus invalid 501-1,000
 bytes in a v17 source are not laundered by migration. Backup discovery applies
-that rule per candidate, continues past an invalid newest candidate to an
-older valid one, and otherwise returns the existing restore failure without a
-canonical database. Stored overflow or privacy failure maps to the owning
-sanitized stored-context inconsistency result, not caller `invalid_argument`
-or `privacy_rejected`, with no partial business, evidence, generation, or
-artifact write.
+the specification's TG-M21.4B matrix per candidate: only stored Task-
+verification privacy/capacity rejection may expose an older eligible candidate;
+structural failure remains set-fatal. No eligible candidate returns the
+existing restore failure without a canonical database. Stored overflow or
+privacy failure maps to the owning sanitized stored-context inconsistency
+result, not caller `invalid_argument` or `privacy_rejected`, with no partial
+business, evidence, generation, or artifact write.
 
 M21.5 changes only `TASK_VERIFICATION_INPUT_LIMIT` from 500 to 1,000 and the
 directly coupled public add/edit help, formal wording, package metadata, and

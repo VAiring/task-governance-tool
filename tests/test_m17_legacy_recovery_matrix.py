@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import os
+import sqlite3
 import tempfile
 import unittest
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from unittest import mock
 
 from tests.m14_test_support import (
     create_v14_target,
@@ -15,6 +18,7 @@ from tests.test_state_resolver import (
     create_backup_artifact,
     insert_generation_rows,
 )
+from tests.test_db_init import insert_task
 
 from task_governance_tool import setup as setup_service
 from task_governance_tool.state_resolver import resolve_project_state
@@ -75,6 +79,27 @@ def _metadata(index: int, *, retention: int) -> MigrationBackupMetadata:
     )
 
 
+def _record_generation(target, metadata: MigrationBackupMetadata) -> None:
+    insert_generation_rows(target, (metadata,))
+    with closing(sqlite3.connect(target.db_path)) as connection:
+        connection.execute(
+            """
+            UPDATE project_maintenance
+               SET latest_backup_generation_id = ?,
+                   backup_last_success_at = ?,
+                   applied_backup_generations = ?
+             WHERE project_id = ?
+            """,
+            (
+                metadata.generation_id,
+                metadata.published_at,
+                metadata.publication_retention,
+                target.project.project_id,
+            ),
+        )
+        connection.commit()
+
+
 def _run_setup(install):
     return setup_service.run_setup(
         repo=str(install.project_root),
@@ -93,12 +118,12 @@ def _build_positive_source(install, shape: _PositiveShape):
     for index in range(1, 21):
         metadata = _metadata(index, retention=20)
         old_artifacts.append(create_backup_artifact(target, metadata))
-        insert_generation_rows(target, (metadata,))
+        _record_generation(target, metadata)
 
     newest = _metadata(21, retention=1)
     create_backup_artifact(target, newest)
     if shape.newest_row_present:
-        insert_generation_rows(target, (newest,))
+        _record_generation(target, newest)
 
     if shape.row_only_oldest:
         old_artifacts[0].unlink()
@@ -108,6 +133,53 @@ def _build_positive_source(install, shape: _PositiveShape):
     if not shape.primary_present:
         target.db_path.unlink()
     return target, newest
+
+
+def _build_local_invalid_newer_source(install):
+    target = install.legacy_target
+    create_v14_target(target)
+    with closing(sqlite3.connect(target.db_path)) as connection:
+        insert_task(
+            connection,
+            task_id="tg_task_legacy_older",
+            project_id=target.project.project_id,
+            title="Legacy older task",
+        )
+        connection.commit()
+    older = _metadata(1, retention=2)
+    older_path = create_backup_artifact(target, older)
+    _record_generation(target, older)
+    with closing(sqlite3.connect(target.db_path)) as connection:
+        insert_task(
+            connection,
+            task_id="tg_task_legacy_selected",
+            project_id=target.project.project_id,
+            title="Legacy selected task",
+        )
+        connection.commit()
+    selected = _metadata(2, retention=2)
+    selected_path = create_backup_artifact(target, selected)
+    _record_generation(target, selected)
+    with closing(sqlite3.connect(target.db_path)) as connection:
+        insert_task(
+            connection,
+            task_id="tg_task_legacy_newer",
+            project_id=target.project.project_id,
+            title="Legacy newer task",
+        )
+        connection.commit()
+    newer = _metadata(3, retention=2)
+    newer_path = create_backup_artifact(target, newer)
+    with closing(sqlite3.connect(newer_path)) as connection:
+        cursor = connection.execute(
+            "UPDATE tasks SET verification = ? WHERE task_id = ?",
+            ("x" * 501, "tg_task_legacy_newer"),
+        )
+        if cursor.rowcount != 1:
+            raise AssertionError("newer legacy task was not updated")
+        connection.commit()
+    target.db_path.unlink()
+    return target, older_path, selected_path, newer_path
 
 
 class M17LegacyRecoveryMatrixTests(unittest.TestCase):
@@ -237,6 +309,197 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
                     file_snapshot(install.skill_root),
                     before,
                 )
+
+    def test_backup_only_legacy_skips_newer_local_invalid_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            _build_local_invalid_newer_source(install)
+
+            result = _run_setup(install)
+
+            self.assertTrue(result.ok, result)
+            resolution = resolve_project_state(
+                skill_root=install.skill_root,
+                repo=install.project_root,
+            )
+            self.assertIsNotNone(resolution.target)
+            with closing(sqlite3.connect(resolution.target.db_path)) as connection:
+                titles = {
+                    str(row[0])
+                    for row in connection.execute(
+                        "SELECT title FROM tasks"
+                    ).fetchall()
+                }
+            self.assertEqual(
+                titles,
+                {"Legacy older task", "Legacy selected task"},
+            )
+
+    def test_backup_only_legacy_revalidates_selected_source_before_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            _, _, selected_path, _ = _build_local_invalid_newer_source(
+                install
+            )
+            real_copy = setup_service.copy_database_snapshot
+            changed_bytes: bytes | None = None
+
+            def invalidate_selected_before_copy(**kwargs):
+                nonlocal changed_bytes
+                self.assertEqual(kwargs["source_path"], selected_path)
+                before = selected_path.stat()
+                with closing(sqlite3.connect(selected_path)) as connection:
+                    cursor = connection.execute(
+                        "UPDATE tasks SET verification = ? WHERE task_id = ?",
+                        ("x" * 501, "tg_task_legacy_selected"),
+                    )
+                    self.assertEqual(cursor.rowcount, 1)
+                    connection.commit()
+                changed = selected_path.stat()
+                self.assertEqual(changed.st_size, before.st_size)
+                os.utime(
+                    selected_path,
+                    ns=(changed.st_atime_ns, before.st_mtime_ns),
+                )
+                after = selected_path.stat()
+                self.assertEqual(
+                    (
+                        after.st_dev,
+                        after.st_ino,
+                        after.st_size,
+                        after.st_mtime_ns,
+                    ),
+                    (
+                        before.st_dev,
+                        before.st_ino,
+                        before.st_size,
+                        before.st_mtime_ns,
+                    ),
+                )
+                changed_bytes = selected_path.read_bytes()
+                return real_copy(**kwargs)
+
+            with mock.patch.object(
+                setup_service,
+                "copy_database_snapshot",
+                side_effect=invalidate_selected_before_copy,
+            ) as copied:
+                result = _run_setup(install)
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "setup_restore_failed")
+            self.assertEqual(result.data["completed_writes"], [])
+            copied.assert_called_once()
+            self.assertFalse(install.fixed_root.exists())
+            self.assertIsNotNone(changed_bytes)
+            self.assertEqual(selected_path.read_bytes(), changed_bytes)
+            state_root = install.skill_root / "state"
+            self.assertEqual(list(state_root.glob(".current-stage-*")), [])
+
+    def test_backup_only_legacy_maps_post_plan_reselection_to_restore_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            _, _, selected_path, _ = _build_local_invalid_newer_source(
+                install
+            )
+            real_lock = setup_service.state_transition_lock
+            changed_bytes: bytes | None = None
+
+            @contextmanager
+            def invalidate_selected_after_plan(state_root):
+                nonlocal changed_bytes
+                with real_lock(state_root):
+                    before = selected_path.stat()
+                    with closing(sqlite3.connect(selected_path)) as connection:
+                        cursor = connection.execute(
+                            "UPDATE tasks SET verification = ? WHERE task_id = ?",
+                            ("x" * 501, "tg_task_legacy_selected"),
+                        )
+                        self.assertEqual(cursor.rowcount, 1)
+                        connection.commit()
+                    changed = selected_path.stat()
+                    self.assertEqual(changed.st_size, before.st_size)
+                    os.utime(
+                        selected_path,
+                        ns=(changed.st_atime_ns, before.st_mtime_ns),
+                    )
+                    changed_bytes = selected_path.read_bytes()
+                    yield
+
+            with mock.patch.object(
+                setup_service,
+                "state_transition_lock",
+                invalidate_selected_after_plan,
+            ):
+                result = _run_setup(install)
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "setup_restore_failed")
+            self.assertEqual(result.data["completed_writes"], [])
+            self.assertFalse(install.fixed_root.exists())
+            self.assertIsNotNone(changed_bytes)
+            self.assertEqual(selected_path.read_bytes(), changed_bytes)
+            state_root = install.skill_root / "state"
+            self.assertEqual(list(state_root.glob(".current-stage-*")), [])
+
+    def test_backup_only_legacy_revalidates_inventory_before_publish(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            _, older_path, _, _ = _build_local_invalid_newer_source(install)
+            real_resolve_staged = setup_service.resolve_staged_project_state
+            changed_bytes: bytes | None = None
+
+            def invalidate_nonselected_candidate(**kwargs):
+                nonlocal changed_bytes
+                result = real_resolve_staged(**kwargs)
+                before = older_path.stat()
+                with closing(sqlite3.connect(older_path)) as connection:
+                    cursor = connection.execute(
+                        "UPDATE tasks SET verification = ? WHERE task_id = ?",
+                        ("x" * 501, "tg_task_legacy_older"),
+                    )
+                    self.assertEqual(cursor.rowcount, 1)
+                    connection.commit()
+                changed = older_path.stat()
+                self.assertEqual(changed.st_size, before.st_size)
+                os.utime(
+                    older_path,
+                    ns=(changed.st_atime_ns, before.st_mtime_ns),
+                )
+                after = older_path.stat()
+                self.assertEqual(
+                    (
+                        after.st_dev,
+                        after.st_ino,
+                        after.st_size,
+                        after.st_mtime_ns,
+                    ),
+                    (
+                        before.st_dev,
+                        before.st_ino,
+                        before.st_size,
+                        before.st_mtime_ns,
+                    ),
+                )
+                changed_bytes = older_path.read_bytes()
+                return result
+
+            with mock.patch.object(
+                setup_service,
+                "resolve_staged_project_state",
+                side_effect=invalidate_nonselected_candidate,
+            ) as staged:
+                result = _run_setup(install)
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "setup_restore_failed")
+            self.assertEqual(result.data["completed_writes"], [])
+            staged.assert_called_once()
+            self.assertFalse(install.fixed_root.exists())
+            self.assertIsNotNone(changed_bytes)
+            self.assertEqual(older_path.read_bytes(), changed_bytes)
+            state_root = install.skill_root / "state"
+            self.assertEqual(list(state_root.glob(".current-stage-*")), [])
 
 
 if __name__ == "__main__":

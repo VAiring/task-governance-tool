@@ -33,6 +33,7 @@ except ModuleNotFoundError:
 
 from task_governance_tool import backup as backup_service
 from task_governance_tool import setup as setup_service
+from task_governance_tool.state_resolver import resolve_setup_project_state
 from task_governance_tool.storage import DatabaseTarget, StorageError
 
 
@@ -81,6 +82,45 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
         )
         self.assertEqual(len(backups), 1)
         return install, backups[0]
+
+    def _two_generation_fixture(self, root: Path):
+        install, older_path = self._initialize_with_backed_up_task(root)
+        second = install.run(
+            "task",
+            "add",
+            "--title",
+            "Newest generation task",
+            "--json",
+        )
+        self.assertEqual(second.returncode, 0, second.stderr)
+        target = install.target
+        with (
+            mock.patch.object(
+                backup_service,
+                "utc_now",
+                return_value="2099-01-01T00:00:00Z",
+            ),
+            backup_service.managed_backup_lock(target),
+        ):
+            newer = backup_service.publish_setup_backup(target, 3)
+        newer_path = next(
+            path
+            for path in canonical_managed_sqlite_files(
+                install,
+                exclude=(install.db_path,),
+            )
+            if newer.generation_id[10:] in path.name
+        )
+        return install, target, older_path, newer_path
+
+    def _replace_newest_verification(self, path: Path, value: str) -> None:
+        with closing(sqlite3.connect(path)) as connection:
+            cursor = connection.execute(
+                "UPDATE tasks SET verification = ? WHERE title = ?",
+                (value, "Newest generation task"),
+            )
+            self.assertEqual(cursor.rowcount, 1)
+            connection.commit()
 
     def test_setup_preview_and_write_restore_current_managed_generation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -379,6 +419,132 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             self.assertEqual(newer_path.read_bytes(), newer_bytes)
             self.assertTrue(older_path.is_file())
 
+    def test_newer_foreign_artifact_never_exposes_an_older_valid_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install, _, older_path, newer_path = self._two_generation_fixture(
+                root / "local"
+            )
+            _, foreign_path = self._initialize_with_backed_up_task(
+                root / "foreign"
+            )
+            shutil.copy2(foreign_path, newer_path)
+            foreign_bytes = newer_path.read_bytes()
+            install.db_path.unlink()
+
+            failed = install.run("setup", "--json")
+
+            self.assertEqual(failed.returncode, 2)
+            self.assertEqual(
+                json_payload(failed)["errors"],
+                [{
+                    "code": "project_state_unreadable",
+                    "message": "project state could not be read safely",
+                }],
+            )
+            self.assertFalse(install.db_path.exists())
+            self.assertTrue(older_path.is_file())
+            self.assertEqual(newer_path.read_bytes(), foreign_bytes)
+
+    def test_v17_recovery_skips_only_capacity_or_privacy_local_candidates(self):
+        cases = (
+            ("capacity", "x" * 501, False),
+            ("privacy", "token=stored-recovery-secret", False),
+            ("boundary", "x" * 500, True),
+        )
+        for name, verification, restores_newest in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                install, target, older_path, newer_path = (
+                    self._two_generation_fixture(Path(tmp))
+                )
+                self._replace_newest_verification(newer_path, verification)
+                newer_bytes = newer_path.read_bytes()
+                install.db_path.unlink()
+
+                selected = backup_service.select_managed_backup_for_recovery(
+                    target
+                )
+                self.assertIsNotNone(selected)
+                self.assertEqual(
+                    canonical_test_path(selected.path),
+                    canonical_test_path(
+                        newer_path if restores_newest else older_path
+                    ),
+                )
+                restored = install.run("setup", "--json")
+
+                self.assertEqual(restored.returncode, 0, restored.stderr)
+                self.assertEqual(newer_path.read_bytes(), newer_bytes)
+                with closing(sqlite3.connect(install.db_path)) as connection:
+                    titles = {
+                        str(row[0])
+                        for row in connection.execute(
+                            "SELECT title FROM tasks"
+                        ).fetchall()
+                    }
+                    stored = connection.execute(
+                        "SELECT verification FROM tasks WHERE title = ?",
+                        ("Newest generation task",),
+                    ).fetchone()
+                if restores_newest:
+                    self.assertIn("Newest generation task", titles)
+                    self.assertEqual(stored, (verification,))
+                else:
+                    self.assertNotIn("Newest generation task", titles)
+                    self.assertIsNone(stored)
+
+    def test_only_local_invalid_recovery_candidate_is_sanitized_no_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install, backup_path = self._initialize_with_backed_up_task(
+                Path(tmp)
+            )
+            sentinel = "token=must-not-appear-in-output"
+            with closing(sqlite3.connect(backup_path)) as connection:
+                cursor = connection.execute(
+                    "UPDATE tasks SET verification = ?",
+                    (sentinel,),
+                )
+                self.assertEqual(cursor.rowcount, 1)
+                connection.commit()
+            install.db_path.unlink()
+            if install.viewer_path.exists():
+                install.viewer_path.unlink()
+            before = {
+                path.relative_to(install.fixed_root).as_posix(): path.read_bytes()
+                for path in install.fixed_root.rglob("*")
+                if path.is_file()
+            }
+
+            failed = install.run("setup", "--json")
+
+            self.assertEqual(failed.returncode, 2)
+            payload = json_payload(failed)
+            self.assertEqual(
+                payload["errors"],
+                [{
+                    "code": "setup_restore_failed",
+                    "message": "managed backup could not be restored",
+                }],
+            )
+            self.assertEqual(payload["data"]["planned_writes"], [])
+            self.assertNotIn(sentinel, failed.stdout)
+            self.assertNotIn(sentinel, failed.stderr)
+            self.assertFalse(install.db_path.exists())
+            self.assertFalse(install.viewer_path.exists())
+            self.assertEqual(
+                {
+                    path.relative_to(install.fixed_root).as_posix():
+                    path.read_bytes()
+                    for path in install.fixed_root.rglob("*")
+                    if path.is_file()
+                },
+                before,
+            )
+            self.assertEqual(
+                list(install.fixed_root.glob(".taskgov-restore-*.tmp")),
+                [],
+            )
+
     def test_configured_v10_through_v12_recovery_preserves_policy(self):
         fixture_factories = {
             10: create_v10_target,
@@ -490,6 +656,11 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             )
             self.assertIsNotNone(candidate)
             install.db_path.unlink()
+            recovery = resolve_setup_project_state(
+                skill_root=install.skill_root,
+                repo=install.project_root,
+            ).fixed_recovery
+            self.assertIsNotNone(recovery)
             real_link = backup_service.os.link
             competing = b"competing canonical state"
 
@@ -506,6 +677,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     backup_service.restore_managed_backup(
                         target,
                         candidate,
+                        expected_recovery=recovery,
                     )
 
             self.assertEqual(raised.exception.code, "setup_restore_failed")
@@ -663,6 +835,11 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             self.assertIsNotNone(candidate)
             before_backup = backup_path.read_bytes()
             install.db_path.unlink()
+            recovery = resolve_setup_project_state(
+                skill_root=install.skill_root,
+                repo=install.project_root,
+            ).fixed_recovery
+            self.assertIsNotNone(recovery)
             journal = Path(str(install.db_path) + "-journal")
             journal_bytes = b"late orphan rollback journal"
             real_fsync = backup_service.os.fsync
@@ -680,6 +857,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     backup_service.restore_managed_backup(
                         target,
                         candidate,
+                        expected_recovery=recovery,
                     )
 
             self.assertEqual(raised.exception.code, "setup_restore_failed")

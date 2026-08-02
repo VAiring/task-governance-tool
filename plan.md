@@ -362,14 +362,14 @@ current gate. Completed execution details, current/ready/blocked/review/done
 state, blocker detail, targets, evidence, and completion commits are queried
 through the public CLI rather than mirrored in Git documents.
 
-### TG-M21.4 And TG-M21.4A Accepted Inactive Corrections
+### TG-M21.4, TG-M21.4A, And TG-M21.4B Corrections
 
 TG-M21.4 `tg_task_6ae822dd1a77c095` is a Tier 2 design-only interrupt after accepted TG-M22.1 and before schema-v18 activation.
 Current schema-v17 Receipts, caller-authored `command_label` bytes, linked cycles, CLI, Skill, and Task-show projection remain unchanged.
 Schema v18 instead derives an immutable taskgov-owned subject from each fresh target's nonempty verification criterion.
 New input retains result, duration, coverage, and expected generation but drops label composition; v17 rows remain explicit legacy labels and never enter a native M22 bundle.
 TG-M21.4A `tg_task_95c5e968c8fe7e4b` keeps v17 storage/read/write at 500; makes M22.2 schema-v18 storage/read/internal processing 1,000 while public Task add/edit stays 500; and leaves M21.5 only the public-ingress change to 1,000.
-Exact subject, same-schema compatibility, and capacity contracts live in the active specification and design.
+TG-M21.4B `tg_task_9b746fbe5fe4927f` reconciles current v17 recovery so only source-schema Task-verification capacity/privacy rejection may expose an older candidate; every structural or TOCTOU fault remains set-fatal. Exact subject, compatibility, capacity, and recovery contracts live in the active specification/design.
 
 ### TG-M22 Accepted Inactive Evidence Ledger Decision
 
@@ -381,16 +381,16 @@ All retain 21 leaves/call bounds; old rows/cycles remain legacy, caller attestat
 
 ### Approved TG-M22 Sequence
 
-All seven units, including the three M21 additions, are sequential Tier 2 work in lane
-`TG-M22-EVIDENCE-LEDGER`. Live status, targets, evidence, blockers, and
-completion commits remain solely in the Task database.
+All eight units, including the four M21 additions, are sequential Tier 2 work in lane `TG-M22-EVIDENCE-LEDGER`.
+Live status, targets, evidence, blockers, and completion commits remain solely in the Task database.
 
 | Unit/order | Task | Dependency | Purpose, bounded scope, permission, and completion gate |
 |---|---|---|---|
 | TG-M22.1 / 10 | `tg_task_0a3c0d361da10f49` | accepted TG-M21.3 | Freeze the Evidence Ledger, assurance/producer, authority/criterion, artifact, bundle, JSON, legacy, repair, and future-producer design in `plan.md`, `docs/specification.md`, and `docs/design.md` only. Change no runtime, schema, CLI, Skill, Viewer, package, generated artifact, or network behavior. Require active-document consistency, exact diff, current Verification Receipt, and two exact-target Tier 2 reviews. |
 | TG-M21.4 / 15 | `tg_task_6ae822dd1a77c095` | accepted TG-M22.1 | Freeze the inactive tool-owned verification-subject correction, preserve v17 rows/cycles and behavior, allocate its v18/v19 transition, revise dependent Task Contracts, and require exact diff, current Receipt, and two reviews. |
 | TG-M21.4A / 18 | `tg_task_95c5e968c8fe7e4b` | accepted TG-M21.4 | Correct schema-v18 capacity ownership in the three active documents and dependent Task Contracts only: M22.2 pre-admits 1,000-character durable/read/internal state but keeps public Task add/edit at 500; M21.5 changes only public ingress. Require current-v17 invariance, same-schema forward-data compatibility, exact diff, current Receipt, and two reviews. |
-| TG-M22.2 / 20 | `tg_task_88bfe19eb6cffe2e` | accepted TG-M21.4A | Activate schema v18 authority snapshots, criteria, verification subjects, evidence references, deterministic manifests, and 1,000-character durable/read capacity while public Task add/edit remains 500. Preserve v17 Receipt/cycle bytes as subject-basis zero; fresh targets create basis one, Receipt input drops caller labels, and capture-v0 evidence writes fail closed. Preserve 21 leaves/call graph; add no bundle/JSON, analyzer, Runner, caller artifact list, raw content, or decision authority. Synchronize `AGENTS.md` retention, docs, Skill/reference, Viewer/package/migrations, split focused/full tests, record the exact compatibility package baseline, self-host retarget/reverification/review, exact-target Receipt, and two reviews. |
+| TG-M21.4B / 19 | `tg_task_9b746fbe5fe4927f` | accepted TG-M21.4A | Reconcile recovery classification across docs, resolver/setup/backup, tests, and the M22.2 Contract. Skip only source-schema Task-verification capacity/privacy rejection; keep corruption, foreign identity, lineage/metadata/structure, and TOCTOU set-fatal. Require deterministic errors/no-write, focused/full/release checks, and two reviews. |
+| TG-M22.2 / 20 | `tg_task_88bfe19eb6cffe2e` | accepted TG-M21.4B | Activate schema v18 authority snapshots, criteria, verification subjects, evidence references, deterministic manifests, and 1,000-character durable/read capacity while public Task add/edit remains 500. Preserve v17 Receipt/cycle bytes as subject-basis zero; fresh targets create basis one, Receipt input drops caller labels, and capture-v0 evidence writes fail closed. Preserve 21 leaves/call graph; add no bundle/JSON, analyzer, Runner, caller artifact list, raw content, or decision authority. Synchronize `AGENTS.md` retention, docs, Skill/reference, Viewer/package/migrations, split focused/full tests, record the exact compatibility package baseline, self-host retarget/reverification/review, exact-target Receipt, and two reviews. |
 | TG-M21.5 / 25 | `tg_task_e7701fb907020905` | accepted TG-M22.2 | Raise only explicit public Task add/edit verification admission from 500 to 1,000 characters at schema v18; change no stored reader, DDL, migration, backfill, other field limit, subject, leaf, or call. Preserve exact bytes, privacy, output caps, and compatibility with the complete recorded M22.2 package; require focused/full tests, exact-target Receipt, and two reviews. |
 | TG-M22.3 / 30 | `tg_task_ae6f52c4f7b25549` | accepted TG-M21.5 | Activate schema v19 native bundles, criterion links/finding snapshots, projection generation, subject-based Evidence JSON and index-last publication, setup repair, and bounded maintenance. Consume the M22.2-stored/M21.5-public 1,000-character boundary without changing it. Native output contains the tool-owned subject and caller-attested result/coverage but no legacy caller label. Forbid import, custom output, service/network, narrative, analyzer, Runner, Viewer evidence UI, raw content, new leaf, or new LLM call; require synchronized contracts, migration/recovery/full-offline/exact-diff Receipt, and two reviews. |
 | TG-M22.4 / 40 | `tg_task_0a90b4caf566a8fd` | accepted TG-M22.3 | Accept M22.2/M21.5/M22.3 across the exact v17 500/500, M22.2 v18 500-public/1,000-stored, and M21.5 v18 1,000/1,000 matrix; unchanged legacy rows/cycles; safe M22.2 operation on post-M21.5 state; capture-v0 rejection; Task/Contract/target/verification/review/completion/reopen; Git artifacts; immutable bundles; DB/JSON equivalence; repair; privacy/size/no-write; command counts; local consumer; package/release; full offline; and forward scenarios. Permit only bounded corrections; add no M23/M24 activation, Viewer evidence UI, command, unrelated refactor, or weakened test. Require exact-target Receipt and two reviews. |

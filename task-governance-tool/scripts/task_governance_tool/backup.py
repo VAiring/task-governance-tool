@@ -9,10 +9,16 @@ import sqlite3
 import stat
 import tempfile
 from contextlib import closing, contextmanager, suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
+
+if TYPE_CHECKING:
+    from task_governance_tool.state_resolver import (
+        FixedRecoveryObservation,
+        ManagedBackupObservation,
+    )
 
 from task_governance_tool.artifact_lock import (
     ArtifactLockError,
@@ -29,6 +35,7 @@ from task_governance_tool.storage import (
     MigrationBackupMetadata,
     ProjectMaintenanceState,
     StorageError,
+    StoredTaskVerificationError,
     configure_connection,
     connect_readonly,
     current_schema_version,
@@ -44,6 +51,7 @@ from task_governance_tool.storage import (
     utc_now,
     validate_current_database,
     validate_migration_backup_metadata,
+    validate_stored_task_verification,
     validate_utc_timestamp,
 )
 
@@ -52,6 +60,7 @@ _FILENAME = re.compile(
     r"^taskgov-backup-v1_(?P<time>\d{8}T\d{6}Z)_"
     r"(?P<token>[0-9a-f]{32})_r(?P<retention>[1-9]|1[0-9]|20)\.sqlite$"
 )
+_FILENAME_ALIAS = re.compile(_FILENAME.pattern, re.IGNORECASE)
 _FAILURE_MESSAGE = "setup backup could not be completed"
 _RESTORE_FAILURE_MESSAGE = "managed backup could not be restored"
 _LOCK_FILENAME = "taskgov-backup.lock"
@@ -62,6 +71,21 @@ class _Artifact:
     path: Path
     metadata: MigrationBackupMetadata
     identity: tuple[int, int, int, int]
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.metadata.published_at, self.metadata.generation_id)
+
+
+@dataclass(frozen=True)
+class ManagedBackupRecoveryArtifact:
+    """One fully classified generation bound to a recovery decision."""
+
+    path: Path = field(repr=False)
+    metadata: MigrationBackupMetadata
+    schema_version: int
+    content_valid: bool
+    identity: tuple[int, int, int, int] = field(repr=False)
 
     @property
     def key(self) -> tuple[str, str]:
@@ -82,6 +106,7 @@ class ManagedBackupRecoveryCandidate:
     metadata: MigrationBackupMetadata
     schema_version: int
     identity: tuple[int, int, int, int] = field(repr=False)
+    inventory: tuple[ManagedBackupRecoveryArtifact, ...] = field(repr=False)
 
 
 def _failure() -> StorageError:
@@ -380,6 +405,67 @@ def _discover(target: DatabaseTarget) -> list[_Artifact]:
     return sorted(artifacts, key=lambda artifact: artifact.key)
 
 
+def _discover_recovery_artifacts(
+    target: DatabaseTarget,
+) -> list[ManagedBackupRecoveryArtifact]:
+    """Classify recognized recovery artifacts without hiding structural faults."""
+
+    directory = _directory(target, create=False)
+    if not directory.exists():
+        return []
+    try:
+        names = sorted(path.name for path in directory.iterdir())
+    except OSError as exc:
+        raise _restore_failure() from exc
+    artifacts: list[ManagedBackupRecoveryArtifact] = []
+    generation_ids: set[str] = set()
+    recognized_count = 0
+    for name in names:
+        folded_name = name.casefold()
+        if any(
+            folded_name.endswith(suffix)
+            and _FILENAME_ALIAS.fullmatch(name[: -len(suffix)]) is not None
+            for suffix in ("-journal", "-wal", "-shm")
+        ):
+            raise _restore_failure()
+    for name in names:
+        metadata = _parse_filename(name)
+        if metadata is None:
+            continue
+        recognized_count += 1
+        if recognized_count > MAX_BACKUP_GENERATIONS + 1:
+            raise _restore_failure()
+        if metadata.generation_id in generation_ids:
+            raise _restore_failure()
+        generation_ids.add(metadata.generation_id)
+        path = directory / name
+        identity = _file_identity(path)
+        if identity is None:
+            raise _restore_failure()
+        content_valid = True
+        try:
+            with closing(connect_readonly(path)) as connection:
+                version = _validate_database(connection, target)
+                try:
+                    validate_stored_task_verification(connection, version)
+                except StoredTaskVerificationError:
+                    content_valid = False
+        except (OSError, sqlite3.Error, StorageError) as exc:
+            raise _restore_failure() from exc
+        if _file_identity(path) != identity:
+            raise _restore_failure()
+        artifacts.append(
+            ManagedBackupRecoveryArtifact(
+                path=path,
+                metadata=metadata,
+                schema_version=version,
+                content_valid=content_valid,
+                identity=identity,
+            )
+        )
+    return sorted(artifacts, key=lambda item: item.key)
+
+
 def discover_managed_backup_metadata(
     target: DatabaseTarget,
 ) -> tuple[MigrationBackupMetadata, ...]:
@@ -395,21 +481,16 @@ def select_managed_backup_for_recovery(
     try:
         if _canonical_rollback_journal_present(target):
             raise _restore_failure()
-        artifacts = _discover(target)
-        if artifacts:
-            artifact = artifacts[-1]
-            schema_version = _artifact_schema_version(
-                artifact.path,
-                target,
-                artifact.identity,
-            )
-            if schema_version is None:
-                raise _restore_failure()
+        artifacts = _discover_recovery_artifacts(target)
+        eligible = [item for item in artifacts if item.content_valid]
+        if eligible:
+            selected = eligible[-1]
             return ManagedBackupRecoveryCandidate(
-                path=artifact.path,
-                metadata=artifact.metadata,
-                schema_version=schema_version,
-                identity=artifact.identity,
+                path=selected.path,
+                metadata=selected.metadata,
+                schema_version=selected.schema_version,
+                identity=selected.identity,
+                inventory=tuple(artifacts),
             )
 
         directory = _directory(target, create=False)
@@ -427,19 +508,121 @@ def select_managed_backup_for_recovery(
         raise _restore_failure() from exc
 
 
+def _require_recovery_inventory(
+    target: DatabaseTarget,
+    candidate: ManagedBackupRecoveryCandidate,
+) -> tuple[ManagedBackupRecoveryArtifact, ...]:
+    """Reclassify and bind the complete generation set before publication."""
+
+    observed = tuple(_discover_recovery_artifacts(target))
+    eligible = tuple(item for item in observed if item.content_valid)
+    if observed != candidate.inventory or not eligible:
+        raise _restore_failure()
+    selected = eligible[-1]
+    if (
+        selected.path != candidate.path
+        or selected.metadata != candidate.metadata
+        or selected.identity != candidate.identity
+        or selected.schema_version != candidate.schema_version
+    ):
+        raise _restore_failure()
+    return observed
+
+
+def recovery_candidate_matches_observation(
+    candidate: ManagedBackupRecoveryCandidate,
+    recovery: "FixedRecoveryObservation",
+) -> bool:
+    """Match a backup-service selection to one deep resolver observation."""
+
+    selected = recovery.selected
+    if (
+        not selected.recovery_content_valid
+        or candidate.path != selected.path
+        or candidate.metadata != selected.metadata
+        or candidate.schema_version != selected.source_schema_version
+        or candidate.identity != selected.identity
+        or len(candidate.inventory) != len(recovery.managed_backups)
+    ):
+        return False
+    return all(
+        artifact.path == observed.path
+        and artifact.metadata == observed.metadata
+        and artifact.schema_version == observed.source_schema_version
+        and artifact.content_valid == observed.recovery_content_valid
+        and artifact.identity == observed.identity
+        for artifact, observed in zip(
+            candidate.inventory,
+            recovery.managed_backups,
+            strict=True,
+        )
+    )
+
+
+def _require_fixed_recovery_state(
+    target: DatabaseTarget,
+    candidate: ManagedBackupRecoveryCandidate,
+    expected: "FixedRecoveryObservation",
+) -> None:
+    """Re-run the owning whole-set resolver before fixed publication."""
+
+    if not target.canonical_fixed or target.skill_root is None:
+        raise _restore_failure()
+    from task_governance_tool.state_resolver import resolve_setup_project_state
+
+    resolution = resolve_setup_project_state(
+        skill_root=target.skill_root,
+        repo=target.project.canonical_repo,
+    )
+    resolved = resolution.target
+    if (
+        resolution.error_code is not None
+        or resolution.layout != "fixed_current_v1"
+        or resolution.binding != "matching"
+        or resolution.project_id != target.project.project_id
+        or resolution.fixed_recovery != expected
+        or not recovery_candidate_matches_observation(candidate, expected)
+        or resolved is None
+        or not resolved.canonical_fixed
+        or resolved.db_path != target.db_path
+        or resolved.skill_root != target.skill_root
+        or resolved.backups_path != target.backups_path
+        or resolved.viewer_path != target.viewer_path
+        or resolved.binding_path_hash != target.binding_path_hash
+        or resolved.binding_generation != target.binding_generation
+    ):
+        raise _restore_failure()
+
+
 def _prepare_recovered_repository(
     target: DatabaseTarget,
     candidate: ManagedBackupRecoveryCandidate,
+    *,
+    expected_snapshot: "ManagedBackupObservation | None" = None,
 ) -> None:
+    if expected_snapshot is not None:
+        from task_governance_tool.state_resolver import (
+            recovery_database_matches_observation,
+        )
+
+        if not recovery_database_matches_observation(
+            target.db_path,
+            expected_snapshot,
+        ):
+            raise _restore_failure()
+    classified = _require_recovery_inventory(target, candidate)
     version = candidate.schema_version
     if version == 10:
-        record_setup_backup(target, candidate.metadata)
+        record_setup_backup(target, classified[-1].metadata)
         return
     if version < 11:
         return
 
     migration_source = version < SCHEMA_VERSION
-    artifacts = _discover(target)
+    artifacts = [
+        _Artifact(item.path, item.metadata, item.identity)
+        for item in classified
+    ]
     artifact_by_id = {
         artifact.metadata.generation_id: artifact for artifact in artifacts
     }
@@ -490,22 +673,47 @@ def _prepare_recovered_repository(
         target,
         migration_source=migration_source,
     )
+    expected_latest = artifacts[-1].metadata
     if (
         not repository.generations
-        or repository.generations[-1] != candidate.metadata
+        or candidate.metadata not in repository.generations
+        or repository.generations[-1] != expected_latest
         or repository.maintenance.latest_backup_generation_id
-        != candidate.metadata.generation_id
+        != expected_latest.generation_id
         or repository.maintenance.backup_last_success_at
-        != candidate.metadata.published_at
+        != expected_latest.published_at
         or repository.maintenance.applied_backup_generations
-        != candidate.metadata.publication_retention
+        != expected_latest.publication_retention
     ):
         raise _restore_failure()
+
+
+def _normalized_recovery_observation(
+    candidate: ManagedBackupRecoveryCandidate,
+    expected: "ManagedBackupObservation",
+) -> "ManagedBackupObservation":
+    version = candidate.schema_version
+    if version >= 11:
+        rows = tuple(item.metadata for item in candidate.inventory)
+        pointer = rows[-1]
+    elif version == 10:
+        rows = ()
+        pointer = candidate.inventory[-1].metadata
+    else:
+        rows = ()
+        pointer = None
+    return replace(
+        expected,
+        generation_rows=rows,
+        maintenance_pointer=pointer,
+    )
 
 
 def restore_managed_backup(
     target: DatabaseTarget,
     candidate: ManagedBackupRecoveryCandidate,
+    *,
+    expected_recovery: "FixedRecoveryObservation | None" = None,
 ) -> int:
     """Atomically recreate a missing canonical DB from one validated generation."""
 
@@ -518,10 +726,16 @@ def restore_managed_backup(
             or _canonical_rollback_journal_present(target)
         ):
             raise _restore_failure()
-        if (
-            _file_identity(candidate.path) != candidate.identity
-            or _parse_filename(candidate.path.name) != candidate.metadata
-        ):
+        _require_recovery_inventory(target, candidate)
+        if target.canonical_fixed:
+            if expected_recovery is None:
+                raise _restore_failure()
+            _require_fixed_recovery_state(
+                target,
+                candidate,
+                expected_recovery,
+            )
+        if _parse_filename(candidate.path.name) != candidate.metadata:
             raise _restore_failure()
 
         parent = target.db_path.parent
@@ -541,6 +755,10 @@ def restore_managed_backup(
                 target,
                 candidate.schema_version,
             )
+            try:
+                validate_stored_task_verification(source, source_version)
+            except StoredTaskVerificationError as exc:
+                raise _restore_failure() from exc
             with closing(
                 configure_connection(sqlite3.connect(temporary))
             ) as destination:
@@ -550,6 +768,13 @@ def restore_managed_backup(
                     target,
                     source_version,
                 )
+                try:
+                    validate_stored_task_verification(
+                        destination,
+                        source_version,
+                    )
+                except StoredTaskVerificationError as exc:
+                    raise _restore_failure() from exc
 
         temporary_target = DatabaseTarget(
             project=target.project,
@@ -565,19 +790,52 @@ def restore_managed_backup(
         _prepare_recovered_repository(
             temporary_target,
             candidate,
+            expected_snapshot=(
+                expected_recovery.selected
+                if expected_recovery is not None
+                else None
+            ),
         )
+        if expected_recovery is not None:
+            from task_governance_tool.state_resolver import (
+                recovery_database_matches_observation,
+            )
+
+            if not recovery_database_matches_observation(
+                temporary,
+                _normalized_recovery_observation(
+                    candidate,
+                    expected_recovery.selected,
+                ),
+            ):
+                raise _restore_failure()
         with closing(connect_readonly(temporary)) as restored:
             _validate_database(
                 restored,
                 target,
                 source_version,
             )
+            try:
+                validate_stored_task_verification(
+                    restored,
+                    source_version,
+                )
+            except StoredTaskVerificationError as exc:
+                raise _restore_failure() from exc
 
         with temporary.open("r+b") as stream:
             os.fsync(stream.fileno())
+        _require_recovery_inventory(target, candidate)
+        if target.canonical_fixed:
+            if expected_recovery is None:
+                raise _restore_failure()
+            _require_fixed_recovery_state(
+                target,
+                candidate,
+                expected_recovery,
+            )
         if (
             _directory_identity(parent) != parent_identity
-            or _file_identity(candidate.path) != candidate.identity
             or _file_identity(temporary) is None
             or target.db_path.exists()
             or target.db_path.is_symlink()
@@ -609,6 +867,9 @@ def copy_database_snapshot(
     source_path: Path,
     source_target: DatabaseTarget,
     destination_target: DatabaseTarget,
+    expected_source_identity: tuple[int, int, int, int] | None = None,
+    require_recovery_content_valid: bool = False,
+    expected_recovery_observation: "ManagedBackupObservation | None" = None,
 ) -> int:
     """Copy one validated SQLite snapshot into an absent private-stage DB."""
 
@@ -623,8 +884,30 @@ def copy_database_snapshot(
     ):
         raise _failure()
     try:
+        source_identity = _file_identity(source_path)
+        if source_identity is None or (
+            expected_source_identity is not None
+            and source_identity != expected_source_identity
+        ):
+            raise _failure()
+        recovery_database_matches_observation = None
+        if expected_recovery_observation is not None:
+            from task_governance_tool.state_resolver import (
+                recovery_database_matches_observation,
+            )
+
+            if not recovery_database_matches_observation(
+                source_path,
+                expected_recovery_observation,
+            ):
+                raise _failure()
         with closing(connect_readonly(source_path)) as source:
             source_version = _validate_database(source, source_target)
+            if require_recovery_content_valid:
+                try:
+                    validate_stored_task_verification(source, source_version)
+                except StoredTaskVerificationError as exc:
+                    raise _failure() from exc
             with closing(
                 configure_connection(sqlite3.connect(destination))
             ) as copied:
@@ -634,9 +917,37 @@ def copy_database_snapshot(
                     destination_target,
                     source_version,
                 )
+                if require_recovery_content_valid:
+                    try:
+                        validate_stored_task_verification(
+                            copied,
+                            source_version,
+                        )
+                    except StoredTaskVerificationError as exc:
+                        raise _failure() from exc
+        if (
+            expected_recovery_observation is not None
+            and recovery_database_matches_observation is not None
+            and not recovery_database_matches_observation(
+                destination,
+                expected_recovery_observation,
+            )
+        ):
+            raise _failure()
         with destination.open("r+b") as stream:
             os.fsync(stream.fileno())
-        if _file_identity(destination) is None:
+        if (
+            _file_identity(source_path) != source_identity
+            or _file_identity(destination) is None
+            or (
+                expected_recovery_observation is not None
+                and recovery_database_matches_observation is not None
+                and not recovery_database_matches_observation(
+                    source_path,
+                    expected_recovery_observation,
+                )
+            )
+        ):
             raise _failure()
         return source_version
     except StorageError:

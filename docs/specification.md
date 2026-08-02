@@ -15,8 +15,9 @@ completed lineage. The approved
 TG-M21.4 now freezes an accepted but inactive correction that replaces future
 caller-authored Receipt labels with a taskgov-owned verification subject at
 the schema-v18 boundary. TG-M21.4A additionally freezes the compatible
-schema-v18 verification-capacity split described below; current schema-v17
-behavior remains unchanged. The
+schema-v18 verification-capacity split described below. TG-M21.4B reconciles
+the current schema-v17 managed-recovery classifier without activating schema
+v18, changing public Task admission, or weakening artifact hardening. The
 TG-M20S successor observation has reached its frozen terminal
 `proceed_to_design` result and no-rerun retirement boundary. TG-M20S.3 now
 freezes an accepted but inactive Tier 2 decomposition contract; it changes no
@@ -1560,12 +1561,83 @@ Stored validation is source-schema-aware before any migration or recovery
 write: a schema-v17 source permits at most 500 characters, while a schema-v18
 or later supported source permits at most 1,000. Setup must not migrate a
 schema-v17 501-1,000-character row and thereby legitimize invalid source
-state. Backup discovery validates each candidate against its own schema; an
-invalid newest candidate does not hide an older valid one, and no valid
-candidate yields the existing `setup_restore_failed` result without creating
-a canonical database. Migration, reentry, recovery, and schema-v19 activation
-reject invalid stored state before DDL/history, publication, or business rows
-can commit.
+state. Migration, reentry, recovery, and schema-v19 activation reject invalid
+stored state before DDL/history, publication, or business rows can commit.
+
+### TG-M21.4B Recovery Candidate Validity Matrix
+
+TG-M21.4B, Task `tg_task_9b746fbe5fe4927f`, owns the current recovery
+classification correction. Its authority reference is
+`conversation_decision:2026-08-02:recovery-candidate-boundary-followup`.
+Every recognized managed candidate first passes physical-file, SQLite,
+schema/history/object, quick/foreign-key, project identity, binding lineage,
+filename/embedded metadata, generation repository, retention, and set-envelope
+validation. Only after the whole set passes may exact stored Task verification
+be classified against that candidate's source schema, with privacy checked
+before capacity and without exposing or rewriting the value.
+
+Each candidate's own immutable pre-publication repository snapshot is part of
+that structural validation. Across the complete set, each generation ID maps
+to exactly one complete metadata tuple in every filename, embedded row, and
+maintenance pointer where it appears. For schema v11 and later, its pointer must equal
+its latest embedded row, its own artifact is the one file-only generation in
+the physical prefix visible at publication, and any bounded row-only history
+is strictly older. Schema v10 has no generation rows and may point only to an
+older mechanical generation: when a retained physical predecessor exists it
+must equal that predecessor's complete metadata, and only the first retained
+candidate may point to an older generation whose ID is absent from the complete
+physical candidate set. Candidate schemas need not be monotonic after an older
+fallback is recovered and backed up for migration.
+A candidate-derived `-journal`, `-wal`, or `-shm` entry, including a
+filesystem case alias, is set-fatal even when empty. The stored Task validator
+examines all rows for malformed storage values before returning a
+candidate-local result; among local results, privacy has precedence over
+capacity.
+
+| Observation | Classification and selection | Initial setup result |
+|---|---|---|
+| Structurally coherent, same-project candidate at the current recovery binding whose stored Task verification passes its source-schema rules | eligible; select the newest `(published_at, generation_id)` | continue recovery |
+| The same safe candidate whose stored Task verification alone fails privacy or source-schema capacity | candidate-local rejection; retain and observe the file but exclude it from selection | recover the newest older eligible candidate, or `setup_restore_failed` when none remains |
+| Corrupt/unreadable SQLite, unsafe file or sidecar, unsupported/newer/incomplete schema, failed quick/FK check, foreign identity, binding/lineage divergence, metadata/repository/retention/structure inconsistency, duplicate or overflow | set-fatal; never skip it to reach another candidate | the existing specific journal/busy/newer result where applicable, otherwise `project_state_unreadable` |
+| Any candidate addition, removal, replacement, stamp/order/content classification change, selected-candidate change, or canonical database/journal appearance after planning | TOCTOU set-fatal; never reselect under the established plan | `setup_restore_failed` before restore or canonical publication |
+
+The mechanically newest candidate remains the structural head for lineage and
+generation-envelope validation even when it is candidate-local rejected.
+Selection additionally requires an exact identity scheme, binding generation,
+canonical path hash, and complete binding lineage match with that head; a
+structurally valid older lineage-prefix artifact may remain in the inventory
+but is never a fallback across a binding generation.
+Initial discovery and lock-held revalidation retain every eligible and rejected
+candidate plus its physical identity; their complete inventory,
+classification, and selected candidate must match. The established complete
+inventory remains bound through source copy, repository normalization, and the
+last validation immediately before canonical publication; a later rescan may
+only confirm it, never replace or narrow it. Recovery of an older candidate
+keeps every structurally coherent generation in the normal row/file/pointer
+envelope; rejection changes selection only and never excuses a missing or
+mismatched generation relation. Classification and recovery do not rewrite a
+rejected artifact, although later already-authorized retention may prune
+managed generations normally. A present fixed primary remains authoritative:
+ordinary consumers do not fall back to a backup, while setup's deep inspection
+still scans every candidate and applies set-fatal hardening. A local
+privacy/capacity rejection does not invalidate an authoritative primary, but a
+malformed stored Task value does.
+
+The private SQLite copy must still match the selected candidate's project,
+binding, embedded generation rows, maintenance pointer, source schema, and Task
+classification before repository normalization. Fixed recovery re-runs the
+same deep resolver at restore entry and immediately before no-replace canonical
+publication, and revalidates the normalized private copy's required schema
+objects and exact normalized repository state. Legacy backup-only recovery
+applies the same observation to the source and copied stage and re-runs the
+full source resolution immediately before publishing the private stage.
+Any shallow inventory refresh precedes, and never follows, the final deep
+source-set comparison.
+
+The current schema-v17 implementation admits 500 and locally rejects 501;
+TG-M22.2 must extend the same classifier to admit 1,000 and reject 1,001 for a
+schema-v18 candidate. It must not generalize local rejection to another field
+or to structural, identity, lineage, metadata, or TOCTOU failure.
 
 At the M22.2 public ingress, even an explicit same-value verification replay
 of 501-1,000 characters is rejected before a transaction. The existing input
@@ -2617,11 +2689,12 @@ layout, project, state ownership, package integrity, Git ignore when applicable,
 journal, schema, identity, binding, and artifacts.
 
 When canonical state is absent, setup checks only the canonical managed backup
-directory. It chooses the newest valid same-project generation by publication
-time then ID; invalid/newer artifacts do not hide an older valid one. Existing
-unreadable canonical state is never overwritten. If recognized material exists
-but no valid same-project candidate remains, setup fails
-`setup_restore_failed` rather than initializing empty.
+directory and applies the TG-M21.4B validity matrix. It chooses the newest
+eligible same-project, current-binding generation by publication time then ID;
+only a Task-verification capacity/privacy rejection may expose an older
+eligible generation. Existing unreadable canonical state is never overwritten.
+If only locally rejected candidates remain, setup fails `setup_restore_failed`
+rather than initializing empty.
 
 Recovery copies the selected artifact via SQLite backup API into a fresh
 sibling temporary database, normalizes schema-appropriate generation/pointer

@@ -19,6 +19,7 @@ from task_governance_tool.backup import (
     managed_backup_lock,
     publish_setup_backup,
     reconcile_private_migration_repository,
+    recovery_candidate_matches_observation,
     restore_managed_backup,
     select_managed_backup_for_recovery,
 )
@@ -891,18 +892,31 @@ def _copy_legacy_artifacts(
             root=stage_root,
         )
     for backup in source.managed_backups:
-        observed = hash_physical_file(
-            backup.path,
-            root=resolution.paths.state_root,
-            max_bytes=maximum,
-        )
-        copy_physical_file_exclusive(
-            observed,
-            backup_destination / backup.path.name,
-            source_root=resolution.paths.state_root,
-            destination_root=stage_root,
-            max_bytes=maximum,
-        )
+        try:
+            observed = hash_physical_file(
+                backup.path,
+                root=resolution.paths.state_root,
+                max_bytes=maximum,
+            )
+            observed_identity = (
+                observed.identity.device,
+                observed.identity.inode,
+                observed.identity.size,
+                observed.identity.modified_ns,
+            )
+            if observed_identity != backup.identity:
+                raise StateTransitionError()
+            copy_physical_file_exclusive(
+                observed,
+                backup_destination / backup.path.name,
+                source_root=resolution.paths.state_root,
+                destination_root=stage_root,
+                max_bytes=maximum,
+            )
+        except (StatePathError, StateTransitionError) as exc:
+            if not source.primary_present:
+                raise _LegacySetupFailure("setup_restore_failed") from exc
+            raise
 
     viewer_relative = "viewer/task-viewer.html"
     if viewer_relative in source.recognized_entries:
@@ -1055,6 +1069,10 @@ def _same_legacy_observation(
         and after.legacy_source is not None
         and before.legacy_source.primary_present
         == after.legacy_source.primary_present
+        and before.legacy_source.source_database
+        == after.legacy_source.source_database
+        and before.legacy_source.managed_backups
+        == after.legacy_source.managed_backups
     )
 
 
@@ -1167,6 +1185,7 @@ def _publish_legacy(
         or initial_resolution.binding != expected_binding
     ):
         raise _LegacySetupFailure("setup_incomplete")
+    backup_only_recovery = not source.primary_present
 
     completed: list[str] = []
     published_target: DatabaseTarget | None = None
@@ -1189,7 +1208,11 @@ def _publish_legacy(
             )
             if refreshed.error_code is not None:
                 raise _LegacySetupFailure(
-                    refreshed.error_code,
+                    (
+                        "setup_restore_failed"
+                        if backup_only_recovery
+                        else refreshed.error_code
+                    ),
                     resolution=refreshed,
                 )
             accepted_relocation: _AcceptedRelocation | None = None
@@ -1212,9 +1235,15 @@ def _publish_legacy(
                 expected_binding=expected_binding,
             ):
                 raise _LegacySetupFailure(
-                    "relocation_token_stale"
-                    if confirmation_token is not None
-                    else "setup_incomplete",
+                    (
+                        "setup_restore_failed"
+                        if backup_only_recovery
+                        else (
+                            "relocation_token_stale"
+                            if confirmation_token is not None
+                            else "setup_incomplete"
+                        )
+                    ),
                     resolution=refreshed,
                 )
             if residue is not None:
@@ -1233,7 +1262,11 @@ def _publish_legacy(
                 )
                 if locked.error_code is not None:
                     raise _LegacySetupFailure(
-                        locked.error_code,
+                        (
+                            "setup_restore_failed"
+                            if backup_only_recovery
+                            else locked.error_code
+                        ),
                         resolution=locked,
                     )
                 if not _same_legacy_observation(
@@ -1242,9 +1275,15 @@ def _publish_legacy(
                     expected_binding=expected_binding,
                 ):
                     raise _LegacySetupFailure(
-                        "relocation_token_stale"
-                        if confirmation_token is not None
-                        else "setup_incomplete"
+                        (
+                            "setup_restore_failed"
+                            if backup_only_recovery
+                            else (
+                                "relocation_token_stale"
+                                if confirmation_token is not None
+                                else "setup_incomplete"
+                            )
+                        )
                     )
                 assert locked.legacy_source is not None
                 assert locked.stored_project is not None
@@ -1269,12 +1308,43 @@ def _publish_legacy(
                     stage_root / "taskgov.sqlite",
                 )
                 source_target = locked.legacy_source.source_target
-                copied_version = copy_database_snapshot(
-                    source_path=locked.legacy_source.source_database,
-                    source_target=source_target,
-                    destination_target=stage_target,
-                )
+                recovery_source = None
+                if not locked.legacy_source.primary_present:
+                    matching_sources = tuple(
+                        backup
+                        for backup in locked.legacy_source.managed_backups
+                        if backup.path == locked.legacy_source.source_database
+                    )
+                    if (
+                        len(matching_sources) != 1
+                        or not matching_sources[0].recovery_content_valid
+                    ):
+                        raise _LegacySetupFailure("setup_restore_failed")
+                    recovery_source = matching_sources[0]
+                try:
+                    copied_version = copy_database_snapshot(
+                        source_path=locked.legacy_source.source_database,
+                        source_target=source_target,
+                        destination_target=stage_target,
+                        expected_source_identity=(
+                            recovery_source.identity
+                            if recovery_source is not None
+                            else None
+                        ),
+                        require_recovery_content_valid=(
+                            recovery_source is not None
+                        ),
+                        expected_recovery_observation=recovery_source,
+                    )
+                except StorageError as exc:
+                    if recovery_source is not None:
+                        raise _LegacySetupFailure(
+                            "setup_restore_failed"
+                        ) from exc
+                    raise
                 if copied_version != locked.source_schema_version:
+                    if recovery_source is not None:
+                        raise _LegacySetupFailure("setup_restore_failed")
                     raise StateTransitionError()
                 _copy_legacy_artifacts(locked, stage_root=stage_root)
                 reconcile_private_migration_repository(stage_target)
@@ -1460,6 +1530,23 @@ def _publish_legacy(
                     != "current"
                 ):
                     raise StateTransitionError()
+                if not locked.legacy_source.primary_present:
+                    final_source = resolve_setup_project_state(
+                        skill_root=refreshed_scope.skill_root,
+                        repo=refreshed_scope.canonical_repo,
+                    )
+                    if (
+                        final_source.error_code is not None
+                        or not _same_legacy_observation(
+                            locked,
+                            final_source,
+                            expected_binding=expected_binding,
+                        )
+                    ):
+                        raise _LegacySetupFailure(
+                            "setup_restore_failed",
+                            resolution=final_source,
+                        )
                 rename_no_replace(
                     residue.stage_directory,
                     locked.paths.fixed_root,
@@ -1811,10 +1898,15 @@ def run_setup(
         repo=scope.canonical_repo,
     )
     if resolution.error_code is not None:
+        error_message = (
+            SETUP_ERROR_MESSAGES[resolution.error_code]
+            if resolution.error_code in SETUP_ERROR_MESSAGES
+            else PROJECT_STATE_MESSAGES[resolution.error_code]
+        )
         return _preflight_failure(
             inspection,
             code=resolution.error_code,
-            message=PROJECT_STATE_MESSAGES[resolution.error_code],
+            message=error_message,
         )
     try:
         inspect_state_transition_lock(resolution.paths.state_root)
@@ -1896,20 +1988,30 @@ def run_setup(
             recovery_candidate = select_managed_backup_for_recovery(
                 target
             )
-            if recovery_candidate is not None:
-                planning_state = inspect_setup_state(
-                    DatabaseTarget(
-                        project=target.project,
-                        db_path=recovery_candidate.path,
-                        explicit_db=target.explicit_db,
-                        binding_path_hash=target.binding_path_hash,
-                        binding_generation=target.binding_generation,
-                        skill_root=target.skill_root,
-                        backups_path=target.backups_path,
-                        viewer_path=target.viewer_path,
-                        canonical_fixed=False,
-                    )
+            if (
+                recovery_candidate is None
+                or not recovery_candidate_matches_observation(
+                    recovery_candidate,
+                    resolution.fixed_recovery,
                 )
+            ):
+                raise StorageError(
+                    "setup_restore_failed",
+                    SETUP_ERROR_MESSAGES["setup_restore_failed"],
+                )
+            planning_state = inspect_setup_state(
+                DatabaseTarget(
+                    project=target.project,
+                    db_path=recovery_candidate.path,
+                    explicit_db=target.explicit_db,
+                    binding_path_hash=target.binding_path_hash,
+                    binding_generation=target.binding_generation,
+                    skill_root=target.skill_root,
+                    backups_path=target.backups_path,
+                    viewer_path=target.viewer_path,
+                    canonical_fixed=False,
+                )
+            )
         except Exception as exc:
             code, message = _storage_preflight_code(exc)
             return _preflight_failure(
@@ -2696,6 +2798,7 @@ def run_setup(
                 restored_version = restore_managed_backup(
                     target,
                     current_candidate,
+                    expected_recovery=locked_resolution.fixed_recovery,
                 )
                 if restored_version != schema_from:
                     raise StorageError(

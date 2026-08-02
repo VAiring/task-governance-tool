@@ -21,6 +21,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 PROJECT_ID_HASH_LENGTH = 12
 SCHEMA_VERSION = 17
+STORED_TASK_VERIFICATION_LIMIT_V17 = 500
 SQLITE_INT64_MAX = (1 << 63) - 1
 IDENTITY_SCHEMES = {"legacy_path_v1", "uuid_v1"}
 BINDING_REASONS = {
@@ -114,6 +115,79 @@ class StorageError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class StoredTaskVerificationError(Exception):
+    """One sanitized stored-verification rejection usable by recovery callers."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__("stored task verification is not recovery-eligible")
+        self.reason = reason
+
+
+def stored_task_verification_limit(source_schema_version: int) -> int:
+    """Return the durable Task verification limit owned by a source schema."""
+
+    if (
+        isinstance(source_schema_version, bool)
+        or not isinstance(source_schema_version, int)
+        or source_schema_version < 1
+        or source_schema_version > SCHEMA_VERSION
+    ):
+        raise StorageError(
+            "project_state_unreadable",
+            "task database schema version is invalid",
+        )
+    return STORED_TASK_VERIFICATION_LIMIT_V17
+
+
+def validate_stored_task_verification(
+    connection: sqlite3.Connection,
+    source_schema_version: int,
+) -> None:
+    """Validate exact stored Task verification without exposing stored bytes.
+
+    Privacy is intentionally checked before the source-schema capacity.  Only
+    those two semantic failures use ``StoredTaskVerificationError``; malformed
+    SQLite values and query failures remain structural storage failures.
+    """
+
+    from task_governance_tool.tasks import (  # Avoid the storage/tasks cycle.
+        TaskValidationError,
+        reject_private_or_raw_content,
+    )
+
+    limit = stored_task_verification_limit(source_schema_version)
+    local_reason: str | None = None
+    try:
+        rows = connection.execute(
+            "SELECT verification FROM tasks ORDER BY task_id"
+        )
+        for row in rows:
+            value = row[0]
+            if not isinstance(value, str):
+                raise StorageError(
+                    "project_state_unreadable",
+                    "task database stored verification is invalid",
+                )
+            try:
+                reject_private_or_raw_content("verification", value)
+            except TaskValidationError as exc:
+                if exc.code != "privacy_rejected":
+                    raise StorageError(
+                        "project_state_unreadable",
+                        "task database stored verification is invalid",
+                    ) from exc
+                local_reason = "privacy"
+            if len(value) > limit and local_reason != "privacy":
+                local_reason = "capacity"
+    except sqlite3.Error as exc:
+        raise StorageError(
+            "project_state_unreadable",
+            "task database stored verification is unreadable",
+        ) from exc
+    if local_reason is not None:
+        raise StoredTaskVerificationError(local_reason)
 
 
 @dataclass(frozen=True)

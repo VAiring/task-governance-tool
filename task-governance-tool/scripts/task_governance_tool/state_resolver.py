@@ -13,7 +13,7 @@ import re
 import sqlite3
 import stat
 from contextlib import closing
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -25,6 +25,7 @@ from task_governance_tool.storage import (
     MigrationBackupMetadata,
     ProjectIdentity,
     StorageError,
+    StoredTaskVerificationError,
     canonicalize_repo,
     connect_readonly,
     current_schema_version,
@@ -44,6 +45,7 @@ from task_governance_tool.storage import (
     validate_lower_hex_64,
     validate_migration_backup_metadata,
     validate_operational_journal_state,
+    validate_stored_task_verification,
 )
 
 
@@ -59,6 +61,7 @@ _BACKUP_FILENAME = re.compile(
     r"^taskgov-backup-v1_(?P<time>\d{8}T\d{6}Z)_"
     r"(?P<token>[0-9a-f]{32})_r(?P<retention>[1-9]|1[0-9]|20)\.sqlite$"
 )
+_BACKUP_FILENAME_ALIAS = re.compile(_BACKUP_FILENAME.pattern, re.IGNORECASE)
 _ROOT_TEMP = re.compile(r"^\.taskgov-restore-[a-z0-9_]{8}\.tmp$")
 _BACKUP_TEMP = re.compile(r"^\.taskgov-backup-[a-z0-9_]{8}\.tmp$")
 _VIEWER_TEMP = re.compile(r"^\.task-viewer-[a-z0-9_]{8}\.tmp$")
@@ -69,6 +72,7 @@ _KNOWN_RESOLVER_ERRORS = frozenset(
         "project_mismatch",
         "project_state_unreadable",
         "schema_too_new",
+        "setup_restore_failed",
         "unsupported_journal_mode",
     }
 )
@@ -117,8 +121,12 @@ class ManagedBackupObservation:
 
     metadata: MigrationBackupMetadata
     source_schema_version: int
+    recovery_content_valid: bool
+    identity: tuple[int, int, int, int] = field(repr=False)
     path: Path = field(repr=False)
     stored_project: StoredProjectObservation = field(repr=False)
+    generation_rows: tuple[MigrationBackupMetadata, ...] = field(repr=False)
+    maintenance_pointer: MigrationBackupMetadata | None = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -197,6 +205,7 @@ class _DatabaseObservation:
     generation_rows: tuple[MigrationBackupMetadata, ...]
     maintenance_pointer: MigrationBackupMetadata | None
     stamp: _FileStamp = field(repr=False)
+    recovery_content_valid: bool = True
     doctor_state: DoctorStorageState | None = field(default=None, repr=False)
     read_connection: sqlite3.Connection | None = field(
         default=None,
@@ -353,7 +362,11 @@ def _resolve_with_paths(
         if fixed is not None:
             return fixed
         if include_legacy:
-            return _resolve_legacy(paths, current_root)
+            return _resolve_legacy(
+                paths,
+                current_root,
+                setup_mode=validate_fixed_artifacts,
+            )
         raise _ResolverFailure("project_state_unreadable")
     except _ResolverFailure as exc:
         return _error_resolution(paths, current_root, exc.code)
@@ -513,6 +526,7 @@ def _resolve_fixed(
             database,
             primary_present=True,
         )
+        _classify_recovery_backups(backups)
         return _fixed_resolution(
             paths,
             current_root,
@@ -526,10 +540,10 @@ def _resolve_fixed(
     root_owned = _inspect_root_owned_entries(paths.fixed_root)
     recognized.extend(root_owned)
     if backups:
-        selected = backups[-1]
+        structural_head = backups[-1]
         if "taskgov.sqlite-journal" in root_owned:
             raise _ResolverFailure("project_state_unreadable")
-        source_size = selected._database.stamp.size
+        source_size = structural_head._database.stamp.size
         recognized.extend(
             _inspect_fixed_temporaries(paths, source_size=source_size)
         )
@@ -540,14 +554,34 @@ def _resolve_fixed(
         )
         _validate_backup_set(
             backups,
-            selected._database,
+            structural_head._database,
             primary_present=False,
         )
+        backups = _classify_recovery_backups(backups)
+        structural_head = backups[-1]
         if (
-            selected.stored_project.canonical_path_hash
+            structural_head.stored_project.canonical_path_hash
             != current_root.canonical_path_hash
         ):
             raise _ResolverFailure("project_state_unreadable")
+        eligible = [
+            item
+            for item in backups
+            if (
+                item._database.recovery_content_valid
+                and _same_recovery_binding(
+                    item.stored_project,
+                    structural_head.stored_project,
+                )
+            )
+        ]
+        if not eligible:
+            raise _ResolverFailure(
+                "setup_restore_failed"
+                if validate_artifacts
+                else "project_state_unreadable"
+            )
+        selected = eligible[-1]
         destination_target = _database_target(
             selected.stored_project,
             current_root,
@@ -612,6 +646,8 @@ def _fixed_resolution(
 def _resolve_legacy(
     paths: CanonicalStatePaths,
     current_root: CurrentRootObservation,
+    *,
+    setup_mode: bool,
 ) -> ProjectStateResolution:
     if not _validate_optional_directory(paths.legacy_projects):
         return _missing_resolution(paths, current_root)
@@ -695,6 +731,36 @@ def _resolve_legacy(
         primary_present=primary_present,
     )
 
+    if primary_present and setup_mode:
+        _classify_recovery_backups(backups)
+
+    if not primary_present:
+        backups = _classify_recovery_backups(backups)
+        structural_head = backups[-1]
+        database = structural_head._database
+        stored = database.stored_project
+        if stored.canonical_path_hash != current_root.canonical_path_hash:
+            raise _ResolverFailure("project_state_unreadable")
+        eligible = [
+            item
+            for item in backups
+            if (
+                item._database.recovery_content_valid
+                and _same_recovery_binding(
+                    item.stored_project,
+                    structural_head.stored_project,
+                )
+            )
+        ]
+        if not eligible:
+            raise _ResolverFailure(
+                "setup_restore_failed"
+                if setup_mode
+                else "project_state_unreadable"
+            )
+        database = eligible[-1]._database
+        stored = database.stored_project
+
     binding: BindingState = (
         "matching"
         if stored.canonical_path_hash == current_root.canonical_path_hash
@@ -702,7 +768,15 @@ def _resolve_legacy(
     )
     if not primary_present and binding == "relocation_required":
         raise _ResolverFailure("project_state_unreadable")
-    source_database = primary if primary_present else backups[-1].path
+    source_database = (
+        primary
+        if primary_present
+        else next(
+            item.path
+            for item in backups
+            if item._database is database
+        )
+    )
     source_target = _database_target(
         stored,
         current_root,
@@ -796,9 +870,11 @@ def _inspect_database(
     mutable: bool = False,
     retain_connection: bool = False,
     consumer_current_root: CurrentRootObservation | None = None,
+    classify_recovery_content: bool = False,
 ) -> _DatabaseObservation:
     before = _stamp(path)
     connection: sqlite3.Connection | None = None
+    recovery_content_valid = True
     try:
         connection = connect_readonly(path)
         version = current_schema_version(connection)
@@ -857,6 +933,11 @@ def _inspect_database(
             stored.project_id,
             version,
         )
+        if classify_recovery_content:
+            try:
+                validate_stored_task_verification(connection, version)
+            except StoredTaskVerificationError:
+                recovery_content_valid = False
         validation_root = consumer_current_root or doctor_current_root
         if version == SCHEMA_VERSION and validation_root is not None:
             validate_current_database_binding(
@@ -925,6 +1006,7 @@ def _inspect_database(
         maintenance_pointer=pointer,
         doctor_state=doctor_state,
         stamp=after,
+        recovery_content_valid=recovery_content_valid,
         read_connection=retained_connection,
     )
 
@@ -1082,11 +1164,21 @@ class _BackupCandidate:
 
     @property
     def public(self) -> ManagedBackupObservation:
+        stamp = self._database.stamp
         return ManagedBackupObservation(
             metadata=self.metadata,
             source_schema_version=self.stored_project.source_schema_version,
+            recovery_content_valid=self._database.recovery_content_valid,
+            identity=(
+                stamp.device,
+                stamp.inode,
+                stamp.size,
+                stamp.modified_ns,
+            ),
             path=self.path,
             stored_project=self.stored_project,
+            generation_rows=self._database.generation_rows,
+            maintenance_pointer=self._database.maintenance_pointer,
         )
 
 
@@ -1101,6 +1193,16 @@ def _inspect_backup_directory(
         entries = sorted(directory.iterdir(), key=lambda item: item.name)
     except OSError as exc:
         raise _ResolverFailure("project_state_unreadable") from exc
+    for entry in entries:
+        name = entry.name
+        folded_name = name.casefold()
+        if any(
+            folded_name.endswith(suffix)
+            and _BACKUP_FILENAME_ALIAS.fullmatch(name[: -len(suffix)])
+            is not None
+            for suffix in ("-journal", "-wal", "-shm")
+        ):
+            raise _ResolverFailure("project_state_unreadable")
     for entry in entries:
         name = entry.name
         metadata = _parse_backup_filename(name)
@@ -1255,6 +1357,149 @@ def _inspect_single_temporary(
     return [f"{relative_prefix}{matches[0].name}"]
 
 
+def _metadata_key(metadata: MigrationBackupMetadata) -> tuple[str, str]:
+    return (metadata.published_at, metadata.generation_id)
+
+
+def _validate_candidate_repository_snapshots(
+    backups: list[_BackupCandidate],
+    selected: _DatabaseObservation,
+) -> None:
+    """Validate complete metadata identity and each repository snapshot."""
+
+    physical_by_id = {
+        item.metadata.generation_id: item.metadata for item in backups
+    }
+    generation_registry: dict[str, MigrationBackupMetadata] = {}
+
+    def register(metadata: MigrationBackupMetadata) -> None:
+        existing = generation_registry.get(metadata.generation_id)
+        if existing is not None and existing != metadata:
+            raise _ResolverFailure("project_state_unreadable")
+        generation_registry[metadata.generation_id] = metadata
+
+    for metadata in selected.generation_rows:
+        register(metadata)
+    if selected.maintenance_pointer is not None:
+        register(selected.maintenance_pointer)
+    for candidate in backups:
+        observed_metadata = (
+            candidate.metadata,
+            *candidate._database.generation_rows,
+        )
+        if candidate._database.maintenance_pointer is not None:
+            observed_metadata += (
+                candidate._database.maintenance_pointer,
+            )
+        for metadata in observed_metadata:
+            register(metadata)
+    for index, candidate in enumerate(backups):
+        database = candidate._database
+        version = candidate.stored_project.source_schema_version
+        rows = database.generation_rows
+        pointer = database.maintenance_pointer
+        if version < 10:
+            if rows or pointer is not None:
+                raise _ResolverFailure("project_state_unreadable")
+            continue
+        if version == 10:
+            if rows:
+                raise _ResolverFailure("project_state_unreadable")
+            prior = backups[:index]
+            if prior and pointer != prior[-1].metadata:
+                raise _ResolverFailure("project_state_unreadable")
+            if (
+                not prior
+                and pointer is not None
+                and (
+                    _metadata_key(pointer) >= candidate.key
+                    or pointer.generation_id in physical_by_id
+                )
+            ):
+                raise _ResolverFailure("project_state_unreadable")
+            continue
+
+        expected_pointer = rows[-1] if rows else None
+        if pointer != expected_pointer or len(rows) > MAX_MANAGED_BACKUP_ARTIFACTS - 1:
+            raise _ResolverFailure("project_state_unreadable")
+        rows_by_id = {item.generation_id: item for item in rows}
+        prefix_by_id = {
+            item.metadata.generation_id: item.metadata
+            for item in backups[: index + 1]
+        }
+        for generation_id in rows_by_id.keys() & physical_by_id.keys():
+            if rows_by_id[generation_id] != physical_by_id[generation_id]:
+                raise _ResolverFailure("project_state_unreadable")
+        file_only = set(prefix_by_id) - set(rows_by_id)
+        row_only = set(rows_by_id) - set(prefix_by_id)
+        if (
+            file_only != {candidate.metadata.generation_id}
+            or len(row_only) > MAX_MANAGED_BACKUP_ARTIFACTS - 1
+            or any(
+                _metadata_key(rows_by_id[generation_id]) >= candidate.key
+                for generation_id in row_only
+            )
+        ):
+            raise _ResolverFailure("project_state_unreadable")
+
+
+def _classify_recovery_backups(
+    backups: list[_BackupCandidate],
+) -> list[_BackupCandidate]:
+    """Classify content only after every structural/set check has passed."""
+
+    classified: list[_BackupCandidate] = []
+    for candidate in backups:
+        database = _inspect_database(
+            candidate.path,
+            classify_recovery_content=True,
+        )
+        if replace(database, recovery_content_valid=True) != candidate._database:
+            raise _ResolverFailure("project_state_unreadable")
+        classified.append(
+            _BackupCandidate(
+                metadata=candidate.metadata,
+                path=candidate.path,
+                _database=database,
+            )
+        )
+    return classified
+
+
+def recovery_database_matches_observation(
+    path: Path,
+    expected: ManagedBackupObservation,
+) -> bool:
+    """Validate one private recovery copy against its selected source snapshot."""
+
+    try:
+        observed = _inspect_database(
+            path,
+            classify_recovery_content=True,
+        )
+    except _ResolverFailure:
+        return False
+    return bool(
+        observed.stored_project == expected.stored_project
+        and observed.generation_rows == expected.generation_rows
+        and observed.maintenance_pointer == expected.maintenance_pointer
+        and observed.recovery_content_valid
+        == expected.recovery_content_valid
+    )
+
+
+def _same_recovery_binding(
+    candidate: StoredProjectObservation,
+    structural_head: StoredProjectObservation,
+) -> bool:
+    return (
+        candidate.identity_scheme == structural_head.identity_scheme
+        and candidate.binding_generation == structural_head.binding_generation
+        and candidate.canonical_path_hash == structural_head.canonical_path_hash
+        and candidate.binding_lineage == structural_head.binding_lineage
+    )
+
+
 def _validate_backup_set(
     backups: list[_BackupCandidate],
     selected: _DatabaseObservation,
@@ -1274,6 +1519,8 @@ def _validate_backup_set(
         ):
             raise _ResolverFailure("project_state_unreadable")
 
+    _validate_candidate_repository_snapshots(backups, selected)
+
     version = selected_project.source_schema_version
     if version >= 11:
         files_by_id = {item.metadata.generation_id: item.metadata for item in backups}
@@ -1285,7 +1532,14 @@ def _validate_backup_set(
                 raise _ResolverFailure("project_state_unreadable")
         file_only = set(files_by_id) - set(rows_by_id)
         row_only = set(rows_by_id) - set(files_by_id)
+        expected_pointer = (
+            selected.generation_rows[-1]
+            if selected.generation_rows
+            else None
+        )
         if len(set(files_by_id) | set(rows_by_id)) > MAX_MANAGED_BACKUP_ARTIFACTS:
+            raise _ResolverFailure("project_state_unreadable")
+        if selected.maintenance_pointer != expected_pointer:
             raise _ResolverFailure("project_state_unreadable")
         if primary_present:
             if (
@@ -1298,7 +1552,10 @@ def _validate_backup_set(
             if not backups:
                 raise _ResolverFailure("project_state_unreadable")
             newest = backups[-1]
-            if file_only != {newest.metadata.generation_id} or len(row_only) > 20:
+            if (
+                file_only != {newest.metadata.generation_id}
+                or len(row_only) > 20
+            ):
                 raise _ResolverFailure("project_state_unreadable")
             if any(
                 (

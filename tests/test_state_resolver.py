@@ -133,6 +133,31 @@ def insert_generation_rows(
         connection.commit()
 
 
+def set_generation_pointer(
+    target: DatabaseTarget,
+    metadata: MigrationBackupMetadata,
+) -> None:
+    with closing(sqlite3.connect(target.db_path)) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE project_maintenance
+               SET latest_backup_generation_id = ?,
+                   backup_last_success_at = ?,
+                   applied_backup_generations = ?
+             WHERE project_id = ?
+            """,
+            (
+                metadata.generation_id,
+                metadata.published_at,
+                metadata.publication_retention,
+                target.project.project_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise AssertionError("resolver fixture maintenance row is missing")
+        connection.commit()
+
+
 def initialize_resolver_layout(
     root: Path,
     layout: str,
@@ -770,6 +795,7 @@ class StateResolverTests(unittest.TestCase):
                         create_backup_artifact(target, metadata)
                     if row_present:
                         insert_generation_rows(target, (metadata,))
+                        set_generation_pointer(target, metadata)
                     before = tree_snapshot(fixture.skill_root)
 
                     resolution = resolve_project_state(
@@ -802,6 +828,7 @@ class StateResolverTests(unittest.TestCase):
             for metadata in map(backup_metadata, range(1, 21)):
                 create_backup_artifact(target, metadata)
                 insert_generation_rows(target, (metadata,))
+                set_generation_pointer(target, metadata)
             in_flight = backup_metadata(21)
             create_backup_artifact(target, in_flight)
             before_pre_row = tree_snapshot(fixture.skill_root)
@@ -822,6 +849,7 @@ class StateResolverTests(unittest.TestCase):
             )
 
             insert_generation_rows(target, (in_flight,))
+            set_generation_pointer(target, in_flight)
             before_post_row = tree_snapshot(fixture.skill_root)
             post_row = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -844,6 +872,7 @@ class StateResolverTests(unittest.TestCase):
             target = fixture.initialize_legacy_v14()
             for metadata in map(backup_metadata, range(1, 21)):
                 insert_generation_rows(target, (metadata,))
+                set_generation_pointer(target, metadata)
             newest = backup_metadata(21)
             newest_path = create_backup_artifact(target, newest)
             target.db_path.unlink()

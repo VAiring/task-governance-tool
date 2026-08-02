@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
+import sqlite3
 import tempfile
 import unittest
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from unittest import mock
 
@@ -353,6 +355,324 @@ class M17RecoveryHardeningTests(unittest.TestCase):
             self.assertFalse(target.db_path.exists())
             self.assertIsNotNone(locked_files)
             self.assertEqual(_backup_snapshot(backup_root), locked_files)
+            self.assertEqual(
+                list(target.db_path.parent.glob(".taskgov-restore-*.tmp")),
+                [],
+            )
+
+    def test_recovery_content_classification_drift_under_lock_never_falls_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install, target, _ = _setup_current(Path(tmp))
+            added = install.run(
+                "task",
+                "add",
+                "--title",
+                "Classification race task",
+                "--json",
+            )
+            self.assertEqual(added.returncode, 0, added.stderr)
+            for observed_at in (
+                "2098-01-01T00:00:00Z",
+                "2099-01-01T00:00:00Z",
+            ):
+                with (
+                    mock.patch.object(
+                        backup_service,
+                        "utc_now",
+                        return_value=observed_at,
+                    ),
+                    backup_service.managed_backup_lock(target),
+                ):
+                    backup_service.publish_setup_backup(target, 3)
+            artifacts = backup_service._discover(target)
+            self.assertGreaterEqual(len(artifacts), 2)
+            newest = artifacts[-1].path
+            target.db_path.unlink()
+
+            real_lock = setup_service.managed_backup_lock
+            real_restore = setup_service.restore_managed_backup
+            backup_root = target.resolved_backups_path
+            locked_files: dict[str, bytes] | None = None
+            changed = False
+
+            @contextmanager
+            def invalidate_newest_after_lock(lock_target):
+                nonlocal changed, locked_files
+                with real_lock(lock_target) as lock_bytes:
+                    if not changed:
+                        with closing(sqlite3.connect(newest)) as connection:
+                            cursor = connection.execute(
+                                "UPDATE tasks SET verification = ? WHERE title = ?",
+                                ("x" * 501, "Classification race task"),
+                            )
+                            self.assertEqual(cursor.rowcount, 1)
+                            connection.commit()
+                        locked_files = _backup_snapshot(backup_root)
+                        changed = True
+                    yield lock_bytes
+
+            with (
+                mock.patch.object(
+                    setup_service,
+                    "managed_backup_lock",
+                    invalidate_newest_after_lock,
+                ),
+                mock.patch.object(
+                    setup_service,
+                    "restore_managed_backup",
+                    wraps=real_restore,
+                ) as restore,
+            ):
+                result = setup_service.run_setup(
+                    repo=str(install.project_root),
+                    repo_explicit=True,
+                    script_path=install.entrypoint,
+                    read_only=False,
+                    backup_interval_minutes=None,
+                    backup_generations=None,
+                )
+
+            self.assertTrue(changed)
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "setup_restore_failed")
+            restore.assert_not_called()
+            self.assertFalse(target.db_path.exists())
+            self.assertIsNotNone(locked_files)
+            self.assertEqual(_backup_snapshot(backup_root), locked_files)
+            self.assertEqual(
+                list(target.db_path.parent.glob(".taskgov-restore-*.tmp")),
+                [],
+            )
+
+    def test_restore_rejects_nonselected_classification_drift_after_selection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install, target, _ = _setup_current(Path(tmp))
+            added = install.run(
+                "task",
+                "add",
+                "--title",
+                "Post-selection race task",
+                "--json",
+            )
+            self.assertEqual(added.returncode, 0, added.stderr)
+            for observed_at in (
+                "2098-02-01T00:00:00Z",
+                "2099-02-01T00:00:00Z",
+            ):
+                with (
+                    mock.patch.object(
+                        backup_service,
+                        "utc_now",
+                        return_value=observed_at,
+                    ),
+                    backup_service.managed_backup_lock(target),
+                ):
+                    backup_service.publish_setup_backup(target, 3)
+            artifacts = backup_service._discover(target)
+            self.assertGreaterEqual(len(artifacts), 2)
+            older = artifacts[-2].path
+            target.db_path.unlink()
+
+            real_restore = setup_service.restore_managed_backup
+            backup_root = target.resolved_backups_path
+            changed_files: dict[str, bytes] | None = None
+
+            def drift_after_selection(
+                restore_target,
+                candidate,
+                *,
+                expected_recovery,
+            ):
+                nonlocal changed_files
+                before = older.stat()
+                with closing(sqlite3.connect(older)) as connection:
+                    cursor = connection.execute(
+                        "UPDATE tasks SET verification = ? WHERE title = ?",
+                        ("x" * 501, "Post-selection race task"),
+                    )
+                    self.assertEqual(cursor.rowcount, 1)
+                    connection.commit()
+                changed = older.stat()
+                self.assertEqual(changed.st_size, before.st_size)
+                os.utime(
+                    older,
+                    ns=(changed.st_atime_ns, before.st_mtime_ns),
+                )
+                after = older.stat()
+                self.assertEqual(
+                    (
+                        after.st_dev,
+                        after.st_ino,
+                        after.st_size,
+                        after.st_mtime_ns,
+                    ),
+                    (
+                        before.st_dev,
+                        before.st_ino,
+                        before.st_size,
+                        before.st_mtime_ns,
+                    ),
+                )
+                changed_files = _backup_snapshot(backup_root)
+                return real_restore(
+                    restore_target,
+                    candidate,
+                    expected_recovery=expected_recovery,
+                )
+
+            with mock.patch.object(
+                setup_service,
+                "restore_managed_backup",
+                side_effect=drift_after_selection,
+            ) as restore:
+                result = setup_service.run_setup(
+                    repo=str(install.project_root),
+                    repo_explicit=True,
+                    script_path=install.entrypoint,
+                    read_only=False,
+                    backup_interval_minutes=None,
+                    backup_generations=None,
+                )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "setup_restore_failed")
+            self.assertEqual(result.data["completed_writes"], [])
+            restore.assert_called_once()
+            self.assertFalse(target.db_path.exists())
+            self.assertIsNotNone(changed_files)
+            self.assertEqual(_backup_snapshot(backup_root), changed_files)
+            self.assertEqual(
+                list(target.db_path.parent.glob(".taskgov-restore-*.tmp")),
+                [],
+            )
+
+    def test_restore_rejects_inventory_removal_after_repository_prepare(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install, target, _ = _setup_current(Path(tmp))
+            for observed_at in (
+                "2098-03-01T00:00:00Z",
+                "2099-03-01T00:00:00Z",
+            ):
+                with (
+                    mock.patch.object(
+                        backup_service,
+                        "utc_now",
+                        return_value=observed_at,
+                    ),
+                    backup_service.managed_backup_lock(target),
+                ):
+                    backup_service.publish_setup_backup(target, 3)
+            artifacts = backup_service._discover(target)
+            self.assertGreaterEqual(len(artifacts), 2)
+            older = artifacts[-2].path
+            target.db_path.unlink()
+
+            real_prepare = backup_service._prepare_recovered_repository
+            backup_root = target.resolved_backups_path
+            changed_files: dict[str, bytes] | None = None
+
+            def remove_after_prepare(
+                temporary_target,
+                candidate,
+                *,
+                expected_snapshot,
+            ):
+                nonlocal changed_files
+                real_prepare(
+                    temporary_target,
+                    candidate,
+                    expected_snapshot=expected_snapshot,
+                )
+                older.unlink()
+                changed_files = _backup_snapshot(backup_root)
+
+            with mock.patch.object(
+                backup_service,
+                "_prepare_recovered_repository",
+                side_effect=remove_after_prepare,
+            ) as prepare:
+                result = setup_service.run_setup(
+                    repo=str(install.project_root),
+                    repo_explicit=True,
+                    script_path=install.entrypoint,
+                    read_only=False,
+                    backup_interval_minutes=None,
+                    backup_generations=None,
+                )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "setup_restore_failed")
+            self.assertEqual(result.data["completed_writes"], [])
+            prepare.assert_called_once()
+            self.assertFalse(target.db_path.exists())
+            self.assertIsNotNone(changed_files)
+            self.assertEqual(_backup_snapshot(backup_root), changed_files)
+            self.assertEqual(
+                list(target.db_path.parent.glob(".taskgov-restore-*.tmp")),
+                [],
+            )
+
+    def test_local_rejection_never_hides_generation_structure_corruption(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install, target, _ = _setup_current(Path(tmp))
+            added = install.run(
+                "task",
+                "add",
+                "--title",
+                "Mixed corruption task",
+                "--json",
+            )
+            self.assertEqual(added.returncode, 0, added.stderr)
+            for observed_at in (
+                "2097-01-01T00:00:00Z",
+                "2098-01-01T00:00:00Z",
+                "2099-01-01T00:00:00Z",
+            ):
+                with (
+                    mock.patch.object(
+                        backup_service,
+                        "utc_now",
+                        return_value=observed_at,
+                    ),
+                    backup_service.managed_backup_lock(target),
+                ):
+                    backup_service.publish_setup_backup(target, 4)
+            artifacts = backup_service._discover(target)
+            self.assertGreaterEqual(len(artifacts), 3)
+            rejected = artifacts[-2]
+            structural_head = artifacts[-1]
+            with closing(sqlite3.connect(rejected.path)) as connection:
+                connection.execute(
+                    "UPDATE tasks SET verification = ?",
+                    ("x" * 501,),
+                )
+                connection.commit()
+            with closing(sqlite3.connect(structural_head.path)) as connection:
+                cursor = connection.execute(
+                    "DELETE FROM managed_backup_generations WHERE generation_id = ?",
+                    (rejected.metadata.generation_id,),
+                )
+                self.assertEqual(cursor.rowcount, 1)
+                connection.commit()
+            target.db_path.unlink()
+
+            with mock.patch.object(
+                setup_service,
+                "restore_managed_backup",
+            ) as restore:
+                result = setup_service.run_setup(
+                    repo=str(install.project_root),
+                    repo_explicit=True,
+                    script_path=install.entrypoint,
+                    read_only=False,
+                    backup_interval_minutes=None,
+                    backup_generations=None,
+                )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "project_state_unreadable")
+            restore.assert_not_called()
+            self.assertFalse(target.db_path.exists())
             self.assertEqual(
                 list(target.db_path.parent.glob(".taskgov-restore-*.tmp")),
                 [],

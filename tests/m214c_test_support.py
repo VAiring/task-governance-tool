@@ -58,12 +58,13 @@ def seed_current_task(
     status: str = "ready",
     title: str = "Stored Task boundary",
     priority: str = "normal",
+    with_contract: bool = False,
 ) -> tuple[Path, Path, dict[str, Any]]:
     repo = root / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     db = root / "taskgov.sqlite"
     initialize_taskgov_internal(repo=repo, db=db)
-    result = run_taskgov_internal(
+    command = [
         "task",
         "add",
         "--repo",
@@ -76,8 +77,18 @@ def seed_current_task(
         status,
         "--priority",
         priority,
-        "--json",
-    )
+    ]
+    if with_contract:
+        command.extend(
+            (
+                "--contract-scope",
+                "Validate the stored Contract relationship.",
+                "--contract-acceptance",
+                "The selected Task pointer resolves to its latest revision.",
+            )
+        )
+    command.append("--json")
+    result = run_taskgov_internal(*command)
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
     return repo, db, json.loads(result.stdout)["data"]["task"]
@@ -107,6 +118,28 @@ def inject_task_fault(
     if storage is None:
         raise AssertionError("fault target task was not found")
     return {column: str(storage[index]) for index, column in enumerate(columns)}
+
+
+def inject_contract_pointer_fault(
+    db: Path,
+    task_id: str,
+    *,
+    pointer: Any,
+) -> str:
+    with closing(sqlite3.connect(db)) as connection:
+        connection.execute("PRAGMA ignore_check_constraints = ON")
+        connection.execute(
+            "UPDATE tasks SET current_contract_revision = ? WHERE task_id = ?",
+            (pointer, task_id),
+        )
+        storage = connection.execute(
+            "SELECT typeof(current_contract_revision) FROM tasks WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        connection.commit()
+    if storage is None:
+        raise AssertionError("fault target task was not found")
+    return str(storage[0])
 
 
 def assert_fixed_cli_failure(testcase: Any, result: Any) -> dict[str, Any]:

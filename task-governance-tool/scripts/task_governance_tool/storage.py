@@ -165,6 +165,7 @@ def validate_stored_task_verification(
         raise stored_task_sqlite_error(exc) from exc
     result = validate_stored_task_rows(
         rows,
+        connection=connection,
         source_schema_version=source_schema_version,
         expected_project_id=expected_project_id,
         verification_rejection_is_local=True,
@@ -182,22 +183,14 @@ def _read_validated_current_task_row(
     """Read and validate one locked/current Task without an import cycle."""
 
     from task_governance_tool.tasks import (
-        fetch_stored_task_row,
-        validate_stored_task_rows,
+        fetch_validated_current_task_row,
     )
 
-    row = fetch_stored_task_row(
+    return fetch_validated_current_task_row(
         connection,
-        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
-        (project_id, task_id),
+        project_id=project_id,
+        task_id=task_id,
     )
-    if row is not None:
-        validate_stored_task_rows(
-            [row],
-            source_schema_version=SCHEMA_VERSION,
-            expected_project_id=project_id,
-        )
-    return row
 
 
 @dataclass(frozen=True)
@@ -9798,6 +9791,7 @@ def read_setup_state(
             raise stored_task_sqlite_error(exc) from exc
         validate_stored_task_rows(
             task_rows,
+            connection=connection,
             source_schema_version=version,
             expected_project_id=target.project.project_id,
         )

@@ -753,9 +753,88 @@ def _validate_stored_task_row(
     return verification_rejection
 
 
+def _validate_stored_contract_relationships(
+    connection: sqlite3.Connection,
+    rows: list[sqlite3.Row] | tuple[sqlite3.Row, ...],
+    *,
+    expected_project_id: str,
+) -> None:
+    """Validate current Contract pointers with one selected-batch read."""
+
+    pointers: dict[str, int] = {}
+    for row in rows:
+        task_id = _stored_text(row, "task_id", required=True, limit=128)[0]
+        pointer = _stored_integer(row, "current_contract_revision", minimum=0)
+        if pointer is None or task_id in pointers:
+            raise _stored_task_unreadable()
+        pointers[task_id] = pointer
+    if not pointers:
+        return
+
+    selected_ids = json.dumps(
+        list(pointers),
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    relationship_rows = fetch_stored_task_rows(
+        connection,
+        """
+        WITH selected_task_ids(value) AS (
+            SELECT value FROM json_each(?)
+        ),
+        selected_storage_keys(value) AS (
+            SELECT value FROM selected_task_ids
+            UNION ALL
+            SELECT CAST(value AS BLOB) FROM selected_task_ids
+        )
+        SELECT project_id, task_id, revision
+          FROM task_contract_revisions
+         WHERE task_id IN (SELECT value FROM selected_storage_keys)
+         ORDER BY task_id, revision
+        """,
+        (selected_ids,),
+    )
+    revisions: dict[str, set[int]] = {task_id: set() for task_id in pointers}
+    for relationship in relationship_rows:
+        project_id = _stored_text(
+            relationship,
+            "project_id",
+            required=True,
+        )[0]
+        task_id = _stored_text(
+            relationship,
+            "task_id",
+            required=True,
+            limit=128,
+        )[0]
+        revision = _stored_integer(
+            relationship,
+            "revision",
+            minimum=1,
+        )
+        if (
+            revision is None
+            or project_id != expected_project_id
+            or task_id not in pointers
+            or pointers[task_id] == 0
+            or revision in revisions[task_id]
+        ):
+            raise _stored_task_unreadable()
+        revisions[task_id].add(revision)
+
+    for task_id, pointer in pointers.items():
+        related = revisions[task_id]
+        if pointer == 0:
+            if related:
+                raise _stored_task_unreadable()
+        elif not related or pointer not in related or pointer != max(related):
+            raise _stored_task_unreadable()
+
+
 def validate_stored_task_rows(
     rows: list[sqlite3.Row] | tuple[sqlite3.Row, ...],
     *,
+    connection: sqlite3.Connection | None = None,
     source_schema_version: object,
     expected_project_id: str,
     verification_rejection_is_local: bool = False,
@@ -781,21 +860,62 @@ def validate_stored_task_rows(
             rejection = "privacy"
         elif row_rejection == "capacity" and rejection is None:
             rejection = "capacity"
+    if capabilities.has_contract_revision:
+        if connection is None:
+            raise _stored_task_unreadable()
+        _validate_stored_contract_relationships(
+            connection,
+            rows,
+            expected_project_id=expected_project_id,
+        )
     if rejection is not None and not verification_rejection_is_local:
         raise _stored_task_unreadable()
     return StoredTaskValidationResult(verification_rejection=rejection)
 
 
 def validate_current_stored_task_rows(
+    connection: sqlite3.Connection,
     rows: list[sqlite3.Row] | tuple[sqlite3.Row, ...],
     *,
     expected_project_id: str,
 ) -> None:
     validate_stored_task_rows(
         rows,
+        connection=connection,
         source_schema_version=SCHEMA_VERSION,
         expected_project_id=expected_project_id,
     )
+
+
+def fetch_validated_current_task_row(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+) -> sqlite3.Row | None:
+    """Read one current Task and its Contract relation in one snapshot."""
+
+    owns_read_transaction = not connection.in_transaction
+    try:
+        if owns_read_transaction:
+            connection.execute("BEGIN")
+        row = fetch_stored_task_row(
+            connection,
+            "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
+            (project_id, task_id),
+        )
+        if row is not None:
+            validate_current_stored_task_rows(
+                connection,
+                [row],
+                expected_project_id=project_id,
+            )
+        return row
+    except sqlite3.Error as exc:
+        raise stored_task_sqlite_error(exc) from exc
+    finally:
+        if owns_read_transaction and connection.in_transaction:
+            connection.rollback()
 
 
 def validation_error(code: str, message: str, field: str | None = None) -> TaskValidationError:
@@ -1492,6 +1612,7 @@ def add_task(
             )
         validate_stored_task_rows(
             [task],
+            connection=connection,
             source_schema_version=schema_version,
             expected_project_id=project.project_id,
         )
@@ -1592,6 +1713,7 @@ def list_tasks(
         query_values.append(row_limit)
     stored_rows = fetch_stored_task_rows(connection, query, query_values)
     validate_current_stored_task_rows(
+        connection,
         stored_rows,
         expected_project_id=project.project_id,
     )
@@ -1946,23 +2068,13 @@ def show_task(
     event_limit: int = 10,
 ) -> TaskShowResult:
     normalized_task_id = validate_task_id(task_id)
-    task_row = fetch_stored_task_row(
+    task_row = fetch_validated_current_task_row(
         connection,
-        """
-        SELECT *
-          FROM tasks
-         WHERE project_id = ?
-           AND task_id = ?
-        """,
-        (project.project_id, normalized_task_id),
+        project_id=project.project_id,
+        task_id=normalized_task_id,
     )
     if task_row is None:
         raise TaskRepositoryError("not_found", "task was not found")
-
-    validate_current_stored_task_rows(
-        [task_row],
-        expected_project_id=project.project_id,
-    )
     task = row_to_show_task(task_row)
     event_rows = connection.execute(
         """
@@ -2071,6 +2183,7 @@ def list_tasks_for_viewer(
     )
     validate_stored_task_rows(
         task_rows,
+        connection=connection,
         source_schema_version=source_schema_version,
         expected_project_id=project.project_id,
     )
@@ -2192,6 +2305,7 @@ def list_current_tasks(
         parameters,
     )
     validate_current_stored_task_rows(
+        connection,
         rows,
         expected_project_id=project.project_id,
     )
@@ -2228,36 +2342,24 @@ def list_current_tasks(
 
 
 def read_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> dict[str, Any] | None:
-    row = fetch_stored_task_row(
+    row = fetch_validated_current_task_row(
         connection,
-        """
-        SELECT *
-          FROM tasks
-         WHERE project_id = ?
-           AND task_id = ?
-        """,
-        (project_id, task_id),
+        project_id=project_id,
+        task_id=task_id,
     )
     if row is None:
         return None
-    validate_current_stored_task_rows([row], expected_project_id=project_id)
     return row_to_task(row)
 
 
 def read_internal_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> dict[str, Any] | None:
-    row = fetch_stored_task_row(
+    row = fetch_validated_current_task_row(
         connection,
-        """
-        SELECT *
-          FROM tasks
-         WHERE project_id = ?
-           AND task_id = ?
-        """,
-        (project_id, task_id),
+        project_id=project_id,
+        task_id=task_id,
     )
     if row is None:
         return None
-    validate_current_stored_task_rows([row], expected_project_id=project_id)
     return row_to_internal_task(row)
 
 

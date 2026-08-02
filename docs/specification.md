@@ -20,7 +20,9 @@ the current schema-v17 managed-recovery classifier without activating schema
 v18, changing public Task admission, or weakening artifact hardening.
 TG-M21.4C hardens every current schema-v17 stored Task read through one shared,
 source-schema-aware row/batch validator before public or internal projection;
-it changes no schema, command inventory, or valid output. The
+it changes no schema, command inventory, or valid output. TG-M21.4D completes
+that boundary by validating each loaded Task's current Contract pointer with
+one selected-batch relationship read before projection or lifecycle use. The
 TG-M20S successor observation has reached its frozen terminal
 `proceed_to_design` result and no-rerun retirement boundary. TG-M20S.3 now
 freezes an accepted but inactive Tier 2 decomposition contract; it changes no
@@ -326,12 +328,13 @@ one query-only transaction. It also returns exactly one routing Boolean
 the existing continuation warning. Text show does not add that flag.
 
 Every Task-loading operation applies the current TG-M21.4C stored-row contract
+and TG-M21.4D Contract-relationship contract
 before an allow-list projection, compact omission, derived-state use, or
 write-basis use. Bounded list/current/next reads validate the complete rows in
 their selected batch and do not add an unrelated full-table scan. `task show`
 and Task-backed lifecycle operations validate the selected complete row before
 reading or mutating dependent state. The shared failure result is defined in
-the current TG-M21.4C section below.
+the current TG-M21.4C and TG-M21.4D sections below.
 
 The deterministic Skill call graph is:
 
@@ -1729,6 +1732,43 @@ privacy/capacity fault, or any other structural Task fault is whole-set fatal
 as `project_state_unreadable`; it cannot publish a canonical database or
 select an older candidate.
 
+## Current TG-M21.4D Stored Contract Pointer Integrity Contract
+
+TG-M21.4D, Task `tg_task_7051724dca3f1501`, owns the current schema-v17
+Contract-pointer relationship correction. Its authority reference is
+`conversation_decision:2026-08-03:m21-4d-effort-observation`. After the
+TG-M21.4C scalar row checks pass, the same shared validation boundary performs
+exactly one bounded bulk relationship read for the loaded Task IDs when the
+source schema is v8 or later and the batch is nonempty. Source schemas v1-v7
+have no Contract capability and perform no relationship read.
+
+For each loaded Task, `current_contract_revision=0` requires no related
+`task_contract_revisions` row. A positive pointer requires every related row
+to have exact TEXT same-project/same-Task ownership and an exact positive
+SQLite INTEGER revision; the pointed revision must exist and equal the latest
+raw related revision. Dangling, foreign-project, nonlatest,
+revision-zero-with-row, duplicate, wrong-storage-class, malformed, or
+ownership-mismatched relationship state fails before Task projection,
+dependent-state use, or write. Values are not coerced through `int(...)` or a
+SQLite aggregate before their storage classes are checked.
+
+The relationship read is scoped only to the already validated selected batch.
+It does not query once per Task, scan an unselected Task's Contract history, or
+perform a general cross-table audit. Existing Contract-content validation
+remains owned by the Contract repository after this relationship boundary.
+Bounded list/current/next therefore retain their selected-row behavior, while
+Doctor, Viewer, setup, migration/reentry, and managed recovery apply the check
+to their existing whole-Task batch.
+
+Every relationship fault uses the TG-M21.4C fixed exit-2
+`project_state_unreadable` / `project state could not be read safely` result,
+with no rejected bytes, warning, partial projection, or write. It is a
+structural whole-set failure during recovery and never receives the M21.4B
+verification privacy/capacity candidate-local exception. Valid revision-zero
+and latest-positive states remain byte-compatible. Intentional empty review
+target with positive generation and canonical stored-lane behavior are
+unchanged.
+
 ## Accepted But Inactive TG-M21.4A Capacity Compatibility Details
 
 At the M22.2 public ingress, even an explicit same-value verification replay
@@ -2937,7 +2977,8 @@ atomically replaces; failure preserves last good.
 
 Snapshot v4 accepts source schemas v5-v17. One query-only transaction validates
 schema/project/binding, reads generation, validates the complete source-aware
-Task batch through the TG-M21.4C boundary, and assembles rows; rendering and
+Task batch through the TG-M21.4C row and TG-M21.4D relationship boundary, and
+assembles rows; rendering and
 publication occur after close. A stored Task fault produces no snapshot or
 replacement and therefore preserves the last-good Viewer.
 
@@ -3071,7 +3112,8 @@ traceback, raw stream dump, and large diff patterns are rejected with
 `privacy_rejected` before storage. Rejected patterns include bearer tokens,
 authorization headers, private-key blocks, `password=`, `token=`, and
 `api_key=`. Public read projections revalidate stored content and cross-field
-matrices through the current TG-M21.4C shared validator before omission or
+matrices and Contract-pointer relationships through the current TG-M21.4C and
+TG-M21.4D shared validator before omission or
 exposure. Invalid stored Task content returns only
 `project_state_unreadable` / `project state could not be read safely`, never
 the rejected value or a caller-input error. The existing `lane` and

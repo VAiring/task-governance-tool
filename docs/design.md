@@ -17,6 +17,9 @@ TOCTOU reconciliation without activating schema v18 or public-limit changes.
 TG-M21.4C implements the current v17 shared stored Task row/batch validator
 across public projections, lifecycle bases, Viewer, doctor, setup, and recovery
 without changing the schema, public leaves, or valid output.
+TG-M21.4D extends that same boundary with one selected-batch Contract-pointer
+relationship read and keeps relationship faults out of late consumer-specific
+`internal_error` paths.
 TG-M16.4
 behavioral acceptance remains part of the published baseline. The TG-M20S
 successor observation reached its frozen `proceed_to_design` result and
@@ -126,9 +129,10 @@ The implementation keeps these narrow ownership boundaries:
   connections.
 - `tasks.py`, `ordering.py`, and `selection.py` own task validation, lifecycle,
   current/list projections, the source-schema-aware stored Task row/batch
-  validator, the shared sequential predecessor predicate, and next-task
-  selection. `storage.py` supplies source-schema capability and the fixed
-  stored-state failure boundary rather than duplicating Task semantics.
+  and Contract-relationship validator, the shared sequential predecessor
+  predicate, and next-task selection. `storage.py` supplies source-schema
+  capability and the fixed stored-state failure boundary rather than
+  duplicating Task semantics.
 - `completion.py`, `completion_workflow.py`, and `git_snapshot.py` own typed
   completion evidence, read-only Git observations, completion planning, and
   review-to-commit snapshot binding.
@@ -755,6 +759,50 @@ evidence consumes the already-validated Task where available and derives
 column capability from that version, removing the per-Task `PRAGMA` path.
 Routine Viewer failure occurs before rendering/replacement and preserves the
 last-good file; its caller applies the existing fixed maintenance warning.
+
+### Current TG-M21.4D Stored Contract Pointer Relationship Boundary
+
+For source schema v8 and later, `validate_stored_task_rows` receives the active
+SQLite connection in addition to the already loaded complete Task batch. Only
+after all TG-M21.4C scalar checks pass, `tasks.py` extracts the exact selected
+Task IDs and performs one `task_contract_revisions` query whose predicate is a
+single JSON-encoded ID set consumed by `json_each`. The query intentionally
+does not filter `project_id`, so a foreign owner using a selected Task ID is
+observable as corruption. An empty batch and source schemas v1-v7 issue no
+relationship query.
+
+The relation predicate derives both the exact TEXT key and its UTF-8 BLOB form
+from each selected Task ID. The BLOB form exists only to surface a
+wrong-storage-class alias to the raw validator; it neither admits an unrelated
+Task ID nor changes the selected-batch boundary into a general table audit.
+
+The relationship reader returns raw `project_id`, `task_id`, and `revision`
+values for only those selected IDs. Python validates exact TEXT identity and
+positive SQLite INTEGER revision before calculating the latest revision; it
+does not use `MAX(revision)` or `int(...)` before storage-class validation.
+Revision zero requires no returned row. A positive pointer requires a matching
+row, same-project/same-Task ownership for every returned row, and equality to
+the raw latest revision. Duplicate, dangling, foreign, nonlatest,
+revision-zero-with-row, decode, storage-class, and ownership faults all raise
+the existing fixed stored-state `StorageError`.
+
+The composed validator is called once by add post-read, list/current/next,
+show, Viewer, `read_task`, `read_internal_task`, locked write-basis reads,
+setup/doctor preflight, migration/reentry, and recovery. Review Packet,
+checkpoint, handoff, Effort, and evidence/completion lifecycle paths inherit it
+through their existing Task reader. No consumer owns a second relationship
+rule or per-Task query. `contracts.py::read_current_contract` retains Contract
+content validation after this boundary; unrelated Contract history is not a
+general audit target. Recovery's verification-local result is evaluated only
+after relationship validation, so every relationship fault remains structural
+and set-fatal.
+
+The shared single-Task fetch helper opens one short read transaction only when
+its caller has not already established a transaction. The Task row and its
+relationship rows therefore come from one SQLite snapshot even when another
+writer commits a Contract revision between calls. Existing query-only and
+locked write transactions are reused unchanged; the helper performs no write
+and closes only the read transaction it owns.
 
 ### Sequential Ordering
 
@@ -2073,7 +2121,9 @@ Schema v8 gives Tasks a current revision pointer and adds append-only
 `task_contract_revisions`. Revision 0 has no row and projects empty fields.
 Each positive row stores normalized scope, acceptance, optional constraints,
 stable authority reference, change reason, and timestamp. Repository reads
-require the pointer to reference the latest same-project/same-task revision.
+require the pointer to reference the latest same-project/same-task revision;
+the TG-M21.4D shared boundary enforces this before Contract projection or
+Task-backed lifecycle use.
 Scope and acceptance are each capped at 4,000 characters, constraints at
 2,000, authority reference at 500, and change reason at 1,000.
 
@@ -2314,7 +2364,8 @@ advisory has `suggested_action=continue`; doctor creates no lock, directory,
 sidecar, database, event, backup, or Viewer.
 
 The coherent project snapshot loads complete Task rows once and validates the
-whole batch with the TG-M21.4C validator before computing Task counts. On a
+whole batch with the TG-M21.4C/TG-M21.4D validator before computing Task
+counts. On a
 Task fault, doctor maps project state to `unreadable`, every other
 project-backed component to `unavailable`, and setup eligibility to false;
 the package observation remains independent.
@@ -2480,7 +2531,7 @@ Setup invokes the same canonical renderer directly. There is no public Viewer
 command, output choice, browser launch, server, or browser-to-SQLite path.
 
 The repository selects complete rows for all project Tasks in list order and
-validates them as one source-schema-aware TG-M21.4C batch before any Task,
+validates them as one source-schema-aware TG-M21.4C/TG-M21.4D batch before any Task,
 review, or history projection. Validation failure occurs before rendering or
 replacement and preserves the last-good HTML. It then selects at most 10 newest
 events per Task by time/rowid, review evidence through the shared gate read
@@ -3023,6 +3074,10 @@ a real consuming project or Git state. Tests cover:
   module, plus representative public/lifecycle/doctor/Viewer route canaries,
   selected-batch query bounds, no-write failure, and last-good publication in
   a separate consumer-boundary module;
+- the TG-M21.4D Contract-pointer matrix in one focused relation module and its
+  selected-batch single-query, pre-v8 no-query, recovery set-fatal, valid-state,
+  lifecycle, doctor/setup, and last-good Viewer canaries in one separate
+  consumer-boundary module rather than duplicating every command fixture;
 - Git option safety, canonical commit resolution, snapshot/index/tree binding,
   no mutation, and no lazy network;
 - concurrent readers/writers, short writer ownership, stable busy/WAL errors,

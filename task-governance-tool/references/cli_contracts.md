@@ -362,7 +362,8 @@ states remain successful advisory data and never create a stop.
 
 Doctor validates the complete stored Task batch before returning Task-derived
 counts. A malformed, wrong-storage-class, privacy-rejected, over-capacity, or
-cross-field-invalid Task makes `project_state.code="unreadable"`, all other
+cross-field-invalid Task, or invalid current Contract relationship makes
+`project_state.code="unreadable"`, all other
 project-backed components `{"code":"unavailable"}`,
 `setup_eligible=false`, and returns exit 2 with the fixed
 `project_state_unreadable` error. It exposes no rejected value and writes
@@ -383,6 +384,14 @@ dependent-state use, or use as a write basis. Exact SQLite storage classes,
 privacy/capacity, enums, and Task cross-field matrices are checked without
 coercion or repair. Bounded list/current/next commands validate only their
 selected complete-row batch and add no unrelated whole-table rescan.
+For source schemas v8-v17, the same boundary performs one bulk relationship
+read for only those selected Task IDs. Revision zero requires no Contract row;
+a positive `current_contract_revision` must exist as the latest exact INTEGER
+revision owned by the same project and Task. Dangling, foreign, nonlatest,
+revision-zero-with-row, wrong-storage-class, or ownership-mismatched state uses
+the fixed stored-state error. Source schemas v1-v7 perform no Contract read,
+and no command queries Contract rows once per Task or audits unselected Task
+history.
 Malformed or undecodable SQLite TEXT and other non-busy Task fetch/decode
 faults use the same fixed error; genuine busy/locked state remains
 `database_busy`. Doctor, Viewer, setup, and recovery validate every Task row,
@@ -990,7 +999,8 @@ five-key projection as `task show` without exposing internal event links,
 maintenance data, or checkpoint content.
 
 Viewer capture validates the complete source-aware Task batch before rendering
-or replacement. A stored Task fault therefore publishes no partial snapshot
+or replacement, including the source-v8+ Contract-pointer relationship. A
+stored Task fault therefore publishes no partial snapshot
 and preserves the last-good Viewer; routine post-commit maintenance returns the
 successful business result with only `viewer_refresh_failed`. Setup preflight
 instead fails no-write with `project_state_unreadable`; a failure confined to
@@ -1091,11 +1101,12 @@ Important task/review/handoff errors include:
 or binding is malformed.
 `project_state_unreadable` uses exit 2 and fixed message
 `project state could not be read safely` for any invalid current stored Task
-row. It never downgrades to `privacy_rejected`/`invalid_argument`, returns a
+row or selected Task's current Contract relationship. It never downgrades to
+`privacy_rejected`/`invalid_argument`, returns a
 partial projection, or exposes the offending value. Managed setup recovery
 retains the sole narrower exception: only stored Task `verification`
 privacy/capacity failure is candidate-local; all other Task faults remain
-whole-set fatal.
+whole-set fatal, including every Contract-pointer relationship fault.
 
 Privacy validation is deny-by-default for stored free-form input. Never submit
 secrets, tokens, authorization headers, raw stdout/stderr, stack traces,

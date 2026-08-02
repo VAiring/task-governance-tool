@@ -129,6 +129,7 @@ def select_next_tasks(
         values,
     )
     validate_current_stored_task_rows(
+        connection,
         rows,
         expected_project_id=project.project_id,
     )

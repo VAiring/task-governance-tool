@@ -195,6 +195,12 @@ class TaskValidationTests(unittest.TestCase):
     def test_v17_stored_verification_classifier_is_privacy_first(self):
         self.assertEqual(stored_task_verification_limit(17), 500)
         base = valid_stored_task_row()
+        connection = sqlite3.connect(":memory:")
+        self.addCleanup(connection.close)
+        connection.row_factory = sqlite3.Row
+        connection.execute(
+            "CREATE TABLE task_contract_revisions (project_id, task_id, revision)"
+        )
         for name, value, reason in (
             ("boundary", "x" * 500, None),
             ("capacity", "x" * 501, "capacity"),
@@ -207,6 +213,7 @@ class TaskValidationTests(unittest.TestCase):
             with self.subTest(name=name):
                 result = validate_stored_task_rows(
                     [valid_stored_task_row(verification=value)],
+                    connection=connection,
                     source_schema_version=17,
                     expected_project_id=base["project_id"],
                     verification_rejection_is_local=True,
@@ -233,6 +240,7 @@ class TaskValidationTests(unittest.TestCase):
                                 verification=sqlite3.Binary(b"not-text"),
                             ),
                         ],
+                        connection=connection,
                         source_schema_version=17,
                         expected_project_id=base["project_id"],
                         verification_rejection_is_local=True,

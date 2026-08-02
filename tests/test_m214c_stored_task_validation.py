@@ -27,10 +27,27 @@ finally:
 
 
 class StoredTaskValidationTests(unittest.TestCase):
+    def setUp(self):
+        self.connection = sqlite3.connect(":memory:")
+        self.connection.row_factory = sqlite3.Row
+        self.connection.execute(
+            """
+            CREATE TABLE task_contract_revisions (
+                project_id,
+                task_id,
+                revision
+            )
+            """
+        )
+
+    def tearDown(self):
+        self.connection.close()
+
     def assert_unreadable(self, rows, **kwargs):
         with self.assertRaises(StorageError) as caught:
             validate_stored_task_rows(
                 rows,
+                connection=self.connection,
                 source_schema_version=17,
                 expected_project_id=valid_stored_task_row()["project_id"],
                 **kwargs,
@@ -49,6 +66,7 @@ class StoredTaskValidationTests(unittest.TestCase):
         original = copy.deepcopy(row)
         result = validate_stored_task_rows(
             [row],
+            connection=self.connection,
             source_schema_version=17,
             expected_project_id=row["project_id"],
         )
@@ -64,6 +82,7 @@ class StoredTaskValidationTests(unittest.TestCase):
             legacy.pop(field)
         validate_stored_task_rows(
             [legacy],
+            connection=self.connection,
             source_schema_version=5,
             expected_project_id=row["project_id"],
         )
@@ -76,6 +95,7 @@ class StoredTaskValidationTests(unittest.TestCase):
         preserved_original = copy.deepcopy(preserved_legacy_hash)
         validate_stored_task_rows(
             [preserved_legacy_hash],
+            connection=self.connection,
             source_schema_version=4,
             expected_project_id=row["project_id"],
         )
@@ -154,6 +174,7 @@ class StoredTaskValidationTests(unittest.TestCase):
                 with self.assertRaises(StorageError) as caught:
                     validate_stored_task_rows(
                         [valid_stored_task_row(**changes)],
+                        connection=self.connection,
                         source_schema_version=17,
                         expected_project_id=project_id,
                     )
@@ -173,6 +194,7 @@ class StoredTaskValidationTests(unittest.TestCase):
         )
         result = validate_stored_task_rows(
             [capacity, privacy],
+            connection=self.connection,
             source_schema_version=17,
             expected_project_id=project_id,
             verification_rejection_is_local=True,
@@ -207,7 +229,14 @@ class StoredTaskValidationTests(unittest.TestCase):
                     "SELECT * FROM tasks WHERE task_id = ?",
                     (task["task_id"],),
                 ).fetchone()
-                self.assert_unreadable([row])
+                with self.assertRaises(StorageError) as caught:
+                    validate_stored_task_rows(
+                        [row],
+                        connection=connection,
+                        source_schema_version=17,
+                        expected_project_id=task["project_id"],
+                    )
+                self.assertEqual(caught.exception.code, FIXED_CODE)
 
     def test_invalid_source_capability_fails_closed(self):
         for version in (True, 0, 18, "17"):
@@ -215,6 +244,7 @@ class StoredTaskValidationTests(unittest.TestCase):
                 with self.assertRaises(StorageError) as caught:
                     validate_stored_task_rows(
                         [valid_stored_task_row()],
+                        connection=self.connection,
                         source_schema_version=version,
                         expected_project_id=valid_stored_task_row()["project_id"],
                     )

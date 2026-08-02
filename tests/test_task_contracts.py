@@ -924,7 +924,15 @@ class TaskContractCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             payload = json.loads(result.stdout)
             self.assertFalse(payload["ok"])
-            self.assertEqual(payload["errors"][0]["code"], "internal_error")
+            self.assertEqual(
+                payload["errors"],
+                [
+                    {
+                        "code": "project_state_unreadable",
+                        "message": "project state could not be read safely",
+                    }
+                ],
+            )
             self.assertEqual(
                 payload["data"],
                 {

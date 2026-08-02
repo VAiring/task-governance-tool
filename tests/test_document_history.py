@@ -231,11 +231,26 @@ class DocumentHistoryTests(unittest.TestCase):
         m214c_section = specification[m214c_start:m214c_next_start]
         self.assertEqual(
             specification[m214c_next_start:].splitlines()[0],
-            "## Accepted But Inactive TG-M21.4A Capacity Compatibility Details",
+            "## Current TG-M21.4D Stored Contract Pointer Integrity Contract",
         )
         self.assertIn("Task `tg_task_efa90606fed8fba0`", m214c_section)
         self.assertIn("project_state_unreadable", m214c_section)
         self.assertIn("no unrelated whole-table rescan", m214c_section)
+        m214d_start = m214c_next_start
+        m214d_next_start = specification.index("\n## ", m214d_start + 1) + 1
+        m214d_section = specification[m214d_start:m214d_next_start]
+        self.assertEqual(
+            specification[m214d_next_start:].splitlines()[0],
+            "## Accepted But Inactive TG-M21.4A Capacity Compatibility Details",
+        )
+        self.assertIn("Task `tg_task_7051724dca3f1501`", m214d_section)
+        self.assertIn(
+            "conversation_decision:2026-08-03:m21-4d-effort-observation",
+            m214d_section,
+        )
+        self.assertIn("exactly one bounded bulk relationship read", m214d_section)
+        self.assertIn("`current_contract_revision=0`", m214d_section)
+        self.assertIn("structural whole-set failure", m214d_section)
         self.assertIn(
             "| Observation | Classification and selection | Setup result |",
             current_section_flat,

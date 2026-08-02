@@ -558,8 +558,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                     connection.execute(
                         """
                         UPDATE tasks
-                           SET current_contract_revision =
-                               current_contract_revision + 1
+                           SET title = title || ' changed'
                          WHERE task_id = ?
                         """,
                         (task["task_id"],),

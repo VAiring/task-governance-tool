@@ -16,6 +16,11 @@ from tests.review_test_helpers import seed_review_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
+sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+try:
+    from task_governance_tool.effort import load_effort_profile
+finally:
+    sys.path.pop(0)
 
 
 def run_taskgov(*args):
@@ -112,7 +117,10 @@ class TaskShowTests(unittest.TestCase):
             self.assertEqual(data["task"]["completion_evidence_revision"], "")
             self.assertEqual(data["task"]["completion_evidence_reason"], "")
             self.assertEqual(data["task"]["external_revision_approved"], 0)
-            self.assertFalse(data["effort_advisory_enabled"])
+            self.assertEqual(
+                data["effort_advisory_enabled"],
+                load_effort_profile(SKILL_ROOT).enabled,
+            )
             self.assertIsNone(data["latest_checkpoint"])
             self.assertEqual(
                 data["completion_history"],

@@ -3,6 +3,8 @@ import sys
 import unittest
 from pathlib import Path
 
+from tests.m214c_test_support import valid_stored_task_row
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
@@ -13,13 +15,12 @@ try:
         TaskValidationError,
         validate_legacy_m19_7_stored_text,
         validate_event_summary,
+        validate_stored_task_rows,
         validate_task_input,
     )
     from task_governance_tool.storage import (
         StorageError,
-        StoredTaskVerificationError,
         stored_task_verification_limit,
-        validate_stored_task_verification,
     )
 finally:
     sys.path.pop(0)
@@ -193,56 +194,53 @@ class TaskValidationTests(unittest.TestCase):
 
     def test_v17_stored_verification_classifier_is_privacy_first(self):
         self.assertEqual(stored_task_verification_limit(17), 500)
-        with sqlite3.connect(":memory:") as connection:
-            connection.execute(
-                "CREATE TABLE tasks(task_id TEXT PRIMARY KEY, verification TEXT)"
-            )
-            for name, value, reason in (
-                ("boundary", "x" * 500, None),
-                ("capacity", "x" * 501, "capacity"),
-                (
-                    "privacy_before_capacity",
-                    "token=stored-secret " + ("x" * 501),
-                    "privacy",
-                ),
-            ):
-                with self.subTest(name=name):
-                    connection.execute("DELETE FROM tasks")
-                    connection.execute(
-                        "INSERT INTO tasks(task_id, verification) VALUES (?, ?)",
-                        ("tg_task_stored_validation", value),
-                    )
-                    if reason is None:
-                        validate_stored_task_verification(connection, 17)
-                    else:
-                        with self.assertRaises(
-                            StoredTaskVerificationError
-                        ) as caught:
-                            validate_stored_task_verification(connection, 17)
-                        self.assertEqual(caught.exception.reason, reason)
+        base = valid_stored_task_row()
+        for name, value, reason in (
+            ("boundary", "x" * 500, None),
+            ("capacity", "x" * 501, "capacity"),
+            (
+                "privacy_before_capacity",
+                "token=stored-secret " + ("x" * 501),
+                "privacy",
+            ),
+        ):
+            with self.subTest(name=name):
+                result = validate_stored_task_rows(
+                    [valid_stored_task_row(verification=value)],
+                    source_schema_version=17,
+                    expected_project_id=base["project_id"],
+                    verification_rejection_is_local=True,
+                )
+                self.assertEqual(result.verification_rejection, reason)
 
-            for local_reason, local_value in (
-                ("capacity", "x" * 501),
-                ("privacy", "token=stored-secret"),
+        for local_reason, local_value in (
+            ("capacity", "x" * 501),
+            ("privacy", "token=stored-secret"),
+        ):
+            with self.subTest(
+                local_reason=local_reason,
+                later_value="malformed",
             ):
-                with self.subTest(
-                    local_reason=local_reason,
-                    later_value="malformed",
-                ):
-                    connection.execute("DELETE FROM tasks")
-                    connection.executemany(
-                        "INSERT INTO tasks(task_id, verification) VALUES (?, ?)",
-                        (
-                            ("a_local", local_value),
-                            ("z_structural", sqlite3.Binary(b"not-text")),
-                        ),
+                with self.assertRaises(StorageError) as structural:
+                    validate_stored_task_rows(
+                        [
+                            valid_stored_task_row(
+                                task_id="a_local",
+                                verification=local_value,
+                            ),
+                            valid_stored_task_row(
+                                task_id="z_structural",
+                                verification=sqlite3.Binary(b"not-text"),
+                            ),
+                        ],
+                        source_schema_version=17,
+                        expected_project_id=base["project_id"],
+                        verification_rejection_is_local=True,
                     )
-                    with self.assertRaises(StorageError) as structural:
-                        validate_stored_task_verification(connection, 17)
-                    self.assertEqual(
-                        structural.exception.code,
-                        "project_state_unreadable",
-                    )
+                self.assertEqual(
+                    structural.exception.code,
+                    "project_state_unreadable",
+                )
 
     def test_event_summary_is_required(self):
         self.assert_validation_error(

@@ -360,6 +360,14 @@ Not-yet-known maintenance values are `null`, not omitted. Maintenance outcome
 codes are `none`, `succeeded`, `deferred`, or `failed`; readable maintenance
 states remain successful advisory data and never create a stop.
 
+Doctor validates the complete stored Task batch before returning Task-derived
+counts. A malformed, wrong-storage-class, privacy-rejected, over-capacity, or
+cross-field-invalid Task makes `project_state.code="unreadable"`, all other
+project-backed components `{"code":"unavailable"}`,
+`setup_eligible=false`, and returns exit 2 with the fixed
+`project_state_unreadable` error. It exposes no rejected value and writes
+nothing.
+
 Package `modified` or `unknown` is an exit-0 warning and makes
 `setup_eligible=false`. Missing or migratable state is an exit-0
 `setup_required` or `migration_required` warning. Invalid layout/project,
@@ -368,6 +376,23 @@ newer schema are exit-2 errors. No row exposes a local path, digest, file
 content, exception, or raw state.
 
 ## Task Commands
+
+Every command that loads a Task validates its complete stored row through one
+source-schema-aware boundary before allow-list projection, compact omission,
+dependent-state use, or use as a write basis. Exact SQLite storage classes,
+privacy/capacity, enums, and Task cross-field matrices are checked without
+coercion or repair. Bounded list/current/next commands validate only their
+selected complete-row batch and add no unrelated whole-table rescan.
+Malformed or undecodable SQLite TEXT and other non-busy Task fetch/decode
+faults use the same fixed error; genuine busy/locked state remains
+`database_busy`. Doctor, Viewer, setup, and recovery validate every Task row,
+including stored project ownership, as one whole batch.
+
+Any current schema-v17 stored Task fault returns exit 2, code
+`project_state_unreadable`, and message
+`project state could not be read safely`. The command keeps its existing empty
+data shape and emits no warning, partial Task projection, rejected content, or
+write. Valid rows and outputs are unchanged.
 
 ### `task add`
 
@@ -964,6 +989,13 @@ history; sources 15-17 use stored cycles. Every Task receives the same bounded
 five-key projection as `task show` without exposing internal event links,
 maintenance data, or checkpoint content.
 
+Viewer capture validates the complete source-aware Task batch before rendering
+or replacement. A stored Task fault therefore publishes no partial snapshot
+and preserves the last-good Viewer; routine post-commit maintenance returns the
+successful business result with only `viewer_refresh_failed`. Setup preflight
+instead fails no-write with `project_state_unreadable`; a failure confined to
+setup's later Viewer stage remains `setup_incomplete`.
+
 If post-commit maintenance cannot complete, the primary business mutation
 remains successful and only a bounded warning is appended:
 
@@ -1057,6 +1089,13 @@ Important task/review/handoff errors include:
 `invalid_verification_evidence` likewise fails closed with exit 2 and
 `stored verification evidence is inconsistent` when stored Receipt structure
 or binding is malformed.
+`project_state_unreadable` uses exit 2 and fixed message
+`project state could not be read safely` for any invalid current stored Task
+row. It never downgrades to `privacy_rejected`/`invalid_argument`, returns a
+partial projection, or exposes the offending value. Managed setup recovery
+retains the sole narrower exception: only stored Task `verification`
+privacy/capacity failure is candidate-local; all other Task faults remain
+whole-set fatal.
 
 Privacy validation is deny-by-default for stored free-form input. Never submit
 secrets, tokens, authorization headers, raw stdout/stderr, stack traces,

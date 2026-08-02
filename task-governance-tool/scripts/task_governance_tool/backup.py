@@ -447,7 +447,11 @@ def _discover_recovery_artifacts(
             with closing(connect_readonly(path)) as connection:
                 version = _validate_database(connection, target)
                 try:
-                    validate_stored_task_verification(connection, version)
+                    validate_stored_task_verification(
+                        connection,
+                        version,
+                        target.project.project_id,
+                    )
                 except StoredTaskVerificationError:
                     content_valid = False
         except (OSError, sqlite3.Error, StorageError) as exc:
@@ -756,7 +760,11 @@ def restore_managed_backup(
                 candidate.schema_version,
             )
             try:
-                validate_stored_task_verification(source, source_version)
+                validate_stored_task_verification(
+                    source,
+                    source_version,
+                    target.project.project_id,
+                )
             except StoredTaskVerificationError as exc:
                 raise _restore_failure() from exc
             with closing(
@@ -772,6 +780,7 @@ def restore_managed_backup(
                     validate_stored_task_verification(
                         destination,
                         source_version,
+                        target.project.project_id,
                     )
                 except StoredTaskVerificationError as exc:
                     raise _restore_failure() from exc
@@ -819,6 +828,7 @@ def restore_managed_backup(
                 validate_stored_task_verification(
                     restored,
                     source_version,
+                    target.project.project_id,
                 )
             except StoredTaskVerificationError as exc:
                 raise _restore_failure() from exc
@@ -905,7 +915,11 @@ def copy_database_snapshot(
             source_version = _validate_database(source, source_target)
             if require_recovery_content_valid:
                 try:
-                    validate_stored_task_verification(source, source_version)
+                    validate_stored_task_verification(
+                        source,
+                        source_version,
+                        source_target.project.project_id,
+                    )
                 except StoredTaskVerificationError as exc:
                     raise _failure() from exc
             with closing(
@@ -922,6 +936,7 @@ def copy_database_snapshot(
                         validate_stored_task_verification(
                             copied,
                             source_version,
+                            source_target.project.project_id,
                         )
                     except StoredTaskVerificationError as exc:
                         raise _failure() from exc

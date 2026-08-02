@@ -145,50 +145,59 @@ def stored_task_verification_limit(source_schema_version: int) -> int:
 def validate_stored_task_verification(
     connection: sqlite3.Connection,
     source_schema_version: int,
+    expected_project_id: str,
 ) -> None:
-    """Validate exact stored Task verification without exposing stored bytes.
+    """Validate stored Tasks for recovery without exposing stored bytes.
 
     Privacy is intentionally checked before the source-schema capacity.  Only
-    those two semantic failures use ``StoredTaskVerificationError``; malformed
-    SQLite values and query failures remain structural storage failures.
+    those two failures for ``verification`` use
+    ``StoredTaskVerificationError``; every other Task-row or query fault remains
+    a structural storage failure.
     """
 
     from task_governance_tool.tasks import (  # Avoid the storage/tasks cycle.
-        TaskValidationError,
-        reject_private_or_raw_content,
+        validate_stored_task_rows,
     )
 
-    limit = stored_task_verification_limit(source_schema_version)
-    local_reason: str | None = None
     try:
-        rows = connection.execute(
-            "SELECT verification FROM tasks ORDER BY task_id"
-        )
-        for row in rows:
-            value = row[0]
-            if not isinstance(value, str):
-                raise StorageError(
-                    "project_state_unreadable",
-                    "task database stored verification is invalid",
-                )
-            try:
-                reject_private_or_raw_content("verification", value)
-            except TaskValidationError as exc:
-                if exc.code != "privacy_rejected":
-                    raise StorageError(
-                        "project_state_unreadable",
-                        "task database stored verification is invalid",
-                    ) from exc
-                local_reason = "privacy"
-            if len(value) > limit and local_reason != "privacy":
-                local_reason = "capacity"
+        rows = connection.execute("SELECT * FROM tasks ORDER BY task_id").fetchall()
     except sqlite3.Error as exc:
-        raise StorageError(
-            "project_state_unreadable",
-            "task database stored verification is unreadable",
-        ) from exc
-    if local_reason is not None:
-        raise StoredTaskVerificationError(local_reason)
+        raise stored_task_sqlite_error(exc) from exc
+    result = validate_stored_task_rows(
+        rows,
+        source_schema_version=source_schema_version,
+        expected_project_id=expected_project_id,
+        verification_rejection_is_local=True,
+    )
+    if result.verification_rejection is not None:
+        raise StoredTaskVerificationError(result.verification_rejection)
+
+
+def _read_validated_current_task_row(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+) -> sqlite3.Row | None:
+    """Read and validate one locked/current Task without an import cycle."""
+
+    from task_governance_tool.tasks import (
+        fetch_stored_task_row,
+        validate_stored_task_rows,
+    )
+
+    row = fetch_stored_task_row(
+        connection,
+        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
+        (project_id, task_id),
+    )
+    if row is not None:
+        validate_stored_task_rows(
+            [row],
+            source_schema_version=SCHEMA_VERSION,
+            expected_project_id=project_id,
+        )
+    return row
 
 
 @dataclass(frozen=True)
@@ -876,6 +885,17 @@ def operational_sqlite_error(
     if is_sqlite_busy_or_locked(exc):
         return StorageError("database_busy", DATABASE_BUSY_MESSAGE)
     return StorageError("internal_error", fallback_message)
+
+
+def stored_task_sqlite_error(exc: sqlite3.Error) -> StorageError:
+    """Map Task-row fetch/decode faults without weakening busy semantics."""
+
+    if is_sqlite_busy_or_locked(exc):
+        return StorageError("database_busy", DATABASE_BUSY_MESSAGE)
+    return StorageError(
+        "project_state_unreadable",
+        "project state could not be read safely",
+    )
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -4406,16 +4426,11 @@ def insert_verification_receipt_locked(
             "migration_required",
             "verification receipt recording requires schema version 17",
         )
-    locked = connection.execute(
-        """
-        SELECT status, verification, current_contract_revision,
-               review_target_kind, review_target_value,
-               review_target_base_revision, review_target_generation
-          FROM tasks
-         WHERE project_id = ? AND task_id = ?
-        """,
-        (project_id, task_id),
-    ).fetchone()
+    locked = _read_validated_current_task_row(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+    )
     if locked is None:
         raise invalid_verification_evidence()
     expectation = locked["verification"]
@@ -6134,15 +6149,11 @@ def select_completion_gate_basis_locked(
 ) -> CompletionGateBasis:
     """Select one deterministic current review basis inside a writer."""
 
-    task = connection.execute(
-        """
-        SELECT review_tier, review_target_kind, review_target_value,
-               review_target_base_revision, review_target_generation
-          FROM tasks
-         WHERE project_id = ? AND task_id = ?
-        """,
-        (project_id, task_id),
-    ).fetchone()
+    task = _read_validated_current_task_row(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+    )
     if task is None:
         raise completion_history_inconsistent()
     return _select_completion_gate_basis_for_projection_locked(
@@ -6442,10 +6453,11 @@ def insert_completion_cycle_locked(
     """Archive the locked current-done projection without caller-owned content."""
 
     _require_completion_cycle_writer(connection)
-    current = connection.execute(
-        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
-        (project_id, task_id),
-    ).fetchone()
+    current = _read_validated_current_task_row(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+    )
     if current is None:
         raise completion_history_inconsistent()
     cycle = _legacy_completion_cycle_from_task_projection(
@@ -6495,10 +6507,11 @@ def insert_native_completion_cycle_locked(
 
     _require_completion_cycle_writer(connection)
     _require_completion_capture_activation_locked(connection)
-    locked = connection.execute(
-        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
-        (project_id, task_id),
-    ).fetchone()
+    locked = _read_validated_current_task_row(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+    )
     if locked is None:
         raise completion_history_inconsistent()
     locked_task = dict(locked)
@@ -6668,10 +6681,11 @@ def _match_current_done_completion_cycle_locked(
         ):
             raise completion_history_inconsistent()
         _validate_completion_history_structure(connection)
-    current = connection.execute(
-        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
-        (project_id, task_id),
-    ).fetchone()
+    current = _read_validated_current_task_row(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+    )
     if current is None:
         raise completion_history_inconsistent()
     task_projection = dict(current)
@@ -9774,6 +9788,19 @@ def read_setup_state(
                 "project_mismatch",
                 "task database belongs to a different project",
             )
+        from task_governance_tool.tasks import validate_stored_task_rows
+
+        try:
+            task_rows = connection.execute(
+                "SELECT * FROM tasks ORDER BY task_id"
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise stored_task_sqlite_error(exc) from exc
+        validate_stored_task_rows(
+            task_rows,
+            source_schema_version=version,
+            expected_project_id=target.project.project_id,
+        )
         if version == SCHEMA_VERSION:
             try:
                 validate_completion_cycle_storage(connection)

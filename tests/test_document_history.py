@@ -195,7 +195,7 @@ STUDY_HISTORIES = {
 
 
 class DocumentHistoryTests(unittest.TestCase):
-    def test_m214b_current_contract_and_setup_errors_are_routed_explicitly(self):
+    def test_m214b_and_m214c_current_contracts_are_routed_explicitly(self):
         specification = (ROOT / "docs" / "specification.md").read_text(
             encoding="utf-8-sig"
         )
@@ -220,11 +220,22 @@ class DocumentHistoryTests(unittest.TestCase):
 
         self.assertEqual(
             next_h2,
-            "## Accepted But Inactive TG-M21.4A Capacity Compatibility Details",
+            "## Current TG-M21.4C Stored Task Read And Privacy Contract",
         )
         self.assertNotIn("At the M22.2 public ingress", current_section)
         self.assertNotIn("M21.5 changes only", current_section)
         self.assertIn("Task `tg_task_9b746fbe5fe4927f`", current_section)
+
+        m214c_start = next_h2_start
+        m214c_next_start = specification.index("\n## ", m214c_start + 1) + 1
+        m214c_section = specification[m214c_start:m214c_next_start]
+        self.assertEqual(
+            specification[m214c_next_start:].splitlines()[0],
+            "## Accepted But Inactive TG-M21.4A Capacity Compatibility Details",
+        )
+        self.assertIn("Task `tg_task_efa90606fed8fba0`", m214c_section)
+        self.assertIn("project_state_unreadable", m214c_section)
+        self.assertIn("no unrelated whole-table rescan", m214c_section)
         self.assertIn(
             "| Observation | Classification and selection | Setup result |",
             current_section_flat,

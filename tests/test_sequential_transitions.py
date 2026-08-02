@@ -84,7 +84,7 @@ class SequentialTransitionTests(unittest.TestCase):
                 )
                 self.assertEqual(task_state(db, "tg_task_missing")[1], 1)
 
-    def test_direct_start_review_and_done_reject_incomplete_predecessor(self):
+    def test_noncanonical_stored_lane_fails_closed_before_transition(self):
         for status in ("in_progress", "review_pending", "done"):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as tmp:
                 db = Path(tmp) / "taskgov.sqlite"
@@ -116,10 +116,10 @@ class SequentialTransitionTests(unittest.TestCase):
 
                 result = edit_result(db, repo, later["task_id"], "--status", status, *extra)
 
-                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.returncode, 2)
                 self.assertEqual(
                     json.loads(result.stdout)["errors"][0]["code"],
-                    "sequential_predecessor_incomplete",
+                    "project_state_unreadable",
                 )
                 row, events = task_state(db, later["task_id"])
                 self.assertEqual(row[0], "ready")

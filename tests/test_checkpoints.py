@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests.m214c_test_support import valid_stored_task_row
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
@@ -48,8 +50,32 @@ def checkpoint_connection(
         CREATE TABLE tasks (
           task_id TEXT PRIMARY KEY,
           project_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          lane TEXT NOT NULL,
+          lane_order INTEGER,
+          priority TEXT NOT NULL,
           status TEXT NOT NULL,
+          blocked_reason TEXT NOT NULL,
+          pause_reason TEXT NOT NULL,
+          review_tier INTEGER NOT NULL,
+          verification TEXT NOT NULL,
+          tags TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          completed_at TEXT,
+          completion_commit_required INTEGER NOT NULL,
+          completion_commit_hash TEXT NOT NULL,
+          completion_evidence_kind TEXT NOT NULL,
+          completion_evidence_revision TEXT NOT NULL,
+          completion_evidence_reason TEXT NOT NULL,
+          external_revision_approved INTEGER NOT NULL,
+          review_target_kind TEXT NOT NULL,
+          review_target_value TEXT NOT NULL,
+          review_target_base_revision TEXT NOT NULL,
+          review_target_generation INTEGER NOT NULL,
           current_contract_revision INTEGER NOT NULL,
+          completion_history_coverage TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           FOREIGN KEY (project_id) REFERENCES project_meta(project_id)
         );
@@ -96,19 +122,20 @@ def checkpoint_connection(
         "INSERT INTO project_meta(project_id) VALUES (?)",
         (project.project_id,),
     )
+    task = valid_stored_task_row(
+        task_id=task_id,
+        project_id=project.project_id,
+        status=status,
+        current_contract_revision=contract_revision,
+        created_at="2026-07-27T00:00:00Z",
+        updated_at="2026-07-27T00:00:00Z",
+        completed_at=("2026-07-27T00:00:00Z" if status == "done" else None),
+    )
+    columns = tuple(task)
     connection.execute(
-        """
-        INSERT INTO tasks(
-          task_id, project_id, status, current_contract_revision, updated_at
-        ) VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            task_id,
-            project.project_id,
-            status,
-            contract_revision,
-            "2026-07-27T00:00:00.000000Z",
-        ),
+        f"INSERT INTO tasks({', '.join(columns)}) "
+        f"VALUES ({', '.join('?' for _ in columns)})",
+        tuple(task[column] for column in columns),
     )
     if contract_revision:
         connection.execute(

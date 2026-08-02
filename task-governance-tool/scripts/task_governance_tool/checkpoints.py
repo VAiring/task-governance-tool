@@ -21,6 +21,7 @@ from task_governance_tool.tasks import (
     begin_task_write,
     create_task_event,
     generate_id,
+    read_internal_task,
     reject_done_task_write,
     validate_legacy_m19_7_stored_text,
     validate_task_id,
@@ -245,15 +246,12 @@ def record_checkpoint(
     )
 
     begin_task_write(connection, database_target)
-    task = connection.execute(
-        """
-        SELECT task_id, project_id, status, current_contract_revision
-          FROM tasks
-         WHERE task_id = ?
-        """,
-        (normalized_task_id,),
-    ).fetchone()
-    if task is None or str(task["project_id"]) != project.project_id:
+    task = read_internal_task(
+        connection,
+        project.project_id,
+        normalized_task_id,
+    )
+    if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(task)
 

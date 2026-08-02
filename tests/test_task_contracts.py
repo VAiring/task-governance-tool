@@ -753,10 +753,27 @@ class TaskContractCliTests(unittest.TestCase):
                 task_id = added["data"]["task"]["task_id"]
                 task_ids[status] = task_id
                 with closing(sqlite3.connect(db)) as connection:
-                    connection.execute(
-                        "UPDATE tasks SET status = ? WHERE task_id = ?",
-                        (status, task_id),
-                    )
+                    if status == "done":
+                        connection.execute(
+                            """
+                            UPDATE tasks
+                               SET status = 'done',
+                                   completed_at = updated_at,
+                                   completion_commit_required = 0,
+                                   completion_commit_hash = '',
+                                   completion_evidence_kind = 'commit_not_required',
+                                   completion_evidence_revision = '',
+                                   completion_evidence_reason = '',
+                                   external_revision_approved = 0
+                             WHERE task_id = ?
+                            """,
+                            (task_id,),
+                        )
+                    else:
+                        connection.execute(
+                            "UPDATE tasks SET status = ? WHERE task_id = ?",
+                            (status, task_id),
+                        )
                     connection.commit()
 
             done_result, done_payload = edit_contract(

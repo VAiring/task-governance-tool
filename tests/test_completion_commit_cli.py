@@ -500,9 +500,9 @@ class CompletionCommitCliTests(unittest.TestCase):
                 "--json",
             )
 
-            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.returncode, 2)
             payload = json.loads(result.stdout)
-            self.assertEqual(payload["errors"][0]["code"], "completion_evidence_conflict")
+            self.assertEqual(payload["errors"][0]["code"], "project_state_unreadable")
             self.assertEqual(fetch_task_state(db, task["task_id"])["status"], "ready")
             self.assertEqual(table_count(db, "task_events"), 1)
 

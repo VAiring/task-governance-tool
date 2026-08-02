@@ -25,6 +25,7 @@ from task_governance_tool.storage import (
     operational_sqlite_error,
     utc_now,
 )
+from task_governance_tool.tasks import read_internal_task
 
 
 CONFIG_RELATIVE_PATH = Path("config") / "effort-advisory.json"
@@ -810,15 +811,11 @@ def build_effort_advisory(
     db_path: Path | None = None,
     database_target: DatabaseTarget | None = None,
 ) -> EffortAdvisoryResult:
-    task = connection.execute(
-        """
-        SELECT task_id, current_contract_revision
-          FROM tasks
-         WHERE project_id = ?
-           AND task_id = ?
-        """,
-        (project.project_id, task_id),
-    ).fetchone()
+    task = read_internal_task(
+        connection,
+        project.project_id,
+        task_id,
+    )
     if task is None:
         raise EffortAdvisoryError("not_found", "task was not found")
     if not profile.enabled:

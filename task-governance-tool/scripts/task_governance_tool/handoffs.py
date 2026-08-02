@@ -13,6 +13,7 @@ from typing import Any, Sequence
 from task_governance_tool.storage import ProjectIdentity, utc_now
 from task_governance_tool.tasks import (
     TaskValidationError,
+    read_internal_task,
     validate_limit,
     validate_task_id,
     validate_text,
@@ -352,15 +353,11 @@ def record_handoff(
                 ) from exc
             raise
 
-    task_row = connection.execute(
-        """
-        SELECT task_id, current_contract_revision
-          FROM tasks
-         WHERE project_id = ?
-           AND task_id = ?
-        """,
-        (project.project_id, normalized_task_id),
-    ).fetchone()
+    task_row = read_internal_task(
+        connection,
+        project.project_id,
+        normalized_task_id,
+    )
     if task_row is None:
         raise HandoffError("not_found", "source task was not found")
 

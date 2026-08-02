@@ -105,6 +105,7 @@ def build_viewer_snapshot(
             connection,
             target.project,
             event_limit=VIEWER_EVENT_LIMIT,
+            source_schema_version=source_schema_version,
         )
         if source_schema_version < VIEWER_HISTORY_SCHEMA_VERSION:
             legacy_history = format_completion_history(

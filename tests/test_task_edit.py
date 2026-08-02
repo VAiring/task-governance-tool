@@ -604,7 +604,7 @@ class TaskEditTests(unittest.TestCase):
             self.assertEqual(fetch_task(db, mover["task_id"])["lane"], "SOURCE")
             self.assertEqual(db.read_bytes(), before)
 
-    def test_unrelated_edit_preserves_historical_whitespace_lane(self):
+    def test_unrelated_edit_rejects_historical_whitespace_lane_without_write(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
@@ -629,24 +629,22 @@ class TaskEditTests(unittest.TestCase):
             self.assertEqual(selected.returncode, 0, selected.stdout)
             self.assertEqual(json.loads(selected.stdout)["data"]["tasks"], [])
 
+            before = db.read_bytes()
             result = run_taskgov(
                 "task", "edit", "--repo", str(repo), "--db", str(db),
                 historical["task_id"], "--title", "Historical updated", "--json",
             )
 
-            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(result.returncode, 2, result.stdout)
+            self.assertEqual(
+                json.loads(result.stdout)["errors"][0]["code"],
+                "project_state_unreadable",
+            )
             stored = fetch_task(db, historical["task_id"])
-            self.assertEqual(stored["title"], "Historical updated")
+            self.assertEqual(stored["title"], "Historical")
             self.assertEqual(stored["lane"], " CORE ")
             self.assertEqual(stored["lane_order"], 1)
-            blocked = run_taskgov(
-                "task", "edit", "--repo", str(repo), "--db", str(db),
-                historical["task_id"], "--status", "in_progress", "--json",
-            )
-            self.assertEqual(blocked.returncode, 1, blocked.stdout)
-            self.assertEqual(
-                json.loads(blocked.stdout)["errors"][0]["code"], "invalid_argument"
-            )
+            self.assertEqual(db.read_bytes(), before)
             self.assertEqual(fetch_task(db, historical["task_id"])["status"], "ready")
 
     def test_done_task_accepts_only_exact_reopen_shape_without_write(self):
@@ -941,7 +939,7 @@ class TaskEditTests(unittest.TestCase):
             )
             self.assertEqual(
                 json.loads(overflow.stdout)["errors"][0]["code"],
-                "completion_history_inconsistent",
+                "project_state_unreadable",
             )
             self.assertEqual(db.read_bytes(), before_overflow)
 
@@ -971,8 +969,8 @@ class TaskEditTests(unittest.TestCase):
             self.assertEqual(
                 mismatch_payload["errors"],
                 [{
-                    "code": "completion_history_inconsistent",
-                    "message": "stored completion history is inconsistent",
+                    "code": "project_state_unreadable",
+                    "message": "project state could not be read safely",
                 }],
             )
             self.assertNotIn("historical-secret", mismatched.stdout)

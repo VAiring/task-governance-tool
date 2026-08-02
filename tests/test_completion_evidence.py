@@ -641,10 +641,10 @@ class CompletionEvidenceTests(unittest.TestCase):
                 "--review-complete",
             )
 
-            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.returncode, 2)
             self.assertEqual(
                 json.loads(result.stdout)["errors"][0]["code"],
-                "completion_evidence_conflict",
+                "project_state_unreadable",
             )
             self.assertEqual(db.read_bytes(), before)
 

@@ -15,6 +15,7 @@ from task_governance_tool.completion import (
 )
 from task_governance_tool.git_snapshot import GitSnapshotError, capture_git_snapshot
 from task_governance_tool.storage import (
+    SCHEMA_VERSION,
     DatabaseTarget,
     ProjectIdentity,
     begin_initialized_write,
@@ -246,10 +247,11 @@ def set_review_target(
         summary=f"Review target set: {target_kind}, generation {generation}",
         created_at=now,
     )
-    updated_row = connection.execute(
-        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
-        (project.project_id, normalized_task_id),
-    ).fetchone()
+    updated_row = read_internal_task(
+        connection,
+        project.project_id,
+        normalized_task_id,
+    )
     if updated_row is None:
         raise TaskRepositoryError("internal_error", "task was not readable after review target update")
     return ReviewTargetResult(
@@ -317,10 +319,11 @@ def set_git_snapshot_target(
         summary=f"Review target set: git_snapshot, generation {generation}",
         created_at=now,
     )
-    updated_row = connection.execute(
-        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
-        (project.project_id, normalized_task_id),
-    ).fetchone()
+    updated_row = read_internal_task(
+        connection,
+        project.project_id,
+        normalized_task_id,
+    )
     if updated_row is None:
         raise TaskRepositoryError(
             "internal_error",
@@ -786,43 +789,34 @@ def read_review_evidence(
     *,
     review_tier: int | None = None,
     recent_limit: int = 10,
+    validated_task: dict[str, Any] | sqlite3.Row | None = None,
+    source_schema_version: int = SCHEMA_VERSION,
 ) -> dict[str, Any]:
     if not 1 <= recent_limit <= 10:
         raise review_error("invalid_review_evidence", "recent review evidence limit must be 1 to 10")
-    task_has_base = any(
-        str(row["name"]) == "review_target_base_revision"
-        for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
-    )
-    receipt_has_base = any(
-        str(row["name"]) == "target_base_revision"
-        for row in connection.execute("PRAGMA table_info(review_receipts)").fetchall()
-    )
-    if task_has_base != receipt_has_base:
-        raise ReviewEvidenceError(
-            "invalid_review_evidence",
-            "stored review target and receipt schemas are inconsistent",
-        )
-    task_base_projection = (
-        "review_target_base_revision"
-        if task_has_base
-        else "'' AS review_target_base_revision"
-    )
-    task = connection.execute(
-        f"""
-        SELECT review_tier, review_target_kind, review_target_value,
-               {task_base_projection}, review_target_generation
-          FROM tasks WHERE project_id = ? AND task_id = ?
-        """,
-        (project_id, task_id),
-    ).fetchone()
+    task_has_base = source_schema_version >= 6
+    receipt_has_base = task_has_base
+    task = validated_task
+    if task is None:
+        task = read_internal_task(connection, project_id, task_id)
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     tier = int(task["review_tier"] if review_tier is None else review_tier)
     target_kind = str(task["review_target_kind"])
     target_value = str(task["review_target_value"])
-    target_base_revision = str(task["review_target_base_revision"])
+    target_base_revision = (
+        str(task["review_target_base_revision"])
+        if task_has_base
+        else ""
+    )
     generation = int(task["review_target_generation"])
-    validate_stored_review_target(dict(task))
+    validate_stored_review_target(
+        {
+            "review_target_kind": target_kind,
+            "review_target_value": target_value,
+            "review_target_base_revision": target_base_revision,
+        }
+    )
 
     total_receipts = int(
         connection.execute(

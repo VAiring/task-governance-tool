@@ -1434,7 +1434,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             self.assertNotIn("review_target_base_revision", serialized)
             self.assertNotIn(base, serialized)
 
-    def test_review_tier_downgrade_rejects_nonempty_snapshot_base_without_write(self):
+    def test_invalid_snapshot_base_fails_closed_before_review_tier_write(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
@@ -1455,10 +1455,10 @@ class ReviewEvidenceTests(unittest.TestCase):
                 "--review-tier", "1", "--review-tier-change-reason",
                 "Review scope is now localized", "--json",
             )
-            self.assertEqual(rejected.returncode, 1, rejected.stdout)
+            self.assertEqual(rejected.returncode, 2, rejected.stdout)
             self.assertEqual(
                 payload(rejected)["errors"][0]["code"],
-                "review_tier_downgrade_forbidden",
+                "project_state_unreadable",
             )
             self.assertEqual(db.read_bytes(), before)
 

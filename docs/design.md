@@ -14,6 +14,9 @@ caller-authored labels to a taskgov-owned verification subject. TG-M21.4A
 also freezes the schema-v18 verification-capacity compatibility correction
 below. TG-M21.4B implements the current v17 recovery-candidate classifier and
 TOCTOU reconciliation without activating schema v18 or public-limit changes.
+TG-M21.4C implements the current v17 shared stored Task row/batch validator
+across public projections, lifecycle bases, Viewer, doctor, setup, and recovery
+without changing the schema, public leaves, or valid output.
 TG-M16.4
 behavioral acceptance remains part of the published baseline. The TG-M20S
 successor observation reached its frozen `proceed_to_design` result and
@@ -122,8 +125,10 @@ The implementation keeps these narrow ownership boundaries:
   and transaction-scoped queries. Feature modules do not open raw SQLite
   connections.
 - `tasks.py`, `ordering.py`, and `selection.py` own task validation, lifecycle,
-  current/list projections, the shared sequential predecessor predicate, and
-  next-task selection.
+  current/list projections, the source-schema-aware stored Task row/batch
+  validator, the shared sequential predecessor predicate, and next-task
+  selection. `storage.py` supplies source-schema capability and the fixed
+  stored-state failure boundary rather than duplicating Task semantics.
 - `completion.py`, `completion_workflow.py`, and `git_snapshot.py` own typed
   completion evidence, read-only Git observations, completion planning, and
   review-to-commit snapshot binding.
@@ -713,6 +718,43 @@ The internal completion-cycle link added in schema v15 is never in
 allow-list explicitly. Latest-event ordering is
 `created_at DESC, rowid DESC`. Tool events remain bounded operational records,
 not raw logs.
+
+### Current TG-M21.4C Shared Stored Task Row/Batch Validator
+
+`tasks.py` owns one source-schema-aware validator for complete stored Task
+rows. Its capability object is constructed once per top-level read from the
+already-observed source schema and describes the verification limit and the
+presence of review-target base, Contract pointer, and completion-history
+coverage fields. The validator receives rows and expected project identity; it
+does not query schema metadata, mutate a row, or issue a database write.
+
+Exact text/nullable-text and SQLite integer storage classes are checked before
+any value helper can trim or coerce. The validator then applies field privacy
+and capacity, stable identity, enum, canonical lane/order/timestamp, and Task
+cross-field rules. It raises only `StorageError("project_state_unreadable",
+"project state could not be read safely")`. Current Task converters remain
+pure allow-list builders and are invoked only after their complete input batch
+passes.
+The shared Task fetch helpers map non-busy SQLite query or UTF-8 decode failure
+to that fixed error before a row reaches the validator, while preserving the
+existing `database_busy` result for actual busy/locked state.
+
+`list_tasks`, `list_current_tasks`, and `select_next_tasks` select complete
+rows with their existing SQL bounds and validate that selected batch before
+tag filtering, conversion, or compact omission; they never add a whole-project
+validation query. Single-Task reads and lifecycle/write bases route through
+the same validator. Whole-project consumers—doctor and Viewer—and setup or
+recovery validation load every Task row without a project filter and pass that
+complete ownership-checked batch. Managed recovery
+sets its explicit verification-local flag so only that field's privacy or
+source-capacity failure remains candidate-local; every other Task fault is
+structural and set-fatal.
+
+Viewer supplies the source version returned by snapshot validation. Review
+evidence consumes the already-validated Task where available and derives
+column capability from that version, removing the per-Task `PRAGMA` path.
+Routine Viewer failure occurs before rendering/replacement and preserves the
+last-good file; its caller applies the existing fixed maintenance warning.
 
 ### Sequential Ordering
 
@@ -2271,6 +2313,12 @@ state produces exit 2. Relocation mismatch is a successful
 advisory has `suggested_action=continue`; doctor creates no lock, directory,
 sidecar, database, event, backup, or Viewer.
 
+The coherent project snapshot loads complete Task rows once and validates the
+whole batch with the TG-M21.4C validator before computing Task counts. On a
+Task fault, doctor maps project state to `unreadable`, every other
+project-backed component to `unavailable`, and setup eligibility to false;
+the package observation remains independent.
+
 The package inspector strictly parses manifest v1, caps it at 256 KiB and 512
 core entries, rejects unknown/duplicate keys, invalid identity/version/origin/
 hash/path, traversal/backslashes/absolute paths, casefold collisions, and
@@ -2431,7 +2479,10 @@ committed Viewer-relevant event
 Setup invokes the same canonical renderer directly. There is no public Viewer
 command, output choice, browser launch, server, or browser-to-SQLite path.
 
-The repository selects all project Tasks in list order, at most 10 newest
+The repository selects complete rows for all project Tasks in list order and
+validates them as one source-schema-aware TG-M21.4C batch before any Task,
+review, or history projection. Validation failure occurs before rendering or
+replacement and preserves the last-good HTML. It then selects at most 10 newest
 events per Task by time/rowid, review evidence through the shared gate read
 model, and bounded completion history. Snapshot v4 contains snapshot/source
 schema versions, generated time, project ID/display only, counts, and explicit
@@ -2968,6 +3019,10 @@ a real consuming project or Git state. Tests cover:
 - task validation, ordering, pause/block/current/next, done/reopen,
   completion evidence, every review tier/target/receipt/finding, Contract,
   checkpoint, handoff, and Effort route;
+- the TG-M21.4C shared stored-Task fault matrix once in a focused validator
+  module, plus representative public/lifecycle/doctor/Viewer route canaries,
+  selected-batch query bounds, no-write failure, and last-good publication in
+  a separate consumer-boundary module;
 - Git option safety, canonical commit resolution, snapshot/index/tree binding,
   no mutation, and no lazy network;
 - concurrent readers/writers, short writer ownership, stable busy/WAL errors,

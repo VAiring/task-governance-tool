@@ -17,6 +17,7 @@ from task_governance_tool.completion import (
     CompletionEvidenceError,
     CompletionRequest,
     CompletionResolution,
+    FULL_GIT_OBJECT_ID,
     WRITABLE_EVIDENCE_KINDS,
     completion_evidence_values,
     resolve_completion_request,
@@ -39,9 +40,11 @@ from task_governance_tool.ordering import (
     incomplete_predecessor_sql,
 )
 from task_governance_tool.storage import (
+    SCHEMA_VERSION,
     CompletionHistory,
     DatabaseTarget,
     ProjectIdentity,
+    StorageError,
     begin_initialized_write,
     completion_history_inconsistent,
     current_schema_version,
@@ -49,7 +52,10 @@ from task_governance_tool.storage import (
     insert_native_completion_cycle_locked,
     match_current_done_completion_cycle_locked,
     read_completion_history,
+    stored_task_sqlite_error,
+    stored_task_verification_limit,
     utc_now,
+    validate_utc_timestamp,
 )
 
 
@@ -383,6 +389,413 @@ class CompletionPlan:
     request: CompletionRequest
     basis: CompletionBasis = field(repr=False)
     resolution: CompletionResolution
+
+
+@dataclass(frozen=True)
+class StoredTaskSchemaCapabilities:
+    """Source-schema facts used by the shared stored Task validator."""
+
+    source_schema_version: int
+    verification_limit: int
+    has_completion_commit: bool
+    has_pause_reason: bool
+    has_completion_evidence: bool
+    has_review_target: bool
+    has_review_target_base: bool
+    has_contract_revision: bool
+    has_completion_history_coverage: bool
+
+
+@dataclass(frozen=True)
+class StoredTaskValidationResult:
+    """Private validation result used only by managed recovery selection."""
+
+    verification_rejection: str | None = None
+
+
+def stored_task_schema_capabilities(
+    source_schema_version: object,
+) -> StoredTaskSchemaCapabilities:
+    """Resolve one immutable source-schema capability without reading SQLite."""
+
+    if (
+        type(source_schema_version) is not int
+        or not 1 <= source_schema_version <= SCHEMA_VERSION
+    ):
+        raise _stored_task_unreadable()
+    try:
+        verification_limit = stored_task_verification_limit(
+            source_schema_version
+        )
+    except StorageError as exc:
+        raise _stored_task_unreadable() from exc
+    return StoredTaskSchemaCapabilities(
+        source_schema_version=source_schema_version,
+        verification_limit=verification_limit,
+        has_completion_commit=source_schema_version >= 2,
+        has_pause_reason=source_schema_version >= 3,
+        has_completion_evidence=source_schema_version >= 4,
+        has_review_target=source_schema_version >= 5,
+        has_review_target_base=source_schema_version >= 6,
+        has_contract_revision=source_schema_version >= 8,
+        has_completion_history_coverage=source_schema_version >= 15,
+    )
+
+
+def _stored_task_unreadable() -> StorageError:
+    return StorageError(
+        "project_state_unreadable",
+        "project state could not be read safely",
+    )
+
+
+def fetch_stored_task_rows(
+    connection: sqlite3.Connection,
+    query: str,
+    parameters: tuple[Any, ...] | list[Any] = (),
+) -> list[sqlite3.Row]:
+    """Fetch a Task batch while preserving busy and sanitizing decode faults."""
+
+    try:
+        return connection.execute(query, parameters).fetchall()
+    except sqlite3.Error as exc:
+        raise stored_task_sqlite_error(exc) from exc
+
+
+def fetch_stored_task_row(
+    connection: sqlite3.Connection,
+    query: str,
+    parameters: tuple[Any, ...] | list[Any] = (),
+) -> sqlite3.Row | None:
+    """Fetch one Task row with the same storage-fault mapping as batches."""
+
+    try:
+        return connection.execute(query, parameters).fetchone()
+    except sqlite3.Error as exc:
+        raise stored_task_sqlite_error(exc) from exc
+
+
+def _stored_value(row: sqlite3.Row | dict[str, Any], field: str) -> object:
+    try:
+        if field not in row.keys():
+            raise KeyError(field)
+        return row[field]
+    except (IndexError, KeyError, TypeError, AttributeError) as exc:
+        raise _stored_task_unreadable() from exc
+
+
+def _stored_text(
+    row: sqlite3.Row | dict[str, Any],
+    field: str,
+    *,
+    required: bool = False,
+    limit: int | None = None,
+    verification_limit: int | None = None,
+    privacy_field: str | None = None,
+) -> tuple[str, str | None]:
+    value = _stored_value(row, field)
+    if type(value) is not str:
+        raise _stored_task_unreadable()
+    if required and not value.strip():
+        raise _stored_task_unreadable()
+    verification_rejection: str | None = None
+    try:
+        reject_private_or_raw_content(privacy_field or field, value)
+    except TaskValidationError as exc:
+        if field == "verification" and exc.code == "privacy_rejected":
+            verification_rejection = "privacy"
+        else:
+            raise _stored_task_unreadable() from exc
+    if limit is not None and len(value) > limit:
+        raise _stored_task_unreadable()
+    if (
+        verification_limit is not None
+        and len(value) > verification_limit
+        and verification_rejection != "privacy"
+    ):
+        verification_rejection = "capacity"
+    return value, verification_rejection
+
+
+def _stored_integer(
+    row: sqlite3.Row | dict[str, Any],
+    field: str,
+    *,
+    nullable: bool = False,
+    minimum: int = SQLITE_INT64_MIN,
+    maximum: int = SQLITE_INT64_MAX,
+) -> int | None:
+    value = _stored_value(row, field)
+    if value is None and nullable:
+        return None
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise _stored_task_unreadable()
+    return value
+
+
+def _stored_timestamp(
+    row: sqlite3.Row | dict[str, Any],
+    field: str,
+    *,
+    nullable: bool = False,
+) -> str | None:
+    value = _stored_value(row, field)
+    if value is None and nullable:
+        return None
+    if type(value) is not str:
+        raise _stored_task_unreadable()
+    try:
+        return validate_utc_timestamp(value, field=field)
+    except StorageError as exc:
+        raise _stored_task_unreadable() from exc
+
+
+def _validate_stored_completion_evidence(
+    row: sqlite3.Row | dict[str, Any],
+) -> None:
+    task = {
+        "completion_evidence_kind": _stored_text(
+            row,
+            "completion_evidence_kind",
+        )[0],
+        "completion_evidence_revision": _stored_text(
+            row,
+            "completion_evidence_revision",
+            limit=TEXT_LIMITS["completion_revision"],
+            privacy_field="completion_revision",
+        )[0],
+        "completion_evidence_reason": _stored_text(
+            row,
+            "completion_evidence_reason",
+            limit=TEXT_LIMITS["completion_evidence_reason"],
+        )[0],
+        "external_revision_approved": _stored_integer(
+            row,
+            "external_revision_approved",
+            minimum=0,
+            maximum=1,
+        ),
+        "completion_commit_required": _stored_integer(
+            row,
+            "completion_commit_required",
+            minimum=0,
+            maximum=1,
+        ),
+        "completion_commit_hash": _stored_text(
+            row,
+            "completion_commit_hash",
+            limit=TEXT_LIMITS["completion_revision"],
+            privacy_field="completion_revision",
+        )[0],
+    }
+    kind = str(task["completion_evidence_kind"])
+    revision = str(task["completion_evidence_revision"])
+    legacy_hash = str(task["completion_commit_hash"])
+    if kind == "git_commit" and set(revision) == {"0"}:
+        raise _stored_task_unreadable()
+    if kind == "legacy_unverified" and not revision:
+        raise _stored_task_unreadable()
+    try:
+        validate_evidence_matrix(task, allow_legacy=True)
+    except (CompletionEvidenceError, TypeError, ValueError, OverflowError) as exc:
+        raise _stored_task_unreadable() from exc
+
+
+def _validate_stored_review_target(
+    row: sqlite3.Row | dict[str, Any],
+    capabilities: StoredTaskSchemaCapabilities,
+) -> None:
+    kind = _stored_text(row, "review_target_kind")[0]
+    value = _stored_text(
+        row,
+        "review_target_value",
+        limit=TEXT_LIMITS["review_target_value"],
+    )[0]
+    generation = _stored_integer(
+        row,
+        "review_target_generation",
+        minimum=0,
+    )
+    base_revision = (
+        _stored_text(
+            row,
+            "review_target_base_revision",
+            limit=TEXT_LIMITS["review_target_value"],
+        )[0]
+        if capabilities.has_review_target_base
+        else ""
+    )
+    if not kind:
+        if value or base_revision:
+            raise _stored_task_unreadable()
+        return
+    if generation is None or generation <= 0 or not value or value != value.strip():
+        raise _stored_task_unreadable()
+    if kind == "git_commit":
+        if (
+            FULL_GIT_OBJECT_ID.fullmatch(value) is None
+            or set(value) == {"0"}
+            or base_revision
+        ):
+            raise _stored_task_unreadable()
+    elif kind == "diff_fingerprint":
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", value) is None or base_revision:
+            raise _stored_task_unreadable()
+    elif kind == "external_revision":
+        if base_revision:
+            raise _stored_task_unreadable()
+    elif kind == "git_snapshot":
+        if (
+            not capabilities.has_review_target_base
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", value) is None
+            or FULL_GIT_OBJECT_ID.fullmatch(base_revision) is None
+            or set(base_revision) == {"0"}
+        ):
+            raise _stored_task_unreadable()
+    else:
+        raise _stored_task_unreadable()
+
+
+def _validate_stored_task_row(
+    row: sqlite3.Row | dict[str, Any],
+    *,
+    capabilities: StoredTaskSchemaCapabilities,
+    expected_project_id: str,
+) -> str | None:
+    task_id = _stored_text(row, "task_id", required=True, limit=128)[0]
+    if task_id != task_id.strip():
+        raise _stored_task_unreadable()
+    project_id = _stored_text(row, "project_id", required=True)[0]
+    if project_id != expected_project_id:
+        raise _stored_task_unreadable()
+    _stored_text(row, "title", required=True, limit=TEXT_LIMITS["title"])
+    _stored_text(row, "description", limit=TEXT_LIMITS["description"])
+    kind = _stored_text(row, "kind")[0]
+    lane = _stored_text(row, "lane")[0]
+    lane_order = _stored_integer(row, "lane_order", nullable=True)
+    priority = _stored_text(row, "priority")[0]
+    status = _stored_text(row, "status")[0]
+    blocked_reason = _stored_text(row, "blocked_reason")[0]
+    pause_reason = (
+        _stored_text(
+            row,
+            "pause_reason",
+            limit=TEXT_LIMITS["pause_reason"],
+        )[0]
+        if capabilities.has_pause_reason
+        else ""
+    )
+    review_tier = _stored_integer(
+        row,
+        "review_tier",
+        minimum=0,
+        maximum=2,
+    )
+    _, verification_rejection = _stored_text(
+        row,
+        "verification",
+        verification_limit=capabilities.verification_limit,
+    )
+    _stored_text(row, "tags", limit=TEXT_LIMITS["tags"])
+    created_at = _stored_timestamp(row, "created_at")
+    updated_at = _stored_timestamp(row, "updated_at")
+    completed_at = _stored_timestamp(row, "completed_at", nullable=True)
+
+    allowed_statuses = STATUSES if capabilities.has_pause_reason else tuple(
+        value for value in STATUSES if value != "paused"
+    )
+    if (
+        kind not in KINDS
+        or priority not in PRIORITIES
+        or status not in allowed_statuses
+        or review_tier not in REVIEW_TIERS
+        or lane != canonical_lane(lane)
+        or (kind == "sequential" and (not lane or lane_order is None))
+        or (status == "blocked" and not blocked_reason.strip())
+        or (
+            capabilities.has_pause_reason
+            and (
+                (status == "paused" and not pause_reason.strip())
+                or (status != "paused" and pause_reason != "")
+            )
+        )
+        or (completed_at is None) != (status != "done")
+        or created_at is None
+        or updated_at is None
+    ):
+        raise _stored_task_unreadable()
+
+    if capabilities.has_completion_commit:
+        _stored_integer(
+            row,
+            "completion_commit_required",
+            minimum=0,
+            maximum=1,
+        )
+        _stored_text(
+            row,
+            "completion_commit_hash",
+            limit=TEXT_LIMITS["completion_revision"],
+            privacy_field="completion_revision",
+        )
+    if capabilities.has_completion_evidence:
+        _validate_stored_completion_evidence(row)
+    if capabilities.has_review_target:
+        _validate_stored_review_target(row, capabilities)
+    if capabilities.has_contract_revision:
+        _stored_integer(row, "current_contract_revision", minimum=0)
+    if capabilities.has_completion_history_coverage:
+        if _stored_text(row, "completion_history_coverage")[0] not in {
+            "legacy_unknown",
+            "complete",
+        }:
+            raise _stored_task_unreadable()
+    return verification_rejection
+
+
+def validate_stored_task_rows(
+    rows: list[sqlite3.Row] | tuple[sqlite3.Row, ...],
+    *,
+    source_schema_version: object,
+    expected_project_id: str,
+    verification_rejection_is_local: bool = False,
+) -> StoredTaskValidationResult:
+    """Validate one loaded Task batch before projection or derived use.
+
+    No stored value is coerced, normalized, rewritten, or included in an error.
+    The recovery-only flag preserves M21.4B's candidate-local exception for
+    verification privacy/capacity while every structural fault stays fatal.
+    """
+
+    if type(expected_project_id) is not str or not expected_project_id:
+        raise _stored_task_unreadable()
+    capabilities = stored_task_schema_capabilities(source_schema_version)
+    rejection: str | None = None
+    for row in rows:
+        row_rejection = _validate_stored_task_row(
+            row,
+            capabilities=capabilities,
+            expected_project_id=expected_project_id,
+        )
+        if row_rejection == "privacy":
+            rejection = "privacy"
+        elif row_rejection == "capacity" and rejection is None:
+            rejection = "capacity"
+    if rejection is not None and not verification_rejection_is_local:
+        raise _stored_task_unreadable()
+    return StoredTaskValidationResult(verification_rejection=rejection)
+
+
+def validate_current_stored_task_rows(
+    rows: list[sqlite3.Row] | tuple[sqlite3.Row, ...],
+    *,
+    expected_project_id: str,
+) -> None:
+    validate_stored_task_rows(
+        rows,
+        source_schema_version=SCHEMA_VERSION,
+        expected_project_id=expected_project_id,
+    )
 
 
 def validation_error(code: str, message: str, field: str | None = None) -> TaskValidationError:
@@ -1067,15 +1480,21 @@ def add_task(
             occurred_at=now,
             preflight=effort_preflight,
         )
-        task = connection.execute(
+        task = fetch_stored_task_row(
+            connection,
             "SELECT * FROM tasks WHERE task_id = ?",
             (task_id,),
-        ).fetchone()
+        )
         if task is None:
             raise TaskRepositoryError(
                 "internal_error",
                 "task was not readable after insert",
             )
+        validate_stored_task_rows(
+            [task],
+            source_schema_version=schema_version,
+            expected_project_id=project.project_id,
+        )
     except sqlite3.IntegrityError as exc:
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
@@ -1167,7 +1586,16 @@ def list_tasks(
            created_at,
            task_id
     """
-    rows = [row_to_task(row) for row in connection.execute(query, values).fetchall()]
+    query_values = list(values)
+    if requested_tag is None:
+        query += " LIMIT ?"
+        query_values.append(row_limit)
+    stored_rows = fetch_stored_task_rows(connection, query, query_values)
+    validate_current_stored_task_rows(
+        stored_rows,
+        expected_project_id=project.project_id,
+    )
+    rows = [row_to_task(row) for row in stored_rows]
     if requested_tag is not None:
         rows = [row for row in rows if task_matches_tag(str(row["tags"]), requested_tag)]
     tasks = rows[:row_limit]
@@ -1518,7 +1946,8 @@ def show_task(
     event_limit: int = 10,
 ) -> TaskShowResult:
     normalized_task_id = validate_task_id(task_id)
-    task_row = connection.execute(
+    task_row = fetch_stored_task_row(
+        connection,
         """
         SELECT *
           FROM tasks
@@ -1526,10 +1955,14 @@ def show_task(
            AND task_id = ?
         """,
         (project.project_id, normalized_task_id),
-    ).fetchone()
+    )
     if task_row is None:
         raise TaskRepositoryError("not_found", "task was not found")
 
+    validate_current_stored_task_rows(
+        [task_row],
+        expected_project_id=project.project_id,
+    )
     task = row_to_show_task(task_row)
     event_rows = connection.execute(
         """
@@ -1551,6 +1984,7 @@ def show_task(
         connection,
         project.project_id,
         normalized_task_id,
+        validated_task=task_row,
     )
     handoff_summary = handoff_summary_for_task(
         connection,
@@ -1607,6 +2041,7 @@ def list_tasks_for_viewer(
     project: ProjectIdentity,
     *,
     event_limit: int = 10,
+    source_schema_version: int = SCHEMA_VERSION,
 ) -> ViewerTaskListResult:
     """Return the complete, bounded task projection used by static viewers."""
     if not 1 <= event_limit <= 10:
@@ -1615,11 +2050,11 @@ def list_tasks_for_viewer(
             "viewer event limit must be between 1 and 10",
         )
 
-    task_rows = connection.execute(
+    task_rows = fetch_stored_task_rows(
+        connection,
         """
         SELECT *
           FROM tasks
-         WHERE project_id = ?
          ORDER BY
            CASE priority
              WHEN 'urgent' THEN 0
@@ -1633,8 +2068,12 @@ def list_tasks_for_viewer(
            created_at,
            task_id
         """,
-        (project.project_id,),
-    ).fetchall()
+    )
+    validate_stored_task_rows(
+        task_rows,
+        source_schema_version=source_schema_version,
+        expected_project_id=project.project_id,
+    )
 
     from task_governance_tool.reviews import read_review_evidence
 
@@ -1659,6 +2098,8 @@ def list_tasks_for_viewer(
             connection,
             project.project_id,
             str(task["task_id"]),
+            validated_task=task_row,
+            source_schema_version=source_schema_version,
         )
         tasks.append(task)
         event_count += len(events)
@@ -1709,7 +2150,8 @@ def list_current_tasks(
         status_predicate = "task.status = ?"
         parameters = (project.project_id, status_filter, row_limit)
         result_statuses = (status_filter,)
-    rows = connection.execute(
+    rows = fetch_stored_task_rows(
+        connection,
         f"""
         SELECT
           task.*,
@@ -1748,7 +2190,11 @@ def list_current_tasks(
          LIMIT ?
         """,
         parameters,
-    ).fetchall()
+    )
+    validate_current_stored_task_rows(
+        rows,
+        expected_project_id=project.project_id,
+    )
     tasks = []
     from task_governance_tool.checkpoints import read_latest_checkpoint
 
@@ -1782,7 +2228,8 @@ def list_current_tasks(
 
 
 def read_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> dict[str, Any] | None:
-    row = connection.execute(
+    row = fetch_stored_task_row(
+        connection,
         """
         SELECT *
           FROM tasks
@@ -1790,14 +2237,16 @@ def read_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> 
            AND task_id = ?
         """,
         (project_id, task_id),
-    ).fetchone()
+    )
     if row is None:
         return None
+    validate_current_stored_task_rows([row], expected_project_id=project_id)
     return row_to_task(row)
 
 
 def read_internal_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> dict[str, Any] | None:
-    row = connection.execute(
+    row = fetch_stored_task_row(
+        connection,
         """
         SELECT *
           FROM tasks
@@ -1805,9 +2254,10 @@ def read_internal_task(connection: sqlite3.Connection, project_id: str, task_id:
            AND task_id = ?
         """,
         (project_id, task_id),
-    ).fetchone()
+    )
     if row is None:
         return None
+    validate_current_stored_task_rows([row], expected_project_id=project_id)
     return row_to_internal_task(row)
 
 
@@ -1887,6 +2337,7 @@ def capture_completion_basis(
             project.project_id,
             normalized_task_id,
             review_tier=int(task["review_tier"]),
+            validated_task=task,
         )
     except ReviewEvidenceError as exc:
         review_evidence = None

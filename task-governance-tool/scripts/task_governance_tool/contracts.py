@@ -15,6 +15,7 @@ from task_governance_tool.tasks import (
     TaskValidationError,
     bounded_transition_summary,
     create_task_event,
+    read_internal_task as read_validated_internal_task,
     row_to_task,
     validate_legacy_m19_7_stored_text,
     validate_sqlite_int64,
@@ -472,18 +473,10 @@ def _read_internal_task(
     project_id: str,
     task_id: str,
 ) -> dict[str, Any]:
-    row = connection.execute(
-        """
-        SELECT *
-          FROM tasks
-         WHERE project_id = ?
-           AND task_id = ?
-        """,
-        (project_id, task_id),
-    ).fetchone()
-    if row is None:
+    task = read_validated_internal_task(connection, project_id, task_id)
+    if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
-    return dict(row)
+    return task
 
 
 def _rollback_savepoint(connection: sqlite3.Connection, savepoint: str) -> None:
@@ -588,10 +581,11 @@ def _activate_revision_zero(
             ),
             created_at=now,
         )
-        stored = connection.execute(
-            "SELECT * FROM tasks WHERE task_id = ?",
-            (existing["task_id"],),
-        ).fetchone()
+        stored = _read_internal_task(
+            connection,
+            project_id=project.project_id,
+            task_id=str(existing["task_id"]),
+        )
         if stored is None:
             raise TaskRepositoryError(
                 "internal_error",
@@ -673,12 +667,11 @@ def _later_revision(
         and values["acceptance"] == current["acceptance"]
         and values["constraints_text"] == current["constraints"]
     ):
-        row = connection.execute(
-            "SELECT * FROM tasks WHERE task_id = ?",
-            (existing["task_id"],),
-        ).fetchone()
-        if row is None:
-            raise TaskRepositoryError("not_found", "task was not found")
+        row = _read_internal_task(
+            connection,
+            project_id=project.project_id,
+            task_id=str(existing["task_id"]),
+        )
         return ContractEditResult(
             task=row_to_task(row),
             changed_fields=[],
@@ -840,10 +833,11 @@ def _later_revision(
             ),
             created_at=now,
         )
-        stored = connection.execute(
-            "SELECT * FROM tasks WHERE task_id = ?",
-            (existing["task_id"],),
-        ).fetchone()
+        stored = _read_internal_task(
+            connection,
+            project_id=project.project_id,
+            task_id=str(existing["task_id"]),
+        )
         if stored is None:
             raise TaskRepositoryError(
                 "internal_error",

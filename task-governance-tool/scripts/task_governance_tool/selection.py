@@ -15,8 +15,10 @@ from task_governance_tool.storage import ProjectIdentity
 from task_governance_tool.tasks import (
     KINDS,
     PRIORITIES,
+    fetch_stored_task_rows,
     row_to_task,
     validate_choice,
+    validate_current_stored_task_rows,
     validate_lane,
     validate_limit,
 )
@@ -103,7 +105,8 @@ def select_next_tasks(
     filters, values = next_task_filters(project, kind=kind, lane=lane, priority=priority)
     row_limit = validate_limit(limit, default=5)
     values.append(row_limit)
-    rows = connection.execute(
+    rows = fetch_stored_task_rows(
+        connection,
         f"""
         SELECT task.*, COUNT(*) OVER() AS total_matching
           FROM tasks AS task
@@ -124,7 +127,11 @@ def select_next_tasks(
          LIMIT ?
         """,
         values,
-    ).fetchall()
+    )
+    validate_current_stored_task_rows(
+        rows,
+        expected_project_id=project.project_id,
+    )
     tasks = [row_to_task(row) for row in rows]
     return TaskNextResult(
         tasks=tasks,

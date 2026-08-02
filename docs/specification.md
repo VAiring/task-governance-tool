@@ -17,7 +17,10 @@ caller-authored Receipt labels with a taskgov-owned verification subject at
 the schema-v18 boundary. TG-M21.4A additionally freezes the compatible
 schema-v18 verification-capacity split described below. TG-M21.4B reconciles
 the current schema-v17 managed-recovery classifier without activating schema
-v18, changing public Task admission, or weakening artifact hardening. The
+v18, changing public Task admission, or weakening artifact hardening.
+TG-M21.4C hardens every current schema-v17 stored Task read through one shared,
+source-schema-aware row/batch validator before public or internal projection;
+it changes no schema, command inventory, or valid output. The
 TG-M20S successor observation has reached its frozen terminal
 `proceed_to_design` result and no-rerun retirement boundary. TG-M20S.3 now
 freezes an accepted but inactive Tier 2 decomposition contract; it changes no
@@ -322,6 +325,14 @@ one query-only transaction. It also returns exactly one routing Boolean
 `effort_advisory_enabled`; invalid advisory configuration returns false plus
 the existing continuation warning. Text show does not add that flag.
 
+Every Task-loading operation applies the current TG-M21.4C stored-row contract
+before an allow-list projection, compact omission, derived-state use, or
+write-basis use. Bounded list/current/next reads validate the complete rows in
+their selected batch and do not add an unrelated full-table scan. `task show`
+and Task-backed lifecycle operations validate the selected complete row before
+reading or mutating dependent state. The shared failure result is defined in
+the current TG-M21.4C section below.
+
 The deterministic Skill call graph is:
 
 - one compact `task current` call to rediscover work;
@@ -363,6 +374,10 @@ Doctor data contains only `suggested_action`, `setup_eligible`, and
 one independent bounded filesystem observation. When state is readable, all
 project-backed components come from one lock-respecting read transaction; an
 unavailable project-backed component is exactly `{"code":"unavailable"}`.
+Doctor validates the complete project Task batch before returning Task-derived
+counts. A stored Task fault makes `project_state.code="unreadable"`, every
+other project-backed component `{"code":"unavailable"}`, and
+`setup_eligible=false`, with the fixed `project_state_unreadable` error.
 
 - `package` is the bounded manifest-integrity projection.
 - `project_state` contains only `code`, `schema_version`, and
@@ -497,6 +512,10 @@ Typed completion storage is exactly `completion_evidence_kind`,
 `review_target_kind`, `review_target_value`,
 `review_target_base_revision`, and generation. Values and their legacy
 projection must satisfy one cross-field matrix before storage or output.
+For a current schema-v17 source, every complete loaded Task row is validated
+for exact SQLite/Python storage class, bounded text/privacy, closed enums, and
+all Task cross-field matrices before any field can be omitted or exposed.
+Stored values are never coerced, trimmed, repaired, or rewritten by a read.
 
 Optional work is actionable when ready. Sequential work is actionable only
 when every earlier Task in its lane is done or cancelled. That same predicate
@@ -1657,6 +1676,58 @@ The current schema-v17 implementation admits 500 and locally rejects 501;
 TG-M22.2 must extend the same classifier to admit 1,000 and reject 1,001 for a
 schema-v18 candidate. It must not generalize local rejection to another field
 or to structural, identity, lineage, metadata, or TOCTOU failure.
+
+## Current TG-M21.4C Stored Task Read And Privacy Contract
+
+TG-M21.4C, Task `tg_task_efa90606fed8fba0`, owns the current schema-v17
+stored Task read hardening. Its authority reference is
+`conversation_decision:2026-08-03:pre-m22-qa-baseline-hardening`.
+Every Task-loading operation reads the source-schema capability once and
+validates each complete loaded Task row through one shared row/batch validator
+before public allow-listing, compact-field omission, filtering, derived-state
+use, or use as a write basis. The validator does not normalize, coerce,
+truncate, repair, or rewrite stored values.
+
+For schema v17, exact text and nullable-text storage classes, exact SQLite
+integers, stable IDs/project ownership, canonical lane/order, closed
+kind/priority/status/review-tier enums, canonical timestamps, bounded
+free-form privacy, and the blocker, pause, completion, current-review-target,
+Contract-pointer, and completion-history cross-field matrices are validated as
+one row contract. Text privacy is checked before its capacity. The validator
+uses source-schema capabilities rather than per-row schema introspection and
+accepts only columns valid for that supported source.
+Task-row fetches share the same boundary: malformed or undecodable SQLite TEXT
+and other non-busy fetch/decode faults use the fixed stored-state error before
+projection, while genuine SQLite busy/locked state retains `database_busy`.
+
+Bounded `task list`, `task current`, and `task next` operations select complete
+Task rows and validate only that selected batch before filtering or projection;
+they add no unrelated whole-table rescan. `task show`, Review Packet basis,
+checkpoint, handoff, Effort Advisory, completion/review/verification lifecycle,
+and metadata-only writes validate their selected Task row before dependent
+content or mutation. Doctor, Viewer capture, setup, migration/reentry, and
+managed recovery load every Task row without a project filter and validate the
+complete batch, including project ownership. A caller that
+already holds a validated Task row passes it to dependent review/history
+readers, avoiding per-Task schema introspection or duplicate Task reads.
+
+A current stored Task fault always fails closed with exit 2, code
+`project_state_unreadable`, and message
+`project state could not be read safely`. A normal command returns its existing
+command-specific empty data shape, no warning, no partial projection, no
+rejected bytes, and no write. Doctor uses the component mapping defined above.
+A routine post-commit Viewer refresh preserves the committed business result
+and last-good Viewer and emits only the existing fixed
+`viewer_refresh_failed` warning; setup preflight fails no-write with the fixed
+stored-state error, while a failure confined to setup's later Viewer stage
+remains `setup_incomplete`.
+
+Managed recovery preserves exactly one M21.4B exception: only stored Task
+`verification` privacy or source-schema capacity failure is candidate-local.
+Wrong storage class, enum, cross-field matrix, another Task field's
+privacy/capacity fault, or any other structural Task fault is whole-set fatal
+as `project_state_unreadable`; it cannot publish a canonical database or
+select an older candidate.
 
 ## Accepted But Inactive TG-M21.4A Capacity Compatibility Details
 
@@ -2865,8 +2936,10 @@ atomically replaces; failure preserves last good.
 ### Snapshot v4
 
 Snapshot v4 accepts source schemas v5-v17. One query-only transaction validates
-schema/project/binding, reads generation, and assembles rows; rendering and
-publication occur after close.
+schema/project/binding, reads generation, validates the complete source-aware
+Task batch through the TG-M21.4C boundary, and assembles rows; rendering and
+publication occur after close. A stored Task fault produces no snapshot or
+replacement and therefore preserves the last-good Viewer.
 
 It contains version/UTC `generated_at`, project ID/display, source schema,
 seven status counts, explicit Task allow-list, newest at most 10 sanitized
@@ -2998,7 +3071,11 @@ traceback, raw stream dump, and large diff patterns are rejected with
 `privacy_rejected` before storage. Rejected patterns include bearer tokens,
 authorization headers, private-key blocks, `password=`, `token=`, and
 `api_key=`. Public read projections revalidate stored content and cross-field
-matrices. The existing `lane` and `blocked_reason` inputs have no numeric
+matrices through the current TG-M21.4C shared validator before omission or
+exposure. Invalid stored Task content returns only
+`project_state_unreadable` / `project state could not be read safely`, never
+the rejected value or a caller-input error. The existing `lane` and
+`blocked_reason` inputs have no numeric
 character limit and still use the common privacy guard and state validation.
 `lane` is canonicalized by trimming outer whitespace; `blocked_reason` is
 retained as supplied after string/privacy checks.
@@ -3035,6 +3112,7 @@ sequential_predecessor_incomplete done_task_requires_reopen
 review_tier_downgrade_forbidden privacy_rejected not_found
 db_not_initialized migration_required schema_too_new project_mismatch
 project_relocation_required unsupported_journal_mode database_busy
+project_state_unreadable
 review_target_required review_target_missing review_target_mismatch
 review_changes_requested review_receipts_insufficient
 review_finding_unresolved review_receipt_mismatch

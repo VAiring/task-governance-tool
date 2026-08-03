@@ -16,6 +16,7 @@ M20_RETIREMENT_ANCHOR = "dd662a861f3a224bc17f021e0dc0ed6f20be6bc1"
 M20_HISTORY_SHA256 = "1164c65d0270aeef35311a061064c23cf14c1726ad647568598e0fcb2718405d"
 M20S_RETIREMENT_ANCHOR = "0eaeb9691c0ca4c316ad541ee4dd634287f1ccef"
 M20S_HISTORY_SHA256 = "9f7064d5fb74fe4e6a10c44d4e9ebb70b1b2b6a3969843d7e68775e26668432d"
+PRE_M22_HISTORY_SHA256 = "426d27bb9189349439b7a2c5764bad0b2035d9cdd6dfd40b7152d45d2054728f"
 M20S3_TASK = "tg_task_286129dbca4d25ab"
 ROADMAP_SOURCE_COMMIT = "af5e19545e4f5b59817c70fbc5e2763c0dbf2e1e"
 RETIRED_ROADMAP = ROOT / "docs" / "implementation-roadmap.md"
@@ -200,13 +201,11 @@ class DocumentHistoryTests(unittest.TestCase):
             encoding="utf-8-sig"
         )
         design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8-sig")
-        plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
         cli_contracts = (
             ROOT / "task-governance-tool" / "references" / "cli_contracts.md"
         ).read_text(encoding="utf-8-sig")
         specification_flat = " ".join(specification.split())
         design_flat = " ".join(design.split())
-        plan_flat = " ".join(plan.split())
         cli_contracts_flat = " ".join(cli_contracts.split())
 
         current_heading = (
@@ -241,7 +240,7 @@ class DocumentHistoryTests(unittest.TestCase):
         m214d_section = specification[m214d_start:m214d_next_start]
         self.assertEqual(
             specification[m214d_next_start:].splitlines()[0],
-            "## Accepted But Inactive TG-M21.4A Capacity Compatibility Details",
+            "## SQLite, Migration, And Concurrency",
         )
         self.assertIn("Task `tg_task_7051724dca3f1501`", m214d_section)
         self.assertIn(
@@ -346,8 +345,6 @@ class DocumentHistoryTests(unittest.TestCase):
             "no valid matching generation fail with",
             cli_contracts_flat,
         )
-        self.assertIn("pre-selection structural faults", plan_flat)
-        self.assertIn("post-plan TOCTOU faults", plan_flat)
         self.assertIn(
             "| recovery-set structural/set-fatal defect | the existing "
             "specific resolver error where applicable, otherwise "
@@ -355,197 +352,6 @@ class DocumentHistoryTests(unittest.TestCase):
             specification_flat,
         )
         self.assertIn("test_m214b_legacy_recovery_boundaries.py", design)
-
-    def test_m21_design_and_m20s_closed_decision_survive_roadmap_retirement(self):
-        specification = (ROOT / "docs" / "specification.md").read_text(
-            encoding="utf-8-sig"
-        )
-        design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8-sig")
-        plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
-        active = specification + design + plan
-
-        for document in (specification, design, plan):
-            self.assertIn(M20S3_TASK, document)
-        specification_flat = " ".join(specification.split())
-        design_flat = " ".join(design.split())
-        for document in (specification, design):
-            document_flat = " ".join(document.split())
-            self.assertIn(
-                "Accepted But Inactive TG-M20S.3",
-                document_flat,
-            )
-        self.assertIn(
-            "not current Skill or product behavior",
-            specification_flat,
-        )
-        self.assertIn(
-            "Nothing in this section is wired into the current package",
-            design_flat,
-        )
-        for marker in (
-            "register-bounded-set",
-            "register-single",
-            "no-write",
-            "acceptance_independent=yes",
-            "verification_independent=yes",
-            "commit_independent=yes",
-            "completion_independent=yes",
-            "keep-current",
-            "revise-current",
-            "propose-successor",
-            "handoff",
-            "pause",
-            "block",
-            "At most one proposal",
-            "scope disposition occurs before any continuation status",
-            "Handoff is not lossless proposal storage",
-            "summarized in Handoff first",
-            "each at most 1,000 characters",
-        ):
-            self.assertIn(marker, specification_flat)
-        for marker in (
-            "register_bounded_set",
-            "register_single",
-            "no_write",
-            "one-to-one, explicitly accepted outcomes",
-            "Contract-only edit is performed first",
-            "task-governance-tool/SKILL.md",
-            "task-governance-tool/references/task_workflow.md",
-            "task-governance-tool/release-manifest.json",
-            "Neutral Forward-Test Boundary",
-            "failure after one successful `task add`",
-            "Handoff/resume in a fresh session",
-            "valid proposed Contract fields exceed Handoff bounds",
-        ):
-            self.assertIn(marker, design_flat)
-        for marker in (
-            "automatic Task creation",
-            "In-scope discovery",
-            "cross-module failure",
-            "normal Task-loop call count",
-        ):
-            self.assertIn(marker, specification_flat)
-        self.assertNotIn("does not register such a Task", specification)
-        self.assertIn("E=2,Q=2,U=2", active)
-        self.assertIn(
-            "history/v0.10.0/m20s-task-decomposition.md",
-            active,
-        )
-        self.assertNotIn(
-            "Approved Temporary TG-M20S",
-            active,
-        )
-        self.assertIn("The retained static sequence", active)
-
-        self.assertIn("Current TG-M21 Verification Receipt Contract", specification)
-        self.assertIn("Current TG-M21 Verification Receipt Design", design)
-        for document in (specification, design):
-            document_flat = " ".join(document.split())
-            self.assertIn("schema v17", document_flat)
-            self.assertIn("21 public command", document_flat)
-            self.assertIn("verification receipt add", document_flat)
-
-        for marker in (
-            "command_label",
-            "result",
-            "source_revision",
-            "duration",
-            "scope_coverage",
-            "verification_receipt_required",
-            "verification_receipt_blocking",
-            "expected-target-generation",
-            "verification_basis_version",
-            "verification_expectation_digest",
-            "verification_receipt_id",
-            "no per-Task Receipt query",
-            "pass/full",
-            "TG-M21.2 atomic vertical activation",
-            "TG-M21.3 integrated acceptance",
-        ):
-            self.assertIn(marker, active)
-
-        self.assertIn(
-            "The retained static sequence has one atomic activation boundary",
-            plan,
-        )
-        m21_section = plan[plan.index("### Current Authority Layout") :]
-        for task_id in (
-            "tg_task_a6f5ec3147440e53",
-            "tg_task_8e30cf88c9018824",
-            "tg_task_2f6fd712dd83f250",
-            "tg_task_a42cb5d0383980bd",
-        ):
-            self.assertIn(task_id, m21_section)
-
-        storage = (
-            ROOT
-            / "task-governance-tool"
-            / "scripts"
-            / "task_governance_tool"
-            / "storage.py"
-        ).read_text(encoding="utf-8")
-        skill = (ROOT / "task-governance-tool" / "SKILL.md").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("SCHEMA_VERSION = 17", storage)
-        self.assertIn("verification receipt add", skill)
-        self.assertTrue(
-            (
-                ROOT
-                / "task-governance-tool"
-                / "scripts"
-                / "task_governance_tool"
-                / "verification_receipts.py"
-            ).exists()
-        )
-
-    def test_m211b_retires_roadmap_and_preserves_positive_authority(self):
-        specification = (ROOT / "docs" / "specification.md").read_text(
-            encoding="utf-8-sig"
-        )
-        design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8-sig")
-        plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
-        active = specification + design + plan
-        normalized_plan = " ".join(plan.split())
-
-        self.assertFalse(RETIRED_ROADMAP.exists())
-        for task_id in (
-            "tg_task_a6f5ec3147440e53",
-            "tg_task_8e30cf88c9018824",
-            "tg_task_2f6fd712dd83f250",
-            "tg_task_a42cb5d0383980bd",
-        ):
-            self.assertIn(task_id, plan)
-        for marker in (
-            "TG-M21-VERIFICATION-RECEIPTS",
-            "TG-M21.1A / 12",
-            "TG-M21.1B / 14",
-            "TG-M21.2 / 20",
-            "TG-M21.3 / 30",
-            "physical-deletion authority",
-            "execute no project command or network/external mutation",
-            "bounded fixes only",
-        ):
-            self.assertIn(marker, normalized_plan)
-        self.assertIn("Current TG-M21 Verification Receipt", active)
-        self.assertIn(
-            "project-local Task database, inspected through the public CLI",
-            normalized_plan,
-        )
-        for m12_marker in (
-            "tg_task_1f7503aca5e32cdc",
-            "Task Contract: revision zero",
-            "SCOPE-CONTROL` / 40",
-            "fixed bounded retry",
-            "bounded receiver acceptance receipt",
-            "zero additional LLM decisions",
-            "two current-target Tier 2 review gates",
-        ):
-            self.assertIn(m12_marker, normalized_plan)
-        self.assertNotIn("(docs/implementation-roadmap.md)", active)
-        self.assertNotIn("## Concise Completion Index", plan)
-        self.assertNotIn("## Implementation Execution Status", plan)
-        self.assertNotIn("| Unit | Task | Current gate |", plan)
 
     def test_archives_are_fixed_exact_captures_with_non_authority_banners(self):
         version_root = HISTORY_ROOT / "v0.10.0"
@@ -687,6 +493,16 @@ class DocumentHistoryTests(unittest.TestCase):
         }
         self.assertEqual(actual_archives, indexed_archives)
 
+        pre_m22_relative = "v0.11.0/pre-m22-completed-execution.md"
+        pre_m22_text = (HISTORY_ROOT / pre_m22_relative).read_text(
+            encoding="utf-8-sig"
+        )
+        self.assertEqual(
+            hashlib.sha256(pre_m22_text.encode("utf-8")).hexdigest(),
+            PRE_M22_HISTORY_SHA256,
+        )
+        self.assertEqual(index.count(f"]({pre_m22_relative})"), 1)
+
     def test_m20_study_is_retired_to_no_rerun_tombstones(self):
         receipt_root = ROOT / "fixtures" / "m20"
         receipt_paths = sorted(receipt_root.glob("*.json"))
@@ -809,250 +625,6 @@ class DocumentHistoryTests(unittest.TestCase):
                     "test_m20s_decomposition_harness*.pyc"
                 )
             )
-        )
-
-    def test_governing_and_historical_markdown_links_resolve(self):
-        active_documents = [
-            ROOT / "AGENTS.md",
-            ROOT / "README.md",
-            ROOT / "plan.md",
-            ROOT / "docs" / "specification.md",
-            ROOT / "docs" / "design.md",
-            HISTORY_ROOT / "README.md",
-        ]
-        link_pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
-        checked = 0
-        for document in active_documents:
-            text = document.read_text(encoding="utf-8")
-            for target in link_pattern.findall(text):
-                path_text = target.split("#", 1)[0]
-                if not path_text or "://" in path_text or path_text.startswith("mailto:"):
-                    continue
-                checked += 1
-                resolved = (document.parent / path_text).resolve()
-                self.assertTrue(
-                    resolved.is_file(),
-                    f"{document.relative_to(ROOT)} -> {target}",
-                )
-
-        immutable_documents = (
-            HISTORY_ROOT / "v0.10.0" / "m20-operational-baseline.md",
-            HISTORY_ROOT / "v0.10.0" / "m20s-task-decomposition.md",
-        )
-        for document in immutable_documents:
-            text = document.read_text(encoding="utf-8")
-            for target in link_pattern.findall(text):
-                path_text = target.split("#", 1)[0]
-                if not path_text or "://" in path_text:
-                    continue
-                checked += 1
-                resolved = (document.parent / path_text).resolve()
-                if resolved == RETIRED_ROADMAP.resolve():
-                    self.assertFalse(resolved.exists())
-                else:
-                    self.assertTrue(
-                        resolved.is_file(),
-                        f"{document.relative_to(ROOT)} -> {target}",
-                    )
-
-        for relative, expected in ARCHIVES.items():
-            document = HISTORY_ROOT / "v0.10.0" / relative
-            data = document.read_bytes()
-            banner = data[: -expected["body_size"]].decode("utf-8")
-            for target in link_pattern.findall(banner):
-                path_text = target.split("#", 1)[0]
-                if not path_text or "://" in path_text:
-                    continue
-                checked += 1
-                resolved = (document.parent / path_text).resolve()
-                if resolved == RETIRED_ROADMAP.resolve():
-                    self.assertFalse(resolved.exists())
-                else:
-                    self.assertTrue(
-                        resolved.is_file(),
-                        f"{document.relative_to(ROOT)} banner -> {target}",
-                    )
-
-        retirement_data = ROADMAP_RETIREMENT_CAPTURE.read_bytes()
-        source_body = subprocess.run(
-            [
-                "git",
-                "show",
-                f"{ROADMAP_SOURCE_COMMIT}:docs/implementation-roadmap.md",
-            ],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-        ).stdout
-        retirement_prefix = retirement_data[: -len(source_body)].decode("utf-8")
-        for target in link_pattern.findall(retirement_prefix):
-            path_text = target.split("#", 1)[0]
-            if not path_text or "://" in path_text:
-                continue
-            checked += 1
-            resolved = (ROADMAP_RETIREMENT_CAPTURE.parent / path_text).resolve()
-            self.assertTrue(
-                resolved.is_file(),
-                f"{ROADMAP_RETIREMENT_CAPTURE.relative_to(ROOT)} -> {target}",
-            )
-        self.assertGreaterEqual(checked, 40)
-
-    def test_active_authority_is_concise_and_forward_evidence_is_historical(self):
-        plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
-        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-
-        self.assertLess(len(plan.splitlines()), 500)
-        self.assertFalse(RETIRED_ROADMAP.exists())
-        self.assertTrue(ROADMAP_RETIREMENT_CAPTURE.is_file())
-        self.assertNotIn("## Implementation Execution Status", plan)
-        self.assertNotIn("| Unit | Task | Current gate |", plan)
-        self.assertFalse(any((ROOT / "docs" / "forward-tests").glob("*.md")))
-        self.assertIn("docs/history/README.md", agents)
-        self.assertIn("non-authoritative", agents)
-        self.assertIn("docs/history/README.md", plan)
-
-    def test_post_release_authority_is_synchronized_and_plan_avoids_handoff_mirror(
-        self,
-    ):
-        active_paths = (
-            ROOT / "docs" / "specification.md",
-            ROOT / "docs" / "design.md",
-            ROOT / "plan.md",
-            ROOT / "README.md",
-            ROOT / "docs" / "release-install.md",
-        )
-        active = {
-            path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8-sig")
-            for path in active_paths
-        }
-        for relative, text in active.items():
-            with self.subTest(relative=relative):
-                self.assertIn(CAPTURE_M19_PUBLICATION, text)
-                self.assertIn("362617903", text)
-                self.assertIn("prerelease", text.lower())
-
-        combined = "\n".join(active.values())
-        for stale in (
-            "TG-M19.6A is the current corrective unit",
-            "reacceptance required after TG-M19.6A",
-            "Apache-2.0 is selected but not applied until",
-            "selected but cannot be applied until",
-            "Before publication, run at least",
-        ):
-            self.assertNotIn(stale, combined)
-
-        retirement_data = ROADMAP_RETIREMENT_CAPTURE.read_bytes()
-        roadmap = retirement_data[-34_165:].decode("utf-8-sig")
-        for task_id in (
-            "tg_task_e452e6eb7dcf0e08",
-            "tg_task_d0e8ac1287bd07a4",
-            "tg_task_704ecd1d1e2f7552",
-            "tg_task_0f76a52915987511",
-        ):
-            self.assertIn(task_id, roadmap)
-
-        m20_units = (
-            ("tg_task_43fd4b96c9ca92a1", 10, 2),
-            ("tg_task_2885725486bec173", 20, 2),
-            ("tg_task_8efb270f74360308", 30, 1),
-            ("tg_task_787f976a5e9daa7e", 40, 1),
-            ("tg_task_f6c19be1c10ad3ab", 50, 2),
-        )
-        positions = []
-        for task_id, lane_order, review_tier in m20_units:
-            positions.append(roadmap.index(task_id))
-            self.assertRegex(
-                roadmap,
-                (
-                    rf"Task: `{task_id}`\n"
-                    rf"Lane/order: `TG-M20-OPERATIONAL-BASELINE` / "
-                    rf"{lane_order}\n"
-                    rf"Review tier: Tier {review_tier}\n"
-                ),
-            )
-        self.assertEqual(positions, sorted(positions))
-
-        normalized_combined = " ".join(combined.split())
-        self.assertNotIn("TG-M19.14 is active", normalized_combined)
-        design = active["docs/design.md"]
-        self.assertIn("Completed TG-M20 Study Boundary", design)
-        self.assertIn("history/v0.10.0/m20-operational-baseline.md", design)
-        for retired_contract_marker in (
-            "m20-operational-observation-v1",
-            "m20-observation-v1\\0",
-            "There is no rerun, replacement subject",
-        ):
-            self.assertNotIn(retired_contract_marker, design)
-
-        m20_history = (
-            HISTORY_ROOT / "v0.10.0" / "m20-operational-baseline.md"
-        ).read_text(encoding="utf-8")
-        for synthesis_marker in (
-            "NON-AUTHORITATIVE STUDY HISTORY",
-            CAPTURE_M20_BASELINE,
-            "machine_observed",
-            "historically_reconstructed",
-            "observer_attested",
-            "vp_cli_contract",
-            "sp_handoff_control",
-            "E=1`, `Q=1`, and `U=3",
-            "TG-M21 Verification Receipts | `proceed_to_design`",
-            "Skill-only proportional-verification guardrail | `observe_more`",
-            "Bounded user-approved Task decomposition | `observe_more`",
-        ):
-            self.assertIn(synthesis_marker, m20_history)
-
-        plan = active["plan.md"]
-        handoff_scan = combined + "\n" + (ROOT / "AGENTS.md").read_text(
-            encoding="utf-8"
-        )
-        self.assertNotIn("## Pending Local Handoffs", handoff_scan)
-        self.assertNotRegex(handoff_scan, r"tg_handoff_[0-9a-f]{16}")
-        self.assertNotRegex(
-            handoff_scan,
-            (
-                r"(?i)(?:reports|contains|has)[^.]{0,120}\b"
-                r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b"
-                r"[^.]{0,80}(?:pending[_ -]?handoff|handoff records?)"
-            ),
-        )
-        normalized_plan = " ".join(plan.split())
-        self.assertRegex(
-            normalized_plan,
-            r"Task database[^.]{0,200}handoff",
-        )
-        self.assertRegex(
-            normalized_plan,
-            r"does not mirror[^.]{0,100}handoff",
-        )
-        for candidate in (
-            "project-profile detection",
-            "dependency graphs",
-            "default-browser launch",
-            "event-history or current/list pagination",
-            "once-daily GitHub update check",
-            "versioned local intake and transport contract",
-        ):
-            self.assertIn(candidate, normalized_plan)
-
-        specification = " ".join(
-            active["docs/specification.md"].lower().split()
-        )
-        design = " ".join(design.lower().split())
-        self.assertIn(
-            "current-generation changes-requested receipt",
-            specification,
-        )
-        self.assertIn(
-            "unresolved high/medium finding from any recorded generation",
-            specification,
-        )
-        self.assertIn("across all task receipts", design)
-
-        release_body = (ROOT / "docs" / "releases" / "v0.10.0.md").read_bytes()
-        self.assertEqual(
-            hashlib.sha256(release_body).hexdigest(),
-            "aaa118a3fbbb261ec6a24f7a80f50f161e606a86857f99e17f957f34ba044a03",
         )
 
     def test_retired_completion_index_preserves_pre_task_db_lineage(self):

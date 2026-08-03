@@ -20,15 +20,17 @@ workspace.
 - The intended repository root is `C:\WorkSpace\task-governance-tool`.
 - The installable package, CLI, migrations, tests, and formal documents already
   exist; inspect them before changing an established contract.
-- Supported product behavior belongs in `docs/specification.md`, implementation
-  structure in `docs/design.md`, and approved static execution contracts,
-  current decisions, open issues, and future candidates in `plan.md`. The
-  project-local Task database, inspected through the public CLI, owns live Task
-  state and evidence. Published artifact and install identity belongs in
-  `docs/release-install.md`; completed milestone narratives and superseded
-  evidence are indexed as non-authoritative lineage by
-  `docs/history/README.md`. Consult those owners instead of mirroring volatile
-  status here.
+- `docs/authority.md` is the concise repository authority index. It routes
+  product behavior to `docs/specification.md`, implementation structure to
+  `docs/design.md`, current decisions, open issues, cross-sequence gateways,
+  and non-delegated static contracts to `plan.md`, and each indexed inactive
+  sequence's exact units to its conditional execution contract. The
+  project-local Task database, inspected
+  through the public CLI, owns live Task state and evidence. Published artifact
+  and install identity belongs in `docs/release-install.md`; completed
+  milestone narratives and superseded evidence are indexed as
+  non-authoritative lineage by `docs/history/README.md`. Consult those owners
+  instead of mirroring volatile status here.
 - The workspace is Git-managed. The checked-out committed lineage determines
   which revision of the active governing documents applies locally; a default
   or legacy branch name is not authority by itself. Continue to verify Git
@@ -59,37 +61,46 @@ workspace.
 
 ## Source Of Truth
 
-Before design or implementation work, read and follow:
+At the start of every Task, read and follow the minimal start set:
 
 1. `AGENTS.md`
-2. `docs/specification.md`
-3. `docs/design.md`
-4. `plan.md`
-5. directly coupled code, config, schemas, tests, examples, and fixtures
-6. files under root `references/` as reference only
+2. `docs/authority.md`
+3. the live Task Contract through the public CLI
+
+Then use the authority index and exact Task Contract to select only the
+applicable current or conditional sections, directly coupled code, config,
+schemas, tests, examples, and fixtures. Files under root `references/` remain
+reference only. Do not load history during normal implementation or search.
 
 If these documents conflict:
 
 - Follow `AGENTS.md` for agent behavior, safety, and workflow discipline.
 - For product behavior, prefer `docs/specification.md`.
 - For implementation structure, prefer `docs/design.md`.
-- For approved execution-unit purpose, scope, dependency order, permission
-  boundaries, and verification, review, and completion gates, prefer
-  `plan.md`.
-- Use `plan.md` for those static execution contracts, future candidates,
-  current decisions, and open issues. It is not the execution-status, evidence,
-  or historical milestone log. Inspect live Task state and evidence through
-  the public CLI.
+- For current decisions, open issues, cross-sequence gateways, and static
+  contracts not delegated by the authority index, prefer `plan.md`.
+- For an indexed inactive sequence, prefer the exact conditional formal
+  document and anchor routed by `docs/authority.md` and the Task Contract for
+  that unit's purpose, scope, order, dependency, permission boundary, and gates.
+- `plan.md` is not the execution-status, evidence, or historical milestone log.
+  Inspect live Task state and evidence through the public CLI.
 - If a required product decision is missing, record it as an open issue in
   `plan.md` or ask the user before hard-coding behavior.
 
 ## Reread Rule
 
-- Re-read `AGENTS.md` at the start of each new task.
-- Re-read `AGENTS.md` at the start of every milestone and execution unit before
-  planning, editing, verification, or review.
-- Re-read `docs/specification.md`, `docs/design.md`, and `plan.md` before
-  implementation-affecting decisions.
+- Re-read the minimal start set at the start of each new Task and at every
+  milestone or execution-unit boundary before planning, editing, verification,
+  or review.
+- Before an implementation-affecting decision, read every owner and exact
+  section selected by `docs/authority.md` and the current Task Contract. Read
+  directly coupled implementation and tests; do not substitute memory or a
+  milestone summary.
+- Escalate to a full read of `docs/specification.md`, `docs/design.md`,
+  `plan.md`, and every affected conditional contract for an authority-layout
+  transition, a cross-cutting behavior/schema/CLI/privacy/permission change, a
+  missing or ambiguous route, or a conflict across owners. Full reads are an
+  exception triggered by scope or uncertainty, not the normal start path.
 - If remembered context and current documents differ, follow the current
   documents.
 
@@ -214,11 +225,12 @@ The product must not become:
 - Do not duplicate release- or milestone-specific product contracts, status,
   command inventories, schemas, constants, truth tables, acceptance matrices,
   or history in this file. Product behavior belongs in `docs/specification.md`,
-  implementation structure in `docs/design.md`, approved static execution
-  purpose, scope, dependency order, permission boundaries, and gates together
-  with current decisions and open issues in `plan.md`, live Task state and
-  evidence in the project-local Task database through the public CLI, and
-  immutable non-authoritative lineage behind `docs/history/README.md`.
+  implementation structure in `docs/design.md`, current decisions, open issues,
+  cross-sequence gateways, and non-delegated static contracts in `plan.md`,
+  exact indexed inactive-unit purpose, scope, order, dependency, permission, and gates
+  in the conditional formal document selected by `docs/authority.md`, live Task
+  state and evidence in the project-local Task database through the public CLI,
+  and immutable non-authoritative lineage behind `docs/history/README.md`.
 - Treat the current CLI, storage, setup/doctor, maintenance, Viewer, and output
   contracts as established. Read their exact current formal sections and
   directly coupled code and tests before changing them; do not reconstruct them
@@ -244,6 +256,9 @@ The product must not become:
   for supported current behavior must remain in the active governing
   documents; history may preserve lineage, rationale, and old evidence but
   never fills a gap in current authority.
+- Normal repository search must exclude `docs/history/`. Search history only
+  when the current Task explicitly needs lineage, migration review, or recovery
+  evidence, and name that reason before doing so.
 
 ## SQLite And State Rules
 
@@ -348,8 +363,8 @@ The product must not become:
 - Before implementing, identify the intended outcome, write scope,
   verification gate, and review gate.
 - Prefer one verified slice over broad unfinished scaffolding.
-- For design-affecting work, update `plan.md` or the relevant governing doc in
-  the same task.
+- For design-affecting work, update the applicable owner routed by
+  `docs/authority.md` in the same Task.
 - For code work, add or update focused tests proportional to risk.
 - If verification cannot be run, state the limitation and run the strongest
   relevant check available.
@@ -359,8 +374,8 @@ The product must not become:
 
 ## Execution Plan Before Substantial Implementation
 
-- Before broad implementation, create or update an implementation plan in
-  `plan.md` or a later formal implementation-task document.
+- Before broad implementation, create or update an implementation plan in the
+  static or conditional owner routed by `docs/authority.md`.
 - The execution plan should define:
   - milestones or phases
   - execution units categorized as sequential or optional
@@ -396,10 +411,9 @@ The product must not become:
   work is blocked or dependent, a required user decision is missing, or an
   external state change is needed; or when the user changes scope or asks to
   pause.
-- At every execution-unit boundary, re-read the governing docs required by the
-  Reread Rule, declare intended outcome, write scope, verification gate, and
-  review tier, then update `plan.md` or a later task-status artifact until
-  SQLite-backed task status exists.
+- At every execution-unit boundary, re-read the governing material required by
+  the Reread Rule, declare intended outcome, write scope, verification gate,
+  and review tier, then record live status only through the public CLI.
 - Completion of one routine execution unit is not itself a stop condition while
   approved work remains.
 
@@ -443,8 +457,9 @@ Use this structure for independent reviews:
 ## Testing And Verification Rules
 
 - Verify the narrowest meaningful slice for the current task.
-- For docs-only work, verify internal consistency and agreement with `AGENTS.md`
-  and `plan.md`.
+- For docs-only work, run the repository document-contract checker and verify
+  internal consistency across every applicable owner selected by the authority
+  index.
 - For CLI work, verify help text, dry-run/read-only behavior, JSON output shape,
   error behavior, and write behavior when applicable.
 - For SQLite work, verify migrations, repository behavior, schema versioning,

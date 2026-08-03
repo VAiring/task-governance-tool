@@ -409,6 +409,7 @@ checksum, GitHub Release, push, or publication is claimed or authorized for it.
 For current development and any later release candidate, run at least:
 
 ```powershell
+python tools\document_contract.py --repo .
 python tools\release_contract.py --repo .
 python tools\test_lanes.py --repo . --check
 python tools\test_lanes.py --repo . --lane all
@@ -416,6 +417,12 @@ python task-governance-tool\scripts\taskgov.py --help
 python task-governance-tool\scripts\taskgov.py --version
 git diff --check
 ```
+
+The document checker is offline and read-only. It validates this repository's
+closed authority registry, fixed canonical routing syntax, conditional sequence
+tables, history provenance, search exclusion, and size budgets. It is not a
+general Markdown or CommonMark parser; unsupported route-bearing forms fail
+closed instead of being interpreted.
 
 For shorter local feedback, replace `all` with `fast`, `integration`, or
 `release`. The three base lanes own every standard-discovery test exactly once;
@@ -448,13 +455,18 @@ coverage.
 ## Project Docs
 
 - `AGENTS.md`: durable agent behavior, safety, and workflow gates.
+- `docs/authority.md`: concise authority index and selective-read routing.
 - `docs/specification.md`: product contract.
 - `docs/design.md`: implementation design and boundaries.
-- `plan.md`: approved static execution contracts, current decisions, and open
-  issues.
+- `plan.md`: current decisions, open issues, cross-sequence gateways, and
+  non-delegated static contracts.
+- `docs/execution-contracts/`: indexed conditional authority for accepted but
+  inactive M22, M23, and M24 units.
 - `docs/release-install.md`: current candidate, immutable published artifact,
   and installation identity.
 - `docs/history/README.md`: non-authoritative lineage index.
 
 Inspect live Task state and evidence through the public CLI; project documents
-do not mirror that volatile state.
+do not mirror that volatile state. Normal repository searches exclude history;
+load it only for an explicitly named lineage, migration, rationale-recovery, or
+superseded-evidence need.

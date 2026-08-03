@@ -272,3 +272,21 @@ evidence remain available only through the public CLI.
   [docs/specification.md](../specification.md),
   [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
   CLI for live Task state and evidence.
+
+## v0.11.0 Pre-M22 Completed Execution Lineage
+
+### Completed M20, M20S, and M21 execution narrative
+
+- Immutable history:
+  [v0.11.0/pre-m22-completed-execution.md](v0.11.0/pre-m22-completed-execution.md)
+- Source commit: `695b240178681a072b5cbd73845dff8e31a281d6`
+- Capture unit: `TG-DOC.1`
+- Capture purpose: preserve completed M20/M20S observation and M21 design,
+  activation, acceptance, and correction narrative retired from the normal
+  read set before M22 execution.
+- Current replacements: [docs/authority.md](../authority.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), [plan.md](../../plan.md), and the applicable
+  [conditional execution contract index](../execution-contracts/README.md).
+  Use the public CLI for live Task state and evidence. This capture is lineage
+  only and cannot fill a current authority gap or satisfy a gate.

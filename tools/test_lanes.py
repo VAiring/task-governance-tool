@@ -108,6 +108,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
     ),
     "release": (
         "test_backup_performance",
+        "test_document_contract",
         "test_document_history",
         "test_m14_integrated_acceptance",
         "test_m17_legacy_recovery_matrix",

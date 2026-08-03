@@ -187,15 +187,18 @@ execution unit in lane `TG-M22-EVIDENCE-LEDGER` at order 25. It depends on
 accepted TG-M21.4D and completed TG-DOC.1
 `tg_task_7d03a44b6733fee4`. It freezes the closed conditional Review
 provenance matrix and synchronizes formal documents plus downstream Task
-Contracts only. Human/model-not-applicable, LLM/Skill-not-used, declared,
-unknown, not-required, and legacy states remain distinct without proving
-identity, competence, independence, or truth.
+Contracts only. Explicit v1, absent legacy-v0, and null provenance on the
+existing Tier-0 `not_required` disposition remain distinct. Human/model-not-
+applicable, LLM/Skill-not-used, declared, unknown, tool, and hybrid states use
+only closed bounded codes. Original Receipt assurance and the separate
+provenance assurance never prove identity, competence, independence, or truth.
 
 This unit changes no v17 runtime, schema, command, normal-loop call, Viewer UI,
 package, network, or target-project behavior. Completion requires exact
 documentation consistency, an exact-diff current Verification Receipt, and
 two independent Tier 2 reviews. Its detailed accepted boundary and the later
-M22 units are owned conditionally by the
+M22 storage/read/reference, Bundle/JSON, acceptance, and M23 reporting handoffs
+are owned conditionally by the
 [TG-M22 Evidence Ledger execution contract](docs/execution-contracts/tg-m22-evidence-ledger.md).
 
 ### Conditional TG-M22 And TG-M23 Sequences

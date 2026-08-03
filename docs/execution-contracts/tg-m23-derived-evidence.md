@@ -25,20 +25,36 @@ TG-M23 is sequential Tier 2 work in lane `TG-M23-DERIVED-EVIDENCE`:
 | TG-M23.2 / 20 | `tg_task_d5511d2ca7db93dc` | accepted TG-M23.1 |
 | TG-M23.3 / 30 | `tg_task_0ada32d2b4f9759d` | accepted TG-M23.2 |
 
-The sequence consumes sealed canonical M22 Bundle/JSON artifacts and never
-reads SQLite directly. Canonical evidence remains independent of the analyzer.
-Derived reports cannot mutate a bundle, Task, Review, Verification, completion,
-Git, or any gate and add no normal Task-loop call.
+The sequence consumes either a sealed native M22 Bundle or one exact
+`legacy_unknown` entry from the validated canonical M22 Evidence index and
+never reads SQLite directly. Canonical evidence remains independent of the
+analyzer. Derived reports cannot mutate a bundle, Task, Review, Verification,
+completion, Git, or any gate and add no normal Task-loop call.
 
 Review provenance is reproduced exactly rather than inferred. Explicit v1
-provenance remains `bound_attestation/trusted_caller/1`; absent v17 provenance
-remains `legacy_unknown/legacy_migration`, and the original legacy Receipt's
-assurance is unchanged. Human/no-model, LLM/no-Skill, declared model or Skill,
-deterministic-tool, hybrid, `unknown`, `not_required`, `not_applicable`,
-`not_used`, and legacy-v0 remain distinct. Descriptive grouping and repeated
-declared-profile or method visibility never establishes identity, competence,
-independence, quality, diversity, or truth and never affects reviewer-key
+provenance remains `bound_attestation/trusted_caller/1`; the schema-v18 public
+absence state remains `legacy_unknown/legacy_migration`, and the original
+legacy Receipt's assurance is unchanged. Human/no-model, LLM/no-Skill,
+declared model or Skill, deterministic-tool, hybrid, `unknown`,
+`not_required`, `not_applicable`, `not_used`, and index-only legacy absence
+remain distinct. Descriptive grouping and visibility of the same declared
+profile or method across distinct Receipts never establishes identity,
+competence, independence, quality, diversity, or truth and never affects reviewer-key
 distinctness, PASS, findings, Tier, verification, or completion.
+
+The analyzer consumes only what the exact M22 Bundle/JSON boundary carries. A
+native Receipt report cites its Receipt and bundle binding; v1 additionally
+cites its provenance ID, version, and digest and reproduces every scalar and
+canonically ordered profile/lens/method code. A `not_required` Receipt renders
+as a gate disposition with null provenance, not as v0 or explicit unknown.
+Migrated v0 Receipts have no Evidence Reference and cannot enter a native
+bundle. A pre-v19 index-only cycle therefore reports `legacy_unknown` from its
+cycle/index binding and states that Receipt/provenance detail is unavailable;
+it never fabricates a v0 object, Receipt citation, provenance ID, or digest.
+Grouping is allowed only over actually declared v1 values; repetition means
+the same allowed code across distinct v1 Receipts or bundles, never a duplicate
+inside one Receipt collection. Index-only absence, null, and an empty v1
+collection remain separate.
 
 <a id="tg-m23-1"></a>
 
@@ -52,12 +68,16 @@ uncertainty reporting, and human-readable rendering. It must define a strict
 offline deterministic baseline plus an optional isolated Codex non-interactive
 path with bounded cost, retry, timeout, cancellation, and failure states.
 
-Packets may contain only sanitized data selected from one exact sealed bundle,
-never SQLite, full conversations, or unrestricted repository content. Reports
-must separate observed target/gate facts, trusted-caller declarations, legacy
-absence, and `llm_derived` non-authoritative conclusions. Reproducibility may
-record bounded producer, model, prompt-schema, input, and output digests but
-must not claim authenticated model or actor identity.
+Eligible packet source/citation data is limited to sanitized data selected from
+one exact sealed bundle or one validated legacy index entry, never SQLite, full
+conversations, or unrestricted repository content. The legacy source allow-
+list contains only the index `project_id`, `projection_generation`,
+`index_digest`, and the entry's exact nine fields; its five bundle/file
+identity and seal-time values remain null.
+Reports must separate observed target/gate facts, trusted-caller declarations,
+legacy absence, and `llm_derived` non-authoritative conclusions.
+Reproducibility may record bounded producer, model, prompt-schema, input, and
+output digests but must not claim authenticated model or actor identity.
 
 This unit activates no runtime, schema, public CLI, Skill loop, worker, network,
 credential use, or report publication. It may not infer provenance from
@@ -77,8 +97,8 @@ no unresolved High or Medium finding.
 ## TG-M23.2 Activation
 
 Task `tg_task_d5511d2ca7db93dc` may implement only the exact design accepted in
-TG-M23.1: deduplicated local jobs, bounded packets, a
-separate worker, optional Codex adapter, schema and citation validation,
+TG-M23.1: deduplicated local jobs, bounded native-bundle or legacy-index
+packets, a separate worker, optional Codex adapter, schema and citation validation,
 immutable report revisions, timeout/cancel/retry/status handling, and local
 publication. The adapter consumes canonical M22 Bundle/JSON through the
 approved boundary and never SQLite.
@@ -102,11 +122,13 @@ two independent Tier 2 reviews with no unresolved High or Medium finding.
 ## TG-M23.3 Integrated Acceptance
 
 Task `tg_task_0ada32d2b4f9759d` accepts the exact TG-M23.2 target across
-multiple bundles, queue/restart/replay/failure, offline rendering,
-and optional mocked-model analysis. It must trace every value and conclusion to
-stable bundle, cycle, artifact, Verification Receipt, Review Receipt,
-provenance IDs, versions, and digests, and cover all conditional and legacy
-states plus repeated profiles and methods.
+multiple bundles and legacy index entries, queue/restart/replay/failure,
+offline rendering, and optional mocked-model analysis. It must trace every value and conclusion to
+the available stable bundle, cycle, artifact, Verification Receipt, Review
+Receipt, and provenance IDs, versions, and digests; an index-only legacy cycle
+instead cites only its exact cycle/index binding. It covers all reachable
+conditional and legacy states plus the same profile or method across distinct
+Receipts/bundles.
 
 Reports must remain useful while preserving the separation between facts,
 trusted-caller declarations, legacy absence, and inference. No missing value is
@@ -124,6 +146,7 @@ High or Medium finding. Only bounded corrections inside TG-M23.1 are allowed.
 
 ## Deferred Detail Rule
 
+Within the native-bundle/legacy-index source and citation boundary fixed above,
 TG-M23.1 owns any exact packet schema, module layout, local storage location,
 adapter protocol, or report format needed by TG-M23.2. This pre-design contract
 does not select those details. Any semantic expansion, gate authority, direct

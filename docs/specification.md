@@ -769,6 +769,38 @@ requirement, qualifying current-generation counts, fallback state, bounded
 recent receipts/findings, and blocking counts including
 `changes_requested_current_generation`. It never emits raw review content.
 
+### Accepted Inactive TG-M22.1A Review Provenance Boundary
+
+TG-M22.1A freezes only the future schema-v18 Review-provenance contract. Its
+exact enums, bounds, input options, public union, digest, and cross-field
+matrix are owned by the indexed
+[conditional M22 contract](execution-contracts/tg-m22-evidence-ledger.md#tg-m22-1a).
+Current schema-v17 Review Receipt input, storage, output, Viewer, gates, and
+assurance remain unchanged until M22.2 activates that contract.
+
+The accepted future boundary adds structured v1 provenance to new
+`independent` and `self_review_fallback` Receipts through the existing
+`review receipt add` leaf and call only. It accepts the closed human, LLM,
+deterministic-tool, hybrid, and explicit-unknown matrix; conditional model and
+Skill declarations; canonical profile, lens, context, and method codes; and no
+free-form capability object. Public Receipt reads add one exact
+`review_provenance` union: explicit v1 is
+`bound_attestation/trusted_caller/1`; absent pre-v18 provenance is version zero
+with `legacy_unknown/legacy_migration/1`; and the existing Tier-0
+`not_required` Receipt remains a gate disposition with a null provenance
+value. The original Review Receipt assertion retains its existing assurance in
+all three cases.
+
+Declared identifiers and code collections are bounded, sanitized, canonical,
+and digest-bound to the exact Receipt and target. They prove no actor, model or
+Skill execution, competence, independence, quality, diversity, or truth.
+Migration never parses reviewer keys or summaries, backfills a missing value,
+or strengthens legacy evidence. M22.2 owns storage/input/read/Evidence
+Reference integration, M22.3 owns Bundle/JSON projection, M22.4 owns matrix
+acceptance, and M23 owns non-inferential reporting. No unit adds a public leaf,
+normal-loop call, Viewer provenance UI, network action, or target-project
+write.
+
 ### Git Snapshot And Target Binding
 
 `review target set --kind git_snapshot` accepts no caller revision. It reads a

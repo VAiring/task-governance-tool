@@ -18,10 +18,91 @@ not delegated here. The Task database owns only live state and evidence.
 ## TG-M22.1A Review Method And Provenance
 
 Task `tg_task_0e1d93d81eb843ab` must freeze a closed versioned
-Review-provenance matrix before schema-v18 activation. This anchor owns the
-pre-execution design contract below; it does not activate a provenance record
-or prematurely select the exact v1 profile, lens, context, or method code
-vocabularies that the design unit must publish.
+Review-provenance matrix before schema-v18 activation. This anchor owns that
+complete pre-execution design contract. It activates no record or behavior.
+
+### Versioned Public Union And Structural Seal
+
+From schema v18, every public Review Receipt object adds exactly one
+`review_provenance` value. A new `independent` or `self_review_fallback`
+Receipt has a v1 object with exactly these keys in its allow-list:
+
+```text
+review_provenance_id provenance_version reviewer_class model_state
+declared_model_id skill_state declared_skill_id declared_skill_version
+review_profiles review_lenses context_relation method_codes assurance_class
+producer_class producer_version digest
+```
+
+Its ID is `tg_review_provenance_` plus 16 lowercase hexadecimal characters;
+version is integer `1`; assurance/producer is exactly
+`bound_attestation/trusted_caller/1`; and `digest` is
+`sha256:<64-lowercase-hex>`. The digest is SHA-256 over
+`taskgov-review-provenance-v1\0` plus canonical sorted-key compact UTF-8 JSON
+containing exactly `project_id`, `task_id`, `review_receipt_id`, `receipt_kind`,
+`target`, and every v1 public field from `provenance_version` through
+`producer_version`. `target` is exactly
+`{kind,value,base_revision,generation,capture_version}`. The input excludes the
+random provenance ID and digest.
+
+A pre-v18 `independent` or `self_review_fallback` Receipt has no native row and
+projects the same keys with `provenance_version=0`, null ID/digest and null v1
+semantic fields/collections, plus exactly
+`legacy_unknown/legacy_migration/1`. Version zero states absence; it does not
+infer `unknown` from reviewer key, summary, kind, or verdict. An existing or
+new Tier-0 `not_required` Receipt remains the current gate-disposition record
+but projects `review_provenance=null` and owns no provenance row. Thus legacy
+absence, explicit v1 unknown, empty v1 code sets, and not-required are distinct.
+
+### Closed Vocabularies, Bounds, And Ordering
+
+The exact scalar enums are:
+
+```text
+reviewer_class   human llm deterministic_tool hybrid unknown
+model_state      declared not_applicable unknown
+skill_state      declared not_applicable not_used unknown
+context_relation same_context forked_context fresh_context external_context
+                 not_applicable unknown
+```
+
+The exact profile, lens, and method enum orders are:
+
+```text
+review_profiles general authority_contract implementation verification
+                migration_compatibility privacy_safety release_acceptance
+review_lenses   correctness contract_compliance state_completion_integrity
+                privacy target_safety verification_regression
+                migration_compatibility maintainability accessibility
+                performance release_integrity
+method_codes    review_packet_inspection authority_cross_check diff_inspection
+                source_inspection test_inspection
+                verification_evidence_inspection artifact_inspection
+                runtime_observation deterministic_rule_check
+```
+
+At most four profiles, eight lenses, and eight methods may be supplied. Each
+is a set: duplicates are invalid, empty is valid, and stored/public order is
+the fixed enum order regardless of option order. `context_relation` is one
+required code. Downstream repetition means the same allowed code across
+distinct v1 Receipts or bundles; a duplicate within one collection is invalid.
+It is only a caller declaration about supplied context; no code proves
+separation or independence. Declared model and Skill IDs are 1-128
+ASCII bytes matching `[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}`. Declared Skill
+version is 1-64 ASCII bytes matching
+`[A-Za-z0-9][A-Za-z0-9._+-]{0,63}`. They are preserved byte-for-byte after
+the normal privacy check and are identifiers, not free-form capability claims.
+
+The existing `review receipt add` leaf adds required
+`--reviewer-class`, `--model-state`, `--skill-state`, and
+`--context-relation`, optional `--declared-model-id`,
+`--declared-skill-id`, and `--declared-skill-version`, and repeatable
+`--review-profile`, `--review-lens`, and `--review-method` only for
+`independent` and `self_review_fallback`. No value is defaulted or inferred.
+Every provenance option is forbidden for `not_required`. Type, enum, bound,
+duplicate, grammar, or cross-field failure uses the existing
+`invalid_review_evidence` boundary with fixed sanitized detail; the common
+privacy rejection keeps its precedence and no rejected value is emitted.
 
 The accepted case matrix is closed as follows:
 
@@ -33,30 +114,60 @@ The accepted case matrix is closed as follows:
 | Deterministic tool | `deterministic_tool` | `not_applicable`; ID absent | `not_applicable`; ID/version absent | Tool output is not relabeled as model or Skill use. |
 | Hybrid | `hybrid` | `declared` with supplied ID, or `unknown` with no ID | `declared` with supplied ID/version, `not_used`, or `unknown` | Each component retains its own applicability and declaration state. |
 | Applicable data unavailable | `unknown` | `unknown`; ID absent | `unknown`; ID/version absent | Unknown is explicit and is never guessed from reviewer key or summary. |
-| Review not required | no Review Receipt or provenance row | no state | no state | `not_required` is a gate disposition, not an unknown reviewer or synthetic Receipt. |
-| Legacy v17 Receipt | no native v1 subrecord | v0 absence only | v0 absence only | Projection is exactly `legacy_unknown/legacy_migration`; original Receipt assertions and assurance remain unchanged. |
+| Review not required | existing Tier-0 `not_required` Receipt only | no model state | no Skill state | The gate disposition remains; its `review_provenance` is null and it has no provenance row. |
+| Legacy v17 independent/self-review Receipt | no native v1 subrecord | v0 absence only | v0 absence only | Projection is exactly `legacy_unknown/legacy_migration`; original Receipt assertions and assurance remain unchanged. |
 
-The v1 structure is limited to `provenance_version=1`, `reviewer_class`, the
-model state plus its conditional declared ID, the Skill state plus its
-conditional declared ID/version, bounded canonical review-profile and lens
-code sets, one bounded context-relation code, bounded canonical method-code
-sets, and the existing structural binding and assurance/producer metadata.
-M22.1A must spell out closed v1 allow-lists, bounds, canonical ordering, and
-cross-field validation for every profile, lens, context, and method code before
-it may complete; unrestricted strings or JSON are forbidden. Empty code sets,
-`unknown`, `not_required`, `not_applicable`, and `not_used` remain distinct.
-`declared` requires its corresponding supplied value, and every other state
-requires that value to be absent.
+The matrix is exact. Human and deterministic-tool rows require both states
+`not_applicable`. LLM and hybrid rows require model `declared` with its ID or
+`unknown` without one; their Skill state is `declared` with both ID/version,
+`not_used` without either, or `unknown` without either. Reviewer class
+`unknown` requires both states `unknown`. `declared` always requires its
+corresponding value or values and every other state requires them absent.
+Receipt verdict does not change the matrix. Profile/lens/method sets and
+context are otherwise independently chosen from their closed values and add no
+capability, applicability, or further cross-field inference.
+
+### Storage, Migration, Read, And Downstream Binding
+
+M22.2 adds `review_provenance_basis_version` and nullable
+`review_provenance_id` to `review_receipts`, plus normalized immutable
+`review_receipt_provenance` and `review_receipt_provenance_codes` tables. The
+latter stores only `profile|lens|method`, a zero-based contiguous ordinal
+within one provenance and kind after fixed-enum ordering, and an allowed code;
+duplicate provenance/kind/code or provenance/kind/ordinal is invalid, and no
+JSON or arbitrary map is stored. Deferred same-Receipt ownership plus
+insert/read guards enforce: migrated independent/self-review is `0/null`, new
+independent/self-review is `1/non-null` with exactly one v1 row, and
+`not_required` is `0/null`. New legacy-shaped independent/self-review inserts
+are forbidden. Receipt and provenance rows/codes commit atomically.
+
+Migration 18 adds only the zero/null discriminator to old Receipts and creates
+no provenance row, ID, digest, declared value, or Evidence Reference. Reentry,
+setup, backup, recovery, and every stored Review reader validate the exact
+version/kind/null/code/digest matrix. A schema-v17 source uses its existing
+shape; a schema-v18 source with malformed provenance is structural failure,
+never the Task-verification candidate-local recovery exception. Public Receipt
+add/show reads emit the union above. Review Packet keeps its existing keys but
+its required-output/receipt-command text requests the same v1 fields. Viewer
+validates then discards provenance and adds no field, filter, or UI.
 
 Explicit v1 values remain `bound_attestation/trusted_caller/1`. The structure
 proves no identity, execution, competence, independence, quality, diversity,
 or truth and changes no reviewer-key distinctness, PASS counting, Tier, or
-completion gate. It stores no person identity, session, prompt, chat,
-reasoning, raw output, command, log, environment, credential, or provider body.
+completion gate. The original Review Receipt assertion remains
+`bound_attestation/trusted_caller/1` even when its distinct absent provenance
+projects `legacy_unknown/legacy_migration/1`. It stores no person identity,
+session, prompt, chat, reasoning, raw output, command, log, environment,
+credential, or provider body.
 
-M22.2 owns storage/input/read/Evidence Reference and digest integration;
-M22.3 owns Bundle/JSON projection; M22.4 owns the complete matrix acceptance;
-M23 owns non-inferential reporting. This design unit changes no current v17
+M22.2 binds the native v1/null provenance subset inside the Review Receipt
+Evidence Reference source projection and reference digest, without changing
+the Receipt assertion's assurance. A migrated v0 Receipt gets no Reference.
+M22.3 copies the native v1/null subset into each Bundle/JSON `review_receipts`
+member; pre-v19 legacy cycles remain index-only and expose no Receipt. M22.4
+owns the complete matrix acceptance. M23 cites v1 ID/digest, reports null
+not-required, and reports index-only legacy absence without inventing v0
+Receipt data or upgrading assurance. This design unit changes no current v17
 runtime, schema, migration, public leaf, normal-loop call, Viewer UI, package,
 network behavior, or target-project authority.
 
@@ -392,15 +503,18 @@ versioned `producer_class`. Assurance is exactly one of:
 | `deterministically_derived` | A pure versioned rule derived the value from validated source records. The result cannot have stronger assurance than those sources. |
 | `external_reference` | A bounded external identity is retained without claiming that taskgov observed its content, existence, authority, or semantics. |
 | `legacy_unknown` | Required origin or basis predates capture or is unavailable. No migration, repair, or projection may fill or strengthen it. |
-| `llm_derived` | A future separately activated analyzer produced a non-authoritative semantic claim from cited bundle content. It never satisfies a verification, review, completion, or release gate. |
+| `llm_derived` | A future analyzer produced a non-authoritative semantic claim from a cited native bundle or exact legacy-index entry. The label authorizes no canonical ledger write and never satisfies a verification, review, completion, or release gate. |
 
 `producer_class` is exactly `taskgov_core`, `taskgov_git`, `trusted_caller`,
 `legacy_migration`, `external_system`, `batch_analyzer`, or
 `verification_runner`, plus a positive `producer_version`. TG-M22 activates
-only the producers needed by its owning units. `batch_analyzer` and
-`verification_runner` are reserved extension seams and cannot write until
-their own later activation. Producer values are provenance labels, not
-authentication, signatures, process identity, independence, or authority.
+only the producers needed by its owning units. M23 may use `batch_analyzer`
+only as metadata on its separate report artifacts; M23 activation enables no
+canonical `derived_analysis` Evidence Reference or criterion-link writer. That
+writer remains disabled pending separately indexed post-M23 authority.
+`verification_runner` remains reserved until its own later activation.
+Producer values are provenance labels, not authentication, signatures,
+process identity, independence, or authority.
 
 The required current mappings are fixed:
 
@@ -408,9 +522,12 @@ The required current mappings are fixed:
   `taskgov_git`;
 - canonical digests, generations, deterministic links, and gate snapshots are
   `deterministically_derived` from `taskgov_core`;
-- M21 Verification Receipts and Review Receipts/Findings remain
-  `bound_attestation` from `trusted_caller`; the same applies only to the
-  caller's `commit_not_required` completion assertion;
+- M21 Verification Receipts and the original Review Receipt/Finding assertions
+  remain `bound_attestation` from `trusted_caller`; explicit v1 Review
+  provenance is separately caller-attested, absent legacy provenance alone is
+  `legacy_unknown/legacy_migration`, and null not-required provenance has no
+  class; the same caller assurance also applies only to the caller's
+  `commit_not_required` completion assertion;
 - a locally resolved Git completion commit is `machine_observed` from
   `taskgov_git`, while an approved external completion revision remains
   `external_reference` from `external_system`;
@@ -589,7 +706,7 @@ The v1 source dispatch is exact; producer version is `1` throughout:
 | `artifact_manifest/opaque_target/diff_fingerprint` | `bound_attestation/trusted_caller` | manifest ID/state/target kind/manifest digest/`artifact_content_not_observed` | acceptance `completion_basis`, when acceptance exists |
 | `artifact_manifest/opaque_target/external_revision` | `external_reference/external_system` | manifest ID/state/target kind/manifest digest/`artifact_content_not_observed` | acceptance `completion_basis`, when acceptance exists |
 | `verification_receipt` | `bound_attestation/trusted_caller` | Receipt ID, subject-basis version, authority snapshot ID, verification criterion ID, result, duration, coverage, and creation time; no legacy caller label or internal compatibility value | verification `verification_attestation`, exactly once |
-| `review_receipt` | `bound_attestation/trusted_caller` | Receipt ID, reviewer key, kind, verdict, summary, approval flag, and creation time | acceptance `review_assessment`, once for each selected qualifying Receipt when acceptance exists |
+| `review_receipt` | `bound_attestation/trusted_caller` | Receipt ID, reviewer key, kind, verdict, summary, approval flag, creation time, and native v1/null `review_provenance`; nested v1 provenance retains its own assurance/producer, while migrated public v0 Receipts create no Reference | acceptance `review_assessment`, once for each selected qualifying Receipt when acceptance exists |
 | `review_finding` | `bound_attestation/trusted_caller` | Finding ID, Receipt ID, severity, original summary, and creation time | acceptance `review_finding` only for the current target generation when acceptance exists |
 | `completion_evidence/git_commit` | `machine_observed/taskgov_git` | cycle ID/time and the exact six-field completion-evidence value | acceptance `completion_basis`, when acceptance exists |
 | `completion_evidence/external_revision` | `external_reference/external_system` | cycle ID/time and the exact six-field completion-evidence value | acceptance `completion_basis`, when acceptance exists |
@@ -642,10 +759,10 @@ exists, its unique current pass/full Receipt receives
 `verification_attestation`. If the corresponding criterion is absent, those
 links are omitted and the source references remain bundle members. No other
 M22 source-kind, criterion-kind, relation, or cardinality is valid.
-`derived_analysis` may later link `derived_analysis` to either criterion only
-after M23 authority, and `runner_observation` may later link
-`runner_observation` to verification only after M24 authority; both writers
-remain disabled in M22.
+`derived_analysis` may link `derived_analysis` to either criterion only after
+separate canonical-ledger-writer authority beyond M23, and
+`runner_observation` may later link `runner_observation` to verification only
+after M24 authority; both writers remain disabled in M22.
 
 Finding snapshot selection is also closed. It includes every Finding from the
 current target generation, plus every high/medium Finding from an earlier
@@ -763,7 +880,7 @@ The bundle payload has exactly these keys:
 | `finding_snapshots` | the exact snapshot fields defined above, in the defined Finding order |
 | `omissions` | unique strings in the fixed omission order |
 | `project_id` | project ID string |
-| `review_receipts` | selected objects `{review_receipt_id,reviewer_key,receipt_kind,verdict,summary,user_approved,created_at}` in the exact `qualifying_receipt_ids` gate-basis order; `user_approved` is integer `0|1` |
+| `review_receipts` | selected objects `{review_receipt_id,reviewer_key,receipt_kind,verdict,summary,user_approved,created_at,review_provenance}` in the exact `qualifying_receipt_ids` gate-basis order; `user_approved` is integer `0|1`, and native provenance is v1 or null because migrated v0 Receipts have no Reference and cannot enter a native bundle |
 | `source_schema_version` | integer `19` |
 | `target` | exactly `{kind,value,base_revision,generation,capture_version}`, with nullable base revision and positive integers |
 | `task` | exactly `{task_id,title,description,review_tier,verification}` |
@@ -855,8 +972,10 @@ Receipt or legacy caller label, aggregates partial Receipts, retries a
 generation, or converts a Receipt to `machine_observed`.
 
 M23 may later create separate append-only `llm_derived` analysis revisions
-that cite exact bundle/criterion/link IDs and digests. They remain outside the
-sealed bundle and every current gate. M24 may later add a versioned
+outside the canonical ledger. A native revision cites exact bundle/criterion/
+link IDs and digests; a legacy revision cites only its exact index/cycle
+binding. Both remain outside the sealed bundle and every current gate and
+create no Evidence Reference or criterion link. M24 may later add a versioned
 `verification_runner` producer and a new tagged verification basis. Shadow
 Runner evidence remains gate-ineligible until that later activation; gate
 integration must preserve the M21 caller Receipt as an explicit fallback and
@@ -1149,8 +1268,10 @@ remote-commit, or artifact-identity claim.
 
 ### Future Module Ownership
 
-The activation design introduces three narrow package modules:
+The activation design introduces four narrow package modules:
 
+- `review_provenance.py` owns the closed enum/matrix, existing-leaf input,
+  canonical public union, and provenance digest; it owns no SQLite access.
 - `evidence_ledger.py` owns assurance/producer validation, authority-basis
   canonicalization, whole-field criteria, evidence references, immutable link
   rules, bundle assembly, omission codes, and canonical public allow-lists.
@@ -1197,11 +1318,11 @@ batch_analyzer verification_runner
 ```
 
 Schema v18 admits the reserved future values structurally so a later migration
-does not need to reinterpret old records, while repository writers allow only
-the producers activated by their current schema/feature version. A producer
-class is not a user, reviewer, process, model, executable, machine, signature,
-or trust proof. Derived records preserve source IDs and classes; the validator
-rejects any assurance upgrade.
+does not need to reinterpret old records. Canonical repository writers allow
+only branches explicitly authorized for canonical storage; M23 report
+activation is not such authority. A producer class is not a user, reviewer,
+process, model, executable, machine, signature, or trust proof. Derived records
+preserve source IDs and classes; the validator rejects any assurance upgrade.
 
 The current mapping is implemented as the fixed source/state dispatch table in
 the specification, not caller input. A complete Git manifest reference is
@@ -1211,8 +1332,10 @@ not a separately classed claim. An opaque diff-fingerprint manifest is
 `external_reference/external_system/1`. M21 Receipt and review inputs are
 `bound_attestation/trusted_caller/1`. Completion evidence dispatches by its
 closed kind to Git-observed, external-reference, or caller-attested exactly as
-specified. Migration-only absence is legacy unknown. M23 and M24 producer
-branches remain unreachable until their own schema and service activations.
+specified. Migration-only absence is legacy unknown. M23's separate report-
+artifact producer and the M24 Runner branch remain unreachable until their own
+schema/service activations. M23 activation leaves the canonical
+`derived_analysis` writer unreachable pending separate post-M23 authority.
 
 ### Schema V18 Capture Foundation
 
@@ -1222,15 +1345,18 @@ Migration 18 is named `evidence_ledger_capture`. It adds:
 authority_snapshots
 contract_criteria
 authority_snapshot_criteria
+review_receipt_provenance
+review_receipt_provenance_codes
 artifact_manifests
 artifact_manifest_entries
 evidence_references
 ```
 
-and the minimum current-pointer, target-binding, and TG-M21.4 subject columns
-needed to connect them to Tasks, Receipts, and cycles. The subject columns are
-the additive three-field set defined in the preceding section; no separate
-subject table or caller-authored value exists. All record IDs use their
+and the minimum current-pointer, target-binding, Review-provenance
+version/ID, and TG-M21.4 subject columns needed to connect them to Tasks,
+Receipts, and cycles. The provenance relation and subject columns are the
+additive sets defined above; neither accepts arbitrary JSON or caller-owned
+assurance. All record IDs use their
 specification prefixes plus 16 random
 lowercase hexadecimal characters. Every owned table includes project and Task
 keys, composite foreign keys, deterministic uniqueness, canonical timestamp
@@ -1555,8 +1681,9 @@ advances Evidence source generation when it inserts that cycle. A selected
 pre-v18 high/medium Finding is represented only by the nullable-reference
 legacy snapshot and omission defined above. A post-v19 recompletion creates
 only a new version-1 bundle for the new cycle. V17 Receipts retain their exact
-row, caller label, target, result/coverage, caller-attested class, and v17
-done-cycle rules but receive no reference or bundle. A native bundle accepts
+row, reviewer key, summary, target, verdict, caller-attested class, and v17
+done-cycle rules; Review reads project provenance v0, but migration creates no
+provenance row/reference/bundle. A native bundle accepts
 only subject basis one and serializes exactly `basis_version`, `kind`,
 `authority_snapshot_id`, and `verification_criterion_id`. The schema-v18
 read-model union's `legacy_caller_label` key and the internal compatibility
@@ -1564,11 +1691,12 @@ value are both absent; result/coverage remain caller-attested.
 
 ### Future M23 And M24 Seams
 
-The M23 analyzer may later read one exact bundle file/digest through a bounded
-core-created packet and append a separate `llm_derived` analysis revision and
-criterion link. It may not update a bundle, create canonical evidence, change a
-Task or gate, or read SQLite directly. M22 activates no worker, outbox, remote
-model, report narrative, retry policy, or analyzer producer.
+The M23 analyzer may later receive one exact native bundle or validated
+`legacy_unknown` index entry through a bounded core-created packet and publish
+a separate `llm_derived` revision outside canonical Evidence References and
+criterion links. It may not update a bundle, create canonical evidence, change
+a Task or gate, or read SQLite directly. M22 activates no worker, outbox,
+remote model, report narrative, retry policy, or canonical analyzer writer.
 
 The M24 Runner may later add a runner-observation table and a new tagged
 verification-basis/bundle version. A Runner can classify only its directly

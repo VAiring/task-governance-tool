@@ -969,6 +969,43 @@ key distinctness proves only different stored strings, not identity,
 independence, provenance, expertise, target inspection, or authentication. The
 trusted caller/orchestrator is responsible for truthful attestation.
 
+### Accepted Inactive TG-M22.1A Provenance Design
+
+The exact future model is owned by the indexed
+[TG-M22.1A anchor](execution-contracts/tg-m22-evidence-ledger.md#tg-m22-1a).
+M22.1A changes no current module or database. M22.2 will add
+`review_provenance.py` for the closed enum/matrix, input normalization, public
+v1/v0/null union, and structural digest; `reviews.py` will integrate it into
+the existing Receipt write and Review Packet shape; and `storage.py` alone
+will own the additive schema, repositories, migration, and stored validation.
+
+Migration 18 adds a version discriminator and nullable provenance ID to
+`review_receipts`, plus one immutable normalized provenance table and one
+ordered code table. Existing rows receive only zero/null. New independent and
+self-review writes atomically insert a version-1 row and its canonical
+profile/lens/method codes; new `not_required` writes retain zero/null. Deferred
+same-Receipt ownership, insert guards, and shared readers reject a missing,
+extra, cross-owned, noncanonical, or digest-mismatched relation. Migration and
+reentry never parse reviewer key/summary or synthesize a provenance row.
+
+The Receipt assertion and its provenance have separate assurance. Existing
+Review Receipt facts remain caller-attested; explicit v1 provenance is also
+`bound_attestation/trusted_caller/1`; absent legacy provenance alone projects
+`legacy_unknown/legacy_migration/1`; and a not-required disposition has null
+provenance. The existing gate evaluator consumes none of these fields. Viewer
+snapshot readers validate and discard them. Schema-v18 recovery treats any
+provenance defect as structural set-fatal state, not as the narrowly allowed
+Task-verification content rejection.
+
+M22.2 includes the exact provenance union in Review Receipt reads; only native
+v1/null Receipts can enter a Review Receipt Evidence Reference/digest, while a
+migrated v0 Receipt gets none. M22.3 copies that native subset into sealed
+Bundle/JSON members and leaves pre-v19 cycles index-only. M23 reads only those
+exact artifacts and reports legacy detail as unavailable rather than inventing
+a v0 Receipt. No general JSON column, dynamic enum, model call, reviewer
+launcher, provenance score, Viewer UI, public leaf, or normal-loop call is
+introduced.
+
 ### Review Packet
 
 `review prepare` reads Task, Contract, target, and review counts in one

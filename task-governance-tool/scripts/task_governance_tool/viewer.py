@@ -24,9 +24,13 @@ from task_governance_tool.storage import (
     operational_sqlite_error,
     read_completion_histories_for_tasks,
     utc_now,
-    validate_snapshot_database,
+    validate_snapshot_database_for_viewer,
 )
-from task_governance_tool.tasks import STATUSES, list_tasks_for_viewer
+from task_governance_tool.tasks import (
+    STATUSES,
+    _list_tasks_for_validated_viewer_snapshot,
+    list_tasks_for_viewer,
+)
 from task_governance_tool.viewer_config import (
     VIEWER_REFRESH_DISABLED_SECONDS,
     VIEWER_REFRESH_MAX_SECONDS,
@@ -100,13 +104,23 @@ def build_viewer_snapshot(
 ) -> ViewerSnapshotResult:
     """Build snapshot version 4 from one validated SQLite read transaction."""
     try:
-        source_schema_version = validate_snapshot_database(connection, target)
-        task_result = list_tasks_for_viewer(
-            connection,
-            target.project,
-            event_limit=VIEWER_EVENT_LIMIT,
-            source_schema_version=source_schema_version,
-        )
+        validation = validate_snapshot_database_for_viewer(connection, target)
+        source_schema_version = validation.source_schema_version
+        if validation.validated_task_batch is None:
+            task_result = list_tasks_for_viewer(
+                connection,
+                target.project,
+                event_limit=VIEWER_EVENT_LIMIT,
+                source_schema_version=source_schema_version,
+            )
+        else:
+            task_result = _list_tasks_for_validated_viewer_snapshot(
+                connection,
+                target.project,
+                validation.validated_task_batch,
+                event_limit=VIEWER_EVENT_LIMIT,
+                source_schema_version=source_schema_version,
+            )
         if source_schema_version < VIEWER_HISTORY_SCHEMA_VERSION:
             legacy_history = format_completion_history(
                 CompletionHistory(

@@ -19,7 +19,7 @@ LEGACY_LINES = 7_404
 LEGACY_BYTES = 428_058
 MIN_REDUCTION_BP = 9_000
 PRE_M22_SHA256 = "426d27bb9189349439b7a2c5764bad0b2035d9cdd6dfd40b7152d45d2054728f"
-TRIGGER_ROUTING_SHA256 = "f07ba62adfb4af8ccb9014e7f194713794302b7be7af7b5c87c7c3437a04fa74"
+TRIGGER_ROUTING_SHA256 = "0f225b7020cf99580bc0c28c9678f9c6dac795fb5af8e765d4fc9a653f612c99"
 EXECUTION_INDEX = "docs/execution-contracts/README.md"
 M22 = "docs/execution-contracts/tg-m22-evidence-ledger.md"
 M23 = "docs/execution-contracts/tg-m23-derived-evidence.md"
@@ -41,8 +41,8 @@ FIRST_HEADINGS = {
     "docs/specification.md": "# task-governance-tool Current Product Specification",
     "docs/design.md": "# task-governance-tool Current Implementation Design",
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
-    EXECUTION_INDEX: "# Conditional Execution Contract Index",
-    M22: "# TG-M22 Evidence Ledger Conditional Execution Contract",
+    EXECUTION_INDEX: "# Current And Conditional Execution Contract Index",
+    M22: "# TG-M22 Evidence Ledger Current And Conditional Execution Contract",
     M23: "# TG-M23 Derived Evidence Conditional Execution Contract",
     M24: "# TG-M24 Verification Runner Conditional Execution Contract",
     HISTORY_INDEX: "# Historical Documentation Index",
@@ -50,10 +50,10 @@ FIRST_HEADINGS = {
 ROUTE_SECTIONS = (
     (AUTHORITY, "## Mandatory Start Set", ("../AGENTS.md",)),
     (AUTHORITY, "## Selective Current Authority", ("specification.md", "design.md", "../plan.md")),
+    (AUTHORITY, "## Mixed Current And Conditional Execution Authority", ("execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence",)),
     (
         AUTHORITY, "## Conditional Formal Authority",
         (
-            "execution-contracts/tg-m22-evidence-ledger.md",
             "execution-contracts/tg-m23-derived-evidence.md",
             "execution-contracts/tg-m24-verification-runner.md",
         ),
@@ -62,20 +62,20 @@ ROUTE_SECTIONS = (
     (
         EXECUTION_INDEX, "## Indexed Contracts",
         (
-            "tg-m22-evidence-ledger.md#tg-m22-conditional-product",
+            "tg-m22-evidence-ledger.md#tg-m22-sequence",
             "tg-m23-derived-evidence.md#tg-m23-derived-evidence",
             "tg-m24-verification-runner.md#tg-m24-verification-runner",
         ),
     ),
 )
 AGENTS_SECTION_DIGESTS = {
-    "## Source Of Truth": "b879088234a7bb2b9807c7ba993a3f3b7d641fdb2371626fcb87924ba702ea7b",
+    "## Source Of Truth": "c65264713d75aaa57d26438e59e75a5d7d24390347385d9652cfad0682c0f55e",
     "## Reread Rule": "52ebf7567263642e65fad840a5eec36daa6e38d67eb922e994446fce5671a834",
-    "## Product Contract Routing And Durable Agent Guardrails": "e0cb3e14ea6168afe059875b6eefdaf87a79640ee348c19b86630d1368330dc9",
+    "## Product Contract Routing And Durable Agent Guardrails": "7b0b6336310ec3ec04056d3ebd6eeb0373be73ed42db1fbc390e3a1df815f3aa",
 }
 BANNER_DIGESTS = {
-    EXECUTION_INDEX: "b436fd6fdbcadc6ca9c48bd98ae58ec39cafb7cc0ffa9ab6480e3475da22e876",
-    M22: "75c3657d96001a3412d66004925c9819505858b4fa28a9c895a8bba6c288134a",
+    EXECUTION_INDEX: "1374027e4a1079f0aeeb1fa0357901c960fcf34b3f999c7e3ef2c98da940b462",
+    M22: "56f9ac6f5e73afbc206a14574c13fff12938bf5d7b24c0bf98b1edfbf9f8101d",
     M23: "a9aff0908e6494e06682fa33c9a79f121c3a874c118b30e9369de1fb36d2bc98",
     M24: "46f92f30d7b9aad7f6eb23436662f4a9939fc57167050eaa0bcf4291a7f346e0",
     HISTORY_INDEX: "934f43005b3038f9d24088b1ba26f85b816f6b42285b39ed29334c1ba1001380",
@@ -106,8 +106,8 @@ ROLE_MARKERS = {
     "docs/specification.md": ("This document specifies supported product behavior.",),
     "docs/design.md": ("This document is the current implementation design for the behavior specified",),
     "plan.md": ("It is not the product contract, execution ledger, or evidence store:", "cross-sequence gateways"),
-    EXECUTION_INDEX: ("Each indexed file is the sole detailed owner for its named inactive units'",),
-    M22: ("This document is the sole detailed owner of the accepted inactive units'",),
+    EXECUTION_INDEX: ("Each indexed file is the sole detailed execution owner for its named units'",),
+    M22: ("document owns exact TG-M22.2 execution and acceptance detail",),
     M23: ("This document is the sole detailed owner of the accepted inactive units'",),
     M24: ("This document is the sole detailed owner of the accepted inactive units'",),
 }
@@ -136,9 +136,9 @@ class SequenceSpec:
     digest: str
 SEQUENCES = (
     SequenceSpec(
-        M22, "## Approved Inactive Sequence",
+        M22, "## Mixed Current And Inactive Sequence",
         ("Unit/order", "Task", "Dependency", "Bounded outcome and gate"),
-        ROWS_M22, "7058aea4345a064ffbfd4607150f432e9c1cf134fc801893aa511ca9e1f8ab81",
+        ROWS_M22, "003bf1a8b6a9971ca139fc57bf99160f274ff143666ba6fa77457c9663726372",
     ),
     SequenceSpec(
         M23, "## Sequence Boundary",
@@ -382,13 +382,16 @@ def _section_digest(scan: Scan, heading: str) -> str | None:
     return None if bounds is None else _digest(scan.lines[bounds[0]:bounds[1]])
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v1",
+        "schema": "taskgov-document-authority-v2",
         "baseline": {"commit": BASELINE_COMMIT, "mandatory_files": 4, "lines": LEGACY_LINES, "bytes": LEGACY_BYTES},
         "budgets": {path: {"lines": limit[0], "bytes": limit[1]} for path, limit in BUDGETS.items()},
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": ["docs/specification.md", "docs/design.md", "plan.md"],
+        "mixed_execution": [{
+            "path": M22, "route_anchor": "tg-m22-sequence",
+            "current_units": ["TG-M22.2"],
+            "inactive_units": ["TG-M21.5", "TG-M22.3", "TG-M22.4"],}],
         "conditional": [
-            "docs/execution-contracts/tg-m22-evidence-ledger.md",
             "docs/execution-contracts/tg-m23-derived-evidence.md",
             "docs/execution-contracts/tg-m24-verification-runner.md",
         ],
@@ -526,7 +529,7 @@ def _roles(scans: dict[str, Scan], issues: list[Issue]) -> None:
     if _section_digest(scans[AUTHORITY], "## Trigger Routing") != TRIGGER_ROUTING_SHA256:
         issues.append(Issue("authority_route", AUTHORITY, "Trigger Routing differs from the fixed owner registry"))
     readme = " ".join("\n".join(scans["README.md"].lines).split())
-    for required in ("fixed canonical routing syntax", "not a general Markdown or CommonMark parser", "docs/authority.md"):
+    for required in ("fixed canonical routing syntax", "not a general Markdown or CommonMark parser", "docs/authority.md", "mixed current/conditional authority", "docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence", "TG-M22.2 is current. Only TG-M21.5, TG-M22.3, and TG-M22.4 are inactive in M22; M23 and M24 remain inactive."):
         if required not in readme:
             issues.append(Issue("document_role", "README.md", "documentation-check or authority guidance is incomplete"))
 def _banners(scans: dict[str, Scan], issues: list[Issue]) -> None:

@@ -7,6 +7,11 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
+from tests.m14_test_support import (
+    remove_v18_evidence_ledger_for_test,
+    run_taskgov_internal,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
@@ -14,6 +19,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool.storage import (  # noqa: E402
+    DATABASE_BUSY_MESSAGE,
     SCHEMA_VERSION,
     StorageError,
     apply_completion_cycle_capture_activation_migration,
@@ -40,12 +46,25 @@ from task_governance_tool.storage import (  # noqa: E402
     initial_schema_sql,
     initialize_database,
     resolve_database_target,
+    validate_snapshot_database,
+    validate_snapshot_database_for_viewer,
 )
-from task_governance_tool.tasks import STATUSES, VIEWER_TASK_FIELDS, add_task  # noqa: E402
+from task_governance_tool import tasks as tasks_module  # noqa: E402
+from task_governance_tool import storage as storage_module  # noqa: E402
+from task_governance_tool.tasks import (  # noqa: E402
+    STATUSES,
+    VIEWER_TASK_FIELDS,
+    _list_tasks_for_validated_viewer_snapshot,
+    add_task,
+    list_tasks_for_viewer,
+)
 from task_governance_tool.reviews import (  # noqa: E402
     add_review_finding,
     add_review_receipt,
     set_review_target,
+)
+from task_governance_tool.verification_receipts import (  # noqa: E402
+    add_verification_receipt,
 )
 from task_governance_tool import viewer as viewer_module  # noqa: E402
 from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
@@ -67,7 +86,409 @@ def table_count(db: Path, table: str) -> int:
         return int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
 
+def sqlite_lock_error(error_code: int) -> sqlite3.OperationalError:
+    error = sqlite3.OperationalError(
+        "Authorization: Bearer sensitive Viewer lock detail"
+    )
+    error.sqlite_errorcode = error_code
+    return error
+
+
 class ViewerSnapshotTests(unittest.TestCase):
+    def test_v18_viewer_batch_preserves_database_busy(self):
+        project_id = "project-a"
+        task_id = "tg_task_" + "1" * 16
+        savepoint_name = "taskgov_viewer_batch_" + "a" * 32
+
+        for error_code in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+            with self.subTest(stage="issuance", error_code=error_code):
+                connection = mock.Mock()
+                connection.execute.side_effect = sqlite_lock_error(error_code)
+                target = mock.Mock()
+                target.project.project_id = project_id
+                with (
+                    mock.patch.object(
+                        storage_module,
+                        "_validate_snapshot_database_state",
+                        return_value=(18, ({"task_id": task_id},)),
+                    ),
+                    self.assertRaises(StorageError) as failure,
+                ):
+                    validate_snapshot_database_for_viewer(connection, target)
+
+                self.assertEqual(failure.exception.code, "database_busy")
+                self.assertEqual(
+                    failure.exception.message,
+                    DATABASE_BUSY_MESSAGE,
+                )
+                self.assertNotIn("Authorization", str(failure.exception))
+
+            for stage in ("consume_read", "consume_release"):
+                with self.subTest(stage=stage, error_code=error_code):
+                    connection = mock.Mock()
+                    connection.in_transaction = True
+                    batch = storage_module._register_validated_viewer_task_batch(
+                        connection,
+                        project_id=project_id,
+                        source_schema_version=18,
+                        task_ids=(task_id,),
+                        task_count=1,
+                        data_version=1,
+                        savepoint_name=savepoint_name,
+                    )
+                    if stage == "consume_read":
+                        connection.execute.side_effect = sqlite_lock_error(
+                            error_code
+                        )
+                    else:
+                        def execute(sql):
+                            if sql == "PRAGMA query_only":
+                                cursor = mock.Mock()
+                                cursor.fetchone.return_value = (1,)
+                                return cursor
+                            if sql == "PRAGMA data_version":
+                                cursor = mock.Mock()
+                                cursor.fetchone.return_value = (1,)
+                                return cursor
+                            raise sqlite_lock_error(error_code)
+
+                        connection.execute.side_effect = execute
+
+                    with self.assertRaises(StorageError) as failure:
+                        storage_module._consume_validated_viewer_task_batch(
+                            connection,
+                            batch,
+                            project_id=project_id,
+                            source_schema_version=18,
+                            task_rows=[
+                                {
+                                    "project_id": project_id,
+                                    "task_id": task_id,
+                                }
+                            ],
+                        )
+
+                    self.assertEqual(failure.exception.code, "database_busy")
+                    self.assertEqual(
+                        failure.exception.message,
+                        DATABASE_BUSY_MESSAGE,
+                    )
+                    self.assertNotIn("Authorization", str(failure.exception))
+
+    def test_v18_snapshot_reuses_exact_ledger_validated_task_batch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = initialized_target(tmp)
+            with closing(connect(target.db_path)) as connection:
+                with connection:
+                    add_task(
+                        connection,
+                        target.project,
+                        title="Later Viewer task",
+                        priority="low",
+                    )
+                    add_task(
+                        connection,
+                        target.project,
+                        title="First Viewer task",
+                        priority="urgent",
+                    )
+
+            with closing(connect_snapshot_readonly(target.db_path)) as connection:
+                self.assertEqual(
+                    validate_snapshot_database(connection, target),
+                    SCHEMA_VERSION,
+                )
+
+            with closing(connect_snapshot_readonly(target.db_path)) as connection:
+                ordinary = list_tasks_for_viewer(
+                    connection,
+                    target.project,
+                    source_schema_version=SCHEMA_VERSION,
+                )
+
+            validated_batch_sizes = []
+            real_validator = tasks_module.validate_stored_task_rows
+
+            def counted_validator(rows, *args, **kwargs):
+                validated_batch_sizes.append(len(rows))
+                return real_validator(rows, *args, **kwargs)
+
+            with (
+                closing(connect_snapshot_readonly(target.db_path)) as connection,
+                mock.patch.object(
+                    tasks_module,
+                    "validate_stored_task_rows",
+                    side_effect=counted_validator,
+                ),
+                mock.patch.object(
+                    tasks_module,
+                    "_consume_validated_viewer_task_batch",
+                    wraps=tasks_module._consume_validated_viewer_task_batch,
+                ) as consume_batch,
+            ):
+                snapshot = build_viewer_snapshot(
+                    connection,
+                    target,
+                    generated_at="2026-08-04T00:00:00Z",
+                )
+
+            projected_tasks = []
+            for task in snapshot.snapshot["tasks"]:
+                projected = dict(task)
+                projected.pop("completion_history")
+                projected_tasks.append(projected)
+            self.assertEqual(projected_tasks, ordinary.tasks)
+            self.assertEqual(snapshot.event_count, ordinary.event_count)
+            self.assertEqual(validated_batch_sizes, [2])
+            consume_batch.assert_called_once()
+
+    def test_v18_validated_viewer_task_batch_rejects_wrong_bindings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = initialized_target(tmp)
+            with closing(connect(target.db_path)) as connection:
+                with connection:
+                    add_task(
+                        connection,
+                        target.project,
+                        title="Viewer proof binding",
+                    )
+            other_target = resolve_database_target(
+                repo=Path(tmp) / "other-repo",
+                db=target.db_path,
+                script_path=SCRIPT_PATH,
+            )
+
+            with (
+                closing(connect_snapshot_readonly(target.db_path)) as source,
+                closing(connect_snapshot_readonly(target.db_path)) as other,
+            ):
+                validation = validate_snapshot_database_for_viewer(source, target)
+                with self.assertRaises(StorageError) as wrong_connection:
+                    _list_tasks_for_validated_viewer_snapshot(
+                        other,
+                        target.project,
+                        validation.validated_task_batch,
+                    )
+                self.assertEqual(
+                    wrong_connection.exception.code,
+                    "project_state_unreadable",
+                )
+
+            with closing(connect_snapshot_readonly(target.db_path)) as connection:
+                validation = validate_snapshot_database_for_viewer(connection, target)
+                batch = validation.validated_task_batch
+                issuance = storage_module._VIEWER_TASK_BATCH_ISSUANCES[id(batch)][1]
+                connection.execute(f"RELEASE SAVEPOINT {issuance.savepoint_name}")
+                connection.execute(f"SAVEPOINT {issuance.savepoint_name}")
+                reconstructed = type(batch)()
+                with self.assertRaises(StorageError) as reconstructed_token:
+                    _list_tasks_for_validated_viewer_snapshot(
+                        connection,
+                        target.project,
+                        reconstructed,
+                    )
+                self.assertEqual(
+                    reconstructed_token.exception.code,
+                    "project_state_unreadable",
+                )
+
+            with closing(connect_snapshot_readonly(target.db_path)) as connection:
+                validation = validate_snapshot_database_for_viewer(connection, target)
+                with self.assertRaises(StorageError) as wrong_project:
+                    _list_tasks_for_validated_viewer_snapshot(
+                        connection,
+                        other_target.project,
+                        validation.validated_task_batch,
+                    )
+                self.assertEqual(
+                    wrong_project.exception.code,
+                    "project_state_unreadable",
+                )
+                with self.assertRaises(StorageError) as burned_token:
+                    _list_tasks_for_validated_viewer_snapshot(
+                        connection,
+                        target.project,
+                        validation.validated_task_batch,
+                    )
+                self.assertEqual(
+                    burned_token.exception.code,
+                    "project_state_unreadable",
+                )
+
+            with closing(connect_snapshot_readonly(target.db_path)) as connection:
+                validation = validate_snapshot_database_for_viewer(connection, target)
+                _list_tasks_for_validated_viewer_snapshot(
+                    connection,
+                    target.project,
+                    validation.validated_task_batch,
+                )
+                with self.assertRaises(StorageError) as reused_batch:
+                    _list_tasks_for_validated_viewer_snapshot(
+                        connection,
+                        target.project,
+                        validation.validated_task_batch,
+                    )
+                self.assertEqual(
+                    reused_batch.exception.code,
+                    "project_state_unreadable",
+                )
+
+            with closing(connect_snapshot_readonly(target.db_path)) as connection:
+                validation = validate_snapshot_database_for_viewer(connection, target)
+                batch = validation.validated_task_batch
+                issuance = storage_module._VIEWER_TASK_BATCH_ISSUANCES[id(batch)][1]
+                savepoint_name = issuance.savepoint_name
+                connection.rollback()
+                with closing(connect(target.db_path)) as writer:
+                    writer.execute(
+                        "UPDATE tasks SET title = ? WHERE project_id = ?",
+                        (
+                            "Authorization: Bearer unvalidated-private-value",
+                            target.project.project_id,
+                        ),
+                    )
+                    writer.commit()
+                connection.execute("BEGIN")
+                connection.execute(f"SAVEPOINT {savepoint_name}")
+                with (
+                    mock.patch.object(
+                        tasks_module,
+                        "row_to_viewer_task",
+                        side_effect=AssertionError(
+                            "revoked proof projected changed Task bytes"
+                        ),
+                    ) as project_task,
+                    self.assertRaises(StorageError) as wrong_transaction,
+                ):
+                    _list_tasks_for_validated_viewer_snapshot(
+                        connection,
+                        target.project,
+                        batch,
+                    )
+                self.assertEqual(
+                    wrong_transaction.exception.code,
+                    "project_state_unreadable",
+                )
+                project_task.assert_not_called()
+
+            with tempfile.TemporaryDirectory() as invalid_tmp:
+                invalid_target = initialized_target(invalid_tmp)
+                with (
+                    closing(
+                        connect_snapshot_readonly(invalid_target.db_path)
+                    ) as connection,
+                    mock.patch.object(
+                        storage_module.secrets,
+                        "token_hex",
+                        return_value="invalid;savepoint",
+                    ),
+                    self.assertRaises(StorageError) as invalid_savepoint,
+                ):
+                    validate_snapshot_database_for_viewer(
+                        connection,
+                        invalid_target,
+                    )
+                self.assertEqual(
+                    invalid_savepoint.exception.code,
+                    "project_state_unreadable",
+                )
+
+    def test_schema_v17_native_receipt_history_uses_legacy_subject_projection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = initialized_target(tmp)
+            with closing(connect(target.db_path)) as connection:
+                with connection:
+                    task = add_task(
+                        connection,
+                        target.project,
+                        title="Schema 17 Viewer receipt history",
+                        status="in_progress",
+                        review_tier=0,
+                        verification="Focused offline verification",
+                    ).task
+
+            with closing(connect(target.db_path)) as connection:
+                set_review_target(
+                    connection,
+                    target.project,
+                    task["task_id"],
+                    kind="diff_fingerprint",
+                    revision="sha256:" + ("d" * 64),
+                )
+                add_review_receipt(
+                    connection,
+                    target.project,
+                    task["task_id"],
+                    reviewer="mechanical-review",
+                    kind="not_required",
+                    verdict="not_required",
+                    summary="Mechanical Viewer compatibility fixture",
+                )
+                connection.commit()
+
+            with closing(connect(target.db_path)) as connection:
+                add_verification_receipt(
+                    connection,
+                    target.project,
+                    task["task_id"],
+                    result="pass",
+                    duration_ms=1,
+                    scope_coverage="full",
+                    expected_target_generation=1,
+                )
+                connection.commit()
+
+            completed = run_taskgov_internal(
+                "task",
+                "complete",
+                task["task_id"],
+                "--repo",
+                str(target.project.canonical_repo),
+                "--db",
+                str(target.db_path),
+                "--verification-complete",
+                "--review-complete",
+                "--commit-not-required",
+                "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+
+            with closing(connect(target.db_path)) as connection:
+                remove_v18_evidence_ledger_for_test(connection)
+                connection.commit()
+
+            validated_batch_sizes = []
+            real_validator = tasks_module.validate_stored_task_rows
+
+            def counted_validator(rows, *args, **kwargs):
+                validated_batch_sizes.append(len(rows))
+                return real_validator(rows, *args, **kwargs)
+
+            with (
+                closing(connect_snapshot_readonly(target.db_path)) as connection,
+                mock.patch.object(
+                    tasks_module,
+                    "validate_stored_task_rows",
+                    side_effect=counted_validator,
+                ),
+                mock.patch.object(
+                    tasks_module,
+                    "_consume_validated_viewer_task_batch",
+                    wraps=tasks_module._consume_validated_viewer_task_batch,
+                ) as consume_batch,
+            ):
+                result = build_viewer_snapshot(connection, target)
+
+            self.assertEqual(result.snapshot["source_schema_version"], 17)
+            self.assertEqual(validated_batch_sizes, [1])
+            consume_batch.assert_not_called()
+            history = result.snapshot["tasks"][0]["completion_history"]
+            self.assertEqual(history["returned_count"], 1)
+            self.assertIs(
+                history["cycles"][0]["verification_attestation"],
+                True,
+            )
+
     def test_snapshot_v4_reads_schema_v5_through_v17_with_honest_history(self):
         for source_version in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
@@ -437,6 +858,11 @@ class ViewerSnapshotTests(unittest.TestCase):
                             status=initial_status,
                             blocked_reason=("Waiting for input" if status == "blocked" else ""),
                             priority=("urgent" if index == 0 else "normal"),
+                            verification=(
+                                "Run the bounded Viewer verification"
+                                if status == "in_progress"
+                                else ""
+                            ),
                             **contract_input,
                         ).task
                         if status == "done":
@@ -466,6 +892,14 @@ class ViewerSnapshotTests(unittest.TestCase):
                             tasks[status]["status"] = "paused"
                             tasks[status]["pause_reason"] = "Viewer pause reason"
                     selected = tasks["ready"]
+                    verification_task = tasks["in_progress"]
+                    set_review_target(
+                        connection,
+                        target.project,
+                        verification_task["task_id"],
+                        kind="diff_fingerprint",
+                        revision="sha256:" + ("b" * 64),
+                    )
                     connection.execute(
                         """
                         UPDATE tasks
@@ -491,6 +925,13 @@ class ViewerSnapshotTests(unittest.TestCase):
                         kind="independent",
                         verdict="pass",
                         summary="Viewer evidence projection accepted",
+                        reviewer_class="human",
+                        model_state="not_applicable",
+                        skill_state="not_applicable",
+                        review_profiles=["general"],
+                        review_lenses=["correctness"],
+                        context_relation="external_context",
+                        review_methods=["review_packet_inspection"],
                     )
                     add_review_finding(
                         connection,
@@ -519,6 +960,18 @@ class ViewerSnapshotTests(unittest.TestCase):
                             ),
                         )
 
+            with closing(connect(target.db_path)) as connection:
+                add_verification_receipt(
+                    connection,
+                    target.project,
+                    verification_task["task_id"],
+                    result="pass",
+                    duration_ms=25,
+                    scope_coverage="full",
+                    expected_target_generation=1,
+                )
+                connection.commit()
+
             task_events_before = table_count(target.db_path, "task_events")
             tool_events_before = table_count(target.db_path, "tool_events")
             generated_at = "2026-07-17T00:00:00Z"
@@ -530,8 +983,19 @@ class ViewerSnapshotTests(unittest.TestCase):
                 )
 
             snapshot = result.snapshot
+            self.assertEqual(
+                set(snapshot),
+                {
+                    "snapshot_version",
+                    "generated_at",
+                    "project",
+                    "source_schema_version",
+                    "counts",
+                    "tasks",
+                },
+            )
             self.assertEqual(snapshot["snapshot_version"], 4)
-            self.assertEqual(snapshot["source_schema_version"], 17)
+            self.assertEqual(snapshot["source_schema_version"], 18)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {
@@ -583,7 +1047,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 [event["summary"] for event in ready["events"]],
                 [f"Viewer event {index:02d}" for index in range(11, 1, -1)],
             )
-            self.assertEqual(result.event_count, 16)
+            self.assertEqual(result.event_count, 17)
             self.assertEqual(snapshot["tasks"][0]["priority"], "urgent")
 
             serialized = json.dumps(snapshot)
@@ -592,6 +1056,13 @@ class ViewerSnapshotTests(unittest.TestCase):
             self.assertNotIn("VIEWER_CONTRACT_SCOPE_MUST_STAY_LOCAL", serialized)
             self.assertNotIn("current_contract_revision", serialized)
             self.assertNotIn("task_contract_revisions", serialized)
+            self.assertNotIn("review_provenance", serialized)
+            self.assertNotIn("authority_snapshot_id", serialized)
+            self.assertNotIn("acceptance_criterion_id", serialized)
+            self.assertNotIn("verification_criterion_id", serialized)
+            self.assertNotIn("artifact_manifest", serialized)
+            self.assertNotIn("evidence_reference", serialized)
+            self.assertNotIn("verification_subject", serialized)
             self.assertNotIn(str(target.project.canonical_repo), serialized)
             self.assertNotIn(str(target.db_path), serialized)
             self.assertEqual(table_count(target.db_path, "task_events"), task_events_before)

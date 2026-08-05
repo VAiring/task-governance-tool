@@ -1,7 +1,7 @@
 # Release Candidate And Published Install Record
 
 This note owns both the current local package candidate and the immutable
-published artifact identity. Version 0.11.0 is an unpublished local candidate:
+published artifact identity. Version 0.12.0 is an unpublished local candidate:
 no candidate commit, push, tag, archive, checksum, GitHub Release, or
 publication is fixed, claimed, or authorized. The published v0.10.0 artifact
 and its exact commit, tag, Release, archive, checksum, and Release body remain
@@ -12,9 +12,9 @@ Skill in any project.
 
 | Item | Value |
 |---|---|
-| Package version | `0.11.0` |
-| SQLite schema | v17 |
-| Viewer snapshot | v4, accepting source schemas v5-v17 (v5 through v17) |
+| Package version | `0.12.0` |
+| SQLite schema | v18 |
+| Viewer snapshot | v4, accepting source schemas v5-v18 (v5 through v18) |
 | Public command leaves | 21 |
 | Supported runtime | Python 3.12 or newer on Windows |
 | Verified platform | Windows |
@@ -26,7 +26,7 @@ Skill in any project.
 | Checksum | not produced |
 | Archive root | `task-governance-tool/` |
 | Release title | not assigned |
-| Release notes | `docs/releases/v0.11.0.md` candidate note |
+| Release notes | `docs/releases/v0.12.0.md` candidate note |
 | Workflow/name/job | `.github/workflows/ci.yml`, `CI`, `test` |
 | CI Python matrix | 3.12 and 3.14 |
 
@@ -41,7 +41,7 @@ visibility. Its archive is `task-governance-tool-0.10.0.zip`, its checksum is
 `task-governance-tool-0.10.0.zip.sha256`, its title is
 `task-governance-tool v0.10.0`, and its exact canonical body remains
 `docs/releases/v0.10.0.md`. The accepted archive root is
-`task-governance-tool/`. No v0.11.0 candidate work changes or supersedes these
+`task-governance-tool/`. No v0.12.0 candidate work changes or supersedes these
 facts.
 
 ## License Boundary
@@ -148,7 +148,7 @@ one-way opt-in to bounded local maintenance and directly publishes or repairs
 the canonical Viewer. It is explicit, noninteractive, idempotent, and limited
 to the supported physical project-scoped package.
 
-Version 0.11.0 retains the fixed package-local `state/current/` layout. Fresh
+Version 0.12.0 retains the fixed package-local `state/current/` layout. Fresh
 write-mode setup creates one UUIDv4-backed immutable project identity and
 stores the mutable governed-directory binding separately. Explicit setup
 publishes supported schema-v1-through-v13 legacy state into the fixed layout
@@ -227,8 +227,14 @@ metadata. Schema v15 adds append-only completion-cycle storage and conservative
 partial rows only for then-current done Tasks; schema v16 is the marker-only
 activation boundary for atomic native capture. Schema v17 adds immutable
 Verification Receipts and an explicit completion-cycle verification basis.
-Migration from v1-v16 and schema-v17 activation/reentry is ordered and
-repeatable.
+Schema v18 adds capture-versioned authority snapshots, whole-field criteria,
+evidence references, Git artifact manifests, tool-owned verification subjects,
+and versioned Review provenance. It raises durable/read verification capacity
+to 1,000 characters while explicit public Task add/edit admission remains 500.
+Migration from v1-v17 and schema-v18 activation/reentry is ordered and
+repeatable. A migrated capture-version-0 target remains read-only lineage and
+must be replaced with a fresh capture-version-1 target before a new Receipt,
+Finding, or completion source can be recorded.
 
 Installation alone and ordinary task commands never migrate. After replacing
 packaged core files while preserving local state, run `setup`; it performs any
@@ -239,14 +245,17 @@ migration.
 
 The immutable v0.10.0 release acceptance rehearsed the transition from the
 exact legacy v0.1.0/schema-v2 baseline to v0.10.0/schema v16. The current
-v0.11.0 candidate must separately rehearse that isolated baseline through
-schema v17, including Verification Receipt and completion-basis preservation,
-before it can become a release. Neither rehearsal selects or mutates
+v0.12.0 candidate must separately rehearse that isolated baseline through
+schema v18, including schema-v17 Receipt/completion preservation, subject and
+provenance migration, capture-v0/fresh retargeting, 500/1,000 capacity,
+backup recovery, and no-partial-write behavior before it can become a release.
+The v0.11.0 candidate note remains immutable lineage and its rehearsal cannot
+satisfy this current gate. Neither rehearsal selects or mutates
 user-wide, linked, junction, or custom-`--db` state.
 
 Rollback restores one matched pre-migration package, database, and managed
 artifact set as a single compatibility point, then proves that the legacy
-package can read that restored state. Running old code against schema v17,
+package can read that restored state. Running old code against schema v18,
 reverse-migrating in place, mixing generations, or treating a Git checkout
 alone as rollback is unsupported. After cutover, a defect is handled by a
 forward fix and new candidate/version, not a force update, history rewrite,
@@ -292,13 +301,14 @@ separate model decision. Handoff-only writes may make backup due but do not
 change the Viewer generation. Setup publishes the Viewer directly.
 
 The Viewer is a self-contained, read-only `file://` projection under the
-ignored package state. Snapshot v4 accepts source schemas v5-v17 and includes
+ignored package state. Snapshot v4 accepts source schemas v5-v18 and includes
 the same bounded newest-first completion history as `task show`; sources v5-v14
 receive an empty, legacy-incomplete history. It omits internal event links,
 storage paths, maintenance internals, checkpoint content, handoffs,
-Verification Receipt data, raw evidence, environment data, and secrets. It
-validates internal schema-v17 completion-cycle Receipt links but performs no
-network request and provides no database or task write control.
+Verification Receipt data, Review provenance, raw evidence, environment data,
+and secrets. For source v18 it validates subject/provenance/capture bindings
+before discarding them from snapshot v4. It performs no network request and
+provides no database or task write control.
 
 An optional browser-only refresh profile may exist at the physical installed
 package's `config/viewer.json`. Taskgov never creates or edits it, and the file
@@ -330,7 +340,7 @@ unchanged.
 
 ## Public CLI Surface
 
-The current 0.11.0 candidate exposes exactly these 21 command leaves:
+The current 0.12.0 candidate exposes exactly these 21 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -353,6 +363,23 @@ The current 0.11.0 candidate exposes exactly these 21 command leaves:
 19. `taskgov review finding add`
 20. `taskgov review finding resolve`
 21. `taskgov verification receipt add`
+
+The schema-v18 Receipt writes remain those existing leaves. Verification has
+no caller label or replacement subject input; Taskgov derives the subject from
+the locked capture-version-1 target:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-key> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class llm --model-state declared --declared-model-id <model-id> --skill-state not_used --context-relation fresh_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
+```
+
+For independent/self-review Receipts, reviewer class, model state, Skill state,
+and context relation are conditionally required; declared identifiers are
+optional only when their states require them, while profile, lens, and method
+flags are repeatable bounded sets. Native Receipts project v1 provenance,
+migrated pre-v18 Receipts project v0 absence, and `not_required` projects null.
+These attestations never authenticate reviewer identity or prove actual
+model/Skill execution, competence, independence, diversity, quality, or truth.
 
 Applicable leaves retain `--repo`, `--json`, and `--read-only`; the root retains
 `--version`. Storage and generated-artifact paths are internal implementation
@@ -407,11 +434,16 @@ use the network.
 Default retention excludes raw stdout/stderr, stack traces, environment dumps,
 full prompts or conversations, authorization material, raw provider bodies,
 large diffs, raw review transcripts, and secrets. A Verification Receipt stores
-only its sanitized command label, result, duration, full/partial scope
-coverage, ownership, current Contract/target basis, and recording time. It
+only its result, duration, full/partial scope coverage, ownership, tool-owned
+verification subject, current Contract/target basis, and recording time. A
+migrated subject-v0 Receipt preserves its old caller label only as legacy
+read-only lineage; a new subject-v1 Receipt accepts none. It
 never stores the verification command body or arguments, exit code, output,
 logs, exception, prompt, diff, credential, arbitrary coverage prose, or debug
-variant. The Viewer and diagnostic envelopes expose bounded allow-listed
+variant. Review provenance retains only the closed scalar/code declarations,
+bounded declared identifiers, binding metadata, assurance/producer values, and
+digest. It does not upgrade the parent Receipt's assurance. The Viewer and
+diagnostic envelopes expose bounded allow-listed
 projections only. Completion cycles copy only already accepted bounded fields
 and receipt IDs and never satisfy a current gate.
 
@@ -445,7 +477,7 @@ The v0.10.0 acceptance boundary is complete:
   body is the exact bytes of `docs/releases/v0.10.0.md`, SHA-256
   `aaa118a3fbbb261ec6a24f7a80f50f161e606a86857f99e17f957f34ba044a03`.
 
-For the current 0.11.0 candidate, first run the repository-only, offline,
+For the current 0.12.0 candidate, first run the repository-only, offline,
 read-only checker with `python tools/release_contract.py --repo .`. It derives
 the parser leaves and package/schema/Viewer versions from owning Python code,
 uses the release manifest as the exact packaged-core inventory, and checks
@@ -475,14 +507,18 @@ supplies that authorization.
 
 ## Current Candidate Summary
 
-Version 0.11.0 is an unpublished local candidate. Schema v17 adds the bounded
-caller-attested Verification Receipt and exact-current completion gate while
-executing no project command and retaining no command body or output. Viewer
-snapshot v4 accepts source schemas v5-v17 without adding Receipt content or UI.
-The public inventory is exactly 21 leaves, and the normal no-finding Tier 2
-flow is bounded to ten calls, or eleven with the enabled Effort Advisory.
-Nothing in this candidate records a publishable commit, creates a tag or
-archive, dispatches CI, pushes, or publishes a Release.
+Version 0.12.0 is an unpublished local candidate. Schema v18 activates the
+capture-ledger foundation, tool-owned verification subjects, Review provenance,
+capture-v0 stale/fresh retargeting, and 1,000-character durable/read capacity
+while public Task verification ingress remains 500. Backup/recovery and
+schema-aware source validation fail closed before mutation. Viewer snapshot v4
+accepts source schemas v5-v18 while validating and discarding the new ledger
+fields. No Evidence Bundle, Evidence JSON, Runner, Analyzer, network/model
+invocation, Viewer Evidence surface, command leaf, or normal-loop call is
+activated. The public inventory is exactly 21 leaves, and the normal no-finding
+Tier 2 flow remains bounded to ten calls, or eleven with the enabled Effort
+Advisory. Nothing in this candidate records a publishable commit, creates a tag
+or archive, dispatches CI, pushes, or publishes a Release.
 
 ## Immutable Published v0.10.0 Summary
 

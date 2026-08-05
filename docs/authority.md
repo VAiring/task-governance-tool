@@ -25,13 +25,24 @@ Read only the exact owner and section selected by the Task Contract and the
 trigger table below. Directly coupled code, schemas, tests, configuration,
 examples, and fixtures remain part of that selected read.
 
+The specification remains the product-behavior owner and the design remains
+the implementation-structure owner. Execution-detail routing below does not
+transfer either role.
+
+## Mixed Current And Conditional Execution Authority
+
+- [TG-M22 Evidence Ledger sequence](execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence)
+
+Only TG-M22.2's exact execution and acceptance detail is current. TG-M22.1A
+is its accepted design prerequisite; TG-M21.5 and TG-M22.3/TG-M22.4 remain
+inactive. Reading or indexing their detail does not activate them.
+
 ## Conditional Formal Authority
 
-- [TG-M22 Evidence Ledger](execution-contracts/tg-m22-evidence-ledger.md)
 - [TG-M23 Derived Evidence](execution-contracts/tg-m23-derived-evidence.md)
 - [TG-M24 Verification Runner](execution-contracts/tg-m24-verification-runner.md)
 
-These documents are accepted but inactive. Load only the exact document and
+These sequences are accepted but inactive. Load only the exact document and
 explicit ASCII anchor named by the current Task Contract or a directly coupled
 cross-cutting decision. Indexing or reading one does not activate behavior.
 
@@ -51,7 +62,8 @@ current gate.
 | Supported product behavior, public CLI/JSON, persistence, privacy, setup, Viewer, or current gate | Exact section in `docs/specification.md` |
 | Module ownership, storage/process boundary, migration mechanics, or test architecture | Exact section in `docs/design.md` |
 | Current decision, open issue, cross-sequence gateway, or static contract not delegated below | Exact section in `plan.md` |
-| TG-M22, TG-M23, or TG-M24 unit purpose, scope, order, dependency, permission, or verification/review/completion gate | Exact conditional file and ASCII anchor above |
+| TG-M22.2 purpose, scope, order, dependency, permission, or execution/acceptance gate | Stable `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence` route and its current detailed sections; product behavior and implementation structure remain owned above |
+| TG-M21.5, TG-M22.3/TG-M22.4, TG-M23, or TG-M24 unit detail | Exact inactive unit in the routed execution contract and ASCII anchor above |
 | Published artifact, install, upgrade, tag, or Release identity | `docs/release-install.md` |
 | Live status, blocker, target, evidence, review, or completion history | Public CLI and live Task Contract; no Git-document mirror |
 | Historical lineage or retired evidence | `docs/history/README.md`, only after naming the exceptional reason |
@@ -76,7 +88,7 @@ to omit a current invariant or weaken a contract.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v1",
+  "schema": "taskgov-document-authority-v2",
   "baseline": {
     "commit": "695b240178681a072b5cbd73845dff8e31a281d6",
     "mandatory_files": 4,
@@ -95,8 +107,13 @@ to omit a current invariant or weaken a contract.
   },
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md"],
+  "mixed_execution": [{
+    "path": "docs/execution-contracts/tg-m22-evidence-ledger.md",
+    "route_anchor": "tg-m22-sequence",
+    "current_units": ["TG-M22.2"],
+    "inactive_units": ["TG-M21.5", "TG-M22.3", "TG-M22.4"]
+  }],
   "conditional": [
-    "docs/execution-contracts/tg-m22-evidence-ledger.md",
     "docs/execution-contracts/tg-m23-derived-evidence.md",
     "docs/execution-contracts/tg-m24-verification-runner.md"
   ],

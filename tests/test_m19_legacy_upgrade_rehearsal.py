@@ -341,7 +341,11 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
         expected: int = 0,
     ) -> dict[str, Any]:
         result = run_cli(skill, project, *arguments)
-        self.assertEqual(result.returncode, expected)
+        self.assertEqual(
+            result.returncode,
+            expected,
+            f"{result.stderr}\n{result.stdout}",
+        )
         return json_payload(result)
 
     def test_exact_legacy_package_upgrades_and_rolls_back_as_one_compatibility_point(
@@ -407,14 +411,14 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertEqual(overlay_state_snapshot, legacy_state_snapshot)
             version = run_cli(legacy_skill, project, "--version")
             self.assertEqual(version.returncode, 0)
-            self.assertEqual(version.stdout.strip(), "taskgov 0.11.0")
+            self.assertEqual(version.stdout.strip(), "taskgov 0.12.0")
 
             preview = self.invoke(
                 legacy_skill, project, "setup", "--repo", str(project),
                 "--read-only", "--json",
             )
             self.assertEqual(preview["data"]["schema_from"], 2)
-            self.assertEqual(preview["data"]["schema_to"], 17)
+            self.assertEqual(preview["data"]["schema_to"], 18)
             self.assertEqual(preview["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(preview["data"]["completed_writes"], [])
             self.assertEqual(
@@ -450,7 +454,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                 "--repo", str(project), "--json",
             )
             self.assertEqual(upgraded["data"]["schema_from"], 2)
-            self.assertEqual(upgraded["data"]["schema_to"], 17)
+            self.assertEqual(upgraded["data"]["schema_to"], 18)
             self.assertEqual(upgraded["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(upgraded["data"]["completed_writes"], LEGACY_SETUP_WRITES)
 
@@ -461,7 +465,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertTrue(current_db.is_file())
             self.assertTrue(viewer.is_file())
             self.assertFalse(legacy_db.exists())
-            self.assertEqual(sqlite_version(current_db), 17)
+            self.assertEqual(sqlite_version(current_db), 18)
             self.assertEqual(legacy_projection(current_db), pre_upgrade_projection)
 
             with closing(sqlite3.connect(current_db)) as connection:
@@ -541,7 +545,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             )
             self.assertEqual(
                 doctor["data"]["components"]["project_state"]["schema_version"],
-                17,
+                18,
             )
             self.assertEqual(
                 doctor["data"]["components"]["maintenance"]["viewer"]["code"],
@@ -575,7 +579,6 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             receipt = self.invoke(
                 legacy_skill, project, "verification", "receipt", "add",
                 fresh_task_id, "--repo", str(project),
-                "--command-label", "Post-upgrade integrated acceptance",
                 "--result", "pass",
                 "--duration-ms", "1",
                 "--scope-coverage", "full",
@@ -605,6 +608,10 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                     "--kind", "independent",
                     "--verdict", "pass",
                     "--summary", "Post-upgrade review passed",
+                    "--reviewer-class", "human",
+                    "--model-state", "not_applicable",
+                    "--skill-state", "not_applicable",
+                    "--context-relation", "external_context",
                     "--json",
                 )
             fresh_completed = self.invoke(

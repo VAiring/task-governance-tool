@@ -285,7 +285,7 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         ):
             text = path.read_text(encoding="utf-8")
             self.assertIn(__version__, text, path)
-            self.assertRegex(text, r"(?i)schema(?: version)? v?17")
+            self.assertRegex(text, r"(?i)schema(?: version)? v?18")
             self.assertRegex(text, r"(?i)(?:viewer )?snapshot v4")
 
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -653,8 +653,6 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
                 "receipt",
                 "add",
                 task_id,
-                "--command-label",
-                "Bounded integrated acceptance",
                 "--result",
                 "pass",
                 "--duration-ms",
@@ -695,6 +693,14 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
                     "pass",
                     "--summary",
                     "Integrated acceptance passed.",
+                    "--reviewer-class",
+                    "human",
+                    "--model-state",
+                    "not_applicable",
+                    "--skill-state",
+                    "not_applicable",
+                    "--context-relation",
+                    "external_context",
                 )
                 graph_payloads.append(receipt)
 

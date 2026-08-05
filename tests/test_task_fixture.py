@@ -104,8 +104,6 @@ class TaskStatusFixtureTests(unittest.TestCase):
                         str(repo),
                         "--db",
                         str(db),
-                        "--command-label",
-                        "Fixture verification",
                         "--result",
                         "pass",
                         "--duration-ms",

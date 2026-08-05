@@ -214,6 +214,19 @@ class CliHelpTests(unittest.TestCase):
                 "authenticated provenance",
             ):
                 self.assertIn(phrase, normalized_receipt)
+            for option in (
+                "--reviewer-class",
+                "--model-state",
+                "--declared-model-id",
+                "--skill-state",
+                "--declared-skill-id",
+                "--declared-skill-version",
+                "--review-profile",
+                "--review-lens",
+                "--context-relation",
+                "--review-method",
+            ):
+                self.assertIn(option, receipt.stdout)
 
     def test_verification_receipt_help_exposes_only_bounded_attestation_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -226,7 +239,6 @@ class CliHelpTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         for supported in (
             "task_id",
-            "--command-label",
             "--result",
             "--duration-ms",
             "--scope-coverage",
@@ -237,6 +249,8 @@ class CliHelpTests(unittest.TestCase):
         ):
             self.assertIn(supported, result.stdout)
         for unsupported in (
+            "--command-label",
+            "--verification-subject",
             "--output",
             "--exit-code",
             "--source-revision",

@@ -2,8 +2,8 @@
 
 Decision baseline: v0.10.0 is the immutable published release; its exact
 identity lives in `docs/release-install.md`. The current unpublished local
-candidate is v0.11.0/schema v17/Viewer snapshot v4 with source compatibility
-v5-v17 and 21 public command leaves. This plan retains current decisions,
+candidate is v0.12.0/schema v18/Viewer snapshot v4 with source compatibility
+v5-v18 and 21 public command leaves. This plan retains current decisions,
 unfinished static contracts, and open issues only. Completed execution
 narrative is indexed as non-authoritative history, while the Task database,
 queried through the public CLI, solely owns live execution status and evidence.
@@ -14,11 +14,13 @@ gates. It is not the product contract, execution ledger, or evidence store:
 - [`docs/specification.md`](docs/specification.md) owns product behavior.
 - [`docs/design.md`](docs/design.md) owns implementation structure.
 - [`docs/authority.md`](docs/authority.md) owns the concise mandatory and
-  selective read routing; its conditional registry points to accepted inactive
-  execution detail without activating it.
+  selective read routing; its execution registry points to exact current or
+  inactive detail without transferring product/design ownership or activating
+  an inactive unit.
 - This plan owns current decisions, open issues, cross-sequence gateways, and
   static contracts not delegated by `docs/authority.md`. It is not a progress
-  table. Indexed conditional documents own their named inactive units.
+  table. Indexed execution contracts own their routed current or inactive unit
+  detail.
 - The project-local Task database owns live Task, handoff, review, checkpoint,
   and completion state. This file does not mirror volatile handoff IDs or
   counts; inspect them through the public CLI.
@@ -172,7 +174,7 @@ outside until separately supported. The exact Task DB record owns live state.
 
 ### Current Verification Receipt Decision
 
-The current schema-v17 Verification Receipt behavior is defined by the active
+The current schema-v18 Verification Receipt behavior is defined by the active
 [specification](docs/specification.md) and [design](docs/design.md). Completed
 M21 design, activation, acceptance, and correction narrative is preserved only
 in [indexed non-authoritative history](docs/history/v0.11.0/pre-m22-completed-execution.md).
@@ -180,32 +182,26 @@ That history supplies no current gate or implementation authority.
 
 <a id="tg-m22-1a"></a>
 
-### TG-M22.1A Review Provenance Prerequisite
+### Current Schema-v18 Evidence Capture Decision
 
-TG-M22.1A `tg_task_0e1d93d81eb843ab` is a sequential Tier 2
-execution unit in lane `TG-M22-EVIDENCE-LEDGER` at order 25. It depends on
-accepted TG-M21.4D and completed TG-DOC.1
-`tg_task_7d03a44b6733fee4`. It freezes the closed conditional Review
-provenance matrix and synchronizes formal documents plus downstream Task
-Contracts only. Explicit v1, absent legacy-v0, and null provenance on the
-existing Tier-0 `not_required` disposition remain distinct. Human/model-not-
-applicable, LLM/Skill-not-used, declared, unknown, tool, and hybrid states use
-only closed bounded codes. Original Receipt assurance and the separate
-provenance assurance never prove identity, competence, independence, or truth.
+The v0.12.0 candidate activates TG-M22.2 only: immutable current-authority
+snapshots, exact whole-field criteria, capture-version-1 target bindings and
+artifact manifests, closed Evidence References, tool-owned Verification
+subjects, and the Review provenance v1/v0/null union. Capture-version-zero
+targets remain read-only legacy lineage and reject new evidence sources until
+explicit retargeting. The durable/read verification limit is 1,000 while the
+two explicit public Task ingress points remain 500. Viewer snapshot v4
+validates and discards the new relations. No Bundle, Evidence JSON, Analyzer,
+Runner, new public leaf, normal-loop call, network action, or target mutation
+is activated.
 
-This unit changes no v17 runtime, schema, command, normal-loop call, Viewer UI,
-package, network, or target-project behavior. Completion requires exact
-documentation consistency, an exact-diff current Verification Receipt, and
-two independent Tier 2 reviews. Its detailed accepted boundary and the later
-M22 storage/read/reference, Bundle/JSON, acceptance, and M23 reporting handoffs
-are owned conditionally by the
-[TG-M22 Evidence Ledger execution contract](docs/execution-contracts/tg-m22-evidence-ledger.md).
+### Current TG-M22.2 And Conditional Later Sequences
 
-### Conditional TG-M22 And TG-M23 Sequences
-
-After TG-M22.1A, the exact M22 purpose, order, dependencies, permissions, and
-gates are owned by the
-[TG-M22 conditional execution contract](docs/execution-contracts/tg-m22-evidence-ledger.md).
+TG-M22.2 product behavior remains owned by the active specification and its
+implementation structure by the active design. Its exact execution and
+acceptance detail, plus the remaining inactive M21.5 and TG-M22.3/TG-M22.4
+purpose, order, dependencies, permissions, and gates, are owned at the stable
+[TG-M22 sequence anchor](docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence).
 The exact approved-but-inactive M23 sequence is owned by the
 [TG-M23 conditional execution contract](docs/execution-contracts/tg-m23-derived-evidence.md).
 Those contracts are read only when their owning sequence or a directly

@@ -198,8 +198,13 @@ class DocumentContractTests(unittest.TestCase):
     def test_registry_and_routes_reject_hidden_duplicate_extra_and_order_drift(self):
         mutations = (
             (
-                '  "schema": "taskgov-document-authority-v1",',
-                '  "schema": "taskgov-document-authority-v1",\n  "schema": "taskgov-document-authority-v1",',
+                '  "schema": "taskgov-document-authority-v2",',
+                '  "schema": "taskgov-document-authority-v2",\n  "schema": "taskgov-document-authority-v2",',
+                "authority_registry",
+            ),
+            (
+                '    "current_units": ["TG-M22.2"],',
+                '    "current_units": ["TG-M22.3"],',
                 "authority_registry",
             ),
             (
@@ -246,6 +251,42 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/design.md",
                 "# task-governance-tool Current Implementation Design",
                 "# task-governance-tool Current Implementation Design\n\n## Completed TG-M20 Study Boundary",
+                "document_role",
+            ),
+            (
+                "docs/execution-contracts/tg-m22-evidence-ledger.md",
+                "# TG-M22 Evidence Ledger Current And Conditional Execution Contract",
+                "# TG-M22 Evidence Ledger Conditional Execution Contract",
+                "document_role",
+            ),
+            (
+                contract.EXECUTION_INDEX,
+                "# Current And Conditional Execution Contract Index",
+                "# Conditional Execution Contract Index",
+                "document_role",
+            ),
+            (
+                contract.EXECUTION_INDEX,
+                "MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY.",
+                "CONDITIONAL FORMAL AUTHORITY — ACCEPTED BUT INACTIVE.",
+                "banner_contract",
+            ),
+            (
+                contract.EXECUTION_INDEX,
+                "Each indexed file is the sole detailed execution owner for its named units'",
+                "Each indexed file is the sole detailed owner for its named inactive units'",
+                "document_role",
+            ),
+            (
+                contract.EXECUTION_INDEX,
+                "tg-m22-evidence-ledger.md#tg-m22-sequence",
+                "tg-m22-evidence-ledger.md#tg-m22-conditional-product",
+                "authority_route",
+            ),
+            (
+                "README.md",
+                "TG-M22.2 is current. Only TG-M21.5, TG-M22.3, and TG-M22.4 are inactive in",
+                "TG-M22.2 and all later M22 units are inactive in",
                 "document_role",
             ),
             (

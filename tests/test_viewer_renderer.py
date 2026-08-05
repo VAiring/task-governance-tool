@@ -63,7 +63,7 @@ def sample_snapshot(title="Safe task"):
             "project_id": "viewer-project-123456789abc",
             "display_name": "Viewer project",
         },
-        "source_schema_version": 17,
+        "source_schema_version": 18,
         "counts": {
             "total": 1,
             "ready": 1,

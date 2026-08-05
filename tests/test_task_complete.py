@@ -11,6 +11,7 @@ from unittest import mock
 from tests.review_test_helpers import seed_review_evidence
 from tests.m14_test_support import (
     initialize_taskgov_internal,
+    remove_v18_evidence_ledger_for_test,
     run_taskgov_internal,
     run_taskgov_internal_raw,
 )
@@ -23,9 +24,15 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import completion_workflow  # noqa: E402
+from task_governance_tool import reviews as review_service  # noqa: E402
 from task_governance_tool import tasks as task_service  # noqa: E402
 from task_governance_tool.completion import (  # noqa: E402
     COMPLETION_CHECK_MAX_BYTES,
+)
+from task_governance_tool.storage import (  # noqa: E402
+    apply_evidence_ledger_capture_migration,
+    connect,
+    resolve_database_target,
 )
 
 
@@ -53,6 +60,16 @@ def add_task(db, repo, title, *extra):
         title,
         *extra,
         "--json",
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stderr or result.stdout)
+    return json.loads(result.stdout)["data"]["task"]
+
+
+def edit_task_title(db, repo, task_id, title):
+    result = run_taskgov(
+        "task", "edit", "--repo", str(repo), "--db", str(db), task_id,
+        "--title", title, "--json",
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
@@ -554,16 +571,12 @@ class TaskCompleteCliTests(unittest.TestCase):
 
             def mutate_after_git(*args, **kwargs):
                 plan = original(*args, **kwargs)
-                with closing(sqlite3.connect(db)) as connection:
-                    connection.execute(
-                        """
-                        UPDATE tasks
-                           SET title = title || ' changed'
-                         WHERE task_id = ?
-                        """,
-                        (task["task_id"],),
-                    )
-                    connection.commit()
+                edit_task_title(
+                    db,
+                    repo,
+                    task["task_id"],
+                    "Stale check changed",
+                )
                 return plan
 
             argv = list(
@@ -609,17 +622,12 @@ class TaskCompleteCliTests(unittest.TestCase):
 
             def mutate_unrelated_after_git(*args, **kwargs):
                 plan = original(*args, **kwargs)
-                with closing(sqlite3.connect(db)) as connection:
-                    connection.execute(
-                        """
-                        UPDATE tasks
-                           SET title = 'Unrelated changed',
-                               updated_at = '2999-01-01T00:00:00Z'
-                         WHERE task_id = ?
-                        """,
-                        (unrelated["task_id"],),
-                    )
-                    connection.commit()
+                edit_task_title(
+                    db,
+                    repo,
+                    unrelated["task_id"],
+                    "Unrelated changed",
+                )
                 return plan
 
             argv = list(
@@ -662,17 +670,12 @@ class TaskCompleteCliTests(unittest.TestCase):
                 try:
                     return original(*args, **kwargs)
                 finally:
-                    with closing(sqlite3.connect(db)) as connection:
-                        connection.execute(
-                            """
-                            UPDATE tasks
-                               SET title = 'Changed during check',
-                                   updated_at = '2999-01-01T00:00:00Z'
-                             WHERE task_id = ?
-                            """,
-                            (task["task_id"],),
-                        )
-                        connection.commit()
+                    edit_task_title(
+                        db,
+                        repo,
+                        task["task_id"],
+                        "Changed during check",
+                    )
 
             argv = [
                 "task",
@@ -978,7 +981,8 @@ class TaskCompleteCliTests(unittest.TestCase):
                 "2",
             )
             target_value = "sha256:" + ("d" * 64)
-            with closing(sqlite3.connect(db)) as connection:
+            with closing(connect(db)) as connection:
+                remove_v18_evidence_ledger_for_test(connection)
                 project_id = connection.execute(
                     "SELECT project_id FROM tasks WHERE task_id = ?",
                     (task["task_id"],),
@@ -986,13 +990,10 @@ class TaskCompleteCliTests(unittest.TestCase):
                 connection.execute(
                     """
                     UPDATE tasks
-                       SET review_target_kind = 'diff_fingerprint',
-                           review_target_value = ?,
-                           review_target_base_revision = '',
-                           review_target_generation = 201
+                       SET review_target_generation = 200
                      WHERE task_id = ?
                     """,
-                    (target_value, task["task_id"]),
+                    (task["task_id"],),
                 )
                 for generation in range(1, 201):
                     receipt_id = (
@@ -1035,27 +1036,51 @@ class TaskCompleteCliTests(unittest.TestCase):
                             receipt_id,
                         ),
                     )
-                for reviewer in ("current-reviewer-a", "current-reviewer-b"):
-                    connection.execute(
-                        """
-                        INSERT INTO review_receipts(
-                          review_receipt_id, task_id, project_id, reviewer_key,
-                          receipt_kind, verdict, target_kind, target_value,
-                          target_base_revision, target_generation, summary,
-                          user_approved, created_at
-                        ) VALUES (
-                          ?, ?, ?, ?, 'independent', 'pass',
-                          'diff_fingerprint', ?, '', 201, '', 0,
-                          '2026-07-22T00:01:00Z'
-                        )
-                        """,
-                        (
-                            "tg_review_receipt_" + reviewer,
-                            task["task_id"],
-                            project_id,
-                            reviewer,
-                            target_value,
-                        ),
+                connection.commit()
+                apply_evidence_ledger_capture_migration(connection)
+                legacy_provenance = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                      FROM review_receipts
+                     WHERE task_id = ?
+                       AND review_provenance_basis_version = 0
+                       AND review_provenance_id IS NULL
+                    """,
+                    (task["task_id"],),
+                ).fetchone()[0]
+                self.assertEqual(legacy_provenance, 200)
+
+            database_target = resolve_database_target(
+                repo=repo,
+                db=db,
+                script_path=SKILL_ROOT / "scripts" / "taskgov.py",
+            )
+            with closing(connect(db)) as connection:
+                review_service.set_review_target(
+                    connection,
+                    database_target.project,
+                    task["task_id"],
+                    kind="diff_fingerprint",
+                    revision=target_value,
+                )
+                for reviewer in (
+                    "current-reviewer-a",
+                    "current-reviewer-b",
+                ):
+                    review_service.add_review_receipt(
+                        connection,
+                        database_target.project,
+                        task["task_id"],
+                        reviewer=reviewer,
+                        kind="independent",
+                        verdict="pass",
+                        reviewer_class="human",
+                        model_state="not_applicable",
+                        skill_state="not_applicable",
+                        review_profiles=["general"],
+                        review_lenses=["correctness"],
+                        context_relation="external_context",
+                        review_methods=["review_packet_inspection"],
                     )
                 connection.commit()
 
@@ -1095,8 +1120,16 @@ class TaskCompleteCliTests(unittest.TestCase):
                 "done",
             )
             self.assertTrue(observations)
+            normalized_observations = [
+                (" ".join(statement.split()), row_count)
+                for statement, row_count in observations
+            ]
+            self.assertNotIn(
+                "select * from review_receipts order by review_receipt_id",
+                [statement for statement, _ in normalized_observations],
+            )
             self.assertLessEqual(
-                max(row_count for _, row_count in observations),
+                max(row_count for _, row_count in normalized_observations),
                 10,
             )
 

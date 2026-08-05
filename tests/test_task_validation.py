@@ -2,6 +2,7 @@ import sqlite3
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.m214c_test_support import valid_stored_task_row
 
@@ -10,9 +11,13 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 try:
+    from task_governance_tool import tasks as tasks_module
     from task_governance_tool.tasks import (
+        COMBINED_PRIVACY_PATTERN,
+        PRIVACY_PATTERNS,
         TEXT_LIMITS,
         TaskValidationError,
+        _legacy_m19_7_stored_guard_value,
         validate_legacy_m19_7_stored_text,
         validate_event_summary,
         validate_stored_task_rows,
@@ -33,6 +38,13 @@ class TaskValidationTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, code)
         if field is not None:
             self.assertEqual(caught.exception.field, field)
+
+    def assert_privacy_pattern_parity(self, value):
+        original_match = any(
+            pattern.search(value) for pattern in PRIVACY_PATTERNS
+        )
+        combined_match = COMBINED_PRIVACY_PATTERN.search(value) is not None
+        self.assertEqual(combined_match, original_match)
 
     def test_valid_task_input_normalizes_review_tier_and_lane_order(self):
         validated = validate_task_input(
@@ -184,11 +196,13 @@ class TaskValidationTests(unittest.TestCase):
         self.assertEqual(len(validate_event_summary("x" * TEXT_LIMITS["event_summary"])), 1000)
 
     def test_privacy_error_takes_precedence_over_size_error(self):
+        value = "token=secret " + ("x" * TEXT_LIMITS["add_note"])
+        self.assert_privacy_pattern_parity(value)
         self.assert_validation_error(
             "privacy_rejected",
             validate_task_input,
             title="Task",
-            add_note="token=secret " + ("x" * TEXT_LIMITS["add_note"]),
+            add_note=value,
             field="add_note",
         )
 
@@ -211,6 +225,7 @@ class TaskValidationTests(unittest.TestCase):
             ),
         ):
             with self.subTest(name=name):
+                self.assert_privacy_pattern_parity(value)
                 result = validate_stored_task_rows(
                     [valid_stored_task_row(verification=value)],
                     connection=connection,
@@ -228,6 +243,7 @@ class TaskValidationTests(unittest.TestCase):
                 local_reason=local_reason,
                 later_value="malformed",
             ):
+                self.assert_privacy_pattern_parity(local_value)
                 with self.assertRaises(StorageError) as structural:
                     validate_stored_task_rows(
                         [
@@ -249,6 +265,75 @@ class TaskValidationTests(unittest.TestCase):
                     structural.exception.code,
                     "project_state_unreadable",
                 )
+
+    def test_stored_privacy_success_cache_is_field_bound_local_and_bounded(self):
+        base = valid_stored_task_row()
+        rows = [
+            valid_stored_task_row(
+                task_id=f"tg_task_cache_{index:04d}",
+                title=f"Safe repeated value {index:04d}",
+                description=f"Safe repeated value {index:04d}",
+            )
+            for index in range(100)
+        ]
+        with mock.patch.object(
+            tasks_module,
+            "reject_private_or_raw_content",
+            wraps=tasks_module.reject_private_or_raw_content,
+        ) as privacy_check:
+            validate_stored_task_rows(
+                rows,
+                source_schema_version=7,
+                expected_project_id=base["project_id"],
+            )
+            first_call_count = privacy_check.call_count
+            first_calls = [call.args for call in privacy_check.call_args_list]
+            validate_stored_task_rows(
+                rows,
+                source_schema_version=7,
+                expected_project_id=base["project_id"],
+            )
+
+        self.assertLessEqual(first_call_count, (3 * len(rows)) + 20)
+        self.assertEqual(privacy_check.call_count, 2 * first_call_count)
+        self.assertEqual(
+            first_calls.count(("title", "Safe repeated value 0000")),
+            1,
+        )
+        self.assertEqual(
+            first_calls.count(("description", "Safe repeated value 0000")),
+            1,
+        )
+
+    def test_stored_privacy_success_cache_never_caches_rejection(self):
+        base = valid_stored_task_row()
+        private_value = "token=stored-private-value"
+        rows = [
+            valid_stored_task_row(
+                task_id=f"tg_task_private_cache_{index}",
+                verification=private_value,
+            )
+            for index in range(2)
+        ]
+        with mock.patch.object(
+            tasks_module,
+            "reject_private_or_raw_content",
+            wraps=tasks_module.reject_private_or_raw_content,
+        ) as privacy_check:
+            result = validate_stored_task_rows(
+                rows,
+                source_schema_version=7,
+                expected_project_id=base["project_id"],
+                verification_rejection_is_local=True,
+            )
+
+        self.assertEqual(result.verification_rejection, "privacy")
+        self.assertEqual(
+            [call.args for call in privacy_check.call_args_list].count(
+                ("verification", private_value)
+            ),
+            2,
+        )
 
     def test_event_summary_is_required(self):
         self.assert_validation_error(
@@ -435,6 +520,7 @@ class TaskValidationTests(unittest.TestCase):
         )
         for text in patterns:
             with self.subTest(text=text.splitlines()[0]):
+                self.assert_privacy_pattern_parity(text)
                 self.assert_validation_error(
                     "privacy_rejected",
                     validate_task_input,
@@ -451,6 +537,7 @@ class TaskValidationTests(unittest.TestCase):
             "-----END PRIVATE KEY-----",
         ):
             with self.subTest(text=text.splitlines()[0]):
+                self.assert_privacy_pattern_parity(text)
                 self.assert_validation_error(
                     "privacy_rejected",
                     validate_event_summary,
@@ -468,6 +555,7 @@ class TaskValidationTests(unittest.TestCase):
             "blocked_reason",
         ):
             with self.subTest(field=field):
+                self.assert_privacy_pattern_parity("token=secret")
                 kwargs = {"title": "Task", field: "token=secret"}
                 if field == "title":
                     kwargs = {"title": "token=secret"}
@@ -479,6 +567,7 @@ class TaskValidationTests(unittest.TestCase):
                 )
 
     def test_title_rejects_raw_output_values_but_allows_task_wording(self):
+        self.assert_privacy_pattern_parity("stdout: hello world")
         self.assert_validation_error(
             "privacy_rejected",
             validate_task_input,
@@ -487,6 +576,7 @@ class TaskValidationTests(unittest.TestCase):
         )
         for title in ("Command output: improve formatting", "Command output: refine formatting"):
             with self.subTest(title=title):
+                self.assert_privacy_pattern_parity(title)
                 validated = validate_task_input(title=title)
                 self.assertEqual(validated["title"], title)
 
@@ -509,6 +599,7 @@ class TaskValidationTests(unittest.TestCase):
             "Standard output wording update",
         ):
             with self.subTest(title=title):
+                self.assert_privacy_pattern_parity(title)
                 validated = validate_task_input(title=title)
                 self.assertEqual(validated["title"], title)
 
@@ -521,6 +612,7 @@ class TaskValidationTests(unittest.TestCase):
             '{"operation_sequence":4}',
         ):
             with self.subTest(note=note):
+                self.assert_privacy_pattern_parity(note)
                 validated = validate_task_input(title="Task", add_note=note)
                 self.assertEqual(validated["add_note"], note)
 
@@ -531,6 +623,7 @@ class TaskValidationTests(unittest.TestCase):
             '{"password":0}',
         ):
             with self.subTest(note=note):
+                self.assert_privacy_pattern_parity(note)
                 validated = validate_task_input(title="Task", add_note=note)
                 self.assertEqual(validated["add_note"], note)
 
@@ -543,6 +636,10 @@ class TaskValidationTests(unittest.TestCase):
         )
         for value in accepted:
             with self.subTest(value=value):
+                self.assert_privacy_pattern_parity(value)
+                self.assert_privacy_pattern_parity(
+                    _legacy_m19_7_stored_guard_value(value)
+                )
                 self.assertEqual(
                     validate_legacy_m19_7_stored_text("stored", value),
                     value,
@@ -564,12 +661,35 @@ class TaskValidationTests(unittest.TestCase):
         )
         for value in rejected:
             with self.subTest(value=value):
+                self.assert_privacy_pattern_parity(value)
+                self.assert_privacy_pattern_parity(
+                    _legacy_m19_7_stored_guard_value(value)
+                )
                 self.assert_validation_error(
                     "privacy_rejected",
                     validate_legacy_m19_7_stored_text,
                     "stored",
                     value,
                     field="stored",
+                )
+
+    def test_combined_privacy_pattern_preserves_inline_flag_semantics(self):
+        cases = (
+            ("prefix\nPRIVATE PROMPT: hidden", True),
+            ("Environment variables:\nPath: C:\\Windows", True),
+            ("prefix\n    at render (app.js:12:34)", True),
+            ("prefix\nTraceback (most recent call last)", True),
+            ("prefix\nOPENAI_API_KEY=secret", True),
+            ("Document private prompt rejection", False),
+            ("Document environment variables support", False),
+            ("Review stack trace detection", False),
+        )
+        for value, expected in cases:
+            with self.subTest(value=value.splitlines()[-1]):
+                self.assert_privacy_pattern_parity(value)
+                self.assertEqual(
+                    COMBINED_PRIVACY_PATTERN.search(value) is not None,
+                    expected,
                 )
 
 

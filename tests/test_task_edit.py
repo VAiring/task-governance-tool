@@ -181,6 +181,77 @@ class TaskEditTests(unittest.TestCase):
             self.assertEqual(reopened["data"]["event"]["event_type"], "task_reopened")
             self.assertIn("completed_at", reopened["data"]["changed_fields"])
 
+    def test_task_edit_done_capture_zero_precedes_empty_verification_and_review_gates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            task = add_task(db, repo, "Legacy completion target")
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    """
+                    UPDATE tasks
+                       SET review_target_kind = 'diff_fingerprint',
+                           review_target_value = ?,
+                           review_target_base_revision = '',
+                           review_target_generation = 1,
+                           review_target_capture_version = 0,
+                           review_target_authority_snapshot_id = NULL,
+                           review_target_acceptance_criterion_id = NULL,
+                           review_target_verification_criterion_id = NULL,
+                           review_target_artifact_manifest_id = NULL
+                     WHERE task_id = ?
+                    """,
+                    ("sha256:" + "a" * 64, task["task_id"]),
+                )
+                connection.commit()
+
+            watched_tables = (
+                "tasks",
+                "task_events",
+                "task_completion_cycles",
+                "verification_receipts",
+                "review_receipts",
+                "review_findings",
+                "evidence_references",
+            )
+            before_task = fetch_task(db, task["task_id"])
+            before_counts = {
+                table: table_count(db, table) for table in watched_tables
+            }
+            before_bytes = db.read_bytes()
+
+            result = run_taskgov(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--status",
+                "done",
+                "--verification-complete",
+                "--review-complete",
+                "--commit-not-required",
+                "--json",
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout)
+            payload = json.loads(result.stdout)
+            self.assertEqual(
+                payload["errors"],
+                [{
+                    "code": "evidence_basis_stale",
+                    "message": "current evidence basis must be captured again",
+                }],
+            )
+            self.assertEqual(fetch_task(db, task["task_id"]), before_task)
+            self.assertEqual(
+                {table: table_count(db, table) for table in watched_tables},
+                before_counts,
+            )
+            self.assertEqual(db.read_bytes(), before_bytes)
+
     def test_task_edit_blocked_status_requires_reason_and_can_clear_on_unblock(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
@@ -848,6 +919,14 @@ class TaskEditTests(unittest.TestCase):
                 "independent",
                 "--verdict",
                 "pass",
+                "--reviewer-class",
+                "human",
+                "--model-state",
+                "not_applicable",
+                "--skill-state",
+                "not_applicable",
+                "--context-relation",
+                "external_context",
                 "--json",
             )
             self.assertEqual(receipt.returncode, 0, receipt.stdout)
@@ -1164,7 +1243,7 @@ class TaskEditTests(unittest.TestCase):
             self.assertEqual(raised["data"]["task"]["review_tier"], 2)
             self.assertEqual(
                 fetch_task(db, upgrade["task_id"])["review_target_generation"],
-                old_generation,
+                old_generation + 1,
             )
 
     def test_task_edit_unknown_task_returns_structured_not_found(self):

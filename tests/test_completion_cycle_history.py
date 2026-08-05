@@ -731,10 +731,22 @@ class CompletionCycleHistoryTests(unittest.TestCase):
                 self.assertNotIn("completion_cycle_id", created)
                 connection.commit()
 
-                shown = show_task(
-                    connection,
-                    target.project,
-                    task_ids["ready"],
+                self.assertEqual(current_schema_version(connection), 15)
+                traced_sql: list[str] = []
+                connection.set_trace_callback(traced_sql.append)
+                try:
+                    shown = show_task(
+                        connection,
+                        target.project,
+                        task_ids["ready"],
+                    )
+                finally:
+                    connection.set_trace_callback(None)
+                self.assertFalse(
+                    any(
+                        "evidence_references" in statement.lower()
+                        for statement in traced_sql
+                    )
                 )
                 self.assertGreaterEqual(len(shown.events), 2)
                 for event in shown.events:

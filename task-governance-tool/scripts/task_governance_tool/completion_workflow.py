@@ -38,6 +38,7 @@ COMPLETION_BLOCKING_CODES = (
     "git_commit_not_found_or_ambiguous",
     "invalid_review_evidence",
     "review_target_required",
+    "evidence_basis_stale",
     "verification_receipt_required",
     "verification_receipt_blocking",
     "review_target_mismatch",

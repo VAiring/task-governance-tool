@@ -495,9 +495,105 @@ def initialize_taskgov_internal(
     }
 
 
+def remove_v18_evidence_ledger_for_test(connection) -> None:
+    """Downgrade a current test database to the exact schema-v17 surface."""
+
+    if connection.in_transaction:
+        raise AssertionError("schema downgrade fixture requires no active transaction")
+    foreign_keys_enabled = bool(
+        connection.execute("PRAGMA foreign_keys").fetchone()[0]
+    )
+    connection.execute("PRAGMA foreign_keys = OFF")
+    if connection.execute("PRAGMA foreign_keys").fetchone()[0] != 0:
+        raise AssertionError("schema downgrade fixture could not disable foreign keys")
+    try:
+        connection.execute(
+            "DELETE FROM schema_migrations WHERE version = 18"
+        )
+        for trigger in (
+            "trg_review_receipts_provenance_basis_insert",
+            "trg_verification_receipts_subject_basis_insert",
+            "trg_task_completion_cycles_subject_basis_insert",
+            "trg_authority_snapshots_no_update",
+            "trg_authority_snapshots_no_delete",
+            "trg_contract_criteria_no_update",
+            "trg_contract_criteria_no_delete",
+            "trg_authority_snapshot_criteria_no_update",
+            "trg_authority_snapshot_criteria_no_delete",
+            "trg_review_receipt_provenance_no_update",
+            "trg_review_receipt_provenance_no_delete",
+            "trg_review_receipt_provenance_codes_no_update",
+            "trg_review_receipt_provenance_codes_no_delete",
+            "trg_artifact_manifests_no_update",
+            "trg_artifact_manifests_no_delete",
+            "trg_artifact_manifest_entries_no_update",
+            "trg_artifact_manifest_entries_no_delete",
+            "trg_evidence_references_no_update",
+            "trg_evidence_references_no_delete",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        for index in (
+            "idx_evidence_references_source",
+            "idx_artifact_manifests_target",
+            "idx_review_provenance_receipt",
+            "idx_contract_criteria_task_kind_digest",
+            "idx_authority_snapshots_task_generation",
+        ):
+            connection.execute(f"DROP INDEX {index}")
+        for column in (
+            "review_target_artifact_manifest_id",
+            "review_target_verification_criterion_id",
+            "review_target_acceptance_criterion_id",
+            "review_target_authority_snapshot_id",
+            "review_target_capture_version",
+            "current_authority_snapshot_generation",
+            "current_authority_snapshot_id",
+        ):
+            connection.execute(f"ALTER TABLE tasks DROP COLUMN {column}")
+        for column in (
+            "review_provenance_id",
+            "review_provenance_basis_version",
+        ):
+            connection.execute(
+                f"ALTER TABLE review_receipts DROP COLUMN {column}"
+            )
+        for table in ("verification_receipts", "task_completion_cycles"):
+            for column in (
+                "subject_verification_criterion_id",
+                "subject_authority_snapshot_id",
+                "verification_subject_basis_version",
+            ):
+                connection.execute(
+                    f"ALTER TABLE {table} DROP COLUMN {column}"
+                )
+        for table in (
+            "evidence_references",
+            "artifact_manifest_entries",
+            "authority_snapshot_criteria",
+            "review_receipt_provenance_codes",
+            "artifact_manifests",
+            "review_receipt_provenance",
+            "contract_criteria",
+            "authority_snapshots",
+        ):
+            connection.execute(f"DROP TABLE {table}")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        if foreign_keys_enabled:
+            connection.execute("PRAGMA foreign_keys = ON")
+            if connection.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
+                raise AssertionError(
+                    "schema downgrade fixture could not restore foreign keys"
+                )
+
+
 def remove_v10_maintenance_for_test(connection) -> None:
     """Downgrade a current test database before exercising an older migration."""
 
+    remove_v18_evidence_ledger_for_test(connection)
     connection.execute(
         "DELETE FROM schema_migrations "
         "WHERE version IN (10, 11, 12, 13, 14, 15, 16, 17)"

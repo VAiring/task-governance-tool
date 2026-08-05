@@ -222,6 +222,85 @@ class RoutineBackupTests(unittest.TestCase):
                 (published,),
             )
 
+    def test_routine_metadata_uses_the_reconciled_repository_latest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp), generations=3)
+            first = run_routine_backup(target, observed_at=timestamp(0))
+            self.assertEqual((first.code, first.attempted), ("succeeded", True))
+            previous = repository(target).generations[-1]
+            observed_after = []
+            real_new_metadata = backup_service._new_metadata
+
+            def capture_reconciled_after(*args, **kwargs):
+                observed_after.append(kwargs["after"])
+                return real_new_metadata(*args, **kwargs)
+
+            with (
+                mock.patch.object(
+                    backup_service,
+                    "_new_publication_metadata",
+                    side_effect=AssertionError(
+                        "routine publication must not rediscover reconciled files"
+                    ),
+                ) as rediscovery,
+                mock.patch.object(
+                    backup_service,
+                    "_new_metadata",
+                    side_effect=capture_reconciled_after,
+                ),
+            ):
+                second = run_routine_backup(target, observed_at=timestamp(30))
+
+            self.assertEqual((second.code, second.attempted), ("succeeded", True))
+            rediscovery.assert_not_called()
+            self.assertEqual(observed_after, [previous])
+            self.assertGreater(
+                repository(target).generations[-1].published_at,
+                previous.published_at,
+            )
+
+    def test_routine_metadata_collision_and_final_reconcile_failure_fail_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp), generations=3)
+            first = run_routine_backup(target, observed_at=timestamp(0))
+            self.assertEqual((first.code, first.attempted), ("succeeded", True))
+            previous = repository(target).generations[-1]
+
+            with mock.patch.object(
+                backup_service,
+                "_new_metadata",
+                return_value=previous,
+            ):
+                collision = run_routine_backup(target, observed_at=timestamp(30))
+
+            self.assertEqual(
+                (collision.code, collision.attempted),
+                ("failed", True),
+            )
+            self.assertEqual(repository(target).generations, (previous,))
+            self.assertEqual(discover_managed_backup_metadata(target), (previous,))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp), generations=3)
+            first = run_routine_backup(target, observed_at=timestamp(0))
+            self.assertEqual((first.code, first.attempted), ("succeeded", True))
+
+            with mock.patch.object(
+                backup_service,
+                "_reconcile_v11",
+                side_effect=(True, False),
+            ) as reconcile:
+                failed = run_routine_backup(target, observed_at=timestamp(30))
+
+            self.assertEqual((failed.code, failed.attempted), ("failed", True))
+            self.assertEqual(reconcile.call_count, 2)
+            self.assertEqual(
+                repository(target).maintenance.backup_last_outcome_code,
+                "failed",
+            )
+            self.assertEqual(len(repository(target).generations), 2)
+            self.assertEqual(len(discover_managed_backup_metadata(target)), 2)
+
     def test_lock_deferred_and_copy_failure_both_remain_due(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = make_target(Path(tmp))

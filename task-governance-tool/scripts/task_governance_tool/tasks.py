@@ -31,6 +31,11 @@ from task_governance_tool.git_snapshot import (
     GitSnapshotError,
     verify_git_snapshot_commit,
 )
+from task_governance_tool.evidence_ledger import (
+    EvidenceSource,
+    TargetCaptureBinding,
+    build_evidence_reference,
+)
 from task_governance_tool.ordering import (
     ADVANCED_STATUSES,
     canonical_lane,
@@ -45,17 +50,22 @@ from task_governance_tool.storage import (
     DatabaseTarget,
     ProjectIdentity,
     StorageError,
+    _ValidatedViewerTaskBatch,
+    _consume_validated_viewer_task_batch,
     begin_initialized_write,
+    capture_or_reuse_current_authority_snapshot_locked,
     completion_history_inconsistent,
     current_schema_version,
     insert_completion_cycle_locked,
     insert_native_completion_cycle_locked,
     match_current_done_completion_cycle_locked,
+    persist_evidence_reference_locked,
     read_completion_history,
     stored_task_sqlite_error,
     stored_task_verification_limit,
     utc_now,
     validate_utc_timestamp,
+    validate_selected_task_authority_storage,
 )
 
 
@@ -245,6 +255,46 @@ PRIVACY_PATTERNS = (
     re.compile(r"(?m)^goroutine\s+\d+\s+\[running\]:"),
 )
 
+_SCOPABLE_REGEX_FLAGS = (
+    (re.ASCII, "a"),
+    (re.IGNORECASE, "i"),
+    (re.LOCALE, "L"),
+    (re.MULTILINE, "m"),
+    (re.DOTALL, "s"),
+    (re.UNICODE, "u"),
+    (re.VERBOSE, "x"),
+)
+_SCOPABLE_REGEX_FLAG_MASK = sum(
+    int(flag) for flag, _ in _SCOPABLE_REGEX_FLAGS
+)
+_LEADING_GLOBAL_INLINE_FLAGS_PATTERN = re.compile(
+    r"^(?:\(\?[aiLmsux]+\))*"
+)
+
+
+def _scoped_regex_branch(pattern: re.Pattern[str]) -> str:
+    """Preserve one compiled pattern's semantics inside an alternation."""
+
+    unsupported_flags = int(pattern.flags) & ~_SCOPABLE_REGEX_FLAG_MASK
+    if unsupported_flags:
+        raise ValueError("privacy pattern uses unsupported regular-expression flags")
+    source = _LEADING_GLOBAL_INLINE_FLAGS_PATTERN.sub(
+        "",
+        pattern.pattern,
+        count=1,
+    )
+    scoped_flags = "".join(
+        name for flag, name in _SCOPABLE_REGEX_FLAGS if pattern.flags & flag
+    )
+    return f"(?{scoped_flags}:{source})"
+
+
+COMBINED_PRIVACY_PATTERN = re.compile(
+    "(?:"
+    + "|".join(_scoped_regex_branch(pattern) for pattern in PRIVACY_PATTERNS)
+    + ")"
+)
+
 BASIC_AUTH_VALUE_PATTERN = re.compile(r"\bBasic\s+([A-Za-z0-9+/]{8,}={0,2})(?=$|[\s,.;:)])", re.IGNORECASE)
 BEARER_TOKEN_VALUE_PATTERN = re.compile(r"\bBearer\s+([A-Za-z0-9._~+/=-]{3,})(?=$|[\s,.;:)])", re.IGNORECASE)
 RAW_OUTPUT_VALUE_PATTERN = re.compile(
@@ -408,9 +458,45 @@ class StoredTaskSchemaCapabilities:
 
 @dataclass(frozen=True)
 class StoredTaskValidationResult:
-    """Private validation result used only by managed recovery selection."""
+    """Private facts retained from one bounded stored-Task validation."""
 
     verification_rejection: str | None = None
+    verification_rejected_task_ids: frozenset[str] = field(
+        default_factory=frozenset,
+        repr=False,
+        compare=False,
+    )
+    current_contract_rows: dict[str, sqlite3.Row | None] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+
+
+_AUTHORITY_PRIVACY_REUSE_FIELDS = frozenset(
+    {"title", "description", "verification"}
+)
+
+
+def _stored_task_privacy_success_cache(
+    prevalidated_privacy_successes: frozenset[tuple[str, str]] | None,
+) -> set[tuple[str, str]]:
+    """Copy one internal same-call authority proof into a local cache."""
+
+    if prevalidated_privacy_successes is None:
+        return set()
+    if type(prevalidated_privacy_successes) is not frozenset:
+        raise _stored_task_unreadable()
+    for item in prevalidated_privacy_successes:
+        if (
+            type(item) is not tuple
+            or len(item) != 2
+            or type(item[0]) is not str
+            or item[0] not in _AUTHORITY_PRIVACY_REUSE_FIELDS
+            or type(item[1]) is not str
+        ):
+            raise _stored_task_unreadable()
+    return set(prevalidated_privacy_successes)
 
 
 def stored_task_schema_capabilities(
@@ -492,6 +578,7 @@ def _stored_text(
     limit: int | None = None,
     verification_limit: int | None = None,
     privacy_field: str | None = None,
+    privacy_success_cache: set[tuple[str, str]] | None = None,
 ) -> tuple[str, str | None]:
     value = _stored_value(row, field)
     if type(value) is not str:
@@ -499,13 +586,19 @@ def _stored_text(
     if required and not value.strip():
         raise _stored_task_unreadable()
     verification_rejection: str | None = None
-    try:
-        reject_private_or_raw_content(privacy_field or field, value)
-    except TaskValidationError as exc:
-        if field == "verification" and exc.code == "privacy_rejected":
-            verification_rejection = "privacy"
+    resolved_privacy_field = privacy_field or field
+    privacy_key = (resolved_privacy_field, value)
+    if privacy_success_cache is None or privacy_key not in privacy_success_cache:
+        try:
+            reject_private_or_raw_content(resolved_privacy_field, value)
+        except TaskValidationError as exc:
+            if field == "verification" and exc.code == "privacy_rejected":
+                verification_rejection = "privacy"
+            else:
+                raise _stored_task_unreadable() from exc
         else:
-            raise _stored_task_unreadable() from exc
+            if privacy_success_cache is not None:
+                privacy_success_cache.add(privacy_key)
     if limit is not None and len(value) > limit:
         raise _stored_task_unreadable()
     if (
@@ -552,22 +645,26 @@ def _stored_timestamp(
 
 def _validate_stored_completion_evidence(
     row: sqlite3.Row | dict[str, Any],
+    privacy_success_cache: set[tuple[str, str]],
 ) -> None:
     task = {
         "completion_evidence_kind": _stored_text(
             row,
             "completion_evidence_kind",
+            privacy_success_cache=privacy_success_cache,
         )[0],
         "completion_evidence_revision": _stored_text(
             row,
             "completion_evidence_revision",
             limit=TEXT_LIMITS["completion_revision"],
             privacy_field="completion_revision",
+            privacy_success_cache=privacy_success_cache,
         )[0],
         "completion_evidence_reason": _stored_text(
             row,
             "completion_evidence_reason",
             limit=TEXT_LIMITS["completion_evidence_reason"],
+            privacy_success_cache=privacy_success_cache,
         )[0],
         "external_revision_approved": _stored_integer(
             row,
@@ -586,6 +683,7 @@ def _validate_stored_completion_evidence(
             "completion_commit_hash",
             limit=TEXT_LIMITS["completion_revision"],
             privacy_field="completion_revision",
+            privacy_success_cache=privacy_success_cache,
         )[0],
     }
     kind = str(task["completion_evidence_kind"])
@@ -604,12 +702,18 @@ def _validate_stored_completion_evidence(
 def _validate_stored_review_target(
     row: sqlite3.Row | dict[str, Any],
     capabilities: StoredTaskSchemaCapabilities,
+    privacy_success_cache: set[tuple[str, str]],
 ) -> None:
-    kind = _stored_text(row, "review_target_kind")[0]
+    kind = _stored_text(
+        row,
+        "review_target_kind",
+        privacy_success_cache=privacy_success_cache,
+    )[0]
     value = _stored_text(
         row,
         "review_target_value",
         limit=TEXT_LIMITS["review_target_value"],
+        privacy_success_cache=privacy_success_cache,
     )[0]
     generation = _stored_integer(
         row,
@@ -621,6 +725,7 @@ def _validate_stored_review_target(
             row,
             "review_target_base_revision",
             limit=TEXT_LIMITS["review_target_value"],
+            privacy_success_cache=privacy_success_cache,
         )[0]
         if capabilities.has_review_target_base
         else ""
@@ -661,26 +766,70 @@ def _validate_stored_task_row(
     *,
     capabilities: StoredTaskSchemaCapabilities,
     expected_project_id: str,
+    privacy_success_cache: set[tuple[str, str]],
 ) -> str | None:
-    task_id = _stored_text(row, "task_id", required=True, limit=128)[0]
+    task_id = _stored_text(
+        row,
+        "task_id",
+        required=True,
+        limit=128,
+        privacy_success_cache=privacy_success_cache,
+    )[0]
     if task_id != task_id.strip():
         raise _stored_task_unreadable()
-    project_id = _stored_text(row, "project_id", required=True)[0]
+    project_id = _stored_text(
+        row,
+        "project_id",
+        required=True,
+        privacy_success_cache=privacy_success_cache,
+    )[0]
     if project_id != expected_project_id:
         raise _stored_task_unreadable()
-    _stored_text(row, "title", required=True, limit=TEXT_LIMITS["title"])
-    _stored_text(row, "description", limit=TEXT_LIMITS["description"])
-    kind = _stored_text(row, "kind")[0]
-    lane = _stored_text(row, "lane")[0]
+    _stored_text(
+        row,
+        "title",
+        required=True,
+        limit=TEXT_LIMITS["title"],
+        privacy_success_cache=privacy_success_cache,
+    )
+    _stored_text(
+        row,
+        "description",
+        limit=TEXT_LIMITS["description"],
+        privacy_success_cache=privacy_success_cache,
+    )
+    kind = _stored_text(
+        row,
+        "kind",
+        privacy_success_cache=privacy_success_cache,
+    )[0]
+    lane = _stored_text(
+        row,
+        "lane",
+        privacy_success_cache=privacy_success_cache,
+    )[0]
     lane_order = _stored_integer(row, "lane_order", nullable=True)
-    priority = _stored_text(row, "priority")[0]
-    status = _stored_text(row, "status")[0]
-    blocked_reason = _stored_text(row, "blocked_reason")[0]
+    priority = _stored_text(
+        row,
+        "priority",
+        privacy_success_cache=privacy_success_cache,
+    )[0]
+    status = _stored_text(
+        row,
+        "status",
+        privacy_success_cache=privacy_success_cache,
+    )[0]
+    blocked_reason = _stored_text(
+        row,
+        "blocked_reason",
+        privacy_success_cache=privacy_success_cache,
+    )[0]
     pause_reason = (
         _stored_text(
             row,
             "pause_reason",
             limit=TEXT_LIMITS["pause_reason"],
+            privacy_success_cache=privacy_success_cache,
         )[0]
         if capabilities.has_pause_reason
         else ""
@@ -695,8 +844,14 @@ def _validate_stored_task_row(
         row,
         "verification",
         verification_limit=capabilities.verification_limit,
+        privacy_success_cache=privacy_success_cache,
     )
-    _stored_text(row, "tags", limit=TEXT_LIMITS["tags"])
+    _stored_text(
+        row,
+        "tags",
+        limit=TEXT_LIMITS["tags"],
+        privacy_success_cache=privacy_success_cache,
+    )
     created_at = _stored_timestamp(row, "created_at")
     updated_at = _stored_timestamp(row, "updated_at")
     completed_at = _stored_timestamp(row, "completed_at", nullable=True)
@@ -737,15 +892,24 @@ def _validate_stored_task_row(
             "completion_commit_hash",
             limit=TEXT_LIMITS["completion_revision"],
             privacy_field="completion_revision",
+            privacy_success_cache=privacy_success_cache,
         )
     if capabilities.has_completion_evidence:
-        _validate_stored_completion_evidence(row)
+        _validate_stored_completion_evidence(row, privacy_success_cache)
     if capabilities.has_review_target:
-        _validate_stored_review_target(row, capabilities)
+        _validate_stored_review_target(
+            row,
+            capabilities,
+            privacy_success_cache,
+        )
     if capabilities.has_contract_revision:
         _stored_integer(row, "current_contract_revision", minimum=0)
     if capabilities.has_completion_history_coverage:
-        if _stored_text(row, "completion_history_coverage")[0] not in {
+        if _stored_text(
+            row,
+            "completion_history_coverage",
+            privacy_success_cache=privacy_success_cache,
+        )[0] not in {
             "legacy_unknown",
             "complete",
         }:
@@ -758,18 +922,25 @@ def _validate_stored_contract_relationships(
     rows: list[sqlite3.Row] | tuple[sqlite3.Row, ...],
     *,
     expected_project_id: str,
-) -> None:
+    privacy_success_cache: set[tuple[str, str]],
+) -> dict[str, sqlite3.Row | None]:
     """Validate current Contract pointers with one selected-batch read."""
 
     pointers: dict[str, int] = {}
     for row in rows:
-        task_id = _stored_text(row, "task_id", required=True, limit=128)[0]
+        task_id = _stored_text(
+            row,
+            "task_id",
+            required=True,
+            limit=128,
+            privacy_success_cache=privacy_success_cache,
+        )[0]
         pointer = _stored_integer(row, "current_contract_revision", minimum=0)
         if pointer is None or task_id in pointers:
             raise _stored_task_unreadable()
         pointers[task_id] = pointer
     if not pointers:
-        return
+        return {}
 
     selected_ids = json.dumps(
         list(pointers),
@@ -787,25 +958,29 @@ def _validate_stored_contract_relationships(
             UNION ALL
             SELECT CAST(value AS BLOB) FROM selected_task_ids
         )
-        SELECT project_id, task_id, revision
+        SELECT *
           FROM task_contract_revisions
          WHERE task_id IN (SELECT value FROM selected_storage_keys)
          ORDER BY task_id, revision
         """,
         (selected_ids,),
     )
-    revisions: dict[str, set[int]] = {task_id: set() for task_id in pointers}
+    revisions: dict[str, dict[int, sqlite3.Row]] = {
+        task_id: {} for task_id in pointers
+    }
     for relationship in relationship_rows:
         project_id = _stored_text(
             relationship,
             "project_id",
             required=True,
+            privacy_success_cache=privacy_success_cache,
         )[0]
         task_id = _stored_text(
             relationship,
             "task_id",
             required=True,
             limit=128,
+            privacy_success_cache=privacy_success_cache,
         )[0]
         revision = _stored_integer(
             relationship,
@@ -820,7 +995,7 @@ def _validate_stored_contract_relationships(
             or revision in revisions[task_id]
         ):
             raise _stored_task_unreadable()
-        revisions[task_id].add(revision)
+        revisions[task_id][revision] = relationship
 
     for task_id, pointer in pointers.items():
         related = revisions[task_id]
@@ -829,6 +1004,10 @@ def _validate_stored_contract_relationships(
                 raise _stored_task_unreadable()
         elif not related or pointer not in related or pointer != max(related):
             raise _stored_task_unreadable()
+    return {
+        task_id: (revisions[task_id].get(pointer) if pointer > 0 else None)
+        for task_id, pointer in pointers.items()
+    }
 
 
 def validate_stored_task_rows(
@@ -838,39 +1017,55 @@ def validate_stored_task_rows(
     source_schema_version: object,
     expected_project_id: str,
     verification_rejection_is_local: bool = False,
+    _prevalidated_privacy_successes: frozenset[tuple[str, str]] | None = None,
 ) -> StoredTaskValidationResult:
     """Validate one loaded Task batch before projection or derived use.
 
     No stored value is coerced, normalized, rewritten, or included in an error.
     The recovery-only flag preserves M21.4B's candidate-local exception for
     verification privacy/capacity while every structural fault stays fatal.
+    The private authority seed is copied, shape-checked, and consumed only by
+    this call's ordinary field-bound privacy cache.
     """
 
     if type(expected_project_id) is not str or not expected_project_id:
         raise _stored_task_unreadable()
     capabilities = stored_task_schema_capabilities(source_schema_version)
+    privacy_success_cache = _stored_task_privacy_success_cache(
+        _prevalidated_privacy_successes
+    )
     rejection: str | None = None
+    rejected_task_ids: set[str] = set()
     for row in rows:
         row_rejection = _validate_stored_task_row(
             row,
             capabilities=capabilities,
             expected_project_id=expected_project_id,
+            privacy_success_cache=privacy_success_cache,
         )
         if row_rejection == "privacy":
             rejection = "privacy"
         elif row_rejection == "capacity" and rejection is None:
             rejection = "capacity"
+        if row_rejection is not None:
+            rejected_task_ids.add(str(row["task_id"]))
+    current_contract_rows: dict[str, sqlite3.Row | None] = {}
     if capabilities.has_contract_revision:
         if connection is None:
             raise _stored_task_unreadable()
-        _validate_stored_contract_relationships(
+        current_contract_rows = _validate_stored_contract_relationships(
             connection,
             rows,
             expected_project_id=expected_project_id,
+            privacy_success_cache=privacy_success_cache,
         )
     if rejection is not None and not verification_rejection_is_local:
         raise _stored_task_unreadable()
-    return StoredTaskValidationResult(verification_rejection=rejection)
+    return StoredTaskValidationResult(
+        verification_rejection=rejection,
+        verification_rejected_task_ids=frozenset(rejected_task_ids),
+        current_contract_rows=current_contract_rows,
+    )
 
 
 def validate_current_stored_task_rows(
@@ -879,12 +1074,27 @@ def validate_current_stored_task_rows(
     *,
     expected_project_id: str,
 ) -> None:
-    validate_stored_task_rows(
+    version = current_schema_version(connection)
+    validation = validate_stored_task_rows(
         rows,
         connection=connection,
-        source_schema_version=SCHEMA_VERSION,
+        source_schema_version=(
+            version if 1 <= version <= SCHEMA_VERSION else SCHEMA_VERSION
+        ),
         expected_project_id=expected_project_id,
     )
+    if version >= 18:
+        try:
+            validate_selected_task_authority_storage(
+                connection,
+                rows,
+                expected_project_id=expected_project_id,
+                current_contract_rows=validation.current_contract_rows,
+            )
+        except StorageError as exc:
+            if exc.code == "database_busy":
+                raise
+            raise _stored_task_unreadable() from exc
 
 
 def fetch_validated_current_task_row(
@@ -931,13 +1141,12 @@ def ensure_string(field: str, value: Any, *, default: str = "") -> str:
 
 
 def _reject_private_or_raw_content_value(field: str, guard_value: str) -> None:
-    for pattern in PRIVACY_PATTERNS:
-        if pattern.search(guard_value):
-            raise validation_error(
-                "privacy_rejected",
-                f"{field} appears to contain a secret, raw log, or dump content",
-                field,
-            )
+    if COMBINED_PRIVACY_PATTERN.search(guard_value):
+        raise validation_error(
+            "privacy_rejected",
+            f"{field} appears to contain a secret, raw log, or dump content",
+            field,
+        )
     if (
         contains_basic_auth_value(guard_value)
         or contains_bearer_token_value(field, guard_value)
@@ -1582,6 +1791,13 @@ def add_task(
                 contract_input=contract_input,
                 created_at=now,
             ).to_dict()
+        if schema_version >= 18:
+            capture_or_reuse_current_authority_snapshot_locked(
+                connection,
+                project_id=project.project_id,
+                task_id=task_id,
+                created_at=now,
+            )
         event = create_task_event(
             connection,
             project_id=project.project_id,
@@ -2068,6 +2284,7 @@ def show_task(
     event_limit: int = 10,
 ) -> TaskShowResult:
     normalized_task_id = validate_task_id(task_id)
+    source_schema_version = current_schema_version(connection)
     task_row = fetch_validated_current_task_row(
         connection,
         project_id=project.project_id,
@@ -2097,6 +2314,7 @@ def show_task(
         project.project_id,
         normalized_task_id,
         validated_task=task_row,
+        source_schema_version=source_schema_version,
     )
     handoff_summary = handoff_summary_for_task(
         connection,
@@ -2155,7 +2373,44 @@ def list_tasks_for_viewer(
     event_limit: int = 10,
     source_schema_version: int = SCHEMA_VERSION,
 ) -> ViewerTaskListResult:
-    """Return the complete, bounded task projection used by static viewers."""
+    """Return a Viewer projection with ordinary complete Task validation."""
+
+    return _list_tasks_for_viewer(
+        connection,
+        project,
+        event_limit=event_limit,
+        source_schema_version=source_schema_version,
+        validated_task_batch=None,
+    )
+
+
+def _list_tasks_for_validated_viewer_snapshot(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    validated_task_batch: _ValidatedViewerTaskBatch,
+    *,
+    event_limit: int = 10,
+    source_schema_version: int = SCHEMA_VERSION,
+) -> ViewerTaskListResult:
+    """Return a Viewer projection from one exact same-transaction v18 proof."""
+
+    return _list_tasks_for_viewer(
+        connection,
+        project,
+        event_limit=event_limit,
+        source_schema_version=source_schema_version,
+        validated_task_batch=validated_task_batch,
+    )
+
+
+def _list_tasks_for_viewer(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    *,
+    event_limit: int,
+    source_schema_version: int,
+    validated_task_batch: _ValidatedViewerTaskBatch | None,
+) -> ViewerTaskListResult:
     if not 1 <= event_limit <= 10:
         raise TaskRepositoryError(
             "internal_error",
@@ -2181,12 +2436,21 @@ def list_tasks_for_viewer(
            task_id
         """,
     )
-    validate_stored_task_rows(
-        task_rows,
-        connection=connection,
-        source_schema_version=source_schema_version,
-        expected_project_id=project.project_id,
-    )
+    if validated_task_batch is None:
+        validate_stored_task_rows(
+            task_rows,
+            connection=connection,
+            source_schema_version=source_schema_version,
+            expected_project_id=project.project_id,
+        )
+    else:
+        _consume_validated_viewer_task_batch(
+            connection,
+            validated_task_batch,
+            project_id=project.project_id,
+            source_schema_version=source_schema_version,
+            task_rows=task_rows,
+        )
 
     from task_governance_tool.reviews import read_review_evidence
 
@@ -2214,6 +2478,8 @@ def list_tasks_for_viewer(
             validated_task=task_row,
             source_schema_version=source_schema_version,
         )
+        for receipt in task["review_evidence"]["recent_receipts"]:
+            receipt.pop("review_provenance", None)
         tasks.append(task)
         event_count += len(events)
 
@@ -2523,6 +2789,11 @@ def validate_completion_database_basis(
             "review_target_required",
             "task completion requires a current structured review target",
             "review_target_kind",
+        )
+    if int(basis.task.get("review_target_capture_version", 0)) == 0:
+        raise validation_error(
+            "evidence_basis_stale",
+            "current evidence basis must be captured again",
         )
     if basis.verification_gate.blocking_code == "verification_receipt_required":
         raise validation_error(
@@ -2933,6 +3204,11 @@ def reopen_done_task(
             "review_target_value": "",
             "review_target_generation": generation,
             "review_target_base_revision": "",
+            "review_target_capture_version": 0,
+            "review_target_authority_snapshot_id": None,
+            "review_target_acceptance_criterion_id": None,
+            "review_target_verification_criterion_id": None,
+            "review_target_artifact_manifest_id": None,
         }
     )
     reset_fields = (
@@ -2958,6 +3234,15 @@ def reopen_done_task(
         field: reopened[field]
         for field in persisted_changed_fields
     }
+    update_values.update(
+        {
+            "review_target_capture_version": 0,
+            "review_target_authority_snapshot_id": None,
+            "review_target_acceptance_criterion_id": None,
+            "review_target_verification_criterion_id": None,
+            "review_target_artifact_manifest_id": None,
+        }
+    )
     update_values["updated_at"] = now
     affected_lanes = (
         {str(existing["lane"])} if existing["kind"] == "sequential" else set()
@@ -3209,12 +3494,14 @@ def edit_task(
     order_was_provided = "lane_order" in normalized
     for field, value in normalized.items():
         updated[field] = value
-    verification_changed_after_target = (
-        "verification" in normalized
-        and updated["verification"] != existing["verification"]
-        and int(existing["review_target_generation"]) > 0
+    authority_changed = any(
+        field in normalized and updated[field] != existing[field]
+        for field in ("title", "description", "verification", "review_tier")
     )
-    if verification_changed_after_target:
+    authority_changed_after_target = (
+        authority_changed and int(existing["review_target_generation"]) > 0
+    )
+    if authority_changed_after_target:
         if status_was_provided and updated["status"] not in {
             "in_progress",
             "paused",
@@ -3223,7 +3510,7 @@ def edit_task(
         }:
             raise validation_error(
                 "invalid_status_transition",
-                "verification changes require a fresh target before review or completion",
+                "authority changes require a fresh target before review or completion",
                 "status",
             )
         evidence_companions = {
@@ -3237,7 +3524,7 @@ def edit_task(
         if provided_fields & evidence_companions:
             raise validation_error(
                 "completion_evidence_conflict",
-                "verification changes cannot be combined with completion evidence options",
+                "authority changes cannot be combined with completion evidence options",
                 "verification",
             )
         updated.update(
@@ -3255,6 +3542,11 @@ def edit_task(
                     int(existing["review_target_generation"]) + 1,
                     field="review_target_generation",
                 ),
+                "review_target_capture_version": 0,
+                "review_target_authority_snapshot_id": None,
+                "review_target_acceptance_criterion_id": None,
+                "review_target_verification_criterion_id": None,
+                "review_target_artifact_manifest_id": None,
             }
         )
         if not status_was_provided and existing["status"] == "review_pending":
@@ -3509,6 +3801,16 @@ def edit_task(
         recorded_markers=recorded_markers,
     )
     update_values = {field: updated[field] for field in changed_fields}
+    if authority_changed_after_target:
+        update_values.update(
+            {
+                "review_target_capture_version": 0,
+                "review_target_authority_snapshot_id": None,
+                "review_target_acceptance_criterion_id": None,
+                "review_target_verification_criterion_id": None,
+                "review_target_artifact_manifest_id": None,
+            }
+        )
     update_values["updated_at"] = now
     ordering_changed = any(
         updated[field] != existing[field]
@@ -3578,6 +3880,16 @@ def edit_task(
                         "sequential_predecessor_incomplete",
                         "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
                     )
+            if (
+                int(proposed_done["review_target_generation"]) > 0
+                and str(proposed_done["review_target_kind"])
+                and str(proposed_done["review_target_value"])
+                and int(proposed_done.get("review_target_capture_version", 0)) != 1
+            ):
+                raise validation_error(
+                    "evidence_basis_stale",
+                    "current evidence basis must be captured again",
+                )
             from task_governance_tool.verification_receipts import (
                 enforce_verification_gate,
                 verification_expectation_digest,
@@ -3606,8 +3918,140 @@ def edit_task(
                     if str(proposed_done["verification"]).strip()
                     else None
                 ),
+                verification_subject_basis_version=1,
+                subject_authority_snapshot_id=(
+                    str(
+                        proposed_done[
+                            "review_target_authority_snapshot_id"
+                        ]
+                    )
+                    if str(proposed_done["verification"]).strip()
+                    else None
+                ),
+                subject_verification_criterion_id=(
+                    str(
+                        proposed_done[
+                            "review_target_verification_criterion_id"
+                        ]
+                    )
+                    if str(proposed_done["verification"]).strip()
+                    else None
+                ),
             )
             completion_cycle_id = cycle.completion_cycle_id
+            completion_binding = TargetCaptureBinding(
+                target_kind=str(proposed_done["review_target_kind"]),
+                target_value=str(proposed_done["review_target_value"]),
+                target_base_revision=str(
+                    proposed_done["review_target_base_revision"]
+                ),
+                target_generation=int(
+                    proposed_done["review_target_generation"]
+                ),
+                authority_snapshot_id=str(
+                    proposed_done["review_target_authority_snapshot_id"]
+                ),
+                acceptance_criterion_id=(
+                    str(
+                        proposed_done[
+                            "review_target_acceptance_criterion_id"
+                        ]
+                    )
+                    if proposed_done[
+                        "review_target_acceptance_criterion_id"
+                    ]
+                    is not None
+                    else None
+                ),
+                verification_criterion_id=(
+                    str(
+                        proposed_done[
+                            "review_target_verification_criterion_id"
+                        ]
+                    )
+                    if proposed_done[
+                        "review_target_verification_criterion_id"
+                    ]
+                    is not None
+                    else None
+                ),
+            )
+            completion_source = EvidenceSource(
+                source_kind="completion_evidence",
+                source_state=str(cycle.completion_evidence_kind),
+                source_id=cycle.completion_cycle_id,
+                source_projection={
+                    "completion_cycle_id": cycle.completion_cycle_id,
+                    "completed_at": cycle.completed_at,
+                    "completion_evidence_kind": (
+                        cycle.completion_evidence_kind
+                    ),
+                    "completion_evidence_revision": (
+                        cycle.completion_evidence_revision
+                    ),
+                    "completion_evidence_reason": (
+                        cycle.completion_evidence_reason
+                    ),
+                    "external_revision_approved": int(
+                        cycle.external_revision_approved
+                    ),
+                    "completion_commit_required": int(
+                        cycle.completion_commit_required
+                    ),
+                    "completion_commit_hash": cycle.completion_commit_hash,
+                },
+            )
+            completion_reference = build_evidence_reference(
+                source=completion_source,
+                project_id=project.project_id,
+                task_id=normalized_task_id,
+                contract_revision=cycle.contract_revision,
+                binding=completion_binding,
+                completion_cycle_id=cycle.completion_cycle_id,
+            )
+            persist_evidence_reference_locked(
+                connection,
+                reference={
+                    "evidence_reference_id": (
+                        f"tg_evidence_reference_{secrets.token_hex(8)}"
+                    ),
+                    "project_id": project.project_id,
+                    "task_id": normalized_task_id,
+                    "source_kind": completion_source.source_kind,
+                    "source_state": completion_source.source_state,
+                    "source_id": completion_source.source_id,
+                    "assurance_class": (
+                        completion_reference.attribution.assurance_class
+                    ),
+                    "producer_class": (
+                        completion_reference.attribution.producer_class
+                    ),
+                    "producer_version": (
+                        completion_reference.attribution.producer_version
+                    ),
+                    "contract_revision": cycle.contract_revision,
+                    "authority_snapshot_id": (
+                        completion_binding.authority_snapshot_id
+                    ),
+                    "acceptance_criterion_id": (
+                        completion_binding.acceptance_criterion_id
+                    ),
+                    "verification_criterion_id": (
+                        completion_binding.verification_criterion_id
+                    ),
+                    "target_kind": completion_binding.target_kind,
+                    "target_value": completion_binding.target_value,
+                    "target_base_revision": (
+                        completion_binding.target_base_revision
+                    ),
+                    "target_generation": (
+                        completion_binding.target_generation
+                    ),
+                    "completion_cycle_id": cycle.completion_cycle_id,
+                    "digest": completion_reference.digest,
+                    "created_at": now,
+                },
+            )
 
         update_task_row(
             connection,
@@ -3615,6 +4059,13 @@ def edit_task(
             project_id=project.project_id,
             values=update_values,
         )
+        if authority_changed:
+            capture_or_reuse_current_authority_snapshot_locked(
+                connection,
+                project_id=project.project_id,
+                task_id=normalized_task_id,
+                created_at=now,
+            )
         if (
             updated["kind"] == "sequential"
             and (lane_metadata_changed or advanced_transition)

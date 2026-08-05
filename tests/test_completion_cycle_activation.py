@@ -26,6 +26,7 @@ from task_governance_tool.relocation import (  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
     StorageError,
     apply_completion_cycle_capture_activation_migration,
+    apply_evidence_ledger_capture_migration,
     apply_verification_receipts_migration,
     connect,
     connect_readonly,
@@ -37,6 +38,10 @@ from task_governance_tool.storage import (  # noqa: E402
     verification_expectation_digest,
 )
 from task_governance_tool.tasks import add_task  # noqa: E402
+from task_governance_tool.reviews import (  # noqa: E402
+    add_review_receipt,
+    set_review_target,
+)
 from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
 from tests.test_completion_cycle_history import (  # noqa: E402
     make_v14_target,
@@ -321,26 +326,24 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     connection
                 )
                 apply_verification_receipts_migration(connection)
+                apply_evidence_ledger_capture_migration(connection)
                 task_id = str(
                     add_task(
                         connection,
                         target.project,
                         title="Native capture",
-                        review_tier=0,
+                        review_tier=2,
                     ).task["task_id"]
                 )
                 fingerprint = "sha256:" + ("a" * 64)
-                connection.execute(
-                    """
-                    UPDATE tasks
-                       SET review_target_kind = 'diff_fingerprint',
-                           review_target_value = ?,
-                           review_target_base_revision = '',
-                           review_target_generation = 1
-                     WHERE task_id = ?
-                    """,
-                    (fingerprint, task_id),
+                set_review_target(
+                    connection,
+                    target.project,
+                    task_id,
+                    kind="diff_fingerprint",
+                    revision=fingerprint,
                 )
+                receipt_ids = {}
                 for receipt in (
                     (
                         "receipt-independent",
@@ -355,29 +358,28 @@ class CompletionCycleActivationTests(unittest.TestCase):
                         "pass",
                     ),
                 ):
-                    connection.execute(
-                        """
-                        INSERT INTO review_receipts(
-                          review_receipt_id, task_id, project_id,
-                          reviewer_key, receipt_kind, verdict,
-                          target_kind, target_value, target_base_revision,
-                          target_generation, summary, user_approved,
-                          created_at
-                        ) VALUES (
-                          ?, ?, ?, ?, ?, ?, 'diff_fingerprint', ?, '',
-                          1, 'Accepted.', 0, '2026-07-30T05:30:00Z'
-                        )
-                        """,
-                        (
-                            receipt[0],
-                            task_id,
-                            target.project.project_id,
-                            receipt[1],
-                            receipt[2],
-                            receipt[3],
-                            fingerprint,
+                    stored_receipt = add_review_receipt(
+                        connection,
+                        target.project,
+                        task_id,
+                        reviewer=receipt[1],
+                        kind=receipt[2],
+                        verdict=receipt[3],
+                        summary="Accepted.",
+                        user_approved=(
+                            receipt[2] == "self_review_fallback"
                         ),
+                        reviewer_class="human",
+                        model_state="not_applicable",
+                        skill_state="not_applicable",
+                        review_profiles=["general"],
+                        review_lenses=["correctness"],
+                        context_relation="external_context",
+                        review_methods=["review_packet_inspection"],
                     )
+                    receipt_ids[receipt[2]] = stored_receipt.receipt[
+                        "review_receipt_id"
+                    ]
                 connection.commit()
                 current = dict(
                     connection.execute(
@@ -410,6 +412,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                         verification_expectation_digest("")
                     ),
                     verification_receipt_id=None,
+                    verification_subject_basis_version=1,
                 )
                 connection.execute(
                     """
@@ -449,11 +452,11 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     cycle.gate_basis.qualifying_receipt_ids,
-                    ("receipt-independent",),
+                    (receipt_ids["independent"],),
                 )
                 validate_completion_cycle_storage(connection)
 
-    def test_v17_viewer_v16_marker_and_relocation_boundaries(
+    def test_v18_viewer_v16_marker_and_relocation_boundaries(
         self,
     ):
         with tempfile.TemporaryDirectory() as tmp:
@@ -469,7 +472,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 add_task(
                     connection,
                     target.project,
-                    title="Viewer source-17 task",
+                    title="Viewer source-18 task",
                 )
                 connection.commit()
             with closing(
@@ -481,7 +484,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     generated_at="2026-07-30T05:40:00Z",
                 ).snapshot
             self.assertEqual(snapshot["snapshot_version"], 4)
-            self.assertEqual(snapshot["source_schema_version"], 17)
+            self.assertEqual(snapshot["source_schema_version"], 18)
             self.assertEqual(
                 snapshot["tasks"][0]["completion_history"],
                 {
@@ -576,10 +579,10 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 15,
             )
             result = initialize_database(target)
-            self.assertEqual(result.migrations_applied, [16, 17])
-            self.assertEqual(result.schema_version, 17)
+            self.assertEqual(result.migrations_applied, [16, 17, 18])
+            self.assertEqual(result.schema_version, 18)
             with closing(connect_readonly(target.db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 17)
+                self.assertEqual(current_schema_version(connection), 18)
                 self.assertEqual(
                     connection.execute(
                         """
@@ -599,6 +602,16 @@ class CompletionCycleActivationTests(unittest.TestCase):
                         """
                     ).fetchone()[0],
                     "verification_receipts",
+                )
+                self.assertEqual(
+                    connection.execute(
+                        """
+                        SELECT name
+                          FROM schema_migrations
+                         WHERE version = 18
+                        """
+                    ).fetchone()[0],
+                    "evidence_ledger_capture",
                 )
 
 

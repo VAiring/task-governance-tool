@@ -58,6 +58,7 @@ from task_governance_tool.storage import (
     configure_project_maintenance,
     initialize_database,
     initialize_uuid_database,
+    migrate_bound_database,
     inspect_setup_state,
     is_sqlite_busy_or_locked,
     read_project_binding_history,
@@ -2827,7 +2828,7 @@ def run_setup(
                         scope,
                         expected_project_id=resolution.project_id,
                     )
-                    initialize_database(
+                    migrate_bound_database(
                         target,
                         setup_backup=(
                             backup_metadata
@@ -2878,7 +2879,7 @@ def run_setup(
                     scope,
                     expected_project_id=resolution.project_id,
                 )
-                initialize_database(
+                migrate_bound_database(
                     target,
                     setup_backup=(
                         backup_metadata

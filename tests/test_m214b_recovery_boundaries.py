@@ -7,7 +7,10 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import tree_snapshot
+from tests.m14_test_support import (
+    remove_v18_evidence_ledger_for_test,
+    tree_snapshot,
+)
 from tests.m214b_test_support import (
     inject_primary_candidate_metadata_conflict as _inject_primary_candidate_metadata_conflict,
     publish_generations as _publish_generations,
@@ -16,6 +19,7 @@ from tests.m214b_test_support import (
     restore_original_mtime as _restore_original_mtime,
     restore_temporaries as _restore_temporaries,
 )
+from tests.m214c_test_support import PRIVATE_SENTINEL
 from tests.test_m17_recovery_hardening import (
     _relocate_install,
     _run_setup,
@@ -33,6 +37,11 @@ from task_governance_tool.storage import (
     read_managed_backup_repository,
     validate_sqlite_integer_storage_class,
 )
+
+
+def _downgrade_candidate_to_v17(path: Path) -> None:
+    with closing(sqlite3.connect(path)) as connection:
+        remove_v18_evidence_ledger_for_test(connection)
 
 
 class M214BRecoveryBoundaryTests(unittest.TestCase):
@@ -190,6 +199,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 target,
                 "2099-03-01T00:00:01Z",
             )[-1]
+            _downgrade_candidate_to_v17(artifact.path)
             _replace_verification(
                 artifact.path,
                 "Fixed local rejection task",
@@ -212,6 +222,254 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                     ("Fixed local rejection task",),
                 ).fetchone()[0]
             self.assertEqual(verification, "")
+
+    def test_v18_task_only_local_rejection_falls_back_to_older_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install, target, _ = _setup_current(Path(tmp))
+            title = "V18 local rejection task"
+            added = install.run(
+                "task",
+                "add",
+                "--title",
+                title,
+                "--json",
+            )
+            self.assertEqual(added.returncode, 0, added.stderr)
+            artifacts = _publish_generations(
+                target,
+                "2097-03-02T00:00:00Z",
+                "2098-03-02T00:00:00Z",
+                "2099-03-02T00:00:00Z",
+            )
+            _replace_verification(artifacts[-1].path, title, "x" * 1001)
+            target.db_path.unlink()
+
+            result = setup_service.run_setup(
+                repo=str(install.project_root),
+                repo_explicit=True,
+                script_path=install.entrypoint,
+                read_only=False,
+                backup_interval_minutes=None,
+                backup_generations=None,
+            )
+
+            self.assertTrue(result.ok, result)
+            with closing(sqlite3.connect(target.db_path)) as connection:
+                verification = connection.execute(
+                    "SELECT verification FROM tasks WHERE title = ?",
+                    (title,),
+                ).fetchone()[0]
+            self.assertEqual(verification, "")
+
+    def test_v18_task_only_privacy_rejection_falls_back_to_older_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install, target, _ = _setup_current(Path(tmp))
+            title = "V18 local privacy rejection task"
+            added = install.run(
+                "task",
+                "add",
+                "--title",
+                title,
+                "--json",
+            )
+            self.assertEqual(added.returncode, 0, added.stderr)
+            artifacts = _publish_generations(
+                target,
+                "2097-03-02T01:00:00Z",
+                "2098-03-02T01:00:00Z",
+                "2099-03-02T01:00:00Z",
+            )
+            _replace_verification(
+                artifacts[-1].path,
+                title,
+                PRIVATE_SENTINEL,
+            )
+            target.db_path.unlink()
+
+            result = setup_service.run_setup(
+                repo=str(install.project_root),
+                repo_explicit=True,
+                script_path=install.entrypoint,
+                read_only=False,
+                backup_interval_minutes=None,
+                backup_generations=None,
+            )
+
+            self.assertTrue(result.ok, result)
+            with closing(sqlite3.connect(target.db_path)) as connection:
+                verification = connection.execute(
+                    "SELECT verification FROM tasks WHERE title = ?",
+                    (title,),
+                ).fetchone()[0]
+            self.assertEqual(verification, "")
+
+    def test_v18_ledger_defect_is_set_fatal_even_with_local_rejection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install, target, _ = _setup_current(Path(tmp))
+            title = "V18 combined recovery defect"
+            added = install.run(
+                "task",
+                "add",
+                "--title",
+                title,
+                "--json",
+            )
+            self.assertEqual(added.returncode, 0, added.stderr)
+            artifacts = _publish_generations(
+                target,
+                "2097-03-03T00:00:00Z",
+                "2098-03-03T00:00:00Z",
+                "2099-03-03T00:00:00Z",
+            )
+            newest = artifacts[-1].path
+            _replace_verification(
+                newest,
+                title,
+                PRIVATE_SENTINEL + ("x" * 1001),
+            )
+            with closing(sqlite3.connect(newest)) as connection:
+                trigger_sql = connection.execute(
+                    """
+                    SELECT sql FROM sqlite_master
+                     WHERE type = 'trigger'
+                       AND name = 'trg_authority_snapshots_no_update'
+                    """
+                ).fetchone()[0]
+                connection.execute(
+                    "DROP TRIGGER trg_authority_snapshots_no_update"
+                )
+                connection.execute(
+                    "UPDATE authority_snapshots SET basis_digest = ?",
+                    ("sha256:" + "0" * 64,),
+                )
+                connection.execute(trigger_sql)
+                connection.commit()
+            target.db_path.unlink()
+
+            with mock.patch.object(
+                setup_service,
+                "restore_managed_backup",
+            ) as restore:
+                result = setup_service.run_setup(
+                    repo=str(install.project_root),
+                    repo_explicit=True,
+                    script_path=install.entrypoint,
+                    read_only=False,
+                    backup_interval_minutes=None,
+                    backup_generations=None,
+                )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "project_state_unreadable")
+            self.assertEqual(result.data["planned_writes"], [])
+            self.assertEqual(result.data["completed_writes"], [])
+            restore.assert_not_called()
+            self.assertFalse(target.db_path.exists())
+
+    def test_backup_revalidation_does_not_hide_v18_ledger_defect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install, target, _ = _setup_current(Path(tmp))
+            title = "V18 backup revalidation defect"
+            added = install.run(
+                "task",
+                "add",
+                "--title",
+                title,
+                "--json",
+            )
+            self.assertEqual(added.returncode, 0, added.stderr)
+            artifacts = _publish_generations(
+                target,
+                "2097-03-03T01:00:00Z",
+                "2098-03-03T01:00:00Z",
+                "2099-03-03T01:00:00Z",
+            )
+            newest = artifacts[-1].path
+            _replace_verification(
+                newest,
+                title,
+                PRIVATE_SENTINEL + ("x" * 1001),
+            )
+            with closing(sqlite3.connect(newest)) as connection:
+                trigger_sql = connection.execute(
+                    """
+                    SELECT sql FROM sqlite_master
+                     WHERE type = 'trigger'
+                       AND name = 'trg_authority_snapshots_no_update'
+                    """
+                ).fetchone()[0]
+                connection.execute(
+                    "DROP TRIGGER trg_authority_snapshots_no_update"
+                )
+                connection.execute(
+                    "UPDATE authority_snapshots SET basis_digest = ?",
+                    ("sha256:" + "0" * 64,),
+                )
+                connection.execute(trigger_sql)
+                connection.commit()
+            target.db_path.unlink()
+
+            with self.assertRaises(StorageError) as caught:
+                backup_service.select_managed_backup_for_recovery(target)
+
+            self.assertEqual(caught.exception.code, "setup_restore_failed")
+            self.assertFalse(target.db_path.exists())
+
+    def test_v18_ledger_only_defect_is_preselection_set_fatal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install, target, _ = _setup_current(Path(tmp))
+            added = install.run(
+                "task",
+                "add",
+                "--title",
+                "V18 ledger-only recovery defect",
+                "--json",
+            )
+            self.assertEqual(added.returncode, 0, added.stderr)
+            artifacts = _publish_generations(
+                target,
+                "2097-03-04T00:00:00Z",
+                "2098-03-04T00:00:00Z",
+                "2099-03-04T00:00:00Z",
+            )
+            newest = artifacts[-1].path
+            with closing(sqlite3.connect(newest)) as connection:
+                trigger_sql = connection.execute(
+                    """
+                    SELECT sql FROM sqlite_master
+                     WHERE type = 'trigger'
+                       AND name = 'trg_authority_snapshots_no_update'
+                    """
+                ).fetchone()[0]
+                connection.execute(
+                    "DROP TRIGGER trg_authority_snapshots_no_update"
+                )
+                connection.execute(
+                    "UPDATE authority_snapshots SET basis_digest = ?",
+                    ("sha256:" + "0" * 64,),
+                )
+                connection.execute(trigger_sql)
+                connection.commit()
+            target.db_path.unlink()
+
+            with mock.patch.object(
+                setup_service,
+                "restore_managed_backup",
+            ) as restore:
+                result = setup_service.run_setup(
+                    repo=str(install.project_root),
+                    repo_explicit=True,
+                    script_path=install.entrypoint,
+                    read_only=False,
+                    backup_interval_minutes=None,
+                    backup_generations=None,
+                )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "project_state_unreadable")
+            self.assertEqual(result.data["planned_writes"], [])
+            restore.assert_not_called()
+            self.assertFalse(target.db_path.exists())
 
     def test_fixed_primary_rejects_candidate_metadata_conflict(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -262,6 +520,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             )
             selected = artifacts[-2]
             newest = artifacts[-1]
+            _downgrade_candidate_to_v17(newest.path)
             _replace_verification(
                 newest.path,
                 "Candidate repository task",
@@ -532,6 +791,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 "2099-06-01T00:00:00Z",
             )
             rejected = artifacts[-1].path
+            _downgrade_candidate_to_v17(rejected)
             _replace_verification(
                 rejected,
                 "Rejected head task",
@@ -654,7 +914,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 _replace_verification(
                     temporary_target.db_path,
                     "Temporary validation task",
-                    "x" * 501,
+                    "x" * 1001,
                 )
 
             with mock.patch.object(
@@ -915,6 +1175,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 target_a,
                 "2026-08-07T00:00:00Z",
             )[-1]
+            _downgrade_candidate_to_v17(head.path)
             _replace_verification(
                 head.path,
                 "Binding history task",

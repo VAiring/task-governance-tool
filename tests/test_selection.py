@@ -11,7 +11,12 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool.selection import select_next_tasks  # noqa: E402
-from task_governance_tool.storage import connect, initialize_database, resolve_database_target  # noqa: E402
+from task_governance_tool.storage import (  # noqa: E402
+    capture_or_reuse_current_authority_snapshot_locked,
+    connect,
+    initialize_database,
+    resolve_database_target,
+)
 from task_governance_tool.tasks import add_task, edit_task  # noqa: E402
 from tests.review_test_helpers import seed_review_evidence_connection  # noqa: E402
 
@@ -115,6 +120,12 @@ def insert_task(connection, project_id, **overrides):
         )
         """,
         row,
+    )
+    capture_or_reuse_current_authority_snapshot_locked(
+        connection,
+        project_id=project_id,
+        task_id=row["task_id"],
+        created_at=row["created_at"],
     )
 
 

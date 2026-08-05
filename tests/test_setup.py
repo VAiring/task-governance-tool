@@ -21,6 +21,7 @@ try:  # noqa: E402
         json_payload,
         make_physical_install,
         make_source_self_host,
+        remove_v18_evidence_ledger_for_test,
     )
 except ModuleNotFoundError:  # noqa: E402
     from tests.m14_test_support import (
@@ -35,6 +36,7 @@ except ModuleNotFoundError:  # noqa: E402
         json_payload,
         make_physical_install,
         make_source_self_host,
+        remove_v18_evidence_ledger_for_test,
     )
 
 from task_governance_tool import setup as setup_service
@@ -151,7 +153,7 @@ class SetupCommandTests(unittest.TestCase):
                     "planned_writes": FRESH_WRITES,
                     "completed_writes": [],
                     "schema_from": None,
-                    "schema_to": 17,
+                    "schema_to": 18,
                     "maintenance_enabled": False,
                     "backup_interval_minutes": 30,
                     "backup_generations": 3,
@@ -177,7 +179,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(completed_data["planned_writes"], FRESH_WRITES)
             self.assertEqual(completed_data["completed_writes"], FRESH_WRITES)
             self.assertEqual(completed_data["schema_from"], None)
-            self.assertEqual(completed_data["schema_to"], 17)
+            self.assertEqual(completed_data["schema_to"], 18)
             self.assertTrue(completed_data["maintenance_enabled"])
             self.assertEqual(completed_data["backup_interval_minutes"], 30)
             self.assertEqual(completed_data["backup_generations"], 3)
@@ -227,6 +229,110 @@ class SetupCommandTests(unittest.TestCase):
                 FIXED_UUID_RELOCATION,
             )
 
+    def test_schema_v17_receipt_history_previews_and_migrates_with_viewer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            initialized = install.run("setup", "--json")
+            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+
+            added = install.run(
+                "task",
+                "add",
+                "--title",
+                "Schema 17 setup Viewer receipt history",
+                "--status",
+                "in_progress",
+                "--review-tier",
+                "0",
+                "--verification",
+                "Focused offline verification",
+                "--json",
+            )
+            self.assertEqual(added.returncode, 0, added.stderr)
+            task_id = json_payload(added)["data"]["task"]["task_id"]
+            targeted = install.run(
+                "review",
+                "target",
+                "set",
+                task_id,
+                "--kind",
+                "diff_fingerprint",
+                "--revision",
+                "sha256:" + ("d" * 64),
+                "--json",
+            )
+            self.assertEqual(targeted.returncode, 0, targeted.stderr)
+            reviewed = install.run(
+                "review",
+                "receipt",
+                "add",
+                task_id,
+                "--reviewer",
+                "mechanical-review",
+                "--kind",
+                "not_required",
+                "--verdict",
+                "not_required",
+                "--summary",
+                "Mechanical setup compatibility fixture",
+                "--json",
+            )
+            self.assertEqual(reviewed.returncode, 0, reviewed.stderr)
+            verified = install.run(
+                "verification",
+                "receipt",
+                "add",
+                task_id,
+                "--result",
+                "pass",
+                "--duration-ms",
+                "1",
+                "--scope-coverage",
+                "full",
+                "--expected-target-generation",
+                "1",
+                "--json",
+            )
+            self.assertEqual(verified.returncode, 0, verified.stderr)
+            completed = install.run(
+                "task",
+                "complete",
+                task_id,
+                "--verification-complete",
+                "--review-complete",
+                "--commit-not-required",
+                "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
+            with closing(sqlite3.connect(install.db_path)) as connection:
+                remove_v18_evidence_ledger_for_test(connection)
+                connection.commit()
+            before_preview = file_snapshot(install.project_root)
+
+            preview = install.run("setup", "--read-only", "--json")
+            self.assertEqual(preview.returncode, 0, preview.stderr)
+            preview_data = self.assert_setup_shape(json_payload(preview))
+            self.assertEqual(preview_data["schema_from"], 17)
+            self.assertEqual(preview_data["schema_to"], 18)
+            self.assertEqual(
+                preview_data["planned_writes"],
+                ["migration_backup", "database_migrate", "viewer_publish"],
+            )
+            self.assertEqual(preview_data["viewer_status"], "repair_required")
+            self.assertEqual(file_snapshot(install.project_root), before_preview)
+
+            migrated = install.run("setup", "--json")
+            self.assertEqual(migrated.returncode, 0, migrated.stderr)
+            migrated_data = self.assert_setup_shape(json_payload(migrated))
+            self.assertEqual(migrated_data["schema_from"], 17)
+            self.assertEqual(migrated_data["schema_to"], 18)
+            self.assertEqual(
+                migrated_data["completed_writes"],
+                ["migration_backup", "database_migrate", "viewer_publish"],
+            )
+            self.assertEqual(migrated_data["viewer_status"], "published")
+
     def test_policy_validation_change_and_equal_replay_are_bounded(self):
         invalid_cases = (
             ("--backup-interval-minutes", "0"),
@@ -252,7 +358,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": [],
                         "completed_writes": [],
                         "schema_from": None,
-                        "schema_to": 17,
+                        "schema_to": 18,
                         "maintenance_enabled": None,
                         "backup_interval_minutes": None,
                         "backup_generations": None,
@@ -631,7 +737,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": planned,
                         "completed_writes": completed,
                         "schema_from": schema_from,
-                        "schema_to": 17,
+                        "schema_to": 18,
                         "maintenance_enabled": maintenance_enabled,
                         "backup_interval_minutes": 30,
                         "backup_generations": 3,
@@ -684,7 +790,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": [],
                         "completed_writes": [],
                         "schema_from": None,
-                        "schema_to": 17,
+                        "schema_to": 18,
                         "maintenance_enabled": None,
                         "backup_interval_minutes": None,
                         "backup_generations": None,
@@ -995,7 +1101,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             data = self.assert_setup_shape(json_payload(migrated))
             self.assertEqual(data["schema_from"], 9)
-            self.assertEqual(data["schema_to"], 17)
+            self.assertEqual(data["schema_to"], 18)
             self.assertEqual(
                 data["planned_writes"],
                 LEGACY_MIGRATION_WRITES,
@@ -1025,7 +1131,7 @@ class SetupCommandTests(unittest.TestCase):
             with closing(sqlite3.connect(install.db_path)) as connection:
                 self.assertEqual(
                     connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0],
-                    17,
+                    18,
                 )
                 row = connection.execute(
                     """
@@ -1063,7 +1169,7 @@ class SetupCommandTests(unittest.TestCase):
                 "legacy_state_cleanup",
             ]
             self.assertEqual(data["schema_from"], 10)
-            self.assertEqual(data["schema_to"], 17)
+            self.assertEqual(data["schema_to"], 18)
             self.assertEqual(data["planned_writes"], expected_writes)
             self.assertEqual(data["completed_writes"], expected_writes)
             self.assertFalse(install.legacy_db_path.exists())
@@ -1132,7 +1238,7 @@ class SetupCommandTests(unittest.TestCase):
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 data = self.assert_setup_shape(json_payload(migrated))
                 self.assertEqual(data["schema_from"], 12)
-                self.assertEqual(data["schema_to"], 17)
+                self.assertEqual(data["schema_to"], 18)
                 self.assertEqual(
                     data["planned_writes"],
                     [
@@ -1163,7 +1269,7 @@ class SetupCommandTests(unittest.TestCase):
                         connection.execute(
                             "SELECT MAX(version) FROM schema_migrations"
                         ).fetchone()[0],
-                        17,
+                        18,
                     )
                     self.assertIsNotNone(
                         connection.execute(

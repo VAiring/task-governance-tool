@@ -73,6 +73,7 @@ def copy_release_fixture(destination: Path) -> Path:
         "release-install.md",
         "releases/v0.10.0.md",
         "releases/v0.11.0.md",
+        "releases/v0.12.0.md",
     ):
         source = ROOT / "docs" / Path(*relative.split("/"))
         target = fixture / "docs" / Path(*relative.split("/"))
@@ -129,7 +130,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         self.assertEqual(result.runtime, runtime)
         self.assertEqual(len(runtime.public_commands), 21)
         self.assertEqual(result.ci_python_versions, ("3.12", "3.14"))
-        self.assertEqual(result.manifest_core_count, 40)
+        self.assertEqual(result.manifest_core_count, 43)
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
@@ -333,7 +334,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             release = fixture / "docs" / "release-install.md"
             release.write_text(
                 release.read_text(encoding="utf-8").replace(
-                    "| SQLite schema | v17 |",
+                    "| SQLite schema | v18 |",
                     "| SQLite schema | v99 |",
                     1,
                 ),

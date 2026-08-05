@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from task_governance_tool.ordering import first_out_of_order_advanced_task
-from task_governance_tool.storage import ProjectIdentity, utc_now
+from task_governance_tool.storage import (
+    ProjectIdentity,
+    capture_or_reuse_current_authority_snapshot_locked,
+    current_schema_version,
+    utc_now,
+)
 from task_governance_tool.tasks import (
     SQLITE_INT64_MAX,
     TaskRepositoryError,
@@ -553,6 +558,13 @@ def _activate_revision_zero(
                 "contract_write_conflict",
                 "Task Contract activation conflicted with current state",
             )
+        if current_schema_version(connection) >= 18:
+            capture_or_reuse_current_authority_snapshot_locked(
+                connection,
+                project_id=project.project_id,
+                task_id=str(existing["task_id"]),
+                created_at=now,
+            )
         lanes = {str(existing["lane"])} if existing["kind"] == "sequential" else set()
         invalid_task_id = first_out_of_order_advanced_task(
             connection,
@@ -751,6 +763,11 @@ def _later_revision(
         "review_target_value": "",
         "review_target_base_revision": "",
         "review_target_generation": next_generation,
+        "review_target_capture_version": 0,
+        "review_target_authority_snapshot_id": None,
+        "review_target_acceptance_criterion_id": None,
+        "review_target_verification_criterion_id": None,
+        "review_target_artifact_manifest_id": None,
         "status": next_status,
     }
     changed_fields = [
@@ -759,6 +776,11 @@ def _later_revision(
         if field not in {
             "current_contract_revision",
             "review_target_base_revision",
+            "review_target_capture_version",
+            "review_target_authority_snapshot_id",
+            "review_target_acceptance_criterion_id",
+            "review_target_verification_criterion_id",
+            "review_target_artifact_manifest_id",
         }
         and existing[field] != value
     ]
@@ -798,6 +820,11 @@ def _later_revision(
                    review_target_value = :review_target_value,
                    review_target_base_revision = :review_target_base_revision,
                    review_target_generation = :review_target_generation,
+                   review_target_capture_version = :review_target_capture_version,
+                   review_target_authority_snapshot_id = :review_target_authority_snapshot_id,
+                   review_target_acceptance_criterion_id = :review_target_acceptance_criterion_id,
+                   review_target_verification_criterion_id = :review_target_verification_criterion_id,
+                   review_target_artifact_manifest_id = :review_target_artifact_manifest_id,
                    status = :status,
                    updated_at = :updated_at
              WHERE project_id = :project_id
@@ -816,6 +843,13 @@ def _later_revision(
             raise TaskRepositoryError(
                 "contract_write_conflict",
                 "Task Contract revision conflicted with current state",
+            )
+        if current_schema_version(connection) >= 18:
+            capture_or_reuse_current_authority_snapshot_locked(
+                connection,
+                project_id=project.project_id,
+                task_id=str(existing["task_id"]),
+                created_at=now,
             )
         event = create_task_event(
             connection,

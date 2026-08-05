@@ -764,11 +764,22 @@ class CompletionEvidenceTests(unittest.TestCase):
                     *evidence_args,
                 )
 
-                self.assertEqual(result.returncode, 1, result.stdout)
-                self.assertEqual(
-                    json.loads(result.stdout)["errors"][0]["code"],
-                    "git_commit_not_found_or_ambiguous",
-                )
+                payload = json.loads(result.stdout)
+                if target == "review":
+                    self.assertEqual(result.returncode, 2, result.stdout)
+                    self.assertEqual(
+                        payload["errors"],
+                        [{
+                            "code": "project_state_unreadable",
+                            "message": "project state could not be read safely",
+                        }],
+                    )
+                else:
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertEqual(
+                        payload["errors"][0]["code"],
+                        "git_commit_not_found_or_ambiguous",
+                    )
                 self.assertEqual(db.read_bytes(), before_db)
                 self.assertEqual(git_state(repo), before_git)
 

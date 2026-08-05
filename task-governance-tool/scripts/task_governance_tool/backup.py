@@ -50,6 +50,8 @@ from task_governance_tool.storage import (
     record_setup_backup,
     utc_now,
     validate_current_database,
+    validate_evidence_ledger_storage,
+    validate_evidence_ledger_storage_for_recovery,
     validate_migration_backup_metadata,
     validate_stored_task_verification,
     validate_utc_timestamp,
@@ -351,7 +353,27 @@ def _validate_publication_source(
     version = _validate_database(connection, target, expected_version)
     if version == SCHEMA_VERSION:
         validate_current_database(connection, target)
+        validate_evidence_ledger_storage(connection)
     return version
+
+
+def _recovery_content_valid(
+    connection: sqlite3.Connection,
+    version: int,
+    target: DatabaseTarget,
+) -> bool:
+    try:
+        if version == SCHEMA_VERSION:
+            validate_evidence_ledger_storage_for_recovery(connection)
+        else:
+            validate_stored_task_verification(
+                connection,
+                version,
+                target.project.project_id,
+            )
+    except StoredTaskVerificationError:
+        return False
+    return True
 
 
 def _source_version(target: DatabaseTarget) -> int:
@@ -375,6 +397,8 @@ def _artifact_schema_version(
     try:
         with closing(connect_readonly(path)) as connection:
             version = _validate_database(connection, target)
+            if version == SCHEMA_VERSION:
+                validate_evidence_ledger_storage(connection)
         return version if _file_identity(path) == identity else None
     except (OSError, sqlite3.Error, StorageError):
         return None
@@ -446,14 +470,11 @@ def _discover_recovery_artifacts(
         try:
             with closing(connect_readonly(path)) as connection:
                 version = _validate_database(connection, target)
-                try:
-                    validate_stored_task_verification(
-                        connection,
-                        version,
-                        target.project.project_id,
-                    )
-                except StoredTaskVerificationError:
-                    content_valid = False
+                content_valid = _recovery_content_valid(
+                    connection,
+                    version,
+                    target,
+                )
         except (OSError, sqlite3.Error, StorageError) as exc:
             raise _restore_failure() from exc
         if _file_identity(path) != identity:
@@ -759,14 +780,8 @@ def restore_managed_backup(
                 target,
                 candidate.schema_version,
             )
-            try:
-                validate_stored_task_verification(
-                    source,
-                    source_version,
-                    target.project.project_id,
-                )
-            except StoredTaskVerificationError as exc:
-                raise _restore_failure() from exc
+            if not _recovery_content_valid(source, source_version, target):
+                raise _restore_failure()
             with closing(
                 configure_connection(sqlite3.connect(temporary))
             ) as destination:
@@ -776,14 +791,12 @@ def restore_managed_backup(
                     target,
                     source_version,
                 )
-                try:
-                    validate_stored_task_verification(
-                        destination,
-                        source_version,
-                        target.project.project_id,
-                    )
-                except StoredTaskVerificationError as exc:
-                    raise _restore_failure() from exc
+                if not _recovery_content_valid(
+                    destination,
+                    source_version,
+                    target,
+                ):
+                    raise _restore_failure()
 
         temporary_target = DatabaseTarget(
             project=target.project,
@@ -824,14 +837,8 @@ def restore_managed_backup(
                 target,
                 source_version,
             )
-            try:
-                validate_stored_task_verification(
-                    restored,
-                    source_version,
-                    target.project.project_id,
-                )
-            except StoredTaskVerificationError as exc:
-                raise _restore_failure() from exc
+            if not _recovery_content_valid(restored, source_version, target):
+                raise _restore_failure()
 
         with temporary.open("r+b") as stream:
             os.fsync(stream.fileno())
@@ -1396,15 +1403,16 @@ def run_routine_backup(
             retention = repository.maintenance.backup_generations
             if retention is None:
                 raise _failure()
-            metadata = _new_publication_metadata(
-                target,
+            metadata = _new_metadata(
                 retention,
                 published_at=timestamp,
+                after=(
+                    repository.generations[-1]
+                    if repository.generations
+                    else None
+                ),
             )
             _copy(target, metadata)
-            artifacts = _discover(target)
-            if not any(artifact.metadata == metadata for artifact in artifacts):
-                raise _failure()
             record_managed_backup(target, metadata)
             if not _reconcile_v11(target, observed_at=timestamp):
                 raise _failure()

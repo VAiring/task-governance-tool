@@ -663,6 +663,14 @@ class TaskContractCliTests(unittest.TestCase):
                 "pass",
                 "--summary",
                 "Contract review passed",
+                "--reviewer-class",
+                "human",
+                "--model-state",
+                "not_applicable",
+                "--skill-state",
+                "not_applicable",
+                "--context-relation",
+                "external_context",
             )
             self.assertEqual(receipt_result.returncode, 0, receipt_result.stderr)
             completion_result, _ = json_command(
@@ -1177,9 +1185,9 @@ class TaskContractMigrationTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     connection.execute(
-                        "SELECT MAX(version) FROM schema_migrations"
+                        "SELECT COUNT(*) FROM schema_migrations WHERE version = 8"
                     ).fetchone()[0],
-                    7,
+                    0,
                 )
 
                 apply_task_contract_migration(connection)

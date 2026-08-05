@@ -108,8 +108,8 @@ Use this normal flow:
 7. Set the exact review target and retain its returned generation. Run the
    Task's verification outside taskgov against that target. When the Task has
    nonempty verification text, attest the aggregate result once with
-   `verification receipt add <task-id> --command-label <label> --result
-   <pass|fail|timeout> --duration-ms <milliseconds> --scope-coverage
+   `verification receipt add <task-id> --result <pass|fail|timeout>
+   --duration-ms <milliseconds> --scope-coverage
    <full|partial> --expected-target-generation <generation> --json`.
 8. Run `review prepare` once, obtain the required reviews, and record their
    receipts and findings.
@@ -146,6 +146,12 @@ mandatory question, judgment, or user-return stop.
 - Copy a Task Contract only when scope and acceptance already exist in current
   authority. Leave revision zero otherwise without asking. Revise a Contract
   only from later explicit authority and record the reason.
+- Explicit public `task add` and `task edit --verification` input remains
+  limited to 500 characters. Schema-v18 stored/read paths preserve an existing
+  valid value through 1,000 characters; do not replay such a value through the
+  narrower public input merely to make an unrelated edit.
+- Schema v18 creates no Evidence Bundle or Evidence JSON, adds no Runner or
+  Analyzer, and introduces no Viewer Evidence surface or network/model call.
 - Pause only active/review-pending work with `--pause-reason`; block with
   `--blocked-reason`; resume explicitly to `in_progress`.
 - Classify a new finding once. Keep it in the current Task only when it is
@@ -173,20 +179,38 @@ Set a review target only after the exact material is ready. Retain its returned
 generation, run the governed verification outside taskgov against that exact
 target, and, for nonempty Task verification, record one aggregate attestation
 with `verification receipt add` before preparing review. Taskgov does not run
-the command or retain its body or output. A `fail`, `timeout`, or `partial`
-Receipt requires a fresh target generation before another run can become
-current. For review before a Git completion commit, stage exactly the intended files and set
+the command or retain its body or output. It derives the version-1
+verification subject from the locked target's authority snapshot and
+verification criterion; there is no caller label or replacement subject input.
+A `fail`, `timeout`, or `partial` Receipt requires a fresh target generation
+before another run can become current. A migrated capture-version-0 target is
+read-only lineage: set a fresh
+target before adding a Verification Receipt, Review Receipt, Review Finding, or
+completion evidence. `review prepare` and resolving an existing Finding remain
+allowed; the old target is never upgraded in place. For review before a Git
+completion commit, stage exactly the intended files and set
 `--kind git_snapshot` without a revision. Unstaged and untracked files are
 excluded. Use the single bounded `review prepare` packet for the independent
 reviewers; follow its exact-target instruction rather than ambient Git or
 worktree state. Have reviewers return verdicts and findings. Record those
-sanitized results from the trusted parent or orchestrator. Taskgov
+sanitized results from the trusted parent or orchestrator. For
+`independent` or `self_review_fallback`, `review receipt add` requires
+`--reviewer-class`, `--model-state`, `--skill-state`, and
+`--context-relation`; declared model/Skill identifiers are conditional, and
+`--review-profile`, `--review-lens`, and `--review-method` are repeatable.
+These provenance options are forbidden for `not_required`. Taskgov
 deterministically evaluates qualifying PASS receipts and changes-requested
 receipts only for the current review target and generation. Any unresolved high
 or medium finding from any recorded generation of that Task continues to block
 the gate. Distinct reviewer keys prove distinct stored strings only; they do
 not prove distinct people, LLMs, machines, independent processes,
 independence, or authenticated provenance.
+
+Public Review Receipts distinguish native v1 provenance, migrated v0 absence,
+and `not_required` null. The v1 record is a bounded caller attestation; v0 does
+not infer unknown values, and neither form upgrades the Receipt's existing
+assurance or proves reviewer identity, model/Skill execution, competence,
+independence, diversity, quality, or truth.
 
 Tier 2 normally requires two distinct independent PASS receipts for the same
 target generation. A changed target requires fresh receipts. A

@@ -23,8 +23,8 @@ workspace.
 - `docs/authority.md` is the concise repository authority index. It routes
   product behavior to `docs/specification.md`, implementation structure to
   `docs/design.md`, current decisions, open issues, cross-sequence gateways,
-  and non-delegated static contracts to `plan.md`, and each indexed inactive
-  sequence's exact units to its conditional execution contract. The
+  and non-delegated static contracts to `plan.md`, and each indexed execution
+  unit's exact detail to its routed current-or-conditional contract. The
   project-local Task database, inspected
   through the public CLI, owns live Task state and evidence. Published artifact
   and install identity belongs in `docs/release-install.md`; completed
@@ -79,9 +79,10 @@ If these documents conflict:
 - For implementation structure, prefer `docs/design.md`.
 - For current decisions, open issues, cross-sequence gateways, and static
   contracts not delegated by the authority index, prefer `plan.md`.
-- For an indexed inactive sequence, prefer the exact conditional formal
+- For indexed execution detail, prefer the exact current or conditional formal
   document and anchor routed by `docs/authority.md` and the Task Contract for
   that unit's purpose, scope, order, dependency, permission boundary, and gates.
+  Product behavior and implementation structure remain owned above.
 - `plan.md` is not the execution-status, evidence, or historical milestone log.
   Inspect live Task state and evidence through the public CLI.
 - If a required product decision is missing, record it as an open issue in
@@ -227,8 +228,9 @@ The product must not become:
   or history in this file. Product behavior belongs in `docs/specification.md`,
   implementation structure in `docs/design.md`, current decisions, open issues,
   cross-sequence gateways, and non-delegated static contracts in `plan.md`,
-  exact indexed inactive-unit purpose, scope, order, dependency, permission, and gates
-  in the conditional formal document selected by `docs/authority.md`, live Task
+  exact indexed execution-unit purpose, scope, order, dependency, permission,
+  and gates in the current or conditional formal document selected by
+  `docs/authority.md`, live Task
   state and evidence in the project-local Task database through the public CLI,
   and immutable non-authoritative lineage behind `docs/history/README.md`.
 - Treat the current CLI, storage, setup/doctor, maintenance, Viewer, and output
@@ -287,8 +289,11 @@ The product must not become:
   status codes, and sanitized summaries.
 - Verification Receipt retention is deny-by-default. Store only the exact
   bounded Receipt fields and structural binding metadata defined by the current
-  specification: sanitized command label, result, duration, scope coverage,
-  ownership, current Contract/target basis, and recording time.
+  specification: a preserved version-zero sanitized legacy caller label or the
+  fixed internal compatibility value for a tool-owned version-one structural
+  subject, result, duration, scope coverage, ownership, current
+  Contract/authority/criterion/target basis, and recording time. Never accept
+  a caller label or caller-supplied subject for a version-one Receipt.
 - Never store the verification command body or arguments, exit code,
   stdout/stderr, stack trace, environment, log, exception, prompt, diff,
   credential, arbitrary coverage prose, or debug-retention variant.

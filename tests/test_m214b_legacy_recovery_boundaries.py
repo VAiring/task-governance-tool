@@ -11,6 +11,7 @@ from tests.m14_test_support import (
     create_v10_target,
     create_v14_target,
     make_physical_install,
+    remove_v18_evidence_ledger_for_test,
     tree_snapshot,
 )
 from tests.m214b_test_support import (
@@ -340,6 +341,8 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                 "2099-10-01T00:00:00Z",
                 retention=5,
             )[-1]
+            with closing(sqlite3.connect(head.path)) as connection:
+                remove_v18_evidence_ledger_for_test(connection)
             replace_verification(
                 head.path,
                 "Mixed-schema rejected head",
@@ -349,7 +352,11 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
 
             recovered = install.run("setup", "--json")
 
-            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertEqual(
+                recovered.returncode,
+                0,
+                f"{recovered.stderr}\n{recovered.stdout}",
+            )
             with closing(sqlite3.connect(install.db_path)) as connection:
                 schema_version = connection.execute(
                     "SELECT MAX(version) FROM schema_migrations"
@@ -358,5 +365,5 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                     "SELECT COUNT(*) FROM tasks WHERE title = ?",
                     ("Mixed-schema rejected head",),
                 ).fetchone()[0]
-            self.assertEqual(schema_version, 17)
+            self.assertEqual(schema_version, 18)
             self.assertEqual(rejected_title_count, 0)

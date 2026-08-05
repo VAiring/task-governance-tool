@@ -101,6 +101,18 @@ class StoredTaskValidationTests(unittest.TestCase):
         )
         self.assertEqual(preserved_legacy_hash, preserved_original)
 
+    def test_valid_v18_stored_verification_accepts_one_thousand(self):
+        row = valid_stored_task_row(verification="界" * 1_000)
+        original = copy.deepcopy(row)
+        result = validate_stored_task_rows(
+            [row],
+            connection=self.connection,
+            source_schema_version=18,
+            expected_project_id=row["project_id"],
+        )
+        self.assertIsNone(result.verification_rejection)
+        self.assertEqual(row, original)
+
     def test_fault_matrix_uses_one_fixed_sanitized_error(self):
         project_id = valid_stored_task_row()["project_id"]
         faults = {
@@ -200,6 +212,10 @@ class StoredTaskValidationTests(unittest.TestCase):
             verification_rejection_is_local=True,
         )
         self.assertEqual(result.verification_rejection, "privacy")
+        self.assertEqual(
+            result.verification_rejected_task_ids,
+            frozenset({"tg_task_capacity", "tg_task_privacy"}),
+        )
 
         malformed = valid_stored_task_row(
             task_id="tg_task_malformed",
@@ -239,7 +255,7 @@ class StoredTaskValidationTests(unittest.TestCase):
                 self.assertEqual(caught.exception.code, FIXED_CODE)
 
     def test_invalid_source_capability_fails_closed(self):
-        for version in (True, 0, 18, "17"):
+        for version in (True, 0, 19, "18"):
             with self.subTest(version=version):
                 with self.assertRaises(StorageError) as caught:
                     validate_stored_task_rows(

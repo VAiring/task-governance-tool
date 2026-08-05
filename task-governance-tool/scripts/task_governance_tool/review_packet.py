@@ -33,6 +33,8 @@ from task_governance_tool.storage import (
     DatabaseTarget,
     StorageError,
     connect_initialized_readonly,
+    current_schema_version,
+    stored_task_verification_limit,
 )
 from task_governance_tool.tasks import (
     STATUSES,
@@ -89,6 +91,10 @@ REQUIRED_OUTPUT = (
     "severity-ordered findings with exact file/line",
     "remaining risks",
     "recommended changes",
+    (
+        "review provenance: reviewer class, model and Skill declaration "
+        "states, context relation, profiles, lenses, and methods"
+    ),
 )
 
 MISSING_TARGET_MESSAGE = (
@@ -181,7 +187,9 @@ def _read_basis(
                 "verification": validate_text(
                     "verification",
                     stored["verification"],
-                    limit=TEXT_LIMITS["verification"],
+                    limit=stored_task_verification_limit(
+                        current_schema_version(active_connection)
+                    ),
                 ),
                 "review_tier": validate_review_tier(
                     stored["review_tier"],
@@ -507,7 +515,16 @@ def prepare_review_packet(
         f"taskgov review receipt add {normalized_task_id} "
         "--reviewer <reviewer-key> --kind independent "
         "--verdict <pass|changes_requested> "
-        "--summary <sanitized-summary> --json"
+        "--summary <sanitized-summary> "
+        "--reviewer-class <human|llm|deterministic_tool|hybrid|unknown> "
+        "--model-state <declared|not_applicable|unknown> "
+        "--skill-state <declared|not_applicable|not_used|unknown> "
+        "--context-relation <same_context|forked_context|fresh_context|"
+        "external_context|not_applicable|unknown> "
+        "[--declared-model-id <id>] [--declared-skill-id <id> "
+        "--declared-skill-version <version>] "
+        "[--review-profile <profile>] [--review-lens <lens>] "
+        "[--review-method <method>] --json"
     )
     return {
         "task": basis.task,

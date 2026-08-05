@@ -21,12 +21,14 @@ from task_governance_tool import maintenance as maintenance_service
 from task_governance_tool import viewer_maintenance as viewer_maintenance_service
 from task_governance_tool.backup import discover_managed_backup_metadata
 from task_governance_tool.storage import (
+    capture_or_reuse_current_authority_snapshot_locked,
     configure_project_maintenance,
     connect,
     initialize_database,
     read_managed_backup_repository,
     read_viewer_maintenance,
     resolve_database_target,
+    validate_evidence_ledger_storage,
 )
 from task_governance_tool.viewer_maintenance import ViewerRefreshResult
 
@@ -180,6 +182,14 @@ def seed_fixture(
                 for item in tool_event_specs
             ],
         )
+        for task_row in task_rows:
+            capture_or_reuse_current_authority_snapshot_locked(
+                connection,
+                project_id=target.project.project_id,
+                task_id=str(task_row[0]),
+                created_at=timestamp(0),
+            )
+        validate_evidence_ledger_storage(connection)
         connection.commit()
 
     target_task_id = next(

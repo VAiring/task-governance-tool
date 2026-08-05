@@ -227,10 +227,13 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("matched pre-migration package", normalized)
             self.assertIn("git checkout alone", normalized)
 
-    def test_v011_candidate_is_local_and_separate_from_published_v010(self):
+    def test_v012_candidate_is_local_and_separate_from_published_v010(self):
         candidate_bytes = (
-            ROOT / "docs" / "releases" / "v0.11.0.md"
+            ROOT / "docs" / "releases" / "v0.12.0.md"
         ).read_bytes()
+        v011_lineage = (
+            ROOT / "docs" / "releases" / "v0.11.0.md"
+        ).read_text(encoding="utf-8")
         candidate = candidate_bytes.decode("utf-8")
         release_guide = (ROOT / "docs" / "release-install.md").read_text(
             encoding="utf-8"
@@ -242,7 +245,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertTrue(candidate_bytes.endswith(b"\n"))
         self.assertEqual(
             candidate.splitlines()[0],
-            "# task-governance-tool v0.11.0",
+            "# task-governance-tool v0.12.0",
         )
         for text in (candidate, release_guide, readme):
             normalized = " ".join(text.lower().split())
@@ -264,7 +267,13 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "| Checksum | not produced |",
         ):
             self.assertIn(candidate_identity_row, release_guide)
-        self.assertIn("docs/releases/v0.11.0.md", release_guide)
+        self.assertEqual(
+            v011_lineage.splitlines()[0],
+            "# task-governance-tool v0.11.0",
+        )
+        self.assertIn("v0.11.0 candidate note remains immutable lineage", release_guide)
+        self.assertIn("docs/releases/v0.12.0.md", release_guide)
+        self.assertIn("docs/releases/v0.12.0.md", readme)
         self.assertIn("docs/releases/v0.11.0.md", readme)
 
     def test_core_task_and_review_guidance_is_synchronized(self):
@@ -296,10 +305,36 @@ class SkillSelfContainmentTests(unittest.TestCase):
             " ".join(skill_md.lower().split()),
         )
         self.assertIn("snapshot v4", contracts.lower())
-        self.assertIn("schema v17", release_note.lower())
-        self.assertIn("0.11.0", release_note)
+        self.assertIn("schema v18", release_note.lower())
+        self.assertIn("0.12.0", release_note)
         self.assertIn("verification and review gates", skill_md.lower())
         self.assertIn("current governed task", openai_yaml.lower())
+
+    def test_task_show_verification_evidence_exact_keys_are_packaged(self):
+        contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
+            encoding="utf-8"
+        )
+        task_show = contracts.split("### `task show`", 1)[1].split(
+            "### `task checkpoint`", 1
+        )[0]
+        exact_keys = re.search(
+            r"`verification_evidence` has exactly (.*?)\. `source_revision`",
+            " ".join(task_show.split()),
+        )
+
+        self.assertIsNotNone(exact_keys)
+        self.assertEqual(
+            re.findall(r"`([^`]+)`", exact_keys.group(1)),
+            [
+                "expectation",
+                "contract_revision",
+                "source_revision",
+                "current_verification_subject",
+                "gate",
+                "counts",
+                "recent_receipts",
+            ],
+        )
 
     def test_m17_release_and_relocation_guidance_is_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -332,10 +367,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "fresh user approval",
             ):
                 self.assertIn(phrase, normalized)
-        self.assertIn("schema v17", contracts.lower())
-        self.assertIn("source schemas 5 through 17", readme.lower())
-        self.assertIn("source schemas v5-v17", release_note.lower())
-        self.assertEqual(manifest["package_version"], "0.11.0")
+        self.assertIn("schema v18", contracts.lower())
+        self.assertIn("source schemas 5 through 18", readme.lower())
+        self.assertIn("source schemas v5-v18", release_note.lower())
+        self.assertEqual(manifest["package_version"], "0.12.0")
         documented_uuid = re.search(
             r'"project_id": "(tg_project_[0-9a-f]{32})"',
             contracts,
@@ -684,7 +719,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertIn("0.11.0", version.stdout)
+        self.assertIn("0.12.0", version.stdout)
 
     def test_tg_m12_local_handoff_guidance_and_isolated_flow_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -708,8 +743,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("rejected raw", text.lower())
         for text in (workflow, contracts):
             self.assertIn("handoff_not_persisted", text)
-        self.assertIn("schema v17", release_note.lower())
-        self.assertIn("0.11.0", release_note)
+        self.assertIn("schema v18", release_note.lower())
+        self.assertIn("0.12.0", release_note)
         for text in (workflow, contracts, readme, release_note):
             self.assertIn("Effort Advisory", text)
         self.assertIn("effort_advisory_enabled", skill_md)
@@ -726,7 +761,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
             initialized = run("setup")
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
-            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 17)
+            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 18)
             added = run(
                 "task",
                 "add",
@@ -971,7 +1006,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                     canonical_test_path(install.skill_root / "state")
                 )
             )
-            self.assertEqual(payload["data"]["schema_to"], 17)
+            self.assertEqual(payload["data"]["schema_to"], 18)
 
             from_skill_root = install.run(
                 "doctor",

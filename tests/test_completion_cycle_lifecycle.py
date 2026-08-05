@@ -25,10 +25,19 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from task_governance_tool import completion_workflow  # noqa: E402
 from task_governance_tool import tasks as task_service  # noqa: E402
 from task_governance_tool.completion import CompletionRequest  # noqa: E402
+from task_governance_tool.reviews import (  # noqa: E402
+    add_review_receipt,
+    set_review_target,
+)
 from task_governance_tool.storage import (  # noqa: E402
+    ProjectIdentity,
+    StorageError,
     apply_completion_cycle_capture_activation_migration,
+    apply_evidence_ledger_capture_migration,
     apply_verification_receipts_migration,
     connect,
+    connect_initialized_readonly,
+    read_completion_histories_for_tasks,
     resolve_database_target,
 )
 from tests.test_completion_cycle_activation import make_captureless_done  # noqa: E402
@@ -111,22 +120,25 @@ def completion_args(
     return args
 
 
-def task_target(connection, task_id: str):
-    return connection.execute(
-        """
-        SELECT project_id, review_target_kind, review_target_value,
-               review_target_base_revision, review_target_generation
-          FROM tasks
-         WHERE task_id = ?
-        """,
+def test_project(connection, db: Path, task_id: str):
+    row = connection.execute(
+        "SELECT project_id FROM tasks WHERE task_id = ?",
         (task_id,),
     ).fetchone()
+    if row is None:
+        raise AssertionError("missing test task")
+    return ProjectIdentity(
+        project_id=str(row[0]),
+        canonical_repo=(db.parent / "repo").resolve(),
+        canonical_path_hash="0" * 64,
+        display_name="test-project",
+    )
 
 
 def insert_receipt(
     db: Path,
     task_id: str,
-    receipt_id: str,
+    _receipt_id: str,
     *,
     reviewer: str,
     kind: str,
@@ -135,73 +147,61 @@ def insert_receipt(
     summary: str = "",
 ):
     with closing(sqlite3.connect(db)) as connection:
-        target = task_target(connection, task_id)
-        if target is None:
-            raise AssertionError("missing test task")
-        connection.execute(
-            """
-            INSERT INTO review_receipts(
-              review_receipt_id, task_id, project_id, reviewer_key,
-              receipt_kind, verdict, target_kind, target_value,
-              target_base_revision, target_generation, summary,
-              user_approved, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                receipt_id,
-                task_id,
-                target[0],
-                reviewer,
-                kind,
-                verdict,
-                target[1],
-                target[2],
-                target[3],
-                target[4],
-                summary,
-                user_approved,
-                "2026-07-30T08:00:00Z",
-            ),
+        connection.row_factory = sqlite3.Row
+        provenance = (
+            {}
+            if kind == "not_required"
+            else {
+                "reviewer_class": "human",
+                "model_state": "not_applicable",
+                "skill_state": "not_applicable",
+                "review_profiles": ["general"],
+                "review_lenses": ["correctness"],
+                "context_relation": "external_context",
+                "review_methods": ["review_packet_inspection"],
+            }
+        )
+        add_review_receipt(
+            connection,
+            test_project(connection, db, task_id),
+            task_id,
+            reviewer=reviewer,
+            kind=kind,
+            verdict=verdict,
+            summary=summary,
+            user_approved=bool(user_approved),
+            **provenance,
         )
         connection.commit()
 
 
 def set_diff_target_with_fallback(db: Path, task_id: str):
     with closing(sqlite3.connect(db)) as connection:
-        row = connection.execute(
-            """
-            SELECT project_id, review_target_generation
-              FROM tasks
-             WHERE task_id = ?
-            """,
-            (task_id,),
-        ).fetchone()
-        generation = int(row[1]) + 1
-        connection.execute(
-            """
-            UPDATE tasks
-               SET review_target_kind = 'diff_fingerprint',
-                   review_target_value = ?,
-                   review_target_base_revision = '',
-                   review_target_generation = ?
-             WHERE task_id = ?
-            """,
-            (FINGERPRINT, generation, task_id),
+        connection.row_factory = sqlite3.Row
+        project = test_project(connection, db, task_id)
+        set_review_target(
+            connection,
+            project,
+            task_id,
+            kind="diff_fingerprint",
+            revision=FINGERPRINT,
         )
-        connection.execute(
-            """
-            INSERT INTO review_receipts(
-              review_receipt_id, task_id, project_id, reviewer_key,
-              receipt_kind, verdict, target_kind, target_value,
-              target_base_revision, target_generation, summary,
-              user_approved, created_at
-            ) VALUES (
-              'tg_review_receipt_00000000000000f0', ?, ?, 'self',
-              'self_review_fallback', 'pass', 'diff_fingerprint', ?, '',
-              ?, 'approved fallback', 1, '2026-07-30T08:00:00Z'
-            )
-            """,
-            (task_id, row[0], FINGERPRINT, generation),
+        add_review_receipt(
+            connection,
+            project,
+            task_id,
+            reviewer="self",
+            kind="self_review_fallback",
+            verdict="pass",
+            summary="approved fallback",
+            user_approved=True,
+            reviewer_class="human",
+            model_state="not_applicable",
+            skill_state="not_applicable",
+            review_profiles=["general"],
+            review_lenses=["correctness"],
+            context_relation="external_context",
+            review_methods=["review_packet_inspection"],
         )
         connection.commit()
 
@@ -228,15 +228,6 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
 
             combined = add_task(db, repo, "Combined completion", tier=1)
             seed_review_evidence(db, combined["task_id"])
-            insert_receipt(
-                db,
-                combined["task_id"],
-                "tg_review_receipt_0000000000000002",
-                reviewer="test-reviewer-b",
-                kind="independent",
-                verdict="pass",
-                user_approved=0,
-            )
             combined_args = completion_args(
                 db,
                 repo,
@@ -251,7 +242,49 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                 "--review-tier-change-reason",
                 "Scope reached Tier 2",
             ]
-            edit_result, edit_payload = run_json(*combined_args)
+            rejected, rejected_payload = run_json(*combined_args)
+            self.assertEqual(rejected.returncode, 1, rejected.stdout)
+            self.assertEqual(
+                rejected_payload["errors"],
+                [{
+                    "code": "invalid_status_transition",
+                    "message": (
+                        "authority changes require a fresh target before "
+                        "review or completion"
+                    ),
+                }],
+            )
+
+            authority_edit, authority_payload = run_json(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                combined["task_id"],
+                "--title",
+                "Combined final title",
+                "--review-tier",
+                "2",
+                "--review-tier-change-reason",
+                "Scope reached Tier 2",
+                "--json",
+            )
+            self.assertEqual(authority_edit.returncode, 0, authority_edit.stdout)
+            self.assertEqual(
+                authority_payload["data"]["event"]["event_type"],
+                "review_tier_changed",
+            )
+            seed_review_evidence(db, combined["task_id"])
+            edit_result, edit_payload = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    combined["task_id"],
+                    command="task.complete",
+                )
+            )
             self.assertEqual(edit_result.returncode, 0, edit_result.stdout)
 
             self.assertNotIn(
@@ -264,7 +297,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             )
             self.assertEqual(
                 edit_payload["data"]["event"]["event_type"],
-                "review_tier_changed",
+                "task_updated",
             )
             self.assertEqual(
                 edit_payload["data"]["task"]["title"],
@@ -322,7 +355,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             self.assertEqual(links[thin["task_id"]]["event_type"], "task_updated")
             self.assertEqual(
                 links[combined["task_id"]]["event_type"],
-                "review_tier_changed",
+                "task_updated",
             )
             self.assertEqual(
                 links[combined["task_id"]]["completion_cycle_id"],
@@ -671,30 +704,23 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             )
 
             overflow = add_task(db, repo, "Generation overflow", tier=0)
+            seed_review_evidence(db, overflow["task_id"])
             with closing(sqlite3.connect(db)) as connection:
+                original_generation = connection.execute(
+                    "SELECT review_target_generation FROM tasks WHERE task_id = ?",
+                    (overflow["task_id"],),
+                ).fetchone()[0]
                 connection.execute(
                     """
                     UPDATE tasks
-                       SET review_target_kind = 'diff_fingerprint',
-                           review_target_value = ?,
-                           review_target_base_revision = '',
-                           review_target_generation = ?
+                       SET review_target_generation = ?
                      WHERE task_id = ?
                     """,
-                    (FINGERPRINT, (1 << 63) - 1, overflow["task_id"]),
+                    ((1 << 63) - 1, overflow["task_id"]),
                 )
                 connection.commit()
-            insert_receipt(
-                db,
-                overflow["task_id"],
-                "tg_review_receipt_00000000000000ee",
-                reviewer="mechanical-review",
-                kind="not_required",
-                verdict="not_required",
-                user_approved=0,
-                summary="Mechanical test setup",
-            )
-            completed, _ = run_json(
+            before_overflow = db.read_bytes()
+            completed, payload = run_json(
                 *completion_args(
                     db,
                     repo,
@@ -702,25 +728,25 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     command="task.complete",
                 )
             )
-            self.assertEqual(completed.returncode, 0, completed.stdout)
-            before_overflow = db.read_bytes()
-            result, payload = run_json(
-                "task",
-                "edit",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db),
-                overflow["task_id"],
-                "--status",
-                "in_progress",
-                "--reopen-reason",
-                "Generation cannot advance",
-                "--json",
+            self.assertEqual(completed.returncode, 2, completed.stdout)
+            self.assertEqual(
+                payload["errors"],
+                [{
+                    "code": "project_state_unreadable",
+                    "message": "project state could not be read safely",
+                }],
             )
-            self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(payload["errors"][0]["code"], "invalid_argument")
             self.assertEqual(db.read_bytes(), before_overflow)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    """
+                    UPDATE tasks
+                       SET review_target_generation = ?
+                     WHERE task_id = ?
+                    """,
+                    (original_generation, overflow["task_id"]),
+                )
+                connection.commit()
 
             reused = add_task(db, repo, "Reused cycle", tier=0)
             seed_review_evidence(db, reused["task_id"])
@@ -921,6 +947,242 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                 )
             self.assertEqual(after, before)
 
+    def test_native_completion_reference_corruption_fails_show_batch_and_reopen(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "taskgov.sqlite"
+            repo.mkdir()
+            initialize_taskgov_internal(repo=repo, db=db)
+            task = add_task(db, repo, "Completion Reference integrity", tier=0)
+            seed_review_evidence(db, task["task_id"])
+            completed, _ = run_json(
+                *completion_args(
+                    db,
+                    repo,
+                    task["task_id"],
+                    command="task.complete",
+                )
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            target = resolve_database_target(
+                repo=repo,
+                db=db,
+                script_path=SCRIPT_PATH,
+            )
+
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                reference = dict(
+                    connection.execute(
+                        """
+                        SELECT reference.*
+                          FROM evidence_references AS reference
+                          JOIN task_completion_cycles AS cycle
+                            ON cycle.completion_cycle_id = reference.source_id
+                         WHERE reference.source_kind = 'completion_evidence'
+                           AND cycle.task_id = ?
+                        """,
+                        (task["task_id"],),
+                    ).fetchone()
+                )
+                delete_trigger_sql = connection.execute(
+                    """
+                    SELECT sql FROM sqlite_master
+                     WHERE type = 'trigger'
+                       AND name = 'trg_evidence_references_no_delete'
+                    """
+                ).fetchone()[0]
+                connection.execute(
+                    "DROP TRIGGER trg_evidence_references_no_delete"
+                )
+                connection.execute(
+                    "DELETE FROM evidence_references "
+                    "WHERE evidence_reference_id = ?",
+                    (reference["evidence_reference_id"],),
+                )
+                connection.execute(delete_trigger_sql)
+                connection.commit()
+
+            shown, shown_payload = run_json(
+                "task",
+                "show",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--read-only",
+                "--json",
+            )
+            self.assertEqual(shown.returncode, 2)
+            self.assertEqual(
+                shown_payload["errors"],
+                [{
+                    "code": "evidence_ledger_inconsistent",
+                    "message": "stored evidence ledger is inconsistent",
+                }],
+            )
+
+            with closing(sqlite3.connect(db)) as connection:
+                fields = tuple(reference)
+                connection.execute(
+                    f"INSERT INTO evidence_references({', '.join(fields)}) "
+                    f"VALUES ({', '.join('?' for _ in fields)})",
+                    tuple(reference[field] for field in fields),
+                )
+                update_trigger_sql = connection.execute(
+                    """
+                    SELECT sql FROM sqlite_master
+                     WHERE type = 'trigger'
+                       AND name = 'trg_evidence_references_no_update'
+                    """
+                ).fetchone()[0]
+                connection.execute(
+                    "DROP TRIGGER trg_evidence_references_no_update"
+                )
+                connection.execute(
+                    """
+                    UPDATE evidence_references
+                       SET digest = ?
+                     WHERE evidence_reference_id = ?
+                    """,
+                    (
+                        "sha256:" + "0" * 64,
+                        reference["evidence_reference_id"],
+                    ),
+                )
+                connection.execute(update_trigger_sql)
+                connection.commit()
+
+            with closing(connect_initialized_readonly(target)) as connection:
+                traced_sql: list[str] = []
+                connection.set_trace_callback(traced_sql.append)
+                with self.assertRaises(StorageError) as batch_error:
+                    read_completion_histories_for_tasks(
+                        connection,
+                        project_id=target.project.project_id,
+                        task_ids=(task["task_id"],),
+                    )
+                connection.set_trace_callback(None)
+                self.assertEqual(
+                    batch_error.exception.code,
+                    "evidence_ledger_inconsistent",
+                )
+                self.assertEqual(
+                    batch_error.exception.message,
+                    "stored evidence ledger is inconsistent",
+                )
+                selected_queries = [
+                    statement
+                    for statement in traced_sql
+                    if "WITH selected_sources(value)" in statement
+                ]
+                self.assertEqual(len(selected_queries), 1)
+                plan_details = [
+                    str(row[3])
+                    for row in connection.execute(
+                        "EXPLAIN QUERY PLAN " + selected_queries[0]
+                    ).fetchall()
+                ]
+                self.assertTrue(
+                    any(
+                        "SEARCH owner USING COVERING INDEX "
+                        "idx_tasks_project_task_identity" in detail
+                        for detail in plan_details
+                    ),
+                    plan_details,
+                )
+                self.assertTrue(
+                    any(
+                        "SEARCH reference USING INDEX "
+                        "idx_evidence_references_source" in detail
+                        for detail in plan_details
+                    ),
+                    plan_details,
+                )
+                self.assertFalse(
+                    any("SCAN reference" in detail for detail in plan_details),
+                    plan_details,
+                )
+                self.assertFalse(
+                    any(
+                        "SCAN owner" in detail or "SCAN tasks" in detail
+                        for detail in plan_details
+                    ),
+                    plan_details,
+                )
+
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    "DROP TRIGGER trg_evidence_references_no_update"
+                )
+                connection.execute(
+                    """
+                    UPDATE evidence_references
+                       SET digest = ?, completion_cycle_id = NULL
+                     WHERE evidence_reference_id = ?
+                    """,
+                    (
+                        reference["digest"],
+                        reference["evidence_reference_id"],
+                    ),
+                )
+                connection.execute(update_trigger_sql)
+                connection.commit()
+                before = tuple(
+                    tuple(row)
+                    for table_name, order_by in (
+                        ("tasks", "task_id"),
+                        ("task_completion_cycles", "completion_cycle_id"),
+                        ("task_events", "rowid"),
+                        ("evidence_references", "evidence_reference_id"),
+                    )
+                    for row in connection.execute(
+                        f"SELECT * FROM {table_name} "
+                        f"WHERE task_id = ? ORDER BY {order_by}",
+                        (task["task_id"],),
+                    ).fetchall()
+                )
+
+            reopened, reopened_payload = run_json(
+                "task",
+                "edit",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task["task_id"],
+                "--status",
+                "in_progress",
+                "--reopen-reason",
+                "Completion Reference binding must fail closed",
+                "--json",
+            )
+            self.assertEqual(reopened.returncode, 2)
+            self.assertEqual(
+                reopened_payload["errors"],
+                [{
+                    "code": "evidence_ledger_inconsistent",
+                    "message": "stored evidence ledger is inconsistent",
+                }],
+            )
+            with closing(sqlite3.connect(db)) as connection:
+                after = tuple(
+                    tuple(row)
+                    for table_name, order_by in (
+                        ("tasks", "task_id"),
+                        ("task_completion_cycles", "completion_cycle_id"),
+                        ("task_events", "rowid"),
+                        ("evidence_references", "evidence_reference_id"),
+                    )
+                    for row in connection.execute(
+                        f"SELECT * FROM {table_name} "
+                        f"WHERE task_id = ? ORDER BY {order_by}",
+                        (task["task_id"],),
+                    ).fetchall()
+                )
+            self.assertEqual(after, before)
+
     def test_legacy_no_cycle_reopen_bridges_and_post_link_failure_rolls_back(self):
         with tempfile.TemporaryDirectory() as temp:
             target = make_v14_target(Path(temp))
@@ -979,6 +1241,29 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     task["task_id"], "--status", "in_progress",
                     "--reopen-reason", reason, "--json",
                 )
+
+            schema17_bytes = db.read_bytes()
+            blocked, blocked_payload = run_json(
+                *reopen_args(
+                    successful,
+                    "Schema 17 requires explicit setup migration",
+                )
+            )
+            self.assertEqual(blocked.returncode, 2, blocked.stdout)
+            self.assertEqual(
+                blocked_payload["errors"],
+                [{
+                    "code": "migration_required",
+                    "message": (
+                        "database schema version 17 does not match supported "
+                        "version 18; run setup to migrate"
+                    ),
+                }],
+            )
+            self.assertEqual(db.read_bytes(), schema17_bytes)
+
+            with closing(connect(db)) as connection:
+                apply_evidence_ledger_capture_migration(connection)
 
             reopened, reopen_payload = run_json(
                 *reopen_args(
@@ -1060,7 +1345,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             record_effort.assert_called_once()
             self.assertEqual(database_dump(), before_failure)
 
-    def test_m19_7_legacy_content_is_read_unchanged_without_database_write(self):
+    def test_native_authority_mutation_fails_closed_without_database_write(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             repo, db = root / "repo", root / "taskgov.sqlite"
@@ -1227,32 +1512,16 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                 "--json",
             )
 
-            self.assertEqual(shown.returncode, 0, shown.stdout)
+            self.assertEqual(shown.returncode, 2, shown.stdout)
             self.assertEqual(
-                shown_payload["data"]["contract"]["constraints"].encode(
-                    "utf-8"
-                ),
-                legacy_constraints.encode("utf-8"),
+                shown_payload["errors"],
+                [{
+                    "code": "project_state_unreadable",
+                    "message": "project state could not be read safely",
+                }],
             )
-            self.assertEqual(
-                shown_payload["data"]["latest_checkpoint"]["summary"].encode(
-                    "utf-8"
-                ),
-                legacy_checkpoint_summary.encode("utf-8"),
-            )
-            history = shown_payload["data"]["completion_history"]
-            self.assertEqual(history["total"], 1)
-            self.assertEqual(history["returned_count"], 1)
-            self.assertFalse(history["truncated"])
-            self.assertEqual(len(history["cycles"]), 1)
-            self.assertEqual(
-                history["cycles"][0]["completion_evidence"]["revision"],
-                external_revision,
-            )
-            self.assertEqual(
-                history["cycles"][0]["review_target"]["value"],
-                external_revision,
-            )
+            self.assertIsNone(shown_payload["data"]["task"])
+            self.assertIsNone(shown_payload["data"]["completion_history"])
 
             self.assertEqual(
                 hashlib.sha256(db.read_bytes()).digest(),

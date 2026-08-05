@@ -3,20 +3,18 @@
 Status: the immutable published product remains v0.10.0 with SQLite schema
 v16, Viewer snapshot v4 accepting source schemas v5-v16, and 20 public command
 leaves. Its release identity is fixed in `docs/release-install.md`. The current
-unpublished local candidate is v0.11.0 with SQLite schema v17, Viewer snapshot
-v4 accepting source schemas v5-v17, and 21 public command leaves. It implements
-the current TG-M21 Receipt, managed-recovery, shared stored-Task validation,
-and current-Contract relationship boundaries below. TG-M20S.3 remains an
-accepted inactive design boundary. Future TG-M22 detail is formal but inactive
-in the indexed
-[conditional execution contract](execution-contracts/tg-m22-evidence-ledger.md)
-and changes no current runtime, schema, package, generated artifact, or agent
-behavior. TG-M16.4 behavioral acceptance remains part of the current baseline.
-The Task database owns live state and evidence.
+unpublished local candidate is v0.12.0 with SQLite schema v18, Viewer snapshot
+v4 accepting source schemas v5-v18, and 21 public command leaves. It implements
+the current TG-M21 Receipt and TG-M22.2 capture foundation, managed recovery,
+shared stored-Task validation, and current-Contract relationship boundaries
+below. TG-M20S.3, TG-M21.5, TG-M22.3+, TG-M23, and TG-M24 remain inactive.
+TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
+database owns live state and evidence.
 
 This document is the current implementation design for the behavior specified
 in `docs/specification.md`. The [authority index](authority.md) selects current
-and conditional owners from the live Task Contract. Historical design captures
+owners and exact current-or-conditional execution detail from the live Task
+Contract. Historical design captures
 under `docs/history/` are non-authoritative and are never needed to implement,
 operate, migrate, or review the supported product.
 
@@ -128,8 +126,15 @@ The implementation keeps these narrow ownership boundaries:
 - `verification_receipts.py` owns caller Receipt validation, exact-current
   classification, completion-gate evaluation, and the bounded Task-show read
   model; `storage.py` alone owns Receipt persistence, migration structure, and
-  the deterministic command-label predicate shared by public input and
-  stored-row validation.
+  version-aware legacy-label/internal-subject stored-row validation.
+- `review_provenance.py` owns the closed Review provenance matrix, canonical
+  v1/v0/null public union, and provenance digest without SQLite access.
+- `evidence_ledger.py` owns authority/criterion canonicalization, closed
+  assurance/producer dispatch, Evidence Reference projections and digests,
+  and capture-version source guards without SQLite access.
+- `artifact_manifest.py` owns safe bounded Git leaf observation, exact rename
+  classification/order, opaque/complete manifests, and manifest digests. Git
+  observation is separate from the short DB binding transaction.
 - `reviews.py` owns review target, receipt, finding, and deterministic gate
   evaluation; `review_packet.py` owns bounded read-only review context.
 - `contracts.py` owns immutable Task Contract revisions and invalidation.
@@ -371,6 +376,7 @@ Current sequential migrations are:
 | 15 | immutable completion-cycle history and internal event linkage |
 | 16 | marker-only native completion-capture activation |
 | 17 | immutable Verification Receipts and completion-cycle verification basis |
+| 18 | authority/criterion capture, Review provenance, target manifests, Evidence References, and Verification subjects |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -381,10 +387,10 @@ preservation, and the sanitized realistic 12-task/191-event fixture with nine
 historical completion hashes and representative review, Contract, handoff,
 checkpoint, maintenance, identity, and completion traces.
 
-The fixed-state setup migrator accepts complete source schemas v1-v16 and
-treats v17 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v17 and
+treats v18 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v17.
+Viewer compatibility is independent and accepts source schemas v5-v18.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
@@ -452,8 +458,9 @@ structural head. It then calls the storage-owned exact Task-verification
 validator with that candidate's source schema. The validator returns normally
 or raises a sanitized internal privacy/capacity rejection; every other storage
 failure remains structural and set-fatal. The current implementation accepts
-at most 500 characters for supported schema v17 and earlier. M22.2 changes the
-same stored validator for schema v18 rather than adding a recovery-only limit.
+at most 500 characters through schema v17 and 1,000 at schema v18. The source
+schema is selected before migration or recovery publication; no recovery-only
+limit or migration laundering exists.
 
 The structural phase also validates each candidate as the immutable
 pre-publication repository snapshot for its ordered physical prefix. One
@@ -586,7 +593,7 @@ tgr1.<unpadded-base64url-canonical-json>.<sha256>
 Its exact payload binds version 1, project ID/scheme, current binding
 generation, distinct old/new 64-hex hashes, source layout, source schema, issue
 time, and expiry exactly 900 seconds later. A fixed-current source may be
-schema v1-v16; `legacy_projects_v1` is capped at the explicit v14 transition,
+schema v1-v18; `legacy_projects_v1` is capped at the explicit v14 transition,
 while ordinary legacy discovery remains v1-v13 plus that v14 shape. Canonical JSON uses
 sorted keys, compact separators, UTF-8, and `ensure_ascii=True`; the checksum
 is SHA-256 over ASCII `tgr1.<payload>` and is compared with
@@ -714,7 +721,8 @@ not raw logs.
 
 `tasks.py` owns one source-schema-aware validator for complete stored Task
 rows. Its capability object is constructed once per top-level read from the
-already-observed source schema and describes the verification limit and the
+already-observed source schema and describes the verification limit (500
+through v17, 1,000 at v18) and the
 presence of review-target base, Contract pointer, and completion-history
 coverage fields. The validator receives rows and expected project identity; it
 does not query schema metadata, mutate a row, or issue a database write.
@@ -726,6 +734,9 @@ cross-field rules. It raises only `StorageError("project_state_unreadable",
 "project state could not be read safely")`. Current Task converters remain
 pure allow-list builders and are invoked only after their complete input batch
 passes.
+The public `task add` and explicit `task edit --verification` ingress remains
+independently capped at 500; every stored/read/internal path uses the source-
+schema limit and never revalidates untouched bytes as new caller input.
 The shared Task fetch helpers map non-busy SQLite query or UTF-8 decode failure
 to that fixed error before a row reaches the validator, while preserving the
 existing `database_busy` result for actual busy/locked state.
@@ -741,11 +752,20 @@ sets its explicit verification-local flag so only that field's privacy or
 source-capacity failure remains candidate-local; every other Task fault is
 structural and set-fatal.
 
-Viewer supplies the source version returned by snapshot validation. Review
-evidence consumes the already-validated Task where available and derives
-column capability from that version, removing the per-Task `PRAGMA` path.
-Routine Viewer failure occurs before rendering/replacement and preserves the
-last-good file; its caller applies the existing fixed maintenance warning.
+Viewer supplies the source version returned by snapshot validation. For exact
+schema v18, that validation completes the full Evidence Ledger and Task batch
+checks before issuing one private, one-shot batch proof bound to the same
+query-only connection and transaction, project, source version, exact sorted
+Task IDs/count, issuance data version, and a fixed nested savepoint held only
+in a module-private exact-object issuance registry. The private Viewer ordering
+path revokes and consumes that proof once; mismatch, reconstruction, reuse, or
+a changed
+transaction fails closed. Other callers and source schemas v5-v17 retain the
+ordinary complete Task validator. Review evidence consumes the already-
+validated Task where available and derives column capability from that
+version, removing the per-Task `PRAGMA` path. Routine Viewer failure occurs
+before rendering/replacement and preserves the last-good file; its caller
+applies the existing fixed maintenance warning.
 
 ### Current TG-M21.4D Stored Contract Pointer Relationship Boundary
 
@@ -920,6 +940,23 @@ for mode/object/path entries sorted by raw path bytes:
 The target value is its SHA-256 fingerprint and base is HEAD. It excludes
 unstaged and untracked content.
 
+Target setting first performs bounded Git observation outside SQLite. A short
+writer then rereads Task, Contract, current authority snapshot/criteria, and
+expected generation and atomically inserts one capture-version-1 target,
+manifest, manifest Evidence Reference, and event. Git targets compare complete
+tree/index leaves or commit/first-parent leaves; root commits use the read-only
+empty-tree identity. `artifact_manifest.py` validates safe UTF-8 POSIX paths,
+full mode/object IDs, unique exact renames, fixed byte ordering and ordinals,
+10,000 entries, 16 MiB canonical bytes, object presence, and pre/post stability.
+Opaque targets insert zero entries and the fixed omission. The writer
+revalidates the observation binding but never runs Git.
+
+Migration leaves old targets at capture version 0 with null snapshot,
+criterion, and manifest IDs. Source-producing Receipt/Finding/completion paths
+check this after target structure and expected-generation equality but before
+uniqueness or gate evaluation and return `evidence_basis_stale`. Preparation
+and existing-Finding resolution remain read-only with respect to the ledger.
+
 At completion, the proposed commit must have exactly one parent equal to the
 stored base. Its recursive tree leaves are normalized to the same
 mode/object/path form and must reproduce the fingerprint. Root and merge
@@ -969,15 +1006,12 @@ key distinctness proves only different stored strings, not identity,
 independence, provenance, expertise, target inspection, or authentication. The
 trusted caller/orchestrator is responsible for truthful attestation.
 
-### Accepted Inactive TG-M22.1A Provenance Design
+### Current Schema-v18 Provenance And Ledger Design
 
-The exact future model is owned by the indexed
-[TG-M22.1A anchor](execution-contracts/tg-m22-evidence-ledger.md#tg-m22-1a).
-M22.1A changes no current module or database. M22.2 will add
-`review_provenance.py` for the closed enum/matrix, input normalization, public
-v1/v0/null union, and structural digest; `reviews.py` will integrate it into
-the existing Receipt write and Review Packet shape; and `storage.py` alone
-will own the additive schema, repositories, migration, and stored validation.
+`review_provenance.py` owns the closed enum/matrix, input normalization,
+public v1/v0/null union, and structural digest; `reviews.py` integrates it into
+the existing Receipt write and Review Packet shape; `storage.py` alone owns
+the additive schema, repositories, migration, and stored validation.
 
 Migration 18 adds a version discriminator and nullable provenance ID to
 `review_receipts`, plus one immutable normalized provenance table and one
@@ -988,6 +1022,13 @@ same-Receipt ownership, insert guards, and shared readers reject a missing,
 extra, cross-owned, noncanonical, or digest-mismatched relation. Migration and
 reentry never parse reviewer key/summary or synthesize a provenance row.
 
+The same migration owns `authority_snapshots`, `contract_criteria`,
+`authority_snapshot_criteria`, `review_receipt_provenance`,
+`review_receipt_provenance_codes`, `artifact_manifests`,
+`artifact_manifest_entries`, and `evidence_references`, plus only their
+current pointers and binding/version columns. Every ledger table is immutable,
+same-project/Task owned, and digest/reentry validated.
+
 The Receipt assertion and its provenance have separate assurance. Existing
 Review Receipt facts remain caller-attested; explicit v1 provenance is also
 `bound_attestation/trusted_caller/1`; absent legacy provenance alone projects
@@ -997,14 +1038,26 @@ snapshot readers validate and discard them. Schema-v18 recovery treats any
 provenance defect as structural set-fatal state, not as the narrowly allowed
 Task-verification content rejection.
 
-M22.2 includes the exact provenance union in Review Receipt reads; only native
+Current Review Receipt reads include the exact provenance union; only native
 v1/null Receipts can enter a Review Receipt Evidence Reference/digest, while a
-migrated v0 Receipt gets none. M22.3 copies that native subset into sealed
-Bundle/JSON members and leaves pre-v19 cycles index-only. M23 reads only those
-exact artifacts and reports legacy detail as unavailable rather than inventing
-a v0 Receipt. No general JSON column, dynamic enum, model call, reviewer
-launcher, provenance score, Viewer UI, public leaf, or normal-loop call is
-introduced.
+migrated v0 Receipt gets none. No general JSON column, dynamic enum, model
+call, reviewer launcher, provenance score, Viewer UI, public leaf, or
+normal-loop call is introduced. Bundle/JSON use remains inactive.
+
+`evidence_ledger.py` builds immutable current-basis snapshots and exact
+whole-field acceptance/verification criteria inside Task/Contract savepoints.
+Only title, description, review tier, exact verification, or Contract basis
+changes advance the snapshot. Migration creates one exact current-basis
+`legacy_migration` snapshot per Task, never historical authority. Criteria are
+reused only by same-Task kind/digest and never parsed or rewritten.
+
+Every schema-v18 native manifest, Receipt, Finding, and completion source is
+inserted with one Evidence Reference in the source transaction. One closed
+dispatch derives assurance/producer/version and exact source projection; the
+caller supplies none. Completion References use deferred same-cycle ownership.
+Update/delete triggers and repository validation recompute ownership, binding,
+null matrices, dispatch, and digest. No criterion links, Bundle table, Evidence
+JSON, projection state, Analyzer writer, or Runner writer is active.
 
 ### Review Packet
 
@@ -1028,7 +1081,7 @@ include a diff, transcript, prompt, stdout/stderr, secret, or absolute path.
 
 ## Completion Cycle History
 
-### Schema V15, V16, And V17 Activation
+### Schema V15 Through V18 Activation
 
 Schema v15 adds immutable `task_completion_cycles`, Task coverage
 `legacy_unknown|complete`, nullable internal `task_events.completion_cycle_id`,
@@ -1103,14 +1156,14 @@ explicitly writes coverage `complete`; the column default remains
 Both `task complete` and compatibility `task edit --status done` perform Git
 preflight outside SQLite and converge on one locked native capture:
 
-1. validate schema v17, identity/binding, optimistic Task basis, Contract,
-   sequential ordering, evidence, and target;
+1. validate schema v18, identity/binding, optimistic Task/authority/target
+   capture basis, Contract, sequential ordering, and evidence;
 2. reread Verification Receipts and review receipts/findings, evaluate the
    current verification and review gates, and select their deterministic
    bases;
 3. choose canonical completion time and next ordinal;
-4. insert one immutable complete verification-basis-v1 `native_done` cycle,
-   including the exact expectation digest and required Receipt link;
+4. insert one immutable complete verification/subject-basis-v1 `native_done`
+   cycle, required Receipt, and completion-evidence Reference;
 5. update the current Task to done with identical evidence;
 6. rerun lane invariants;
 7. insert the existing completion event with the internal cycle link; and
@@ -1166,8 +1219,8 @@ or value; `task show` and Viewer use this same formatter.
 
 Viewer batch history is grouped/windowed for at most 500 selected Tasks and 10
 cycles each, not one query per cycle. Snapshot v4 uses the identical wrapper.
-Source schemas v5-v14 synthesize empty/incomplete history; v15-v17 use stored
-rows. Source v17 validates linked Receipt ownership, basis, target, and
+Source schemas v5-v14 synthesize empty/incomplete history; v15-v18 use stored
+rows. Sources v17-v18 validate linked Receipt ownership, basis, target, and
 pass/full qualification in the bounded history batch before discarding every
 Receipt field. Neither public events nor Viewer disclose internal event-cycle
 or Verification Receipt IDs.
@@ -1176,9 +1229,9 @@ The only new stable error is
 `completion_history_inconsistent: stored completion history is inconsistent`.
 It exposes no IDs, counts, values, hashes, SQL, or paths.
 
-## Current TG-M21 Verification Receipt Design
+## Current Schema-v18 Verification Receipt Design
 
-This section defines the current post-publication schema-v17 implementation
+This section defines the current post-publication schema-v18 implementation
 boundary. It does not rewrite the immutable v0.10.0 artifact or claim a later
 published artifact identity. Schema, parser, completion, Viewer compatibility,
 Skill guidance, package inventory, and tests form one atomic supported
@@ -1194,7 +1247,7 @@ Receipt uniqueness. `tasks.py` and `completion_workflow.py` consume the gate
 result; neither opens raw SQLite or interprets verification prose.
 `cli.py` owns only parser/dispatch/formatting for the one Receipt write leaf.
 
-Schema v17 adds an immutable `verification_receipts` table with:
+Schema v17 added an immutable `verification_receipts` table with:
 
 ```text
 verification_receipt_id project_id task_id contract_revision
@@ -1205,8 +1258,10 @@ target_generation created_at
 
 IDs use the `tg_verification_receipt_<16-lowercase-hex>` grammar. Result is
 `pass|fail|timeout`; coverage is `full|partial`; duration is a nonnegative
-signed-64-bit millisecond integer. The label is nonempty, privacy-validated,
-and at most 200 characters. Target fields reuse the existing four-way matrix.
+signed-64-bit millisecond integer. Legacy labels are nonempty,
+privacy-validated, and at most 200 characters; native v18 rows store only the
+internal `taskgov-owned-verification-subject-v1` value in the retained column.
+Target fields reuse the existing four-way matrix.
 Composite indexes support project/Task/current Contract/expectation/target
 gate reads without one query per Receipt. Update/delete triggers preserve the
 append-only boundary. A unique project/Task/target-generation key permits one
@@ -1234,6 +1289,14 @@ unknown done Task has no cycle; every normal native insert requires version 1.
 None of the internal fields is added to the public completion-history
 projection.
 
+Migration 18 adds subject-basis version and nullable authority-snapshot and
+verification-criterion IDs to both Receipts and cycles without rebuilding or
+updating old rows. Existing rows read as subject version 0/null/null. A native
+Receipt and nonempty native cycle use version 1 with matching capture IDs;
+trimmed-empty verification uses version 1/null/null and no Receipt. Triggers
+and readers enforce same-project/Task snapshot-to-criterion membership and the
+exact target binding.
+
 The expectation digest is:
 
 ```text
@@ -1255,16 +1318,18 @@ target bound 10 or 11 with Effort Advisory.
 
 ### Receipt Write And Freshness
 
-The write service first validates the four caller-supplied Receipt facts plus
-positive `expected_target_generation` without opening a writer, then starts
+The write service first validates result, duration, coverage, and positive
+`expected_target_generation` without opening a writer, then starts
 one short immediate transaction and rereads schema,
 identity/binding, Task, Contract pointer, exact verification text, and target
 tuple. It permits only in-progress or review-pending Tasks with specified
 verification and a current target. Expected generation must equal the locked
 target generation; drift returns `verification_basis_stale` without storage.
-It computes the digest, appends the row without changing the Task or adding an
-event, commits, and only then invokes backup-eligible, Viewer-ineligible post-
-commit maintenance.
+Capture version must then be 1 or the write returns `evidence_basis_stale`.
+It derives the subject from the locked snapshot/criterion, computes the digest,
+appends the Receipt and Evidence Reference without changing the Task or adding
+an event, commits, and only then invokes backup-eligible, Viewer-ineligible
+post-commit maintenance.
 
 The caller's add invocation attests that the external run exercised the copied
 target; taskgov does not prove that claim. The caller supplies no command body,
@@ -1278,19 +1343,17 @@ then explicitly set a fresh target before another run.
 Parser and common state errors retain their existing owners. The Receipt
 service owns one ordered validator matching the specification: normalized
 caller fields, Task existence, done/disallowed status, nonempty expectation,
-stored target structure/presence, expected generation, then uniqueness. It is
+stored target structure/presence, expected generation, capture version, then
+uniqueness. It is
 used before and after the writer lock so a concurrent status, Contract,
 expectation, or target change cannot select a different semantic ordering or
 bind the row to new material. CLI formatting owns the exact three-line success
 text and adds no synthetic Task event.
 
-The shared command-label predicate applies before the supported writer and
-during stored-row validation. It combines the common secret/raw-log scan with
-deterministic rejection of shell controls, standalone options, path-prefixed
-invocations, executable/script-suffixed leading tokens, and recognized
-command-runner prefixes including Windows executable forms. A row inserted
-outside the supported repository boundary therefore cannot become accepted
-Receipt history.
+No label or subject argument exists. Version-aware stored validation applies
+the legacy command-label predicate only to subject-zero rows and requires only
+the fixed internal value for subject-one rows; public projection emits the
+versioned subject union and never that internal value.
 
 One shared evaluator classifies a row as exact-current only when project,
 Task, Contract revision, expectation digest, and every target field equal the
@@ -1306,6 +1369,11 @@ specified expectation + pass/full
 unspecified expectation
   => receipt gate not required; existing attestation remains required
 ```
+
+A nonempty capture-version-zero target instead reports
+`evidence_basis_stale` before Receipt-required/blocking evaluation. Completion
+check applies the same stale result for every capture-zero target because any
+completion creates a new ledger source.
 
 Old-target, old-Contract, and old-expectation rows remain visible only in the
 bounded recent audit list and never affect that result. Any current non-
@@ -1353,6 +1421,12 @@ Task and adds the fixed `verification_evidence` object. The formatter exposes
 only the specification's public allow-lists; no separate list/show/import/
 export command or pagination is added.
 
+Recent rows replace the old top-level label with the five-key versioned
+subject union. The parent read model adds `current_verification_subject`, null
+without a capture-v1 verification criterion. Subject-zero done cycles retain
+their exact v17 link/label rules; reopen clears current capture and requires a
+fresh target.
+
 The read model emits the exact types and nulls fixed by the specification.
 Empty expectation is not required and is satisfied. A nonempty active Task
 reports target-required, Receipt-required, Receipt-blocking, or satisfied in
@@ -1372,22 +1446,24 @@ Viewer snapshot v4.
 
 ### Schema, Viewer, Packaging, And Tests
 
-Migration `verification_receipts` creates the Receipt table, indexes, triggers,
+Migration 17 `verification_receipts` creates the Receipt table, indexes, triggers,
 the three completion-cycle basis columns and insert/link guards, and the schema-
 history row. Existing cycles receive only version 0/null-digest/null-link as a
 structural legacy discriminator. It never parses verification text or events
 to infer runs or create Receipt evidence. Reentry validates the exact objects,
 columns, constraints, immutable triggers, ownership/link relations, and
-absence of invented Receipt rows. Old binaries reject v17 normally; setup
+absence of invented Receipt rows. Migration 18 adds the capture/provenance/
+subject tables and columns described above, preserves exact v17 projections,
+and creates no historical evidence. Old binaries reject v18 normally; setup
 remains the sole migrator. The established reopen bridge remains the only
 post-migration writer of the exact version-0/null/null legacy shape.
 
-Viewer source compatibility accepts v5-v17, while snapshot v4 fields and UI
+Viewer source compatibility accepts v5-v18, while snapshot v4 fields and UI
 remain unchanged. Receipt writes are Viewer-ineligible. The existing bounded
 batch completion-history
-loader performs one internal join for selected version-1 cycle Receipt links,
-validates only ownership/digest/target/qualification, and discards every
-Receipt field before snapshot formatting. There is no Receipt dataset,
+loader performs bounded joins for selected version-1 cycle Receipt links and
+v18 subject/provenance/manifest/Reference relations, validates them, and
+discards every ledger field before snapshot formatting. There is no Receipt dataset,
 snapshot field, panel, filter, or detail, and no per-Task Receipt query. This
 compatibility update must land with the schema bump so explicit setup and later
 unrelated Viewer maintenance cannot fail merely because the canonical state
@@ -1395,13 +1471,13 @@ migrated.
 
 Focused tests reuse one matrix owner for result/coverage/current-binding gate
 cases and existing migration/completion/Task-show helpers. They cover all
-source schemas v1-v17, rollback/reentry, no legacy synthesis, exact target and
+source schemas v1-v18, rollback/reentry, no legacy synthesis, exact target and
 Contract invalidation, semantic verification edit, failure-generation reset,
 unique per-generation ownership, version-0 legacy exemption, version-1
 Receipt-link enforcement, the sole post-v17 legacy bridge, cycle-target
 reconstruction, concurrent target/edit drift and expected-generation
 rejection, read-only no-write, privacy rejection, byte/count bounds,
-backup-only maintenance, Viewer v17
+backup-only maintenance, Viewer v18
 compatibility including valid/corrupt link batch validation, parser/help/
 output, and unchanged unrelated projections. Test
 facts and command inventories must remain derived from their existing owners
@@ -1825,20 +1901,25 @@ Setup invokes the same canonical renderer directly. There is no public Viewer
 command, output choice, browser launch, server, or browser-to-SQLite path.
 
 The repository selects complete rows for all project Tasks in list order and
-validates them as one source-schema-aware TG-M21.4C/TG-M21.4D batch before any Task,
-review, or history projection. Validation failure occurs before rendering or
-replacement and preserves the last-good HTML. It then selects at most 10 newest
-events per Task by time/rowid, review evidence through the shared gate read
-model, and bounded completion history. Snapshot v4 contains snapshot/source
-schema versions, generated time, project ID/display only, counts, and explicit
-Task/event/evidence/history allow-lists. It excludes repository/database paths,
-tool events, handoffs, checkpoints, maintenance state, internal generation,
-event-cycle links, environment, and raw review material.
+validates them as one source-schema-aware TG-M21.4C/TG-M21.4D batch before any
+Task, review, or history projection. Exact v18 snapshot validation first
+validates the complete Task batch as part of the full Evidence Ledger, then the
+same-transaction list-order query consumes the private proof above instead of
+repeating scalar, privacy, and Contract validation. Sources v5-v17 and the
+ordinary Viewer repository entry still validate the selected batch directly.
+Validation failure occurs before rendering or replacement and preserves the
+last-good HTML. It then selects at most 10 newest events per Task by time/rowid,
+review evidence through the shared gate read model, and bounded completion
+history. Snapshot v4 contains snapshot/source schema versions, generated time,
+project ID/display only, counts, and explicit Task/event/evidence/history allow-
+lists. It excludes repository/database paths, tool events, handoffs,
+checkpoints, maintenance state, internal generation, event-cycle links,
+environment, and raw review material.
 
 Source schemas v5-v14 synthesize empty/incomplete completion history;
-v15-v17 use stored cycles, reading completion histories in batches of at most
-500 Task IDs. Source v17 validates version-1 cycle Receipt links within that
-batch and discards the joined Receipt fields. Every snapshot reports its
+v15-v18 use stored cycles, reading completion histories in batches of at most
+500 Task IDs. Sources v17-v18 validate version-1 cycle Receipt links within that
+batch and discard the joined Receipt fields. Every snapshot reports its
 actual source schema and selects all
 project Tasks; 500 Tasks is the accepted performance fixture rather than a
 selection cap. The rendered artifact is capped at 64 MiB.
@@ -2281,7 +2362,7 @@ a real consuming project or Git state. Tests cover:
 - all 21 parser leaves, removed commands/options, help, text/JSON/error/compact
   envelopes, and byte limits;
 - missing/old/too-new/invalid state with no creation or sidecars;
-- every v1-v17 migration, rollback, idempotency, required-object marker,
+- every v1-v18 migration, rollback, idempotency, required-object marker,
   realistic preservation fixture, quick check, and foreign keys;
 - task validation, ordering, pause/block/current/next, done/reopen,
   completion evidence, every review tier/target/receipt/finding, Contract,
@@ -2303,7 +2384,7 @@ a real consuming project or Git state. Tests cover:
   no-clobber publication, cleanup resume, and preservation of unrelated files;
 - backup publication/reconciliation/retention/recovery and every crash
   boundary;
-- Viewer v4 sources 5-17, completion-history bounds, version-1 Receipt-link
+- Viewer v4 sources 5-18, completion-history bounds, version-1 Receipt-link
   validation, 500-ID history batching,
   the accepted 500-Task performance fixture, 64-MiB artifact cap,
   generation/last-good behavior, strict config, timer/visibility, one-shot

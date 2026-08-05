@@ -149,14 +149,13 @@ Use this deterministic graph for a normal no-finding Tier 2 task:
    When the Task verification text is nonempty, record the aggregate result:
 
    ```powershell
-   python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --command-label "Focused offline checks" --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
+   python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
    ```
 
-   The label is a bounded descriptive noun phrase, not a command line. Shell
-   controls, standalone options, path-prefixed invocations, leading executable/
-   script suffixes, and recognized command-runner prefixes are rejected.
-   Taskgov executes no command and stores no command body or output. A `fail`,
-   `timeout`, or `partial` Receipt is
+   Taskgov derives the verification subject from the locked capture-version-1
+   target; there is no label or replacement subject input. It executes no
+   command and stores no command body or output. A `fail`, `timeout`, or
+   `partial` Receipt is
    immutable; set a fresh target generation before a new run can become
    current.
 9. Prepare one bounded review packet, record the required review
@@ -193,6 +192,15 @@ task.
 Before starting each execution unit, state its intended outcome, write scope,
 verification gate, and review tier. Update the task only after those values
 come from current authority.
+
+At schema v18, explicit public `task add` and `task edit --verification` input
+remains capped at 500 characters. Stored/read and internal-derived paths accept
+and preserve valid existing verification text through 1,000 characters. A
+metadata or lifecycle edit must not replay an existing 501-1,000-character
+value through the narrower caller-input path; values over 1,000 fail closed.
+Schema v18 creates no Evidence Bundle or Evidence JSON and adds no Runner,
+Analyzer, Viewer Evidence surface, network call, model call, public leaf, or
+normal-loop call.
 
 ## Task Contract
 
@@ -374,15 +382,25 @@ trimming, record one caller-attested aggregate Receipt using the returned
 target generation:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --command-label "Full offline verification" --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
 ```
 
 Only an exact-current `pass/full` Receipt satisfies a verification expectation
 that is nonempty after trimming. A missing Receipt or a current `fail`,
 `timeout`, or `partial`
 Receipt blocks completion; explicitly set a fresh target before retrying.
-Taskgov does not execute or resolve the label, infer coverage, or retain a
-command body, exit code, output, exception, environment, or result file.
+Taskgov derives a version-1 subject from the locked target's authority snapshot
+and verification criterion. It accepts no caller label or replacement subject,
+does not infer coverage, and retains no command body, exit code, output,
+exception, environment, or result file. Public Receipt reads project that
+subject; migrated pre-v18 Receipts instead retain a version-0 legacy-label
+subject.
+
+A migrated capture-version-0 target is read-only lineage. Verification Receipt
+add, Review Receipt add, Review Finding add, and completion fail
+`evidence_basis_stale` (`current evidence basis must be captured again`). Set a
+fresh target to create capture version 1; the old target is never upgraded in
+place. `review prepare` and resolving an already stored Finding remain allowed.
 
 Prepare one read-only packet after the target is set:
 
@@ -392,7 +410,8 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare --r
 
 Use that one bounded packet for the reviewers. Do not reconstruct separate
 task, Contract, target, and changed-path prompts. The command launches no
-reviewer and imports or stores no result.
+reviewer and imports or stores no result. Its required-output and receipt-command
+instructions request the provenance fields needed by the existing receipt leaf.
 
 Follow the packet's target-kind instruction exactly:
 
@@ -420,9 +439,25 @@ Tier 2 normally requires two distinct independent PASS receipts for one target
 generation:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class llm --model-state declared --declared-model-id <model-id> --skill-state not_used --context-relation fresh_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class human --model-state not_applicable --skill-state not_applicable --context-relation external_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
 ```
+
+For `independent` and `self_review_fallback`, the four scalar provenance flags
+shown above are conditionally required. `--declared-model-id`,
+`--declared-skill-id`, and `--declared-skill-version` are optional only when
+their declared states require them; `--review-profile`, `--review-lens`, and
+`--review-method` are repeatable bounded sets. No value is inferred. All
+provenance flags are forbidden for `not_required`.
+
+Every public Review Receipt has one `review_provenance` projection: native
+independent/self-review receipts use v1, migrated pre-v18 receipts use v0
+absence, and `not_required` uses null. The v1 record remains
+`bound_attestation/trusted_caller/1`; v0 remains
+`legacy_unknown/legacy_migration/1` and does not infer unknown semantic values.
+Neither projection upgrades the original Receipt assurance or proves identity,
+actual model/Skill execution, competence, independence, diversity, quality, or
+truth.
 
 Record findings with `review finding add` and resolve them with
 `review finding resolve`. A current-generation `changes_requested` receipt or

@@ -62,6 +62,21 @@ def insert_current_row(connection, project_id, task_id, title, *, priority="norm
         """,
         (task_id, project_id, title, priority, updated_at, updated_at),
     )
+    from task_governance_tool.storage import (
+        capture_or_reuse_current_authority_snapshot_locked,
+    )
+
+    original_row_factory = connection.row_factory
+    connection.row_factory = sqlite3.Row
+    try:
+        capture_or_reuse_current_authority_snapshot_locked(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+            created_at=updated_at,
+        )
+    finally:
+        connection.row_factory = original_row_factory
 
 
 def seed_current_states(db, repo):

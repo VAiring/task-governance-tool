@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import closing
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -86,8 +87,40 @@ class CompletionCommitSchemaTests(unittest.TestCase):
             target = initialized_target(tmp)
             with closing(connect(target.db_path)) as connection:
                 with connection:
+                    other_project_id = "other-project-123456789abc"
+                    connection.execute(
+                        """
+                        INSERT INTO project_meta(
+                          project_id, canonical_path_hash, display_name,
+                          created_at, updated_at
+                        )
+                        SELECT ?, canonical_path_hash, ?, created_at, updated_at
+                          FROM project_meta
+                         WHERE project_id = ?
+                        """,
+                        (
+                            other_project_id,
+                            "Other project",
+                            target.project.project_id,
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO viewer_maintenance_state(
+                          project_id, source_generation
+                        ) VALUES (?, 0)
+                        """,
+                        (other_project_id,),
+                    )
                     visible = add_task(connection, target.project, title="Visible task").task
-                    hidden = add_task(connection, target.project, title="Other project task").task
+                    hidden = add_task(
+                        connection,
+                        replace(
+                            target.project,
+                            project_id=other_project_id,
+                        ),
+                        title="Other project task",
+                    ).task
                     connection.execute(
                         """
                         UPDATE tasks
@@ -95,14 +128,6 @@ class CompletionCommitSchemaTests(unittest.TestCase):
                          WHERE task_id IN (?, ?)
                         """,
                         ("samehash123", visible["task_id"], hidden["task_id"]),
-                    )
-                    connection.execute(
-                        """
-                        UPDATE tasks
-                           SET project_id = ?
-                         WHERE task_id = ?
-                        """,
-                        ("other-project-123456789abc", hidden["task_id"]),
                     )
 
                 matches = find_task_ids_by_completion_commit_hash(

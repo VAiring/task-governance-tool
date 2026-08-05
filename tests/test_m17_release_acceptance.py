@@ -61,7 +61,7 @@ MOVED_V13_WRITES = [
 
 
 def preserved_business_projection(connection: sqlite3.Connection) -> dict:
-    """Project the pre-M18 durable rows that relocation must preserve."""
+    """Project pre-schema-18 durable rows that relocation must preserve."""
 
     excluded_tables = {
         "managed_backup_generations",
@@ -69,10 +69,31 @@ def preserved_business_projection(connection: sqlite3.Connection) -> dict:
         "task_completion_cycles",
         "verification_receipts",
         "viewer_maintenance_state",
+        "authority_snapshots",
+        "contract_criteria",
+        "authority_snapshot_criteria",
+        "review_receipt_provenance",
+        "review_receipt_provenance_codes",
+        "artifact_manifests",
+        "artifact_manifest_entries",
+        "evidence_references",
     }
     excluded_columns = {
-        "tasks": {"completion_history_coverage"},
+        "tasks": {
+            "completion_history_coverage",
+            "current_authority_snapshot_id",
+            "current_authority_snapshot_generation",
+            "review_target_capture_version",
+            "review_target_authority_snapshot_id",
+            "review_target_acceptance_criterion_id",
+            "review_target_verification_criterion_id",
+            "review_target_artifact_manifest_id",
+        },
         "task_events": {"completion_cycle_id"},
+        "review_receipts": {
+            "review_provenance_basis_version",
+            "review_provenance_id",
+        },
     }
     projection = nonidentity_table_projection(connection)
     for table in excluded_tables:
@@ -136,7 +157,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             )
             self.assertEqual(preview["data"]["completed_writes"], [])
             self.assertEqual(preview["data"]["schema_from"], 2)
-            self.assertEqual(preview["data"]["schema_to"], 17)
+            self.assertEqual(preview["data"]["schema_to"], 18)
             self.assertEqual(
                 preview["data"]["relocation"],
                 {
@@ -164,7 +185,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             migrated = json_payload(migrated_process)
             self.assertEqual(migrated["project_id"], project.project_id)
             self.assertEqual(migrated["data"]["schema_from"], 2)
-            self.assertEqual(migrated["data"]["schema_to"], 17)
+            self.assertEqual(migrated["data"]["schema_to"], 18)
             self.assertEqual(
                 migrated["data"]["completed_writes"],
                 PRE_V9_WRITES,
@@ -182,7 +203,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    17,
+                    18,
                 )
                 self.assertEqual(
                     connection.execute(
@@ -267,7 +288,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             self.assertEqual(preview["project_id"], project.project_id)
             self.assertEqual(preview["data"]["status"], "relocation_preview")
             self.assertEqual(preview["data"]["schema_from"], 13)
-            self.assertEqual(preview["data"]["schema_to"], 17)
+            self.assertEqual(preview["data"]["schema_to"], 18)
             self.assertEqual(
                 preview["data"]["planned_writes"],
                 MOVED_V13_WRITES,
@@ -326,7 +347,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    17,
+                    18,
                 )
                 self.assertEqual(
                     connection.execute(

@@ -5,8 +5,8 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.11.0` uses SQLite schema v17 and Viewer snapshot v4 with source
-schemas 5 through 17 as the current unpublished local candidate contract. It
+Release `0.12.0` uses SQLite schema v18 and Viewer snapshot v4 with source
+schemas 5 through 18 as the current unpublished local candidate contract. It
 has not been pushed, tagged, or published. The immutable published release
 remains v0.10.0 at its recorded commit, tag, and GitHub prerelease.
 
@@ -71,7 +71,7 @@ the old legacy primary. A moved legacy backup-only source is not a relocation
 candidate and fails no-write as `project_state_unreadable`. It does not add a
 recovery command or accept a recovery path.
 
-The 0.11.0 candidate retains one immutable project identity in the fixed
+The 0.12.0 candidate retains one immutable project identity in the fixed
 package-local `state/current/` layout and keeps the governed-directory binding
 separately.
 Fresh setup creates a UUID-backed identity. Explicit setup mechanically moves
@@ -81,8 +81,17 @@ stored binding still matches the current project.
 Existing fixed state migrates transactionally through append-only completion
 cycle storage in schema v15 and marker-only native-capture activation in schema
 v16. Schema v17 adds immutable Verification Receipts and an explicit
-completion-cycle verification basis. Legacy gaps remain marked incomplete
+completion-cycle verification basis. Schema v18 adds capture-versioned
+authority/criterion ledger bindings, tool-owned verification subjects,
+versioned Review provenance, and 1,000-character durable/read verification
+capacity while explicit public Task add/edit admission remains 500 characters.
+Migrated capture-version-0 targets remain read-only lineage and require a fresh
+target before new evidence-source writes. Legacy gaps remain marked incomplete
 rather than being inferred.
+
+This candidate activates no Evidence Bundle, Evidence JSON, Runner, Analyzer,
+network/model invocation, Viewer Evidence surface, new public leaf, or new
+normal-loop call.
 
 A binding mismatch is an exceptional relocation flow, not a normal Task-loop
 step. Normal commands and `doctor` never rebind state. Run
@@ -123,11 +132,12 @@ single bounded effective-ignore preflight may inspect Git. Doctor is optional
 and is not a prerequisite for setup or normal task work.
 
 Candidate validation rehearses the isolated transition from the exact legacy
-v0.1.0/schema-v2 baseline to v0.11.0/schema v17. Paired rollback restores the
+v0.1.0/schema-v2 baseline to v0.12.0/schema v18. Paired rollback restores the
 matched pre-migration package, database, and managed artifacts together; it
-never runs legacy code against schema v17 or treats a Git checkout alone as
-state rollback. The published v0.10.0/schema-v16 rehearsal remains immutable
-historical evidence and does not satisfy the candidate gate. See
+never runs legacy code against schema v18 or treats a Git checkout alone as
+state rollback. The published v0.10.0/schema-v16 and unpublished
+v0.11.0/schema-v17 rehearsal records remain immutable lineage and do not
+satisfy the current candidate gate. See
 [Release And Install Decision](docs/release-install.md) for the complete
 boundary.
 
@@ -220,10 +230,10 @@ and prepare one bounded review packet:
 git add <intended-project-paths>
 python .agents/skills/task-governance-tool/scripts/taskgov.py review target set <task-id> --kind git_snapshot --json
 # Run the exact approved project verification here; taskgov never executes it.
-python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --command-label "Focused and full offline checks" --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
 python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare <task-id> --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class llm --model-state declared --declared-model-id <model-id> --skill-state not_used --context-relation fresh_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class human --model-state not_applicable --skill-state not_applicable --context-relation external_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
 git commit -m "<project-approved message>"
 python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --completion-evidence-kind git_commit --completion-revision <hash> --verification-complete --review-complete --json
 ```
@@ -231,10 +241,16 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <tas
 The staged snapshot excludes unstaged and untracked content. Taskgov records
 only the caller's bounded verification facts; it never executes the command or
 stores its body, arguments, exit code, output, logs, or environment. The
-completion commit must have exactly one parent equal to the captured base and
-the same tree. Meaningful target changes require a new target and fresh
-verification and review receipts. The Skill validates Git evidence read-only;
-it never stages, commits, branches, pushes, opens a PR, or creates an Issue.
+verification subject is derived from the locked capture-version-1 target; no
+caller label or replacement subject input exists. Native Review Receipts carry
+the declared v1 provenance fields shown above, migrated receipts project v0
+absence, and `not_required` projects null. Provenance never upgrades the
+Receipt assurance or proves reviewer identity, model/Skill execution,
+competence, independence, diversity, quality, or truth. The completion commit
+must have exactly one parent equal to the captured base and the same tree.
+Meaningful target changes require a new target and fresh verification and
+review receipts. The Skill validates Git evidence read-only; it never stages,
+commits, branches, pushes, opens a PR, or creates an Issue.
 
 The packet tells each reviewer how to inspect the exact target rather than
 ambient `HEAD` or worktree content. The independent reviewer returns the
@@ -285,10 +301,12 @@ reported only as bounded sanitized warnings.
 Taskgov starts no daemon, timer, background process, queue, service, browser,
 or maintenance command. The generated Viewer and managed backups remain
 projections/runtime artifacts under the ignored Skill `state/` directory.
-Viewer snapshot v4 reads source schemas 5 through 17 and includes the same
+Viewer snapshot v4 reads source schemas 5 through 18 and includes the same
 bounded newest-first completion history as `task show`. Sources 5-14 are shown
 honestly as empty legacy-incomplete history. The Viewer contains only sanitized
 task/review/audit projections and has no write controls or network dependency.
+It validates schema-v18 subject/provenance/capture bindings but adds no
+provenance field, panel, filter, or other snapshot-v4 UI surface.
 
 Viewer auto-refresh is a separate opt-in browser presentation policy. Taskgov
 does not create or edit it. With no file at
@@ -326,7 +344,7 @@ plus the existing sanitized Viewer warning.
 
 ## Public Commands
 
-The 0.11.0 local candidate exposes exactly these 21 command leaves:
+The 0.12.0 local candidate exposes exactly these 21 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -360,14 +378,13 @@ automatically maintained Viewer supply the bounded projection.
 The Skill stores sanitized task metadata, compact events, completion evidence,
 bounded completion-cycle audit rows, review evidence, handoffs, optional
 Contracts, checkpoints, bounded maintenance facts, and exact allow-listed
-Verification Receipt facts. A Receipt contains only a sanitized command label,
-closed result, duration, full/partial coverage, ownership, current Contract and
-target basis, and recording time. The label must be descriptive prose; obvious
-shell controls, options, paths, executable/script suffixes, and command-runner
-prefixes are rejected. It stores no verification command body or arguments,
-exit code, stdout/stderr, stack trace, environment, logs,
-exceptions, prompts, diffs, credentials, arbitrary coverage prose, or debug
-variant.
+Verification Receipt facts. A native Receipt contains only its closed result,
+duration, full/partial coverage, ownership, tool-owned
+verification subject, current Contract and target basis, and recording time.
+New schema-v18 Receipts accept no caller label. It stores no verification
+command body or arguments, exit code, stdout/stderr, stack trace, environment,
+logs, exceptions, prompts, diffs, credentials, arbitrary coverage prose, or
+debug variant.
 
 New task input strictly rejects both `dispatch_authorization=<value>` and the
 JSON key `"dispatch_authorization":<value>`. For future external-operation
@@ -400,7 +417,9 @@ visibility. Its title is `task-governance-tool v0.10.0`, archive
 `git-archive-v1` recipe, checksum format, workflow identity, and runtime matrix
 are fixed in [docs/release-install.md](docs/release-install.md).
 
-The current v0.11.0 package is an unpublished local candidate described by
+The current v0.12.0 package is an unpublished local candidate described by
+[docs/releases/v0.12.0.md](docs/releases/v0.12.0.md). The immutable v0.11.0
+candidate-lineage note remains at
 [docs/releases/v0.11.0.md](docs/releases/v0.11.0.md). No commit, tag, archive,
 checksum, GitHub Release, push, or publication is claimed or authorized for it.
 
@@ -419,8 +438,9 @@ git diff --check
 ```
 
 The document checker is offline and read-only. It validates this repository's
-closed authority registry, fixed canonical routing syntax, conditional sequence
-tables, history provenance, search exclusion, and size budgets. It is not a
+closed authority registry, fixed canonical routing syntax, mixed
+current/conditional sequence tables, history provenance, search exclusion, and
+size budgets. It is not a
 general Markdown or CommonMark parser; unsupported route-bearing forms fail
 closed instead of being interpreted.
 
@@ -460,8 +480,11 @@ coverage.
 - `docs/design.md`: implementation design and boundaries.
 - `plan.md`: current decisions, open issues, cross-sequence gateways, and
   non-delegated static contracts.
-- `docs/execution-contracts/`: indexed conditional authority for accepted but
-  inactive M22, M23, and M24 units.
+- `docs/execution-contracts/`: indexed mixed current/conditional authority. M22
+  routes through
+  `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence`;
+  TG-M22.2 is current. Only TG-M21.5, TG-M22.3, and TG-M22.4 are inactive in
+  M22; M23 and M24 remain inactive.
 - `docs/release-install.md`: current candidate, immutable published artifact,
   and installation identity.
 - `docs/history/README.md`: non-authoritative lineage index.

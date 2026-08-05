@@ -666,6 +666,31 @@ def build_parser() -> argparse.ArgumentParser:
     review_receipt_add_parser.add_argument("--verdict", required=True)
     review_receipt_add_parser.add_argument("--summary", default="")
     review_receipt_add_parser.add_argument("--user-approved", action="store_true")
+    review_receipt_add_parser.add_argument("--reviewer-class", default=None)
+    review_receipt_add_parser.add_argument("--model-state", default=None)
+    review_receipt_add_parser.add_argument("--declared-model-id", default=None)
+    review_receipt_add_parser.add_argument("--skill-state", default=None)
+    review_receipt_add_parser.add_argument("--declared-skill-id", default=None)
+    review_receipt_add_parser.add_argument("--declared-skill-version", default=None)
+    review_receipt_add_parser.add_argument(
+        "--review-profile",
+        dest="review_profiles",
+        action="append",
+        default=None,
+    )
+    review_receipt_add_parser.add_argument(
+        "--review-lens",
+        dest="review_lenses",
+        action="append",
+        default=None,
+    )
+    review_receipt_add_parser.add_argument("--context-relation", default=None)
+    review_receipt_add_parser.add_argument(
+        "--review-method",
+        dest="review_methods",
+        action="append",
+        default=None,
+    )
 
     review_finding_parser = review_subparsers.add_parser("finding", help="review finding commands")
     review_finding_subparsers = review_finding_parser.add_subparsers(dest="review_action")
@@ -704,7 +729,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common_options(verification_receipt_add_parser)
     verification_receipt_add_parser.add_argument("task_id")
-    verification_receipt_add_parser.add_argument("--command-label", required=True)
     verification_receipt_add_parser.add_argument("--result", required=True)
     verification_receipt_add_parser.add_argument("--duration-ms", required=True)
     verification_receipt_add_parser.add_argument("--scope-coverage", required=True)
@@ -2981,6 +3005,44 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                         verdict=getattr(context.args, "verdict", ""),
                         summary=getattr(context.args, "summary", ""),
                         user_approved=bool(getattr(context.args, "user_approved", False)),
+                        reviewer_class=getattr(context.args, "reviewer_class", None),
+                        model_state=getattr(context.args, "model_state", None),
+                        declared_model_id=getattr(
+                            context.args,
+                            "declared_model_id",
+                            None,
+                        ),
+                        skill_state=getattr(context.args, "skill_state", None),
+                        declared_skill_id=getattr(
+                            context.args,
+                            "declared_skill_id",
+                            None,
+                        ),
+                        declared_skill_version=getattr(
+                            context.args,
+                            "declared_skill_version",
+                            None,
+                        ),
+                        review_profiles=getattr(
+                            context.args,
+                            "review_profiles",
+                            None,
+                        ),
+                        review_lenses=getattr(
+                            context.args,
+                            "review_lenses",
+                            None,
+                        ),
+                        context_relation=getattr(
+                            context.args,
+                            "context_relation",
+                            None,
+                        ),
+                        review_methods=getattr(
+                            context.args,
+                            "review_methods",
+                            None,
+                        ),
                         database_target=target,
                     )
                     data = {"receipt": result.receipt, "event": result.event}
@@ -3110,7 +3172,6 @@ def handle_verification_receipt_add(context: CommandContext) -> CommandResult:
                     connection,
                     target.project,
                     getattr(context.args, "task_id", ""),
-                    command_label=getattr(context.args, "command_label", ""),
                     result=getattr(context.args, "result", ""),
                     duration_ms=getattr(context.args, "duration_ms", ""),
                     scope_coverage=getattr(context.args, "scope_coverage", ""),

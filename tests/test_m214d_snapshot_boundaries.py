@@ -23,7 +23,10 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 try:
     from task_governance_tool import tasks as tasks_module
-    from task_governance_tool.storage import StorageError
+    from task_governance_tool.storage import (
+        StorageError,
+        capture_or_reuse_current_authority_snapshot_locked,
+    )
 finally:
     sys.path.pop(0)
 
@@ -101,6 +104,12 @@ class StoredContractSnapshotBoundaryTests(unittest.TestCase):
                             "WHERE task_id = ?",
                             (task["task_id"],),
                         )
+                        capture_or_reuse_current_authority_snapshot_locked(
+                            writer,
+                            project_id=task["project_id"],
+                            task_id=task["task_id"],
+                            created_at="2026-08-03T00:00:01Z",
+                        )
                         writer.commit()
                 finally:
                     writer_finished.set()
@@ -141,6 +150,12 @@ class StoredContractSnapshotBoundaryTests(unittest.TestCase):
                 connection.execute(
                     "UPDATE tasks SET title = ? WHERE task_id = ?",
                     (pending_title, task["task_id"]),
+                )
+                capture_or_reuse_current_authority_snapshot_locked(
+                    connection,
+                    project_id=task["project_id"],
+                    task_id=task["task_id"],
+                    created_at="2026-08-03T00:00:01Z",
                 )
 
                 observed = tasks_module.fetch_validated_current_task_row(

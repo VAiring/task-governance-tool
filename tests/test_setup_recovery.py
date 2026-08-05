@@ -18,6 +18,7 @@ try:
         create_v9_target,
         json_payload,
         make_physical_install,
+        remove_v18_evidence_ledger_for_test,
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
@@ -29,6 +30,7 @@ except ModuleNotFoundError:
         create_v9_target,
         json_payload,
         make_physical_install,
+        remove_v18_evidence_ledger_for_test,
     )
 
 from task_governance_tool import backup as backup_service
@@ -153,7 +155,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 RECOVERY_WRITES,
             )
             self.assertEqual(preview_data["completed_writes"], [])
-            self.assertEqual(preview_data["schema_from"], 17)
+            self.assertEqual(preview_data["schema_from"], 18)
             self.assertFalse(preview_data["maintenance_enabled"])
             self.assertEqual(
                 {
@@ -350,7 +352,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     "planned_writes": [],
                     "completed_writes": [],
                     "schema_from": None,
-                    "schema_to": 17,
+                    "schema_to": 18,
                     "maintenance_enabled": None,
                     "backup_interval_minutes": None,
                     "backup_generations": None,
@@ -441,7 +443,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    17,
+                    18,
                 )
                 self.assertEqual(
                     (
@@ -546,6 +548,9 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 install, target, older_path, newer_path = (
                     self._two_generation_fixture(Path(tmp))
                 )
+                for candidate_path in (older_path, newer_path):
+                    with closing(sqlite3.connect(candidate_path)) as connection:
+                        remove_v18_evidence_ledger_for_test(connection)
                 self._replace_newest_verification(newer_path, verification)
                 newer_bytes = newer_path.read_bytes()
                 install.db_path.unlink()
@@ -562,7 +567,11 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 )
                 restored = install.run("setup", "--json")
 
-                self.assertEqual(restored.returncode, 0, restored.stderr)
+                self.assertEqual(
+                    restored.returncode,
+                    0,
+                    f"{restored.stderr}\n{restored.stdout}",
+                )
                 self.assertEqual(newer_path.read_bytes(), newer_bytes)
                 with closing(sqlite3.connect(install.db_path)) as connection:
                     titles = {
@@ -587,6 +596,8 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             install, backup_path = self._initialize_with_backed_up_task(
                 Path(tmp)
             )
+            with closing(sqlite3.connect(backup_path)) as connection:
+                remove_v18_evidence_ledger_for_test(connection)
             sentinel = "token=must-not-appear-in-output"
             with closing(sqlite3.connect(backup_path)) as connection:
                 cursor = connection.execute(
@@ -677,7 +688,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                         connection.execute(
                             "SELECT MAX(version) FROM schema_migrations"
                         ).fetchone()[0],
-                        17,
+                        18,
                     )
                     self.assertEqual(
                         connection.execute(

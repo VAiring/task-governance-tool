@@ -3,20 +3,29 @@
 from __future__ import annotations
 
 import re
+import secrets
 import sqlite3
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 from task_governance_tool.completion import FULL_GIT_OBJECT_ID
+from task_governance_tool.evidence_ledger import (
+    EvidenceSource,
+    TargetCaptureBinding,
+    build_evidence_reference,
+)
 from task_governance_tool.reviews import DIFF_FINGERPRINT
 from task_governance_tool.storage import (
+    SCHEMA_VERSION,
     CompletionCycle,
     DatabaseTarget,
     ProjectIdentity,
     begin_initialized_write,
     completion_history_inconsistent,
     insert_verification_receipt_locked,
+    persist_evidence_reference_locked,
     read_verification_receipt_snapshot,
+    stored_task_verification_limit,
     verification_command_label_is_summary,
     verification_expectation_digest,
 )
@@ -42,7 +51,7 @@ PUBLIC_VERIFICATION_RECEIPT_FIELDS = (
     "project_id",
     "task_id",
     "contract_revision",
-    "command_label",
+    "verification_subject",
     "result",
     "duration_ms",
     "scope_coverage",
@@ -50,6 +59,13 @@ PUBLIC_VERIFICATION_RECEIPT_FIELDS = (
     "created_at",
 )
 STORED_RECEIPT_MESSAGE = "stored verification evidence is inconsistent"
+INTERNAL_VERIFICATION_SUBJECT_LABEL = "taskgov-owned-verification-subject-v1"
+AUTHORITY_SNAPSHOT_ID_PATTERN = re.compile(
+    r"^tg_authority_snapshot_[0-9a-f]{16}$"
+)
+CONTRACT_CRITERION_ID_PATTERN = re.compile(
+    r"^tg_contract_criterion_[0-9a-f]{16}$"
+)
 
 
 @dataclass(frozen=True)
@@ -64,7 +80,6 @@ class VerificationReceiptError(Exception):
 
 @dataclass(frozen=True)
 class VerificationReceiptInput:
-    command_label: str
     result: str
     duration_ms: int
     scope_coverage: str
@@ -100,31 +115,6 @@ def _invalid_stored() -> VerificationReceiptError:
     return _error("invalid_verification_evidence", STORED_RECEIPT_MESSAGE)
 
 
-def _normalize_label(value: Any) -> str:
-    try:
-        label = validate_text(
-            "command_label",
-            value,
-            required=True,
-            limit=200,
-        )
-    except TaskValidationError as exc:
-        if exc.code == "privacy_rejected":
-            raise _error(exc.code, exc.message, exc.field) from exc
-        raise _error(
-            "invalid_verification_evidence",
-            "command_label must be a non-empty sanitized label of at most 200 characters",
-            "command_label",
-        ) from exc
-    if not verification_command_label_is_summary(label):
-        raise _error(
-            "invalid_verification_evidence",
-            "command_label must be a non-empty sanitized label of at most 200 characters",
-            "command_label",
-        )
-    return label
-
-
 def _normalize_choice(
     value: Any,
     *,
@@ -155,7 +145,6 @@ def _normalize_integer(
 
 def normalize_verification_receipt_input(
     *,
-    command_label: Any,
     result: Any,
     duration_ms: Any,
     scope_coverage: Any,
@@ -163,7 +152,6 @@ def normalize_verification_receipt_input(
 ) -> VerificationReceiptInput:
     """Validate caller values in the fixed public fail-fast order."""
 
-    label = _normalize_label(command_label)
     normalized_result = _normalize_choice(
         result,
         field="result",
@@ -189,7 +177,6 @@ def normalize_verification_receipt_input(
         message="expected_target_generation must be a positive signed-64-bit integer",
     )
     return VerificationReceiptInput(
-        command_label=label,
         result=normalized_result,
         duration_ms=normalized_duration,
         scope_coverage=normalized_coverage,
@@ -273,13 +260,57 @@ def _source_revision_from_values(
     }
 
 
-def _task_basis(task: Mapping[str, Any]) -> tuple[str, int, str, dict[str, Any] | None]:
+def _current_verification_subject(
+    task: Mapping[str, Any],
+    *,
+    expectation: str,
+    source_revision: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not expectation.strip() or source_revision is None:
+        return None
+    try:
+        capture_version = task["review_target_capture_version"]
+        snapshot_id = task["review_target_authority_snapshot_id"]
+        criterion_id = task["review_target_verification_criterion_id"]
+    except (KeyError, TypeError) as exc:
+        raise _invalid_stored() from exc
+    if type(capture_version) is not int or capture_version not in {0, 1}:
+        raise _invalid_stored()
+    if capture_version == 0:
+        if snapshot_id is not None or criterion_id is not None:
+            raise _invalid_stored()
+        return None
+    if (
+        not isinstance(snapshot_id, str)
+        or AUTHORITY_SNAPSHOT_ID_PATTERN.fullmatch(snapshot_id) is None
+        or not isinstance(criterion_id, str)
+        or CONTRACT_CRITERION_ID_PATTERN.fullmatch(criterion_id) is None
+    ):
+        raise _invalid_stored()
+    return {
+        "basis_version": 1,
+        "kind": "task_verification_criterion",
+        "authority_snapshot_id": snapshot_id,
+        "verification_criterion_id": criterion_id,
+        "legacy_caller_label": None,
+    }
+
+
+def _task_basis(
+    task: Mapping[str, Any],
+) -> tuple[
+    str,
+    int,
+    str,
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+]:
     try:
         expectation = _stored_text(
             task["verification"],
             field="verification",
             required=False,
-            limit=500,
+            limit=stored_task_verification_limit(SCHEMA_VERSION),
         )
         contract_revision = _stored_integer(task["current_contract_revision"])
         source_revision = _source_revision_from_values(
@@ -291,7 +322,17 @@ def _task_basis(task: Mapping[str, Any]) -> tuple[str, int, str, dict[str, Any] 
         )
     except (KeyError, TypeError) as exc:
         raise _invalid_stored() from exc
-    return expectation, contract_revision, verification_expectation_digest(expectation), source_revision
+    return (
+        expectation,
+        contract_revision,
+        verification_expectation_digest(expectation),
+        source_revision,
+        _current_verification_subject(
+            task,
+            expectation=expectation,
+            source_revision=source_revision,
+        ),
+    )
 
 
 def _public_receipt(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -301,11 +342,22 @@ def _public_receipt(row: Mapping[str, Any]) -> dict[str, Any]:
         task_id = str(row["task_id"])
         contract_revision = _stored_integer(row["contract_revision"])
         digest = str(row["verification_expectation_digest"])
-        command_label = _stored_text(
-            row["command_label"],
-            field="command_label",
-            required=True,
-            limit=200,
+        command_label = str(row["command_label"])
+        row_keys = set(row.keys())
+        subject_basis = (
+            _stored_integer(row["verification_subject_basis_version"])
+            if "verification_subject_basis_version" in row_keys
+            else 0
+        )
+        subject_snapshot_id = (
+            row["subject_authority_snapshot_id"]
+            if "subject_authority_snapshot_id" in row_keys
+            else None
+        )
+        subject_criterion_id = (
+            row["subject_verification_criterion_id"]
+            if "subject_verification_criterion_id" in row_keys
+            else None
         )
         result = str(row["result"])
         duration_ms = _stored_integer(row["duration_ms"])
@@ -320,15 +372,52 @@ def _public_receipt(row: Mapping[str, Any]) -> dict[str, Any]:
         created_at = str(row["created_at"])
     except (KeyError, TypeError, ValueError) as exc:
         raise _invalid_stored() from exc
+    if subject_basis == 0:
+        if subject_snapshot_id is not None or subject_criterion_id is not None:
+            raise _invalid_stored()
+        try:
+            legacy_label = _stored_text(
+                command_label,
+                field="command_label",
+                required=True,
+                limit=200,
+            )
+        except VerificationReceiptError:
+            raise
+        if not verification_command_label_is_summary(legacy_label):
+            raise _invalid_stored()
+        verification_subject = {
+            "basis_version": 0,
+            "kind": "legacy_caller_label",
+            "authority_snapshot_id": None,
+            "verification_criterion_id": None,
+            "legacy_caller_label": legacy_label,
+        }
+    elif subject_basis == 1:
+        if (
+            command_label != INTERNAL_VERIFICATION_SUBJECT_LABEL
+            or not isinstance(subject_snapshot_id, str)
+            or AUTHORITY_SNAPSHOT_ID_PATTERN.fullmatch(subject_snapshot_id)
+            is None
+            or not isinstance(subject_criterion_id, str)
+            or CONTRACT_CRITERION_ID_PATTERN.fullmatch(subject_criterion_id)
+            is None
+        ):
+            raise _invalid_stored()
+        verification_subject = {
+            "basis_version": 1,
+            "kind": "task_verification_criterion",
+            "authority_snapshot_id": subject_snapshot_id,
+            "verification_criterion_id": subject_criterion_id,
+            "legacy_caller_label": None,
+        }
+    else:
+        raise _invalid_stored()
     if (
         VERIFICATION_RECEIPT_ID_PATTERN.fullmatch(receipt_id) is None
         or not project_id
         or not task_id
         or re.fullmatch(r"[0-9a-f]{64}", digest) is None
-        or any(
-            ord(character) < 0x20 or ord(character) == 0x7F
-            for character in command_label
-        )
         or result not in VERIFICATION_RESULTS
         or coverage not in VERIFICATION_COVERAGE
         or source_revision is None
@@ -340,7 +429,7 @@ def _public_receipt(row: Mapping[str, Any]) -> dict[str, Any]:
         "project_id": project_id,
         "task_id": task_id,
         "contract_revision": contract_revision,
-        "command_label": command_label,
+        "verification_subject": verification_subject,
         "result": result,
         "duration_ms": duration_ms,
         "scope_coverage": coverage,
@@ -358,8 +447,21 @@ def _snapshot_for_task(
     task: Mapping[str, Any],
     project_id: str,
     task_id: str,
-) -> tuple[Any, str, int, str, dict[str, Any] | None]:
-    expectation, contract_revision, digest, source_revision = _task_basis(task)
+) -> tuple[
+    Any,
+    str,
+    int,
+    str,
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+]:
+    (
+        expectation,
+        contract_revision,
+        digest,
+        source_revision,
+        current_subject,
+    ) = _task_basis(task)
     target = source_revision or {
         "kind": "",
         "value": "",
@@ -378,7 +480,14 @@ def _snapshot_for_task(
         target_generation=int(target["generation"]),
         recent_limit=10,
     )
-    return snapshot, expectation, contract_revision, digest, source_revision
+    return (
+        snapshot,
+        expectation,
+        contract_revision,
+        digest,
+        source_revision,
+        current_subject,
+    )
 
 
 def _validated_rows(rows: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
@@ -396,6 +505,7 @@ def _validate_snapshot_rows(
     contract_revision: int,
     digest: str,
     source_revision: dict[str, Any] | None,
+    current_subject: dict[str, Any] | None,
 ) -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...]]:
     same_generation = _validated_rows(raw_same_generation)
     exact = _validated_rows(raw_exact)
@@ -419,6 +529,10 @@ def _validate_snapshot_rows(
             public["contract_revision"] != contract_revision
             or str(raw.get("verification_expectation_digest")) != digest
             or public["source_revision"] != source_revision
+            or (
+                current_subject is not None
+                and public["verification_subject"] != current_subject
+            )
         ):
             raise _invalid_stored()
     same_ids = tuple(
@@ -446,12 +560,16 @@ def _gate_from_exact(
     *,
     expectation: str,
     source_revision: dict[str, Any] | None,
+    current_subject: dict[str, Any] | None,
     exact_rows: tuple[dict[str, Any], ...],
+    allow_legacy_subject: bool = False,
 ) -> VerificationGate:
     if not expectation.strip():
         return VerificationGate(False, True, None, None)
     if source_revision is None:
         return VerificationGate(True, False, "review_target_required", None)
+    if current_subject is None and not allow_legacy_subject:
+        return VerificationGate(True, False, "evidence_basis_stale", None)
     if not exact_rows:
         return VerificationGate(True, False, "verification_receipt_required", None)
     if len(exact_rows) != 1:
@@ -530,7 +648,14 @@ def read_verification_evidence(
 
     project_id = str(task["project_id"])
     task_id = str(task["task_id"])
-    snapshot, expectation, contract_revision, digest, source_revision = _snapshot_for_task(
+    (
+        snapshot,
+        expectation,
+        contract_revision,
+        digest,
+        source_revision,
+        current_subject,
+    ) = _snapshot_for_task(
         connection,
         task=task,
         project_id=project_id,
@@ -547,13 +672,16 @@ def read_verification_evidence(
         contract_revision=contract_revision,
         digest=digest,
         source_revision=source_revision,
+        current_subject=current_subject,
     )
     if total < len(exact_rows) or total < len(recent_rows):
         raise _invalid_stored()
     gate = _gate_from_exact(
         expectation=expectation,
         source_revision=source_revision,
+        current_subject=current_subject,
         exact_rows=exact_rows,
+        allow_legacy_subject=str(task["status"]) == "done",
     )
     if str(task["status"]) == "done":
         gate = _validate_done_cycle(
@@ -574,6 +702,7 @@ def read_verification_evidence(
         "expectation": expectation,
         "contract_revision": contract_revision,
         "source_revision": source_revision,
+        "current_verification_subject": current_subject,
         "gate": gate.to_public(),
         "counts": {
             "receipts_total": total,
@@ -592,7 +721,14 @@ def current_verification_gate(
 ) -> VerificationGate:
     """Evaluate only the active completion gate from one coherent DB snapshot."""
 
-    snapshot, expectation, _revision, _digest, source_revision = _snapshot_for_task(
+    (
+        snapshot,
+        expectation,
+        _revision,
+        _digest,
+        source_revision,
+        current_subject,
+    ) = _snapshot_for_task(
         connection,
         task=task,
         project_id=str(task["project_id"]),
@@ -608,6 +744,7 @@ def current_verification_gate(
         contract_revision=_revision,
         digest=_digest,
         source_revision=source_revision,
+        current_subject=current_subject,
     )
     total = _stored_integer(snapshot.total)
     if total < len(exact_rows) or total < len(_recent_rows):
@@ -615,6 +752,7 @@ def current_verification_gate(
     return _gate_from_exact(
         expectation=expectation,
         source_revision=source_revision,
+        current_subject=current_subject,
         exact_rows=exact_rows,
     )
 
@@ -630,6 +768,11 @@ def enforce_verification_gate(
             "review_target_required",
             "task completion requires a current structured review target",
             "review_target_kind",
+        )
+    if gate.blocking_code == "evidence_basis_stale":
+        raise _error(
+            "evidence_basis_stale",
+            "current evidence basis must be captured again",
         )
     if gate.blocking_code == "verification_receipt_required":
         raise _error(
@@ -653,7 +796,7 @@ def _validate_add_basis(
     project_id: str,
     task_id: str,
     values: VerificationReceiptInput,
-) -> tuple[str, int, str, dict[str, Any]]:
+) -> tuple[str, int, str, dict[str, Any], dict[str, Any]]:
     status = str(task.get("status", ""))
     if status == "done":
         raise TaskRepositoryError(
@@ -671,7 +814,7 @@ def _validate_add_basis(
             task["verification"],
             field="verification",
             required=False,
-            limit=500,
+            limit=stored_task_verification_limit(SCHEMA_VERSION),
         )
         contract_revision = _stored_integer(task["current_contract_revision"])
     except (KeyError, TypeError) as exc:
@@ -704,6 +847,16 @@ def _validate_add_basis(
             "verification_basis_stale",
             "verification target changed after the reported run",
             "expected_target_generation",
+        )
+    current_subject = _current_verification_subject(
+        task,
+        expectation=expectation,
+        source_revision=source_revision,
+    )
+    if current_subject is None:
+        raise _error(
+            "evidence_basis_stale",
+            "current evidence basis must be captured again",
         )
     snapshot = read_verification_receipt_snapshot(
         connection,
@@ -739,7 +892,13 @@ def _validate_add_basis(
             "verification_receipt_already_recorded",
             "verification evidence is already recorded for the current target",
         )
-    return expectation, contract_revision, digest, source_revision
+    return (
+        expectation,
+        contract_revision,
+        digest,
+        source_revision,
+        current_subject,
+    )
 
 
 def add_verification_receipt(
@@ -747,7 +906,6 @@ def add_verification_receipt(
     project: ProjectIdentity,
     task_id: Any,
     *,
-    command_label: Any,
     result: Any,
     duration_ms: Any,
     scope_coverage: Any,
@@ -758,7 +916,6 @@ def add_verification_receipt(
 
     normalized_task_id = validate_task_id(task_id)
     values = normalize_verification_receipt_input(
-        command_label=command_label,
         result=result,
         duration_ms=duration_ms,
         scope_coverage=scope_coverage,
@@ -787,7 +944,13 @@ def add_verification_receipt(
     locked = read_internal_task(connection, project.project_id, normalized_task_id)
     if locked is None:
         raise TaskRepositoryError("not_found", "task was not found")
-    _expectation, contract_revision, digest, source_revision = _validate_add_basis(
+    (
+        _expectation,
+        contract_revision,
+        digest,
+        source_revision,
+        current_subject,
+    ) = _validate_add_basis(
         connection,
         task=locked,
         project_id=project.project_id,
@@ -801,7 +964,7 @@ def add_verification_receipt(
             task_id=normalized_task_id,
             contract_revision=contract_revision,
             verification_expectation_digest=digest,
-            command_label=values.command_label,
+            command_label=INTERNAL_VERIFICATION_SUBJECT_LABEL,
             result=values.result,
             duration_ms=values.duration_ms,
             scope_coverage=values.scope_coverage,
@@ -809,10 +972,87 @@ def add_verification_receipt(
             target_value=str(source_revision["value"]),
             target_base_revision=str(source_revision["base_revision"] or ""),
             target_generation=int(source_revision["generation"]),
+            verification_subject_basis_version=1,
+            subject_authority_snapshot_id=str(
+                current_subject["authority_snapshot_id"]
+            ),
+            subject_verification_criterion_id=str(
+                current_subject["verification_criterion_id"]
+            ),
         )
     except sqlite3.IntegrityError as exc:
         raise _invalid_stored() from exc
     receipt = _public_receipt(stored)
     if receipt["source_revision"] != source_revision:
         raise _invalid_stored()
+    binding = TargetCaptureBinding(
+        target_kind=str(source_revision["kind"]),
+        target_value=str(source_revision["value"]),
+        target_base_revision=str(source_revision["base_revision"] or ""),
+        target_generation=int(source_revision["generation"]),
+        authority_snapshot_id=str(current_subject["authority_snapshot_id"]),
+        acceptance_criterion_id=(
+            str(locked["review_target_acceptance_criterion_id"])
+            if locked["review_target_acceptance_criterion_id"] is not None
+            else None
+        ),
+        verification_criterion_id=str(
+            current_subject["verification_criterion_id"]
+        ),
+    )
+    source = EvidenceSource(
+        source_kind="verification_receipt",
+        source_state="recorded",
+        source_id=str(stored["verification_receipt_id"]),
+        source_projection={
+            "verification_receipt_id": str(
+                stored["verification_receipt_id"]
+            ),
+            "subject_basis_version": 1,
+            "authority_snapshot_id": str(
+                current_subject["authority_snapshot_id"]
+            ),
+            "verification_criterion_id": str(
+                current_subject["verification_criterion_id"]
+            ),
+            "result": str(stored["result"]),
+            "duration_ms": int(stored["duration_ms"]),
+            "scope_coverage": str(stored["scope_coverage"]),
+            "created_at": str(stored["created_at"]),
+        },
+    )
+    reference = build_evidence_reference(
+        source=source,
+        project_id=project.project_id,
+        task_id=normalized_task_id,
+        contract_revision=contract_revision,
+        binding=binding,
+    )
+    persist_evidence_reference_locked(
+        connection,
+        reference={
+            "evidence_reference_id": (
+                f"tg_evidence_reference_{secrets.token_hex(8)}"
+            ),
+            "project_id": project.project_id,
+            "task_id": normalized_task_id,
+            "source_kind": source.source_kind,
+            "source_state": source.source_state,
+            "source_id": source.source_id,
+            "assurance_class": reference.attribution.assurance_class,
+            "producer_class": reference.attribution.producer_class,
+            "producer_version": reference.attribution.producer_version,
+            "contract_revision": contract_revision,
+            "authority_snapshot_id": binding.authority_snapshot_id,
+            "acceptance_criterion_id": binding.acceptance_criterion_id,
+            "verification_criterion_id": binding.verification_criterion_id,
+            "target_kind": binding.target_kind,
+            "target_value": binding.target_value,
+            "target_base_revision": binding.target_base_revision,
+            "target_generation": binding.target_generation,
+            "completion_cycle_id": None,
+            "digest": reference.digest,
+            "created_at": str(stored["created_at"]),
+        },
+    )
     return VerificationReceiptResult(receipt=receipt)

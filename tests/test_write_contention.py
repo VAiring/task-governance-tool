@@ -94,6 +94,14 @@ def add_review_receipt(db, repo, task_id):
         "independent",
         "--verdict",
         "pass",
+        "--reviewer-class",
+        "human",
+        "--model-state",
+        "not_applicable",
+        "--skill-state",
+        "not_applicable",
+        "--context-relation",
+        "external_context",
     )["data"]["receipt"]
 
 
@@ -365,6 +373,14 @@ class WriteContentionTests(unittest.TestCase):
                 "independent",
                 "--verdict",
                 "pass",
+                "--reviewer-class",
+                "human",
+                "--model-state",
+                "not_applicable",
+                "--skill-state",
+                "not_applicable",
+                "--context-relation",
+                "external_context",
             )
             with self.subTest(operation="receipt"):
                 self._assert_review_commit_locked(

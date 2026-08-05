@@ -42,6 +42,7 @@ from task_governance_tool.storage import (
     validate_identity_project_id,
     validate_current_database_binding,
     validate_current_database_structure,
+    validate_evidence_ledger_storage_for_recovery,
     validate_lower_hex_64,
     validate_migration_backup_metadata,
     validate_operational_journal_state,
@@ -936,11 +937,14 @@ def _inspect_database(
         )
         if classify_recovery_content:
             try:
-                validate_stored_task_verification(
-                    connection,
-                    version,
-                    stored.project_id,
-                )
+                if version == SCHEMA_VERSION:
+                    validate_evidence_ledger_storage_for_recovery(connection)
+                else:
+                    validate_stored_task_verification(
+                        connection,
+                        version,
+                        stored.project_id,
+                    )
             except StoredTaskVerificationError:
                 recovery_content_valid = False
         validation_root = consumer_current_root or doctor_current_root

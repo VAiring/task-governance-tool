@@ -3,9 +3,13 @@
 Use this reference when exact public commands, arguments, JSON fields, bounds,
 or error behavior matter.
 
-The current package uses task schema v17 and offline snapshot v4 with source
-schemas v5 through v17. The published v0.10.0 release remains the immutable
-schema-v16 predecessor.
+The current v0.12.0 package uses task schema v18 and offline snapshot v4 with
+source schemas v5 through v18. The published v0.10.0 release remains the
+immutable schema-v16 predecessor.
+
+Schema v18 publishes no Evidence Bundle or Evidence JSON and adds no Runner,
+Analyzer, Viewer Evidence surface, network/model invocation, public leaf, or
+normal-loop call. Those later capabilities remain inactive.
 
 ## Contents
 
@@ -219,7 +223,7 @@ Expired or stale context requires a fresh preview and fresh user approval.
     "viewer_publish"
   ],
   "schema_from": null,
-  "schema_to": 17,
+  "schema_to": 18,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -254,7 +258,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=17`. A later-stage failure reports only
+null observed values except `schema_to=18`. A later-stage failure reports only
 the durable ordered prefix.
 
 Setup is noninteractive and idempotent. It does not create a second
@@ -295,7 +299,7 @@ A ready result has this structure:
   "components": {
     "package": {
       "package_name": "task-governance-tool",
-      "package_version": "0.11.0",
+      "package_version": "0.12.0",
       "release_origin": "github:VAiring/task-governance-tool",
       "manifest_version": 1,
       "status": "clean",
@@ -307,8 +311,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 17,
-      "required_schema_version": 17
+      "schema_version": 18,
+      "required_schema_version": 18
     },
     "task_summary": {
       "code": "ready",
@@ -384,7 +388,7 @@ dependent-state use, or use as a write basis. Exact SQLite storage classes,
 privacy/capacity, enums, and Task cross-field matrices are checked without
 coercion or repair. Bounded list/current/next commands validate only their
 selected complete-row batch and add no unrelated whole-table rescan.
-For source schemas v8-v17, the same boundary performs one bulk relationship
+For source schemas v8-v18, the same boundary performs one bulk relationship
 read for only those selected Task IDs. Revision zero requires no Contract row;
 a positive `current_contract_revision` must exist as the latest exact INTEGER
 revision owned by the same project and Task. Dangling, foreign, nonlatest,
@@ -397,7 +401,7 @@ faults use the same fixed error; genuine busy/locked state remains
 `database_busy`. Doctor, Viewer, setup, and recovery validate every Task row,
 including stored project ownership, as one whole batch.
 
-Any current schema-v17 stored Task fault returns exit 2, code
+Any current schema-v18 stored Task fault returns exit 2, code
 `project_state_unreadable`, and message
 `project state could not be read safely`. The command keeps its existing empty
 data shape and emits no warning, partial Task projection, rejected content, or
@@ -428,6 +432,15 @@ Initial `done` returns `initial_done_forbidden`; specifically,
 `initial_paused_forbidden`. Initial `blocked` requires `--blocked-reason`.
 Sequential adds preserve the same predecessor rule used for selection and
 transitions.
+
+At schema v18, explicit public `task add --verification` and
+`task edit --verification` values are each capped at 500 characters, with the
+existing privacy check before length. Durable/read and internal-derived paths
+accept and preserve exact valid verification text through 1,000 characters.
+Metadata, Contract, target, review, lifecycle, completion, reopen, setup,
+backup, recovery, and projection paths must not reuse the narrower caller-input
+limit; a stored value over 1,000 fails closed. An explicit 501-1,000-character
+replay remains rejected even when equal to the stored value.
 
 ### `task list`
 
@@ -542,6 +555,14 @@ counts, blocking findings, and recent structured receipts/findings; it omits
 raw reviews and private reasoning. `handoff_summary` contains exact
 `pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user` counts.
 
+`verification_evidence` includes `current_verification_subject`. It is null
+without a capture-version-1 nonempty verification criterion; otherwise it is
+the same five-key subject-v1 object used by recent Verification Receipts. For
+active/review-pending nonempty verification on a retained capture-version-0
+target, its blocking code is `evidence_basis_stale` before receipt-required or
+receipt-blocking evaluation. Trimmed-empty verification remains
+`required=false,satisfied=true,blocking_code=null` with a null subject.
+
 `completion_history` has exactly:
 
 ```text
@@ -584,7 +605,8 @@ compatibility exception; rejected or corrupt stored text returns
 Viewer use the same bounded projection.
 
 `verification_evidence` has exactly `expectation`, `contract_revision`,
-`source_revision`, `gate`, `counts`, and `recent_receipts`. `source_revision`
+`source_revision`, `current_verification_subject`, `gate`, `counts`, and
+`recent_receipts`. `source_revision`
 is null without a target; otherwise it contains exactly `kind`, `value`,
 nullable `base_revision`, and positive `generation`. Gate has exactly
 `required`, `satisfied`, nullable `blocking_code`, and nullable
@@ -747,19 +769,17 @@ outside taskgov, record one caller-attested aggregate result for a Task with a
 verification expectation that is nonempty after trimming:
 
 ```powershell
-python scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --command-label "Full offline verification" --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
+python scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
 ```
 
-The five options are required. `result` is `pass`, `fail`, or `timeout`;
+The four options are required. `result` is `pass`, `fail`, or `timeout`;
 `scope-coverage` is `full` or `partial`; duration is a nonnegative signed-
 64-bit millisecond value; and expected generation is the positive generation
-returned by target set. The label is a sanitized nonempty summary of at most
-200 characters, not a command line. Use a descriptive noun phrase: shell
-controls/redirection, standalone options, path-prefixed invocations, leading
-executable/script suffixes, and recognized runner/interpreter/build/VCS/shell
-prefixes (including Windows forms) are rejected. Taskgov
-copies the locked Contract, verification digest, and complete target tuple; it
-owns ID and timestamp.
+returned by target set. `--command-label` is not accepted and no caller subject
+option replaces it. Taskgov derives the verification subject from the locked
+capture-version-1 target's authority snapshot and whole-field verification
+criterion, and copies the locked Contract, expectation digest, and complete
+target tuple. It owns ID and timestamp.
 
 Receipt recording is allowed only for `in_progress` or `review_pending`,
 requires verification that is nonempty after trimming and a current target,
@@ -769,6 +789,11 @@ timestamp, and permits one immutable row per target generation. A retry after
 does not execute a command, infer coverage, authenticate the runner, or retain
 a command body, arguments, exit code, stdout/stderr, log, exception,
 environment, or result file.
+
+A migrated capture-version-0 target is read-only lineage. Receipt add fails
+`evidence_basis_stale` with `current evidence basis must be captured again`;
+setting a fresh target creates capture version 1 and restores the write. The
+old target is never upgraded in place.
 
 A semantic `task edit --verification` after targeting clears target and old
 completion evidence and advances generation. Without `--status`, a
@@ -782,8 +807,22 @@ Success data is exactly `receipt`, whose fields are exactly:
 
 ```text
 verification_receipt_id, project_id, task_id, contract_revision,
-command_label, result, duration_ms, scope_coverage, source_revision, created_at
+verification_subject, result, duration_ms, scope_coverage, source_revision,
+created_at
 ```
+
+`verification_subject` has exactly:
+
+```text
+basis_version, kind, authority_snapshot_id, verification_criterion_id,
+legacy_caller_label
+```
+
+A native v1 Receipt uses `basis_version=1`, kind
+`task_verification_criterion`, both non-null IDs, and a null legacy label. A
+migrated pre-v18 Receipt uses `basis_version=0`, kind `legacy_caller_label`,
+both IDs null, and the preserved label. Neither form authenticates caller
+identity. `task show` recent rows use the same versioned union.
 
 Success text is exactly:
 
@@ -892,6 +931,12 @@ bounded to 100 rows, 240 UTF-8 bytes per row, and 16,384 aggregate path bytes.
 The complete text or JSON stdout is capped at 32,768 bytes. Git observation is
 capped at ten subprocesses.
 
+The fixed `required_output` requests the verdict, severity-ordered findings,
+exact file references, remaining risks, recommended changes, and the scalar and
+collection provenance values required for the Receipt kind. `receipt_command`
+uses the existing `review receipt add` leaf and includes provenance option
+placeholders; it adds no command, import, reviewer launch, or model call.
+
 `review_focus` contains the four common fixed rows plus exactly one fixed
 target-kind inspection row. `git_snapshot` binds inspection to the stage-0
 index and stored base while excluding unstaged/untracked content. `git_commit`
@@ -921,6 +966,14 @@ python scripts/taskgov.py review target set --repo <target-project> <task-id> --
 generation. Git commits are resolved read-only and stored canonically. A diff
 fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
 
+A target retained by schema-v18 migration with `capture_version=0` is read-only
+lineage. Verification Receipt add, Review Receipt add, Review Finding add, and
+both completion paths fail `evidence_basis_stale` with
+`current evidence basis must be captured again`. Set a fresh target to create
+capture version 1; no operation upgrades the old target in place. `review
+prepare` and resolving an existing Finding remain allowed because they create
+no new evidence source.
+
 For `git_snapshot`, stage exactly intended files first. Capture observes
 canonical HEAD and only the stage-0 index; unstaged and untracked files are
 excluded. Completion requires a single-parent commit whose parent equals the
@@ -930,7 +983,7 @@ needs a new target and fresh receipts.
 Add one sanitized current-generation receipt:
 
 ```powershell
-python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <stable-reviewer-key> --kind independent --verdict pass --summary "No blocking findings" --json
+python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <stable-reviewer-key> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class human --model-state not_applicable --skill-state not_applicable --context-relation external_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
 ```
 
 Kinds are `independent`, `self_review_fallback`, and `not_required`; verdicts
@@ -940,6 +993,77 @@ distinct independent PASS receipts. Any current-generation
 `changes_requested` receipt blocks completion. `--user-approved` is accepted
 only where the governing review-tier fallback contract requires explicit user
 approval; the normal independent path omits it.
+
+For `independent` and `self_review_fallback`, the following provenance options
+apply and no value is defaulted or inferred:
+
+- conditionally required: `--reviewer-class`, `--model-state`,
+  `--skill-state`, and `--context-relation`;
+- optional only when the selected declared states require them:
+  `--declared-model-id`, `--declared-skill-id`, and
+  `--declared-skill-version`; and
+- repeatable bounded sets: `--review-profile` (at most 4), `--review-lens` (at
+  most 8), and `--review-method` (at most 8).
+
+Every provenance option is forbidden for `not_required`. Duplicates are
+invalid; empty profile/lens/method sets are valid; stored and public arrays use
+the fixed enum order regardless of option order. Invalid type, enum, bound,
+grammar, duplicate, or matrix combinations return
+`invalid_review_evidence`; privacy rejection retains precedence.
+
+The scalar enums are exactly:
+
+```text
+reviewer_class   human llm deterministic_tool hybrid unknown
+model_state      declared not_applicable unknown
+skill_state      declared not_applicable not_used unknown
+context_relation same_context forked_context fresh_context external_context
+                 not_applicable unknown
+```
+
+The repeatable enum orders are exactly:
+
+```text
+review_profiles general authority_contract implementation verification
+                migration_compatibility privacy_safety release_acceptance
+review_lenses   correctness contract_compliance state_completion_integrity
+                privacy target_safety verification_regression
+                migration_compatibility maintainability accessibility
+                performance release_integrity
+method_codes    review_packet_inspection authority_cross_check diff_inspection
+                source_inspection test_inspection
+                verification_evidence_inspection artifact_inspection
+                runtime_observation deterministic_rule_check
+```
+
+Human and deterministic-tool cases require model and Skill states
+`not_applicable` and no declared IDs. LLM and hybrid cases require model
+`declared` with an ID or `unknown` without one; their Skill state is `declared`
+with ID and version, `not_used` without either, or `unknown` without either.
+Reviewer class `unknown` requires both states `unknown` and no IDs. Declared
+model/Skill IDs are 1-128 ASCII bytes matching
+`[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}`; declared Skill version is 1-64 ASCII
+bytes matching `[A-Za-z0-9][A-Za-z0-9._+-]{0,63}`.
+
+Every public Review Receipt adds exactly one `review_provenance` value. A new
+independent/self-review Receipt projects v1 with exactly:
+
+```text
+review_provenance_id, provenance_version, reviewer_class, model_state,
+declared_model_id, skill_state, declared_skill_id, declared_skill_version,
+review_profiles, review_lenses, context_relation, method_codes,
+assurance_class, producer_class, producer_version, digest
+```
+
+Native v1 assurance/producer/version is exactly
+`bound_attestation/trusted_caller/1`. A migrated pre-v18 independent/self-review
+Receipt projects the same keys as v0 with null ID/digest and null semantic
+fields/collections, plus `legacy_unknown/legacy_migration/1`; v0 records
+absence and does not infer explicit `unknown`. A `not_required` Receipt projects
+null and owns no provenance row. Provenance does not change the parent
+Receipt's existing `bound_attestation/trusted_caller/1` assertion and never
+proves identity, actual model/Skill execution, competence, independence,
+diversity, quality, or truth.
 
 The independent reviewer returns the verdict and findings. The trusted
 parent/orchestrator records their concise sanitized receipt/finding rows as an
@@ -993,10 +1117,15 @@ command, or normal-loop decision is added.
 
 These operations add no Skill command or LLM judgment. Their artifacts and
 paths are absent from public command output. Snapshot v4 reads source schemas
-5 through 17. Sources 5-14 receive an empty, legacy-incomplete completion
-history; sources 15-17 use stored cycles. Every Task receives the same bounded
+5 through 18. Sources 5-14 receive an empty, legacy-incomplete completion
+history; sources 15-18 use stored cycles. Every Task receives the same bounded
 five-key projection as `task show` without exposing internal event links,
 maintenance data, or checkpoint content.
+
+For source v18, Viewer capture validates Review Receipt provenance and
+verification-subject/capture bindings but deliberately discards those fields
+from snapshot v4. It adds no provenance UI, filter, panel, snapshot key, or
+normal-loop behavior.
 
 Viewer capture validates the complete source-aware Task batch before rendering
 or replacement, including the source-v8+ Contract-pointer relationship. A

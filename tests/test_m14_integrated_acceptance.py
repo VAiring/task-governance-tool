@@ -285,7 +285,7 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         ):
             text = path.read_text(encoding="utf-8")
             self.assertIn(__version__, text, path)
-            self.assertRegex(text, r"(?i)schema(?: version)? v?18")
+            self.assertRegex(text, r"(?i)schema(?: version)? v?19")
             self.assertRegex(text, r"(?i)(?:viewer )?snapshot v4")
 
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")

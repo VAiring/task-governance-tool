@@ -16,6 +16,7 @@ from task_governance_tool.project_scope import (
 )
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
+    EvidenceProjectionState,
     ProjectMaintenanceState,
     ViewerMaintenanceState,
     utc_now,
@@ -85,6 +86,7 @@ def _last_outcome(
 def _maintenance_component(
     maintenance: ProjectMaintenanceState,
     viewer: ViewerMaintenanceState,
+    evidence: EvidenceProjectionState,
     *,
     observed_at: str,
 ) -> dict[str, Any]:
@@ -111,6 +113,9 @@ def _maintenance_component(
     viewer_due = viewer.due if enabled else None
     viewer_outcome_code = viewer.last_outcome_code if enabled else None
     viewer_outcome_at = viewer.last_outcome_at if enabled else None
+    evidence_due = evidence.due if enabled else None
+    evidence_outcome_code = evidence.last_outcome_code if enabled else None
+    evidence_outcome_at = evidence.last_outcome_at if enabled else None
     return {
         "code": "enabled" if enabled else "not_opted_in",
         "opted_in": enabled,
@@ -159,6 +164,31 @@ def _maintenance_component(
             "last_outcome": _last_outcome(
                 viewer_outcome_code,
                 viewer_outcome_at,
+            ),
+        },
+        "evidence": {
+            "code": (
+                (
+                    evidence.last_outcome_code
+                    if evidence.last_outcome_code in {"deferred", "failed"}
+                    else ("due" if evidence_due else "current")
+                )
+                if enabled
+                else "not_opted_in"
+            ),
+            "due": evidence_due,
+            "source_generation": (
+                evidence.source_generation if enabled else None
+            ),
+            "published_generation": (
+                evidence.published_generation if enabled else None
+            ),
+            "last_success_at": (
+                evidence.last_success_at if enabled else None
+            ),
+            "last_outcome": _last_outcome(
+                evidence_outcome_code,
+                evidence_outcome_at,
             ),
         },
     }
@@ -336,6 +366,7 @@ def run_doctor(
     maintenance = _maintenance_component(
         storage_state.maintenance,
         storage_state.viewer,
+        storage_state.evidence,
         observed_at=utc_now(),
     )
     project_code = storage_state.project_code

@@ -1,16 +1,9 @@
 # task-governance-tool Current Product Specification
 
-Status: The immutable published product remains v0.10.0 with SQLite schema
-v16, Viewer snapshot v4 accepting source schemas v5-v16, and 20 public command
-leaves. Its release identity is fixed in `docs/release-install.md`. The current
-unpublished local candidate is v0.12.0 with SQLite schema v18, Viewer snapshot
-v4 accepting source schemas v5-v18, and 21 public command leaves. It implements
-the current TG-M21 Verification Receipt, TG-M22.2 evidence-capture foundation,
-and current TG-M21.5 public verification admission, together with the strict
-managed-recovery classifier, shared stored-Task validator, and current-Contract
-pointer validation. TG-M20S.3, TG-M22.3+, TG-M23, and TG-M24 remain inactive. Completed
-execution narrative is history, and the Task database owns live state and
-evidence.
+Status: The immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
+The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
+snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt and accepted TG-M22.2/TG-M21.5 capture/admission boundaries and activates TG-M22.3 native Bundles and fixed Evidence JSON v1, together with strict recovery and stored-Task/Contract-pointer validation.
+TG-M20S.3, TG-M22.4, TG-M23, and TG-M24 remain inactive. Completed execution narrative is history, and the Task database owns live state and evidence.
 
 This document specifies supported product behavior. The concise
 [authority index](authority.md) routes implementation structure to
@@ -103,6 +96,9 @@ content. The fixed generated targets are:
 ```text
 <physical-skill>/state/current/taskgov.sqlite
 <physical-skill>/state/current/backups/
+<physical-skill>/state/current/evidence/index.json
+<physical-skill>/state/current/evidence/bundles/<completion-evidence-bundle-id>.json
+<physical-skill>/state/current/evidence/taskgov-evidence.lock
 <physical-skill>/state/current/viewer/task-viewer.html
 ```
 
@@ -373,7 +369,7 @@ other project-backed component `{"code":"unavailable"}`, and
   `done`, `next_actionable`, `paused`, and `review_pending`.
 - `handoff_delivery` contains `code`, `handoff_pending`, `adapter_enabled`,
   and `delivery_due`.
-- `maintenance` contains `code`, `opted_in`, `backup`, and `viewer`.
+- `maintenance` contains `code`, `opted_in`, `backup`, `evidence`, and `viewer`.
 
 The package projection contains exactly `package_name`, `package_version`,
 `release_origin`, `manifest_version`, `status`, `changed_core_count`,
@@ -397,6 +393,7 @@ exactly `code`, `due`, `source_generation`, `rendered_generation`,
 `last_success_at`, and `last_outcome`. Each outcome contains only `code`
 (`none`, `succeeded`, `deferred`, or `failed`) and `occurred_at`; not-yet-owned
 values are null.
+The Evidence object has exactly `code`, `due`, `source_generation`, `published_generation`, `last_success_at`, and `last_outcome`; doctor reports these stored facts only and never repairs or reads generated JSON.
 
 Readable/current state is exit 0, `ok=true`, and setup-eligible when package,
 runtime, install, ignore, identity, and state preconditions all pass. Missing
@@ -499,7 +496,7 @@ Typed completion storage is exactly `completion_evidence_kind`,
 `review_target_kind`, `review_target_value`,
 `review_target_base_revision`, and generation. Values and their legacy
 projection must satisfy one cross-field matrix before storage or output.
-For a current schema-v18 source, every complete loaded Task row is validated
+For a supported schema-v18-or-v19 source, every complete loaded Task row is validated
 for exact SQLite/Python storage class, bounded text/privacy, closed enums, and
 all Task cross-field matrices before any field can be omitted or exposed.
 Stored values are never coerced, trimmed, repaired, or rewritten by a read.
@@ -768,28 +765,12 @@ requirement, qualifying current-generation counts, fallback state, bounded
 recent receipts/findings, and blocking counts including
 `changes_requested_current_generation`. It never emits raw review content.
 
-### Current Schema-v18 Review Provenance Boundary
+### Current Schema-v19 Review Provenance And Bundle Boundary
 
-New `independent` and `self_review_fallback` Receipts use the existing
-`review receipt add` leaf with the closed human, LLM, deterministic-tool,
-hybrid, and explicit-unknown matrix; conditional model and Skill identifiers;
-and fixed ordered profile, lens, context, and method codes. No free-form
-capability or caller assurance exists. The normalized immutable v1 record and
-its structural digest bind the exact Receipt and target. Every public Review
-Receipt has one exact `review_provenance` union. Native
-independent/fallback rows expose v1 with
-`bound_attestation/trusted_caller/1`; pre-v18 rows expose version-zero absence
-with `legacy_unknown/legacy_migration/1`; and Tier-0 `not_required` remains a
-gate disposition with null provenance and no provenance row. These states are
-distinct. The original Receipt assertion remains caller-attested, and neither
-it nor provenance proves identity, execution, competence, independence,
-quality, diversity, or truth. Migration adds only zero/null discriminators to
-old Receipts and never parses
-reviewer keys or summaries, backfills provenance, creates an Evidence
-Reference for an old row, or strengthens legacy evidence. Native v1/null rows
-are included exactly in their schema-v18 Evidence Reference; migrated v0 rows
-have none. Viewer snapshot v4 validates and discards provenance with no field,
-panel, filter, or UI. Bundle/JSON projection remains inactive with TG-M22.3.
+New `independent` and `self_review_fallback` Receipts use the existing `review receipt add` leaf with the closed human, LLM, deterministic-tool, hybrid, and explicit-unknown matrix; conditional model and Skill identifiers; and fixed ordered profile, lens, context, and method codes. No free-form capability or caller assurance exists.
+The normalized immutable v1 record and structural digest bind the exact Receipt and target. Every public Review Receipt has one `review_provenance` union: native independent/fallback rows expose v1 with `bound_attestation/trusted_caller/1`; pre-v18 rows expose version-zero absence with `legacy_unknown/legacy_migration/1`; and Tier-0 `not_required` has null provenance and no provenance row.
+These states are distinct. The original Receipt remains caller-attested, and neither it nor provenance proves identity, execution, competence, independence, quality, diversity, or truth. Migration adds only zero/null discriminators and never parses reviewer keys/summaries, backfills provenance, creates an Evidence Reference for an old row, or strengthens legacy evidence.
+Native v1/null rows are included in their schema-v18 Evidence Reference and schema-v19 native Bundle; migrated v0 rows have none. Viewer snapshot v4 validates and discards provenance with no field, panel, filter, or UI. Evidence JSON is an automatic generated projection, not a command.
 
 ### Git Snapshot And Target Binding
 
@@ -1233,14 +1214,14 @@ test-driven cross-module failure, and unrequested work remain governed by the
 current keep/block/Handoff rules and cannot invoke this future decomposition
 policy.
 
-## Current Schema-v18 Verification And Evidence Capture Contract
+## Current Schema-v19 Verification, Ledger, And Bundle Contract
 
 This section defines current post-publication product behavior. It does not
 rewrite the immutable v0.10.0 publication record or claim a later published
-artifact identity. Schema v18 evidence capture, the 21st public command leaf,
-Verification Receipt storage/readiness, completion-cycle linkage, Viewer
-source compatibility, and synchronized Skill guidance form one supported
-candidate boundary.
+artifact identity. Schema v19 retains schema-v18 capture and the 21st public
+command leaf and adds native completion Bundles and fixed Evidence JSON v1.
+Receipt readiness, completion linkage, Viewer compatibility, and synchronized
+Skill guidance form one supported candidate boundary.
 
 ### Authority Snapshot, Whole-Field Criteria, And References
 
@@ -1264,8 +1245,9 @@ completion cycle, and closed assurance/producer/version. Git observation is
 `machine_observed/taskgov_git/1`; caller assertions are
 `bound_attestation/trusted_caller/1`; external revisions are
 `external_reference/external_system/1`. Callers cannot select or upgrade those
-classes. Migration synthesizes no historical Reference. Schema-v19 links,
-Bundles, Evidence JSON, Analyzer, and Runner writers remain inactive.
+classes. Migration synthesizes no historical Reference. Schema-v19 criterion
+links, native Bundles, and Evidence JSON are active; Analyzer and Runner
+writers remain inactive.
 
 ### Receipt Meaning And Record
 
@@ -1527,8 +1509,8 @@ contract. Failure data also contains
 and does not summarize Receipt state; agents use JSON for the new gate.
 
 There is no Receipt list/show/import/export command and no Viewer Receipt
-panel or snapshot field in the initial activation. The Viewer additionally
-accepts source schema v18 while retaining snapshot v4 content. Its existing
+panel or snapshot field. The Viewer accepts source schemas through v19 while
+retaining snapshot v4 content. Its existing
 bounded batch completion-history read internally joins only the Receipt fields needed
 to validate version-1 cycle and subject links plus provenance, manifests, and
 References, fails closed on inconsistency, then discards them; no ledger
@@ -1560,6 +1542,15 @@ one exact current-basis legacy snapshot per Task but no historical target
 binding, manifest, Reference, provenance row, subject, Receipt, Finding, or
 cycle. Reentry validates exact ownership, digests, matrices, triggers, quick
 check, and foreign keys without reconciliation or backfill.
+
+### Schema-v19 Native Bundle And Evidence JSON
+
+Migration 19 `completion_evidence_bundles` adds immutable criterion links, Bundle membership and Finding snapshots, completion Bundles, cycle `evidence_basis_version`/bundle linkage, and Evidence projection state. Every existing cycle becomes version 0 with null bundle ID; migration creates no historical Bundle or link and projects that absence only as `legacy_unknown`.
+Every native post-v19 completion atomically inserts one version-1 Bundle with its cycle, Task update, event, links, selected gate evidence, Finding snapshots, and projection-generation advance. The sole partial legacy reopen bridge stays version 0/null and advances only that generation. A Bundle is complete or the completion fails before write; its canonical payload is capped at 16 MiB.
+
+Evidence JSON v1 is a deterministic one-way SQLite projection. Canonical sorted-key compact UTF-8 JSON uses integer-only JSON values where numeric, preserves valid Unicode without normalization, and ends each file with one LF. Native entries reference `bundles/<completion-evidence-bundle-id>.json`; pre-v19 entries are `legacy_unknown` with null Bundle/file fields.
+The index includes every cycle, is ordered by Task ID, ordinal, and cycle ID, and is capped at 100,000 entries and 64 MiB without truncation. Publication flushes immutable Bundle files and atomically replaces `index.json` last; SQLite remains canonical, unreferenced files are ignored, and JSON is never imported or used to repair the database.
+Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. There is no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, network action, Analyzer, Runner, or additional normal-loop call.
 
 ## Current TG-M21.4B Recovery Candidate Validity Contract
 
@@ -1650,15 +1641,15 @@ write. Retry recomputes from the canonical state and the restore temporary is
 cleaned in either case; no later failure authorizes reselection or another
 canonical publication.
 
-The current classifier admits 500 for schema v17 and 1,000 for schema v18,
+The current classifier admits 500 for schema v17 and 1,000 for schema v18 or v19,
 rejecting the next character in each source schema. It does not generalize
 local rejection to another field
 or to structural, identity, lineage, metadata, or TOCTOU failure.
 
 ## Current TG-M21.4C Stored Task Read And Privacy Contract
 
-TG-M21.4C, Task `tg_task_efa90606fed8fba0`, owns the current schema-v18
-stored Task read hardening. Its authority reference is
+TG-M21.4C, Task `tg_task_efa90606fed8fba0`, owns the accepted schema-v18
+stored Task read hardening retained through schema v19. Its authority reference is
 `conversation_decision:2026-08-03:pre-m22-qa-baseline-hardening`.
 Every Task-loading operation reads the source-schema capability once and
 validates each complete loaded Task row through one shared row/batch validator
@@ -1666,7 +1657,7 @@ before public allow-listing, compact-field omission, filtering, derived-state
 use, or use as a write basis. The validator does not normalize, coerce,
 truncate, repair, or rewrite stored values.
 
-For supported schemas through v18, exact text and nullable-text storage classes, exact SQLite
+For supported schemas through v19, exact text and nullable-text storage classes, exact SQLite
 integers, stable IDs/project ownership, canonical lane/order, closed
 kind/priority/status/review-tier enums, canonical timestamps, bounded
 free-form privacy, and the blocker, pause, completion, current-review-target,
@@ -1709,8 +1700,8 @@ select an older candidate.
 
 ## Current TG-M21.4D Stored Contract Pointer Integrity Contract
 
-TG-M21.4D, Task `tg_task_7051724dca3f1501`, owns the current schema-v18
-Contract-pointer relationship correction. Its authority reference is
+TG-M21.4D, Task `tg_task_7051724dca3f1501`, owns the accepted schema-v18
+Contract-pointer relationship correction retained through schema v19. Its authority reference is
 `conversation_decision:2026-08-03:m21-4d-effort-observation`. After the
 TG-M21.4C scalar row checks pass, the same shared validation boundary performs
 exactly one bounded bulk relationship read for the loaded Task IDs when the
@@ -1754,8 +1745,8 @@ Missing state is `db_not_initialized`; supported older state is
 `migration_required`; a newer schema is `schema_too_new`. Old binaries reject
 newer state and never downgrade/write it.
 
-Fresh setup creates schema v18. Structurally complete contiguous source schemas
-v1-v17 are setup-only migration inputs; v18 is idempotent current state.
+Fresh setup creates schema v19. Structurally complete contiguous source schemas
+v1-v18 are setup-only migration inputs; v19 is idempotent current state.
 Schema sequence is:
 
 | Version | Durable addition |
@@ -1775,6 +1766,7 @@ Schema sequence is:
 | v16 | marker-only native capture activation |
 | v17 | immutable Verification Receipts and completion-cycle verification basis |
 | v18 | authority/criterion capture, Review provenance, target manifests, Evidence References, and Verification subjects |
+| v19 | native completion Bundles, criterion links/Finding snapshots, and Evidence JSON projection state |
 
 Each migration is transactional, idempotent, rollback-tested, validates
 contiguous history and required objects/rows, preserves project/business IDs
@@ -1845,7 +1837,7 @@ old/new hashes, display, UTC time, fixed reason (`legacy_migration`,
 token. Generation 1 has no prior hash/token digest. Raw paths and raw tokens
 are never stored.
 
-One shared resolver owns every production database/backup/Viewer/lock target.
+One shared resolver owns every production database/backup/Evidence/Viewer/lock target.
 It derives only current hash/display from repo, then reads stored identity and
 binding. Every business writer revalidates ID/hash/generation under its short
 lock. An authoritative fixed primary is validated without gating ordinary
@@ -1964,7 +1956,7 @@ Setup always includes `data.relocation` with exactly `required`,
 successful relocation preview. Fresh preview has null top-level ID and null
 identity/generation/token/expiry.
 
-Relocation failure has status null, required schema 18, empty warnings, one
+Relocation failure has status null, required schema 19, empty warnings, one
 error, null token/expiry, and no rejected value. A no-token mismatch preserves
 the read-only future `planned_writes`; invalid/expired/stale/used/not-required
 token rows have empty write arrays and mechanically observed bounded context.
@@ -1973,15 +1965,16 @@ Earlier common-preflight errors retain precedence.
 The complete setup write vocabulary is `database_restore`,
 `database_initialize`, `migration_backup`, `database_migrate`,
 `maintenance_configure`, `legacy_state_publish`, `project_binding_update`,
-`viewer_publish`, and `legacy_state_cleanup`. Durable order is:
+`evidence_projection_publish`, `viewer_publish`, and `legacy_state_cleanup`. Durable order is:
 
 1. one source prefix: empty, restore, legacy publish, restore plus legacy
    publish, or initialize;
 2. migration backup then migration;
 3. maintenance configuration;
 4. binding update only for confirmed mismatch;
-5. Viewer publication;
-6. legacy cleanup only after fixed database, binding, maintenance, and Viewer.
+5. Evidence projection publication;
+6. Viewer publication;
+7. legacy cleanup only after fixed database, binding, maintenance, Evidence, and Viewer.
 
 Legacy work occurs in one private contained stage. Pre-publication staging is
 not reported completed. Atomic no-clobber publication makes its staged prefix
@@ -2027,20 +2020,20 @@ legacy files remain. After all recorded entries are absent, setup clears
 pending inventory metadata atomically. Normal business commands remain usable
 while valid fixed cleanup is pending.
 
-Preview creates no directory, lock, sidecar, temporary, backup, Viewer, Git, or
+Preview creates no directory, lock, sidecar, temporary, backup, Evidence, Viewer, Git, or
 target change. Actual publication holds one fail-fast package transition lock
 before the backup lock, uses SQLite backup API without a source writer during
 copy, and releases writers before Viewer/cleanup. Failures before fixed
 publication remove only proven owned staging; failures after publication keep
 fixed state authoritative and legacy state intact for resumable cleanup.
 
-## Setup, Recovery, Backup, And Viewer Maintenance
+## Setup, Recovery, Evidence, Backup, And Viewer Maintenance
 
 ### Setup Contract
 
 `setup` is explicit, noninteractive, idempotent, and the sole initializer,
 migrator, one-way maintenance opt-in, relocation flow, fixed/legacy recovery,
-and canonical Viewer repair action. Preflight validates runtime, one physical
+and canonical Evidence/Viewer repair action. Preflight validates runtime, one physical
 layout, project, state ownership, package integrity, Git ignore when applicable,
 journal, schema, identity, binding, and artifacts.
 
@@ -2079,13 +2072,13 @@ retention applies only after the next successful backup publication.
 
 Setup output data is exactly `status`, `planned_writes`, `completed_writes`,
 `schema_from`, `schema_to`, `maintenance_enabled`,
-`backup_interval_minutes`, `backup_generations`, `viewer_status`, and
-`relocation`. `schema_to` is always 18. `schema_from` is safely observed source
+`backup_interval_minutes`, `backup_generations`, `evidence_status`,
+`viewer_status`, and `relocation`. `schema_to` is always 19. `schema_from` is safely observed source
 schema, selected recovery schema, or null. Policy values are effective
-requested/stored values, not persistence claims. `maintenance_enabled` and
-Viewer status describe durable post-command state.
+requested/stored values, not persistence claims. `maintenance_enabled`,
+Evidence status, and Viewer status describe durable post-command state.
 
-Viewer status is `not_present`, `current`, `published`, or `repair_required`.
+Evidence and Viewer status are each `not_present`, `current`, `published`, or `repair_required`.
 Successful preview is `setup_preview`; completed writes use `setup_complete`;
 current/equal state is `already_setup`; relocation preview is
 `relocation_preview`. Preview reports the full ordered plan and empty completed
@@ -2104,7 +2097,7 @@ Core setup outcomes are:
 | migration backup failure | `setup_backup_failed` |
 | initialization failure | `setup_initialization_failed` |
 | migration failure after backup | `setup_migration_failed` |
-| configuration, Viewer, cleanup, or other later partial failure | `setup_incomplete` |
+| configuration, Evidence, Viewer, cleanup, or other later partial failure | `setup_incomplete` |
 
 The fixed messages for invalid policy, restore, backup, initialization,
 migration, and later partial failure are respectively
@@ -2130,11 +2123,13 @@ Preview creates neither lock nor artifact.
 ### Same-Process Maintenance
 
 Maintenance is permanently enabled by successful setup; there is no disable
-surface. Every successful backup-eligible business mutation commits and closes
-SQLite before bounded same-process maintenance. Viewer refresh runs first for
-Viewer-relevant mutations; due backup runs second. Read-only, failed, replayed,
-no-op, handoff-only where inapplicable, setup configuration, and
-maintenance-internal operations trigger nothing.
+surface. Every successful state-changed business mutation commits and closes
+SQLite before bounded same-process maintenance. Any such mutation may retry a
+due Evidence projection; only completion-cycle insertion advances its source
+generation. Viewer refresh runs second only for Viewer-relevant mutations, and
+due backup runs third. A changed handoff advances neither projection but may
+retry already-due Evidence before backup. Read-only, failed, replayed, no-op,
+setup configuration, and maintenance-internal operations trigger nothing.
 
 Taskgov starts no detached process, child process, thread, timer, watcher,
 service, queue, daemon, scheduler, or network operation. Each artifact uses a
@@ -2146,6 +2141,8 @@ continuation warning:
 
 | Code | Message |
 |---|---|
+| `evidence_projection_deferred` | `Evidence projection refresh was deferred; task result is unchanged` |
+| `evidence_projection_failed` | `Evidence projection refresh did not complete; task result is unchanged` |
 | `viewer_refresh_deferred` | `Viewer refresh was deferred; task result is unchanged` |
 | `viewer_refresh_failed` | `Viewer refresh did not complete; task result is unchanged` |
 | `backup_deferred` | `managed backup was deferred; task result is unchanged` |
@@ -2197,7 +2194,7 @@ atomically replaces; failure preserves last good.
 
 ### Snapshot v4
 
-Snapshot v4 accepts source schemas v5-v18. One query-only transaction validates
+Snapshot v4 accepts source schemas v5-v19. One query-only transaction validates
 schema/project/binding, reads generation, validates the complete source-aware
 Task batch through the TG-M21.4C row and TG-M21.4D relationship boundary, and
 assembles rows; rendering and
@@ -2207,11 +2204,12 @@ replacement and therefore preserves the last-good Viewer.
 It contains version/UTC `generated_at`, project ID/display, source schema,
 seven status counts, explicit Task allow-list, newest at most 10 sanitized
 events/review receipts/findings, and the exact completion-history projection. Sources
-v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v18
+v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v19
 read stored history in query batches of at most 500 Task IDs. For sources
-v17-v18, the batch reader validates version-1 completion-cycle Verification
-Receipt links; v18 additionally validates subject, provenance, manifest, and
-Reference relations. It discards every joined ledger field. The Viewer
+v17-v19, the batch reader validates version-1 completion-cycle Verification
+Receipt links; v18+ additionally validates subject, provenance, manifest, and
+Reference relations, while v19 validates and discards the Bundle discriminator.
+It discards every joined ledger field. The Viewer
 selects all project Tasks; 500 Tasks is the accepted performance fixture, not a
 selection cap. The HTML artifact is at most 64 MiB.
 
@@ -2327,7 +2325,7 @@ retains its sanitized caller label as explicit legacy data. Neither form stores 
 arguments, exit code, result body, stream, log, environment, exception,
 arbitrary coverage prose, or debug-retention variant.
 
-Current schema-v18 free-form limits not narrowed above are: title 200
+Current schema-v19 free-form limits not narrowed above are: title 200
 characters; description 4,000; stored/read/internal verification and its
 derivatives 1,000; explicit public Task add/edit verification 1,000;
 tags/reviewer/target/external revision/authority ref
@@ -2383,6 +2381,7 @@ project_state_unreadable
 review_target_required review_target_missing review_target_mismatch
 artifact_manifest_path_unsafe artifact_manifest_too_large
 artifact_manifest_stale evidence_basis_stale evidence_ledger_inconsistent
+evidence_bundle_too_large
 review_changes_requested review_receipts_insufficient
 review_finding_unresolved review_receipt_mismatch
 review_receipt_already_recorded invalid_review_evidence
@@ -2409,7 +2408,7 @@ Warnings are bounded, sanitized, and non-authoritative. Required warning codes
 include `paused_tasks_present`, `handoff_delivery_pending`,
 `effort_advisory_profile_invalid`,
 `effort_advisory_threshold_exceeded`, package/setup advisory codes, and the
-four maintenance codes. Warnings never carry Task prose, secrets, raw output,
+six maintenance codes. Warnings never carry Task prose, secrets, raw output,
 diffs, paths, or exception text.
 
 ## Published v0.10.0 Release Record

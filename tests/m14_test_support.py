@@ -589,6 +589,16 @@ def remove_v18_evidence_ledger_for_test(connection) -> None:
 
     if connection.in_transaction:
         raise AssertionError("schema downgrade fixture requires no active transaction")
+    if connection.execute(
+        "SELECT 1 FROM schema_migrations WHERE version = 19"
+    ).fetchone() is not None:
+        try:
+            from m223_test_support import remove_v19_bundle_storage_for_test
+        except ModuleNotFoundError:
+            from tests.m223_test_support import (
+                remove_v19_bundle_storage_for_test,
+            )
+        remove_v19_bundle_storage_for_test(connection)
     foreign_keys_enabled = bool(
         connection.execute("PRAGMA foreign_keys").fetchone()[0]
     )

@@ -25,6 +25,8 @@ from task_governance_tool.relocation import (  # noqa: E402
 )
 from task_governance_tool.storage import (  # noqa: E402
     StorageError,
+    allocate_native_completion_identity_locked,
+    apply_completion_evidence_bundle_migration,
     apply_completion_cycle_capture_activation_migration,
     apply_evidence_ledger_capture_migration,
     apply_verification_receipts_migration,
@@ -33,7 +35,7 @@ from task_governance_tool.storage import (  # noqa: E402
     connect_snapshot_readonly,
     current_schema_version,
     initialize_database,
-    insert_native_completion_cycle_locked,
+    prepare_native_completion_cycle_locked,
     validate_completion_cycle_storage,
     verification_expectation_digest,
 )
@@ -314,7 +316,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     before,
                 )
 
-    def test_native_insert_uses_proposed_tier_and_prefers_independent_pass(
+    def test_native_prepare_uses_proposed_tier_and_prefers_independent_pass(
         self,
     ):
         with tempfile.TemporaryDirectory() as tmp:
@@ -327,6 +329,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 )
                 apply_verification_receipts_migration(connection)
                 apply_evidence_ledger_capture_migration(connection)
+                apply_completion_evidence_bundle_migration(connection)
                 task_id = str(
                     add_task(
                         connection,
@@ -402,7 +405,13 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     }
                 )
                 connection.execute("BEGIN IMMEDIATE")
-                cycle = insert_native_completion_cycle_locked(
+                before_changes = connection.total_changes
+                identity = allocate_native_completion_identity_locked(
+                    connection,
+                    project_id=target.project.project_id,
+                    task_id=task_id,
+                )
+                cycle = prepare_native_completion_cycle_locked(
                     connection,
                     project_id=target.project.project_id,
                     task_id=task_id,
@@ -413,38 +422,9 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     ),
                     verification_receipt_id=None,
                     verification_subject_basis_version=1,
+                    completion_identity=identity,
                 )
-                connection.execute(
-                    """
-                    UPDATE tasks
-                       SET status = 'done',
-                           completed_at = ?,
-                           review_tier = 1,
-                           completion_evidence_kind =
-                             'commit_not_required',
-                           completion_commit_required = 0
-                     WHERE task_id = ?
-                    """,
-                    (proposed["completed_at"], task_id),
-                )
-                connection.execute(
-                    """
-                    INSERT INTO task_events(
-                      task_event_id, task_id, project_id, event_type,
-                      summary, created_at, completion_cycle_id
-                    ) VALUES (
-                      'tg_event_native_tier_change', ?, ?,
-                      'review_tier_changed', 'Tier changed and completed.',
-                      '2026-07-30T05:31:00Z', ?
-                    )
-                    """,
-                    (
-                        task_id,
-                        target.project.project_id,
-                        cycle.completion_cycle_id,
-                    ),
-                )
-                connection.commit()
+                self.assertEqual(connection.total_changes, before_changes)
                 self.assertEqual(cycle.review_tier, 1)
                 self.assertEqual(
                     cycle.gate_basis.kind,
@@ -454,6 +434,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     cycle.gate_basis.qualifying_receipt_ids,
                     (receipt_ids["independent"],),
                 )
+                connection.rollback()
                 validate_completion_cycle_storage(connection)
 
     def test_v18_viewer_v16_marker_and_relocation_boundaries(
@@ -484,7 +465,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     generated_at="2026-07-30T05:40:00Z",
                 ).snapshot
             self.assertEqual(snapshot["snapshot_version"], 4)
-            self.assertEqual(snapshot["source_schema_version"], 18)
+            self.assertEqual(snapshot["source_schema_version"], 19)
             self.assertEqual(
                 snapshot["tasks"][0]["completion_history"],
                 {
@@ -579,10 +560,10 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 15,
             )
             result = initialize_database(target)
-            self.assertEqual(result.migrations_applied, [16, 17, 18])
-            self.assertEqual(result.schema_version, 18)
+            self.assertEqual(result.migrations_applied, [16, 17, 18, 19])
+            self.assertEqual(result.schema_version, 19)
             with closing(connect_readonly(target.db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 18)
+                self.assertEqual(current_schema_version(connection), 19)
                 self.assertEqual(
                     connection.execute(
                         """

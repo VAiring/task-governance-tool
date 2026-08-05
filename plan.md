@@ -2,8 +2,8 @@
 
 Decision baseline: v0.10.0 is the immutable published release; its exact
 identity lives in `docs/release-install.md`. The current unpublished local
-candidate is v0.12.0/schema v18/Viewer snapshot v4 with source compatibility
-v5-v18 and 21 public command leaves. This plan retains current decisions,
+candidate is v0.12.0/schema v19/Viewer snapshot v4 with source compatibility
+v5-v19 and 21 public command leaves. This plan retains current decisions,
 unfinished static contracts, and open issues only. Completed execution
 narrative is indexed as non-authoritative history, while the Task database,
 queried through the public CLI, solely owns live execution status and evidence.
@@ -174,34 +174,33 @@ outside until separately supported. The exact Task DB record owns live state.
 
 ### Current Verification Receipt Decision
 
-The current schema-v18 Verification Receipt behavior is defined by the active
-[specification](docs/specification.md) and [design](docs/design.md). Completed
+The schema-v18-origin Verification Receipt behavior retained by current schema
+v19 is defined by the active [specification](docs/specification.md) and
+[design](docs/design.md). Completed
 M21 design, activation, acceptance, and correction narrative is preserved only
 in [indexed non-authoritative history](docs/history/v0.11.0/pre-m22-completed-execution.md).
 That history supplies no current gate or implementation authority.
 
 <a id="tg-m22-1a"></a>
 
-### Current Schema-v18 Evidence Capture And Verification Admission Decision
+### Current Schema-v19 Evidence Bundle And JSON Decision
 
-The v0.12.0 candidate includes the accepted TG-M22.2 foundation and activates
-TG-M21.5: immutable current-authority snapshots, exact whole-field criteria,
-capture-version-1 target bindings and artifact manifests, closed Evidence
-References, tool-owned Verification subjects, the Review provenance
-v1/v0/null union, and 1,000-character public Task verification admission.
-Capture-version-zero targets remain read-only legacy lineage and reject new
-evidence sources until explicit retargeting. The durable/read and two explicit
-public Task ingress verification limits are 1,000. Viewer snapshot v4
-validates and discards the new relations. No Bundle, Evidence JSON, Analyzer,
-Runner, new public leaf, normal-loop call, network action, or target mutation
-is activated.
+The v0.12.0 candidate retains the accepted TG-M22.2 capture foundation and
+TG-M21.5 admission boundary and activates TG-M22.3: schema-v19 immutable
+native completion Bundles, criterion links and Finding snapshots, plus the
+fixed one-way Evidence JSON v1 projection. Pre-v19 cycles remain index-only as
+`legacy_unknown`; SQLite remains canonical. Setup repairs the projection,
+doctor observes it read-only, and post-commit maintenance runs Evidence,
+Viewer, then backup. Viewer snapshot v4 accepts v5-v19 but adds no Evidence UI.
+No Analyzer, Runner, public leaf, normal-loop call, network action, or target
+mutation is activated.
 
-### Current TG-M21.5 And Conditional Later Sequences
+### Current TG-M22.3 And Conditional Later Sequences
 
-TG-M21.5 product behavior remains owned by the active specification and its
+TG-M22.3 product behavior remains owned by the active specification and its
 implementation structure by the active design. Its exact execution and
-acceptance detail, the accepted TG-M22.2 predecessor, and the remaining
-inactive TG-M22.3/TG-M22.4 purpose, order, dependencies, permissions, and
+acceptance detail, the accepted TG-M22.2/TG-M21.5 predecessors, and the
+remaining inactive TG-M22.4 purpose, order, dependencies, permissions, and
 gates are owned at the stable
 [TG-M22 sequence anchor](docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence).
 The exact approved-but-inactive M23 sequence is owned by the

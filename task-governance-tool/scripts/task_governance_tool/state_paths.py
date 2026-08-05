@@ -10,6 +10,7 @@ from __future__ import annotations
 import errno
 import hashlib
 import os
+import re
 import stat
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -19,6 +20,42 @@ from typing import Iterable
 
 STATE_PATH_FAILURE_MESSAGE = "project state could not be changed safely"
 _COPY_CHUNK_BYTES = 1024 * 1024
+
+EVIDENCE_DIRECTORY_NAME = "evidence"
+EVIDENCE_INDEX_FILENAME = "index.json"
+EVIDENCE_BUNDLES_DIRECTORY_NAME = "bundles"
+EVIDENCE_LOCK_FILENAME = "taskgov-evidence.lock"
+EVIDENCE_INDEX_MAX_BYTES = 67_108_864
+EVIDENCE_BUNDLE_MAX_BYTES = 16_777_216
+EVIDENCE_MAX_BUNDLE_FILES = 100_000
+_EVIDENCE_BUNDLE_FILENAME_PATTERN = re.compile(
+    r"^tg_completion_evidence_bundle_[0-9a-f]{16}\.json$"
+)
+_EVIDENCE_INDEX_TEMP_FILENAME_PATTERN = re.compile(
+    r"^\.taskgov-evidence-index-[a-z0-9_]{8}\.tmp$"
+)
+_EVIDENCE_BUNDLE_TEMP_FILENAME_PATTERN = re.compile(
+    r"^\.taskgov-evidence-bundle-[a-z0-9_]{8}\.tmp$"
+)
+
+
+def evidence_relative_file_kind(relative_name: str) -> str | None:
+    """Classify one exact POSIX name in the resolver-owned Evidence tree."""
+
+    if relative_name == EVIDENCE_INDEX_FILENAME:
+        return "index"
+    if relative_name == EVIDENCE_LOCK_FILENAME:
+        return "lock"
+    if _EVIDENCE_INDEX_TEMP_FILENAME_PATTERN.fullmatch(relative_name):
+        return "index_temporary"
+    bundle_prefix = f"{EVIDENCE_BUNDLES_DIRECTORY_NAME}/"
+    if relative_name.startswith(bundle_prefix):
+        basename = relative_name.removeprefix(bundle_prefix)
+        if _EVIDENCE_BUNDLE_FILENAME_PATTERN.fullmatch(basename):
+            return "bundle"
+        if _EVIDENCE_BUNDLE_TEMP_FILENAME_PATTERN.fullmatch(basename):
+            return "bundle_temporary"
+    return None
 
 
 @dataclass

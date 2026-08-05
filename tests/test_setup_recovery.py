@@ -41,6 +41,7 @@ from task_governance_tool.storage import DatabaseTarget, StorageError
 
 RECOVERY_WRITES = [
     "database_restore",
+    "evidence_projection_publish",
     "viewer_publish",
 ]
 RECOVERY_MIGRATION_WRITES = [
@@ -48,6 +49,14 @@ RECOVERY_MIGRATION_WRITES = [
     "migration_backup",
     "database_migrate",
     "maintenance_configure",
+    "evidence_projection_publish",
+    "viewer_publish",
+]
+CONFIGURED_RECOVERY_MIGRATION_WRITES = [
+    "database_restore",
+    "migration_backup",
+    "database_migrate",
+    "evidence_projection_publish",
     "viewer_publish",
 ]
 
@@ -155,7 +164,8 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 RECOVERY_WRITES,
             )
             self.assertEqual(preview_data["completed_writes"], [])
-            self.assertEqual(preview_data["schema_from"], 18)
+            self.assertEqual(preview_data["schema_from"], 19)
+            self.assertEqual(preview_data["evidence_status"], "not_present")
             self.assertFalse(preview_data["maintenance_enabled"])
             self.assertEqual(
                 {
@@ -180,6 +190,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 restored_data["completed_writes"],
                 RECOVERY_WRITES,
             )
+            self.assertEqual(restored_data["evidence_status"], "published")
             self.assertTrue(restored_data["maintenance_enabled"])
             self.assertEqual(backup_path.read_bytes(), before_backup)
             with closing(sqlite3.connect(install.db_path)) as connection:
@@ -352,10 +363,11 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     "planned_writes": [],
                     "completed_writes": [],
                     "schema_from": None,
-                    "schema_to": 18,
+                    "schema_to": 19,
                     "maintenance_enabled": None,
                     "backup_interval_minutes": None,
                     "backup_generations": None,
+                    "evidence_status": None,
                     "viewer_status": None,
                     "relocation": {
                         "required": False,
@@ -443,7 +455,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    18,
+                    19,
                 )
                 self.assertEqual(
                     (
@@ -651,12 +663,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             11: create_v11_target,
             12: create_v12_target,
         }
-        expected_writes = [
-            "database_restore",
-            "migration_backup",
-            "database_migrate",
-            "viewer_publish",
-        ]
+        expected_writes = CONFIGURED_RECOVERY_MIGRATION_WRITES
         for version, create_fixture in fixture_factories.items():
             with self.subTest(version=version), tempfile.TemporaryDirectory() as tmp:
                 install = make_physical_install(Path(tmp))
@@ -683,12 +690,13 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 self.assertTrue(data["maintenance_enabled"])
                 self.assertEqual(data["backup_interval_minutes"], 45)
                 self.assertEqual(data["backup_generations"], 2)
+                self.assertEqual(data["evidence_status"], "published")
                 with closing(sqlite3.connect(install.db_path)) as connection:
                     self.assertEqual(
                         connection.execute(
                             "SELECT MAX(version) FROM schema_migrations"
                         ).fetchone()[0],
-                        18,
+                        19,
                     )
                     self.assertEqual(
                         connection.execute(

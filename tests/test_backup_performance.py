@@ -20,6 +20,9 @@ from task_governance_tool import backup as backup_service
 from task_governance_tool import maintenance as maintenance_service
 from task_governance_tool import viewer_maintenance as viewer_maintenance_service
 from task_governance_tool.backup import discover_managed_backup_metadata
+from task_governance_tool.evidence_projection import (
+    publish_setup_evidence_projection,
+)
 from task_governance_tool.storage import (
     capture_or_reuse_current_authority_snapshot_locked,
     configure_project_maintenance,
@@ -192,6 +195,13 @@ def seed_fixture(
         validate_evidence_ledger_storage(connection)
         connection.commit()
 
+    evidence = publish_setup_evidence_projection(
+        target,
+        observed_at=timestamp(0),
+    )
+    if evidence.code != "succeeded":
+        raise AssertionError("performance Evidence fixture could not be seeded")
+
     target_task_id = next(
         str(item["task_id"])
         for item in task_specs
@@ -203,6 +213,10 @@ def seed_fixture(
 def copied_target(repo: Path, source_db: Path, destination: Path):
     destination.parent.mkdir(parents=True)
     shutil.copy2(source_db, destination)
+    source_evidence = source_db.parent / "evidence"
+    if not source_evidence.is_dir():
+        raise AssertionError("performance Evidence fixture is missing")
+    shutil.copytree(source_evidence, destination.parent / "evidence")
     return resolve_database_target(
         repo=repo,
         db=destination,

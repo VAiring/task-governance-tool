@@ -368,8 +368,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
             ):
                 self.assertIn(phrase, normalized)
         self.assertIn("schema v18", contracts.lower())
-        self.assertIn("source schemas 5 through 18", readme.lower())
-        self.assertIn("source schemas v5-v18", release_note.lower())
+        self.assertIn("source schemas 5 through 19", readme.lower())
+        self.assertIn("source schemas v5-v19", release_note.lower())
         self.assertEqual(manifest["package_version"], "0.12.0")
         documented_uuid = re.search(
             r'"project_id": "(tg_project_[0-9a-f]{32})"',
@@ -761,7 +761,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
             initialized = run("setup")
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
-            self.assertEqual(json.loads(initialized.stdout)["data"]["schema_to"], 18)
+            self.assertEqual(
+                json.loads(initialized.stdout)["data"]["schema_to"],
+                SCHEMA_VERSION,
+            )
             added = run(
                 "task",
                 "add",
@@ -1006,7 +1009,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                     canonical_test_path(install.skill_root / "state")
                 )
             )
-            self.assertEqual(payload["data"]["schema_to"], 18)
+            self.assertEqual(payload["data"]["schema_to"], SCHEMA_VERSION)
 
             from_skill_root = install.run(
                 "doctor",
@@ -1288,6 +1291,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             tracked,
         )
         for module in (
+            "evidence_projection.py",
             "relocation.py",
             "state_paths.py",
             "state_resolver.py",
@@ -1308,6 +1312,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         )
         self.assertIn("references/reconciliation.md", manifest["core_files"])
         for module in (
+            "evidence_projection.py",
             "relocation.py",
             "state_paths.py",
             "state_resolver.py",

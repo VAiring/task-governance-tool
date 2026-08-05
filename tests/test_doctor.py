@@ -37,6 +37,7 @@ from task_governance_tool.state_resolver import (
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget,
+    EvidenceProjectionState,
     ProjectMaintenanceState,
     ViewerMaintenanceState,
 )
@@ -66,7 +67,7 @@ HANDOFF_KEYS = {
     "adapter_enabled",
     "delivery_due",
 }
-MAINTENANCE_KEYS = {"code", "opted_in", "backup", "viewer"}
+MAINTENANCE_KEYS = {"code", "opted_in", "backup", "viewer", "evidence"}
 BACKUP_KEYS = {
     "code",
     "due",
@@ -80,6 +81,14 @@ VIEWER_KEYS = {
     "due",
     "source_generation",
     "rendered_generation",
+    "last_success_at",
+    "last_outcome",
+}
+EVIDENCE_KEYS = {
+    "code",
+    "due",
+    "source_generation",
+    "published_generation",
     "last_success_at",
     "last_outcome",
 }
@@ -119,6 +128,22 @@ def viewer_state(
     )
 
 
+def evidence_state(
+    source: int,
+    published: int | None,
+    outcome: str | None,
+) -> EvidenceProjectionState:
+    return EvidenceProjectionState(
+        project_id="proj_doctor",
+        source_generation=source,
+        published_generation=published,
+        index_digest=("sha256:" + "1" * 64 if published is not None else None),
+        last_success_at=FIXED_TIME if published is not None else None,
+        last_outcome_code=outcome,
+        last_outcome_at=FIXED_TIME if outcome is not None else None,
+    )
+
+
 class DoctorCommandTests(unittest.TestCase):
     def assert_doctor_shape(self, payload: dict) -> dict:
         self.assertEqual(payload["command"], "doctor")
@@ -146,6 +171,7 @@ class DoctorCommandTests(unittest.TestCase):
         viewer = doctor_service._maintenance_component(
             maintenance_state(enabled=False),
             viewer_state(9, 8, "failed"),
+            evidence_state(9, 8, "failed"),
             observed_at="2026-01-01T00:01:00Z",
         )["viewer"]
 
@@ -187,6 +213,7 @@ class DoctorCommandTests(unittest.TestCase):
                 viewer = doctor_service._maintenance_component(
                     maintenance,
                     stored_viewer,
+                    evidence_state(source, rendered, outcome),
                     observed_at="2026-01-01T00:01:00Z",
                 )["viewer"]
 
@@ -394,6 +421,17 @@ class DoctorCommandTests(unittest.TestCase):
             self.assertIsNotNone(maintenance["viewer"]["last_success_at"])
             self.assertIsNotNone(
                 maintenance["viewer"]["last_outcome"]["occurred_at"]
+            )
+            self.assertEqual(set(maintenance["evidence"]), EVIDENCE_KEYS)
+            self.assertEqual(maintenance["evidence"]["code"], "current")
+            self.assertFalse(maintenance["evidence"]["due"])
+            self.assertEqual(
+                maintenance["evidence"]["source_generation"],
+                maintenance["evidence"]["published_generation"],
+            )
+            self.assertEqual(
+                maintenance["evidence"]["last_outcome"]["code"],
+                "succeeded",
             )
             self.assertEqual(file_snapshot(install.project_root), before)
 

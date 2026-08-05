@@ -3,13 +3,14 @@
 Use this reference when exact public commands, arguments, JSON fields, bounds,
 or error behavior matter.
 
-The current v0.12.0 package uses task schema v18 and offline snapshot v4 with
-source schemas v5 through v18. The published v0.10.0 release remains the
+The current v0.12.0 package uses task schema v19 and offline snapshot v4 with
+source schemas v5 through v19. The published v0.10.0 release remains the
 immutable schema-v16 predecessor.
 
-Schema v18 publishes no Evidence Bundle or Evidence JSON and adds no Runner,
-Analyzer, Viewer Evidence surface, network/model invocation, public leaf, or
-normal-loop call. Those later capabilities remain inactive.
+Schema v19 seals native completion Bundles and maintains fixed Evidence JSON
+v1 automatically. It adds no export/projection command, Runner, Analyzer,
+Viewer Evidence surface, network/model invocation, public leaf, or normal-loop
+call.
 
 ## Contents
 
@@ -139,7 +140,7 @@ subprocess calls when the Effort Advisory is off and eleven when the mandatory
 ## `setup`
 
 `setup` is the sole explicit initializer, migrator, one-way continuity opt-in,
-and canonical offline-projection repair action:
+and canonical Evidence/Viewer projection repair action:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
@@ -215,18 +216,21 @@ Expired or stale context requires a fresh preview and fresh user approval.
   "planned_writes": [
     "database_initialize",
     "maintenance_configure",
+    "evidence_projection_publish",
     "viewer_publish"
   ],
   "completed_writes": [
     "database_initialize",
     "maintenance_configure",
+    "evidence_projection_publish",
     "viewer_publish"
   ],
   "schema_from": null,
-  "schema_to": 18,
+  "schema_to": 19,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
+  "evidence_status": "published",
   "viewer_status": "published",
   "relocation": {
     "required": false,
@@ -243,9 +247,12 @@ Successful `status` is `setup_preview`, `relocation_preview`,
 `setup_complete`, or `already_setup`. Write-list values are limited to
 `database_restore`, `legacy_state_publish`, `database_initialize`,
 `migration_backup`, `database_migrate`, `maintenance_configure`,
-`project_binding_update`, `viewer_publish`, and `legacy_state_cleanup` in
+`project_binding_update`, `evidence_projection_publish`, `viewer_publish`, and `legacy_state_cleanup` in
 execution order. `viewer_status` is `not_present`, `current`, `published`, or
 `repair_required`.
+
+`evidence_status` uses the same four values. Evidence publication follows
+maintenance/binding and precedes Viewer; preview lists it without writing.
 
 `relocation` is always present with exactly the six shown keys. `required`
 is boolean. `source_layout` is null, `legacy_projects_v1`, or
@@ -258,7 +265,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=18`. A later-stage failure reports only
+null observed values except `schema_to=19`. A later-stage failure reports only
 the durable ordered prefix.
 
 Setup is noninteractive and idempotent. It does not create a second
@@ -311,8 +318,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 18,
-      "required_schema_version": 18
+      "schema_version": 19,
+      "required_schema_version": 19
     },
     "task_summary": {
       "code": "ready",
@@ -343,6 +350,17 @@ A ready result has this structure:
           "occurred_at": "2026-07-27T00:00:00Z"
         }
       },
+      "evidence": {
+        "code": "current",
+        "due": false,
+        "source_generation": 1,
+        "published_generation": 1,
+        "last_success_at": "2026-07-27T00:00:00Z",
+        "last_outcome": {
+          "code": "succeeded",
+          "occurred_at": "2026-07-27T00:00:00Z"
+        }
+      },
       "viewer": {
         "code": "current",
         "due": false,
@@ -363,6 +381,9 @@ Unavailable project-backed components are exactly `{"code":"unavailable"}`.
 Not-yet-known maintenance values are `null`, not omitted. Maintenance outcome
 codes are `none`, `succeeded`, `deferred`, or `failed`; readable maintenance
 states remain successful advisory data and never create a stop.
+The Evidence object has exactly `code`, `due`, `source_generation`,
+`published_generation`, `last_success_at`, and `last_outcome`; doctor never
+opens or repairs its JSON files.
 
 Doctor validates the complete stored Task batch before returning Task-derived
 counts. A malformed, wrong-storage-class, privacy-rejected, over-capacity, or
@@ -388,7 +409,7 @@ dependent-state use, or use as a write basis. Exact SQLite storage classes,
 privacy/capacity, enums, and Task cross-field matrices are checked without
 coercion or repair. Bounded list/current/next commands validate only their
 selected complete-row batch and add no unrelated whole-table rescan.
-For source schemas v8-v18, the same boundary performs one bulk relationship
+For source schemas v8-v19, the same boundary performs one bulk relationship
 read for only those selected Task IDs. Revision zero requires no Contract row;
 a positive `current_contract_revision` must exist as the latest exact INTEGER
 revision owned by the same project and Task. Dangling, foreign, nonlatest,
@@ -401,7 +422,7 @@ faults use the same fixed error; genuine busy/locked state remains
 `database_busy`. Doctor, Viewer, setup, and recovery validate every Task row,
 including stored project ownership, as one whole batch.
 
-Any current schema-v18 stored Task fault returns exit 2, code
+Any current schema-v19 stored Task fault returns exit 2, code
 `project_state_unreadable`, and message
 `project state could not be read safely`. The command keeps its existing empty
 data shape and emits no warning, partial Task projection, rejected content, or
@@ -433,7 +454,7 @@ Initial `done` returns `initial_done_forbidden`; specifically,
 Sequential adds preserve the same predecessor rule used for selection and
 transitions.
 
-At schema v18, explicit public `task add --verification` and
+At schema v18 or later, explicit public `task add --verification` and
 `task edit --verification` values are each capped at 1,000 characters, with the
 existing privacy check before length. Durable/read and internal-derived paths
 accept and preserve exact valid verification text through 1,000 characters.
@@ -833,9 +854,11 @@ Result: <result>  Coverage: <scope_coverage>
 Source: <kind>/generation <generation>
 ```
 
-The write is backup-eligible but Viewer-ineligible. `--read-only` and every
-failed call perform no business or maintenance write. There is no Receipt
-list, show, import, export, runner, or Viewer panel.
+The write is backup-eligible but does not advance the Evidence or Viewer
+source generation. Because every changed mutation may retry already-due
+maintenance, a due Evidence projection may still publish before the due
+backup. `--read-only` and every failed call perform no business or maintenance
+write. There is no Receipt list, show, import, export, runner, or Viewer panel.
 
 ## Local Handoff Commands
 
@@ -1090,10 +1113,18 @@ new target and obtain fresh qualifying receipts.
 
 Successful `setup` enables bounded local continuity once. There is no disable
 surface. After eligible successful business writes, the business transaction
-commits and closes before same-process projection refresh and any due managed
-copy. Projection refresh precedes the due-copy attempt. Work is fail-fast,
-bounded to at most two renders and one copy attempt, and taskgov never uses a
+commits and closes before same-process Evidence projection, Viewer refresh,
+and any due managed copy, in that order. Every changed mutation may retry due
+Evidence work, while only completion-cycle insertion advances its source
+generation. Each projection has at most one follow-up and backup one attempt; taskgov never uses a
 daemon, thread, timer, detached process, queue, scheduler, service, or network.
+
+Evidence JSON paths are fixed at `state/current/evidence/index.json` and
+`state/current/evidence/bundles/<completion-evidence-bundle-id>.json`, with the lock at
+`state/current/evidence/taskgov-evidence.lock`; callers cannot select them.
+Native entries reference one immutable Bundle, pre-v19 cycles are index-only
+`legacy_unknown`, the index is published last, SQLite remains canonical, and
+JSON is never imported or displayed by the Viewer.
 
 The optional physical `config/viewer.json` is browser-presentation policy, not
 a CLI or normal-loop choice. Taskgov never creates it; absence means the
@@ -1118,13 +1149,13 @@ command, or normal-loop decision is added.
 
 These operations add no Skill command or LLM judgment. Their artifacts and
 paths are absent from public command output. Snapshot v4 reads source schemas
-5 through 18. Sources 5-14 receive an empty, legacy-incomplete completion
-history; sources 15-18 use stored cycles. Every Task receives the same bounded
+5 through 19. Sources 5-14 receive an empty, legacy-incomplete completion
+history; sources 15-19 use stored cycles. Every Task receives the same bounded
 five-key projection as `task show` without exposing internal event links,
 maintenance data, or checkpoint content.
 
-For source v18, Viewer capture validates Review Receipt provenance and
-verification-subject/capture bindings but deliberately discards those fields
+For sources v18+, Viewer capture validates Review Receipt provenance and
+verification-subject/capture bindings; v19 also validates the Bundle discriminator. It discards those fields
 from snapshot v4. It adds no provenance UI, filter, panel, snapshot key, or
 normal-loop behavior.
 
@@ -1139,6 +1170,8 @@ setup's later Viewer stage remains `setup_incomplete`.
 If post-commit maintenance cannot complete, the primary business mutation
 remains successful and only a bounded warning is appended:
 
+- `evidence_projection_deferred`: `Evidence projection refresh was deferred; task result is unchanged`
+- `evidence_projection_failed`: `Evidence projection refresh did not complete; task result is unchanged`
 - `viewer_refresh_deferred`: `Viewer refresh was deferred; task result is unchanged`
 - `viewer_refresh_failed`: `Viewer refresh did not complete; task result is unchanged`
 - `backup_deferred`: `managed backup was deferred; task result is unchanged`
@@ -1215,6 +1248,8 @@ Important task/review/handoff errors include:
   `verification_receipt_required`, `verification_receipt_blocking`,
   `verification_receipt_already_recorded`, `invalid_verification_evidence`
 - `completion_evidence_conflict`,
+  `evidence_basis_stale`, `evidence_ledger_inconsistent`,
+  `evidence_bundle_too_large`,
   `external_revision_approval_required`,
   `git_commit_not_found_or_ambiguous`
 - `review_target_required`, `review_target_mismatch`,

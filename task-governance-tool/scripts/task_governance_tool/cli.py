@@ -49,6 +49,7 @@ from task_governance_tool.handoffs import (
 )
 from task_governance_tool.maintenance import (
     BACKUP_WARNING_MESSAGES,
+    EVIDENCE_WARNING_MESSAGES,
     MutationOutcome,
     VIEWER_WARNING_MESSAGES,
     run_post_commit_maintenance,
@@ -3311,7 +3312,12 @@ def apply_post_commit_maintenance(
             outcome,
         )
     except Exception:
-        warnings = []
+        warnings = [
+            {
+                "code": "evidence_projection_failed",
+                "message": EVIDENCE_WARNING_MESSAGES["failed"],
+            }
+        ]
         if outcome.viewer_relevant:
             warnings.append(
                 {

@@ -18,6 +18,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+from task_governance_tool.state_paths import (
+    EVIDENCE_BUNDLE_MAX_BYTES,
+    EVIDENCE_BUNDLES_DIRECTORY_NAME,
+    EVIDENCE_DIRECTORY_NAME,
+    EVIDENCE_INDEX_FILENAME,
+    EVIDENCE_INDEX_MAX_BYTES,
+    EVIDENCE_LOCK_FILENAME,
+    EVIDENCE_MAX_BUNDLE_FILES,
+    evidence_relative_file_kind,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget,
@@ -91,6 +101,10 @@ class CanonicalStatePaths:
     database: Path = field(repr=False)
     backups: Path = field(repr=False)
     viewer: Path = field(repr=False)
+    evidence_root: Path = field(repr=False)
+    evidence_index: Path = field(repr=False)
+    evidence_bundles: Path = field(repr=False)
+    evidence_lock: Path = field(repr=False)
     legacy_projects: Path = field(repr=False)
 
 
@@ -227,6 +241,7 @@ def canonical_state_paths(skill_root: Path) -> CanonicalStatePaths:
     canonical_skill = Path(skill_root).expanduser().resolve(strict=False)
     state_root = canonical_skill / "state"
     fixed_root = state_root / "current"
+    evidence_root = fixed_root / EVIDENCE_DIRECTORY_NAME
     return CanonicalStatePaths(
         skill_root=canonical_skill,
         state_root=state_root,
@@ -235,6 +250,10 @@ def canonical_state_paths(skill_root: Path) -> CanonicalStatePaths:
         database=fixed_root / "taskgov.sqlite",
         backups=fixed_root / "backups",
         viewer=fixed_root / "viewer" / "task-viewer.html",
+        evidence_root=evidence_root,
+        evidence_index=evidence_root / EVIDENCE_INDEX_FILENAME,
+        evidence_bundles=evidence_root / EVIDENCE_BUNDLES_DIRECTORY_NAME,
+        evidence_lock=evidence_root / EVIDENCE_LOCK_FILENAME,
         legacy_projects=state_root / "projects",
     )
 
@@ -289,6 +308,7 @@ def resolve_project_state(
         current_root,
         include_legacy=True,
         validate_fixed_artifacts=False,
+        repair_evidence_artifacts=False,
         include_doctor_state=include_doctor_state,
         retain_read_connection=retain_read_connection,
     )
@@ -308,6 +328,7 @@ def resolve_setup_project_state(
         current_root,
         include_legacy=True,
         validate_fixed_artifacts=True,
+        repair_evidence_artifacts=True,
         include_doctor_state=False,
         retain_read_connection=False,
     )
@@ -322,6 +343,7 @@ def resolve_staged_project_state(
 
     fixed_root = Path(stage_root).resolve(strict=False)
     state_root = fixed_root.parent
+    evidence_root = fixed_root / EVIDENCE_DIRECTORY_NAME
     paths = CanonicalStatePaths(
         skill_root=state_root.parent,
         state_root=state_root,
@@ -330,6 +352,10 @@ def resolve_staged_project_state(
         database=fixed_root / "taskgov.sqlite",
         backups=fixed_root / "backups",
         viewer=fixed_root / "viewer" / "task-viewer.html",
+        evidence_root=evidence_root,
+        evidence_index=evidence_root / EVIDENCE_INDEX_FILENAME,
+        evidence_bundles=evidence_root / EVIDENCE_BUNDLES_DIRECTORY_NAME,
+        evidence_lock=evidence_root / EVIDENCE_LOCK_FILENAME,
         legacy_projects=state_root / "projects",
     )
     return _resolve_with_paths(
@@ -337,6 +363,7 @@ def resolve_staged_project_state(
         observe_current_root(repo),
         include_legacy=False,
         validate_fixed_artifacts=True,
+        repair_evidence_artifacts=False,
         include_doctor_state=False,
         retain_read_connection=False,
     )
@@ -348,6 +375,7 @@ def _resolve_with_paths(
     *,
     include_legacy: bool,
     validate_fixed_artifacts: bool,
+    repair_evidence_artifacts: bool,
     include_doctor_state: bool,
     retain_read_connection: bool,
 ) -> ProjectStateResolution:
@@ -358,6 +386,7 @@ def _resolve_with_paths(
             paths,
             current_root,
             validate_artifacts=validate_fixed_artifacts,
+            repair_evidence_artifacts=repair_evidence_artifacts,
             include_doctor_state=include_doctor_state,
             retain_read_connection=retain_read_connection,
         )
@@ -483,6 +512,7 @@ def _resolve_fixed(
     current_root: CurrentRootObservation,
     *,
     validate_artifacts: bool,
+    repair_evidence_artifacts: bool,
     include_doctor_state: bool,
     retain_read_connection: bool,
 ) -> ProjectStateResolution | None:
@@ -513,6 +543,15 @@ def _resolve_fixed(
             )
         backups, recognized = _inspect_backup_directory(paths.backups)
         recognized.extend(_inspect_viewer_directory(paths.viewer.parent))
+        _inspect_evidence_directory(
+            paths.evidence_root,
+            owner_root=paths.fixed_root,
+            database_stamps=(
+                database.stamp,
+                *(item._database.stamp for item in backups),
+            ),
+            allow_oversized_repair=repair_evidence_artifacts,
+        )
         recognized.extend(_inspect_root_owned_entries(paths.fixed_root))
         source_size = database.stamp.size
         recognized.extend(
@@ -539,6 +578,12 @@ def _resolve_fixed(
     validate_operational_journal_state(paths.database)
     backups, recognized = _inspect_backup_directory(paths.backups)
     recognized.extend(_inspect_viewer_directory(paths.viewer.parent))
+    _inspect_evidence_directory(
+        paths.evidence_root,
+        owner_root=paths.fixed_root,
+        database_stamps=tuple(item._database.stamp for item in backups),
+        allow_oversized_repair=repair_evidence_artifacts,
+    )
     root_owned = _inspect_root_owned_entries(paths.fixed_root)
     recognized.extend(root_owned)
     if backups:
@@ -685,6 +730,14 @@ def _resolve_legacy(
         database = backups[-1]._database
     else:
         raise _ResolverFailure("project_state_unreadable")
+    evidence_recognized = _inspect_evidence_directory(
+        candidate / EVIDENCE_DIRECTORY_NAME,
+        owner_root=candidate,
+        database_stamps=(
+            database.stamp,
+            *(item._database.stamp for item in backups),
+        ),
+    )
     source_size = database.stamp.size
     root_owned = _inspect_root_owned_entries(candidate)
     if not primary_present and "taskgov.sqlite-journal" in root_owned:
@@ -703,6 +756,7 @@ def _resolve_legacy(
         recognized,
         source_size=source_size,
     )
+    recognized.extend(evidence_recognized)
     recognized.extend(
         _inspect_single_temporary(
             backups_path,
@@ -847,6 +901,20 @@ def _database_target(
         skill_root = paths.skill_root
         backups_path = paths.backups
         viewer_path = paths.viewer
+        evidence_root = paths.evidence_root
+        evidence_index = paths.evidence_index
+        evidence_bundles = paths.evidence_bundles
+        evidence_lock = paths.evidence_lock
+    else:
+        artifact_root = (
+            backups_path.parent
+            if backups_path is not None
+            else database.parent
+        )
+        evidence_root = artifact_root / EVIDENCE_DIRECTORY_NAME
+        evidence_index = evidence_root / EVIDENCE_INDEX_FILENAME
+        evidence_bundles = evidence_root / EVIDENCE_BUNDLES_DIRECTORY_NAME
+        evidence_lock = evidence_root / EVIDENCE_LOCK_FILENAME
     return DatabaseTarget(
         project=ProjectIdentity(
             project_id=stored.project_id,
@@ -855,6 +923,10 @@ def _database_target(
             display_name=current_root.display_name,
         ),
         db_path=database,
+        evidence_root=evidence_root,
+        evidence_index=evidence_index,
+        evidence_bundles=evidence_bundles,
+        evidence_lock=evidence_lock,
         explicit_db=explicit_db,
         binding_path_hash=stored.canonical_path_hash,
         binding_generation=stored.binding_generation,
@@ -1275,6 +1347,86 @@ def _inspect_viewer_directory(directory: Path) -> list[str]:
         elif entry.name == "taskgov-viewer.lock":
             _stamp(entry)
             recognized.append("viewer/taskgov-viewer.lock")
+    return recognized
+
+
+def _inspect_evidence_directory(
+    directory: Path,
+    *,
+    owner_root: Path,
+    database_stamps: tuple[_FileStamp, ...],
+    allow_oversized_repair: bool = False,
+) -> list[str]:
+    """Validate the closed physical tree owned by Evidence projection."""
+
+    if not _validate_optional_directory(directory):
+        return []
+    _require_contained(directory, owner_root)
+    try:
+        root_entries = sorted(directory.iterdir(), key=lambda item: item.name)
+    except OSError as exc:
+        raise _ResolverFailure("project_state_unreadable") from exc
+
+    file_paths: list[Path] = []
+    for entry in root_entries:
+        if entry.name == EVIDENCE_BUNDLES_DIRECTORY_NAME:
+            if not _validate_optional_directory(entry):
+                raise _ResolverFailure("project_state_unreadable")
+            _require_contained(entry, directory)
+            try:
+                file_paths.extend(
+                    sorted(entry.iterdir(), key=lambda item: item.name)
+                )
+            except OSError as exc:
+                raise _ResolverFailure("project_state_unreadable") from exc
+            continue
+        file_paths.append(entry)
+
+    if len(file_paths) > EVIDENCE_MAX_BUNDLE_FILES + 4:
+        raise _ResolverFailure("project_state_unreadable")
+
+    bundle_count = 0
+    temporary_kinds: set[str] = set()
+    database_objects = {
+        (item.device, item.inode)
+        for item in database_stamps
+    }
+    recognized: list[str] = []
+    for path in file_paths:
+        try:
+            relative_name = path.relative_to(directory).as_posix()
+        except ValueError as exc:
+            raise _ResolverFailure("project_state_unreadable") from exc
+        kind = evidence_relative_file_kind(relative_name)
+        if kind is None:
+            raise _ResolverFailure("project_state_unreadable")
+        if kind == "bundle":
+            bundle_count += 1
+            if bundle_count > EVIDENCE_MAX_BUNDLE_FILES:
+                raise _ResolverFailure("project_state_unreadable")
+        elif kind in {"index_temporary", "bundle_temporary"}:
+            if kind in temporary_kinds:
+                raise _ResolverFailure("project_state_unreadable")
+            temporary_kinds.add(kind)
+
+        _require_contained(path, directory)
+        stamp = _stamp(path)
+        if (stamp.device, stamp.inode) in database_objects:
+            raise _ResolverFailure("project_state_unreadable")
+        maximum = (
+            1
+            if kind == "lock"
+            else EVIDENCE_INDEX_MAX_BYTES
+            if kind in {"index", "index_temporary"}
+            else EVIDENCE_BUNDLE_MAX_BYTES
+        )
+        if stamp.size > maximum and not (
+            allow_oversized_repair and kind in {"index", "bundle"}
+        ):
+            raise _ResolverFailure("project_state_unreadable")
+        recognized.append(
+            f"{EVIDENCE_DIRECTORY_NAME}/{relative_name}"
+        )
     return recognized
 
 

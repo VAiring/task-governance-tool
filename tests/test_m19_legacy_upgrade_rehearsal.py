@@ -31,6 +31,7 @@ LEGACY_SETUP_WRITES = [
     "migration_backup",
     "database_migrate",
     "maintenance_configure",
+    "evidence_projection_publish",
     "viewer_publish",
     "legacy_state_cleanup",
 ]
@@ -344,9 +345,10 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                 "--read-only", "--json",
             )
             self.assertEqual(preview["data"]["schema_from"], 2)
-            self.assertEqual(preview["data"]["schema_to"], 18)
+            self.assertEqual(preview["data"]["schema_to"], 19)
             self.assertEqual(preview["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(preview["data"]["completed_writes"], [])
+            self.assertEqual(preview["data"]["evidence_status"], "not_present")
             self.assertEqual(
                 tree_snapshot(legacy_skill / "state"),
                 overlay_state_snapshot,
@@ -358,6 +360,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertEqual(failed["errors"][0]["code"], "setup_migration_failed")
             self.assertEqual(failed["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(failed["data"]["completed_writes"], [])
+            self.assertEqual(failed["data"]["evidence_status"], "not_present")
             failed_state = tree_snapshot(legacy_skill / "state")
             self.assertEqual(
                 without_state_lock(failed_state),
@@ -380,9 +383,10 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                 "--repo", str(project), "--json",
             )
             self.assertEqual(upgraded["data"]["schema_from"], 2)
-            self.assertEqual(upgraded["data"]["schema_to"], 18)
+            self.assertEqual(upgraded["data"]["schema_to"], 19)
             self.assertEqual(upgraded["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(upgraded["data"]["completed_writes"], LEGACY_SETUP_WRITES)
+            self.assertEqual(upgraded["data"]["evidence_status"], "published")
 
             current_db = legacy_skill / "state" / "current" / "taskgov.sqlite"
             viewer = (
@@ -391,7 +395,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertTrue(current_db.is_file())
             self.assertTrue(viewer.is_file())
             self.assertFalse(legacy_db.exists())
-            self.assertEqual(sqlite_version(current_db), 18)
+            self.assertEqual(sqlite_version(current_db), 19)
             self.assertEqual(legacy_projection(current_db), pre_upgrade_projection)
 
             with closing(sqlite3.connect(current_db)) as connection:
@@ -471,7 +475,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             )
             self.assertEqual(
                 doctor["data"]["components"]["project_state"]["schema_version"],
-                18,
+                19,
             )
             self.assertEqual(
                 doctor["data"]["components"]["maintenance"]["viewer"]["code"],

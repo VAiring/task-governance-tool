@@ -330,7 +330,7 @@ class ProjectIdentityBindingTests(unittest.TestCase):
             migrate_to_v14(install.target)
 
             with closing(connect(install.db_path)) as connection:
-                self.assertEqual(SCHEMA_VERSION, 18)
+                self.assertEqual(SCHEMA_VERSION, 19)
                 self.assertEqual(current_schema_version(connection), 14)
                 migration = tuple(
                     connection.execute(
@@ -427,7 +427,7 @@ class ProjectIdentityBindingTests(unittest.TestCase):
             migrate_to_v14(install.target)
             self.assertEqual(logical_database_state(install.db_path), before_replay)
 
-    def test_every_v1_through_v14_source_preserves_legacy_identity_at_v18(self):
+    def test_every_v1_through_v14_source_preserves_legacy_identity_at_v19(self):
         for source_version in range(1, 15):
             with (
                 self.subTest(source_version=source_version),
@@ -450,9 +450,9 @@ class ProjectIdentityBindingTests(unittest.TestCase):
 
                 self.assertEqual(
                     result.migrations_applied,
-                    list(range(source_version + 1, 19)),
+                    list(range(source_version + 1, 20)),
                 )
-                self.assertEqual(result.schema_version, 18)
+                self.assertEqual(result.schema_version, 19)
                 self.assertEqual(
                     business_record_projection(install.db_path),
                     original_records,
@@ -470,7 +470,7 @@ class ProjectIdentityBindingTests(unittest.TestCase):
                                 "SELECT version FROM schema_migrations ORDER BY version"
                             ).fetchall()
                         ],
-                        list(range(1, 19)),
+                        list(range(1, 20)),
                     )
 
     def test_v14_migration_normalizes_only_the_bounded_display_name(self):
@@ -820,7 +820,7 @@ class ProjectIdentityBindingTests(unittest.TestCase):
             )
 
             expected_id = f"tg_project_{UUID_HEX}"
-            self.assertEqual(result.schema_version, 18)
+            self.assertEqual(result.schema_version, 19)
             self.assertEqual(result.target.project.project_id, expected_id)
             self.assertEqual(result.target.db_path, target.db_path)
             id_factory.assert_called_once_with()
@@ -1136,7 +1136,7 @@ class ProjectIdentityBindingTests(unittest.TestCase):
             ):
                 result = initialize_database(install.target)
 
-            self.assertEqual(result.schema_version, 18)
+            self.assertEqual(result.schema_version, 19)
             self.assertRegex(result.target.project.project_id, r"-[0-9a-f]{12}$")
             self.assertTrue(install.db_path.is_file())
             self.assertIn("projects", install.db_path.parts)

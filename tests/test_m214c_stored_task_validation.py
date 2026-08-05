@@ -255,7 +255,7 @@ class StoredTaskValidationTests(unittest.TestCase):
                 self.assertEqual(caught.exception.code, FIXED_CODE)
 
     def test_invalid_source_capability_fails_closed(self):
-        for version in (True, 0, 19, "18"):
+        for version in (True, 0, 20, "18"):
             with self.subTest(version=version):
                 with self.assertRaises(StorageError) as caught:
                     validate_stored_task_rows(

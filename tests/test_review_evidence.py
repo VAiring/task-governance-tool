@@ -34,6 +34,7 @@ try:
     from task_governance_tool.storage import (
         DATABASE_BUSY_MESSAGE,
         StorageError,
+        apply_completion_evidence_bundle_migration,
         apply_evidence_ledger_capture_migration,
         connect_existing,
         connect_initialized,
@@ -945,6 +946,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             ) = self._create_v17_legacy_finding_fixture(Path(temp))
             with closing(connect_existing(db)) as connection:
                 apply_evidence_ledger_capture_migration(connection)
+                apply_completion_evidence_bundle_migration(connection)
                 self.assertEqual(
                     connection.execute(
                         "SELECT review_provenance_basis_version "
@@ -1034,6 +1036,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                         raise AssertionError("foreign receipt fixture is missing")
                     with closing(connect_existing(db)) as connection:
                         apply_evidence_ledger_capture_migration(connection)
+                        apply_completion_evidence_bundle_migration(connection)
                     self._set_current_two_passes(db, repo, task_id)
 
                     alias_id = (

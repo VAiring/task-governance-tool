@@ -33,9 +33,9 @@ transfer either role.
 
 - [TG-M22 Evidence Ledger sequence](execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence)
 
-Only TG-M21.5's exact execution and acceptance detail is current. TG-M22.1A
-and TG-M22.2 are its accepted predecessors; TG-M22.3/TG-M22.4 remain
-inactive. Reading or indexing their detail does not activate them.
+Only TG-M22.3's exact execution and acceptance detail is current. TG-M22.1A,
+TG-M22.2, and TG-M21.5 are its accepted predecessors; TG-M22.4 remains
+inactive. Reading or indexing inactive detail does not activate it.
 
 ## Conditional Formal Authority
 
@@ -62,8 +62,8 @@ current gate.
 | Supported product behavior, public CLI/JSON, persistence, privacy, setup, Viewer, or current gate | Exact section in `docs/specification.md` |
 | Module ownership, storage/process boundary, migration mechanics, or test architecture | Exact section in `docs/design.md` |
 | Current decision, open issue, cross-sequence gateway, or static contract not delegated below | Exact section in `plan.md` |
-| TG-M21.5 purpose, scope, order, dependency, permission, or execution/acceptance gate | Stable `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence` route and its current detailed sections; product behavior and implementation structure remain owned above |
-| TG-M22.3/TG-M22.4, TG-M23, or TG-M24 unit detail | Exact inactive unit in the routed execution contract and ASCII anchor above |
+| TG-M22.3 purpose, scope, order, dependency, permission, or execution/acceptance gate | Stable `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence` route and its current detailed sections; product behavior and implementation structure remain owned above |
+| TG-M22.4, TG-M23, or TG-M24 unit detail | Exact inactive unit in the routed execution contract and ASCII anchor above |
 | Published artifact, install, upgrade, tag, or Release identity | `docs/release-install.md` |
 | Live status, blocker, target, evidence, review, or completion history | Public CLI and live Task Contract; no Git-document mirror |
 | Historical lineage or retired evidence | `docs/history/README.md`, only after naming the exceptional reason |
@@ -110,8 +110,8 @@ to omit a current invariant or weaken a contract.
   "mixed_execution": [{
     "path": "docs/execution-contracts/tg-m22-evidence-ledger.md",
     "route_anchor": "tg-m22-sequence",
-    "current_units": ["TG-M21.5"],
-    "inactive_units": ["TG-M22.3", "TG-M22.4"]
+    "current_units": ["TG-M22.3"],
+    "inactive_units": ["TG-M22.4"]
   }],
   "conditional": [
     "docs/execution-contracts/tg-m23-derived-evidence.md",

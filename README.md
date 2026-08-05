@@ -5,8 +5,8 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.12.0` uses SQLite schema v18 and Viewer snapshot v4 with source
-schemas 5 through 18 as the current unpublished local candidate contract. It
+Release `0.12.0` uses SQLite schema v19 and Viewer snapshot v4 with source
+schemas 5 through 19 as the current unpublished local candidate contract. It
 has not been pushed, tagged, or published. The immutable published release
 remains v0.10.0 at its recorded commit, tag, and GitHub prerelease.
 
@@ -62,7 +62,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
 
 `setup` is the only initializer and migrator. It also performs the one-way
 opt-in to project-local maintenance and publishes or repairs the canonical
-offline Viewer. It is noninteractive and idempotent. If the canonical DB is
+Evidence JSON and offline Viewer. It is noninteractive and idempotent. If the canonical DB is
 missing while a valid fixed-layout managed generation remains, setup recovers
 the newest valid same-project generation before normal migration and Viewer
 repair. It also supports one unambiguous same-binding legacy backup-only
@@ -89,9 +89,14 @@ Migrated capture-version-0 targets remain read-only lineage and require a fresh
 target before new evidence-source writes. Legacy gaps remain marked incomplete
 rather than being inferred.
 
-This candidate activates no Evidence Bundle, Evidence JSON, Runner, Analyzer,
-network/model invocation, Viewer Evidence surface, new public leaf, or new
-normal-loop call.
+Schema v19 adds immutable criterion links and Finding snapshots, seals one
+version-1 Bundle with each native completion, and maintains deterministic
+Evidence JSON at fixed `state/current/evidence/index.json` and
+`state/current/evidence/bundles/<completion-evidence-bundle-id>.json` paths,
+with its lock at `state/current/evidence/taskgov-evidence.lock`. Pre-v19 cycles remain
+index-only `legacy_unknown`. SQLite stays canonical and JSON is never imported.
+This activates no Runner, Analyzer, network/model invocation, Viewer Evidence
+surface, new public leaf, or new normal-loop call.
 
 A binding mismatch is an exceptional relocation flow, not a normal Task-loop
 step. Normal commands and `doctor` never rebind state. Run
@@ -132,9 +137,9 @@ single bounded effective-ignore preflight may inspect Git. Doctor is optional
 and is not a prerequisite for setup or normal task work.
 
 Candidate validation rehearses the isolated transition from the exact legacy
-v0.1.0/schema-v2 baseline to v0.12.0/schema v18. Paired rollback restores the
+v0.1.0/schema-v2 baseline to v0.12.0/schema v19. Paired rollback restores the
 matched pre-migration package, database, and managed artifacts together; it
-never runs legacy code against schema v18 or treats a Git checkout alone as
+never runs legacy code against schema v19 or treats a Git checkout alone as
 state rollback. The published v0.10.0/schema-v16 and unpublished
 v0.11.0/schema-v17 rehearsal records remain immutable lineage and do not
 satisfy the current candidate gate. See
@@ -292,21 +297,23 @@ minutes and 1-20 generations. Backup policy stays in SQLite and creates no
 configuration file.
 
 After opt-in, each eligible successful state mutation closes its SQLite write
-before running bounded same-process maintenance. The canonical Viewer is
-updated first, followed by at most one due backup attempt. Viewer maintenance
+before running bounded same-process maintenance. Due Evidence projection runs
+first, the canonical Viewer second when relevant, followed by at most one due backup attempt. Viewer maintenance
 renders at most twice to absorb one concurrent change. Backup and Viewer
 failures preserve the primary command result, keep maintenance due, and are
 reported only as bounded sanitized warnings.
 
 Taskgov starts no daemon, timer, background process, queue, service, browser,
-or maintenance command. The generated Viewer and managed backups remain
-projections/runtime artifacts under the ignored Skill `state/` directory.
-Viewer snapshot v4 reads source schemas 5 through 18 and includes the same
+or maintenance command. Generated Evidence JSON, Viewer, and managed backups
+remain runtime artifacts under the ignored Skill `state/` directory. Evidence
+projection failure keeps the mutation successful and the last-good index,
+leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 19 and includes the same
 bounded newest-first completion history as `task show`. Sources 5-14 are shown
 honestly as empty legacy-incomplete history. The Viewer contains only sanitized
 task/review/audit projections and has no write controls or network dependency.
-It validates schema-v18 subject/provenance/capture bindings but adds no
-provenance field, panel, filter, or other snapshot-v4 UI surface.
+It validates schema-v18+ subject/provenance/capture bindings and the schema-v19
+Bundle discriminator but adds no provenance/Bundle field, panel, filter, or
+other snapshot-v4 UI surface.
 
 Viewer auto-refresh is a separate opt-in browser presentation policy. Taskgov
 does not create or edit it. With no file at
@@ -381,10 +388,11 @@ Contracts, checkpoints, bounded maintenance facts, and exact allow-listed
 Verification Receipt facts. A native Receipt contains only its closed result,
 duration, full/partial coverage, ownership, tool-owned
 verification subject, current Contract and target basis, and recording time.
-New schema-v18 Receipts accept no caller label. It stores no verification
+Native schema-v18+ Receipts accept no caller label. Taskgov stores no verification
 command body or arguments, exit code, stdout/stderr, stack trace, environment,
 logs, exceptions, prompts, diffs, credentials, arbitrary coverage prose, or
-debug variant.
+debug variant. Native Bundles and Evidence JSON contain only the same bounded
+allow-listed ledger facts and safe relative artifact identities.
 
 New task input strictly rejects both `dispatch_authorization=<value>` and the
 JSON key `"dispatch_authorization":<value>`. For future external-operation
@@ -483,8 +491,8 @@ coverage.
 - `docs/execution-contracts/`: indexed mixed current/conditional authority. M22
   routes through
   `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence`;
-  TG-M21.5 is current. TG-M22.1A and TG-M22.2 are accepted predecessors, and
-  only TG-M22.3 and TG-M22.4 remain inactive in M22; M23 and M24 remain
+  TG-M22.3 is current. TG-M22.1A, TG-M22.2, and TG-M21.5 are accepted
+  predecessors, and only TG-M22.4 remains inactive in M22; M23 and M24 remain
   inactive.
 - `docs/release-install.md`: current candidate, immutable published artifact,
   and installation identity.

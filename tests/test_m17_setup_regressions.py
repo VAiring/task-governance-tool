@@ -48,6 +48,7 @@ LEGACY_CURRENT_WRITES = [
     "migration_backup",
     "database_migrate",
     "maintenance_configure",
+    "evidence_projection_publish",
     "viewer_publish",
     "legacy_state_cleanup",
 ]
@@ -56,6 +57,7 @@ LEGACY_RECOVERY_WRITES = [
     "legacy_state_publish",
     "migration_backup",
     "database_migrate",
+    "evidence_projection_publish",
     "viewer_publish",
     "legacy_state_cleanup",
 ]
@@ -538,7 +540,7 @@ class M17SetupRegressionTests(unittest.TestCase):
             self.assertTrue(install.db_path.is_file())
             self.assertFalse(install.legacy_root.exists())
             with closing(connect(install.db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 18)
+                self.assertEqual(current_schema_version(connection), 19)
                 maintenance = connection.execute(
                     """
                     SELECT enabled_at, backup_interval_minutes,

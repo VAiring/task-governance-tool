@@ -42,6 +42,7 @@ from task_governance_tool.storage import (
     SCHEMA_VERSION,
     SQLITE_INT64_MAX,
     StorageError,
+    apply_completion_evidence_bundle_migration,
     apply_evidence_ledger_capture_migration,
     apply_migrations,
     apply_verification_receipts_migration,
@@ -953,9 +954,10 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
         )
 
     def test_schema_version_and_verification_capacity_are_layered(self):
-        self.assertEqual(SCHEMA_VERSION, 18)
+        self.assertEqual(SCHEMA_VERSION, 19)
         self.assertEqual(stored_task_verification_limit(17), 500)
         self.assertEqual(stored_task_verification_limit(18), 1_000)
+        self.assertEqual(stored_task_verification_limit(19), 1_000)
         self.assertEqual(TASK_VERIFICATION_INPUT_LIMIT, 1_000)
 
     def test_migration_rejects_v17_overflow_and_v18_captures_one_thousand(self):
@@ -1180,10 +1182,37 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         self.assertEqual(snapshot["producer_class"], "legacy_migration")
                         validate_evidence_ledger_storage(connection)
 
+                        applied, warnings = apply_migrations(connection)
+                        self.assertEqual(applied, [19])
+                        self.assertEqual(warnings, [])
+                        self.assertEqual(current_schema_version(connection), 19)
+                        self.assertEqual(
+                            connection.execute(
+                                "SELECT constraints_text "
+                                "FROM task_contract_revisions "
+                                "WHERE project_id = ? AND task_id = ? "
+                                "AND revision = 1",
+                                (target.project.project_id, task_id),
+                            ).fetchone()[0],
+                            constraints,
+                        )
+                        snapshot = connection.execute(
+                            "SELECT contract_constraints, producer_class "
+                            "FROM authority_snapshots "
+                            "WHERE project_id = ? AND task_id = ?",
+                            (target.project.project_id, task_id),
+                        ).fetchone()
+                        self.assertEqual(
+                            tuple(snapshot),
+                            (constraints, "legacy_migration"),
+                        )
+
                         before_reentry = database_projection(connection)
                         changes_before_reentry = connection.total_changes
-                        apply_migrations(connection)
+                        reapplied, reentry_warnings = apply_migrations(connection)
                         self.assertFalse(connection.in_transaction)
+                        self.assertEqual(reapplied, [])
+                        self.assertEqual(reentry_warnings, [])
                         self.assertEqual(
                             connection.total_changes,
                             changes_before_reentry,
@@ -3264,6 +3293,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                     if source_schema_version == 18:
                         with closing(connect(db)) as connection:
                             apply_evidence_ledger_capture_migration(connection)
+                            apply_completion_evidence_bundle_migration(connection)
 
                     corrupt_owner = "corrupt-verification-project-owner"
                     with closing(connect(db)) as connection:
@@ -3313,6 +3343,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                     if source_schema_version == 18:
                         with closing(connect(db)) as connection:
                             apply_evidence_ledger_capture_migration(connection)
+                            apply_completion_evidence_bundle_migration(connection)
 
                     with closing(connect(db)) as connection:
                         connection.execute("PRAGMA foreign_keys = OFF")
@@ -3905,6 +3936,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         connection.commit()
                         if source_schema_version == 18:
                             apply_evidence_ledger_capture_migration(connection)
+                            apply_completion_evidence_bundle_migration(connection)
 
                     with closing(connect(target.db_path)) as connection:
                         connection.execute("PRAGMA foreign_keys = OFF")

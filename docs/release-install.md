@@ -13,8 +13,8 @@ Skill in any project.
 | Item | Value |
 |---|---|
 | Package version | `0.12.0` |
-| SQLite schema | v18 |
-| Viewer snapshot | v4, accepting source schemas v5-v18 (v5 through v18) |
+| SQLite schema | v19 |
+| Viewer snapshot | v4, accepting source schemas v5-v19 (v5 through v19) |
 | Public command leaves | 21 |
 | Supported runtime | Python 3.12 or newer on Windows |
 | Verified platform | Windows |
@@ -119,7 +119,7 @@ is effectively ignored. This narrow target-local rule is recommended:
 
 An enclosing worktree rule for the same directory is also accepted. Do not
 recommend repository-wide extension globs. The one directory rule contains
-this Skill's database, sidecars, backups, locks, and generated Viewer without
+this Skill's database, sidecars, backups, locks, generated Evidence JSON, and Viewer without
 hiding unrelated project fixtures or assets. Non-Git governed directories are
 valid and do not require an ignore file.
 
@@ -145,8 +145,13 @@ Git repository.
 
 `setup` is the only public initializer and migrator. It also performs the
 one-way opt-in to bounded local maintenance and directly publishes or repairs
-the canonical Viewer. It is explicit, noninteractive, idempotent, and limited
+canonical Evidence JSON and Viewer. It is explicit, noninteractive, idempotent, and limited
 to the supported physical project-scoped package.
+
+Setup reports `schema_to=19` and `evidence_status` as `not_present`, `current`,
+`published`, or `repair_required`. Its ordered write vocabulary includes
+`evidence_projection_publish` after maintenance/binding and before
+`viewer_publish`; read-only preview plans it without writing.
 
 Version 0.12.0 retains the fixed package-local `state/current/` layout. Fresh
 write-mode setup creates one UUIDv4-backed immutable project identity and
@@ -231,14 +236,16 @@ Schema v18 adds capture-versioned authority snapshots, whole-field criteria,
 evidence references, Git artifact manifests, tool-owned verification subjects,
 and versioned Review provenance. It raises durable/read verification capacity
 to 1,000 characters; explicit public Task add/edit admission is also 1,000.
-Migration from v1-v17 and schema-v18 activation/reentry is ordered and
+Schema v19 adds immutable completion Bundles, criterion links/Finding snapshots,
+cycle evidence-basis linkage, and fixed Evidence JSON projection state.
+Migration from v1-v18 and schema-v19 activation/reentry is ordered and
 repeatable. A migrated capture-version-0 target remains read-only lineage and
 must be replaced with a fresh capture-version-1 target before a new Receipt,
 Finding, or completion source can be recorded.
 
 Installation alone and ordinary task commands never migrate. After replacing
 packaged core files while preserving local state, run `setup`; it performs any
-required migration and Viewer repair. A failed migration backup prevents the
+required migration and Evidence/Viewer repair. A failed migration backup prevents the
 migration.
 
 ## Release Upgrade And Paired Rollback
@@ -246,16 +253,16 @@ migration.
 The immutable v0.10.0 release acceptance rehearsed the transition from the
 exact legacy v0.1.0/schema-v2 baseline to v0.10.0/schema v16. The current
 v0.12.0 candidate must separately rehearse that isolated baseline through
-schema v18, including schema-v17 Receipt/completion preservation, subject and
+schema v19, including schema-v17 Receipt/completion preservation, subject and
 provenance migration, capture-v0/fresh retargeting, 500/1,000 capacity,
-backup recovery, and no-partial-write behavior before it can become a release.
+Bundle/projection recovery, backup recovery, and no-partial-write behavior before it can become a release.
 The v0.11.0 candidate note remains immutable lineage and its rehearsal cannot
 satisfy this current gate. Neither rehearsal selects or mutates
 user-wide, linked, junction, or custom-`--db` state.
 
 Rollback restores one matched pre-migration package, database, and managed
 artifact set as a single compatibility point, then proves that the legacy
-package can read that restored state. Running old code against schema v18,
+package can read that restored state. Running old code against schema v19,
 reverse-migrating in place, mixing generations, or treating a Git checkout
 alone as rollback is unsupported. After cutover, a defect is handled by a
 forward fix and new candidate/version, not a force update, history rewrite,
@@ -272,8 +279,9 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py doctor --json
 It is inherently read-only and always reports
 `suggested_action="continue"` for recognized advisory conditions. It observes
 package integrity separately, then—when state is readable—uses one
-lock-respecting SQLite read transaction for project, task, handoff, backup, and
-Viewer status.
+lock-respecting SQLite read transaction for project, task, handoff, backup,
+Evidence, and Viewer status. The fixed Evidence object reports only `code`,
+`due`, source/published generations, last success, and last outcome.
 
 Doctor never initializes, migrates, backs up, renders, repairs, acquires a
 maintenance lock, runs project verification, or changes the target project.
@@ -286,28 +294,37 @@ prerequisite.
 After setup opt-in, every eligible successful state mutation closes its SQLite
 write before the fixed same-process maintenance coordinator runs:
 
-1. refresh the canonical Viewer when its source generation is ahead;
-2. attempt at most one backup when the stored interval is due.
+1. refresh fixed Evidence JSON when its source generation is ahead;
+2. refresh the canonical Viewer when its source generation is ahead; then
+3. attempt at most one backup when the stored interval is due.
 
-Viewer publication permits one initial render and at most one follow-up render.
-Backup rotation keeps only the applied configured generation count. Both use
+Evidence and Viewer publication each permit one initial capture/render and at
+most one follow-up. Backup rotation keeps only the applied configured generation count. All use
 zero-wait OS advisory locks and bounded sanitized outcomes. Contention or
 failure preserves the primary command result and leaves the maintenance stage
 due for the next eligible mutation.
 
 Taskgov starts no daemon, thread, timer, detached process, scheduler, queue,
 service, browser, custom-destination operation, public maintenance command, or
-separate model decision. Handoff-only writes may make backup due but do not
-change the Viewer generation. Setup publishes the Viewer directly.
+separate model decision. Every changed mutation may retry due Evidence work,
+but only cycle insertion advances its source generation; Handoff-only writes
+do not change either projection generation. Setup publishes Evidence then Viewer directly.
+
+Evidence JSON v1 is generated only at fixed `state/current/evidence/index.json`
+and `state/current/evidence/bundles/<completion-evidence-bundle-id>.json`, with the zero-wait
+lock at `state/current/evidence/taskgov-evidence.lock`. Native entries bind one
+immutable Bundle; pre-v19 cycles are index-only `legacy_unknown`. The index is
+published last, SQLite remains canonical, and JSON is never imported. Failure
+preserves the committed mutation and last-good index with one fixed warning.
 
 The Viewer is a self-contained, read-only `file://` projection under the
-ignored package state. Snapshot v4 accepts source schemas v5-v18 and includes
+ignored package state. Snapshot v4 accepts source schemas v5-v19 and includes
 the same bounded newest-first completion history as `task show`; sources v5-v14
 receive an empty, legacy-incomplete history. It omits internal event links,
 storage paths, maintenance internals, checkpoint content, handoffs,
 Verification Receipt data, Review provenance, raw evidence, environment data,
-and secrets. For source v18 it validates subject/provenance/capture bindings
-before discarding them from snapshot v4. It performs no network request and
+and secrets. For sources v18+ it validates subject/provenance/capture bindings;
+v19 also validates and discards Bundle linkage. It performs no network request and
 provides no database or task write control.
 
 An optional browser-only refresh profile may exist at the physical installed
@@ -364,7 +381,7 @@ The current 0.12.0 candidate exposes exactly these 21 command leaves:
 20. `taskgov review finding resolve`
 21. `taskgov verification receipt add`
 
-The schema-v18 Receipt writes remain those existing leaves. Verification has
+The schema-v18+ Receipt writes remain those existing leaves. Verification has
 no caller label or replacement subject input; Taskgov derives the subject from
 the locked capture-version-1 target:
 
@@ -507,15 +524,14 @@ supplies that authorization.
 
 ## Current Candidate Summary
 
-Version 0.12.0 is an unpublished local candidate. Schema v18 activates the
-capture-ledger foundation, tool-owned verification subjects, Review provenance,
-capture-v0 stale/fresh retargeting, and 1,000-character durable/read capacity
-with matching 1,000-character public Task verification ingress. Backup/recovery and
-schema-aware source validation fail closed before mutation. Viewer snapshot v4
-accepts source schemas v5-v18 while validating and discarding the new ledger
-fields. No Evidence Bundle, Evidence JSON, Runner, Analyzer, network/model
-invocation, Viewer Evidence surface, command leaf, or normal-loop call is
-activated. The public inventory is exactly 21 leaves, and the normal no-finding
+Version 0.12.0 is an unpublished local candidate. Schema v19 retains the
+schema-v18 capture ledger, subjects/provenance, retargeting, and 1,000-character
+capacity, then activates native Bundles and fixed Evidence JSON v1. Pre-v19
+cycles remain index-only `legacy_unknown`; setup repairs, doctor observes, and
+post-commit order is Evidence, Viewer, then backup. Viewer snapshot v4 accepts
+source schemas v5-v19 while exposing no Evidence UI. No Runner, Analyzer,
+network/model invocation, command leaf, or normal-loop call is activated. The
+public inventory is exactly 21 leaves, and the normal no-finding
 Tier 2 flow remains bounded to ten calls, or eleven with the enabled Effort
 Advisory. Nothing in this candidate records a publishable commit, creates a tag
 or archive, dispatches CI, pushes, or publishes a Release.

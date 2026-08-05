@@ -58,7 +58,21 @@ RELOCATION_KEYS = {
 }
 FIXED_WRITES = [
     "project_binding_update",
+    "evidence_projection_publish",
     "viewer_publish",
+]
+UNCONFIGURED_FIXED_WRITES = [
+    "maintenance_configure",
+    *FIXED_WRITES,
+]
+LEGACY_MIGRATION_WRITES = [
+    "legacy_state_publish",
+    "migration_backup",
+    "database_migrate",
+    "maintenance_configure",
+    "evidence_projection_publish",
+    "viewer_publish",
+    "legacy_state_cleanup",
 ]
 LEGACY_WRITES = [
     "legacy_state_publish",
@@ -66,6 +80,7 @@ LEGACY_WRITES = [
     "database_migrate",
     "maintenance_configure",
     "project_binding_update",
+    "evidence_projection_publish",
     "viewer_publish",
     "legacy_state_cleanup",
 ]
@@ -285,11 +300,12 @@ class M17RelocationSetupTests(unittest.TestCase):
         self.assertEqual(result.data["planned_writes"], [])
         self.assertEqual(result.data["completed_writes"], [])
         self.assertIsNone(result.data["status"])
-        self.assertEqual(result.data["schema_from"], 18)
-        self.assertEqual(result.data["schema_to"], 18)
+        self.assertEqual(result.data["schema_from"], 19)
+        self.assertEqual(result.data["schema_to"], 19)
         self.assertTrue(result.data["maintenance_enabled"])
         self.assertEqual(result.data["backup_interval_minutes"], 30)
         self.assertEqual(result.data["backup_generations"], 3)
+        self.assertEqual(result.data["evidence_status"], "current")
         self.assertEqual(result.data["viewer_status"], "current")
         relocation = result.data["relocation"]
         self.assertEqual(set(relocation), RELOCATION_KEYS)
@@ -374,14 +390,7 @@ class M17RelocationSetupTests(unittest.TestCase):
             self.assertTrue(migrated.ok, migrated)
             self.assertEqual(
                 migrated.data["completed_writes"],
-                [
-                    "legacy_state_publish",
-                    "migration_backup",
-                    "database_migrate",
-                    "maintenance_configure",
-                    "viewer_publish",
-                    "legacy_state_cleanup",
-                ],
+                LEGACY_MIGRATION_WRITES,
             )
             assert_viewer_presentation_contract(self, install)
 
@@ -410,11 +419,12 @@ class M17RelocationSetupTests(unittest.TestCase):
                     "status": "relocation_preview",
                     "planned_writes": FIXED_WRITES,
                     "completed_writes": [],
-                    "schema_from": 18,
-                    "schema_to": 18,
+                    "schema_from": 19,
+                    "schema_to": 19,
                     "maintenance_enabled": True,
                     "backup_interval_minutes": 30,
                     "backup_generations": 3,
+                    "evidence_status": "current",
                     "viewer_status": "current",
                     "relocation": {
                         "required": True,
@@ -648,8 +658,9 @@ class M17RelocationSetupTests(unittest.TestCase):
             self.assertEqual(failed.data["planned_writes"], FIXED_WRITES)
             self.assertEqual(
                 failed.data["completed_writes"],
-                ["project_binding_update"],
+                FIXED_WRITES[:-1],
             )
+            self.assertEqual(failed.data["evidence_status"], "published")
             self.assertEqual(
                 failed.data["relocation"],
                 {
@@ -760,15 +771,11 @@ class M17RelocationSetupTests(unittest.TestCase):
             self.assertEqual(failed.error_code, "setup_incomplete")
             self.assertEqual(
                 failed.data["planned_writes"],
-                [
-                    "maintenance_configure",
-                    "project_binding_update",
-                    "viewer_publish",
-                ],
+                UNCONFIGURED_FIXED_WRITES,
             )
             self.assertEqual(
                 failed.data["completed_writes"],
-                ["maintenance_configure", "project_binding_update"],
+                UNCONFIGURED_FIXED_WRITES[:-1],
             )
             self.assertTrue(failed.data["maintenance_enabled"])
             self.assertEqual(

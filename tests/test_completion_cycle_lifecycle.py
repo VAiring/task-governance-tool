@@ -33,6 +33,7 @@ from task_governance_tool.storage import (  # noqa: E402
     ProjectIdentity,
     StorageError,
     apply_completion_cycle_capture_activation_migration,
+    apply_completion_evidence_bundle_migration,
     apply_evidence_ledger_capture_migration,
     apply_verification_receipts_migration,
     connect,
@@ -1256,7 +1257,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     "code": "migration_required",
                     "message": (
                         "database schema version 17 does not match supported "
-                        "version 18; run setup to migrate"
+                        "version 19; run setup to migrate"
                     ),
                 }],
             )
@@ -1264,6 +1265,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
 
             with closing(connect(db)) as connection:
                 apply_evidence_ledger_capture_migration(connection)
+                apply_completion_evidence_bundle_migration(connection)
 
             reopened, reopen_payload = run_json(
                 *reopen_args(

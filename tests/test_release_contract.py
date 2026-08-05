@@ -130,7 +130,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         self.assertEqual(result.runtime, runtime)
         self.assertEqual(len(runtime.public_commands), 21)
         self.assertEqual(result.ci_python_versions, ("3.12", "3.14"))
-        self.assertEqual(result.manifest_core_count, 43)
+        self.assertEqual(result.manifest_core_count, 44)
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
@@ -334,7 +334,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             release = fixture / "docs" / "release-install.md"
             release.write_text(
                 release.read_text(encoding="utf-8").replace(
-                    "| SQLite schema | v18 |",
+                    "| SQLite schema | v19 |",
                     "| SQLite schema | v99 |",
                     1,
                 ),

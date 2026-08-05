@@ -24,11 +24,17 @@ from task_governance_tool.artifact_lock import (
     zero_wait_artifact_lock,
 )
 from task_governance_tool.state_paths import (
+    EVIDENCE_BUNDLE_MAX_BYTES,
+    EVIDENCE_BUNDLES_DIRECTORY_NAME,
+    EVIDENCE_DIRECTORY_NAME,
+    EVIDENCE_INDEX_FILENAME,
+    EVIDENCE_INDEX_MAX_BYTES,
     StatePathError,
     ValidatedDirectory,
     ValidatedFile,
     create_exclusive_durable_file,
     create_physical_directory_exclusive,
+    evidence_relative_file_kind,
     hash_physical_file,
     inspect_physical_directory,
     inspect_physical_file,
@@ -52,8 +58,10 @@ STATE_TRANSITION_FAILURE_MESSAGE = "setup completed only partially; rerun setup"
 STATE_TRANSITION_LOCK_FILENAME = "taskgov-state.lock"
 STAGE_OWNER_MAX_BYTES = 2_048
 STAGE_FILE_MAX_OVERHEAD = 16_777_216
+# Legacy publication regenerates an index-only projection and never copies a
+# fixed-current bundle inventory, so Evidence does not expand this stage cap.
 STAGE_MAX_FILES = 32
-STAGE_MAX_DIRECTORIES = 3
+STAGE_MAX_DIRECTORIES = 5
 STAGE_MAX_BACKUPS = 21
 
 _STAGE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
@@ -364,6 +372,16 @@ def _valid_stage_file_name(relative_name: str) -> tuple[str, bool]:
         basename = relative_name.removeprefix("viewer/")
         if _VIEWER_TEMP_PATTERN.fullmatch(basename):
             return "viewer", False
+    evidence_prefix = f"{EVIDENCE_DIRECTORY_NAME}/"
+    if relative_name.startswith(evidence_prefix):
+        evidence_name = relative_name.removeprefix(evidence_prefix)
+        kind = evidence_relative_file_kind(evidence_name)
+        if kind in {"index", "lock", "bundle"}:
+            return "", False
+        if kind == "index_temporary":
+            return "evidence_index", False
+        if kind == "bundle_temporary":
+            return "evidence_bundle", False
     raise _failure()
 
 
@@ -392,7 +410,7 @@ def _inspect_stage_tree(
     directories: dict[str, ValidatedDirectory] = {}
     file_paths: list[Path] = []
     for entry in root_entries:
-        if entry.name in {"backups", "viewer"}:
+        if entry.name in {"backups", "viewer", EVIDENCE_DIRECTORY_NAME}:
             directories[entry.name] = inspect_physical_directory(
                 entry,
                 root=state_root,
@@ -402,6 +420,34 @@ def _inspect_stage_tree(
             except OSError as exc:
                 raise _failure() from exc
             for child in children:
+                if (
+                    entry.name == EVIDENCE_DIRECTORY_NAME
+                    and child.name == EVIDENCE_BUNDLES_DIRECTORY_NAME
+                ):
+                    key = (
+                        f"{EVIDENCE_DIRECTORY_NAME}/"
+                        f"{EVIDENCE_BUNDLES_DIRECTORY_NAME}"
+                    )
+                    directories[key] = inspect_physical_directory(
+                        child,
+                        root=state_root,
+                    )
+                    try:
+                        bundle_children = sorted(
+                            child.iterdir(),
+                            key=lambda item: item.name,
+                        )
+                    except OSError as exc:
+                        raise _failure() from exc
+                    for bundle_child in bundle_children:
+                        try:
+                            details = bundle_child.lstat()
+                        except OSError as exc:
+                            raise _failure() from exc
+                        if not stat.S_ISREG(details.st_mode):
+                            raise _failure()
+                        file_paths.append(bundle_child)
+                    continue
                 try:
                     details = child.lstat()
                 except OSError as exc:
@@ -434,15 +480,25 @@ def _inspect_stage_tree(
             backup_count += 1
             if backup_count > STAGE_MAX_BACKUPS:
                 raise _failure()
-        allowed_size = (
-            min(max_file_bytes, 1)
-            if relative_name
-            in {
-                "backups/taskgov-backup.lock",
-                "viewer/taskgov-viewer.lock",
-            }
-            else max_file_bytes
+        evidence_prefix = f"{EVIDENCE_DIRECTORY_NAME}/"
+        evidence_kind = (
+            evidence_relative_file_kind(
+                relative_name.removeprefix(evidence_prefix)
+            )
+            if relative_name.startswith(evidence_prefix)
+            else None
         )
+        if relative_name in {
+            "backups/taskgov-backup.lock",
+            "viewer/taskgov-viewer.lock",
+        } or evidence_kind == "lock":
+            allowed_size = min(max_file_bytes, 1)
+        elif evidence_kind in {"index", "index_temporary"}:
+            allowed_size = EVIDENCE_INDEX_MAX_BYTES
+        elif evidence_kind in {"bundle", "bundle_temporary"}:
+            allowed_size = EVIDENCE_BUNDLE_MAX_BYTES
+        else:
+            allowed_size = max_file_bytes
         files.append(
             hash_physical_file(
                 path,
@@ -451,7 +507,14 @@ def _inspect_stage_tree(
             )
         )
     ordered_directories = [
-        directories[name] for name in ("viewer", "backups") if name in directories
+        directories[name]
+        for name in (
+            f"{EVIDENCE_DIRECTORY_NAME}/{EVIDENCE_BUNDLES_DIRECTORY_NAME}",
+            EVIDENCE_DIRECTORY_NAME,
+            "viewer",
+            "backups",
+        )
+        if name in directories
     ]
     ordered_directories.append(stage)
     return stage, tuple(files), tuple(ordered_directories)
@@ -549,6 +612,10 @@ def validate_publishable_stage(residue: StageResidue) -> tuple[str, ...]:
     if (
         "taskgov.sqlite" not in names
         or "viewer/task-viewer.html" not in names
+        or (
+            f"{EVIDENCE_DIRECTORY_NAME}/{EVIDENCE_INDEX_FILENAME}"
+            not in names
+        )
     ):
         raise _failure()
     for name in names:
@@ -712,13 +779,36 @@ def _validate_retirement_inventory(
         raise _failure() from exc
     observed_names: set[str] = set()
     for entry in root_entries:
-        if entry.name in {"backups", "viewer"}:
+        if entry.name in {"backups", "viewer", EVIDENCE_DIRECTORY_NAME}:
             inspect_physical_directory(entry, root=state_root)
             try:
                 children = sorted(entry.iterdir(), key=lambda item: item.name)
             except OSError as exc:
                 raise _failure() from exc
             for child in children:
+                if (
+                    entry.name == EVIDENCE_DIRECTORY_NAME
+                    and child.name == EVIDENCE_BUNDLES_DIRECTORY_NAME
+                ):
+                    inspect_physical_directory(child, root=state_root)
+                    try:
+                        bundle_children = sorted(
+                            child.iterdir(),
+                            key=lambda item: item.name,
+                        )
+                    except OSError as exc:
+                        raise _failure() from exc
+                    for bundle_child in bundle_children:
+                        relative = PurePosixPath(
+                            entry.name,
+                            child.name,
+                            bundle_child.name,
+                        ).as_posix()
+                        if relative not in expected_names:
+                            raise _failure()
+                        inspect_physical_file(bundle_child, root=state_root)
+                        observed_names.add(relative)
+                    continue
                 relative = PurePosixPath(entry.name, child.name).as_posix()
                 if relative not in expected_names:
                     raise _failure()
@@ -813,7 +903,17 @@ def _ensure_retirement_parent(
 
 def _remove_owned_empty_directories(observation: CleanupObservation) -> None:
     for base in (observation.retirement_root, observation.old_root):
-        for child_name in ("viewer", "backups"):
+        evidence_bundles = (
+            base
+            / EVIDENCE_DIRECTORY_NAME
+            / EVIDENCE_BUNDLES_DIRECTORY_NAME
+        )
+        if path_lexically_exists(evidence_bundles):
+            rmdir_if_empty(
+                evidence_bundles,
+                root=observation.state_root,
+            )
+        for child_name in (EVIDENCE_DIRECTORY_NAME, "viewer", "backups"):
             child = base / child_name
             if path_lexically_exists(child):
                 rmdir_if_empty(child, root=observation.state_root)

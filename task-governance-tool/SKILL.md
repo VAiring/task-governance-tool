@@ -51,7 +51,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
 
 `setup` is explicit, noninteractive, and idempotent. It is the only command
 that initializes or migrates project-local state, opts into local continuity
-maintenance, and repairs the canonical offline projection. If the canonical
+maintenance, and repairs the canonical offline projections. If the canonical
 DB is missing but a valid managed generation remains, the same explicit call
 recovers the newest valid generation before continuing normal migration and
 repair. Do not invent a separate recovery command or path choice. The normal
@@ -147,11 +147,13 @@ mandatory question, judgment, or user-return stop.
   authority. Leave revision zero otherwise without asking. Revise a Contract
   only from later explicit authority and record the reason.
 - Explicit public `task add` and `task edit --verification` input is limited to
-  1,000 characters. Schema-v18 stored/read paths preserve an existing valid
+  1,000 characters. Schema-v18-or-v19 stored/read paths preserve an existing valid
   value through 1,000 characters; metadata and lifecycle edits continue to
   treat untouched verification bytes as stored state rather than caller input.
-- Schema v18 creates no Evidence Bundle or Evidence JSON, adds no Runner or
-  Analyzer, and introduces no Viewer Evidence surface or network/model call.
+- Schema v19 automatically seals one immutable Bundle for each native
+  completion and maintains fixed-path Evidence JSON v1. Pre-v19 cycles remain
+  index-only `legacy_unknown`; this adds no command, normal-loop call, Runner,
+  Analyzer, Viewer Evidence surface, or network/model call.
 - Pause only active/review-pending work with `--pause-reason`; block with
   `--blocked-reason`; resume explicitly to `in_progress`.
 - Classify a new finding once. Keep it in the current Task only when it is
@@ -233,8 +235,8 @@ push, open PRs, create Issues, or mutate target files.
 - Do not add network use, project-specific test strategy, Issue lifecycle,
   generic workflow automation, or hidden acceptance conditions.
 - Leave local continuity artifacts to `setup` and bounded same-process
-  post-commit maintenance. They add no LLM command choice or background
-  process.
+  post-commit maintenance, ordered Evidence projection, Viewer, then backup.
+  They add no LLM command choice or background process.
 
 ## References
 

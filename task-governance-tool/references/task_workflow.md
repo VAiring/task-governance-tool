@@ -66,9 +66,9 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
 ```
 
 `setup` is the sole initializer and migrator. It also performs the one-way
-local-continuity opt-in and repairs the canonical offline projection. It is
-noninteractive and idempotent. The normal Skill workflow supplies no
-maintenance-policy choice.
+local-continuity opt-in and repairs the canonical Evidence JSON and Viewer
+offline projections. It is noninteractive and idempotent. The normal Skill
+workflow supplies no maintenance-policy choice.
 
 For a package upgrade, preserve project-local state and run explicit setup.
 There is no downgrade or restore command. A release rollback restores one
@@ -193,15 +193,21 @@ Before starting each execution unit, state its intended outcome, write scope,
 verification gate, and review tier. Update the task only after those values
 come from current authority.
 
-At schema v18, explicit public `task add` and `task edit --verification` input
-is capped at 1,000 characters. Stored/read and internal-derived paths accept
-and preserve valid existing verification text through 1,000 characters. A
-metadata or lifecycle edit continues to validate untouched verification as
-stored state rather than replaying it as caller input; values over the source-
-schema limit fail closed.
-Schema v18 creates no Evidence Bundle or Evidence JSON and adds no Runner,
-Analyzer, Viewer Evidence surface, network call, model call, public leaf, or
-normal-loop call.
+From schema v18 through current schema v19, explicit public `task add` and
+`task edit --verification` input is capped at 1,000 characters. Stored/read
+and internal-derived paths accept and preserve valid existing verification
+text through 1,000 characters. A metadata or lifecycle edit continues to
+validate untouched verification as stored state rather than replaying it as
+caller input; values over the source-schema limit fail closed.
+
+At schema v19, each successful native completion atomically seals exactly one
+version-1 Completion Evidence Bundle. Bounded same-process maintenance then
+projects the fixed local files under `state/current/evidence/`: `index.json`
+and `bundles/<completion-evidence-bundle-id>.json`. Pre-v19 cycles project as
+`legacy_unknown`; they are not backfilled with invented Bundles or links. The
+database remains authoritative and there is no Evidence import, export
+command, custom path, Runner, Analyzer, Viewer Evidence surface, network call,
+model call, public leaf, or normal-loop call.
 
 ## Task Contract
 
@@ -501,6 +507,11 @@ root and merge commits are unsupported.
 taskgov validates and records evidence only. It does not stage files, create
 commits or branches, push, open PRs, or write Issue comments.
 
+The schema-v19 Bundle seal is part of completion, and the due Evidence JSON
+refresh is bounded post-commit maintenance; neither is another workflow step
+or command. A projection warning leaves the already-committed task result
+unchanged and may be retried by a later changed mutation or explicit setup.
+
 Treat `done` as write-locked. Reopen only as an isolated operation:
 
 ```powershell
@@ -536,6 +547,7 @@ lane/order fields and return them.
 - Use concise summaries, reasons, notes, checkpoints, findings, and receipts.
 - Do not let inspection authorize target-file, Git, Issue, PR, network, or
   external-service mutation.
-- Leave backup and offline-projection maintenance to setup and bounded
-  same-process post-commit processing. Do not make an LLM choose, schedule, or
+- Leave Evidence JSON, Viewer, and backup maintenance to setup and bounded
+  same-process post-commit processing. When due, their durable order is
+  Evidence, then Viewer, then backup. Do not make an LLM choose, schedule, or
   monitor it.

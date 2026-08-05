@@ -24,6 +24,8 @@ from tests.m14_test_support import (
 
 M22_2_BASELINE_COMMIT = "b954372b30ff3a0b08fca9b804f78b08004825d3"
 M22_2_PACKAGE_TREE = "e2bbd5a0e34859680118b25565daa15ca63b8c05"
+M21_5_WRITER_COMMIT = "c835e713cd6631a62b92d40711502226f87edfa2"
+M21_5_PACKAGE_TREE = "a40b68b4be86203c15ec337403c55ab8eb2568da"
 BACKUP_SCRIPT = r"""
 import json
 import sys
@@ -72,6 +74,18 @@ def task_row(db: Path, task_id: str) -> tuple[object, ...]:
 
 def setup_install(root: Path) -> PhysicalInstall:
     install = make_physical_install(root)
+    result = install.run("setup", "--json")
+    if result.returncode != 0:
+        raise AssertionError(result.stdout or result.stderr)
+    return install
+
+
+def setup_exact_install(root: Path, commit: str) -> PhysicalInstall:
+    project = root / "project"
+    skill_parent = project / ".agents" / "skills"
+    skill_parent.mkdir(parents=True)
+    skill_root = extract_skill_at_commit(skill_parent, commit)
+    install = PhysicalInstall(project_root=project, skill_root=skill_root)
     result = install.run("setup", "--json")
     if result.returncode != 0:
         raise AssertionError(result.stdout or result.stderr)
@@ -258,6 +272,20 @@ class M215VerificationInputCapacityTests(unittest.TestCase):
         self.assertEqual(
             require_repository_git(
                 "rev-parse",
+                f"{M21_5_WRITER_COMMIT}^{{commit}}",
+            ).decode("ascii").strip(),
+            M21_5_WRITER_COMMIT,
+        )
+        self.assertEqual(
+            require_repository_git(
+                "rev-parse",
+                f"{M21_5_WRITER_COMMIT}:task-governance-tool",
+            ).decode("ascii").strip(),
+            M21_5_PACKAGE_TREE,
+        )
+        self.assertEqual(
+            require_repository_git(
+                "rev-parse",
                 f"{M22_2_BASELINE_COMMIT}^{{commit}}",
             ).decode("ascii").strip(),
             M22_2_BASELINE_COMMIT,
@@ -272,7 +300,10 @@ class M215VerificationInputCapacityTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            install = setup_install(root / "current")
+            install = setup_exact_install(
+                root / "current",
+                M21_5_WRITER_COMMIT,
+            )
             added = install.run(
                 "task",
                 "add",

@@ -23,6 +23,10 @@ from task_governance_tool.backup import (
     restore_managed_backup,
     select_managed_backup_for_recovery,
 )
+from task_governance_tool.evidence_projection import (
+    inspect_canonical_evidence_status,
+    publish_setup_evidence_projection,
+)
 from task_governance_tool.project_scope import (
     PREFLIGHT_MESSAGES,
     PROJECT_STATE_MESSAGES,
@@ -122,6 +126,7 @@ SETUP_WRITE_ORDER = (
     "database_migrate",
     "maintenance_configure",
     "project_binding_update",
+    "evidence_projection_publish",
     "viewer_publish",
     "legacy_state_cleanup",
 )
@@ -159,6 +164,7 @@ class SetupPlan:
     migrate: bool
     configure: bool
     rebind: bool
+    publish_evidence: bool
     publish_viewer: bool
     legacy_cleanup: bool
     interval_minutes: int
@@ -175,6 +181,7 @@ class SetupPlan:
             "database_migrate": self.migrate,
             "maintenance_configure": self.configure,
             "project_binding_update": self.rebind,
+            "evidence_projection_publish": self.publish_evidence,
             "viewer_publish": self.publish_viewer,
             "legacy_state_cleanup": self.legacy_cleanup,
         }
@@ -247,6 +254,7 @@ def _setup_data(
     maintenance_enabled: bool | None = None,
     interval_minutes: int | None = None,
     generations: int | None = None,
+    evidence_status: str | None = None,
     viewer_status: str | None = None,
     relocation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -259,6 +267,7 @@ def _setup_data(
         "maintenance_enabled": maintenance_enabled,
         "backup_interval_minutes": interval_minutes,
         "backup_generations": generations,
+        "evidence_status": evidence_status,
         "viewer_status": viewer_status,
         "relocation": (
             _relocation_data()
@@ -374,6 +383,38 @@ def _failure_viewer_status(
         return "repair_required"
 
 
+def _evidence_status(
+    target: DatabaseTarget,
+    *,
+    setup_state: SetupStorageState,
+) -> str:
+    try:
+        return inspect_canonical_evidence_status(target)
+    except StorageError as exc:
+        expected_incompatibility = (
+            exc.code == "db_not_initialized" and setup_state.needs_initialize
+        ) or (
+            exc.code == "migration_required" and setup_state.needs_migration
+        )
+        if not expected_incompatibility:
+            raise
+        return (
+            "repair_required"
+            if path_lexically_exists(target.resolved_evidence_index)
+            else "not_present"
+        )
+
+
+def _failure_evidence_status(
+    target: DatabaseTarget,
+    setup_state: SetupStorageState,
+) -> str:
+    try:
+        return _evidence_status(target, setup_state=setup_state)
+    except Exception:
+        return "repair_required"
+
+
 def _publish_viewer(skill_root: Path, target: DatabaseTarget) -> None:
     result = publish_setup_viewer(
         target,
@@ -383,6 +424,15 @@ def _publish_viewer(skill_root: Path, target: DatabaseTarget) -> None:
         raise ViewerError(
             "internal_error",
             "canonical Viewer could not be published",
+        )
+
+
+def _publish_evidence(target: DatabaseTarget) -> None:
+    result = publish_setup_evidence_projection(target)
+    if result.code != "succeeded":
+        raise StorageError(
+            "internal_error",
+            "canonical Evidence projection could not be published",
         )
 
 
@@ -434,6 +484,7 @@ def _build_plan(
     rebind: bool,
     requested_interval: int | None,
     requested_generations: int | None,
+    evidence_status: str,
     viewer_status: str,
 ) -> SetupPlan:
     configured = bool(state.maintenance_enabled)
@@ -482,6 +533,14 @@ def _build_plan(
         migrate=migrate,
         configure=configure,
         rebind=rebind,
+        publish_evidence=(
+            restore
+            or legacy_publish
+            or initialize
+            or migrate
+            or rebind
+            or evidence_status != "current"
+        ),
         publish_viewer=(
             restore
             or legacy_publish
@@ -1450,6 +1509,7 @@ def _publish_legacy(
                     fingerprint=inventory.fingerprint,
                 )
                 try:
+                    _publish_evidence(stage_target)
                     _publish_viewer(
                         refreshed_scope.skill_root,
                         stage_target,
@@ -1523,6 +1583,11 @@ def _publish_legacy(
                     != expected_hash
                     or observed.binding_lineage != expected_lineage
                     or not observed.legacy_cleanup_pending
+                    or _evidence_status(
+                        staged_resolution.target,
+                        setup_state=staged_state,
+                    )
+                    != "current"
                     or _viewer_status(
                         refreshed_scope.skill_root,
                         staged_resolution.target,
@@ -1581,6 +1646,7 @@ def _publish_legacy(
                     completed.append("maintenance_configure")
                 if accepted_relocation is not None:
                     completed.append("project_binding_update")
+                completed.append("evidence_projection_publish")
                 completed.append("viewer_publish")
                 unlink_validated_file(
                     residue.owner_file,
@@ -1657,7 +1723,7 @@ def _execute_fixed_relocation(
     repo_explicit: bool,
     script_path: Path,
     confirmation_token: str,
-) -> tuple[DatabaseTarget, list[str], str]:
+) -> tuple[DatabaseTarget, list[str], str, str]:
     if (
         initial_resolution.layout != "fixed_current_v1"
         or initial_resolution.binding != "relocation_required"
@@ -1786,15 +1852,30 @@ def _execute_fixed_relocation(
             )
             completed.append("project_binding_update")
 
-            stage = "viewer"
-            _publish_viewer(refreshed_scope.skill_root, current_target)
-            completed.append("viewer_publish")
+            if plan.publish_evidence:
+                stage = "evidence"
+                _publish_evidence(current_target)
+                completed.append("evidence_projection_publish")
+
+            if plan.publish_viewer:
+                stage = "viewer"
+                _publish_viewer(refreshed_scope.skill_root, current_target)
+                completed.append("viewer_publish")
 
             if plan.legacy_cleanup:
                 stage = "cleanup"
                 if _complete_pending_cleanup(refreshed, current_target):
                     completed.append("legacy_state_cleanup")
-            return current_target, completed, "published"
+            return (
+                current_target,
+                completed,
+                (
+                    "published"
+                    if plan.publish_evidence
+                    else "current"
+                ),
+                "published" if plan.publish_viewer else "current",
+            )
     except _FixedRelocationFailure:
         raise
     except StateTransitionError as exc:
@@ -2027,6 +2108,10 @@ def run_setup(
         and resolution.fixed_recovery is None
     ):
         try:
+            observed_evidence_status = _evidence_status(
+                target,
+                setup_state=state,
+            )
             observed_viewer_status = _viewer_status(
                 scope.skill_root,
                 target,
@@ -2041,6 +2126,7 @@ def run_setup(
                 project_id=resolution.project_id,
             )
     else:
+        observed_evidence_status = "not_present"
         observed_viewer_status = "not_present"
     try:
         plan = _build_plan(
@@ -2061,6 +2147,7 @@ def run_setup(
             rebind=resolution.binding == "relocation_required",
             requested_interval=backup_interval_minutes,
             requested_generations=backup_generations,
+            evidence_status=observed_evidence_status,
             viewer_status=observed_viewer_status,
         )
     except StorageError as exc:
@@ -2089,6 +2176,7 @@ def run_setup(
         maintenance_enabled=current_maintenance,
         interval_minutes=plan.interval_minutes,
         generations=plan.generations,
+        evidence_status=observed_evidence_status,
         viewer_status=observed_viewer_status,
         relocation=relocation_projection,
     )
@@ -2111,6 +2199,7 @@ def run_setup(
     ) -> SetupServiceResult:
         effective_resolution = observed_resolution or resolution
         effective_maintenance = current_maintenance
+        effective_evidence_status = observed_evidence_status
         effective_viewer_status = observed_viewer_status
         initial_stored = resolution.stored_project
         observed_stored = (
@@ -2147,6 +2236,10 @@ def run_setup(
                 effective_maintenance = bool(
                     observed_state.maintenance_enabled
                 )
+                effective_evidence_status = _evidence_status(
+                    observed_resolution.target,
+                    setup_state=observed_state,
+                )
                 effective_viewer_status = _viewer_status(
                     scope.skill_root,
                     observed_resolution.target,
@@ -2165,6 +2258,7 @@ def run_setup(
                 maintenance_enabled=effective_maintenance,
                 interval_minutes=plan.interval_minutes,
                 generations=plan.generations,
+                evidence_status=effective_evidence_status,
                 viewer_status=effective_viewer_status,
                 relocation=_relocation_projection(effective_resolution),
             ),
@@ -2217,6 +2311,7 @@ def run_setup(
                         maintenance_enabled=current_maintenance,
                         interval_minutes=plan.interval_minutes,
                         generations=plan.generations,
+                        evidence_status=observed_evidence_status,
                         viewer_status=observed_viewer_status,
                         relocation=relocation_projection,
                     ),
@@ -2237,6 +2332,7 @@ def run_setup(
                     maintenance_enabled=current_maintenance,
                     interval_minutes=plan.interval_minutes,
                     generations=plan.generations,
+                    evidence_status=observed_evidence_status,
                     viewer_status=observed_viewer_status,
                     relocation=relocation_projection,
                 ),
@@ -2294,6 +2390,7 @@ def run_setup(
                         maintenance_enabled=current_maintenance,
                         interval_minutes=plan.interval_minutes,
                         generations=plan.generations,
+                        evidence_status=observed_evidence_status,
                         viewer_status=observed_viewer_status,
                         relocation=relocation_projection,
                     ),
@@ -2333,6 +2430,7 @@ def run_setup(
                 maintenance_enabled=current_maintenance,
                 interval_minutes=plan.interval_minutes,
                 generations=plan.generations,
+                evidence_status=observed_evidence_status,
                 viewer_status=observed_viewer_status,
                 relocation=preview_relocation,
             ),
@@ -2412,6 +2510,19 @@ def run_setup(
             current_maintenance
             or "maintenance_configure" in completed
         )
+        failure_evidence_status = (
+            "published"
+            if "evidence_projection_publish" in completed
+            else (
+                _failure_evidence_status(
+                    failure_target,
+                    state,
+                )
+                if failure_target is not None
+                and failure_target.db_path.exists()
+                else observed_evidence_status
+            )
+        )
         failure_viewer_status = (
             "published"
             if "viewer_publish" in completed
@@ -2462,6 +2573,7 @@ def run_setup(
                 maintenance_enabled=failure_maintenance,
                 interval_minutes=reported_interval,
                 generations=reported_generations,
+                evidence_status=failure_evidence_status,
                 viewer_status=failure_viewer_status,
                 relocation=failure_relocation,
             ),
@@ -2480,7 +2592,12 @@ def run_setup(
         and resolution.layout == "fixed_current_v1"
     ):
         try:
-            target, completed, final_viewer_status = (
+            (
+                target,
+                completed,
+                final_evidence_status,
+                final_viewer_status,
+            ) = (
                 _execute_fixed_relocation(
                     scope=scope,
                     initial_resolution=resolution,
@@ -2527,6 +2644,7 @@ def run_setup(
                 maintenance_enabled=final_state.maintenance_enabled,
                 interval_minutes=plan.interval_minutes,
                 generations=plan.generations,
+                evidence_status=final_evidence_status,
                 viewer_status=final_viewer_status,
                 relocation=_relocation_data(
                     required=False,
@@ -2595,6 +2713,7 @@ def run_setup(
                 maintenance_enabled=final_state.maintenance_enabled,
                 interval_minutes=plan.interval_minutes,
                 generations=plan.generations,
+                evidence_status="published",
                 viewer_status="published",
                 relocation=(
                     _relocation_data(
@@ -2674,6 +2793,10 @@ def run_setup(
                     )
                     current_maintenance = True
                     completed.append("maintenance_configure")
+                if plan.publish_evidence:
+                    fresh_stage = "evidence"
+                    _publish_evidence(target)
+                    completed.append("evidence_projection_publish")
                 if plan.publish_viewer:
                     fresh_stage = "viewer"
                     _publish_viewer(refreshed_scope.skill_root, target)
@@ -2733,6 +2856,7 @@ def run_setup(
                 maintenance_enabled=current_maintenance,
                 interval_minutes=reported_interval,
                 generations=reported_generations,
+                evidence_status="published",
                 viewer_status="published",
                 relocation=relocation_projection,
             ),
@@ -2928,6 +3052,29 @@ def run_setup(
         except Exception:
             return failure_after_write("setup_incomplete")
 
+    final_evidence_status = observed_evidence_status
+    if plan.publish_evidence:
+        try:
+            scope = _revalidate_scope(
+                repo=repo,
+                repo_explicit=repo_explicit,
+                script_path=script_path,
+            )
+            if resolution.project_id is None:
+                raise StorageError(
+                    "setup_incomplete",
+                    SETUP_ERROR_MESSAGES["setup_incomplete"],
+                )
+            target = _matching_fixed_target(
+                scope,
+                expected_project_id=resolution.project_id,
+            )
+            _publish_evidence(target)
+            final_evidence_status = "published"
+            completed.append("evidence_projection_publish")
+        except Exception:
+            return failure_after_write("setup_incomplete")
+
     final_viewer_status = observed_viewer_status
     if plan.publish_viewer:
         try:
@@ -3011,6 +3158,7 @@ def run_setup(
             maintenance_enabled=current_maintenance,
             interval_minutes=reported_interval,
             generations=reported_generations,
+            evidence_status=final_evidence_status,
             viewer_status=final_viewer_status,
             relocation=relocation_projection,
         ),

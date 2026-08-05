@@ -203,8 +203,13 @@ class DocumentContractTests(unittest.TestCase):
                 "authority_registry",
             ),
             (
-                '    "current_units": ["TG-M21.5"],',
                 '    "current_units": ["TG-M22.3"],',
+                '    "current_units": ["TG-M21.5"],',
+                "authority_registry",
+            ),
+            (
+                '    "inactive_units": ["TG-M22.4"]',
+                '    "inactive_units": ["TG-M22.3", "TG-M22.4"]',
                 "authority_registry",
             ),
             (
@@ -285,8 +290,8 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 "README.md",
-                "TG-M21.5 is current. TG-M22.1A and TG-M22.2 are accepted predecessors, and",
-                "TG-M21.5 and all later M22 units are inactive, and",
+                "TG-M22.3 is current. TG-M22.1A, TG-M22.2, and TG-M21.5 are accepted",
+                "TG-M21.5 is current. TG-M22.3 and TG-M22.4 remain inactive",
                 "document_role",
             ),
             (
@@ -307,6 +312,21 @@ class DocumentContractTests(unittest.TestCase):
                 with self.fixture() as root:
                     self.replace(root, relative, old, new)
                     self.assertIn(expected, self.codes(contract.check_document_contract(root)))
+
+    def test_current_m223_schema_viewer_and_evidence_markers_are_closed(self):
+        relative = "docs/execution-contracts/tg-m22-evidence-ledger.md"
+        mutations = (
+            ("v0.12.0 candidate is schema v19, Viewer snapshot v4 with sources v5-v19, 21", "v0.12.0 candidate is schema v18, Viewer snapshot v4 with sources v5-v18, 21"),
+            ("`evidence_projection_deferred`", "`projection_deferred`"),
+            ("adds `evidence_projection_publish` to its ordered write vocabulary plus an", "adds `viewer_publish` to its ordered write vocabulary plus an"),
+            ("Doctor reports only stored Evidence-projection", "Doctor repairs stored Evidence-projection"),
+            ("Post-commit order is Evidence projection, Viewer refresh, then due backup;", "Post-commit order is Viewer refresh, Evidence projection, then due backup;"),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old):
+                with self.fixture() as root:
+                    self.replace(root, relative, old, new)
+                    self.assertIn("document_role", self.codes(contract.check_document_contract(root)))
 
     def test_history_is_indexed_and_digested_without_parsing_capture_prose(self):
         with self.fixture() as root:

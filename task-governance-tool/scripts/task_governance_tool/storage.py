@@ -28,7 +28,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 VIEWER_MIN_SOURCE_SCHEMA_VERSION = 5
 STORED_TASK_VERIFICATION_LIMIT_V17 = 500
 STORED_TASK_VERIFICATION_LIMIT_V18 = 1_000
@@ -62,6 +62,35 @@ REVIEW_FINDING_ID_PATTERN = re.compile(
 EVIDENCE_REFERENCE_ID_PATTERN = re.compile(
     r"^tg_evidence_reference_[0-9a-f]{16}$"
 )
+CRITERION_EVIDENCE_LINK_ID_PATTERN = re.compile(
+    r"^tg_criterion_evidence_link_[0-9a-f]{16}$"
+)
+COMPLETION_EVIDENCE_BUNDLE_ID_PATTERN = re.compile(
+    r"^tg_completion_evidence_bundle_[0-9a-f]{16}$"
+)
+SHA256_DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+COMPLETION_EVIDENCE_BUNDLE_MAX_BYTES = 16_777_216
+CRITERION_EVIDENCE_RELATIONS = {
+    "verification_attestation",
+    "review_assessment",
+    "review_finding",
+    "completion_basis",
+    "derived_analysis",
+    "runner_observation",
+}
+COMPLETION_BUNDLE_MEMBER_KINDS = {
+    "criterion_link",
+    "evidence_reference",
+}
+EVIDENCE_PROJECTION_BATCH_SIZE = 400
+EVIDENCE_PROJECTION_INDEX_ENTRY_LIMIT = 100_000
+COMPLETION_BUNDLE_OMISSION_BITS = {
+    "acceptance_criterion_absent": 1,
+    "verification_criterion_absent": 2,
+    "artifact_content_not_observed": 4,
+    "historical_finding_reference_absent": 8,
+}
+EVIDENCE_PROJECTION_OUTCOMES = {"succeeded", "deferred", "failed"}
 VERIFICATION_SPECIFIED_SQL_FUNCTION = "taskgov_verification_specified"
 VERIFICATION_COMMAND_OPTION_PATTERN = re.compile(
     r"(?:^|\s)(?:--?[A-Za-z0-9][^\s]*|/(?:c|command)(?:\s|$))",
@@ -108,12 +137,21 @@ CLEANUP_TEMP_ENTRY_PATTERNS = (
     re.compile(r"^\.taskgov-restore-[a-z0-9_]{8}\.tmp$"),
     re.compile(r"^backups/\.taskgov-backup-[a-z0-9_]{8}\.tmp$"),
     re.compile(r"^viewer/\.task-viewer-[a-z0-9_]{8}\.tmp$"),
+    re.compile(r"^evidence/\.taskgov-evidence-index-[a-z0-9_]{8}\.tmp$"),
+    re.compile(
+        r"^evidence/bundles/\.taskgov-evidence-bundle-[a-z0-9_]{8}\.tmp$"
+    ),
+)
+CLEANUP_EVIDENCE_BUNDLE_PATTERN = re.compile(
+    r"^evidence/bundles/tg_completion_evidence_bundle_[0-9a-f]{16}\.json$"
 )
 CLEANUP_FIXED_ENTRIES = {
     "taskgov.sqlite",
     "backups/taskgov-backup.lock",
     "viewer/task-viewer.html",
     "viewer/taskgov-viewer.lock",
+    "evidence/index.json",
+    "evidence/taskgov-evidence.lock",
 }
 CLEANUP_INVENTORY_MAX_ENTRIES = 32
 CLEANUP_INVENTORY_MAX_BYTES = 16_384
@@ -265,6 +303,10 @@ class DatabaseTarget:
     backups_path: Path | None = field(default=None, repr=False, compare=False)
     viewer_path: Path | None = field(default=None, repr=False, compare=False)
     canonical_fixed: bool = False
+    evidence_root: Path | None = field(default=None, repr=False, compare=False)
+    evidence_index: Path | None = field(default=None, repr=False, compare=False)
+    evidence_bundles: Path | None = field(default=None, repr=False, compare=False)
+    evidence_lock: Path | None = field(default=None, repr=False, compare=False)
 
     @property
     def resolved_backups_path(self) -> Path:
@@ -276,9 +318,31 @@ class DatabaseTarget:
             self.db_path.parent / "viewer" / "task-viewer.html"
         )
 
+    @property
+    def resolved_evidence_root(self) -> Path:
+        return self.evidence_root or (self.db_path.parent / "evidence")
+
+    @property
+    def resolved_evidence_index(self) -> Path:
+        return self.evidence_index or (
+            self.resolved_evidence_root / "index.json"
+        )
+
+    @property
+    def resolved_evidence_bundles(self) -> Path:
+        return self.evidence_bundles or (
+            self.resolved_evidence_root / "bundles"
+        )
+
+    @property
+    def resolved_evidence_lock(self) -> Path:
+        return self.evidence_lock or (
+            self.resolved_evidence_root / "taskgov-evidence.lock"
+        )
+
 
 class _ValidatedViewerTaskBatch:
-    """One-shot proof that v18 validated every Task in this read transaction."""
+    """One-shot proof that current Evidence storage validated every Task."""
 
     __slots__ = ("__weakref__",)
 
@@ -359,6 +423,32 @@ class UnboundDatabaseTarget:
     backups_path: Path | None = field(default=None, repr=False, compare=False)
     viewer_path: Path | None = field(default=None, repr=False, compare=False)
     canonical_fixed: bool = False
+    evidence_root: Path | None = field(default=None, repr=False, compare=False)
+    evidence_index: Path | None = field(default=None, repr=False, compare=False)
+    evidence_bundles: Path | None = field(default=None, repr=False, compare=False)
+    evidence_lock: Path | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def resolved_evidence_root(self) -> Path:
+        return self.evidence_root or (self.db_path.parent / "evidence")
+
+    @property
+    def resolved_evidence_index(self) -> Path:
+        return self.evidence_index or (
+            self.resolved_evidence_root / "index.json"
+        )
+
+    @property
+    def resolved_evidence_bundles(self) -> Path:
+        return self.evidence_bundles or (
+            self.resolved_evidence_root / "bundles"
+        )
+
+    @property
+    def resolved_evidence_lock(self) -> Path:
+        return self.evidence_lock or (
+            self.resolved_evidence_root / "taskgov-evidence.lock"
+        )
 
 
 @dataclass(frozen=True)
@@ -438,6 +528,7 @@ class DoctorStorageState:
     task_counts: dict[str, int]
     maintenance: ProjectMaintenanceState
     viewer: ViewerMaintenanceState
+    evidence: EvidenceProjectionState
 
 
 @dataclass(frozen=True)
@@ -513,6 +604,152 @@ class CompletionCycle:
     verification_subject_basis_version: int = 0
     subject_authority_snapshot_id: str | None = None
     subject_verification_criterion_id: str | None = None
+    evidence_basis_version: int = 0
+    completion_evidence_bundle_id: str | None = None
+
+
+@dataclass(frozen=True)
+class NativeCompletionIdentity:
+    completion_cycle_id: str
+    saved_cycle_ordinal: int
+    completion_evidence_bundle_id: str
+
+
+@dataclass(frozen=True)
+class PreparedCriterionEvidenceLink:
+    criterion_evidence_link_id: str
+    project_id: str
+    task_id: str
+    criterion_id: str
+    evidence_reference_id: str
+    relation: str
+    assurance_class: str
+    producer_class: str
+    producer_version: int
+    created_at: str
+
+
+@dataclass(frozen=True)
+class PreparedCompletionBundleMember:
+    project_id: str
+    task_id: str
+    completion_evidence_bundle_id: str
+    member_kind: str
+    ordinal: int
+    criterion_evidence_link_id: str | None
+    evidence_reference_id: str | None
+
+
+@dataclass(frozen=True)
+class PreparedCompletionFindingSnapshot:
+    project_id: str
+    task_id: str
+    completion_evidence_bundle_id: str
+    ordinal: int
+    review_finding_id: str
+    review_receipt_id: str
+    target_generation: int
+    severity: str
+    summary: str
+    status: str
+    resolution_summary: str
+    created_at: str
+    resolved_at: str | None
+    evidence_reference_id: str | None
+    assurance_class: str
+    producer_class: str
+    producer_version: int
+    digest: str
+
+
+@dataclass(frozen=True)
+class PreparedCompletionEvidenceBundle:
+    completion_evidence_bundle_id: str
+    project_id: str
+    task_id: str
+    completion_cycle_id: str
+    cycle_ordinal: int
+    source_schema_version: int
+    bundle_version: int
+    contract_revision: int
+    authority_snapshot_id: str
+    acceptance_criterion_id: str | None
+    verification_criterion_id: str | None
+    target_kind: str
+    target_value: str
+    target_base_revision: str
+    target_generation: int
+    target_capture_version: int
+    artifact_manifest_id: str
+    verification_receipt_id: str | None
+    omission_mask: int
+    sealed_at: str
+    bundle_digest: str
+    payload_size_bytes: int
+    criterion_links: tuple[PreparedCriterionEvidenceLink, ...]
+    members: tuple[PreparedCompletionBundleMember, ...]
+    finding_snapshots: tuple[PreparedCompletionFindingSnapshot, ...]
+
+
+@dataclass(frozen=True)
+class EvidenceProjectionState:
+    project_id: str
+    source_generation: int
+    published_generation: int | None
+    index_digest: str | None
+    last_success_at: str | None
+    last_outcome_code: str | None
+    last_outcome_at: str | None
+
+    @property
+    def due(self) -> bool:
+        return (
+            self.published_generation is None
+            or self.published_generation < self.source_generation
+            or self.last_outcome_code in {"deferred", "failed"}
+        )
+
+
+@dataclass(frozen=True)
+class NativeCompletionBundleBasis:
+    task: dict[str, Any]
+    authority_snapshot: dict[str, Any]
+    criteria: tuple[dict[str, Any], ...]
+    artifact_manifest: dict[str, Any]
+    artifact_entries: tuple[dict[str, Any], ...]
+    artifact_reference: dict[str, Any]
+    verification_receipt: dict[str, Any] | None
+    verification_reference: dict[str, Any] | None
+    review_receipts: tuple[dict[str, Any], ...]
+    review_references: tuple[dict[str, Any], ...]
+    findings: tuple[dict[str, Any], ...]
+    finding_references: tuple[dict[str, Any] | None, ...]
+    completion_reference: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class EvidenceProjectionBasis:
+    source_schema_version: int
+    project_id: str
+    source_generation: int
+    cycles: tuple[CompletionCycle, ...]
+    bundles: tuple[PreparedCompletionEvidenceBundle, ...]
+    native_bundles: tuple[ProjectionBundleRecord, ...]
+
+
+@dataclass(frozen=True)
+class ProjectionBundleRecord:
+    bundle: PreparedCompletionEvidenceBundle
+    cycle: CompletionCycle
+    task: dict[str, Any]
+    authority_snapshot: dict[str, Any]
+    criteria: tuple[dict[str, Any], ...]
+    artifact_manifest: dict[str, Any]
+    artifact_entries: tuple[dict[str, Any], ...]
+    evidence_references: tuple[dict[str, Any], ...]
+    verification_receipt: dict[str, Any] | None
+    review_receipts: tuple[dict[str, Any], ...]
+    finding_snapshots: tuple[PreparedCompletionFindingSnapshot, ...]
 
 
 @dataclass(frozen=True)
@@ -669,7 +906,16 @@ def resolve_database_target(
     else:
         db_path = default_db_path(skill_root_from_script(script_path), project.project_id)
         explicit_db = False
-    return DatabaseTarget(project=project, db_path=db_path, explicit_db=explicit_db)
+    evidence_root = db_path.parent / "evidence"
+    return DatabaseTarget(
+        project=project,
+        db_path=db_path,
+        evidence_root=evidence_root,
+        evidence_index=evidence_root / "index.json",
+        evidence_bundles=evidence_root / "bundles",
+        evidence_lock=evidence_root / "taskgov-evidence.lock",
+        explicit_db=explicit_db,
+    )
 
 
 def utc_now() -> str:
@@ -859,6 +1105,7 @@ def _recognized_cleanup_entry(value: str) -> bool:
     return (
         value in CLEANUP_FIXED_ENTRIES
         or MANAGED_BACKUP_FILENAME_PATTERN.fullmatch(value) is not None
+        or CLEANUP_EVIDENCE_BUNDLE_PATTERN.fullmatch(value) is not None
         or any(pattern.fullmatch(value) is not None for pattern in CLEANUP_TEMP_ENTRY_PATTERNS)
     )
 
@@ -906,7 +1153,7 @@ def validate_cleanup_inventory(
         raise StorageError("internal_error", "legacy cleanup inventory is invalid")
     names: list[str] = []
     backup_count = 0
-    temporary_counts = [0, 0, 0]
+    temporary_counts = [0] * len(CLEANUP_TEMP_ENTRY_PATTERNS)
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) != {
             "kind",
@@ -1361,6 +1608,11 @@ _SCHEMA_TABLE_INTRODUCED_VERSION = {
     "artifact_manifests": 18,
     "artifact_manifest_entries": 18,
     "evidence_references": 18,
+    "criterion_evidence_links": 19,
+    "completion_evidence_bundles": 19,
+    "completion_bundle_members": 19,
+    "completion_bundle_finding_snapshots": 19,
+    "evidence_projection_state": 19,
 }
 
 _SCHEMA_INDEX_INTRODUCED_VERSION = {
@@ -1392,6 +1644,10 @@ _SCHEMA_INDEX_INTRODUCED_VERSION = {
     "idx_review_provenance_receipt": 18,
     "idx_artifact_manifests_target": 18,
     "idx_evidence_references_source": 18,
+    "idx_criterion_evidence_links_reference": 19,
+    "idx_completion_evidence_bundles_task_cycle": 19,
+    "idx_completion_bundle_members_reference": 19,
+    "idx_completion_bundle_finding_snapshots_order": 19,
 }
 
 _SCHEMA_TRIGGER_INTRODUCED_VERSION = {
@@ -1430,6 +1686,18 @@ _SCHEMA_TRIGGER_INTRODUCED_VERSION = {
     "trg_review_receipts_provenance_basis_insert": 18,
     "trg_verification_receipts_subject_basis_insert": 18,
     "trg_task_completion_cycles_subject_basis_insert": 18,
+    "trg_criterion_evidence_links_no_update": 19,
+    "trg_criterion_evidence_links_no_delete": 19,
+    "trg_completion_evidence_bundles_no_update": 19,
+    "trg_completion_evidence_bundles_no_delete": 19,
+    "trg_completion_bundle_members_no_update": 19,
+    "trg_completion_bundle_members_no_delete": 19,
+    "trg_completion_bundle_finding_snapshots_no_update": 19,
+    "trg_completion_bundle_finding_snapshots_no_delete": 19,
+    "trg_criterion_evidence_links_matrix_insert": 19,
+    "trg_completion_bundle_members_matrix_insert": 19,
+    "trg_completion_bundle_finding_snapshots_matrix_insert": 19,
+    "trg_task_completion_cycles_evidence_basis_insert": 19,
 }
 
 _SCHEMA_COLUMN_INTRODUCED_VERSION = {
@@ -1474,6 +1742,8 @@ _SCHEMA_COLUMN_INTRODUCED_VERSION = {
     "column:task_completion_cycles.verification_subject_basis_version": 18,
     "column:task_completion_cycles.subject_authority_snapshot_id": 18,
     "column:task_completion_cycles.subject_verification_criterion_id": 18,
+    "column:task_completion_cycles.evidence_basis_version": 19,
+    "column:task_completion_cycles.completion_evidence_bundle_id": 19,
 }
 
 _EVIDENCE_LEDGER_REQUIRED_COLUMNS = {
@@ -1523,6 +1793,41 @@ _EVIDENCE_LEDGER_REQUIRED_COLUMNS = {
         "acceptance_criterion_id", "verification_criterion_id", "target_kind",
         "target_value", "target_base_revision", "target_generation",
         "completion_cycle_id", "digest", "created_at",
+    },
+    "criterion_evidence_links": {
+        "criterion_evidence_link_id", "project_id", "task_id",
+        "criterion_id", "evidence_reference_id", "relation",
+        "assurance_class", "producer_class", "producer_version",
+        "created_at",
+    },
+    "completion_evidence_bundles": {
+        "completion_evidence_bundle_id", "project_id", "task_id",
+        "completion_cycle_id", "cycle_ordinal", "source_schema_version",
+        "bundle_version", "contract_revision", "authority_snapshot_id",
+        "acceptance_criterion_id", "verification_criterion_id",
+        "target_kind", "target_value", "target_base_revision",
+        "target_generation", "target_capture_version",
+        "artifact_manifest_id", "verification_receipt_id",
+        "omission_mask", "sealed_at", "bundle_digest",
+        "payload_size_bytes",
+    },
+    "completion_bundle_members": {
+        "project_id", "task_id", "completion_evidence_bundle_id",
+        "member_kind", "ordinal", "criterion_evidence_link_id",
+        "evidence_reference_id",
+    },
+    "completion_bundle_finding_snapshots": {
+        "project_id", "task_id", "completion_evidence_bundle_id",
+        "ordinal", "review_finding_id", "review_receipt_id",
+        "target_generation", "severity", "summary", "status",
+        "resolution_summary", "created_at", "resolved_at",
+        "evidence_reference_id", "assurance_class", "producer_class",
+        "producer_version", "digest",
+    },
+    "evidence_projection_state": {
+        "project_id", "source_generation", "published_generation",
+        "index_digest", "last_success_at", "last_outcome_code",
+        "last_outcome_at",
     },
 }
 
@@ -1704,6 +2009,8 @@ def required_schema_objects_missing(
             "verification_subject_basis_version",
             "subject_authority_snapshot_id",
             "subject_verification_criterion_id",
+            "evidence_basis_version",
+            "completion_evidence_bundle_id",
             "completion_evidence_kind",
             "completion_evidence_revision",
             "completion_evidence_reason",
@@ -4682,8 +4989,564 @@ def evidence_ledger_capture_schema_statements() -> tuple[str, ...]:
     return (*statements, *immutable_triggers, *subject_triggers)
 
 
+def completion_evidence_bundle_schema_statements() -> tuple[str, ...]:
+    """Return the schema-v19 Bundle foundation in migration order."""
+
+    statements = (
+        """
+        CREATE TABLE criterion_evidence_links (
+          criterion_evidence_link_id TEXT PRIMARY KEY CHECK (
+            length(criterion_evidence_link_id) = 43
+            AND substr(criterion_evidence_link_id, 1, 27) =
+                  'tg_criterion_evidence_link_'
+            AND substr(criterion_evidence_link_id, 28)
+                  NOT GLOB '*[^0-9a-f]*'
+          ),
+          project_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          criterion_id TEXT NOT NULL,
+          evidence_reference_id TEXT NOT NULL,
+          relation TEXT NOT NULL CHECK (relation IN (
+            'verification_attestation', 'review_assessment',
+            'review_finding', 'completion_basis', 'derived_analysis',
+            'runner_observation'
+          )),
+          assurance_class TEXT NOT NULL CHECK (assurance_class IN (
+            'machine_observed', 'bound_attestation',
+            'deterministically_derived', 'external_reference',
+            'legacy_unknown', 'llm_derived'
+          )),
+          producer_class TEXT NOT NULL CHECK (producer_class IN (
+            'taskgov_core', 'taskgov_git', 'trusted_caller',
+            'legacy_migration', 'external_system', 'batch_analyzer',
+            'verification_runner'
+          )),
+          producer_version INTEGER NOT NULL CHECK (producer_version > 0),
+          created_at TEXT NOT NULL,
+          UNIQUE (
+            project_id, task_id, criterion_id,
+            evidence_reference_id, relation
+          ),
+          UNIQUE (project_id, task_id, criterion_evidence_link_id),
+          FOREIGN KEY (project_id, task_id, criterion_id)
+            REFERENCES contract_criteria(project_id, task_id, criterion_id),
+          FOREIGN KEY (project_id, task_id, evidence_reference_id)
+            REFERENCES evidence_references(
+              project_id, task_id, evidence_reference_id
+            )
+        )
+        """,
+        """
+        CREATE TABLE completion_evidence_bundles (
+          completion_evidence_bundle_id TEXT PRIMARY KEY CHECK (
+            length(completion_evidence_bundle_id) = 46
+            AND substr(completion_evidence_bundle_id, 1, 30) =
+                  'tg_completion_evidence_bundle_'
+            AND substr(completion_evidence_bundle_id, 31)
+                  NOT GLOB '*[^0-9a-f]*'
+          ),
+          project_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          completion_cycle_id TEXT NOT NULL,
+          cycle_ordinal INTEGER NOT NULL CHECK (cycle_ordinal > 0),
+          source_schema_version INTEGER NOT NULL
+            CHECK (source_schema_version = 19),
+          bundle_version INTEGER NOT NULL CHECK (bundle_version = 1),
+          contract_revision INTEGER NOT NULL CHECK (contract_revision >= 0),
+          authority_snapshot_id TEXT NOT NULL,
+          acceptance_criterion_id TEXT,
+          verification_criterion_id TEXT,
+          target_kind TEXT NOT NULL CHECK (target_kind IN (
+            'git_commit', 'diff_fingerprint', 'external_revision',
+            'git_snapshot'
+          )),
+          target_value TEXT NOT NULL CHECK (length(target_value) BETWEEN 1 AND 500),
+          target_base_revision TEXT NOT NULL
+            CHECK (length(target_base_revision) <= 500),
+          target_generation INTEGER NOT NULL CHECK (target_generation > 0),
+          target_capture_version INTEGER NOT NULL
+            CHECK (target_capture_version = 1),
+          artifact_manifest_id TEXT NOT NULL,
+          verification_receipt_id TEXT,
+          omission_mask INTEGER NOT NULL CHECK (omission_mask BETWEEN 0 AND 15),
+          sealed_at TEXT NOT NULL,
+          bundle_digest TEXT NOT NULL CHECK (
+            length(bundle_digest) = 71
+            AND substr(bundle_digest, 1, 7) = 'sha256:'
+            AND substr(bundle_digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          payload_size_bytes INTEGER NOT NULL CHECK (
+            payload_size_bytes BETWEEN 1 AND 16777216
+          ),
+          UNIQUE (project_id, task_id, completion_evidence_bundle_id),
+          UNIQUE (project_id, task_id, completion_cycle_id),
+          FOREIGN KEY (project_id, task_id) REFERENCES tasks(project_id, task_id),
+          FOREIGN KEY (project_id, task_id, authority_snapshot_id)
+            REFERENCES authority_snapshots(
+              project_id, task_id, authority_snapshot_id
+            ),
+          FOREIGN KEY (project_id, task_id, acceptance_criterion_id)
+            REFERENCES contract_criteria(project_id, task_id, criterion_id),
+          FOREIGN KEY (project_id, task_id, verification_criterion_id)
+            REFERENCES contract_criteria(project_id, task_id, criterion_id),
+          FOREIGN KEY (project_id, task_id, artifact_manifest_id)
+            REFERENCES artifact_manifests(
+              project_id, task_id, artifact_manifest_id
+            ),
+          FOREIGN KEY (verification_receipt_id)
+            REFERENCES verification_receipts(verification_receipt_id),
+          FOREIGN KEY (completion_cycle_id)
+            REFERENCES task_completion_cycles(completion_cycle_id)
+            DEFERRABLE INITIALLY DEFERRED
+        )
+        """,
+        """
+        CREATE TABLE completion_bundle_members (
+          project_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          completion_evidence_bundle_id TEXT NOT NULL,
+          member_kind TEXT NOT NULL CHECK (
+            member_kind IN ('criterion_link', 'evidence_reference')
+          ),
+          ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+          criterion_evidence_link_id TEXT,
+          evidence_reference_id TEXT,
+          PRIMARY KEY (completion_evidence_bundle_id, member_kind, ordinal),
+          UNIQUE (completion_evidence_bundle_id, criterion_evidence_link_id),
+          UNIQUE (completion_evidence_bundle_id, evidence_reference_id),
+          CHECK (
+            (member_kind = 'criterion_link'
+              AND criterion_evidence_link_id IS NOT NULL
+              AND evidence_reference_id IS NULL)
+            OR
+            (member_kind = 'evidence_reference'
+              AND criterion_evidence_link_id IS NULL
+              AND evidence_reference_id IS NOT NULL)
+          ),
+          FOREIGN KEY (project_id, task_id, completion_evidence_bundle_id)
+            REFERENCES completion_evidence_bundles(
+              project_id, task_id, completion_evidence_bundle_id
+            ),
+          FOREIGN KEY (project_id, task_id, criterion_evidence_link_id)
+            REFERENCES criterion_evidence_links(
+              project_id, task_id, criterion_evidence_link_id
+            ),
+          FOREIGN KEY (project_id, task_id, evidence_reference_id)
+            REFERENCES evidence_references(
+              project_id, task_id, evidence_reference_id
+            )
+        )
+        """,
+        """
+        CREATE TABLE completion_bundle_finding_snapshots (
+          project_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          completion_evidence_bundle_id TEXT NOT NULL,
+          ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+          review_finding_id TEXT NOT NULL,
+          review_receipt_id TEXT NOT NULL,
+          target_generation INTEGER NOT NULL CHECK (target_generation > 0),
+          severity TEXT NOT NULL CHECK (severity IN ('high', 'medium', 'low')),
+          summary TEXT NOT NULL CHECK (length(summary) BETWEEN 1 AND 1000),
+          status TEXT NOT NULL CHECK (status IN ('open', 'resolved')),
+          resolution_summary TEXT NOT NULL CHECK (length(resolution_summary) <= 1000),
+          created_at TEXT NOT NULL,
+          resolved_at TEXT,
+          evidence_reference_id TEXT,
+          assurance_class TEXT NOT NULL CHECK (
+            assurance_class IN ('bound_attestation', 'legacy_unknown')
+          ),
+          producer_class TEXT NOT NULL CHECK (
+            producer_class IN ('trusted_caller', 'legacy_migration')
+          ),
+          producer_version INTEGER NOT NULL CHECK (producer_version = 1),
+          digest TEXT NOT NULL CHECK (
+            length(digest) = 71
+            AND substr(digest, 1, 7) = 'sha256:'
+            AND substr(digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          PRIMARY KEY (completion_evidence_bundle_id, ordinal),
+          UNIQUE (completion_evidence_bundle_id, review_finding_id),
+          CHECK (
+            (status = 'open'
+              AND resolution_summary = '' AND resolved_at IS NULL)
+            OR
+            (status = 'resolved'
+              AND resolution_summary != '' AND resolved_at IS NOT NULL)
+          ),
+          CHECK (
+            (evidence_reference_id IS NOT NULL
+              AND assurance_class = 'bound_attestation'
+              AND producer_class = 'trusted_caller')
+            OR
+            (evidence_reference_id IS NULL
+              AND assurance_class = 'legacy_unknown'
+              AND producer_class = 'legacy_migration')
+          ),
+          FOREIGN KEY (project_id, task_id, completion_evidence_bundle_id)
+            REFERENCES completion_evidence_bundles(
+              project_id, task_id, completion_evidence_bundle_id
+            ),
+          FOREIGN KEY (review_finding_id)
+            REFERENCES review_findings(review_finding_id),
+          FOREIGN KEY (review_receipt_id)
+            REFERENCES review_receipts(review_receipt_id),
+          FOREIGN KEY (project_id, task_id, evidence_reference_id)
+            REFERENCES evidence_references(
+              project_id, task_id, evidence_reference_id
+            )
+        )
+        """,
+        """
+        CREATE TABLE evidence_projection_state (
+          project_id TEXT PRIMARY KEY,
+          source_generation INTEGER NOT NULL CHECK (source_generation >= 0),
+          published_generation INTEGER CHECK (
+            published_generation IS NULL
+            OR (published_generation >= 0
+              AND published_generation <= source_generation)
+          ),
+          index_digest TEXT CHECK (
+            index_digest IS NULL
+            OR (
+              length(index_digest) = 71
+              AND substr(index_digest, 1, 7) = 'sha256:'
+              AND substr(index_digest, 8) NOT GLOB '*[^0-9a-f]*'
+            )
+          ),
+          last_success_at TEXT,
+          last_outcome_code TEXT CHECK (
+            last_outcome_code IS NULL
+            OR last_outcome_code IN ('succeeded', 'deferred', 'failed')
+          ),
+          last_outcome_at TEXT,
+          CHECK (
+            (published_generation IS NULL AND index_digest IS NULL)
+            OR
+            (published_generation IS NOT NULL AND index_digest IS NOT NULL)
+          ),
+          CHECK (
+            (last_outcome_code IS NULL AND last_outcome_at IS NULL)
+            OR
+            (last_outcome_code IS NOT NULL AND last_outcome_at IS NOT NULL)
+          ),
+          FOREIGN KEY (project_id) REFERENCES project_meta(project_id)
+        )
+        """,
+        """ALTER TABLE task_completion_cycles
+             ADD COLUMN evidence_basis_version INTEGER NOT NULL DEFAULT 0
+             CHECK (evidence_basis_version IN (0, 1))""",
+        """ALTER TABLE task_completion_cycles
+             ADD COLUMN completion_evidence_bundle_id TEXT
+             REFERENCES completion_evidence_bundles(completion_evidence_bundle_id)
+             DEFERRABLE INITIALLY DEFERRED""",
+        """CREATE INDEX idx_criterion_evidence_links_reference
+             ON criterion_evidence_links(project_id, task_id, evidence_reference_id)""",
+        """CREATE UNIQUE INDEX idx_completion_evidence_bundles_task_cycle
+             ON completion_evidence_bundles(project_id, task_id, completion_cycle_id)""",
+        """CREATE INDEX idx_completion_bundle_members_reference
+             ON completion_bundle_members(completion_evidence_bundle_id, member_kind, ordinal)""",
+        """CREATE INDEX idx_completion_bundle_finding_snapshots_order
+             ON completion_bundle_finding_snapshots(
+               completion_evidence_bundle_id, target_generation, created_at,
+               review_finding_id
+             )""",
+    )
+    immutable_tables = (
+        "criterion_evidence_links",
+        "completion_evidence_bundles",
+        "completion_bundle_members",
+        "completion_bundle_finding_snapshots",
+    )
+    immutable_triggers = tuple(
+        statement
+        for table_name in immutable_tables
+        for statement in (
+            f"""CREATE TRIGGER trg_{table_name}_no_update BEFORE UPDATE ON {table_name}
+                 BEGIN SELECT RAISE(ABORT, 'immutable_completion_evidence'); END""",
+            f"""CREATE TRIGGER trg_{table_name}_no_delete BEFORE DELETE ON {table_name}
+                 BEGIN SELECT RAISE(ABORT, 'immutable_completion_evidence'); END""",
+        )
+    )
+    guard_triggers = (
+        """
+        CREATE TRIGGER trg_criterion_evidence_links_matrix_insert
+        BEFORE INSERT ON criterion_evidence_links
+        WHEN NOT EXISTS (
+          SELECT 1
+            FROM contract_criteria AS criterion
+            JOIN evidence_references AS reference
+              ON reference.project_id = criterion.project_id
+             AND reference.task_id = criterion.task_id
+           WHERE criterion.project_id = NEW.project_id
+             AND criterion.task_id = NEW.task_id
+             AND criterion.criterion_id = NEW.criterion_id
+             AND reference.evidence_reference_id = NEW.evidence_reference_id
+             AND reference.assurance_class = NEW.assurance_class
+             AND reference.producer_class = NEW.producer_class
+             AND reference.producer_version = NEW.producer_version
+             AND (
+               (NEW.relation = 'verification_attestation'
+                 AND criterion.criterion_kind = 'verification'
+                 AND reference.source_kind = 'verification_receipt')
+               OR
+               (NEW.relation = 'review_assessment'
+                 AND criterion.criterion_kind = 'acceptance'
+                 AND reference.source_kind = 'review_receipt')
+               OR
+               (NEW.relation = 'review_finding'
+                 AND criterion.criterion_kind = 'acceptance'
+                 AND reference.source_kind = 'review_finding')
+               OR
+               (NEW.relation = 'completion_basis'
+                 AND criterion.criterion_kind = 'acceptance'
+                 AND reference.source_kind IN (
+                   'artifact_manifest', 'completion_evidence'
+                 ))
+             )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'invalid_criterion_evidence_link');
+        END
+        """,
+        """
+        CREATE TRIGGER trg_completion_bundle_members_matrix_insert
+        BEFORE INSERT ON completion_bundle_members
+        WHEN NOT (
+          (
+            NEW.member_kind = 'criterion_link'
+            AND EXISTS (
+              SELECT 1 FROM criterion_evidence_links AS link
+               WHERE link.project_id = NEW.project_id
+                 AND link.task_id = NEW.task_id
+                 AND link.criterion_evidence_link_id =
+                       NEW.criterion_evidence_link_id
+            )
+          )
+          OR
+          (
+            NEW.member_kind = 'evidence_reference'
+            AND EXISTS (
+              SELECT 1 FROM evidence_references AS reference
+               WHERE reference.project_id = NEW.project_id
+                 AND reference.task_id = NEW.task_id
+                 AND reference.evidence_reference_id =
+                       NEW.evidence_reference_id
+            )
+          )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'invalid_completion_bundle_member');
+        END
+        """,
+        """
+        CREATE TRIGGER trg_completion_bundle_finding_snapshots_matrix_insert
+        BEFORE INSERT ON completion_bundle_finding_snapshots
+        WHEN NOT EXISTS (
+          SELECT 1
+            FROM review_findings AS finding
+            JOIN review_receipts AS receipt
+              ON receipt.review_receipt_id = finding.review_receipt_id
+           WHERE finding.review_finding_id = NEW.review_finding_id
+             AND finding.review_receipt_id = NEW.review_receipt_id
+             AND receipt.project_id = NEW.project_id
+             AND receipt.task_id = NEW.task_id
+             AND receipt.target_generation = NEW.target_generation
+             AND finding.severity = NEW.severity
+             AND finding.summary = NEW.summary
+             AND finding.status = NEW.status
+             AND finding.resolution_summary = NEW.resolution_summary
+             AND finding.created_at = NEW.created_at
+             AND finding.resolved_at IS NEW.resolved_at
+             AND (
+               (
+                 NEW.evidence_reference_id IS NULL
+                 AND NEW.assurance_class = 'legacy_unknown'
+                 AND NEW.producer_class = 'legacy_migration'
+                 AND NEW.producer_version = 1
+               )
+               OR
+               (
+                 NEW.evidence_reference_id IS NOT NULL
+                 AND NEW.assurance_class = 'bound_attestation'
+                 AND NEW.producer_class = 'trusted_caller'
+                 AND NEW.producer_version = 1
+                 AND EXISTS (
+                   SELECT 1 FROM evidence_references AS reference
+                    WHERE reference.project_id = NEW.project_id
+                      AND reference.task_id = NEW.task_id
+                      AND reference.evidence_reference_id =
+                            NEW.evidence_reference_id
+                      AND reference.source_kind = 'review_finding'
+                      AND reference.source_id = NEW.review_finding_id
+                 )
+               )
+             )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'invalid_completion_finding_snapshot');
+        END
+        """,
+        """
+        CREATE TRIGGER trg_task_completion_cycles_evidence_basis_insert
+        BEFORE INSERT ON task_completion_cycles
+        WHEN NOT (
+          (
+            NEW.origin = 'legacy_current_done'
+            AND NEW.evidence_basis_version = 0
+            AND NEW.completion_evidence_bundle_id IS NULL
+          )
+          OR
+          (
+            NEW.origin = 'native_done'
+            AND NEW.evidence_basis_version = 1
+            AND NEW.completion_evidence_bundle_id IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM completion_evidence_bundles AS bundle
+               WHERE bundle.project_id = NEW.project_id
+                 AND bundle.task_id = NEW.task_id
+                 AND bundle.completion_cycle_id = NEW.completion_cycle_id
+                 AND bundle.cycle_ordinal = NEW.saved_cycle_ordinal
+                 AND bundle.completion_evidence_bundle_id =
+                       NEW.completion_evidence_bundle_id
+            )
+          )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'invalid_completion_evidence_basis');
+        END
+        """,
+    )
+    return (*statements, *immutable_triggers, *guard_triggers)
+
+
 def _normalized_schema_sql(statement: str) -> str:
     return " ".join(statement.strip().removesuffix(";").split())
+
+
+def _validate_completion_evidence_bundle_schema_contract(
+    connection: sqlite3.Connection,
+) -> None:
+    marker = connection.execute(
+        "SELECT name FROM schema_migrations WHERE version = 19"
+    ).fetchone()
+    if marker is None or str(marker["name"]) != "completion_evidence_bundles":
+        raise evidence_ledger_inconsistent()
+    if required_schema_objects_missing(connection, schema_version=19):
+        raise evidence_ledger_inconsistent()
+
+    statements = completion_evidence_bundle_schema_statements()
+    for statement in statements[:5]:
+        match = re.match(
+            r"\s*CREATE\s+TABLE\s+([a-z0-9_]+)\b",
+            statement,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            raise AssertionError("completion Bundle table inventory is incomplete")
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (match.group(1),),
+        ).fetchone()
+        if (
+            row is None
+            or row["sql"] is None
+            or _normalized_schema_sql(str(row["sql"]))
+            != _normalized_schema_sql(statement)
+        ):
+            raise evidence_ledger_inconsistent()
+
+    cycle_columns = {
+        str(row["name"]): row
+        for row in connection.execute(
+            "PRAGMA table_xinfo(task_completion_cycles)"
+        ).fetchall()
+    }
+    evidence_basis = cycle_columns.get("evidence_basis_version")
+    bundle_id = cycle_columns.get("completion_evidence_bundle_id")
+    if (
+        evidence_basis is None
+        or str(evidence_basis["type"]).upper() != "INTEGER"
+        or int(evidence_basis["notnull"]) != 1
+        or str(evidence_basis["dflt_value"]) != "0"
+        or int(evidence_basis["pk"]) != 0
+        or int(evidence_basis["hidden"]) != 0
+        or bundle_id is None
+        or str(bundle_id["type"]).upper() != "TEXT"
+        or int(bundle_id["notnull"]) != 0
+        or bundle_id["dflt_value"] is not None
+        or int(bundle_id["pk"]) != 0
+        or int(bundle_id["hidden"]) != 0
+    ):
+        raise evidence_ledger_inconsistent()
+    cycle_table = connection.execute(
+        "SELECT sql FROM sqlite_master "
+        "WHERE type = 'table' AND name = 'task_completion_cycles'"
+    ).fetchone()
+    if cycle_table is None or cycle_table["sql"] is None:
+        raise evidence_ledger_inconsistent()
+    normalized_cycle_sql = _normalized_schema_sql(str(cycle_table["sql"]))
+    required_cycle_fragments = (
+        "evidence_basis_version INTEGER NOT NULL DEFAULT 0 "
+        "CHECK (evidence_basis_version IN (0, 1))",
+        "completion_evidence_bundle_id TEXT REFERENCES "
+        "completion_evidence_bundles(completion_evidence_bundle_id) "
+        "DEFERRABLE INITIALLY DEFERRED",
+    )
+    if any(
+        normalized_cycle_sql.count(fragment) != 1
+        for fragment in required_cycle_fragments
+    ):
+        raise evidence_ledger_inconsistent()
+
+    expected_indexes: dict[str, str] = {}
+    expected_triggers: dict[str, str] = {}
+    for statement in statements:
+        normalized = _normalized_schema_sql(statement)
+        index_match = re.match(
+            r"CREATE\s+(?:UNIQUE\s+)?INDEX\s+([a-z0-9_]+)\b",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if index_match is not None:
+            expected_indexes[index_match.group(1)] = normalized
+        trigger_match = re.match(
+            r"CREATE\s+TRIGGER\s+([a-z0-9_]+)\b",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if trigger_match is not None:
+            expected_triggers[trigger_match.group(1)] = normalized
+
+    actual_indexes = {
+        str(row["name"]): _normalized_schema_sql(str(row["sql"]))
+        for row in connection.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'index'"
+        ).fetchall()
+        if str(row["name"]) in expected_indexes and row["sql"] is not None
+    }
+    actual_triggers = {
+        str(row["name"]): _normalized_schema_sql(str(row["sql"]))
+        for row in connection.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'trigger'"
+        ).fetchall()
+        if str(row["name"]) in expected_triggers and row["sql"] is not None
+    }
+    if actual_indexes != expected_indexes or actual_triggers != expected_triggers:
+        raise evidence_ledger_inconsistent()
+
+    bundle_foreign_key = (
+        "completion_evidence_bundles",
+        (("completion_evidence_bundle_id", "completion_evidence_bundle_id"),),
+        "NO ACTION",
+        "NO ACTION",
+        "NONE",
+    )
+    if bundle_foreign_key not in _foreign_key_signatures(
+        connection,
+        "task_completion_cycles",
+    ):
+        raise evidence_ledger_inconsistent()
 
 
 def _completion_history_trigger_definitions() -> dict[str, str]:
@@ -5880,6 +6743,22 @@ def _cycle_from_row(row: sqlite3.Row) -> CompletionCycle:
             )
             else None
         ),
+        evidence_basis_version=(
+            _completion_int(
+                row["evidence_basis_version"],
+                maximum=1,
+            )
+            if "evidence_basis_version" in row_fields
+            else 0
+        ),
+        completion_evidence_bundle_id=(
+            str(row["completion_evidence_bundle_id"])
+            if (
+                "completion_evidence_bundle_id" in row_fields
+                and row["completion_evidence_bundle_id"] is not None
+            )
+            else None
+        ),
         completion_evidence_kind=str(row["completion_evidence_kind"]),
         completion_evidence_revision=str(row["completion_evidence_revision"]),
         completion_evidence_reason=str(row["completion_evidence_reason"]),
@@ -5926,6 +6805,19 @@ def _validate_completion_cycle(cycle: CompletionCycle) -> None:
         raise completion_history_inconsistent()
     _completion_int(cycle.verification_basis_version, maximum=1)
     _completion_int(cycle.verification_subject_basis_version, maximum=1)
+    _completion_int(cycle.evidence_basis_version, maximum=1)
+    if cycle.evidence_basis_version == 0:
+        if cycle.completion_evidence_bundle_id is not None:
+            raise completion_history_inconsistent()
+    elif (
+        cycle.origin != "native_done"
+        or cycle.completion_evidence_bundle_id is None
+        or COMPLETION_EVIDENCE_BUNDLE_ID_PATTERN.fullmatch(
+            cycle.completion_evidence_bundle_id
+        )
+        is None
+    ):
+        raise completion_history_inconsistent()
     if cycle.verification_subject_basis_version == 0:
         if (
             cycle.subject_authority_snapshot_id is not None
@@ -6707,6 +7599,21 @@ def _validate_completion_history_schema_contract(
                     "NO ACTION", "NO ACTION", "NONE",
                 ),
             ]
+        )
+    if current_schema_version(connection) >= 19:
+        expected_cycle_foreign_keys.append(
+            (
+                "completion_evidence_bundles",
+                (
+                    (
+                        "completion_evidence_bundle_id",
+                        "completion_evidence_bundle_id",
+                    ),
+                ),
+                "NO ACTION",
+                "NO ACTION",
+                "NONE",
+            )
         )
     expected_cycle_foreign_keys = sorted(
         expected_cycle_foreign_keys,
@@ -7607,6 +8514,10 @@ def _persist_completion_cycle_locked(
         "subject_verification_criterion_id": (
             cycle.subject_verification_criterion_id
         ),
+        "evidence_basis_version": cycle.evidence_basis_version,
+        "completion_evidence_bundle_id": (
+            cycle.completion_evidence_bundle_id
+        ),
         "completion_evidence_kind": cycle.completion_evidence_kind,
         "completion_evidence_revision": cycle.completion_evidence_revision,
         "completion_evidence_reason": cycle.completion_evidence_reason,
@@ -7684,6 +8595,26 @@ def _persist_completion_cycle_locked(
         if has_subject_basis
         else ""
     )
+    has_evidence_basis = column_exists(
+        connection,
+        "task_completion_cycles",
+        "evidence_basis_version",
+    )
+    if not has_evidence_basis and (
+        cycle.evidence_basis_version != 0
+        or cycle.completion_evidence_bundle_id is not None
+    ):
+        raise completion_history_inconsistent()
+    evidence_columns = (
+        ", evidence_basis_version, completion_evidence_bundle_id"
+        if has_evidence_basis
+        else ""
+    )
+    evidence_values = (
+        ", :evidence_basis_version, :completion_evidence_bundle_id"
+        if has_evidence_basis
+        else ""
+    )
     try:
         connection.execute(
             f"""
@@ -7701,6 +8632,7 @@ def _persist_completion_cycle_locked(
               changes_requested_count, open_high_count, open_medium_count,
               fresh_review_required_count, qualifying_receipt_id_1,
               qualifying_receipt_id_2{verification_columns}{subject_columns}
+              {evidence_columns}
             ) VALUES (
               :completion_cycle_id, :project_id, :task_id,
               :saved_cycle_ordinal, :origin, :completeness, :completed_at,
@@ -7716,6 +8648,7 @@ def _persist_completion_cycle_locked(
               :changes_requested_count, :open_high_count, :open_medium_count,
               :fresh_review_required_count, :qualifying_receipt_id_1,
               :qualifying_receipt_id_2{verification_values}{subject_values}
+              {evidence_values}
             )
             """,
             parameters,
@@ -7732,6 +8665,12 @@ def _persist_completion_cycle_locked(
     _validate_cycle_receipts(connection, persisted)
     if persisted != cycle:
         raise completion_history_inconsistent()
+    if has_evidence_basis:
+        _advance_evidence_source_generation_locked(
+            connection,
+            project_id=cycle.project_id,
+        )
+        _validate_completion_evidence_bundle_rows(connection)
     return persisted
 
 
@@ -7775,7 +8714,7 @@ def _require_completion_capture_activation_locked(
     ):
         raise StorageError(
             "migration_required",
-            "completion capture requires schema version 18",
+            "completion capture requires schema version 19",
         )
     if required_schema_objects_missing(
         connection,
@@ -7785,7 +8724,30 @@ def _require_completion_capture_activation_locked(
     _validate_completion_history_structure(connection)
 
 
-def insert_native_completion_cycle_locked(
+def allocate_native_completion_identity_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+) -> NativeCompletionIdentity:
+    """Allocate one unpersisted native cycle/Bundle identity under a writer."""
+
+    _require_completion_cycle_writer(connection)
+    _require_completion_capture_activation_locked(connection)
+    return NativeCompletionIdentity(
+        completion_cycle_id=f"tg_completion_cycle_{secrets.token_hex(8)}",
+        saved_cycle_ordinal=_next_completion_cycle_ordinal_locked(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+        ),
+        completion_evidence_bundle_id=(
+            f"tg_completion_evidence_bundle_{secrets.token_hex(8)}"
+        ),
+    )
+
+
+def prepare_native_completion_cycle_locked(
     connection: sqlite3.Connection,
     *,
     project_id: str,
@@ -7797,11 +8759,27 @@ def insert_native_completion_cycle_locked(
     verification_subject_basis_version: int = 0,
     subject_authority_snapshot_id: str | None = None,
     subject_verification_criterion_id: str | None = None,
+    completion_identity: NativeCompletionIdentity | None = None,
 ) -> CompletionCycle:
-    """Capture one service-validated proposed completion under the Task writer."""
+    """Prepare but do not persist one exact native completion cycle."""
 
     _require_completion_cycle_writer(connection)
     _require_completion_capture_activation_locked(connection)
+    if completion_identity is None:
+        raise completion_history_inconsistent()
+    if (
+        COMPLETION_CYCLE_ID_PATTERN.fullmatch(
+            completion_identity.completion_cycle_id
+        )
+        is None
+        or type(completion_identity.saved_cycle_ordinal) is not int
+        or completion_identity.saved_cycle_ordinal < 1
+        or COMPLETION_EVIDENCE_BUNDLE_ID_PATTERN.fullmatch(
+            completion_identity.completion_evidence_bundle_id
+        )
+        is None
+    ):
+        raise completion_history_inconsistent()
     locked = _read_validated_current_task_row(
         connection,
         project_id=project_id,
@@ -7902,16 +8880,10 @@ def insert_native_completion_cycle_locked(
     ):
         raise completion_history_inconsistent()
     cycle = CompletionCycle(
-        completion_cycle_id=(
-            f"tg_completion_cycle_{secrets.token_hex(8)}"
-        ),
+        completion_cycle_id=completion_identity.completion_cycle_id,
         project_id=project_id,
         task_id=task_id,
-        saved_cycle_ordinal=_next_completion_cycle_ordinal_locked(
-            connection,
-            project_id=project_id,
-            task_id=task_id,
-        ),
+        saved_cycle_ordinal=completion_identity.saved_cycle_ordinal,
         origin="native_done",
         completeness="complete",
         completed_at=str(completed_at),
@@ -7940,6 +8912,10 @@ def insert_native_completion_cycle_locked(
         subject_authority_snapshot_id=subject_authority_snapshot_id,
         subject_verification_criterion_id=(
             subject_verification_criterion_id
+        ),
+        evidence_basis_version=1,
+        completion_evidence_bundle_id=(
+            completion_identity.completion_evidence_bundle_id
         ),
         completion_evidence_kind=str(
             proposed.get("completion_evidence_kind", "")
@@ -7973,7 +8949,146 @@ def insert_native_completion_cycle_locked(
         ),
         gate_basis=basis,
     )
-    return _persist_completion_cycle_locked(connection, cycle)
+    if cycle.saved_cycle_ordinal != _next_completion_cycle_ordinal_locked(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+    ):
+        raise completion_history_inconsistent()
+    return cycle
+
+
+def insert_native_completion_cycle_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    task_projection: dict[str, Any],
+    recorded_at: str,
+    verification_expectation_digest: str,
+    verification_receipt_id: str | None,
+    verification_subject_basis_version: int = 0,
+    subject_authority_snapshot_id: str | None = None,
+    subject_verification_criterion_id: str | None = None,
+    completion_identity: NativeCompletionIdentity | None = None,
+    completion_bundle: PreparedCompletionEvidenceBundle | None = None,
+    prepared_cycle: CompletionCycle | None = None,
+) -> CompletionCycle:
+    """Validate and atomically persist one prepared Bundle/native cycle."""
+
+    if completion_identity is None or completion_bundle is None:
+        raise completion_history_inconsistent()
+    if prepared_cycle is None:
+        cycle = prepare_native_completion_cycle_locked(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+            task_projection=task_projection,
+            recorded_at=recorded_at,
+            verification_expectation_digest=verification_expectation_digest,
+            verification_receipt_id=verification_receipt_id,
+            verification_subject_basis_version=(
+                verification_subject_basis_version
+            ),
+            subject_authority_snapshot_id=subject_authority_snapshot_id,
+            subject_verification_criterion_id=(
+                subject_verification_criterion_id
+            ),
+            completion_identity=completion_identity,
+        )
+    else:
+        _require_completion_cycle_writer(connection)
+        _require_completion_capture_activation_locked(connection)
+        cycle = prepared_cycle
+        _validate_completion_cycle(cycle)
+        expected_gate_basis = _select_completion_gate_basis_for_projection_locked(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+            task_projection=task_projection,
+        )
+        expected_completed_at = task_projection.get("completed_at")
+        expected_verification = task_projection.get("verification")
+        if (
+            type(expected_completed_at) is not str
+            or type(expected_verification) is not str
+            or cycle.project_id != project_id
+            or cycle.task_id != task_id
+            or cycle.completion_cycle_id
+            != completion_identity.completion_cycle_id
+            or cycle.saved_cycle_ordinal
+            != completion_identity.saved_cycle_ordinal
+            or cycle.completion_evidence_bundle_id
+            != completion_identity.completion_evidence_bundle_id
+            or cycle.origin != "native_done"
+            or cycle.completeness != "complete"
+            or cycle.completed_at != expected_completed_at
+            or cycle.recorded_at != recorded_at
+            or cycle.contract_revision
+            != _completion_int(task_projection.get("current_contract_revision"))
+            or cycle.review_tier
+            != _completion_int(task_projection.get("review_tier"), maximum=2)
+            or cycle.verification_expectation
+            != ("specified" if expected_verification.strip() else "unspecified")
+            or cycle.verification_attestation is not True
+            or cycle.verification_basis_version != 1
+            or cycle.verification_expectation_digest
+            != verification_expectation_digest
+            or cycle.verification_receipt_id != verification_receipt_id
+            or cycle.verification_subject_basis_version
+            != verification_subject_basis_version
+            or cycle.subject_authority_snapshot_id
+            != subject_authority_snapshot_id
+            or cycle.subject_verification_criterion_id
+            != subject_verification_criterion_id
+            or cycle.evidence_basis_version != 1
+            or cycle.completion_evidence_kind
+            != str(task_projection.get("completion_evidence_kind", ""))
+            or cycle.completion_evidence_revision
+            != str(task_projection.get("completion_evidence_revision", ""))
+            or cycle.completion_evidence_reason
+            != str(task_projection.get("completion_evidence_reason", ""))
+            or cycle.external_revision_approved
+            != _completion_bool(
+                task_projection.get("external_revision_approved")
+            )
+            or cycle.completion_commit_required
+            != _completion_bool(
+                task_projection.get("completion_commit_required")
+            )
+            or cycle.completion_commit_hash
+            != str(task_projection.get("completion_commit_hash", ""))
+            or cycle.review_target_kind
+            != str(task_projection.get("review_target_kind", ""))
+            or cycle.review_target_value
+            != str(task_projection.get("review_target_value", ""))
+            or cycle.review_target_base_revision
+            != str(task_projection.get("review_target_base_revision", ""))
+            or cycle.review_target_generation
+            != _completion_int(task_projection.get("review_target_generation"))
+            or cycle.gate_basis != expected_gate_basis
+            or cycle.saved_cycle_ordinal
+            != _next_completion_cycle_ordinal_locked(
+                connection,
+                project_id=project_id,
+                task_id=task_id,
+            )
+        ):
+            raise completion_history_inconsistent()
+    persist_completion_evidence_bundle_locked(
+        connection,
+        bundle=completion_bundle,
+        expected_cycle=cycle,
+    )
+    persisted_cycle = _persist_completion_cycle_locked(connection, cycle)
+    _validate_projection_bundle_record(
+        _prepared_projection_bundle_record_locked(
+            connection,
+            bundle=completion_bundle,
+            expected_cycle=persisted_cycle,
+        )
+    )
+    return persisted_cycle
 
 
 def _completion_projection_signature(
@@ -8008,7 +9123,7 @@ def _match_current_done_completion_cycle_locked(
     if validate_structure:
         version = current_schema_version(connection)
         if (
-            version not in {15, 16, 17, 18}
+            version not in {15, 16, 17, 18, 19}
             or missing_migration_versions(connection, version)
             or required_schema_objects_missing(
                 connection,
@@ -8568,7 +9683,7 @@ def apply_completion_cycle_capture_activation_migration(
         connection.execute("BEGIN")
         try:
             if (
-                version not in {16, 17, 18}
+                version not in {16, 17, 18, 19}
                 or missing_migration_versions(connection, version)
                 or required_schema_objects_missing(
                     connection,
@@ -8995,7 +10110,10 @@ def apply_evidence_ledger_capture_migration(
     if version >= 18:
         connection.execute("BEGIN")
         try:
-            if version != 18 or missing_migration_versions(connection, 18):
+            if version not in {18, 19} or missing_migration_versions(
+                connection,
+                18,
+            ):
                 raise StorageError(
                     "migration_required",
                     "evidence-ledger migration is incomplete",
@@ -9102,6 +10220,7 @@ def apply_evidence_ledger_capture_migration(
     except Exception:
         connection.rollback()
         raise
+
     try:
         statements = evidence_ledger_capture_schema_statements()
         for statement in statements[:8]:
@@ -9213,6 +10332,217 @@ def apply_evidence_ledger_capture_migration(
             raise _unreadable_project_state() from exc
         raise
     except sqlite3.IntegrityError as exc:
+        connection.rollback()
+        raise _unreadable_project_state() from exc
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def apply_completion_evidence_bundle_migration(
+    connection: sqlite3.Connection,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Atomically add schema-v19 Bundle storage without inventing history."""
+
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error",
+            "completion Bundle migration requires no active transaction",
+        )
+    version = current_schema_version(connection)
+    if version >= 19:
+        connection.execute("BEGIN")
+        try:
+            if version != 19 or missing_migration_versions(connection, 19):
+                raise StorageError(
+                    "migration_required",
+                    "completion Bundle migration is incomplete",
+                )
+            validate_evidence_ledger_storage(connection)
+            validate_completion_cycle_storage(connection)
+            if [
+                str(row[0])
+                for row in connection.execute("PRAGMA quick_check").fetchall()
+            ] != ["ok"]:
+                raise evidence_ledger_inconsistent()
+            if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                raise evidence_ledger_inconsistent()
+            connection.commit()
+        except StorageError as exc:
+            connection.rollback()
+            if exc.code in {
+                "evidence_ledger_inconsistent",
+                "completion_history_inconsistent",
+                "invalid_verification_evidence",
+            }:
+                raise _unreadable_project_state() from exc
+            raise
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise _unreadable_project_state() from exc
+        except Exception:
+            connection.rollback()
+            raise
+        return
+    if (
+        version != 18
+        or missing_migration_versions(connection, 18)
+        or schema_objects_inconsistent_with_version(connection, 18)
+    ):
+        raise StorageError(
+            "migration_required",
+            "completion Bundle migration requires complete schema version 18",
+        )
+
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        validate_evidence_ledger_storage(connection)
+        validate_completion_cycle_storage(connection)
+        preserved_tables = tuple(
+            table_name
+            for table_name, introduced_version in (
+                _SCHEMA_TABLE_INTRODUCED_VERSION.items()
+            )
+            if table_name != "schema_migrations" and introduced_version <= 18
+        )
+        before = _selected_table_projection_snapshot(
+            connection,
+            preserved_tables,
+        )
+        old_columns = {name: value[0] for name, value in before.items()}
+        project_rows = connection.execute(
+            "SELECT project_id FROM project_meta ORDER BY project_id"
+        ).fetchall()
+        initial_generations: dict[str, int] = {}
+        for project_row in project_rows:
+            project_id = project_row["project_id"]
+            if type(project_id) is not str or not project_id:
+                raise evidence_ledger_inconsistent()
+            count_row = connection.execute(
+                """
+                SELECT COUNT(*) AS cycle_count
+                  FROM task_completion_cycles
+                 WHERE project_id = ?
+                """,
+                (project_id,),
+            ).fetchone()
+            cycle_count = None if count_row is None else count_row["cycle_count"]
+            if type(cycle_count) is not int or not 0 <= cycle_count <= SQLITE_INT64_MAX:
+                raise evidence_ledger_inconsistent()
+            initial_generations[project_id] = cycle_count
+        migration_time = utc_now()
+
+        statements = completion_evidence_bundle_schema_statements()
+        for statement in statements[:5]:
+            connection.execute(statement)
+        if fail_stage == "after_tables":
+            raise StorageError(
+                "internal_error",
+                "injected completion Bundle migration failure",
+            )
+        for statement in statements[5:7]:
+            connection.execute(statement)
+        if fail_stage == "after_columns":
+            raise StorageError(
+                "internal_error",
+                "injected completion Bundle migration failure",
+            )
+        for statement in statements[7:]:
+            connection.execute(statement)
+        if fail_stage == "after_objects":
+            raise StorageError(
+                "internal_error",
+                "injected completion Bundle migration failure",
+            )
+
+        for project_id, source_generation in initial_generations.items():
+            connection.execute(
+                """
+                INSERT INTO evidence_projection_state(
+                  project_id, source_generation, published_generation,
+                  index_digest, last_success_at, last_outcome_code,
+                  last_outcome_at
+                ) VALUES (?, ?, NULL, NULL, NULL, NULL, NULL)
+                """,
+                (project_id, source_generation),
+            )
+        if fail_stage == "after_state":
+            raise StorageError(
+                "internal_error",
+                "injected completion Bundle migration failure",
+            )
+
+        after = _selected_table_projection_snapshot(
+            connection,
+            preserved_tables,
+            column_basis=old_columns,
+        )
+        if after != before:
+            raise evidence_ledger_inconsistent()
+        invented_count = sum(
+            int(
+                connection.execute(
+                    f"SELECT COUNT(*) FROM {_quoted_identifier(table_name)}"
+                ).fetchone()[0]
+            )
+            for table_name in (
+                "criterion_evidence_links",
+                "completion_evidence_bundles",
+                "completion_bundle_members",
+                "completion_bundle_finding_snapshots",
+            )
+        )
+        nonlegacy_cycles = int(
+            connection.execute(
+                """
+                SELECT COUNT(*) FROM task_completion_cycles
+                 WHERE evidence_basis_version != 0
+                    OR completion_evidence_bundle_id IS NOT NULL
+                """
+            ).fetchone()[0]
+        )
+        if invented_count or nonlegacy_cycles:
+            raise evidence_ledger_inconsistent()
+
+        connection.execute(
+            """
+            INSERT INTO schema_migrations(version, name, applied_at)
+            VALUES (19, 'completion_evidence_bundles', ?)
+            """,
+            (migration_time,),
+        )
+        if fail_stage == "after_marker":
+            raise StorageError(
+                "internal_error",
+                "injected completion Bundle migration failure",
+            )
+        validate_evidence_ledger_storage(connection)
+        validate_completion_cycle_storage(connection)
+        if [
+            str(row[0])
+            for row in connection.execute("PRAGMA quick_check").fetchall()
+        ] != ["ok"]:
+            raise evidence_ledger_inconsistent()
+        if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            raise evidence_ledger_inconsistent()
+        if fail_stage == "before_commit":
+            raise StorageError(
+                "internal_error",
+                "injected completion Bundle migration failure",
+            )
+        connection.commit()
+    except StorageError as exc:
+        connection.rollback()
+        if exc.code in {
+            "evidence_ledger_inconsistent",
+            "completion_history_inconsistent",
+            "invalid_verification_evidence",
+        }:
+            raise _unreadable_project_state() from exc
+        raise
+    except sqlite3.Error as exc:
         connection.rollback()
         raise _unreadable_project_state() from exc
     except Exception:
@@ -9336,8 +10666,16 @@ def apply_migrations(
     if version < 18:
         apply_evidence_ledger_capture_migration(connection)
         applied.append(18)
+        version = 18
     else:
         apply_evidence_ledger_capture_migration(connection)
+    if connection.in_transaction:
+        connection.commit()
+    if version < 19:
+        apply_completion_evidence_bundle_migration(connection)
+        applied.append(19)
+    else:
+        apply_completion_evidence_bundle_migration(connection)
     return applied, warnings
 
 
@@ -10152,9 +11490,31 @@ def _validate_evidence_ledger_schema_contract(
                 for contract in alter_statements
                 if contract[0] == table_name
             )
+            later_definitions: tuple[str, ...] = ()
+            later_columns: tuple[str, ...] = ()
+            if (
+                current_schema_version(connection) >= 19
+                and table_name == "task_completion_cycles"
+            ):
+                later_definitions = (
+                    _normalized_schema_sql(
+                        "evidence_basis_version INTEGER NOT NULL DEFAULT 0 "
+                        "CHECK (evidence_basis_version IN (0, 1))"
+                    ),
+                    _normalized_schema_sql(
+                        "completion_evidence_bundle_id TEXT REFERENCES "
+                        "completion_evidence_bundles("
+                        "completion_evidence_bundle_id) DEFERRABLE "
+                        "INITIALLY DEFERRED"
+                    ),
+                )
+                later_columns = (
+                    "evidence_basis_version",
+                    "completion_evidence_bundle_id",
+                )
             expected_suffix = (
                 ", "
-                + ", ".join(expected_definitions)
+                + ", ".join((*expected_definitions, *later_definitions))
                 + base_constraint_suffixes[table_name]
             )
             if not table_sql[table_name].endswith(expected_suffix):
@@ -10173,6 +11533,7 @@ def _validate_evidence_ledger_schema_contract(
                 for contract in alter_statements
                 if contract[0] == table_name
             )
+            expected_columns += later_columns
             column_rows = connection.execute(
                 f"PRAGMA table_xinfo({_quoted_identifier(table_name)})"
             ).fetchall()
@@ -13076,11 +14437,14 @@ def _validate_evidence_ledger_rows(
     )
     if type(expected_project_id) is not str or not expected_project_id:
         raise evidence_ledger_inconsistent()
+    source_schema_version = current_schema_version(connection)
+    if source_schema_version not in {18, 19}:
+        raise evidence_ledger_inconsistent()
     try:
         task_validation = validate_stored_task_rows(
             task_rows,
             connection=connection,
-            source_schema_version=18,
+            source_schema_version=source_schema_version,
             expected_project_id=expected_project_id,
             verification_rejection_is_local=verification_rejection_is_local,
             _prevalidated_privacy_successes=authority.ordinary_privacy_successes,
@@ -13228,17 +14592,620 @@ def _validate_evidence_ledger_rows(
     return tuple(task_rows)
 
 
+def _projection_state_from_row(row: sqlite3.Row) -> EvidenceProjectionState:
+    project_id = row["project_id"]
+    source_generation = row["source_generation"]
+    published_generation = row["published_generation"]
+    index_digest = row["index_digest"]
+    last_success_at = row["last_success_at"]
+    last_outcome_code = row["last_outcome_code"]
+    last_outcome_at = row["last_outcome_at"]
+    if (
+        type(project_id) is not str
+        or not project_id
+        or type(source_generation) is not int
+        or source_generation < 0
+        or source_generation > SQLITE_INT64_MAX
+        or (
+            published_generation is not None
+            and (
+                type(published_generation) is not int
+                or published_generation < 0
+                or published_generation > source_generation
+            )
+        )
+        or (
+            (published_generation is None) != (index_digest is None)
+        )
+        or (
+            index_digest is not None
+            and (
+                type(index_digest) is not str
+                or SHA256_DIGEST_PATTERN.fullmatch(index_digest) is None
+            )
+        )
+        or (
+            last_outcome_code is not None
+            and (
+                type(last_outcome_code) is not str
+                or last_outcome_code not in EVIDENCE_PROJECTION_OUTCOMES
+            )
+        )
+        or ((last_outcome_code is None) != (last_outcome_at is None))
+        or (last_success_at is not None and type(last_success_at) is not str)
+        or (last_outcome_at is not None and type(last_outcome_at) is not str)
+    ):
+        raise evidence_ledger_inconsistent()
+    try:
+        if last_success_at is not None:
+            validate_utc_timestamp(
+                last_success_at,
+                field="Evidence projection success time",
+            )
+        if last_outcome_at is not None:
+            validate_utc_timestamp(
+                last_outcome_at,
+                field="Evidence projection outcome time",
+            )
+    except StorageError as exc:
+        raise evidence_ledger_inconsistent() from exc
+    return EvidenceProjectionState(
+        project_id=project_id,
+        source_generation=source_generation,
+        published_generation=published_generation,
+        index_digest=index_digest,
+        last_success_at=last_success_at,
+        last_outcome_code=last_outcome_code,
+        last_outcome_at=last_outcome_at,
+    )
+
+
+def _criterion_link_relation_valid(
+    *,
+    criterion_kind: object,
+    source_kind: object,
+    relation: object,
+) -> bool:
+    return (
+        relation == "verification_attestation"
+        and criterion_kind == "verification"
+        and source_kind == "verification_receipt"
+    ) or (
+        relation == "review_assessment"
+        and criterion_kind == "acceptance"
+        and source_kind == "review_receipt"
+    ) or (
+        relation == "review_finding"
+        and criterion_kind == "acceptance"
+        and source_kind == "review_finding"
+    ) or (
+        relation == "completion_basis"
+        and criterion_kind == "acceptance"
+        and source_kind in {"artifact_manifest", "completion_evidence"}
+    )
+
+
+def _validate_completion_evidence_bundle_rows(
+    connection: sqlite3.Connection,
+) -> None:
+    criteria = {
+        str(row["criterion_id"]): row
+        for row in connection.execute(
+            "SELECT * FROM contract_criteria ORDER BY criterion_id"
+        ).fetchall()
+    }
+    references = {
+        str(row["evidence_reference_id"]): row
+        for row in connection.execute(
+            "SELECT * FROM evidence_references ORDER BY evidence_reference_id"
+        ).fetchall()
+    }
+    links: dict[str, sqlite3.Row] = {}
+    for row in connection.execute(
+        "SELECT * FROM criterion_evidence_links ORDER BY criterion_evidence_link_id"
+    ).fetchall():
+        link_id = row["criterion_evidence_link_id"]
+        criterion_id = row["criterion_id"]
+        reference_id = row["evidence_reference_id"]
+        relation = row["relation"]
+        producer_version = row["producer_version"]
+        created_at = row["created_at"]
+        criterion = criteria.get(str(criterion_id))
+        reference = references.get(str(reference_id))
+        if (
+            type(link_id) is not str
+            or CRITERION_EVIDENCE_LINK_ID_PATTERN.fullmatch(link_id) is None
+            or link_id in links
+            or type(criterion_id) is not str
+            or type(reference_id) is not str
+            or type(relation) is not str
+            or relation not in CRITERION_EVIDENCE_RELATIONS
+            or relation in {"derived_analysis", "runner_observation"}
+            or type(producer_version) is not int
+            or producer_version <= 0
+            or type(created_at) is not str
+            or criterion is None
+            or reference is None
+            or criterion["project_id"] != row["project_id"]
+            or criterion["task_id"] != row["task_id"]
+            or reference["project_id"] != row["project_id"]
+            or reference["task_id"] != row["task_id"]
+            or reference["assurance_class"] != row["assurance_class"]
+            or reference["producer_class"] != row["producer_class"]
+            or reference["producer_version"] != producer_version
+            or not _criterion_link_relation_valid(
+                criterion_kind=criterion["criterion_kind"],
+                source_kind=reference["source_kind"],
+                relation=relation,
+            )
+        ):
+            raise evidence_ledger_inconsistent()
+        try:
+            validate_utc_timestamp(
+                created_at,
+                field="criterion Evidence Link creation time",
+            )
+        except StorageError as exc:
+            raise evidence_ledger_inconsistent() from exc
+        links[link_id] = row
+
+    bundle_rows = connection.execute(
+        "SELECT * FROM completion_evidence_bundles "
+        "ORDER BY completion_evidence_bundle_id"
+    ).fetchall()
+    bundles = {
+        str(row["completion_evidence_bundle_id"]): row for row in bundle_rows
+    }
+    if len(bundles) != len(bundle_rows):
+        raise evidence_ledger_inconsistent()
+
+    member_rows = connection.execute(
+        "SELECT * FROM completion_bundle_members "
+        "ORDER BY completion_evidence_bundle_id, member_kind, ordinal"
+    ).fetchall()
+    members_by_bundle: dict[str, dict[str, list[sqlite3.Row]]] = {}
+    used_link_ids: set[str] = set()
+    for row in member_rows:
+        bundle_id = row["completion_evidence_bundle_id"]
+        member_kind = row["member_kind"]
+        ordinal = row["ordinal"]
+        if (
+            type(bundle_id) is not str
+            or bundle_id not in bundles
+            or type(member_kind) is not str
+            or member_kind not in COMPLETION_BUNDLE_MEMBER_KINDS
+            or type(ordinal) is not int
+            or ordinal < 0
+            or bundles[bundle_id]["project_id"] != row["project_id"]
+            or bundles[bundle_id]["task_id"] != row["task_id"]
+        ):
+            raise evidence_ledger_inconsistent()
+        grouped = members_by_bundle.setdefault(bundle_id, {}).setdefault(
+            member_kind,
+            [],
+        )
+        if ordinal != len(grouped):
+            raise evidence_ledger_inconsistent()
+        if member_kind == "criterion_link":
+            link_id = row["criterion_evidence_link_id"]
+            if (
+                type(link_id) is not str
+                or row["evidence_reference_id"] is not None
+                or link_id not in links
+                or links[link_id]["project_id"] != row["project_id"]
+                or links[link_id]["task_id"] != row["task_id"]
+            ):
+                raise evidence_ledger_inconsistent()
+            used_link_ids.add(link_id)
+        else:
+            reference_id = row["evidence_reference_id"]
+            if (
+                type(reference_id) is not str
+                or row["criterion_evidence_link_id"] is not None
+                or reference_id not in references
+                or references[reference_id]["project_id"] != row["project_id"]
+                or references[reference_id]["task_id"] != row["task_id"]
+            ):
+                raise evidence_ledger_inconsistent()
+        grouped.append(row)
+    if used_link_ids != set(links):
+        raise evidence_ledger_inconsistent()
+
+    snapshots_by_bundle: dict[str, list[sqlite3.Row]] = {}
+    for row in connection.execute(
+        "SELECT * FROM completion_bundle_finding_snapshots "
+        "ORDER BY completion_evidence_bundle_id, ordinal"
+    ).fetchall():
+        bundle_id = row["completion_evidence_bundle_id"]
+        ordinal = row["ordinal"]
+        producer_version = row["producer_version"]
+        reference_id = row["evidence_reference_id"]
+        if (
+            type(bundle_id) is not str
+            or bundle_id not in bundles
+            or type(ordinal) is not int
+            or ordinal < 0
+            or type(row["review_finding_id"]) is not str
+            or type(row["review_receipt_id"]) is not str
+            or type(row["target_generation"]) is not int
+            or row["target_generation"] <= 0
+            or type(row["summary"]) is not str
+            or type(row["resolution_summary"]) is not str
+            or type(row["created_at"]) is not str
+            or type(producer_version) is not int
+            or producer_version != 1
+            or type(row["digest"]) is not str
+            or SHA256_DIGEST_PATTERN.fullmatch(row["digest"]) is None
+            or bundles[bundle_id]["project_id"] != row["project_id"]
+            or bundles[bundle_id]["task_id"] != row["task_id"]
+            or (
+                reference_id is None
+                and (
+                    row["assurance_class"] != "legacy_unknown"
+                    or row["producer_class"] != "legacy_migration"
+                )
+            )
+            or (
+                reference_id is not None
+                and (
+                    type(reference_id) is not str
+                    or reference_id not in references
+                    or row["assurance_class"] != "bound_attestation"
+                    or row["producer_class"] != "trusted_caller"
+                    or references[reference_id]["source_kind"]
+                    != "review_finding"
+                    or references[reference_id]["source_id"]
+                    != row["review_finding_id"]
+                )
+            )
+        ):
+            raise evidence_ledger_inconsistent()
+        grouped = snapshots_by_bundle.setdefault(bundle_id, [])
+        if ordinal != len(grouped):
+            raise evidence_ledger_inconsistent()
+        try:
+            validate_utc_timestamp(
+                row["created_at"],
+                field="completion Finding snapshot creation time",
+            )
+            if row["resolved_at"] is not None:
+                if type(row["resolved_at"]) is not str:
+                    raise evidence_ledger_inconsistent()
+                validate_utc_timestamp(
+                    row["resolved_at"],
+                    field="completion Finding snapshot resolution time",
+                )
+        except StorageError as exc:
+            raise evidence_ledger_inconsistent() from exc
+        grouped.append(row)
+
+    snapshots = {
+        str(row["authority_snapshot_id"]): row
+        for row in connection.execute(
+            "SELECT * FROM authority_snapshots ORDER BY authority_snapshot_id"
+        ).fetchall()
+    }
+    snapshot_links = _snapshot_criterion_links(connection)
+    manifests = {
+        str(row["artifact_manifest_id"]): row
+        for row in connection.execute(
+            "SELECT * FROM artifact_manifests ORDER BY artifact_manifest_id"
+        ).fetchall()
+    }
+    verification_receipts = {
+        str(row["verification_receipt_id"]): row
+        for row in connection.execute(
+            "SELECT * FROM verification_receipts ORDER BY verification_receipt_id"
+        ).fetchall()
+    }
+    cycle_rows = connection.execute(
+        "SELECT * FROM task_completion_cycles "
+        "ORDER BY project_id, task_id, saved_cycle_ordinal"
+    ).fetchall()
+    cycles = {
+        cycle.completion_cycle_id: cycle
+        for cycle in (_cycle_from_row(row) for row in cycle_rows)
+    }
+    if len(cycles) != len(cycle_rows):
+        raise evidence_ledger_inconsistent()
+
+    for bundle_id, row in bundles.items():
+        cycle = cycles.get(str(row["completion_cycle_id"]))
+        snapshot = snapshots.get(str(row["authority_snapshot_id"]))
+        manifest = manifests.get(str(row["artifact_manifest_id"]))
+        owner_links = snapshot_links.get(str(row["authority_snapshot_id"]), {})
+        verification_receipt_id = row["verification_receipt_id"]
+        omission_mask = row["omission_mask"]
+        payload_size = row["payload_size_bytes"]
+        if (
+            COMPLETION_EVIDENCE_BUNDLE_ID_PATTERN.fullmatch(bundle_id) is None
+            or cycle is None
+            or cycle.evidence_basis_version != 1
+            or cycle.completion_evidence_bundle_id != bundle_id
+            or cycle.project_id != row["project_id"]
+            or cycle.task_id != row["task_id"]
+            or cycle.saved_cycle_ordinal != row["cycle_ordinal"]
+            or cycle.contract_revision != row["contract_revision"]
+            or row["source_schema_version"] != 19
+            or type(row["source_schema_version"]) is not int
+            or row["bundle_version"] != 1
+            or type(row["bundle_version"]) is not int
+            or snapshot is None
+            or snapshot["project_id"] != row["project_id"]
+            or snapshot["task_id"] != row["task_id"]
+            or snapshot["contract_revision"] != row["contract_revision"]
+            or owner_links.get("acceptance") != row["acceptance_criterion_id"]
+            or owner_links.get("verification") != row["verification_criterion_id"]
+            or manifest is None
+            or manifest["project_id"] != row["project_id"]
+            or manifest["task_id"] != row["task_id"]
+            or manifest["authority_snapshot_id"] != row["authority_snapshot_id"]
+            or manifest["acceptance_criterion_id"]
+            != row["acceptance_criterion_id"]
+            or manifest["verification_criterion_id"]
+            != row["verification_criterion_id"]
+            or (
+                manifest["target_kind"], manifest["target_value"],
+                manifest["target_base_revision"], manifest["target_generation"],
+            )
+            != (
+                row["target_kind"], row["target_value"],
+                row["target_base_revision"], row["target_generation"],
+            )
+            or (
+                cycle.review_target_kind, cycle.review_target_value,
+                cycle.review_target_base_revision,
+                cycle.review_target_generation,
+            )
+            != (
+                row["target_kind"], row["target_value"],
+                row["target_base_revision"], row["target_generation"],
+            )
+            or row["target_capture_version"] != 1
+            or type(row["target_capture_version"]) is not int
+            or type(omission_mask) is not int
+            or not 0 <= omission_mask <= 15
+            or type(row["sealed_at"]) is not str
+            or type(row["bundle_digest"]) is not str
+            or SHA256_DIGEST_PATTERN.fullmatch(row["bundle_digest"]) is None
+            or type(payload_size) is not int
+            or not 1 <= payload_size <= COMPLETION_EVIDENCE_BUNDLE_MAX_BYTES
+        ):
+            raise evidence_ledger_inconsistent()
+        try:
+            validate_utc_timestamp(
+                row["sealed_at"],
+                field="completion Evidence Bundle seal time",
+            )
+        except StorageError as exc:
+            raise evidence_ledger_inconsistent() from exc
+        if row["verification_criterion_id"] is None:
+            if verification_receipt_id is not None:
+                raise evidence_ledger_inconsistent()
+        else:
+            receipt = verification_receipts.get(str(verification_receipt_id))
+            if (
+                receipt is None
+                or verification_receipt_id != cycle.verification_receipt_id
+                or receipt["project_id"] != row["project_id"]
+                or receipt["task_id"] != row["task_id"]
+                or receipt["verification_subject_basis_version"] != 1
+                or receipt["subject_authority_snapshot_id"]
+                != row["authority_snapshot_id"]
+                or receipt["subject_verification_criterion_id"]
+                != row["verification_criterion_id"]
+            ):
+                raise evidence_ledger_inconsistent()
+
+        member_groups = members_by_bundle.get(bundle_id, {})
+        reference_members = member_groups.get("evidence_reference", [])
+        link_members = member_groups.get("criterion_link", [])
+        member_reference_ids = {
+            str(member["evidence_reference_id"])
+            for member in reference_members
+        }
+        member_link_ids = {
+            str(member["criterion_evidence_link_id"])
+            for member in link_members
+        }
+        if any(
+            str(links[link_id]["evidence_reference_id"])
+            not in member_reference_ids
+            for link_id in member_link_ids
+        ):
+            raise evidence_ledger_inconsistent()
+        source_keys = {
+            (str(references[reference_id]["source_kind"]),
+             str(references[reference_id]["source_id"])): reference_id
+            for reference_id in member_reference_ids
+        }
+        required_source_keys = {
+            ("artifact_manifest", str(row["artifact_manifest_id"])),
+            ("completion_evidence", cycle.completion_cycle_id),
+            *(
+                ("review_receipt", receipt_id)
+                for receipt_id in cycle.gate_basis.qualifying_receipt_ids
+            ),
+        }
+        if verification_receipt_id is not None:
+            required_source_keys.add(
+                ("verification_receipt", str(verification_receipt_id))
+            )
+        finding_rows = snapshots_by_bundle.get(bundle_id, [])
+        for finding in finding_rows:
+            if finding["evidence_reference_id"] is not None:
+                required_source_keys.add(
+                    ("review_finding", str(finding["review_finding_id"]))
+                )
+        if set(source_keys) != required_source_keys:
+            raise evidence_ledger_inconsistent()
+
+        expected_links: set[tuple[str, str, str]] = set()
+        acceptance_id = row["acceptance_criterion_id"]
+        verification_id = row["verification_criterion_id"]
+        current_finding_source_ids = {
+            str(finding["review_finding_id"])
+            for finding in finding_rows
+            if (
+                finding["evidence_reference_id"] is not None
+                and finding["target_generation"]
+                == cycle.review_target_generation
+            )
+        }
+        if acceptance_id is not None:
+            for source_kind, source_id in required_source_keys:
+                if (
+                    source_kind == "review_finding"
+                    and source_id not in current_finding_source_ids
+                ):
+                    continue
+                relation = {
+                    "artifact_manifest": "completion_basis",
+                    "completion_evidence": "completion_basis",
+                    "review_receipt": "review_assessment",
+                    "review_finding": "review_finding",
+                }.get(source_kind)
+                if relation is not None:
+                    expected_links.add(
+                        (str(acceptance_id), source_keys[(source_kind, source_id)], relation)
+                    )
+        if verification_id is not None and verification_receipt_id is not None:
+            expected_links.add(
+                (
+                    str(verification_id),
+                    source_keys[("verification_receipt", str(verification_receipt_id))],
+                    "verification_attestation",
+                )
+            )
+        actual_links = {
+            (
+                str(links[link_id]["criterion_id"]),
+                str(links[link_id]["evidence_reference_id"]),
+                str(links[link_id]["relation"]),
+            )
+            for link_id in member_link_ids
+        }
+        if actual_links != expected_links:
+            raise evidence_ledger_inconsistent()
+
+        expected_omission_mask = 0
+        if acceptance_id is None:
+            expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
+                "acceptance_criterion_absent"
+            ]
+        if verification_id is None:
+            expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
+                "verification_criterion_absent"
+            ]
+        if manifest["omission_code"] == "artifact_content_not_observed":
+            expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
+                "artifact_content_not_observed"
+            ]
+        if any(
+            finding["evidence_reference_id"] is None
+            for finding in finding_rows
+        ):
+            expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
+                "historical_finding_reference_absent"
+            ]
+        if omission_mask != expected_omission_mask:
+            raise evidence_ledger_inconsistent()
+
+    for cycle in cycles.values():
+        if cycle.evidence_basis_version == 1:
+            if cycle.completion_evidence_bundle_id not in bundles:
+                raise evidence_ledger_inconsistent()
+        elif cycle.completion_evidence_bundle_id is not None:
+            raise evidence_ledger_inconsistent()
+    if {
+        str(row["completion_cycle_id"]) for row in bundle_rows
+    } != {
+        cycle.completion_cycle_id
+        for cycle in cycles.values()
+        if cycle.evidence_basis_version == 1
+    }:
+        raise evidence_ledger_inconsistent()
+
+    project_rows = connection.execute(
+        "SELECT project_id FROM project_meta ORDER BY project_id"
+    ).fetchall()
+    projection_rows = connection.execute(
+        "SELECT * FROM evidence_projection_state ORDER BY project_id"
+    ).fetchall()
+    projection_states = {
+        state.project_id: state
+        for state in (_projection_state_from_row(row) for row in projection_rows)
+    }
+    project_ids = {
+        str(row["project_id"])
+        for row in project_rows
+        if type(row["project_id"]) is str and row["project_id"]
+    }
+    if len(project_ids) != len(project_rows) or set(projection_states) != project_ids:
+        raise evidence_ledger_inconsistent()
+    cycle_counts: dict[str, int] = {project_id: 0 for project_id in project_ids}
+    for cycle in cycles.values():
+        if cycle.project_id not in cycle_counts:
+            raise evidence_ledger_inconsistent()
+        cycle_counts[cycle.project_id] += 1
+    if any(
+        projection_states[project_id].source_generation != cycle_count
+        for project_id, cycle_count in cycle_counts.items()
+    ):
+        raise evidence_ledger_inconsistent()
+    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+        raise evidence_ledger_inconsistent()
+
+
+def _validated_completion_evidence_projection_bases(
+    connection: sqlite3.Connection,
+) -> dict[str, EvidenceProjectionBasis]:
+    _validate_completion_evidence_bundle_schema_contract(connection)
+    _validate_completion_evidence_bundle_rows(connection)
+    project_rows = connection.execute(
+        "SELECT project_id FROM project_meta ORDER BY project_id"
+    ).fetchall()
+    project_ids = tuple(row["project_id"] for row in project_rows)
+    if (
+        any(
+            type(project_id) is not str or not project_id
+            for project_id in project_ids
+        )
+        or len(set(project_ids)) != len(project_ids)
+    ):
+        raise evidence_ledger_inconsistent()
+    result: dict[str, EvidenceProjectionBasis] = {}
+    for project_id in project_ids:
+        basis = _capture_evidence_projection_basis_rows(
+            connection,
+            project_id=project_id,
+        )
+        for record in basis.native_bundles:
+            _validate_projection_bundle_record(record)
+        result[project_id] = basis
+    return result
+
+
+def validate_completion_evidence_bundle_storage(
+    connection: sqlite3.Connection,
+) -> None:
+    _validated_completion_evidence_projection_bases(connection)
+
+
 def _validate_evidence_ledger_storage_with_task_rows(
     connection: sqlite3.Connection,
 ) -> tuple[sqlite3.Row, ...]:
     _validate_evidence_ledger_schema_contract(connection)
-    return _validate_evidence_ledger_rows(connection)
+    task_rows = _validate_evidence_ledger_rows(connection)
+    if current_schema_version(connection) >= 19:
+        validate_completion_evidence_bundle_storage(connection)
+    return task_rows
 
 
 def validate_evidence_ledger_storage(
     connection: sqlite3.Connection,
 ) -> None:
-    """Validate the complete schema-v18 capture foundation and row relations."""
+    """Validate the complete current Evidence storage and row relations."""
 
     _validate_evidence_ledger_storage_with_task_rows(connection)
 
@@ -13246,13 +15213,15 @@ def validate_evidence_ledger_storage(
 def validate_evidence_ledger_storage_for_recovery(
     connection: sqlite3.Connection,
 ) -> None:
-    """Validate schema v18 while preserving the Task-local recovery exception."""
+    """Validate current Evidence storage with the Task-local recovery exception."""
 
     _validate_evidence_ledger_schema_contract(connection)
     _validate_evidence_ledger_rows(
         connection,
         verification_rejection_is_local=True,
     )
+    if current_schema_version(connection) >= 19:
+        validate_completion_evidence_bundle_storage(connection)
 
 
 def validate_selected_task_receipt_evidence(
@@ -14023,6 +15992,1559 @@ def read_evidence_reference(
     return dict(row)
 
 
+def _prepared_row(value: object, fields: set[str]) -> dict[str, Any]:
+    try:
+        result = {name: getattr(value, name) for name in fields}
+    except (AttributeError, TypeError) as exc:
+        raise evidence_ledger_inconsistent() from exc
+    if set(result) != fields:
+        raise evidence_ledger_inconsistent()
+    return result
+
+
+def _validate_prepared_criterion_evidence_link(
+    connection: sqlite3.Connection,
+    link: PreparedCriterionEvidenceLink,
+) -> None:
+    if (
+        not isinstance(link, PreparedCriterionEvidenceLink)
+        or CRITERION_EVIDENCE_LINK_ID_PATTERN.fullmatch(
+            link.criterion_evidence_link_id
+        )
+        is None
+        or type(link.project_id) is not str
+        or not link.project_id
+        or type(link.task_id) is not str
+        or not link.task_id
+        or type(link.criterion_id) is not str
+        or not link.criterion_id
+        or type(link.evidence_reference_id) is not str
+        or EVIDENCE_REFERENCE_ID_PATTERN.fullmatch(
+            link.evidence_reference_id
+        )
+        is None
+        or type(link.relation) is not str
+        or link.relation not in CRITERION_EVIDENCE_RELATIONS
+        or link.relation in {"derived_analysis", "runner_observation"}
+        or type(link.assurance_class) is not str
+        or type(link.producer_class) is not str
+        or type(link.producer_version) is not int
+        or link.producer_version <= 0
+        or type(link.created_at) is not str
+    ):
+        raise evidence_ledger_inconsistent()
+    try:
+        validate_utc_timestamp(
+            link.created_at,
+            field="criterion Evidence Link creation time",
+        )
+    except StorageError as exc:
+        raise evidence_ledger_inconsistent() from exc
+    relation = connection.execute(
+        """
+        SELECT criterion.criterion_kind, reference.source_kind,
+               reference.assurance_class, reference.producer_class,
+               reference.producer_version
+          FROM contract_criteria AS criterion
+          JOIN evidence_references AS reference
+            ON reference.project_id = criterion.project_id
+           AND reference.task_id = criterion.task_id
+         WHERE criterion.project_id = ?
+           AND criterion.task_id = ?
+           AND criterion.criterion_id = ?
+           AND reference.evidence_reference_id = ?
+        """,
+        (
+            link.project_id,
+            link.task_id,
+            link.criterion_id,
+            link.evidence_reference_id,
+        ),
+    ).fetchone()
+    if (
+        relation is None
+        or relation["assurance_class"] != link.assurance_class
+        or relation["producer_class"] != link.producer_class
+        or relation["producer_version"] != link.producer_version
+        or not _criterion_link_relation_valid(
+            criterion_kind=relation["criterion_kind"],
+            source_kind=relation["source_kind"],
+            relation=link.relation,
+        )
+    ):
+        raise evidence_ledger_inconsistent()
+
+
+def persist_criterion_evidence_link_locked(
+    connection: sqlite3.Connection,
+    *,
+    link: PreparedCriterionEvidenceLink,
+) -> PreparedCriterionEvidenceLink:
+    """Persist or exactly reuse one append-only criterion Evidence Link."""
+
+    _require_evidence_writer(connection)
+    _validate_prepared_criterion_evidence_link(connection, link)
+    fields = _EVIDENCE_LEDGER_REQUIRED_COLUMNS["criterion_evidence_links"]
+    values = _prepared_row(link, fields)
+    existing = connection.execute(
+        """
+        SELECT * FROM criterion_evidence_links
+         WHERE criterion_evidence_link_id = ?
+        """,
+        (link.criterion_evidence_link_id,),
+    ).fetchone()
+    if existing is None:
+        ordered = tuple(sorted(fields))
+        try:
+            connection.execute(
+                f"INSERT INTO criterion_evidence_links("
+                f"{', '.join(ordered)}) VALUES ("
+                f"{', '.join(':' + name for name in ordered)})",
+                values,
+            )
+        except sqlite3.IntegrityError as exc:
+            raise evidence_ledger_inconsistent() from exc
+        existing = connection.execute(
+            "SELECT * FROM criterion_evidence_links "
+            "WHERE criterion_evidence_link_id = ?",
+            (link.criterion_evidence_link_id,),
+        ).fetchone()
+    if existing is None or dict(existing) != values:
+        raise evidence_ledger_inconsistent()
+    return link
+
+
+def _validate_prepared_completion_bundle(
+    bundle: PreparedCompletionEvidenceBundle,
+    *,
+    expected_cycle: CompletionCycle,
+) -> None:
+    if (
+        not isinstance(bundle, PreparedCompletionEvidenceBundle)
+        or COMPLETION_EVIDENCE_BUNDLE_ID_PATTERN.fullmatch(
+            bundle.completion_evidence_bundle_id
+        )
+        is None
+        or bundle.completion_evidence_bundle_id
+        != expected_cycle.completion_evidence_bundle_id
+        or bundle.project_id != expected_cycle.project_id
+        or bundle.task_id != expected_cycle.task_id
+        or bundle.completion_cycle_id != expected_cycle.completion_cycle_id
+        or bundle.cycle_ordinal != expected_cycle.saved_cycle_ordinal
+        or bundle.source_schema_version != 19
+        or type(bundle.source_schema_version) is not int
+        or bundle.bundle_version != 1
+        or type(bundle.bundle_version) is not int
+        or bundle.contract_revision != expected_cycle.contract_revision
+        or type(bundle.contract_revision) is not int
+        or bundle.contract_revision < 0
+        or type(bundle.authority_snapshot_id) is not str
+        or not bundle.authority_snapshot_id
+        or (
+            bundle.acceptance_criterion_id is not None
+            and type(bundle.acceptance_criterion_id) is not str
+        )
+        or (
+            bundle.verification_criterion_id is not None
+            and type(bundle.verification_criterion_id) is not str
+        )
+        or (
+            bundle.target_kind,
+            bundle.target_value,
+            bundle.target_base_revision,
+            bundle.target_generation,
+        )
+        != (
+            expected_cycle.review_target_kind,
+            expected_cycle.review_target_value,
+            expected_cycle.review_target_base_revision,
+            expected_cycle.review_target_generation,
+        )
+        or bundle.target_capture_version != 1
+        or type(bundle.target_capture_version) is not int
+        or type(bundle.artifact_manifest_id) is not str
+        or ARTIFACT_MANIFEST_ID_PATTERN.fullmatch(bundle.artifact_manifest_id)
+        is None
+        or bundle.verification_receipt_id
+        != expected_cycle.verification_receipt_id
+        or type(bundle.omission_mask) is not int
+        or not 0 <= bundle.omission_mask <= 15
+        or type(bundle.sealed_at) is not str
+        or bundle.sealed_at != expected_cycle.recorded_at
+        or type(bundle.bundle_digest) is not str
+        or SHA256_DIGEST_PATTERN.fullmatch(bundle.bundle_digest) is None
+        or type(bundle.payload_size_bytes) is not int
+        or not 1
+        <= bundle.payload_size_bytes
+        <= COMPLETION_EVIDENCE_BUNDLE_MAX_BYTES
+    ):
+        raise evidence_ledger_inconsistent()
+    try:
+        validate_utc_timestamp(
+            bundle.sealed_at,
+            field="completion Evidence Bundle seal time",
+        )
+    except StorageError as exc:
+        raise evidence_ledger_inconsistent() from exc
+    link_ids: set[str] = set()
+    for link in bundle.criterion_links:
+        if (
+            not isinstance(link, PreparedCriterionEvidenceLink)
+            or link.project_id != bundle.project_id
+            or link.task_id != bundle.task_id
+            or link.criterion_evidence_link_id in link_ids
+        ):
+            raise evidence_ledger_inconsistent()
+        link_ids.add(link.criterion_evidence_link_id)
+    member_keys: set[tuple[str, int]] = set()
+    member_link_ids: set[str] = set()
+    member_reference_ids: set[str] = set()
+    next_ordinals = {kind: 0 for kind in COMPLETION_BUNDLE_MEMBER_KINDS}
+    for member in bundle.members:
+        if (
+            not isinstance(member, PreparedCompletionBundleMember)
+            or member.project_id != bundle.project_id
+            or member.task_id != bundle.task_id
+            or member.completion_evidence_bundle_id
+            != bundle.completion_evidence_bundle_id
+            or member.member_kind not in COMPLETION_BUNDLE_MEMBER_KINDS
+            or type(member.ordinal) is not int
+            or member.ordinal != next_ordinals[member.member_kind]
+            or (member.member_kind, member.ordinal) in member_keys
+        ):
+            raise evidence_ledger_inconsistent()
+        next_ordinals[member.member_kind] += 1
+        member_keys.add((member.member_kind, member.ordinal))
+        if member.member_kind == "criterion_link":
+            if (
+                type(member.criterion_evidence_link_id) is not str
+                or member.criterion_evidence_link_id not in link_ids
+                or member.evidence_reference_id is not None
+                or member.criterion_evidence_link_id in member_link_ids
+            ):
+                raise evidence_ledger_inconsistent()
+            member_link_ids.add(member.criterion_evidence_link_id)
+        elif (
+            member.criterion_evidence_link_id is not None
+            or type(member.evidence_reference_id) is not str
+            or EVIDENCE_REFERENCE_ID_PATTERN.fullmatch(
+                member.evidence_reference_id
+            )
+            is None
+            or member.evidence_reference_id in member_reference_ids
+        ):
+            raise evidence_ledger_inconsistent()
+        else:
+            member_reference_ids.add(member.evidence_reference_id)
+    if member_link_ids != link_ids or any(
+        link.evidence_reference_id not in member_reference_ids
+        for link in bundle.criterion_links
+    ):
+        raise evidence_ledger_inconsistent()
+    finding_ids: set[str] = set()
+    for ordinal, finding in enumerate(bundle.finding_snapshots):
+        if (
+            not isinstance(finding, PreparedCompletionFindingSnapshot)
+            or finding.project_id != bundle.project_id
+            or finding.task_id != bundle.task_id
+            or finding.completion_evidence_bundle_id
+            != bundle.completion_evidence_bundle_id
+            or type(finding.ordinal) is not int
+            or finding.ordinal != ordinal
+            or REVIEW_FINDING_ID_PATTERN.fullmatch(finding.review_finding_id)
+            is None
+            or REVIEW_RECEIPT_ID_PATTERN.fullmatch(finding.review_receipt_id)
+            is None
+            or finding.review_finding_id in finding_ids
+            or type(finding.target_generation) is not int
+            or finding.target_generation <= 0
+            or finding.severity not in {"high", "medium", "low"}
+            or type(finding.summary) is not str
+            or not 1 <= len(finding.summary) <= 1_000
+            or finding.status not in {"open", "resolved"}
+            or type(finding.resolution_summary) is not str
+            or len(finding.resolution_summary) > 1_000
+            or type(finding.created_at) is not str
+            or (
+                finding.status == "open"
+                and (
+                    finding.resolution_summary != ""
+                    or finding.resolved_at is not None
+                )
+            )
+            or (
+                finding.status == "resolved"
+                and (
+                    not finding.resolution_summary
+                    or type(finding.resolved_at) is not str
+                )
+            )
+            or type(finding.producer_version) is not int
+            or finding.producer_version != 1
+            or SHA256_DIGEST_PATTERN.fullmatch(finding.digest) is None
+            or (
+                finding.evidence_reference_id is None
+                and (
+                    finding.assurance_class != "legacy_unknown"
+                    or finding.producer_class != "legacy_migration"
+                )
+            )
+            or (
+                finding.evidence_reference_id is not None
+                and (
+                    EVIDENCE_REFERENCE_ID_PATTERN.fullmatch(
+                        finding.evidence_reference_id
+                    )
+                    is None
+                    or finding.evidence_reference_id not in member_reference_ids
+                    or finding.assurance_class != "bound_attestation"
+                    or finding.producer_class != "trusted_caller"
+                )
+            )
+        ):
+            raise evidence_ledger_inconsistent()
+        try:
+            validate_utc_timestamp(
+                finding.created_at,
+                field="completion Finding snapshot creation time",
+            )
+            if finding.resolved_at is not None:
+                validate_utc_timestamp(
+                    finding.resolved_at,
+                    field="completion Finding snapshot resolution time",
+                )
+        except StorageError as exc:
+            raise evidence_ledger_inconsistent() from exc
+        finding_ids.add(finding.review_finding_id)
+
+
+def _validate_projection_bundle_record(
+    record: ProjectionBundleRecord,
+) -> None:
+    from task_governance_tool.evidence_projection import (
+        EvidenceProjectionError,
+        build_projection_bundle_artifact,
+    )
+
+    try:
+        build_projection_bundle_artifact(record)
+    except EvidenceProjectionError as exc:
+        raise evidence_ledger_inconsistent() from exc
+
+
+def _prepared_projection_bundle_record_locked(
+    connection: sqlite3.Connection,
+    *,
+    bundle: PreparedCompletionEvidenceBundle,
+    expected_cycle: CompletionCycle,
+) -> ProjectionBundleRecord:
+    completion_reference = _completion_basis_reference(
+        connection,
+        project_id=bundle.project_id,
+        task_id=bundle.task_id,
+        source_kind="completion_evidence",
+        source_id=expected_cycle.completion_cycle_id,
+    )
+    if completion_reference is None:
+        raise evidence_ledger_inconsistent()
+    basis = read_native_completion_bundle_basis_locked(
+        connection,
+        project_id=bundle.project_id,
+        task_id=bundle.task_id,
+        cycle=expected_cycle,
+        completion_reference=completion_reference,
+    )
+    references = (
+        dict(basis.artifact_reference),
+        *(
+            (dict(basis.verification_reference),)
+            if basis.verification_reference is not None
+            else ()
+        ),
+        *(dict(value) for value in basis.review_references),
+        *(
+            dict(value)
+            for value in basis.finding_references
+            if value is not None
+        ),
+        dict(basis.completion_reference),
+    )
+    return ProjectionBundleRecord(
+        bundle=bundle,
+        cycle=expected_cycle,
+        task=dict(basis.task),
+        authority_snapshot=dict(basis.authority_snapshot),
+        criteria=tuple(dict(value) for value in basis.criteria),
+        artifact_manifest=dict(basis.artifact_manifest),
+        artifact_entries=tuple(
+            dict(value) for value in basis.artifact_entries
+        ),
+        evidence_references=references,
+        verification_receipt=(
+            dict(basis.verification_receipt)
+            if basis.verification_receipt is not None
+            else None
+        ),
+        review_receipts=tuple(
+            {
+                "receipt": dict(value["receipt"]),
+                "provenance": value["provenance"],
+            }
+            for value in basis.review_receipts
+        ),
+        finding_snapshots=bundle.finding_snapshots,
+    )
+
+
+def persist_completion_evidence_bundle_locked(
+    connection: sqlite3.Connection,
+    *,
+    bundle: PreparedCompletionEvidenceBundle,
+    expected_cycle: CompletionCycle,
+) -> PreparedCompletionEvidenceBundle:
+    """Persist caller-prepared relational Bundle rows before its deferred cycle."""
+
+    _require_evidence_writer(connection)
+    _validate_prepared_completion_bundle(bundle, expected_cycle=expected_cycle)
+    try:
+        for link in bundle.criterion_links:
+            persist_criterion_evidence_link_locked(connection, link=link)
+        bundle_fields = (
+            _EVIDENCE_LEDGER_REQUIRED_COLUMNS["completion_evidence_bundles"]
+        )
+        bundle_values = _prepared_row(bundle, bundle_fields)
+        ordered_bundle_fields = tuple(sorted(bundle_fields))
+        connection.execute(
+            f"INSERT INTO completion_evidence_bundles("
+            f"{', '.join(ordered_bundle_fields)}) VALUES ("
+            f"{', '.join(':' + name for name in ordered_bundle_fields)})",
+            bundle_values,
+        )
+        member_fields = _EVIDENCE_LEDGER_REQUIRED_COLUMNS[
+            "completion_bundle_members"
+        ]
+        ordered_member_fields = tuple(sorted(member_fields))
+        for member in bundle.members:
+            connection.execute(
+                f"INSERT INTO completion_bundle_members("
+                f"{', '.join(ordered_member_fields)}) VALUES ("
+                f"{', '.join(':' + name for name in ordered_member_fields)})",
+                _prepared_row(member, member_fields),
+            )
+        finding_fields = _EVIDENCE_LEDGER_REQUIRED_COLUMNS[
+            "completion_bundle_finding_snapshots"
+        ]
+        ordered_finding_fields = tuple(sorted(finding_fields))
+        for finding in bundle.finding_snapshots:
+            connection.execute(
+                f"INSERT INTO completion_bundle_finding_snapshots("
+                f"{', '.join(ordered_finding_fields)}) VALUES ("
+                f"{', '.join(':' + name for name in ordered_finding_fields)})",
+                _prepared_row(finding, finding_fields),
+            )
+    except sqlite3.IntegrityError as exc:
+        raise evidence_ledger_inconsistent() from exc
+    stored = read_completion_evidence_bundle(
+        connection,
+        completion_evidence_bundle_id=bundle.completion_evidence_bundle_id,
+    )
+    if stored != bundle:
+        raise evidence_ledger_inconsistent()
+    return stored
+
+
+def read_completion_evidence_bundle(
+    connection: sqlite3.Connection,
+    *,
+    completion_evidence_bundle_id: str,
+) -> PreparedCompletionEvidenceBundle:
+    if (
+        type(completion_evidence_bundle_id) is not str
+        or COMPLETION_EVIDENCE_BUNDLE_ID_PATTERN.fullmatch(
+            completion_evidence_bundle_id
+        )
+        is None
+    ):
+        raise evidence_ledger_inconsistent()
+    row = connection.execute(
+        "SELECT * FROM completion_evidence_bundles "
+        "WHERE completion_evidence_bundle_id = ?",
+        (completion_evidence_bundle_id,),
+    ).fetchone()
+    if row is None:
+        raise evidence_ledger_inconsistent()
+    member_rows = connection.execute(
+        "SELECT * FROM completion_bundle_members "
+        "WHERE completion_evidence_bundle_id = ? "
+        "ORDER BY member_kind, ordinal",
+        (completion_evidence_bundle_id,),
+    ).fetchall()
+    link_rows = connection.execute(
+        """
+        SELECT link.*
+          FROM completion_bundle_members AS member
+          JOIN criterion_evidence_links AS link
+            ON link.criterion_evidence_link_id =
+               member.criterion_evidence_link_id
+         WHERE member.completion_evidence_bundle_id = ?
+           AND member.member_kind = 'criterion_link'
+         ORDER BY member.ordinal
+        """,
+        (completion_evidence_bundle_id,),
+    ).fetchall()
+    finding_rows = connection.execute(
+        "SELECT * FROM completion_bundle_finding_snapshots "
+        "WHERE completion_evidence_bundle_id = ? ORDER BY ordinal",
+        (completion_evidence_bundle_id,),
+    ).fetchall()
+    return PreparedCompletionEvidenceBundle(
+        completion_evidence_bundle_id=str(row["completion_evidence_bundle_id"]),
+        project_id=str(row["project_id"]),
+        task_id=str(row["task_id"]),
+        completion_cycle_id=str(row["completion_cycle_id"]),
+        cycle_ordinal=row["cycle_ordinal"],
+        source_schema_version=row["source_schema_version"],
+        bundle_version=row["bundle_version"],
+        contract_revision=row["contract_revision"],
+        authority_snapshot_id=str(row["authority_snapshot_id"]),
+        acceptance_criterion_id=row["acceptance_criterion_id"],
+        verification_criterion_id=row["verification_criterion_id"],
+        target_kind=str(row["target_kind"]),
+        target_value=str(row["target_value"]),
+        target_base_revision=str(row["target_base_revision"]),
+        target_generation=row["target_generation"],
+        target_capture_version=row["target_capture_version"],
+        artifact_manifest_id=str(row["artifact_manifest_id"]),
+        verification_receipt_id=row["verification_receipt_id"],
+        omission_mask=row["omission_mask"],
+        sealed_at=str(row["sealed_at"]),
+        bundle_digest=str(row["bundle_digest"]),
+        payload_size_bytes=row["payload_size_bytes"],
+        criterion_links=tuple(
+            PreparedCriterionEvidenceLink(**dict(link_row))
+            for link_row in link_rows
+        ),
+        members=tuple(
+            PreparedCompletionBundleMember(**dict(member_row))
+            for member_row in member_rows
+        ),
+        finding_snapshots=tuple(
+            PreparedCompletionFindingSnapshot(**dict(finding_row))
+            for finding_row in finding_rows
+        ),
+    )
+
+
+def read_evidence_projection_state(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+) -> EvidenceProjectionState:
+    if type(project_id) is not str or not project_id:
+        raise evidence_ledger_inconsistent()
+    row = connection.execute(
+        "SELECT * FROM evidence_projection_state WHERE project_id = ?",
+        (project_id,),
+    ).fetchone()
+    if row is None:
+        raise evidence_ledger_inconsistent()
+    return _projection_state_from_row(row)
+
+
+def ensure_evidence_projection_state_row(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+) -> EvidenceProjectionState:
+    """Seed the one project projection row after project identity exists."""
+
+    if current_schema_version(connection) != SCHEMA_VERSION:
+        raise StorageError(
+            "migration_required",
+            "Evidence projection state requires schema version 19",
+        )
+    if type(project_id) is not str or not project_id:
+        raise evidence_ledger_inconsistent()
+    project_count = connection.execute(
+        "SELECT COUNT(*) FROM project_meta WHERE project_id = ?",
+        (project_id,),
+    ).fetchone()[0]
+    source_generation = connection.execute(
+        "SELECT COUNT(*) FROM task_completion_cycles WHERE project_id = ?",
+        (project_id,),
+    ).fetchone()[0]
+    if type(project_count) is not int or project_count != 1:
+        raise evidence_ledger_inconsistent()
+    if (
+        type(source_generation) is not int
+        or source_generation < 0
+        or source_generation > SQLITE_INT64_MAX
+    ):
+        raise evidence_ledger_inconsistent()
+    try:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO evidence_projection_state(
+              project_id, source_generation, published_generation,
+              index_digest, last_success_at, last_outcome_code,
+              last_outcome_at
+            ) VALUES (?, ?, NULL, NULL, NULL, NULL, NULL)
+            """,
+            (project_id, source_generation),
+        )
+    except sqlite3.IntegrityError as exc:
+        raise evidence_ledger_inconsistent() from exc
+    state = read_evidence_projection_state(
+        connection,
+        project_id=project_id,
+    )
+    if state.source_generation != source_generation:
+        raise evidence_ledger_inconsistent()
+    return state
+
+
+def advance_evidence_source_generation_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+) -> EvidenceProjectionState:
+    """Advance the DB-authoritative projection generation exactly once."""
+
+    _require_evidence_writer(connection)
+    current = read_evidence_projection_state(
+        connection,
+        project_id=project_id,
+    )
+    if current.source_generation == SQLITE_INT64_MAX:
+        raise evidence_ledger_inconsistent()
+    cursor = connection.execute(
+        """
+        UPDATE evidence_projection_state
+           SET source_generation = source_generation + 1
+         WHERE project_id = ? AND source_generation = ?
+        """,
+        (project_id, current.source_generation),
+    )
+    if cursor.rowcount != 1:
+        raise evidence_ledger_inconsistent()
+    return read_evidence_projection_state(
+        connection,
+        project_id=project_id,
+    )
+
+
+def _advance_evidence_source_generation_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+) -> EvidenceProjectionState:
+    return advance_evidence_source_generation_locked(
+        connection,
+        project_id=project_id,
+    )
+
+
+def record_evidence_projection_outcome_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    captured_generation: int,
+    outcome_code: str,
+    recorded_at: str,
+    index_digest: str | None = None,
+) -> EvidenceProjectionState:
+    """Conditionally record one bounded projector outcome without file data."""
+
+    _require_evidence_writer(connection)
+    current = read_evidence_projection_state(
+        connection,
+        project_id=project_id,
+    )
+    if (
+        type(captured_generation) is not int
+        or not 0 <= captured_generation <= current.source_generation
+        or type(outcome_code) is not str
+        or outcome_code not in EVIDENCE_PROJECTION_OUTCOMES
+        or type(recorded_at) is not str
+        or (
+            outcome_code == "succeeded"
+            and (
+                type(index_digest) is not str
+                or SHA256_DIGEST_PATTERN.fullmatch(index_digest) is None
+                or (
+                    current.published_generation is not None
+                    and captured_generation < current.published_generation
+                )
+            )
+        )
+        or (outcome_code != "succeeded" and index_digest is not None)
+    ):
+        raise evidence_ledger_inconsistent()
+    try:
+        validate_utc_timestamp(
+            recorded_at,
+            field="Evidence projection outcome time",
+        )
+    except StorageError as exc:
+        raise evidence_ledger_inconsistent() from exc
+    if outcome_code == "succeeded":
+        cursor = connection.execute(
+            """
+            UPDATE evidence_projection_state
+               SET published_generation = ?, index_digest = ?,
+                   last_success_at = ?, last_outcome_code = ?,
+                   last_outcome_at = ?
+             WHERE project_id = ? AND source_generation >= ?
+            """,
+            (
+                captured_generation,
+                index_digest,
+                recorded_at,
+                outcome_code,
+                recorded_at,
+                project_id,
+                captured_generation,
+            ),
+        )
+    else:
+        cursor = connection.execute(
+            """
+            UPDATE evidence_projection_state
+               SET last_outcome_code = ?, last_outcome_at = ?
+             WHERE project_id = ? AND source_generation >= ?
+            """,
+            (outcome_code, recorded_at, project_id, captured_generation),
+        )
+    if cursor.rowcount != 1:
+        raise evidence_ledger_inconsistent()
+    return read_evidence_projection_state(
+        connection,
+        project_id=project_id,
+    )
+
+
+def _completion_basis_reference(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    source_kind: str,
+    source_id: str,
+    required: bool = True,
+) -> dict[str, Any] | None:
+    rows = connection.execute(
+        """
+        SELECT * FROM evidence_references
+         WHERE project_id = ? AND task_id = ?
+           AND source_kind = ? AND source_id = ?
+         ORDER BY evidence_reference_id
+         LIMIT 2
+        """,
+        (project_id, task_id, source_kind, source_id),
+    ).fetchall()
+    if len(rows) > 1 or (required and not rows):
+        raise evidence_ledger_inconsistent()
+    return dict(rows[0]) if rows else None
+
+
+def read_native_completion_bundle_basis_locked(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    cycle: CompletionCycle,
+    completion_reference: dict[str, Any],
+) -> NativeCompletionBundleBasis:
+    """Read one validated, bounded seal-time basis under the Task writer.
+
+    Review Receipt elements are ``{"receipt": ..., "provenance": ...}`` in
+    ``cycle.gate_basis.qualifying_receipt_ids`` order. Findings are ordered by
+    numeric target generation, creation time, then Finding ID; the positional
+    ``finding_references`` tuple contains the matching Reference or ``None``.
+    """
+
+    _require_evidence_writer(connection)
+    _require_completion_capture_activation_locked(connection)
+    _validate_completion_cycle(cycle)
+    if (
+        cycle.project_id != project_id
+        or cycle.task_id != task_id
+        or cycle.origin != "native_done"
+        or cycle.evidence_basis_version != 1
+        or cycle.completion_evidence_bundle_id is None
+        or not isinstance(completion_reference, dict)
+        or set(completion_reference)
+        != _EVIDENCE_LEDGER_REQUIRED_COLUMNS["evidence_references"]
+    ):
+        raise evidence_ledger_inconsistent()
+
+    locked = _read_validated_current_task_row(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+    )
+    if locked is None:
+        raise evidence_ledger_inconsistent()
+    task = dict(locked)
+    if (
+        task.get("status") == "done"
+        or task.get("current_contract_revision") != cycle.contract_revision
+        or task.get("review_tier") != cycle.review_tier
+        or (
+            task.get("review_target_kind"),
+            task.get("review_target_value"),
+            task.get("review_target_base_revision"),
+            task.get("review_target_generation"),
+        )
+        != (
+            cycle.review_target_kind,
+            cycle.review_target_value,
+            cycle.review_target_base_revision,
+            cycle.review_target_generation,
+        )
+        or task.get("review_target_capture_version") != 1
+        or type(task.get("review_target_authority_snapshot_id")) is not str
+        or type(task.get("review_target_artifact_manifest_id")) is not str
+    ):
+        raise evidence_ledger_inconsistent()
+
+    authority = _validated_authority_context(connection)
+    snapshot_id = str(task["review_target_authority_snapshot_id"])
+    snapshot = authority.snapshots.get(snapshot_id)
+    criterion_bindings = authority.links.get(snapshot_id, {})
+    if (
+        snapshot is None
+        or snapshot["project_id"] != project_id
+        or snapshot["task_id"] != task_id
+        or snapshot["contract_revision"] != cycle.contract_revision
+        or snapshot["task_title"] != task.get("title")
+        or snapshot["task_description"] != task.get("description")
+        or snapshot["review_tier"] != task.get("review_tier")
+        or snapshot["verification"] != task.get("verification")
+        or criterion_bindings.get("acceptance")
+        != task.get("review_target_acceptance_criterion_id")
+        or criterion_bindings.get("verification")
+        != task.get("review_target_verification_criterion_id")
+    ):
+        raise evidence_ledger_inconsistent()
+    criteria: list[dict[str, Any]] = []
+    for kind in ("acceptance", "verification"):
+        criterion_id = criterion_bindings.get(kind)
+        if criterion_id is None:
+            continue
+        criterion = authority.criteria.get(criterion_id)
+        if (
+            criterion is None
+            or criterion["project_id"] != project_id
+            or criterion["task_id"] != task_id
+            or criterion["criterion_kind"] != kind
+        ):
+            raise evidence_ledger_inconsistent()
+        criteria.append(dict(criterion))
+
+    manifest_id = str(task["review_target_artifact_manifest_id"])
+    manifests, _by_target = _validate_artifact_manifest_storage(
+        connection,
+        snapshots=authority.snapshots,
+        links=authority.links,
+        manifest_ids={manifest_id},
+    )
+    manifest_record = manifests.get(manifest_id)
+    if manifest_record is None:
+        raise evidence_ledger_inconsistent()
+    manifest = dict(manifest_record.row)
+    artifact_entries = tuple(
+        dict(row)
+        for row in connection.execute(
+            "SELECT * FROM artifact_manifest_entries "
+            "WHERE artifact_manifest_id = ? ORDER BY ordinal",
+            (manifest_id,),
+        ).fetchall()
+    )
+    if len(artifact_entries) != manifest["entry_count"]:
+        raise evidence_ledger_inconsistent()
+    artifact_reference = _completion_basis_reference(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+        source_kind="artifact_manifest",
+        source_id=manifest_id,
+    )
+    if artifact_reference is None:
+        raise evidence_ledger_inconsistent()
+
+    verification_receipt: dict[str, Any] | None = None
+    verification_reference: dict[str, Any] | None = None
+    if cycle.verification_receipt_id is not None:
+        stored_verification = connection.execute(
+            "SELECT * FROM verification_receipts "
+            "WHERE verification_receipt_id = ?",
+            (cycle.verification_receipt_id,),
+        ).fetchone()
+        if stored_verification is None:
+            raise evidence_ledger_inconsistent()
+        validated_verification = _validate_verification_receipt_row(
+            dict(stored_verification)
+        )
+        if (
+            validated_verification["project_id"] != project_id
+            or validated_verification["task_id"] != task_id
+            or validated_verification["verification_subject_basis_version"]
+            != 1
+            or validated_verification["subject_authority_snapshot_id"]
+            != snapshot_id
+            or validated_verification["subject_verification_criterion_id"]
+            != criterion_bindings.get("verification")
+        ):
+            raise evidence_ledger_inconsistent()
+        verification_receipt = {
+            "verification_receipt_id": cycle.verification_receipt_id,
+            "verification_subject": {
+                "basis_version": 1,
+                "kind": "task_verification_criterion",
+                "authority_snapshot_id": snapshot_id,
+                "verification_criterion_id": criterion_bindings.get(
+                    "verification"
+                ),
+            },
+            "result": validated_verification["result"],
+            "duration_ms": validated_verification["duration_ms"],
+            "scope_coverage": validated_verification["scope_coverage"],
+            "created_at": validated_verification["created_at"],
+        }
+        verification_reference = _completion_basis_reference(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+            source_kind="verification_receipt",
+            source_id=cycle.verification_receipt_id,
+        )
+        if verification_reference is None:
+            raise evidence_ledger_inconsistent()
+    elif criterion_bindings.get("verification") is not None:
+        raise evidence_ledger_inconsistent()
+
+    review_receipts: list[dict[str, Any]] = []
+    review_references: list[dict[str, Any]] = []
+    for receipt_id in cycle.gate_basis.qualifying_receipt_ids:
+        value = read_review_receipt_with_provenance(
+            connection,
+            review_receipt_id=receipt_id,
+        )
+        reference = _completion_basis_reference(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+            source_kind="review_receipt",
+            source_id=receipt_id,
+        )
+        if value is None or reference is None:
+            raise evidence_ledger_inconsistent()
+        receipt = value["receipt"]
+        provenance = value["provenance"]
+        if (
+            receipt["project_id"] != project_id
+            or receipt["task_id"] != task_id
+            or (
+                receipt["target_kind"], receipt["target_value"],
+                receipt["target_base_revision"],
+                receipt["target_generation"],
+            )
+            != (
+                cycle.review_target_kind, cycle.review_target_value,
+                cycle.review_target_base_revision,
+                cycle.review_target_generation,
+            )
+            or (
+                receipt["receipt_kind"] != "not_required"
+                and provenance is None
+            )
+            or (
+                receipt["receipt_kind"] == "not_required"
+                and provenance is not None
+            )
+        ):
+            raise evidence_ledger_inconsistent()
+        review_receipts.append(value)
+        review_references.append(reference)
+
+    finding_rows = connection.execute(
+        """
+        SELECT finding.*, receipt.target_generation AS target_generation
+          FROM review_findings AS finding
+          JOIN review_receipts AS receipt
+            ON receipt.review_receipt_id = finding.review_receipt_id
+         WHERE receipt.project_id = ? AND receipt.task_id = ?
+           AND (
+             receipt.target_generation = ?
+             OR (
+               receipt.target_generation < ?
+               AND finding.severity IN ('high', 'medium')
+             )
+           )
+         ORDER BY receipt.target_generation,
+                  finding.created_at COLLATE BINARY,
+                  finding.review_finding_id COLLATE BINARY
+        """,
+        (
+            project_id,
+            task_id,
+            cycle.review_target_generation,
+            cycle.review_target_generation,
+        ),
+    ).fetchall()
+    findings: list[dict[str, Any]] = []
+    finding_references: list[dict[str, Any] | None] = []
+    for stored_finding in finding_rows:
+        finding = dict(stored_finding)
+        _validate_review_finding_base_row(finding)
+        reference = _completion_basis_reference(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+            source_kind="review_finding",
+            source_id=str(finding["review_finding_id"]),
+            required=False,
+        )
+        if (
+            finding["target_generation"] == cycle.review_target_generation
+            and reference is None
+        ):
+            raise evidence_ledger_inconsistent()
+        findings.append(finding)
+        finding_references.append(reference)
+
+    completion_dispatch = {
+        "git_commit": ("machine_observed", "taskgov_git"),
+        "external_revision": ("external_reference", "external_system"),
+        "commit_not_required": ("bound_attestation", "trusted_caller"),
+    }
+    expected_attribution = completion_dispatch.get(
+        cycle.completion_evidence_kind
+    )
+    stored_completion_reference = _completion_basis_reference(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+        source_kind="completion_evidence",
+        source_id=cycle.completion_cycle_id,
+        required=False,
+    )
+    if stored_completion_reference is not None:
+        if stored_completion_reference != completion_reference:
+            raise evidence_ledger_inconsistent()
+    if (
+        expected_attribution is None
+        or completion_reference["project_id"] != project_id
+        or completion_reference["task_id"] != task_id
+        or completion_reference["source_kind"] != "completion_evidence"
+        or completion_reference["source_state"]
+        != cycle.completion_evidence_kind
+        or completion_reference["source_id"] != cycle.completion_cycle_id
+        or completion_reference["completion_cycle_id"]
+        != cycle.completion_cycle_id
+        or completion_reference["contract_revision"]
+        != cycle.contract_revision
+        or completion_reference["authority_snapshot_id"] != snapshot_id
+        or completion_reference["acceptance_criterion_id"]
+        != criterion_bindings.get("acceptance")
+        or completion_reference["verification_criterion_id"]
+        != criterion_bindings.get("verification")
+        or (
+            completion_reference["target_kind"],
+            completion_reference["target_value"],
+            completion_reference["target_base_revision"],
+            completion_reference["target_generation"],
+        )
+        != (
+            cycle.review_target_kind,
+            cycle.review_target_value,
+            cycle.review_target_base_revision,
+            cycle.review_target_generation,
+        )
+        or (
+            completion_reference["assurance_class"],
+            completion_reference["producer_class"],
+        )
+        != expected_attribution
+        or completion_reference["producer_version"] != 1
+        or type(completion_reference["digest"]) is not str
+        or SHA256_DIGEST_PATTERN.fullmatch(completion_reference["digest"])
+        is None
+    ):
+        raise evidence_ledger_inconsistent()
+
+    return NativeCompletionBundleBasis(
+        task={
+            "task_id": task_id,
+            "title": snapshot["task_title"],
+            "description": snapshot["task_description"],
+            "review_tier": snapshot["review_tier"],
+            "verification": snapshot["verification"],
+        },
+        authority_snapshot=dict(snapshot),
+        criteria=tuple(criteria),
+        artifact_manifest=manifest,
+        artifact_entries=artifact_entries,
+        artifact_reference=artifact_reference,
+        verification_receipt=verification_receipt,
+        verification_reference=verification_reference,
+        review_receipts=tuple(review_receipts),
+        review_references=tuple(review_references),
+        findings=tuple(findings),
+        finding_references=tuple(finding_references),
+        completion_reference=dict(completion_reference),
+    )
+
+
+def _fetch_bounded_projection_rows(
+    cursor: sqlite3.Cursor,
+    *,
+    maximum: int | None = None,
+) -> list[sqlite3.Row]:
+    rows: list[sqlite3.Row] = []
+    while True:
+        batch = cursor.fetchmany(EVIDENCE_PROJECTION_BATCH_SIZE)
+        if not batch:
+            break
+        rows.extend(batch)
+        if maximum is not None and len(rows) > maximum:
+            raise evidence_ledger_inconsistent()
+    return rows
+
+
+def _capture_evidence_projection_basis_rows(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+) -> EvidenceProjectionBasis:
+    """Capture raw cycle/Bundle rows after repository validation."""
+
+    if type(project_id) is not str or not project_id:
+        raise evidence_ledger_inconsistent()
+    if current_schema_version(connection) != 19:
+        raise evidence_ledger_inconsistent()
+    state = read_evidence_projection_state(
+        connection,
+        project_id=project_id,
+    )
+    cycle_rows = _fetch_bounded_projection_rows(
+        connection.execute(
+            """
+            SELECT * FROM task_completion_cycles
+             WHERE project_id = ?
+             ORDER BY task_id COLLATE BINARY, saved_cycle_ordinal,
+                      completion_cycle_id COLLATE BINARY
+            """,
+            (project_id,),
+        ),
+        maximum=EVIDENCE_PROJECTION_INDEX_ENTRY_LIMIT,
+    )
+    cycles = tuple(_cycle_from_row(row) for row in cycle_rows)
+    bundle_rows = _fetch_bounded_projection_rows(
+        connection.execute(
+            """
+            SELECT * FROM completion_evidence_bundles
+             WHERE project_id = ?
+             ORDER BY task_id COLLATE BINARY, cycle_ordinal,
+                      completion_cycle_id COLLATE BINARY
+            """,
+            (project_id,),
+        ),
+        maximum=EVIDENCE_PROJECTION_INDEX_ENTRY_LIMIT,
+    )
+    member_rows = _fetch_bounded_projection_rows(
+        connection.execute(
+            """
+            SELECT member.*
+              FROM completion_bundle_members AS member
+              JOIN completion_evidence_bundles AS bundle
+                ON bundle.completion_evidence_bundle_id =
+                   member.completion_evidence_bundle_id
+             WHERE bundle.project_id = ?
+             ORDER BY member.completion_evidence_bundle_id COLLATE BINARY,
+                      member.member_kind COLLATE BINARY, member.ordinal
+            """,
+            (project_id,),
+        )
+    )
+    link_rows = _fetch_bounded_projection_rows(
+        connection.execute(
+            """
+            SELECT member.completion_evidence_bundle_id AS member_bundle_id,
+                   link.*
+              FROM completion_bundle_members AS member
+              JOIN completion_evidence_bundles AS bundle
+                ON bundle.completion_evidence_bundle_id =
+                   member.completion_evidence_bundle_id
+              JOIN criterion_evidence_links AS link
+                ON link.criterion_evidence_link_id =
+                   member.criterion_evidence_link_id
+             WHERE bundle.project_id = ?
+               AND member.member_kind = 'criterion_link'
+             ORDER BY member.completion_evidence_bundle_id COLLATE BINARY,
+                      member.ordinal
+            """,
+            (project_id,),
+        )
+    )
+    finding_rows = _fetch_bounded_projection_rows(
+        connection.execute(
+            """
+            SELECT finding.*
+              FROM completion_bundle_finding_snapshots AS finding
+              JOIN completion_evidence_bundles AS bundle
+                ON bundle.completion_evidence_bundle_id =
+                   finding.completion_evidence_bundle_id
+             WHERE bundle.project_id = ?
+             ORDER BY finding.completion_evidence_bundle_id COLLATE BINARY,
+                      finding.ordinal
+            """,
+            (project_id,),
+        )
+    )
+    snapshot_rows = _fetch_bounded_projection_rows(
+        connection.execute(
+            """
+            SELECT bundle.completion_evidence_bundle_id AS member_bundle_id,
+                   snapshot.*
+              FROM completion_evidence_bundles AS bundle
+              JOIN authority_snapshots AS snapshot
+                ON snapshot.authority_snapshot_id =
+                   bundle.authority_snapshot_id
+             WHERE bundle.project_id = ?
+             ORDER BY bundle.completion_evidence_bundle_id COLLATE BINARY
+            """,
+            (project_id,),
+        )
+    )
+    criterion_rows = _fetch_bounded_projection_rows(
+        connection.execute(
+            """
+            SELECT bundle.completion_evidence_bundle_id AS member_bundle_id,
+                   criterion.*
+              FROM completion_evidence_bundles AS bundle
+              JOIN authority_snapshot_criteria AS binding
+                ON binding.authority_snapshot_id =
+                   bundle.authority_snapshot_id
+              JOIN contract_criteria AS criterion
+                ON criterion.criterion_id = binding.criterion_id
+             WHERE bundle.project_id = ?
+             ORDER BY bundle.completion_evidence_bundle_id COLLATE BINARY,
+                      CASE criterion.criterion_kind
+                        WHEN 'acceptance' THEN 0 ELSE 1 END,
+                      criterion.criterion_id COLLATE BINARY
+            """,
+            (project_id,),
+        )
+    )
+    manifest_rows = _fetch_bounded_projection_rows(
+        connection.execute(
+            """
+            SELECT bundle.completion_evidence_bundle_id AS member_bundle_id,
+                   manifest.*
+              FROM completion_evidence_bundles AS bundle
+              JOIN artifact_manifests AS manifest
+                ON manifest.artifact_manifest_id =
+                   bundle.artifact_manifest_id
+             WHERE bundle.project_id = ?
+             ORDER BY bundle.completion_evidence_bundle_id COLLATE BINARY
+            """,
+            (project_id,),
+        )
+    )
+    entry_rows = _fetch_bounded_projection_rows(
+        connection.execute(
+            """
+            SELECT bundle.completion_evidence_bundle_id AS member_bundle_id,
+                   entry.*
+              FROM completion_evidence_bundles AS bundle
+              JOIN artifact_manifest_entries AS entry
+                ON entry.artifact_manifest_id = bundle.artifact_manifest_id
+             WHERE bundle.project_id = ?
+             ORDER BY bundle.completion_evidence_bundle_id COLLATE BINARY,
+                      entry.ordinal
+            """,
+            (project_id,),
+        )
+    )
+    reference_rows = _fetch_bounded_projection_rows(
+        connection.execute(
+            """
+            SELECT member.completion_evidence_bundle_id AS member_bundle_id,
+                   member.ordinal AS member_ordinal, reference.*
+              FROM completion_bundle_members AS member
+              JOIN completion_evidence_bundles AS bundle
+                ON bundle.completion_evidence_bundle_id =
+                   member.completion_evidence_bundle_id
+              JOIN evidence_references AS reference
+                ON reference.evidence_reference_id =
+                   member.evidence_reference_id
+             WHERE bundle.project_id = ?
+               AND member.member_kind = 'evidence_reference'
+             ORDER BY member.completion_evidence_bundle_id COLLATE BINARY,
+                      member.ordinal
+            """,
+            (project_id,),
+        )
+    )
+    verification_rows = _fetch_bounded_projection_rows(
+        connection.execute(
+            """
+            SELECT bundle.completion_evidence_bundle_id AS member_bundle_id,
+                   receipt.*
+              FROM completion_evidence_bundles AS bundle
+              JOIN verification_receipts AS receipt
+                ON receipt.verification_receipt_id =
+                   bundle.verification_receipt_id
+             WHERE bundle.project_id = ?
+             ORDER BY bundle.completion_evidence_bundle_id COLLATE BINARY
+            """,
+            (project_id,),
+        )
+    )
+    members_by_bundle: dict[str, list[PreparedCompletionBundleMember]] = {}
+    for row in member_rows:
+        members_by_bundle.setdefault(
+            str(row["completion_evidence_bundle_id"]),
+            [],
+        ).append(PreparedCompletionBundleMember(**dict(row)))
+    links_by_bundle: dict[str, list[PreparedCriterionEvidenceLink]] = {}
+    for row in link_rows:
+        values = dict(row)
+        bundle_id = str(values.pop("member_bundle_id"))
+        links_by_bundle.setdefault(bundle_id, []).append(
+            PreparedCriterionEvidenceLink(**values)
+        )
+    findings_by_bundle: dict[
+        str,
+        list[PreparedCompletionFindingSnapshot],
+    ] = {}
+    for row in finding_rows:
+        findings_by_bundle.setdefault(
+            str(row["completion_evidence_bundle_id"]),
+            [],
+        ).append(PreparedCompletionFindingSnapshot(**dict(row)))
+    snapshots_by_bundle_id: dict[str, dict[str, Any]] = {}
+    for row in snapshot_rows:
+        values = dict(row)
+        bundle_id = str(values.pop("member_bundle_id"))
+        if bundle_id in snapshots_by_bundle_id:
+            raise evidence_ledger_inconsistent()
+        snapshots_by_bundle_id[bundle_id] = values
+    criteria_by_bundle: dict[str, list[dict[str, Any]]] = {}
+    for row in criterion_rows:
+        values = dict(row)
+        bundle_id = str(values.pop("member_bundle_id"))
+        criteria_by_bundle.setdefault(bundle_id, []).append(values)
+    manifests_by_bundle: dict[str, dict[str, Any]] = {}
+    for row in manifest_rows:
+        values = dict(row)
+        bundle_id = str(values.pop("member_bundle_id"))
+        if bundle_id in manifests_by_bundle:
+            raise evidence_ledger_inconsistent()
+        manifests_by_bundle[bundle_id] = values
+    entries_by_bundle: dict[str, list[dict[str, Any]]] = {}
+    for row in entry_rows:
+        values = dict(row)
+        bundle_id = str(values.pop("member_bundle_id"))
+        entries_by_bundle.setdefault(bundle_id, []).append(values)
+    references_by_bundle: dict[str, list[dict[str, Any]]] = {}
+    for row in reference_rows:
+        values = dict(row)
+        bundle_id = str(values.pop("member_bundle_id"))
+        values.pop("member_ordinal")
+        references_by_bundle.setdefault(bundle_id, []).append(values)
+    verification_by_bundle: dict[str, dict[str, Any]] = {}
+    for row in verification_rows:
+        values = dict(row)
+        bundle_id = str(values.pop("member_bundle_id"))
+        if bundle_id in verification_by_bundle:
+            raise evidence_ledger_inconsistent()
+        verification_by_bundle[bundle_id] = _validate_verification_receipt_row(
+            values
+        )
+    bundles = tuple(
+        PreparedCompletionEvidenceBundle(
+            completion_evidence_bundle_id=str(
+                row["completion_evidence_bundle_id"]
+            ),
+            project_id=str(row["project_id"]),
+            task_id=str(row["task_id"]),
+            completion_cycle_id=str(row["completion_cycle_id"]),
+            cycle_ordinal=row["cycle_ordinal"],
+            source_schema_version=row["source_schema_version"],
+            bundle_version=row["bundle_version"],
+            contract_revision=row["contract_revision"],
+            authority_snapshot_id=str(row["authority_snapshot_id"]),
+            acceptance_criterion_id=row["acceptance_criterion_id"],
+            verification_criterion_id=row["verification_criterion_id"],
+            target_kind=str(row["target_kind"]),
+            target_value=str(row["target_value"]),
+            target_base_revision=str(row["target_base_revision"]),
+            target_generation=row["target_generation"],
+            target_capture_version=row["target_capture_version"],
+            artifact_manifest_id=str(row["artifact_manifest_id"]),
+            verification_receipt_id=row["verification_receipt_id"],
+            omission_mask=row["omission_mask"],
+            sealed_at=str(row["sealed_at"]),
+            bundle_digest=str(row["bundle_digest"]),
+            payload_size_bytes=row["payload_size_bytes"],
+            criterion_links=tuple(
+                links_by_bundle.get(
+                    str(row["completion_evidence_bundle_id"]),
+                    [],
+                )
+            ),
+            members=tuple(
+                members_by_bundle.get(
+                    str(row["completion_evidence_bundle_id"]),
+                    [],
+                )
+            ),
+            finding_snapshots=tuple(
+                findings_by_bundle.get(
+                    str(row["completion_evidence_bundle_id"]),
+                    [],
+                )
+            ),
+        )
+        for row in bundle_rows
+    )
+    cycles_by_id = {cycle.completion_cycle_id: cycle for cycle in cycles}
+    bundle_by_id = {
+        bundle.completion_evidence_bundle_id: bundle for bundle in bundles
+    }
+    selected_review_ids = {
+        receipt_id
+        for bundle in bundles
+        for receipt_id in cycles_by_id[
+            bundle.completion_cycle_id
+        ].gate_basis.qualifying_receipt_ids
+    }
+    review_receipts_by_id: dict[str, dict[str, Any]] = {}
+    if selected_review_ids:
+        for receipt, provenance in _iter_validated_review_receipts_with_provenance(
+            connection,
+            selected_review_ids,
+        ):
+            receipt_id = str(receipt["review_receipt_id"])
+            review_receipts_by_id[receipt_id] = {
+                "receipt": dict(receipt),
+                "provenance": provenance,
+            }
+    native_records: list[ProjectionBundleRecord] = []
+    for row in bundle_rows:
+        bundle_id = str(row["completion_evidence_bundle_id"])
+        bundle = bundle_by_id.get(bundle_id)
+        cycle = cycles_by_id.get(str(row["completion_cycle_id"]))
+        snapshot = snapshots_by_bundle_id.get(bundle_id)
+        manifest = manifests_by_bundle.get(bundle_id)
+        references = tuple(references_by_bundle.get(bundle_id, []))
+        if bundle is None or cycle is None or snapshot is None or manifest is None:
+            raise evidence_ledger_inconsistent()
+        verification_receipt: dict[str, Any] | None = None
+        if bundle.verification_receipt_id is not None:
+            receipt = verification_by_bundle.get(bundle_id)
+            if receipt is None:
+                raise evidence_ledger_inconsistent()
+            verification_receipt = {
+                "verification_receipt_id": bundle.verification_receipt_id,
+                "verification_subject": {
+                    "basis_version": 1,
+                    "kind": "task_verification_criterion",
+                    "authority_snapshot_id": bundle.authority_snapshot_id,
+                    "verification_criterion_id": bundle.verification_criterion_id,
+                },
+                "result": receipt["result"],
+                "duration_ms": receipt["duration_ms"],
+                "scope_coverage": receipt["scope_coverage"],
+                "created_at": receipt["created_at"],
+            }
+        ordered_reviews = tuple(
+            review_receipts_by_id[receipt_id]
+            for receipt_id in cycle.gate_basis.qualifying_receipt_ids
+        )
+        native_records.append(
+            ProjectionBundleRecord(
+                bundle=bundle,
+                cycle=cycle,
+                task={
+                    "task_id": bundle.task_id,
+                    "title": snapshot["task_title"],
+                    "description": snapshot["task_description"],
+                    "review_tier": snapshot["review_tier"],
+                    "verification": snapshot["verification"],
+                },
+                authority_snapshot=snapshot,
+                criteria=tuple(criteria_by_bundle.get(bundle_id, [])),
+                artifact_manifest=manifest,
+                artifact_entries=tuple(entries_by_bundle.get(bundle_id, [])),
+                evidence_references=references,
+                verification_receipt=verification_receipt,
+                review_receipts=ordered_reviews,
+                finding_snapshots=bundle.finding_snapshots,
+            )
+        )
+    return EvidenceProjectionBasis(
+        source_schema_version=19,
+        project_id=project_id,
+        source_generation=state.source_generation,
+        cycles=cycles,
+        bundles=bundles,
+        native_bundles=tuple(native_records),
+    )
+
+
+def capture_evidence_projection_basis(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+) -> EvidenceProjectionBasis:
+    """Validate and capture one coherent Evidence projection basis once."""
+
+    if type(project_id) is not str or not project_id:
+        raise evidence_ledger_inconsistent()
+    if current_schema_version(connection) != 19:
+        raise evidence_ledger_inconsistent()
+    validate_completion_cycle_storage(connection)
+    _validate_evidence_ledger_schema_contract(connection)
+    _validate_evidence_ledger_rows(connection)
+    bases = _validated_completion_evidence_projection_bases(connection)
+    basis = bases.get(project_id)
+    if basis is None:
+        raise evidence_ledger_inconsistent()
+    return basis
+
+
+def record_evidence_projection_outcome(
+    target: DatabaseTarget,
+    *,
+    captured_generation: int,
+    outcome_code: str,
+    recorded_at: str,
+    index_digest: str | None = None,
+) -> EvidenceProjectionState:
+    """Record one projector outcome through the initialized writer boundary."""
+
+    with closing(connect_initialized(target)) as connection:
+        try:
+            begin_initialized_write(connection, target)
+            state = record_evidence_projection_outcome_locked(
+                connection,
+                project_id=target.project.project_id,
+                captured_generation=captured_generation,
+                outcome_code=outcome_code,
+                recorded_at=recorded_at,
+                index_digest=index_digest,
+            )
+            connection.commit()
+            return state
+        except Exception:
+            connection.rollback()
+            raise
+
+
 def _validate_current_schema_structure(
     connection: sqlite3.Connection,
 ) -> int:
@@ -14044,6 +17566,7 @@ def _validate_current_schema_structure(
     try:
         _validate_completion_history_structure(connection)
         _validate_evidence_ledger_schema_contract(connection)
+        _validate_completion_evidence_bundle_schema_contract(connection)
     except StorageError as exc:
         if exc.code == "database_busy":
             raise
@@ -14059,6 +17582,21 @@ def _validate_current_project_rows(
         raise _unreadable_project_state()
     if read_viewer_maintenance(connection, project_id) is None:
         raise _unreadable_project_state()
+    try:
+        evidence = read_evidence_projection_state(
+            connection,
+            project_id=project_id,
+        )
+        cycle_count = connection.execute(
+            "SELECT COUNT(*) FROM task_completion_cycles WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()[0]
+        if type(cycle_count) is not int or evidence.source_generation != cycle_count:
+            raise evidence_ledger_inconsistent()
+    except StorageError as exc:
+        if exc.code == "database_busy":
+            raise
+        raise _unreadable_project_state() from exc
 
 
 def validate_current_database_structure(
@@ -15446,10 +18984,10 @@ def validate_snapshot_database_for_viewer(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
 ) -> ViewerSnapshotDatabaseValidation:
-    """Validate a Viewer source and issue one same-transaction v18 Task proof."""
+    """Validate a Viewer source and issue one current Evidence Task proof."""
 
     version, task_rows = _validate_snapshot_database_state(connection, target)
-    if version != 18:
+    if version not in {18, 19}:
         return ViewerSnapshotDatabaseValidation(source_schema_version=version)
     if task_rows is None:
         raise _unreadable_project_state()
@@ -15488,7 +19026,7 @@ def _consume_validated_viewer_task_batch(
     source_schema_version: int,
     task_rows: list[sqlite3.Row],
 ) -> None:
-    """Consume one exact v18 proof after the Viewer-order Task query."""
+    """Consume one exact current Evidence proof after the Viewer Task query."""
 
     if type(batch) is not _ValidatedViewerTaskBatch:
         raise _unreadable_project_state()
@@ -15524,7 +19062,7 @@ def _consume_validated_viewer_task_batch(
         or query_only != 1
         or type(data_version) is not int
         or data_version != issuance.data_version
-        or source_schema_version != 18
+        or source_schema_version not in {18, 19}
         or issuance.source_schema_version != source_schema_version
         or type(project_id) is not str
         or not project_id
@@ -15781,12 +19319,17 @@ def read_doctor_state(
             "project_state_unreadable",
             "project state could not be read safely",
         )
+    evidence = read_evidence_projection_state(
+        connection,
+        project_id=target.project.project_id,
+    )
     return DoctorStorageState(
         schema_version=SCHEMA_VERSION,
         project_code="ready" if maintenance.enabled else "setup_required",
         task_counts=count_tasks(connection, target.project.project_id),
         maintenance=maintenance,
         viewer=viewer,
+        evidence=evidence,
     )
 
 
@@ -15798,7 +19341,7 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
         with closing(connect_readonly(db_path)) as connection:
             version = current_schema_version(connection)
             if (
-                version not in {15, 16, 17, 18}
+                version not in {15, 16, 17, 18, 19}
                 or missing_migration_versions(connection, version)
                 or required_schema_objects_missing(
                     connection,
@@ -15819,6 +19362,13 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
                 ).fetchall()
             }
             expected_object_counts = (
+                {
+                    "index": 32,
+                    "table": 31,
+                    "trigger": 47,
+                }
+                if version == 19
+                else
                 {
                     "index": 28,
                     "table": 26,
@@ -15937,6 +19487,10 @@ def _initialize_database_with_identity(
                     binding_reason=binding_reason,
                     timestamp=binding_timestamp,
                     fail_stage=fail_stage,
+                )
+                ensure_evidence_projection_state_row(
+                    connection,
+                    project_id=target.project.project_id,
                 )
                 ensure_project_maintenance_row(
                     connection,
@@ -16102,6 +19656,10 @@ def initialize_uuid_database(
     uuid_target = DatabaseTarget(
         project=uuid_project,
         db_path=db_path,
+        evidence_root=target.resolved_evidence_root,
+        evidence_index=target.resolved_evidence_index,
+        evidence_bundles=target.resolved_evidence_bundles,
+        evidence_lock=target.resolved_evidence_lock,
         explicit_db=target.explicit_db,
         binding_path_hash=canonical_path_hash,
         binding_generation=1,

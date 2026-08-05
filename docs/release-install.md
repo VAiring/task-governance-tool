@@ -230,7 +230,7 @@ Verification Receipts and an explicit completion-cycle verification basis.
 Schema v18 adds capture-versioned authority snapshots, whole-field criteria,
 evidence references, Git artifact manifests, tool-owned verification subjects,
 and versioned Review provenance. It raises durable/read verification capacity
-to 1,000 characters while explicit public Task add/edit admission remains 500.
+to 1,000 characters; explicit public Task add/edit admission is also 1,000.
 Migration from v1-v17 and schema-v18 activation/reentry is ordered and
 repeatable. A migrated capture-version-0 target remains read-only lineage and
 must be replaced with a fresh capture-version-1 target before a new Receipt,
@@ -510,7 +510,7 @@ supplies that authorization.
 Version 0.12.0 is an unpublished local candidate. Schema v18 activates the
 capture-ledger foundation, tool-owned verification subjects, Review provenance,
 capture-v0 stale/fresh retargeting, and 1,000-character durable/read capacity
-while public Task verification ingress remains 500. Backup/recovery and
+with matching 1,000-character public Task verification ingress. Backup/recovery and
 schema-aware source validation fail closed before mutation. Viewer snapshot v4
 accepts source schemas v5-v18 while validating and discarding the new ledger
 fields. No Evidence Bundle, Evidence JSON, Runner, Analyzer, network/model

@@ -5,10 +5,10 @@ v16, Viewer snapshot v4 accepting source schemas v5-v16, and 20 public command
 leaves. Its release identity is fixed in `docs/release-install.md`. The current
 unpublished local candidate is v0.12.0 with SQLite schema v18, Viewer snapshot
 v4 accepting source schemas v5-v18, and 21 public command leaves. It implements
-the current TG-M21 Verification Receipt and TG-M22.2 evidence-capture
-foundation, strict managed-recovery classifier, shared stored-Task validator,
-and current-Contract pointer validation specified below. TG-M20S.3, TG-M21.5,
-TG-M22.3+, TG-M23, and TG-M24 remain accepted but inactive. Completed
+the current TG-M21 Verification Receipt, TG-M22.2 evidence-capture foundation,
+and current TG-M21.5 public verification admission, together with the strict
+managed-recovery classifier, shared stored-Task validator, and current-Contract
+pointer validation. TG-M20S.3, TG-M22.3+, TG-M23, and TG-M24 remain inactive. Completed
 execution narrative is history, and the Task database owns live state and
 evidence.
 
@@ -2329,8 +2329,8 @@ arbitrary coverage prose, or debug-retention variant.
 
 Current schema-v18 free-form limits not narrowed above are: title 200
 characters; description 4,000; stored/read/internal verification and its
-derivatives 1,000, while explicit public Task add/edit verification remains
-500 until TG-M21.5; tags/reviewer/target/external revision/authority ref
+derivatives 1,000; explicit public Task add/edit verification 1,000;
+tags/reviewer/target/external revision/authority ref
 500; note 2,000; event/receipt/finding/resolution/pause/reopen/Contract
 change reason 1,000. Secret/header/private-key/password/token/api-key,
 traceback, raw stream dump, and large diff patterns are rejected with

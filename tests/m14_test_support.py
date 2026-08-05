@@ -8,11 +8,12 @@ import shutil
 import stat
 import subprocess
 import sys
+import tarfile
 import threading
 from contextlib import closing
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 
@@ -57,6 +58,94 @@ from task_governance_tool.state_resolver import (  # noqa: E402
 MANIFEST_NAME = "release-manifest.json"
 MANIFEST_EXCLUDED_ROOTS = {"adapters", "config", "state"}
 _CLI_CAPTURE_LOCK = threading.RLock()
+
+
+def repository_git_environment() -> dict[str, str]:
+    """Return a local-only, noninteractive environment for history fixtures."""
+
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.upper().startswith("GIT_")
+    }
+    environment.update(
+        {
+            "GIT_NO_LAZY_FETCH": "1",
+            "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+            "GCM_INTERACTIVE": "Never",
+        }
+    )
+    return environment
+
+
+def run_repository_git(*arguments: str) -> subprocess.CompletedProcess[bytes]:
+    """Run one bounded Git read against this repository without lazy fetch."""
+
+    return subprocess.run(
+        [
+            "git",
+            "-c",
+            f"safe.directory={ROOT.as_posix()}",
+            "-C",
+            str(ROOT),
+            *arguments,
+        ],
+        env=repository_git_environment(),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        shell=False,
+        timeout=60,
+    )
+
+
+def require_repository_git(*arguments: str) -> bytes:
+    result = run_repository_git(*arguments)
+    if result.returncode != 0:
+        stderr_digest = hashlib.sha256(result.stderr).hexdigest()
+        raise AssertionError(
+            "local Git command failed "
+            f"(exit={result.returncode}, stderr_sha256={stderr_digest})"
+        )
+    return result.stdout
+
+
+def extract_skill_at_commit(destination: Path, commit: str) -> Path:
+    """Materialize one complete tracked skill package from local Git history."""
+
+    require_repository_git("cat-file", "-e", f"{commit}^{{commit}}")
+    archive = require_repository_git(
+        "archive",
+        "--format=tar",
+        commit,
+        "--",
+        "task-governance-tool",
+    )
+    destination.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as source:
+        for member in source.getmembers():
+            relative = PurePosixPath(member.name)
+            if (
+                relative.is_absolute()
+                or not relative.parts
+                or relative.parts[0] != "task-governance-tool"
+                or any(part in {"", ".", ".."} for part in relative.parts)
+                or not (member.isdir() or member.isfile())
+            ):
+                raise AssertionError("skill archive has an unsupported member")
+            target = destination.joinpath(*relative.parts)
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            extracted = source.extractfile(member)
+            if extracted is None:
+                raise AssertionError("skill archive file could not be read")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(extracted.read())
+    return destination / "task-governance-tool"
 
 
 def _copy_skill(destination: Path) -> Path:

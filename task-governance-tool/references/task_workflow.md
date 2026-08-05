@@ -194,10 +194,11 @@ verification gate, and review tier. Update the task only after those values
 come from current authority.
 
 At schema v18, explicit public `task add` and `task edit --verification` input
-remains capped at 500 characters. Stored/read and internal-derived paths accept
+is capped at 1,000 characters. Stored/read and internal-derived paths accept
 and preserve valid existing verification text through 1,000 characters. A
-metadata or lifecycle edit must not replay an existing 501-1,000-character
-value through the narrower caller-input path; values over 1,000 fail closed.
+metadata or lifecycle edit continues to validate untouched verification as
+stored state rather than replaying it as caller input; values over the source-
+schema limit fail closed.
 Schema v18 creates no Evidence Bundle or Evidence JSON and adds no Runner,
 Analyzer, Viewer Evidence surface, network call, model call, public leaf, or
 normal-loop call.

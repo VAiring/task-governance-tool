@@ -19,7 +19,7 @@ LEGACY_LINES = 7_404
 LEGACY_BYTES = 428_058
 MIN_REDUCTION_BP = 9_000
 PRE_M22_SHA256 = "426d27bb9189349439b7a2c5764bad0b2035d9cdd6dfd40b7152d45d2054728f"
-TRIGGER_ROUTING_SHA256 = "0f225b7020cf99580bc0c28c9678f9c6dac795fb5af8e765d4fc9a653f612c99"
+TRIGGER_ROUTING_SHA256 = "de3c3e3e36e28e133cb5c5b2015918c83331dabec5d2880987e9d563639397e8"
 EXECUTION_INDEX = "docs/execution-contracts/README.md"
 M22 = "docs/execution-contracts/tg-m22-evidence-ledger.md"
 M23 = "docs/execution-contracts/tg-m23-derived-evidence.md"
@@ -74,8 +74,8 @@ AGENTS_SECTION_DIGESTS = {
     "## Product Contract Routing And Durable Agent Guardrails": "7b0b6336310ec3ec04056d3ebd6eeb0373be73ed42db1fbc390e3a1df815f3aa",
 }
 BANNER_DIGESTS = {
-    EXECUTION_INDEX: "1374027e4a1079f0aeeb1fa0357901c960fcf34b3f999c7e3ef2c98da940b462",
-    M22: "56f9ac6f5e73afbc206a14574c13fff12938bf5d7b24c0bf98b1edfbf9f8101d",
+    EXECUTION_INDEX: "4134a643d146cc8c5f3e3da7c7eb0ba70e8607dd3dc8b9c79a2dc12db46cb7ad",
+    M22: "d4c1e7d5ea1826e8ea0af42f9ed150fdc70e9609cfc301031b8e6b367c920a3c",
     M23: "a9aff0908e6494e06682fa33c9a79f121c3a874c118b30e9369de1fb36d2bc98",
     M24: "46f92f30d7b9aad7f6eb23436662f4a9939fc57167050eaa0bcf4291a7f346e0",
     HISTORY_INDEX: "934f43005b3038f9d24088b1ba26f85b816f6b42285b39ed29334c1ba1001380",
@@ -107,7 +107,7 @@ ROLE_MARKERS = {
     "docs/design.md": ("This document is the current implementation design for the behavior specified",),
     "plan.md": ("It is not the product contract, execution ledger, or evidence store:", "cross-sequence gateways"),
     EXECUTION_INDEX: ("Each indexed file is the sole detailed execution owner for its named units'",),
-    M22: ("document owns exact TG-M22.2 execution and acceptance detail",),
+    M22: ("document owns exact accepted TG-M22.2 predecessor detail, current TG-M21.5",),
     M23: ("This document is the sole detailed owner of the accepted inactive units'",),
     M24: ("This document is the sole detailed owner of the accepted inactive units'",),
 }
@@ -138,7 +138,7 @@ SEQUENCES = (
     SequenceSpec(
         M22, "## Mixed Current And Inactive Sequence",
         ("Unit/order", "Task", "Dependency", "Bounded outcome and gate"),
-        ROWS_M22, "003bf1a8b6a9971ca139fc57bf99160f274ff143666ba6fa77457c9663726372",
+        ROWS_M22, "1c93feec3f7e647a845d9708b785aae4da107f2824bf7ccc2c4b630d4fc3e166",
     ),
     SequenceSpec(
         M23, "## Sequence Boundary",
@@ -389,8 +389,8 @@ def _expected_registry() -> dict[str, object]:
         "current": ["docs/specification.md", "docs/design.md", "plan.md"],
         "mixed_execution": [{
             "path": M22, "route_anchor": "tg-m22-sequence",
-            "current_units": ["TG-M22.2"],
-            "inactive_units": ["TG-M21.5", "TG-M22.3", "TG-M22.4"],}],
+            "current_units": ["TG-M21.5"],
+            "inactive_units": ["TG-M22.3", "TG-M22.4"],}],
         "conditional": [
             "docs/execution-contracts/tg-m23-derived-evidence.md",
             "docs/execution-contracts/tg-m24-verification-runner.md",
@@ -529,7 +529,7 @@ def _roles(scans: dict[str, Scan], issues: list[Issue]) -> None:
     if _section_digest(scans[AUTHORITY], "## Trigger Routing") != TRIGGER_ROUTING_SHA256:
         issues.append(Issue("authority_route", AUTHORITY, "Trigger Routing differs from the fixed owner registry"))
     readme = " ".join("\n".join(scans["README.md"].lines).split())
-    for required in ("fixed canonical routing syntax", "not a general Markdown or CommonMark parser", "docs/authority.md", "mixed current/conditional authority", "docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence", "TG-M22.2 is current. Only TG-M21.5, TG-M22.3, and TG-M22.4 are inactive in M22; M23 and M24 remain inactive."):
+    for required in ("fixed canonical routing syntax", "not a general Markdown or CommonMark parser", "docs/authority.md", "mixed current/conditional authority", "docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence", "TG-M21.5 is current. TG-M22.1A and TG-M22.2 are accepted predecessors, and only TG-M22.3 and TG-M22.4 remain inactive in M22; M23 and M24 remain inactive."):
         if required not in readme:
             issues.append(Issue("document_role", "README.md", "documentation-check or authority guidance is incomplete"))
 def _banners(scans: dict[str, Scan], issues: list[Issue]) -> None:

@@ -93,6 +93,7 @@ from task_governance_tool.review_packet import (
 from task_governance_tool.setup import run_setup
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
+    TASK_VERIFICATION_INPUT_LIMIT,
     TaskRepositoryError,
     TaskValidationError,
     add_task,
@@ -434,7 +435,14 @@ def build_parser() -> argparse.ArgumentParser:
     task_add_parser.add_argument("--status", default="ready")
     task_add_parser.add_argument("--blocked-reason", default="")
     task_add_parser.add_argument("--review-tier", default=1)
-    task_add_parser.add_argument("--verification", default="")
+    task_add_parser.add_argument(
+        "--verification",
+        default="",
+        help=(
+            "verification expectation "
+            f"({TASK_VERIFICATION_INPUT_LIMIT:,} characters or fewer)"
+        ),
+    )
     task_add_parser.add_argument("--tags", default="")
     task_add_parser.add_argument("--contract-scope", default=argparse.SUPPRESS)
     task_add_parser.add_argument("--contract-acceptance", default=argparse.SUPPRESS)
@@ -510,7 +518,14 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--blocked-reason", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--pause-reason", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--review-tier", default=argparse.SUPPRESS)
-    task_edit_parser.add_argument("--verification", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument(
+        "--verification",
+        default=argparse.SUPPRESS,
+        help=(
+            "verification expectation "
+            f"({TASK_VERIFICATION_INPUT_LIMIT:,} characters or fewer)"
+        ),
+    )
     task_edit_parser.add_argument("--tags", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--add-note", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--reopen-reason", default=argparse.SUPPRESS)

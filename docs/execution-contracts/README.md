@@ -1,9 +1,10 @@
 # Current And Conditional Execution Contract Index
 
 > [!IMPORTANT]
-> MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M22.2 is current. Within
-> M22, only TG-M21.5, TG-M22.3, and TG-M22.4 are accepted but inactive; TG-M23
-> and TG-M24 remain accepted but inactive. Load files only when the current
+> MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M21.5 is current. Within
+> M22, TG-M22.1A and TG-M22.2 are accepted predecessors, and only TG-M22.3 and
+> TG-M22.4 remain accepted but inactive; TG-M23 and TG-M24 remain accepted but
+> inactive. Load files only when the current
 > Task Contract or the
 > [repository authority index](../authority.md) selects their exact path and
 > ASCII anchor. Their presence, indexing, or reading activates no behavior.
@@ -24,8 +25,8 @@ reviews, receipts, or completion history.
 ## Indexed Contracts
 
 - [TG-M22 Evidence Ledger](tg-m22-evidence-ledger.md#tg-m22-sequence)
-  owns accepted TG-M22.1A prerequisite detail and current TG-M22.2 execution
-  and acceptance detail. Only TG-M21.5, TG-M22.3, and TG-M22.4 are accepted but
+  owns accepted TG-M22.1A/TG-M22.2 predecessor detail and current TG-M21.5
+  execution and acceptance detail. Only TG-M22.3 and TG-M22.4 are accepted but
   inactive within M22.
 - [TG-M23 Derived Evidence](tg-m23-derived-evidence.md#tg-m23-derived-evidence)
   owns accepted inactive local analysis/reporting detail for the M23 sequence,

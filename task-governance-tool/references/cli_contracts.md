@@ -434,13 +434,14 @@ Sequential adds preserve the same predecessor rule used for selection and
 transitions.
 
 At schema v18, explicit public `task add --verification` and
-`task edit --verification` values are each capped at 500 characters, with the
+`task edit --verification` values are each capped at 1,000 characters, with the
 existing privacy check before length. Durable/read and internal-derived paths
 accept and preserve exact valid verification text through 1,000 characters.
 Metadata, Contract, target, review, lifecycle, completion, reopen, setup,
-backup, recovery, and projection paths must not reuse the narrower caller-input
-limit; a stored value over 1,000 fails closed. An explicit 501-1,000-character
-replay remains rejected even when equal to the stored value.
+backup, recovery, and projection paths continue to use the source-schema-aware
+stored validator rather than caller-input validation; a stored value over its
+source-schema limit fails closed. Explicit 1,001-character caller input is
+rejected without a write.
 
 ### `task list`
 

@@ -61,7 +61,7 @@ from task_governance_tool.storage import (
     validate_stored_review_receipt_projection,
     verification_expectation_digest,
 )
-from task_governance_tool.tasks import TEXT_LIMITS
+from task_governance_tool.tasks import TASK_VERIFICATION_INPUT_LIMIT
 
 
 MIGRATION_TIME = "2026-08-04T01:02:03Z"
@@ -956,7 +956,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
         self.assertEqual(SCHEMA_VERSION, 18)
         self.assertEqual(stored_task_verification_limit(17), 500)
         self.assertEqual(stored_task_verification_limit(18), 1_000)
-        self.assertEqual(TEXT_LIMITS["verification"], 500)
+        self.assertEqual(TASK_VERIFICATION_INPUT_LIMIT, 1_000)
 
     def test_migration_rejects_v17_overflow_and_v18_captures_one_thousand(self):
         with tempfile.TemporaryDirectory() as temp:

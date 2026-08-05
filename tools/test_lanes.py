@@ -120,6 +120,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m17_release_acceptance",
         "test_m19_legacy_upgrade_rehearsal",
         "test_m214b_legacy_recovery_boundaries",
+        "test_m215_verification_input_capacity",
         "test_migration_acceptance",
         "test_release_contract",
         "test_self_status",

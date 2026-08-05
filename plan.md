@@ -182,25 +182,27 @@ That history supplies no current gate or implementation authority.
 
 <a id="tg-m22-1a"></a>
 
-### Current Schema-v18 Evidence Capture Decision
+### Current Schema-v18 Evidence Capture And Verification Admission Decision
 
-The v0.12.0 candidate activates TG-M22.2 only: immutable current-authority
-snapshots, exact whole-field criteria, capture-version-1 target bindings and
-artifact manifests, closed Evidence References, tool-owned Verification
-subjects, and the Review provenance v1/v0/null union. Capture-version-zero
-targets remain read-only legacy lineage and reject new evidence sources until
-explicit retargeting. The durable/read verification limit is 1,000 while the
-two explicit public Task ingress points remain 500. Viewer snapshot v4
+The v0.12.0 candidate includes the accepted TG-M22.2 foundation and activates
+TG-M21.5: immutable current-authority snapshots, exact whole-field criteria,
+capture-version-1 target bindings and artifact manifests, closed Evidence
+References, tool-owned Verification subjects, the Review provenance
+v1/v0/null union, and 1,000-character public Task verification admission.
+Capture-version-zero targets remain read-only legacy lineage and reject new
+evidence sources until explicit retargeting. The durable/read and two explicit
+public Task ingress verification limits are 1,000. Viewer snapshot v4
 validates and discards the new relations. No Bundle, Evidence JSON, Analyzer,
 Runner, new public leaf, normal-loop call, network action, or target mutation
 is activated.
 
-### Current TG-M22.2 And Conditional Later Sequences
+### Current TG-M21.5 And Conditional Later Sequences
 
-TG-M22.2 product behavior remains owned by the active specification and its
+TG-M21.5 product behavior remains owned by the active specification and its
 implementation structure by the active design. Its exact execution and
-acceptance detail, plus the remaining inactive M21.5 and TG-M22.3/TG-M22.4
-purpose, order, dependencies, permissions, and gates, are owned at the stable
+acceptance detail, the accepted TG-M22.2 predecessor, and the remaining
+inactive TG-M22.3/TG-M22.4 purpose, order, dependencies, permissions, and
+gates are owned at the stable
 [TG-M22 sequence anchor](docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence).
 The exact approved-but-inactive M23 sequence is owned by the
 [TG-M23 conditional execution contract](docs/execution-contracts/tg-m23-derived-evidence.md).

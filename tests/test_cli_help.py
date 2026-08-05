@@ -176,6 +176,22 @@ class CliHelpTests(unittest.TestCase):
         for unsupported in ("--compact", "--check", "--db"):
             self.assertNotIn(unsupported, checkpoint.stdout)
 
+    def test_task_add_and_edit_help_share_verification_input_limit(self):
+        for command in (("task", "add"), ("task", "edit")):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
+                result = make_physical_install(Path(tmp)).run(*command, "--help")
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                normalized = " ".join(result.stdout.split())
+                self.assertIn(
+                    "--verification VERIFICATION",
+                    normalized,
+                )
+                self.assertIn(
+                    "verification expectation (1,000 characters or fewer)",
+                    normalized,
+                )
+
     def test_review_and_handoff_help_keep_only_implemented_stage_commands(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))

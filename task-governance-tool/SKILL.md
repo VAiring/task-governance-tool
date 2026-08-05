@@ -146,10 +146,10 @@ mandatory question, judgment, or user-return stop.
 - Copy a Task Contract only when scope and acceptance already exist in current
   authority. Leave revision zero otherwise without asking. Revise a Contract
   only from later explicit authority and record the reason.
-- Explicit public `task add` and `task edit --verification` input remains
-  limited to 500 characters. Schema-v18 stored/read paths preserve an existing
-  valid value through 1,000 characters; do not replay such a value through the
-  narrower public input merely to make an unrelated edit.
+- Explicit public `task add` and `task edit --verification` input is limited to
+  1,000 characters. Schema-v18 stored/read paths preserve an existing valid
+  value through 1,000 characters; metadata and lifecycle edits continue to
+  treat untouched verification bytes as stored state rather than caller input.
 - Schema v18 creates no Evidence Bundle or Evidence JSON, adds no Runner or
   Analyzer, and introduces no Viewer Evidence surface or network/model call.
 - Pause only active/review-pending work with `--pause-reason`; block with

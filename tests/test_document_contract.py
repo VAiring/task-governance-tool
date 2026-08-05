@@ -203,7 +203,7 @@ class DocumentContractTests(unittest.TestCase):
                 "authority_registry",
             ),
             (
-                '    "current_units": ["TG-M22.2"],',
+                '    "current_units": ["TG-M21.5"],',
                 '    "current_units": ["TG-M22.3"],',
                 "authority_registry",
             ),
@@ -285,8 +285,8 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 "README.md",
-                "TG-M22.2 is current. Only TG-M21.5, TG-M22.3, and TG-M22.4 are inactive in",
-                "TG-M22.2 and all later M22 units are inactive in",
+                "TG-M21.5 is current. TG-M22.1A and TG-M22.2 are accepted predecessors, and",
+                "TG-M21.5 and all later M22 units are inactive, and",
                 "document_role",
             ),
             (

@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import os
 import shutil
 import sqlite3
 import subprocess
 import sys
-import tarfile
 import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+from tests.m14_test_support import (
+    extract_skill_at_commit,
+    require_repository_git as require_git,
+    run_repository_git as run_git,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,86 +54,8 @@ raise SystemExit(
 """
 
 
-def git_environment() -> dict[str, str]:
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.upper().startswith("GIT_")
-    }
-    environment.update(
-        {
-            "GIT_NO_LAZY_FETCH": "1",
-            "GIT_OPTIONAL_LOCKS": "0",
-            "GIT_NO_REPLACE_OBJECTS": "1",
-            "GIT_TERMINAL_PROMPT": "0",
-            "GCM_INTERACTIVE": "Never",
-        }
-    )
-    return environment
-
-
-def run_git(*arguments: str) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        [
-            "git",
-            "-c",
-            f"safe.directory={ROOT.as_posix()}",
-            "-C",
-            str(ROOT),
-            *arguments,
-        ],
-        env=git_environment(),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-        shell=False,
-        timeout=60,
-    )
-
-
-def require_git(*arguments: str) -> bytes:
-    result = run_git(*arguments)
-    if result.returncode != 0:
-        stderr_digest = hashlib.sha256(result.stderr).hexdigest()
-        raise AssertionError(
-            "local Git command failed "
-            f"(exit={result.returncode}, stderr_sha256={stderr_digest})"
-        )
-    return result.stdout
-
-
 def extract_legacy_skill(destination: Path) -> Path:
-    require_git("cat-file", "-e", f"{LEGACY_COMMIT}^{{commit}}")
-    archive = require_git(
-        "archive",
-        "--format=tar",
-        LEGACY_COMMIT,
-        "--",
-        "task-governance-tool",
-    )
-    destination.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as source:
-        for member in source.getmembers():
-            relative = PurePosixPath(member.name)
-            if (
-                relative.is_absolute()
-                or not relative.parts
-                or relative.parts[0] != "task-governance-tool"
-                or any(part in {"", ".", ".."} for part in relative.parts)
-                or not (member.isdir() or member.isfile())
-            ):
-                raise AssertionError("legacy archive has an unsupported member")
-            target = destination.joinpath(*relative.parts)
-            if member.isdir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            extracted = source.extractfile(member)
-            if extracted is None:
-                raise AssertionError("legacy archive file could not be read")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(extracted.read())
-    return destination / "task-governance-tool"
+    return extract_skill_at_commit(destination, LEGACY_COMMIT)
 
 
 def staged_package_paths() -> tuple[Path, ...]:

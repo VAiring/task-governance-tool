@@ -124,10 +124,12 @@ VIEWER_TASK_FIELDS = tuple(
     if field != "review_target_base_revision"
 )
 
+TASK_VERIFICATION_INPUT_LIMIT = 1_000
+
+
 TEXT_LIMITS = {
     "title": 200,
     "description": 4000,
-    "verification": 500,
     "tags": 500,
     "add_note": 2000,
     "event_summary": 1000,
@@ -1383,7 +1385,11 @@ def validate_task_input(
             limit=TEXT_LIMITS["pause_reason"],
         ),
         "review_tier": validate_review_tier(review_tier),
-        "verification": validate_text("verification", verification, limit=TEXT_LIMITS["verification"]),
+        "verification": validate_text(
+            "verification",
+            verification,
+            limit=TASK_VERIFICATION_INPUT_LIMIT,
+        ),
         "tags": validate_text("tags", tags, limit=TEXT_LIMITS["tags"]),
     }
     if normalized["status"] == "blocked" and not normalized["blocked_reason"].strip():
@@ -2103,7 +2109,11 @@ def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
         elif field == "review_tier":
             normalized[field] = validate_review_tier(value)
         elif field == "verification":
-            normalized[field] = validate_text(field, value, limit=TEXT_LIMITS["verification"])
+            normalized[field] = validate_text(
+                field,
+                value,
+                limit=TASK_VERIFICATION_INPUT_LIMIT,
+            )
         elif field == "tags":
             normalized[field] = validate_text(field, value, limit=TEXT_LIMITS["tags"])
         elif field == "add_note":

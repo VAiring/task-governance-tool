@@ -84,7 +84,7 @@ v16. Schema v17 adds immutable Verification Receipts and an explicit
 completion-cycle verification basis. Schema v18 adds capture-versioned
 authority/criterion ledger bindings, tool-owned verification subjects,
 versioned Review provenance, and 1,000-character durable/read verification
-capacity while explicit public Task add/edit admission remains 500 characters.
+capacity. Explicit public Task add/edit admission is also 1,000 characters.
 Migrated capture-version-0 targets remain read-only lineage and require a fresh
 target before new evidence-source writes. Legacy gaps remain marked incomplete
 rather than being inferred.
@@ -483,8 +483,9 @@ coverage.
 - `docs/execution-contracts/`: indexed mixed current/conditional authority. M22
   routes through
   `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence`;
-  TG-M22.2 is current. Only TG-M21.5, TG-M22.3, and TG-M22.4 are inactive in
-  M22; M23 and M24 remain inactive.
+  TG-M21.5 is current. TG-M22.1A and TG-M22.2 are accepted predecessors, and
+  only TG-M22.3 and TG-M22.4 remain inactive in M22; M23 and M24 remain
+  inactive.
 - `docs/release-install.md`: current candidate, immutable published artifact,
   and installation identity.
 - `docs/history/README.md`: non-authoritative lineage index.

@@ -15,6 +15,7 @@ try:
     from task_governance_tool.tasks import (
         COMBINED_PRIVACY_PATTERN,
         PRIVACY_PATTERNS,
+        TASK_VERIFICATION_INPUT_LIMIT,
         TEXT_LIMITS,
         TaskValidationError,
         _legacy_m19_7_stored_guard_value,
@@ -156,7 +157,6 @@ class TaskValidationTests(unittest.TestCase):
         cases = (
             ("title", TEXT_LIMITS["title"]),
             ("description", TEXT_LIMITS["description"]),
-            ("verification", TEXT_LIMITS["verification"]),
             ("tags", TEXT_LIMITS["tags"]),
             ("add_note", TEXT_LIMITS["add_note"]),
         )
@@ -174,6 +174,14 @@ class TaskValidationTests(unittest.TestCase):
 
         self.assert_validation_error(
             "invalid_argument",
+            validate_task_input,
+            title="Task",
+            verification="x" * (TASK_VERIFICATION_INPUT_LIMIT + 1),
+            field="verification",
+        )
+
+        self.assert_validation_error(
+            "invalid_argument",
             validate_event_summary,
             "x" * (TEXT_LIMITS["event_summary"] + 1),
             field="event_summary",
@@ -183,14 +191,17 @@ class TaskValidationTests(unittest.TestCase):
         validated = validate_task_input(
             title="x" * TEXT_LIMITS["title"],
             description="x" * TEXT_LIMITS["description"],
-            verification="x" * TEXT_LIMITS["verification"],
+            verification="x" * TASK_VERIFICATION_INPUT_LIMIT,
             tags="x" * TEXT_LIMITS["tags"],
             add_note="x" * TEXT_LIMITS["add_note"],
         )
 
         self.assertEqual(len(validated["title"]), TEXT_LIMITS["title"])
         self.assertEqual(len(validated["description"]), TEXT_LIMITS["description"])
-        self.assertEqual(len(validated["verification"]), TEXT_LIMITS["verification"])
+        self.assertEqual(
+            len(validated["verification"]),
+            TASK_VERIFICATION_INPUT_LIMIT,
+        )
         self.assertEqual(len(validated["tags"]), TEXT_LIMITS["tags"])
         self.assertEqual(len(validated["add_note"]), TEXT_LIMITS["add_note"])
         self.assertEqual(len(validate_event_summary("x" * TEXT_LIMITS["event_summary"])), 1000)
@@ -204,6 +215,18 @@ class TaskValidationTests(unittest.TestCase):
             title="Task",
             add_note=value,
             field="add_note",
+        )
+
+        verification = "token=secret " + (
+            "x" * TASK_VERIFICATION_INPUT_LIMIT
+        )
+        self.assert_privacy_pattern_parity(verification)
+        self.assert_validation_error(
+            "privacy_rejected",
+            validate_task_input,
+            title="Task",
+            verification=verification,
+            field="verification",
         )
 
     def test_v17_stored_verification_classifier_is_privacy_first(self):

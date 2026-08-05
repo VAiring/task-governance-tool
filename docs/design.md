@@ -5,9 +5,10 @@ v16, Viewer snapshot v4 accepting source schemas v5-v16, and 20 public command
 leaves. Its release identity is fixed in `docs/release-install.md`. The current
 unpublished local candidate is v0.12.0 with SQLite schema v18, Viewer snapshot
 v4 accepting source schemas v5-v18, and 21 public command leaves. It implements
-the current TG-M21 Receipt and TG-M22.2 capture foundation, managed recovery,
-shared stored-Task validation, and current-Contract relationship boundaries
-below. TG-M20S.3, TG-M21.5, TG-M22.3+, TG-M23, and TG-M24 remain inactive.
+the current TG-M21 Receipt, the TG-M22.2 capture foundation, and the current
+TG-M21.5 public verification admission, together with managed recovery, shared
+stored-Task validation, and current-Contract relationship boundaries below.
+TG-M20S.3, TG-M22.3+, TG-M23, and TG-M24 remain inactive.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -734,8 +735,8 @@ cross-field rules. It raises only `StorageError("project_state_unreadable",
 "project state could not be read safely")`. Current Task converters remain
 pure allow-list builders and are invoked only after their complete input batch
 passes.
-The public `task add` and explicit `task edit --verification` ingress remains
-independently capped at 500; every stored/read/internal path uses the source-
+The public `task add` and explicit `task edit --verification` ingress is
+independently capped at 1,000; every stored/read/internal path uses the source-
 schema limit and never revalidates untouched bytes as new caller input.
 The shared Task fetch helpers map non-busy SQLite query or UTF-8 decode failure
 to that fixed error before a row reaches the validator, while preserving the

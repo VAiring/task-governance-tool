@@ -7,6 +7,11 @@ import sys
 import unittest
 from pathlib import Path
 
+from tests.review_test_helpers import (
+    NOT_REQUIRED_REVIEW_PROVENANCE_CASE,
+    REVIEW_PROVENANCE_V1_CASES,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
@@ -79,50 +84,12 @@ class ReviewProvenancePureTests(unittest.TestCase):
         )
 
     def test_closed_case_matrix_accepts_all_supported_classes(self):
-        cases = (
-            {
-                "reviewer_class": "human",
-                "model_state": "not_applicable",
-                "skill_state": "not_applicable",
-            },
-            {
-                "reviewer_class": "deterministic_tool",
-                "model_state": "not_applicable",
-                "skill_state": "not_applicable",
-            },
-            {
-                "reviewer_class": "llm",
-                "model_state": "declared",
-                "declared_model_id": "openai/gpt-5.6",
-                "skill_state": "not_used",
-            },
-            {
-                "reviewer_class": "llm",
-                "model_state": "unknown",
-                "skill_state": "declared",
-                "declared_skill_id": "review/skill-v1",
-                "declared_skill_version": "1.0+local",
-            },
-            {
-                "reviewer_class": "hybrid",
-                "model_state": "declared",
-                "declared_model_id": "model:1",
-                "skill_state": "unknown",
-            },
-            {
-                "reviewer_class": "unknown",
-                "model_state": "unknown",
-                "skill_state": "unknown",
-            },
-        )
-        for case in cases:
-            with self.subTest(case=case):
+        for case in REVIEW_PROVENANCE_V1_CASES:
+            with self.subTest(case=case.name):
                 normalized = normalize_review_provenance_input(
-                    receipt_kind="independent",
-                    context_relation="unknown",
-                    **case,
+                    **case.normalization_input()
                 )
-                self.assertEqual(normalized["reviewer_class"], case["reviewer_class"])
+                self.assertEqual(normalized, case.expected_normalized())
 
     def test_cross_field_matrix_rejects_missing_and_extra_declarations(self):
         invalid_cases = (
@@ -163,9 +130,12 @@ class ReviewProvenancePureTests(unittest.TestCase):
                 )
 
     def test_not_required_forbids_options_and_projects_null(self):
+        case = NOT_REQUIRED_REVIEW_PROVENANCE_CASE
         self.assertIsNone(
-            normalize_review_provenance_input(receipt_kind="not_required")
+            normalize_review_provenance_input(**case.normalization_input())
         )
+        self.assertIsNone(case.expected_normalized())
+        self.assertEqual(case.cli_options(), ())
         self.assertIsNone(legacy_review_provenance("not_required"))
         self.assertIsNone(
             project_review_provenance(

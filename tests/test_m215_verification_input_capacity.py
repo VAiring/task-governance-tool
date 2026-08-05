@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -18,7 +17,9 @@ from tests.m14_test_support import (
     file_snapshot,
     json_payload,
     make_physical_install,
+    replace_install_package_preserving_state,
     require_repository_git,
+    setup_exact_install,
 )
 
 
@@ -74,18 +75,6 @@ def task_row(db: Path, task_id: str) -> tuple[object, ...]:
 
 def setup_install(root: Path) -> PhysicalInstall:
     install = make_physical_install(root)
-    result = install.run("setup", "--json")
-    if result.returncode != 0:
-        raise AssertionError(result.stdout or result.stderr)
-    return install
-
-
-def setup_exact_install(root: Path, commit: str) -> PhysicalInstall:
-    project = root / "project"
-    skill_parent = project / ".agents" / "skills"
-    skill_parent.mkdir(parents=True)
-    skill_root = extract_skill_at_commit(skill_parent, commit)
-    install = PhysicalInstall(project_root=project, skill_root=skill_root)
     result = install.run("setup", "--json")
     if result.returncode != 0:
         raise AssertionError(result.stdout or result.stderr)
@@ -335,11 +324,7 @@ class M215VerificationInputCapacityTests(unittest.TestCase):
                 M22_2_BASELINE_COMMIT,
             )
             expected_package = file_snapshot(baseline, exclude_state=True)
-            held_state = root / "held-state"
-            shutil.move(str(install.skill_root / "state"), held_state)
-            shutil.rmtree(install.skill_root)
-            shutil.move(str(baseline), install.skill_root)
-            shutil.move(str(held_state), install.skill_root / "state")
+            replace_install_package_preserving_state(install, baseline)
 
             self.assertEqual(
                 file_snapshot(install.skill_root, exclude_state=True),

@@ -394,6 +394,76 @@ def make_physical_install(root: Path, *, git_managed: bool = False) -> PhysicalI
     return PhysicalInstall(project_root=project, skill_root=skill_root)
 
 
+def setup_exact_install(root: Path, commit: str) -> PhysicalInstall:
+    """Install and set up one complete package from an exact local commit."""
+
+    project = root / "project"
+    skill_parent = project / ".agents" / "skills"
+    skill_parent.mkdir(parents=True)
+    skill_root = extract_skill_at_commit(skill_parent, commit)
+    install = PhysicalInstall(project_root=project, skill_root=skill_root)
+    result = install.run("setup", "--json")
+    if result.returncode != 0:
+        raise AssertionError(result.stdout or result.stderr)
+    return install
+
+
+def replace_install_package_preserving_state(
+    install: PhysicalInstall,
+    replacement_skill_root: Path,
+) -> Path:
+    """Exchange a test package while preserving its physical state directory.
+
+    The retired package is kept beside the active package and returned to the
+    caller.  No package or state tree is deleted, so a failed exchange can be
+    rolled back without reconstructing SQLite or generated artifacts.
+    """
+
+    skill_root = install.skill_root
+    replacement = Path(replacement_skill_root)
+    state = skill_root / "state"
+    parent = skill_root.parent
+    held_state = parent / ".taskgov-test-held-state"
+    retired_package = parent / ".taskgov-test-retired-package"
+    if (
+        not skill_root.is_dir()
+        or skill_root.is_symlink()
+        or not state.is_dir()
+        or state.is_symlink()
+        or not replacement.is_dir()
+        or replacement.is_symlink()
+        or (replacement / "state").exists()
+        or held_state.exists()
+        or retired_package.exists()
+        or replacement.resolve() == skill_root.resolve()
+    ):
+        raise AssertionError("test package exchange preconditions are not satisfied")
+
+    state_held = False
+    package_retired = False
+    replacement_installed = False
+    try:
+        shutil.move(str(state), str(held_state))
+        state_held = True
+        shutil.move(str(skill_root), str(retired_package))
+        package_retired = True
+        shutil.move(str(replacement), str(skill_root))
+        replacement_installed = True
+        shutil.move(str(held_state), str(skill_root / "state"))
+        state_held = False
+    except Exception:
+        if replacement_installed and skill_root.exists():
+            shutil.move(str(skill_root), str(replacement))
+            replacement_installed = False
+        if package_retired and retired_package.exists():
+            shutil.move(str(retired_package), str(skill_root))
+            package_retired = False
+        if state_held and held_state.exists():
+            shutil.move(str(held_state), str(skill_root / "state"))
+        raise
+    return retired_package
+
+
 def make_legacy_physical_install(
     root: Path,
     *,

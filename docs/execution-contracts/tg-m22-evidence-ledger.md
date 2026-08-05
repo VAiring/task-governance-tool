@@ -1,16 +1,16 @@
 # TG-M22 Evidence Ledger Current And Conditional Execution Contract
 
 > [!IMPORTANT]
-> MIXED FORMAL AUTHORITY: TG-M22.3/SCHEMA V19 IS CURRENT; TG-M22.4 IS
-> INACTIVE. Load this document only when the current Task Contract or
-> [authority index](../authority.md) routes to TG-M22. It does not activate
-> TG-M22.4, Analyzer, or Runner.
+> MIXED FORMAL AUTHORITY: TG-M22.4 INTEGRATED ACCEPTANCE IS CURRENT;
+> TG-M22.1A/TG-M22.2/TG-M21.5/TG-M22.3 ARE ACCEPTED PREDECESSORS. Load this
+> document only when the current Task Contract or [authority index](../authority.md)
+> routes to TG-M22. It activates no new behavior, TG-M23, TG-M24, Analyzer, or Runner.
 
 The active [specification](../specification.md) owns current product behavior,
 and the active [design](../design.md) owns implementation structure. This
-document owns exact accepted TG-M22.1A/TG-M22.2/TG-M21.5 predecessor detail,
-current TG-M22.3 execution and acceptance detail, plus the remaining inactive
-unit's purpose, scope, order, dependencies, permissions, and gates.
+document owns exact accepted TG-M22.1A/TG-M22.2/TG-M21.5/TG-M22.3 predecessor
+detail and current TG-M22.4 integrated-acceptance purpose, scope, order,
+dependencies, permissions, and gates.
 Root [plan.md](../../plan.md) owns cross-sequence gateways, decisions, open
 issues, and non-delegated static contracts. The Task database owns live state
 and evidence.
@@ -21,7 +21,7 @@ and evidence.
 
 Task `tg_task_0e1d93d81eb843ab` defines the closed versioned Review-provenance
 matrix implemented by the accepted schema-v18 TG-M22.2 foundation and retained
-by current TG-M22.3. This anchor owns that exact
+by the accepted TG-M22.3 schema-v19 baseline. This anchor owns that exact
 supporting design contract and activates no later unit by itself.
 
 ### Versioned Public Union And Structural Seal
@@ -185,19 +185,19 @@ network, or target-project writes.
 
 <a id="tg-m22-sequence"></a>
 
-## Mixed Current And Inactive Sequence
+## Current And Accepted Sequence
 
-All units use sequential Tier 2 lane `TG-M22-EVIDENCE-LEDGER`. TG-M22.1A is
-the accepted design prerequisite, TG-M22.2 and TG-M21.5 are accepted
-predecessors, TG-M22.3 is current, and the later row remains inactive.
+All units use sequential Tier 2 lane `TG-M22-EVIDENCE-LEDGER`. TG-M22.1A,
+TG-M22.2, TG-M21.5, and TG-M22.3 are accepted predecessors; TG-M22.4 is the
+current integrated-acceptance unit and activates no new product behavior.
 
 | Unit/order | Task | Dependency | Bounded outcome and gate |
 |---|---|---|---|
 | TG-M22.1A / 25 | `tg_task_0e1d93d81eb843ab` | accepted TG-M21.4D and completed TG-DOC.1 | Accepted prerequisite: freeze the closed Review-provenance case/code/validation matrix in formal documents and downstream Contracts only; require exact documentation consistency and diff, a current exact-target Verification Receipt, two independent Tier 2 PASS reviews, and no unresolved High/Medium finding. |
 | TG-M22.2 / 30 | `tg_task_88bfe19eb6cffe2e` | accepted TG-M22.1A | Accepted predecessor: schema v18 capture, 1,000-character durable/read capacity, and Review provenance while preserving its 500-character public ingress and recovery/read boundaries; full offline/package checks and two reviews. |
 | TG-M21.5 / 40 | `tg_task_e7701fb907020905` | accepted TG-M22.2 | Accepted predecessor: raise only explicit public verification admission to 1,000 characters without changing storage or the shared validator; focused/full checks and two reviews. |
-| TG-M22.3 / 50 | `tg_task_ae6f52c4f7b25549` | accepted TG-M21.5 | Current: activate schema v19 native bundles and deterministic JSON publication without Analyzer, Runner, or gate expansion; migration/recovery/full offline checks and two reviews. |
-| TG-M22.4 / 60 | `tg_task_0a90b4caf566a8fd` | accepted TG-M22.3 | Inactive: later accept the combined legacy/current, provenance, capacity, recovery, bundle, JSON, privacy, and no-write matrix with bounded corrections only; full checks and two reviews. |
+| TG-M22.3 / 50 | `tg_task_ae6f52c4f7b25549` | accepted TG-M21.5 | Accepted predecessor: activate schema v19 native bundles and deterministic JSON publication without Analyzer, Runner, or gate expansion; migration/recovery/full offline checks and two reviews. |
+| TG-M22.4 / 60 | `tg_task_0a90b4caf566a8fd` | accepted TG-M22.3 | Current integrated acceptance: accept the combined legacy/current, provenance, capacity, recovery, bundle, JSON, privacy, and no-write matrix with bounded corrections only and no new behavior; full checks and two reviews. |
 
 No unit grants publication, push, tag, Release, external-service, network, or
 target-project mutation authority. Live status, blocker detail, review target,
@@ -205,12 +205,12 @@ evidence, and completion history remain solely in the Task database.
 
 <a id="tg-m22-conditional-product"></a>
 
-## Current TG-M22.3 And Conditional Later Product Acceptance Detail
+## Current TG-M22.4 Integrated Acceptance And Accepted Product Detail
 
 ## Current TG-M21.4 Verification Subject Correction Detail
 
 TG-M21.4, Task `tg_task_6ae822dd1a77c095`, defines the tool-owned subject
-correction implemented by accepted TG-M22.2 and retained by current TG-M22.3.
+correction implemented by accepted TG-M22.2 and retained by accepted TG-M22.3.
 Its authority reference is
 `conversation_decision:2026-08-02:tool-owned-verification-subject-interrupt`.
 This section is accepted schema-v18 predecessor detail retained by the current schema-v19 candidate; the active
@@ -459,31 +459,31 @@ The bounded dependent sequence is:
 2. Accepted TG-M21.5, after schema v18 and before schema v19, changed only explicit
    public Task add/edit verification admission from 500 to 1,000 characters;
    it performs no migration, stored-reader change, or subject redesign.
-3. Current TG-M22.3 admits only subject-v1 qualifying Receipts to native bundles and
+3. Accepted TG-M22.3 admits only subject-v1 qualifying Receipts to native bundles and
    Evidence JSON and includes no legacy caller label or internal compatibility
    value.
-4. Inactive TG-M22.4 later accepts the combined legacy/current, 1,000-character, bundle, and
-   projection behavior. M23/M24 producers remain separate.
+4. Current TG-M22.4 accepts the combined legacy/current, 1,000-character, bundle, and
+   projection behavior without adding product behavior. M23/M24 remain inactive.
 
 All four activation/acceptance units retain one public Receipt write leaf,
 zero additional normal-loop LLM calls, current project authority, and their
 separate exact-target verification and Tier 2 review gates.
 
-## Current TG-M22.3 Evidence Ledger And Bundle Contract
+## Accepted TG-M22.3 Evidence Ledger And Bundle Contract
 
 TG-M22.1, Task `tg_task_0a3c0d361da10f49`, defines the shared design for a
 canonical local Evidence Ledger, a future immutable Bundle per native
 completion cycle, and deterministic sanitized JSON. Its authority reference is
 `conversation_decision:2026-08-01:roadmap-retirement-and-evidence-sequence`.
-This section is current acceptance detail for TG-M22.3 over the accepted
+This section is accepted predecessor detail for TG-M22.3 over the accepted
 TG-M22.2/schema-v18 capture foundation and TG-M21.5 admission boundary; its
-schema-v19 Bundle/JSON clauses are active. The current
+schema-v19 Bundle/JSON clauses remain active under current TG-M22.4 acceptance. The current
 v0.12.0 candidate is schema v19, Viewer snapshot v4 with sources v5-v19, 21
 public leaves, and the ten-or-eleven-call Skill flow.
 
 Accepted TG-M22.2 established the v0.12.0/schema-v18 candidate with the accepted
 TG-M21.4 subject correction. Accepted TG-M21.5 retained that schema/package
-identity while changing only public verification-text ingress; current
+identity while changing only public verification-text ingress; accepted
 TG-M22.3 retains v0.12.0 while advancing its schema to v19. No unit claims a
 published tag, Release, remote commit, or immutable artifact identity.
 
@@ -1003,25 +1003,25 @@ The approved sequence is:
    verification admission from 500 to 1,000 characters after subject
    activation and before bundles, with no stored-reader, migration, subject,
    public-leaf, or normal-loop-call change.
-3. **Current TG-M22.3 / schema v19:** activates version-1 native bundles and criterion
+3. **Accepted TG-M22.3 / schema v19:** activates version-1 native bundles and criterion
    links, projection generation/state, fixed JSON publication, setup repair,
    subject-only Receipt projection, post-commit warnings, and Viewer snapshot-
    v4 source compatibility through v19. The public command inventory and
    normal Skill call count remain 21 and ten-or-eleven.
-4. **Inactive TG-M22.4:** later accept the exact v18/v19 sequence through the approved legacy
+4. **Current TG-M22.4 integrated acceptance:** accept the exact v18/v19 sequence through the approved legacy
    row/cycle, subject, 1,000-character, migration, lifecycle, Git, privacy,
    repair, consumer, package, release, full-offline, forward-test, and two-
    review gates, applying only bounded corrections within this design.
 
-TG-M22.2 and TG-M21.5 are accepted coherent predecessor boundaries. Current
-TG-M22.3 is the supported runtime/formal-doc/Skill/package/Viewer boundary.
+TG-M22.1A, TG-M22.2, TG-M21.5, and TG-M22.3 are accepted predecessor boundaries.
+Accepted TG-M22.3 remains the supported runtime/formal-doc/Skill/package/Viewer baseline; current TG-M22.4 adds no behavior.
 TG-M22 authorizes no
 release, push, tag, external model, network, report narrative, target-project
 mutation, Analyzer, or Runner operation.
 
 <a id="tg-m22-conditional-design"></a>
 
-## Current TG-M22.3 And Conditional Later Implementation Detail
+## Current TG-M22.4 Integrated Acceptance And Accepted Implementation Detail
 
 ## Current TG-M21.4 Verification Subject Design Detail
 
@@ -1248,15 +1248,15 @@ Accepted TG-M22.2 owns this subject activation together with the schema-v18
 criterion and target foundation plus the 1,000-character durable/read boundary.
 Accepted TG-M21.5 retained the same schema/package identity and changed only the
 public Task add/edit admission to 1,000.
-Current TG-M22.3 owns subject-only bundle/JSON projection, and TG-M22.4 owns integrated
-legacy/current acceptance. No unit adds a public leaf, normal-loop call,
+Accepted TG-M22.3 owns subject-only bundle/JSON projection, and current TG-M22.4 owns
+integrated legacy/current acceptance. No unit adds a public leaf, normal-loop call,
 Runner, analyzer, or raw retained content.
 
-## Current TG-M22.3 Evidence Ledger And Bundle Design
+## Accepted TG-M22.3 Evidence Ledger And Bundle Design
 
 TG-M22.1 plus the TG-M21.4/TG-M21.4A corrections define the accepted TG-M22.2
 schema-v18 subject/capture foundation, accepted TG-M21.5 admission slice, and
-the current TG-M22.3 projection slice. The current schema-v19 package provides
+the accepted TG-M22.3 projection slice. The current schema-v19 package provides
 1,000-character durable/read and public-ingress capacity, completion Bundles,
 and generated JSON. Viewer v5-v19 source range, the Skill call graph, and the
 public 21-leaf parser are synchronized without adding a UI or command.
@@ -1725,12 +1725,12 @@ rewrite existing cycles, bundles, links, or digests.
 2. **Accepted TG-M21.5** owns only the public Task add/edit verification-admission
    change from 500 to 1,000 after schema v18; stored readers and DDL remain
    unchanged, with no migration, subject redesign, leaf, or normal-loop call.
-3. **Current TG-M22.3** owns schema v19, native bundle sealing, immutable criterion
+3. **Accepted TG-M22.3** owns schema v19, native bundle sealing, immutable criterion
    links and finding snapshots, projection state/resolver/staging/setup/
    maintenance, subject-based index-last JSON publication, Viewer-v4 v19
    compatibility, synchronized governing/Skill/package surfaces, full tests,
    exact diff, Verification Receipt, and two Tier 2 reviews.
-4. **Inactive TG-M22.4** owns realistic legacy/current, subject, 1,000-character, and
+4. **Current TG-M22.4 integrated acceptance** owns realistic legacy/current, subject, 1,000-character, and
    Evidence integrated acceptance plus only bounded repairs inside the accepted
    design. It does not activate M23, M24, remote inference, Viewer Evidence UI,
    another command, or another Skill-loop call.

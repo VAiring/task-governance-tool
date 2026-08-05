@@ -203,13 +203,13 @@ class DocumentContractTests(unittest.TestCase):
                 "authority_registry",
             ),
             (
+                '    "current_units": ["TG-M22.4"],',
                 '    "current_units": ["TG-M22.3"],',
-                '    "current_units": ["TG-M21.5"],',
                 "authority_registry",
             ),
             (
+                '    "inactive_units": []',
                 '    "inactive_units": ["TG-M22.4"]',
-                '    "inactive_units": ["TG-M22.3", "TG-M22.4"]',
                 "authority_registry",
             ),
             (
@@ -290,8 +290,8 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 "README.md",
-                "TG-M22.3 is current. TG-M22.1A, TG-M22.2, and TG-M21.5 are accepted",
-                "TG-M21.5 is current. TG-M22.3 and TG-M22.4 remain inactive",
+                "TG-M22.4 integrated acceptance is current.",
+                "TG-M22.3 is current; TG-M22.4 remains inactive.",
                 "document_role",
             ),
             (
@@ -313,7 +313,7 @@ class DocumentContractTests(unittest.TestCase):
                     self.replace(root, relative, old, new)
                     self.assertIn(expected, self.codes(contract.check_document_contract(root)))
 
-    def test_current_m223_schema_viewer_and_evidence_markers_are_closed(self):
+    def test_current_schema_v19_viewer_and_evidence_markers_are_closed(self):
         relative = "docs/execution-contracts/tg-m22-evidence-ledger.md"
         mutations = (
             ("v0.12.0 candidate is schema v19, Viewer snapshot v4 with sources v5-v19, 21", "v0.12.0 candidate is schema v18, Viewer snapshot v4 with sources v5-v18, 21"),

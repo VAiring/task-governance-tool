@@ -491,9 +491,9 @@ coverage.
 - `docs/execution-contracts/`: indexed mixed current/conditional authority. M22
   routes through
   `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence`;
-  TG-M22.3 is current. TG-M22.1A, TG-M22.2, and TG-M21.5 are accepted
-  predecessors, and only TG-M22.4 remains inactive in M22; M23 and M24 remain
-  inactive.
+  TG-M22.4 integrated acceptance is current. TG-M22.1A, TG-M22.2, TG-M21.5,
+  and TG-M22.3 are accepted predecessors; M23 and M24 remain inactive. M22.4
+  activates no new product behavior.
 - `docs/release-install.md`: current candidate, immutable published artifact,
   and installation identity.
 - `docs/history/README.md`: non-authoritative lineage index.

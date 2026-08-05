@@ -185,23 +185,22 @@ That history supplies no current gate or implementation authority.
 
 ### Current Schema-v19 Evidence Bundle And JSON Decision
 
-The v0.12.0 candidate retains the accepted TG-M22.2 capture foundation and
-TG-M21.5 admission boundary and activates TG-M22.3: schema-v19 immutable
-native completion Bundles, criterion links and Finding snapshots, plus the
+The v0.12.0 candidate retains the accepted TG-M22.2 capture foundation,
+TG-M21.5 admission boundary, and TG-M22.3 schema-v19 immutable native
+completion Bundles, criterion links and Finding snapshots, plus the
 fixed one-way Evidence JSON v1 projection. Pre-v19 cycles remain index-only as
 `legacy_unknown`; SQLite remains canonical. Setup repairs the projection,
 doctor observes it read-only, and post-commit maintenance runs Evidence,
 Viewer, then backup. Viewer snapshot v4 accepts v5-v19 but adds no Evidence UI.
 No Analyzer, Runner, public leaf, normal-loop call, network action, or target
-mutation is activated.
+mutation is activated. Current TG-M22.4 only accepts this integrated boundary.
 
-### Current TG-M22.3 And Conditional Later Sequences
+### Current TG-M22.4 And Conditional Later Sequences
 
-TG-M22.3 product behavior remains owned by the active specification and its
-implementation structure by the active design. Its exact execution and
-acceptance detail, the accepted TG-M22.2/TG-M21.5 predecessors, and the
-remaining inactive TG-M22.4 purpose, order, dependencies, permissions, and
-gates are owned at the stable
+Product behavior established by accepted TG-M22.3 remains owned by the active
+specification and its implementation structure by the active design. Current
+TG-M22.4 integrated acceptance and the accepted TG-M22.1A/TG-M22.2/TG-M21.5/
+TG-M22.3 predecessor detail are owned at the stable
 [TG-M22 sequence anchor](docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence).
 The exact approved-but-inactive M23 sequence is owned by the
 [TG-M23 conditional execution contract](docs/execution-contracts/tg-m23-derived-evidence.md).

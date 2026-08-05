@@ -19,7 +19,7 @@ LEGACY_LINES = 7_404
 LEGACY_BYTES = 428_058
 MIN_REDUCTION_BP = 9_000
 PRE_M22_SHA256 = "426d27bb9189349439b7a2c5764bad0b2035d9cdd6dfd40b7152d45d2054728f"
-TRIGGER_ROUTING_SHA256 = "819912a15e580b416d5a60fbfcc04d389d81e8bd7a111fe525d59c78e76553fa"
+TRIGGER_ROUTING_SHA256 = "68b51483f843a57d1e18bdfeb13940f80c84f312d7c119c04baa1ae519bf26b3"
 EXECUTION_INDEX = "docs/execution-contracts/README.md"
 M22 = "docs/execution-contracts/tg-m22-evidence-ledger.md"
 M23 = "docs/execution-contracts/tg-m23-derived-evidence.md"
@@ -74,8 +74,8 @@ AGENTS_SECTION_DIGESTS = {
     "## Product Contract Routing And Durable Agent Guardrails": "7b0b6336310ec3ec04056d3ebd6eeb0373be73ed42db1fbc390e3a1df815f3aa",
 }
 BANNER_DIGESTS = {
-    EXECUTION_INDEX: "c62e2902d787eb466cfe1b4cfd3017e43b6aa8a93c1168da9b5a7514eac84f00",
-    M22: "63b0ecbfbf13228483e938bddd155a5b4bec6daf495b17a385021e1248758ed6",
+    EXECUTION_INDEX: "04ffdb5c4e50857cf61eeaa63a542715b1ec52478e626923f61d980c8fd15d26",
+    M22: "a713ba8c0bff645755ef7ace3b7ae9c8afcef1285d3e55ba1970a969378dca8d",
     M23: "a9aff0908e6494e06682fa33c9a79f121c3a874c118b30e9369de1fb36d2bc98",
     M24: "46f92f30d7b9aad7f6eb23436662f4a9939fc57167050eaa0bcf4291a7f346e0",
     HISTORY_INDEX: "934f43005b3038f9d24088b1ba26f85b816f6b42285b39ed29334c1ba1001380",
@@ -107,7 +107,7 @@ ROLE_MARKERS = {
     "docs/design.md": ("This document is the current implementation design for the behavior specified",),
     "plan.md": ("It is not the product contract, execution ledger, or evidence store:", "cross-sequence gateways"),
     EXECUTION_INDEX: ("Each indexed file is the sole detailed execution owner for its named units'",),
-    M22: ("document owns exact accepted TG-M22.1A/TG-M22.2/TG-M21.5 predecessor detail, current TG-M22.3", "v0.12.0 candidate is schema v19, Viewer snapshot v4 with sources v5-v19, 21", "`evidence_projection_deferred`", "`evidence_projection_failed`", "Post-commit order is Evidence projection, Viewer refresh, then due backup;", "Setup is the sole explicit repair and adds `evidence_projection_publish` to its ordered write vocabulary plus an `evidence_status`", "Doctor reports only stored Evidence-projection generation/outcome facts in a maintenance `evidence` object with exactly `code`, `due`, `source_generation`, `published_generation`, `last_success_at`, and `last_outcome`"),
+    M22: ("document owns exact accepted TG-M22.1A/TG-M22.2/TG-M21.5/TG-M22.3 predecessor detail and current TG-M22.4 integrated-acceptance", "current integrated-acceptance unit and activates no new product behavior", "v0.12.0 candidate is schema v19, Viewer snapshot v4 with sources v5-v19, 21", "`evidence_projection_deferred`", "`evidence_projection_failed`", "Post-commit order is Evidence projection, Viewer refresh, then due backup;", "Setup is the sole explicit repair and adds `evidence_projection_publish` to its ordered write vocabulary plus an `evidence_status`", "Doctor reports only stored Evidence-projection generation/outcome facts in a maintenance `evidence` object with exactly `code`, `due`, `source_generation`, `published_generation`, `last_success_at`, and `last_outcome`"),
     M23: ("This document is the sole detailed owner of the accepted inactive units'",),
     M24: ("This document is the sole detailed owner of the accepted inactive units'",),
 }
@@ -136,9 +136,9 @@ class SequenceSpec:
     digest: str
 SEQUENCES = (
     SequenceSpec(
-        M22, "## Mixed Current And Inactive Sequence",
+        M22, "## Current And Accepted Sequence",
         ("Unit/order", "Task", "Dependency", "Bounded outcome and gate"),
-        ROWS_M22, "82cbae4286d9941916a24483a3d7a1dd75403a957c005a1cf5b0d8748b2852e3",
+        ROWS_M22, "da29ca49e89480915785b115bccae42061d1915a238de98436611e1009d9b1db",
     ),
     SequenceSpec(
         M23, "## Sequence Boundary",
@@ -389,8 +389,8 @@ def _expected_registry() -> dict[str, object]:
         "current": ["docs/specification.md", "docs/design.md", "plan.md"],
         "mixed_execution": [{
             "path": M22, "route_anchor": "tg-m22-sequence",
-            "current_units": ["TG-M22.3"],
-            "inactive_units": ["TG-M22.4"],}],
+            "current_units": ["TG-M22.4"],
+            "inactive_units": [],}],
         "conditional": [
             "docs/execution-contracts/tg-m23-derived-evidence.md",
             "docs/execution-contracts/tg-m24-verification-runner.md",
@@ -529,7 +529,7 @@ def _roles(scans: dict[str, Scan], issues: list[Issue]) -> None:
     if _section_digest(scans[AUTHORITY], "## Trigger Routing") != TRIGGER_ROUTING_SHA256:
         issues.append(Issue("authority_route", AUTHORITY, "Trigger Routing differs from the fixed owner registry"))
     readme = " ".join("\n".join(scans["README.md"].lines).split())
-    for required in ("fixed canonical routing syntax", "not a general Markdown or CommonMark parser", "docs/authority.md", "mixed current/conditional authority", "docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence", "TG-M22.3 is current. TG-M22.1A, TG-M22.2, and TG-M21.5 are accepted predecessors, and only TG-M22.4 remains inactive in M22; M23 and M24 remain inactive."):
+    for required in ("fixed canonical routing syntax", "not a general Markdown or CommonMark parser", "docs/authority.md", "mixed current/conditional authority", "docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence", "TG-M22.4 integrated acceptance is current. TG-M22.1A, TG-M22.2, TG-M21.5, and TG-M22.3 are accepted predecessors; M23 and M24 remain inactive. M22.4 activates no new product behavior."):
         if required not in readme:
             issues.append(Issue("document_role", "README.md", "documentation-check or authority guidance is incomplete"))
 def _banners(scans: dict[str, Scan], issues: list[Issue]) -> None:

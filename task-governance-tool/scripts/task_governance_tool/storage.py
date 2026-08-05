@@ -17507,9 +17507,9 @@ def capture_evidence_projection_basis(
         raise evidence_ledger_inconsistent()
     if current_schema_version(connection) != 19:
         raise evidence_ledger_inconsistent()
-    validate_completion_cycle_storage(connection)
     _validate_evidence_ledger_schema_contract(connection)
     _validate_evidence_ledger_rows(connection)
+    validate_completion_cycle_storage(connection)
     bases = _validated_completion_evidence_projection_bases(connection)
     basis = bases.get(project_id)
     if basis is None:

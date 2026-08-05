@@ -2,8 +2,8 @@
 
 Status: The immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
-snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt and accepted TG-M22.2/TG-M21.5 capture/admission boundaries and activates TG-M22.3 native Bundles and fixed Evidence JSON v1, together with strict recovery and stored-Task/Contract-pointer validation.
-TG-M20S.3, TG-M22.4, TG-M23, and TG-M24 remain inactive. Completed execution narrative is history, and the Task database owns live state and evidence.
+snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, and the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1 with strict recovery and stored-Task/Contract-pointer validation; TG-M22.4 is current integrated acceptance and activates no new product behavior.
+TG-M20S.3, TG-M23, and TG-M24 remain inactive. Completed execution narrative is history, and the Task database owns live state and evidence.
 
 This document specifies supported product behavior. The concise
 [authority index](authority.md) routes implementation structure to

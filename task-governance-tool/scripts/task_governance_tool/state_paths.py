@@ -28,6 +28,13 @@ EVIDENCE_LOCK_FILENAME = "taskgov-evidence.lock"
 EVIDENCE_INDEX_MAX_BYTES = 67_108_864
 EVIDENCE_BUNDLE_MAX_BYTES = 16_777_216
 EVIDENCE_MAX_BUNDLE_FILES = 100_000
+ANALYSIS_DIRECTORY_NAME = "analysis"
+ANALYSIS_LOCK_FILENAME = "taskgov-analysis.lock"
+ANALYSIS_OUTBOX_DIRECTORY_NAME = "outbox"
+ANALYSIS_STATUS_DIRECTORY_NAME = "status"
+ANALYSIS_REPORTS_DIRECTORY_NAME = "reports"
+ANALYSIS_RENDERED_DIRECTORY_NAME = "rendered"
+ANALYSIS_TEMP_DIRECTORY_NAME = "tmp"
 _EVIDENCE_BUNDLE_FILENAME_PATTERN = re.compile(
     r"^tg_completion_evidence_bundle_[0-9a-f]{16}\.json$"
 )
@@ -94,6 +101,34 @@ class ValidatedFile:
 class ValidatedDirectory:
     path: Path = field(repr=False)
     identity: DirectoryIdentity
+
+
+@dataclass(frozen=True)
+class AnalysisStatePaths:
+    """Fixed paths for the SQLite-independent local analysis projection."""
+
+    root: Path = field(repr=False)
+    lock: Path = field(repr=False)
+    outbox: Path = field(repr=False)
+    status: Path = field(repr=False)
+    reports: Path = field(repr=False)
+    rendered: Path = field(repr=False)
+    temporary: Path = field(repr=False)
+
+
+def analysis_state_paths(fixed_root: Path) -> AnalysisStatePaths:
+    """Derive analysis paths without importing the SQLite-backed resolver."""
+
+    root = Path(fixed_root) / ANALYSIS_DIRECTORY_NAME
+    return AnalysisStatePaths(
+        root=root,
+        lock=root / ANALYSIS_LOCK_FILENAME,
+        outbox=root / ANALYSIS_OUTBOX_DIRECTORY_NAME,
+        status=root / ANALYSIS_STATUS_DIRECTORY_NAME,
+        reports=root / ANALYSIS_REPORTS_DIRECTORY_NAME,
+        rendered=root / ANALYSIS_RENDERED_DIRECTORY_NAME,
+        temporary=root / ANALYSIS_TEMP_DIRECTORY_NAME,
+    )
 
 
 def _failure() -> StatePathError:

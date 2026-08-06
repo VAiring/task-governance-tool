@@ -26,6 +26,7 @@ from task_governance_tool.state_paths import (
     EVIDENCE_INDEX_MAX_BYTES,
     EVIDENCE_LOCK_FILENAME,
     EVIDENCE_MAX_BUNDLE_FILES,
+    analysis_state_paths,
     evidence_relative_file_kind,
 )
 from task_governance_tool.storage import (
@@ -105,6 +106,13 @@ class CanonicalStatePaths:
     evidence_index: Path = field(repr=False)
     evidence_bundles: Path = field(repr=False)
     evidence_lock: Path = field(repr=False)
+    analysis_root: Path = field(repr=False)
+    analysis_lock: Path = field(repr=False)
+    analysis_outbox: Path = field(repr=False)
+    analysis_status: Path = field(repr=False)
+    analysis_reports: Path = field(repr=False)
+    analysis_rendered: Path = field(repr=False)
+    analysis_temporary: Path = field(repr=False)
     legacy_projects: Path = field(repr=False)
 
 
@@ -242,6 +250,7 @@ def canonical_state_paths(skill_root: Path) -> CanonicalStatePaths:
     state_root = canonical_skill / "state"
     fixed_root = state_root / "current"
     evidence_root = fixed_root / EVIDENCE_DIRECTORY_NAME
+    analysis = analysis_state_paths(fixed_root)
     return CanonicalStatePaths(
         skill_root=canonical_skill,
         state_root=state_root,
@@ -254,6 +263,13 @@ def canonical_state_paths(skill_root: Path) -> CanonicalStatePaths:
         evidence_index=evidence_root / EVIDENCE_INDEX_FILENAME,
         evidence_bundles=evidence_root / EVIDENCE_BUNDLES_DIRECTORY_NAME,
         evidence_lock=evidence_root / EVIDENCE_LOCK_FILENAME,
+        analysis_root=analysis.root,
+        analysis_lock=analysis.lock,
+        analysis_outbox=analysis.outbox,
+        analysis_status=analysis.status,
+        analysis_reports=analysis.reports,
+        analysis_rendered=analysis.rendered,
+        analysis_temporary=analysis.temporary,
         legacy_projects=state_root / "projects",
     )
 
@@ -344,6 +360,7 @@ def resolve_staged_project_state(
     fixed_root = Path(stage_root).resolve(strict=False)
     state_root = fixed_root.parent
     evidence_root = fixed_root / EVIDENCE_DIRECTORY_NAME
+    analysis = analysis_state_paths(fixed_root)
     paths = CanonicalStatePaths(
         skill_root=state_root.parent,
         state_root=state_root,
@@ -356,6 +373,13 @@ def resolve_staged_project_state(
         evidence_index=evidence_root / EVIDENCE_INDEX_FILENAME,
         evidence_bundles=evidence_root / EVIDENCE_BUNDLES_DIRECTORY_NAME,
         evidence_lock=evidence_root / EVIDENCE_LOCK_FILENAME,
+        analysis_root=analysis.root,
+        analysis_lock=analysis.lock,
+        analysis_outbox=analysis.outbox,
+        analysis_status=analysis.status,
+        analysis_reports=analysis.reports,
+        analysis_rendered=analysis.rendered,
+        analysis_temporary=analysis.temporary,
         legacy_projects=state_root / "projects",
     )
     return _resolve_with_paths(

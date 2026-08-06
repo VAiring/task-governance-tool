@@ -192,21 +192,23 @@ fixed one-way Evidence JSON v1 projection. Pre-v19 cycles remain index-only as
 `legacy_unknown`; SQLite remains canonical. Setup repairs the projection,
 doctor observes it read-only, and post-commit maintenance runs Evidence,
 Viewer, then backup. Viewer snapshot v4 accepts v5-v19 but adds no Evidence UI.
-No Analyzer, Runner, public leaf, normal-loop call, network action, or target
-mutation is activated. Accepted TG-M22.4 completed integrated acceptance;
-current TG-M23.1 freezes design only and activates no product behavior.
+No Runner, public leaf, normal-loop call, network/live-model action, or target
+mutation is activated. Accepted TG-M22.4 completed integrated acceptance and
+accepted TG-M23.1 froze the derived-evidence design; accepted TG-M23.2 supplies
+only its bounded offline/mock implementation predecessor.
 
-### Accepted TG-M22.4 And Current TG-M23.1 Sequence Gateway
+### Accepted TG-M22.4/TG-M23.1/TG-M23.2 And Inactive TG-M23.3 Sequence Gateway
 
 Product behavior established by accepted TG-M22.3 remains owned by the active
 specification and its implementation structure by the active design. Exact
 TG-M22.1A/TG-M22.2/TG-M21.5/TG-M22.3/TG-M22.4 accepted-predecessor detail is
 owned at the stable
 [TG-M22 sequence anchor](docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence).
-Current TG-M23.1 design-only detail and inactive TG-M23.2/TG-M23.3 detail are
-owned and routed by the [TG-M23 mixed execution contract](docs/execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence). Its exact Windows process-containment, private-temp, and atomic-publication/recovery seam is delegated without overlapping unit ownership to the [TG-M23 process-safety contract](docs/execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety).
-Indexing activates no Analyzer runtime, worker, model/network path, CLI or
-Skill call, gate, or Task mutation. Sequential ordering and Tier 2 gates remain
+Accepted TG-M23.1 design and bounded TG-M23.2 implementation detail plus
+inactive TG-M23.3 integrated-acceptance detail are owned and routed by the [TG-M23 mixed execution contract](docs/execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence). Its exact Windows process-containment, private-temp, and atomic-publication/recovery seam is delegated without overlapping unit ownership to the [TG-M23 process-safety contract](docs/execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety).
+Integrated Analyzer product acceptance remains owned by TG-M23.3. SQLite,
+`storage.py`, public CLI/Skill, network/live-model action, gates, and Task
+mutation remain outside TG-M23.2. Sequential ordering and Tier 2 gates remain
 mandatory; live state and evidence remain solely in the Task database.
 
 <a id="tg-m24-sequence"></a>

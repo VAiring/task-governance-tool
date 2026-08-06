@@ -3,18 +3,17 @@
 <a id="tg-m23-process-safety"></a>
 
 > [!IMPORTANT]
-> DELEGATED FORMAL AUTHORITY: this document is the sole detailed owner of the
-> TG-M23 Windows process-containment, private temporary-tree, and atomic
-> publication/recovery mechanics routed by the TG-M23 core contract. TG-M23.1
-> is design-only; TG-M23.2 and TG-M23.3 remain inactive. This document
-> activates no Analyzer runtime, worker, network/model action, public CLI,
-> Skill call, schema, gate, or Task mutation.
+> DELEGATED FORMAL AUTHORITY: sole owner of routed TG-M23 Windows
+> process containment, private temp, and atomic publication/recovery. M23.1 is
+> accepted; bounded offline/mock M23.2 is accepted; M23.3 inactive. It claims no
+> accepted Analyzer, network/live model, public CLI/Skill, schema, gate, or Task
+> mutation.
 
-The [TG-M23 core owner/router](tg-m23-derived-evidence.md#tg-m23-1) remains the sole owner of sequence and Task boundaries, descriptor/packet/status/report/provenance/citation semantics, adapter outcome codes, activation order, permissions, and gates. The [specification](../specification.md) owns product behavior, the [design](../design.md) owns implementation structure, and the Task database owns live state and evidence. This document neither duplicates those roles nor creates a second TG-M23 unit owner.
+The [TG-M23 core owner/router](tg-m23-derived-evidence.md#tg-m23-1) alone owns sequence/Task bounds, descriptor/packet/status/report/provenance/citation semantics, outcome codes, activation, permissions, and gates; [specification](../specification.md)=behavior, [design](../design.md)=structure, Task DB=live state/evidence. This document creates no second owner.
 
 ## Parent Route
 
-This delegated owner is reachable only through the [TG-M23 core owner/router](tg-m23-derived-evidence.md#tg-m23-1). A direct read or link does not bypass the parent unit boundary or activate behavior.
+Only the [TG-M23 core owner/router](tg-m23-derived-evidence.md#tg-m23-1) reaches this owner; a direct read/link neither bypasses the parent unit nor activates behavior.
 
 ## Delegated Interface And Scope
 
@@ -26,9 +25,9 @@ This owner applies only to the ignored `<canonical-package-state>/analysis/` tre
 
 ## Lease, Private Tree, And Quarantine
 
-`taskgov-analysis.lock` is opened no-follow and noninheritable, and byte 0 is held with `LockFileEx(...,LOCKFILE_EXCLUSIVE_LOCK|LOCKFILE_FAIL_IMMEDIATELY)` before root inspection, file counting, or input materialization through terminal publication or quarantine. Busy or uncertain lock state returns deferred `interrupted` and creates nothing. Normal release is exactly `UnlockFileEx` then `CloseHandle`, once, as the final return action.
+`taskgov-analysis.lock` is no-follow/noninheritable; byte 0 is held by `LockFileEx(...,LOCKFILE_EXCLUSIVE_LOCK|LOCKFILE_FAIL_IMMEDIATELY)` before root inspection, counting, input, or status open, through terminal publication/quarantine. Busy/uncertain returns deferred `interrupted` with no creation, inventory, or durable read/write. Parallel/read-only sessions are unsupported. Final release is one `UnlockFileEx` then `CloseHandle`.
 
-Each worker count creates and holds a fresh empty `tmp/.taskgov-analysis-<8-lower-alnum>/`. A pre-existing candidate fails unopened before count or launch. Reuse requires proved absence; identity, bytes, a token, or an old zero-process observation is never freshness evidence. Leaf creation order is `output-schema.json,output.json,report.json,report.md`. B creates and delete-on-close-holds S/O; C creates and holds the report leaves. Success proves S/O and root absence. Failed tree proof closes S/O unread, claims no immediate absence, and follows the quarantine/delete-on-last-child-handle rules below.
+Under lease C creates and holds one absent-before-open `tmp/.taskgov-analysis-<8-lower-alnum>/` root per worker count or publication-eligible no-adapter result; pre-existence fails before count/publication and identity/bytes/token/old zero never proves freshness. Adapter leaf order is `S,O,report.json,report.md`: B delete-on-close-holds S/O and C holds reports. For a core-authorized no-adapter result, C creates only TH-held reports; S/O never exist, held enumeration proves exact `{report.json,report.md}` and S/O absence, and C's ledger proves no B/T/J/restricted-token/mapping/event/pipe/stdio/worker handle creation. Those identity/membership/never-created facts are the core no-adapter-tree proof. Adapter success proves S/O absence; failed tree proof closes S/O unread, claims no immediate absence, and follows quarantine below.
 
 No-follow preflight requires the exact contained non-reparse directory identity and at most 32 entries. Existing roots are quarantine: never traverse, read, change, delete, claim, or reuse them. Entry 33, an unexpected type/name/identity, escape, overflow, or inspection error stops. Only the current attempt root may become `tree_quiescent`; while live it is B-owned. More than 100,000 regular files in the durable analysis directory fails closed, with no partial index or SQLite record.
 
@@ -36,11 +35,11 @@ Every retry uses a fresh N, root, J, B, I, Q, Vb/Vc, S, O, T, pipes, and workers
 
 ## File Handles, Freshness, And Transient Output
 
-Aliases are `(access,share,disposition,flags)`; `RD=FILE_READ_DATA`, `RA=FILE_READ_ATTRIBUTES`, `WD=FILE_WRITE_DATA`, `DL=FILE_LIST_DIRECTORY`, `DA=FILE_ADD_FILE`, `SY=SYNCHRONIZE`, `SR=FILE_SHARE_READ`, `SW=FILE_SHARE_WRITE`, `SD=FILE_SHARE_DELETE`, `X=FILE_FLAG_OPEN_REPARSE_POINT`, `K=FILE_FLAG_BACKUP_SEMANTICS`, and `D=FILE_ATTRIBUTE_TEMPORARY|FILE_FLAG_DELETE_ON_CLOSE|X`.
+Aliases `(access,share,disposition,flags)`: `RD=FILE_READ_DATA`, `RA=FILE_READ_ATTRIBUTES`, `WD=FILE_WRITE_DATA`, `DL=FILE_LIST_DIRECTORY`, `DA=FILE_ADD_FILE|FILE_ADD_SUBDIRECTORY`, `CR=READ_CONTROL`, `SY=SYNCHRONIZE`, `SR=FILE_SHARE_READ`, `SW=FILE_SHARE_WRITE`, `SD=FILE_SHARE_DELETE`, `OI=FILE_OPEN_IF`, `X=FILE_FLAG_OPEN_REPARSE_POINT`, `K=FILE_FLAG_BACKUP_SEMANTICS`, `D=FILE_ATTRIBUTE_TEMPORARY|FILE_FLAG_DELETE_ON_CLOSE|X`.
 
-The exact tuples are `OP=(DELETE|RD|RA|SY,SW|SD,CREATE_NEW,D)`, `OC=(WD|SY,SR|SD,OPEN_EXISTING,X)`, `SP=(DELETE|RD|WD|RA|SY,SR|SD,CREATE_NEW,D)`, `SC=(RD|RA|SY,SR|SW|SD,OPEN_EXISTING,X)`, `TH=(DELETE|RD|WD|RA|SY,0,CREATE_NEW,X)`, `RH=(DELETE|RD|RA|SY,0,OPEN_EXISTING,X)`, and `DP=(DL|DA|RA|SY,0,OPEN_EXISTING,K|X)`. `DF=FileDispositionInfo.DeleteFile`; `NR=FileRenameInfo(ReplaceIfExists=FALSE)`. B owns O/S through OP/SP and T receives only OC/SC. All opens are no-follow and identity-bound; live tuples are never reclaimed.
+Tuples: `OP=(DELETE|RD|RA|SY,SW|SD,CREATE_NEW,D)`, `OC=(WD|SY,SR|SD,OPEN_EXISTING,X)`, `SP=(DELETE|RD|WD|RA|SY,SR|SD,CREATE_NEW,D)`, `SC=(RD|RA|SY,SR|SW|SD,OPEN_EXISTING,X)`, `TH=(CR|DELETE|RD|WD|RA|SY,0,CREATE_NEW,X)`, `RH=(CR|DELETE|RD|RA|SY,0,OPEN_EXISTING,X)`, `S0=(CR|DL|DA|RA|SY,SW,OI,K|X)` (access `0x00120087`, share `0x2`), `R0=(CR|DELETE|DL|DA|RA|SY,0,OPEN_EXISTING,K|X)`, `DP=(DL|DA|RA|SY,SW,OPEN_EXISTING,K|X)`. S0 exists solely for the exclusive lease owner's atomic status CAS; it is acquired after lease and held through that lease's status session. SW authorizes no second/parallel/read-only session; directory DELETE/share-delete, root/outbox/lease R0, RH, and RC remain unchanged. `DF=FileDispositionInfo.DeleteFile`; `AR=FILE_RENAME_INFORMATION(TRUE,held-S0,exact-basename)` and `NR=FILE_RENAME_INFORMATION(FALSE,held-DP,exact-basename)` each run once on held TH via typed `NtSetInformationFile(...,FileRenameInformation)`. B owns O/S through OP/SP; T gets only OC/SC. Opens are no-follow/identity-bound; live tuples are never reclaimed.
 
-Root/S/O/stdio security descriptors dual-allow the current user and `RC=WinRestrictedCodeSid` only their exact file rights. Root denies `FILE_ADD_FILE|FILE_ADD_SUBDIRECTORY|FILE_DELETE_CHILD|WRITE_DAC|WRITE_OWNER`; leaves deny `WRITE_DAC|WRITE_OWNER|DELETE|FILE_WRITE_ATTRIBUTES`. T cannot reopen, rename, delete, change security, reach a destination parent, or reach durable data.
+`CU`=exact current primary `TokenUser` SID; `RC=WinRestrictedCodeSid=S-1-5-12`, `OW=OWNER RIGHTS=S-1-3-4`, `FT=FILE_TRAVERSE`, `WC=WRITE_DAC`, `WO=WRITE_OWNER`. Root/report-temp SDs=protected/noninheriting/canonical; no default/NULL/generic/other ACE. Root exact DACL=`DENY OW(WC|WO);ALLOW CU(R0.access);ALLOW RC(FT|RA)`; report-temp DACL=`DENY OW(WC|WO);ALLOW CU(TH.access)`, no RC ACE. O exact DACL=`DENY OW(WC|WO);ALLOW CU(OP.access|OC.access);ALLOW RC(OC.access)`; S/stdio retain exact-alias CU/RC dual allows plus `DENY OW(WC|WO)`. T cannot list/add/reopen reports, rename/delete/change security, or reach DP/durable data.
 
 B flushes and revalidates S before C atomically records N and `running`; a crash consumes N, never a timestamp. M23.2 O is one closed-code immutable fixture. The held fresh O plus `(analysis_job_id,N,packet_digest)` binds the only candidate result. Partial, replaced, late, wrong-attempt, wrong-packet, or post-read-changed output is `invalid_output`. Rejected bytes, stdout/stderr prefixes, prompts, packet bytes, and provider bodies are discarded before terminal state and never enter report, durable state, logs, or quarantine.
 
@@ -90,7 +89,7 @@ Only a proved abnormal path may leave Q unread, prove S/O absent, remove the cur
 
 Before creating report temps or intent, C acquires and holds both noninheritable DPs and validates canonical identity, containment, and same-volume placement. Failure changes no destination, status, or R3, keeps core state `running`, and returns deferred `interrupted`. C creates both temps through TH, sets DF true before writing bytes and never uses `FILE_FLAG_DELETE_ON_CLOSE`, writes and flushes, held-rereads, and validates exact canonical bytes, privacy, bindings, digests, and caps.
 
-`publish_ready` requires valid report/Markdown temps, `tree_quiescent` or the core's no-adapter-tree proof, O closed and absent, no other private leaf, both held DPs, and the complete all-nonnull R3 intent bound to those exact bytes. Intent order is JSON then Markdown. Promotion sets DF false and uses same-TH atomic NR through DP `RootDirectory` and exact basename; replace, copy, pre-delete, reopen, or path fallback is forbidden. An absent final completes; its held handle rechecks parent, name, identity, length, bytes, and digest. C removes the empty current root and proves absence, atomically records `published`, closes file handles, then DPs, then releases the lease. All handles remain held until their ordered close.
+`publish_ready` requires valid report/Markdown temps, both held DPs, the complete all-nonnull R3 intent bound to those bytes, no other private leaf, and either adapter `tree_quiescent` with S/O closed/absent or the no-adapter-tree proof with S/O never created. Intent order is JSON then Markdown. Promotion sets DF false and uses same-TH atomic NR through DP `RootDirectory` and exact basename; replace, copy, pre-delete, reopen, or path fallback is forbidden. An absent final completes; its held handle rechecks parent, name, identity, length, bytes, and digest. C removes the empty current root and proves absence, atomically records `published`, closes file handles, then DPs, then releases the lease. All handles remain held until their ordered close.
 
 On failure, an unpromoted temp remains DF true through last close and original-identity absence proof. A promoted same TH is reset DF true, closed, and proved original-identity absent or foreign-replaced. The current root is removed only after its absence proof. Only after every matching rollback proof may core atomically publish null R3 `failed/publication_failed`, close DPs, and unlock. Uncertainty preserves the `running` intent/root and returns deferred `interrupted`; it never terminalizes early. An ambiguous status write is reread under lease, and rollback proceeds only if state is still `running`.
 

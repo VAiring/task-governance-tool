@@ -35,11 +35,13 @@ transfer either role.
 - [TG-M23 Derived Evidence sequence](execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence)
   - [delegated TG-M23 process safety](execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety)
 
-TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, and TG-M22.4 are accepted
-predecessors. Only TG-M23.1's exact design detail is current; it activates no
-product behavior. TG-M23.2 and TG-M23.3 remain inactive. The derived-evidence
-contract is the sole unit owner/router; its process-safety route delegates one
-non-overlapping physical-safety seam and owns no unit state or core semantics.
+TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, and bounded
+offline/mock TG-M23.2 are accepted predecessors. No TG-M23 execution unit is
+current; TG-M23.3 remains inactive, and integrated Analyzer product acceptance
+remains owned by that unit. The
+derived-evidence contract is the sole unit owner/router; its process-safety
+route delegates one non-overlapping physical-safety seam and owns no unit state
+or core semantics.
 
 ## Conditional Formal Authority
 
@@ -66,7 +68,7 @@ current gate.
 | Module ownership, storage/process boundary, migration mechanics, or test architecture | Exact section in `docs/design.md` |
 | Current decision, open issue, cross-sequence gateway, or static contract not delegated below | Exact section in `plan.md` |
 | TG-M22 unit purpose, scope, order, dependency, permission, or execution/acceptance gate | Stable `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence` route and its exact accepted-predecessor sections; product behavior and implementation structure remain owned above |
-| TG-M23 unit or core data detail | Exact current design-only or inactive unit in `docs/execution-contracts/tg-m23-derived-evidence.md` and its ASCII anchor above |
+| TG-M23 unit or core data detail | Exact accepted-predecessor, current activation, or inactive unit in `docs/execution-contracts/tg-m23-derived-evidence.md` and its ASCII anchor above |
 | TG-M23 Windows process, private temporary tree, or atomic publication/recovery detail | Exact delegated route in `docs/execution-contracts/tg-m23-process-safety.md`, only through the TG-M23 core owner/router |
 | TG-M24 unit detail | Exact inactive unit in the routed execution contract and ASCII anchor above |
 | Published artifact, install, upgrade, tag, or Release identity | `docs/release-install.md` |
@@ -125,8 +127,8 @@ predecessor.
     {
       "path": "docs/execution-contracts/tg-m23-derived-evidence.md",
       "route_anchor": "tg-m23-derived-evidence",
-      "current_units": ["TG-M23.1"],
-      "inactive_units": ["TG-M23.2", "TG-M23.3"],
+      "current_units": [],
+      "inactive_units": ["TG-M23.3"],
       "detail_routes": [
         {
           "path": "docs/execution-contracts/tg-m23-process-safety.md",

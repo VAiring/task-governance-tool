@@ -1743,8 +1743,8 @@ package, tests, and formal contracts agree.
 ## Downstream Boundary
 
 TG-M23 reporting authority is in
-[the M23 mixed contract](tg-m23-derived-evidence.md); TG-M23.1 is current
-design-only authority while TG-M23.2 and TG-M23.3 remain inactive. TG-M24 Runner
-authority is in
+[the M23 mixed contract](tg-m23-derived-evidence.md); TG-M23.1 and bounded
+offline/mock TG-M23.2 are accepted predecessors, and TG-M23.3 remains inactive.
+TG-M24 Runner authority is in
 [the M24 conditional contract](tg-m24-verification-runner.md) and remains
-inactive. No downstream runtime is activated by this document.
+inactive. No downstream runtime is accepted or activated by this M22 document.

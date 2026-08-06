@@ -203,23 +203,23 @@ class DocumentContractTests(unittest.TestCase):
                 "authority_registry",
             ),
             (
-                '      "current_units": [],',
-                '      "current_units": ["TG-M22.4"],',
+                '      "path": "docs/execution-contracts/tg-m22-evidence-ledger.md",\n      "route_anchor": "tg-m22-sequence",\n      "current_units": [],',
+                '      "path": "docs/execution-contracts/tg-m22-evidence-ledger.md",\n      "route_anchor": "tg-m22-sequence",\n      "current_units": ["TG-M22.4"],',
                 "authority_registry",
             ),
             (
-                '      "current_units": ["TG-M23.1"],',
-                '      "current_units": [],',
+                '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": [],',
+                '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": ["TG-M23.2"],',
                 "authority_registry",
             ),
             (
-                '      "inactive_units": ["TG-M23.2", "TG-M23.3"]',
                 '      "inactive_units": ["TG-M23.3"]',
+                '      "inactive_units": []',
                 "authority_registry",
             ),
             (
+                '      "inactive_units": ["TG-M23.3"]',
                 '      "inactive_units": ["TG-M23.2", "TG-M23.3"]',
-                '      "inactive_units": ["TG-M23.2"]',
                 "authority_registry",
             ),
             (
@@ -340,8 +340,8 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 "README.md",
-                "TG-M23.1 is current design-only authority; TG-M23.2,",
-                "TG-M22.4 is current; TG-M23.1 remains inactive;",
+                "offline/mock TG-M23.2 are accepted predecessors.",
+                "offline/mock TG-M23.2 remains inactive.",
                 "document_role",
             ),
             (
@@ -402,7 +402,7 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 contract.M23_PROCESS,
-                "This document neither duplicates those roles nor creates a second TG-M23 unit owner.",
+                "This document creates no second owner.",
                 "This document also owns TG-M23 unit state.",
             ),
             (
@@ -419,6 +419,26 @@ class DocumentContractTests(unittest.TestCase):
                 contract.M23_PROCESS,
                 "B owns exactly one bounded stdin writer and one bounded drain worker for each of stdout and stderr.",
                 "B may create unbounded detached I/O workers.",
+            ),
+            (
+                contract.M23_PROCESS,
+                "held enumeration proves exact `{report.json,report.md}` and S/O absence",
+                "held enumeration permits S/O in the no-adapter root",
+            ),
+            (
+                contract.M23_PROCESS,
+                "Root exact DACL=`DENY OW(WC|WO);ALLOW CU(R0.access);ALLOW RC(FT|RA)`",
+                "Root DACL may grant RC write access",
+            ),
+            (
+                contract.M23_PROCESS,
+                "`DP=(DL|DA|RA|SY,SW,OPEN_EXISTING,K|X)`",
+                "`DP=(DL|DA|RA|SY,0,OPEN_EXISTING,K|X)`",
+            ),
+            (
+                contract.M23_PROCESS,
+                "`TH=(CR|DELETE|RD|WD|RA|SY,0,CREATE_NEW,X)`",
+                "`TH=(DELETE|RD|WD|RA|SY,0,CREATE_NEW,X)`",
             ),
             (
                 contract.M23_PROCESS,
@@ -447,7 +467,7 @@ class DocumentContractTests(unittest.TestCase):
         self.assertEqual(core.count("sole TG-M23 unit owner/router"), 1)
         self.assertNotIn("sole TG-M23 unit owner/router", process)
         self.assertEqual(
-            process.count("creates a second TG-M23 unit owner"),
+            process.count("creates no second owner"),
             1,
         )
 

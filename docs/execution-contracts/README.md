@@ -2,9 +2,9 @@
 
 > [!IMPORTANT]
 > MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M22.1A, TG-M22.2,
-> TG-M21.5, TG-M22.3, and TG-M22.4 are accepted predecessors. TG-M23.1 is
-> current design-only authority; TG-M23.2, TG-M23.3, and TG-M24 remain
-> accepted but inactive. Load files only when the current
+> TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, and bounded offline/mock TG-M23.2
+> are accepted predecessors. TG-M23.3 and TG-M24 remain accepted but inactive.
+> Integrated Analyzer product acceptance remains owned by TG-M23.3. Load files only when the current
 > Task Contract or the
 > [repository authority index](../authority.md) selects their exact path and
 > ASCII anchor. Their presence, indexing, or reading activates no behavior.
@@ -31,13 +31,14 @@ reviews, receipts, or completion history.
   detail; its supported schema-v19 behavior remains active through the
   specification and design.
 - [TG-M23 Derived Evidence](tg-m23-derived-evidence.md#tg-m23-derived-evidence)
-  is the sole unit owner/router for current TG-M23.1 design-only detail and
-  accepted inactive TG-M23.2/TG-M23.3 detail.
+  is the sole unit owner/router for accepted TG-M23.1 design, accepted bounded
+  TG-M23.2 implementation, and accepted inactive TG-M23.3 detail.
 - [TG-M23 Process Safety](tg-m23-process-safety.md#tg-m23-process-safety)
   is the sole delegated owner of the routed Windows containment, private-temp,
   and atomic publication/recovery seam. It owns no unit state, core schema, or
-  activation. No Analyzer runtime, worker, model/network path, public CLI or
-  Skill call, gate, or Task mutation is active.
+  activation. Accepted TG-M23.2 permits only its routed offline/mock
+  implementation; SQLite, `storage.py`, public CLI/Skill, network/live-model
+  action, gates, and Task mutation remain outside scope.
 - [TG-M24 Verification Runner](tg-m24-verification-runner.md#tg-m24-verification-runner)
   owns accepted inactive Runner design, shadow, gate-integration, and
   acceptance detail for the M24 sequence, which remains inactive.

@@ -3,11 +3,13 @@
 <a id="tg-m23-derived-evidence"></a>
 
 > [!IMPORTANT]
-> MIXED FORMAL AUTHORITY: TG-M23.1 DESIGN IS CURRENT; TG-M23.2 AND TG-M23.3
-> ARE ACCEPTED BUT INACTIVE. Load this document only when the current Task
-> Contract or [authority index](../authority.md) routes to TG-M23. It activates
-> no outbox, worker, model adapter, report store, network use, schema, CLI,
-> Skill call, gate, or Task mutation.
+> MIXED FORMAL AUTHORITY: TG-M23.1 AND BOUNDED OFFLINE/MOCK TG-M23.2 ARE
+> ACCEPTED PREDECESSORS; TG-M23.3 IS ACCEPTED BUT INACTIVE. Load this document
+> only when the current Task Contract or [authority index](../authority.md)
+> routes to TG-M23. Integrated Analyzer product acceptance remains owned by
+> TG-M23.3; SQLite, `storage.py`,
+> public CLI/Skill, network/live-model action, gates, and Task mutation remain
+> outside scope.
 
 [Specification](../specification.md)=behavior; [design](../design.md)=structure; this document is the sole TG-M23 unit owner/router for sequence, Task boundaries, descriptor, packet, status, report, provenance, citation, activation order, permissions, and gates; [process safety](tg-m23-process-safety.md#tg-m23-process-safety)=the sole delegated owner of Windows containment, private temporary storage, and atomic publication/recovery mechanics; [plan.md](../../plan.md)=other static/cross-sequence; Task DB=live state/evidence. The delegated owner does not own unit state or core data semantics, and this router does not restate its physical safety mechanics.
 
@@ -57,11 +59,11 @@ Packet caps: native 16,842,752 bytes, legacy 16,384; excess=`packet_too_large`, 
 
 Status keys=`analysis_job_id,state,worker_attempt_count,adapter_attempt_count,inference_state,fixed_code,duration_ms,packet_digest,accepted_output_digest,report_id,report_digest,render_digest`; state∈`pending|running|published|failed|cancelled`; inference∈`disabled|policy_blocked|pending|running|succeeded|input_too_large|unavailable|launch_failed|timeout|output_too_large|invalid_output|failed|cancelled`; R3=`report_id,report_digest,render_digest`. Counters=integers 0..2; integer duration=0..600,000≤`300000 * worker_attempt_count`. Code=null except failed∈`source_invalid|packet_too_large|report_invalid|publication_failed|interrupted`, cancelled=`cancelled`.
 
-PS=`policy_blocked|input_too_large|succeeded|unavailable|launch_failed|timeout|output_too_large|invalid_output|failed`. Offline: adapter=0, inference=`disabled`, output=null. Optional adapter=0 for `pending|policy_blocked|input_too_large`, 1..2 for `running|succeeded|unavailable|launch_failed|timeout|output_too_large|invalid_output|failed`, cancelled=0..2. Output is non-null exactly for `succeeded`; optional `running|PS` requires packet; `pending` may omit it.
+PS=`policy_blocked|input_too_large|succeeded|unavailable|launch_failed|timeout|output_too_large|invalid_output|failed`. Offline: adapter=0, inference=`disabled`, output=null. Optional adapter=0 for `pending|policy_blocked|input_too_large`, 1..2 for `running|succeeded|unavailable|launch_failed|timeout|output_too_large|invalid_output|failed`, cancelled=0..2. Output is non-null exactly for `succeeded`; optional `running|PS` requires packet; `pending` may omit it. `mode/inference` no-adapter results are exactly `offline/disabled|codex_optional/policy_blocked|codex_optional/input_too_large`; no other result uses the delegated no-adapter-tree proof or consumes an adapter attempt.
 
-Matrix—`pending`: worker/duration=0; code/digests/R3=null; inference offline/optional=`disabled|pending`. All others have worker=1..2. `running`: null code; inference offline=`disabled`, optional=`pending|running|PS`; packet required; output per above; R3 is all-null or all-nonnull intent after report/render validation plus required tree-quiescent/no-tree cleanup proof. `published`: packet+R3, null code, inference=`disabled|PS`. Failed source/packet: packet/output/R3 null, inference=`disabled|pending`; failed report/publication: packet, R3 null, inference=`disabled|PS`. `interrupted`: no packet→`disabled|pending`; packet/no output→`disabled|non-succeeded PS`; reclaim→`failed`; packet/output→`succeeded`. `cancelled`: R3 null/fixed code; optional=`cancelled`/adapter 0..2 or offline=`disabled`/0; packet iff validated. Other R3 null; terminals have no rerun/timestamp/raw error.
+Matrix—`pending`: worker/duration=0; code/digests/R3=null; inference offline/optional=`disabled|pending`. All others have worker=1..2. `running`: null code; inference offline=`disabled`, optional=`pending|running|PS`; packet required; output per above; R3 is all-null or all-nonnull intent after report/render validation plus required tree-quiescent/no-tree cleanup proof. `published`: packet+R3, null code, inference=`disabled|PS`. Failed source/packet: packet/output/R3 null, inference=`disabled|pending`; failed report/publication: packet, R3 null, inference=`disabled|PS`. `interrupted`: no packet→`disabled|pending`; packet/no output→`disabled|non-succeeded PS`; packet/output→`succeeded`. Optional adapter=0/inference=`failed` is valid only as the exact pre-call reclaim terminal: failed/interrupted, worker=2, packet set, output/R3 null. `cancelled`: R3 null/fixed code; optional=`cancelled`/adapter 0..2 or offline=`disabled`/0; packet iff validated. Other R3 null; terminals have no rerun/timestamp/raw error.
 
-Status atomic; pending→running increments worker. Locked no-wait `run_once` enforces 100,000 files and ID order; selects ≤1 pending/reclaimable. Complete intent gets bounded counter-neutral recovery. No-intent running increments worker when `<2`, then `interrupted`. Reclaim never increments adapter/launches/touches O/quarantine. Worker≤300,000 ms; expiry=`failed/interrupted`; adapter increments pre lookup/call, ≤2. Descriptor precedes pending. Valid descriptor/no-status recovers once if no same-ID report/status conflict; invalid pairing/type/parse/digest/binding stays unchanged.
+Status atomic; pending→running increments worker. Locked no-wait `run_once` enforces 100,000 files and ID order; selects ≤1 pending/reclaimable. Complete intent gets bounded counter-neutral recovery. No-intent running with worker below 2 first uses a counter-only running→running CAS: worker alone changes and duration is unchanged. The optional pre-call terminal CAS is exactly running worker=2/adapter=0/inference=`pending`/packet set/output+R3 null/code null → failed worker=2/adapter=0/inference=`failed`/code=`interrupted`, with every other field unchanged. Reclaim never increments adapter/launches/touches O/quarantine. Worker≤300,000 ms; expiry=`failed/interrupted`; adapter increments pre lookup/call, ≤2. Descriptor precedes pending. Under lease, a valid descriptor with absent exact status leaf exclusively creates pending once; reports are neither scanned nor replay input. Present status requires exact pairing; invalid type/parse/digest/binding stays unchanged.
 
 ### Report And Citation Contract
 
@@ -120,7 +122,7 @@ Completion=document/exact-file/diff checks, current full Verification Receipt, t
 
 Task `tg_task_d5511d2ca7db93dc`: source/outbox→validator/report/renderer→mock adapter/worker; scope=paths/disk-consumer/core/internal `run_once`/private fixed mock broker/offline publication; no SQLite/`storage.py`/public CLI/Skill/maintenance/Task-loop/daemon/caller-visible launch/network/live; evidence/assurance/Task/gates inert.
 
-Completion=deterministic dedupe; provenance/citation/status/replay/failure/privacy/no-fabrication/scoring/assurance-upgrade; focused/full offline/package+exact-diff, current Receipt, two clean Tier 2 reviews; credentials/payment need separate cost/data authority.
+Completion=deterministic dedupe; provenance/citation/status/replay/failure/privacy/no-fabrication/scoring/assurance-upgrade; one real-Windows two-process full-session race starts two `run_once`s together, pauses the nondeterministic winner after lease/before selection, proves the loser busy before inventory with no durable read/write and state unchanged until winner release, then exactly one worker increment/publication; focused/full offline/package+exact-diff, current Receipt, two clean Tier 2 reviews; credentials/payment need separate cost/data authority.
 
 <a id="tg-m23-3"></a>
 

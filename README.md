@@ -491,9 +491,13 @@ coverage.
 - `docs/execution-contracts/`: indexed mixed current/conditional authority. M22
   routes through
   `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence`;
-  TG-M22.4 integrated acceptance is current. TG-M22.1A, TG-M22.2, TG-M21.5,
-  and TG-M22.3 are accepted predecessors; M23 and M24 remain inactive. M22.4
-  activates no new product behavior.
+  TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, and TG-M22.4 are accepted
+  predecessors. TG-M23.1 is current design-only authority; TG-M23.2,
+  TG-M23.3, and M24 remain inactive. TG-M23.1 activates no Analyzer runtime,
+  network/model action, public CLI or Skill call, gate, or product behavior.
+  Its sole unit owner/router delegates only the Windows process/private-temp/
+  publication seam to
+  `docs/execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety`.
 - `docs/release-install.md`: current candidate, immutable published artifact,
   and installation identity.
 - `docs/history/README.md`: non-authoritative lineage index.

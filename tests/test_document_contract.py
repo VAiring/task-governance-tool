@@ -198,18 +198,33 @@ class DocumentContractTests(unittest.TestCase):
     def test_registry_and_routes_reject_hidden_duplicate_extra_and_order_drift(self):
         mutations = (
             (
-                '  "schema": "taskgov-document-authority-v2",',
-                '  "schema": "taskgov-document-authority-v2",\n  "schema": "taskgov-document-authority-v2",',
+                '  "schema": "taskgov-document-authority-v3",',
+                '  "schema": "taskgov-document-authority-v3",\n  "schema": "taskgov-document-authority-v3",',
                 "authority_registry",
             ),
             (
-                '    "current_units": ["TG-M22.4"],',
-                '    "current_units": ["TG-M22.3"],',
+                '      "current_units": [],',
+                '      "current_units": ["TG-M22.4"],',
                 "authority_registry",
             ),
             (
-                '    "inactive_units": []',
-                '    "inactive_units": ["TG-M22.4"]',
+                '      "current_units": ["TG-M23.1"],',
+                '      "current_units": [],',
+                "authority_registry",
+            ),
+            (
+                '      "inactive_units": ["TG-M23.2", "TG-M23.3"]',
+                '      "inactive_units": ["TG-M23.3"]',
+                "authority_registry",
+            ),
+            (
+                '      "inactive_units": ["TG-M23.2", "TG-M23.3"]',
+                '      "inactive_units": ["TG-M23.2"]',
+                "authority_registry",
+            ),
+            (
+                '          "owner_scope": "windows_process_private_temp_atomic_publication"',
+                '          "owner_scope": "windows_process_and_publication"',
                 "authority_registry",
             ),
             (
@@ -231,6 +246,35 @@ class DocumentContractTests(unittest.TestCase):
                     self.replace(root, contract.AUTHORITY, old, new)
                     result = contract.check_document_contract(root)
                     self.assertIn(expected, self.codes(result))
+
+        self.assertEqual(
+            contract.FIRST_HEADINGS[contract.M23_PROCESS],
+            "# TG-M23 Windows Process Safety And Atomic Publication Contract",
+        )
+        self.assertEqual(contract.BUDGETS[contract.M23_PROCESS], (120, 20_000))
+        self.assertIn(
+            (
+                contract.M23,
+                "## Process Safety Route",
+                ("tg-m23-process-safety.md#tg-m23-process-safety",),
+            ),
+            contract.ROUTE_SECTIONS,
+        )
+        self.assertIn(
+            (
+                contract.M23_PROCESS,
+                "## Parent Route",
+                ("tg-m23-derived-evidence.md#tg-m23-1",),
+            ),
+            contract.ROUTE_SECTIONS,
+        )
+
+        with self.fixture() as root:
+            root.joinpath(*contract.M23_PROCESS.split("/")).unlink()
+            self.assertIn(
+                "document_unavailable",
+                self.codes(contract.check_document_contract(root)),
+            )
 
     def test_role_and_live_state_drift_are_rejected_outside_fences(self):
         mutations = (
@@ -260,8 +304,14 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 "docs/execution-contracts/tg-m22-evidence-ledger.md",
+                "# TG-M22 Evidence Ledger Accepted Execution Contract",
                 "# TG-M22 Evidence Ledger Current And Conditional Execution Contract",
-                "# TG-M22 Evidence Ledger Conditional Execution Contract",
+                "document_role",
+            ),
+            (
+                contract.M23,
+                "# TG-M23 Derived Evidence Current And Conditional Execution Contract",
+                "# TG-M23 Derived Evidence Conditional Execution Contract",
                 "document_role",
             ),
             (
@@ -278,8 +328,8 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 contract.EXECUTION_INDEX,
-                "Each indexed file is the sole detailed execution owner for its named units'",
-                "Each indexed file is the sole detailed owner for its named inactive units'",
+                "Each indexed sequence file is the sole detailed execution owner/router for its",
+                "Each indexed sequence file is only an informal summary for its",
                 "document_role",
             ),
             (
@@ -290,8 +340,8 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 "README.md",
-                "TG-M22.4 integrated acceptance is current.",
-                "TG-M22.3 is current; TG-M22.4 remains inactive.",
+                "TG-M23.1 is current design-only authority; TG-M23.2,",
+                "TG-M22.4 is current; TG-M23.1 remains inactive;",
                 "document_role",
             ),
             (
@@ -328,6 +378,114 @@ class DocumentContractTests(unittest.TestCase):
                     self.replace(root, relative, old, new)
                     self.assertIn("document_role", self.codes(contract.check_document_contract(root)))
 
+    def test_m23_core_and_process_structural_canaries_are_closed(self):
+        cases = (
+            (
+                contract.M23,
+                "this document is the sole TG-M23 unit owner/router",
+                "this document shares TG-M23 unit ownership",
+            ),
+            (
+                contract.M23,
+                "Stdin exactly=`ASCII(\"taskgov-analysis-stdin-v1\")||LF",
+                "Stdin may use implementation-defined framing ",
+            ),
+            (
+                contract.M23,
+                "payload order=`report_id,analysis_job_id,source_kind,source_key,recipe_digest,inference_state",
+                "payload order=`analysis_job_id,report_id,source_kind,source_key,recipe_digest,inference_state",
+            ),
+            (
+                contract.M23,
+                "Markdown v1=`T||LF||LF||join(B1..B10,LF||LF)||LF`",
+                "Markdown v1 uses an implementation-defined layout",
+            ),
+            (
+                contract.M23_PROCESS,
+                "This document neither duplicates those roles nor creates a second TG-M23 unit owner.",
+                "This document also owns TG-M23 unit state.",
+            ),
+            (
+                contract.M23_PROCESS,
+                "No B thread subsequently creates or receives a window, hook, clipboard",
+                "B may receive a desktop-bound IPC channel",
+            ),
+            (
+                contract.M23_PROCESS,
+                "`STARTUPINFOEXW` with no `STARTF_USESTDHANDLES` and exactly two attributes",
+                "`STARTUPINFOEXW` may inherit ambient handles",
+            ),
+            (
+                contract.M23_PROCESS,
+                "B owns exactly one bounded stdin writer and one bounded drain worker for each of stdout and stderr.",
+                "B may create unbounded detached I/O workers.",
+            ),
+            (
+                contract.M23_PROCESS,
+                "C retains the same lease continuously without `UnlockFileEx` or close",
+                "C releases the lease before retry",
+            ),
+            (
+                contract.M23_PROCESS,
+                "`publish_ready` requires valid report/Markdown temps",
+                "Publication may begin with an incomplete report temp",
+            ),
+        )
+        for relative, old, new in cases:
+            with self.subTest(relative=relative, marker=old[:40]):
+                with self.fixture() as root:
+                    self.replace(root, relative, old, new)
+                    self.assertIn(
+                        "document_role",
+                        self.codes(contract.check_document_contract(root)),
+                    )
+
+        core = ROOT.joinpath(*contract.M23.split("/")).read_text(encoding="utf-8")
+        process = ROOT.joinpath(*contract.M23_PROCESS.split("/")).read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(core.count("sole TG-M23 unit owner/router"), 1)
+        self.assertNotIn("sole TG-M23 unit owner/router", process)
+        self.assertEqual(
+            process.count("creates a second TG-M23 unit owner"),
+            1,
+        )
+
+    def test_m23_digest_vectors_are_independent_and_exact(self):
+        identity = (
+            b'{"bundle_state":"legacy_unknown","completion_cycle_id":"c",'
+            b'"cycle_ordinal":1,"project_id":"p","task_id":"t"}'
+        )
+        recipe = (
+            b'{"declared_model_id":null,"inference_mode":"offline",'
+            b'"producer_version":1,"prompt_schema_version":1,'
+            b'"renderer_version":1,"report_schema_version":1}'
+        )
+        source_key = "sha256:" + hashlib.sha256(
+            b"taskgov-analysis-source-v1\0" + identity
+        ).hexdigest()
+        recipe_digest = "sha256:" + hashlib.sha256(
+            b"taskgov-analysis-recipe-v1\0" + recipe
+        ).hexdigest()
+        job_hash = hashlib.sha256(
+            b"taskgov-analysis-job-v1\0"
+            + source_key.encode("ascii")
+            + b"\0"
+            + recipe_digest.encode("ascii")
+        ).hexdigest()
+        self.assertEqual(
+            source_key,
+            "sha256:43de9c707c10c49ab1b3bc939975b058bbf9b79dfbd495324ecd5e2135581fbf",
+        )
+        self.assertEqual(
+            recipe_digest,
+            "sha256:8ac0a31a34894d0d759b7844b8f0d8b6999520374f34a73b45a2a4cff7b29f3d",
+        )
+        self.assertEqual(
+            "tg_analysis_job_" + job_hash[:16],
+            "tg_analysis_job_ec713ed4ae8e2860",
+        )
+
     def test_history_is_indexed_and_digested_without_parsing_capture_prose(self):
         with self.fixture() as root:
             added = root / "docs" / "history" / "v0.11.0" / "unindexed.md"
@@ -345,6 +503,26 @@ class DocumentContractTests(unittest.TestCase):
                 old_capture.read_bytes() + b"\n[historical tombstone](missing.md)\n"
             )
             self.assertTrue(contract.check_document_contract(root).ok)
+
+    def test_m23_split_history_is_exact_and_indexed_once(self):
+        relative = "v0.12.0/tg-m23-pre-process-safety-split.md"
+        capture = ROOT / "docs" / "history" / relative
+        raw = capture.read_bytes()
+        self.assertEqual(
+            hashlib.sha256(raw).hexdigest(),
+            "86058642778a135dca524d7f2ae89091ba9740c6883cff9acedabcf0b1f6ba9c",
+        )
+        source = subprocess.run(
+            ["git", "show", "7313483a9fd160f0ec8127b013d9f5533d2d16ab:docs/execution-contracts/tg-m23-derived-evidence.md"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(source.returncode, 0)
+        self.assertTrue(raw.endswith(source.stdout))
+        index = (ROOT / "docs" / "history" / "README.md").read_text(encoding="utf-8")
+        self.assertEqual(index.count(f"]({relative})"), 1)
+        self.assertEqual(index.count("](../execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety)"), 1)
 
     def test_static_sequences_reject_row_gate_and_mirror_drift(self):
         mutations = (
@@ -397,6 +575,18 @@ class DocumentContractTests(unittest.TestCase):
             path = root / "plan.md"
             path.write_bytes(path.read_bytes() + ("padding\n" * 25).encode("utf-8"))
             self.assertIn("document_budget", self.codes(contract.check_document_contract(root)))
+
+        for relative in (contract.M23, contract.M23_PROCESS):
+            with self.subTest(relative=relative), self.fixture() as root:
+                path = root.joinpath(*relative.split("/"))
+                raw = path.read_bytes()
+                max_lines, max_bytes = contract.BUDGETS[relative]
+                path.write_bytes(raw[:-1] + b"x" * (max_bytes - len(raw) + 1) + b"\n")
+                result = contract.check_document_contract(root)
+                metric = next(item for item in result.metrics if item.path == relative)
+                self.assertLessEqual(metric.lines, max_lines)
+                self.assertEqual(metric.bytes, max_bytes + 1)
+                self.assertIn("document_budget", self.codes(result))
 
         with self.fixture() as root:
             path = root / "AGENTS.md"

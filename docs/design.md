@@ -2,8 +2,8 @@
 
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
-snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, and the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1 with managed recovery and stored-Task/Contract relationship validation; TG-M22.4 is current integrated acceptance and activates no new behavior.
-TG-M20S.3, TG-M23, and TG-M24 remain inactive.
+snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, and accepted TG-M22.4 integrated acceptance with managed recovery and stored-Task/Contract relationship validation. TG-M23.1 is current design-only authority and activates no implementation.
+TG-M20S.3, TG-M23.2, TG-M23.3, and TG-M24 remain inactive; no Analyzer runtime, worker, network path, CLI or Skill call, or gate is active.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 

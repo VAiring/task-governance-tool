@@ -290,3 +290,20 @@ evidence remain available only through the public CLI.
   [conditional execution contract index](../execution-contracts/README.md).
   Use the public CLI for live Task state and evidence. This capture is lineage
   only and cannot fill a current authority gap or satisfy a gate.
+
+## v0.12.0 TG-M23 Authority-Split Lineage
+
+### Pre-process-safety split capture of `docs/execution-contracts/tg-m23-derived-evidence.md`
+
+- Immutable history:
+  [v0.12.0/tg-m23-pre-process-safety-split.md](v0.12.0/tg-m23-pre-process-safety-split.md)
+- Source commit: `7313483a9fd160f0ec8127b013d9f5533d2d16ab`
+- Capture unit: `TG-M23.1`
+- Capture purpose: preserve the exact accepted-but-inactive TG-M23 authority
+  body before its current one-level core/process-safety owner split.
+- Current replacements:
+  [TG-M23 core owner/router](../execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence)
+  and
+  [TG-M23 process-safety owner](../execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety).
+  Use the public CLI for live Task state and evidence. This capture is lineage
+  only and cannot fill a current authority gap or satisfy a gate.

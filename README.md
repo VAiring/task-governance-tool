@@ -491,12 +491,12 @@ coverage.
 - `docs/execution-contracts/`: indexed mixed current/conditional authority. M22
   routes through
   `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence`;
-  TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, and bounded
-  offline/mock TG-M23.2 are accepted predecessors. TG-M23.3 is current only
-  for offline/mock integrated acceptance; M24 remains inactive. Integrated
-  Analyzer product acceptance remains unaccepted until TG-M23.3 gates pass.
-  SQLite, `storage.py`, public CLI or Skill calls, network/live-model actions,
-  gate mutation, and Task mutation remain outside TG-M23.3.
+  TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
+  offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer
+  acceptance are accepted predecessors; M24 remains inactive. Network/live
+  Analyzer acceptance still requires separate authority. SQLite, `storage.py`,
+  public CLI or Skill calls, network/live-model actions, gate mutation, and
+  Task mutation remain outside the accepted TG-M23 scope.
   Its sole unit owner/router delegates only the Windows process/private-temp/
   publication seam to
   `docs/execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety`.

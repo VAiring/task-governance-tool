@@ -14,6 +14,7 @@ INDEX_DOMAIN = b"taskgov-evidence-index-v1\0"
 CRITERION_DOMAIN = b"taskgov-contract-criterion-v1\0"
 ARTIFACT_MANIFEST_DOMAIN = b"taskgov-artifact-manifest-v1\0"
 EVIDENCE_REFERENCE_DOMAIN = b"taskgov-evidence-reference-v1\0"
+REVIEW_PROVENANCE_DOMAIN = b"taskgov-review-provenance-v1\0"
 
 
 def reference_json_bytes(value: object) -> bytes:
@@ -28,6 +29,122 @@ def reference_json_bytes(value: object) -> bytes:
 
 def domain_digest(domain: bytes, value: object) -> str:
     return "sha256:" + hashlib.sha256(domain + reference_json_bytes(value)).hexdigest()
+
+
+def expected_markdown_v1(envelope: dict[str, object]) -> bytes:
+    """Return the test-owned exact Markdown v1 framing for one report."""
+
+    payload = envelope["payload"]
+    identity = {
+        "report_schema_version": envelope["report_schema_version"],
+        "report_digest": envelope["report_digest"],
+        "report_id": payload["report_id"],
+        "analysis_job_id": payload["analysis_job_id"],
+        "source_kind": payload["source_kind"],
+        "source_key": payload["source_key"],
+        "recipe_digest": payload["recipe_digest"],
+        "inference_state": payload["inference_state"],
+    }
+    values = (
+        ("Identity", identity),
+        ("Structural Facts", payload["structural_facts"]),
+        ("Trusted Caller Declarations", payload["trusted_caller_declarations"]),
+        ("Legacy Absence", payload["legacy_absence"]),
+        ("LLM Derived", payload["llm_derived"]),
+        ("Omissions", payload["omissions"]),
+        ("Uncertainties", payload["uncertainties"]),
+        ("Declared Code Occurrences", payload["declared_code_occurrences"]),
+        ("Citations", payload["citations"]),
+        ("Reproducibility", payload["reproducibility"]),
+    )
+    blocks = [
+        b"## "
+        + name.encode("utf-8")
+        + b"\n\n    "
+        + reference_json_bytes(value)
+        for name, value in values
+    ]
+    return (
+        b"# Task Governance Analysis Report v1\n\n"
+        + b"\n\n".join(blocks)
+        + b"\n"
+    )
+
+
+def held_analysis_tree_snapshot(paths, *, session=None):
+    """Return the exact handle-only analysis namespace snapshot."""
+
+    from task_governance_tool import _analysis_win32 as win32_boundary
+    from task_governance_tool.analysis_outbox import AnalysisOutboxSession
+
+    owned = session is None
+    if owned:
+        session = AnalysisOutboxSession.acquire(paths)
+    opened = []
+    rows = []
+    try:
+        root = session._borrow_analysis_root()
+        rows.extend(
+            ("analysis", item.name, item.file_id, item.size, item.is_directory)
+            for item in win32_boundary.enumerate_held_directory(
+                root,
+                maximum_entries=6,
+            )
+        )
+        parents = (
+            ("outbox", session._directories.outbox),
+            ("status", session._directories.status),
+        )
+        extras = []
+        for name in ("reports", "rendered", "tmp"):
+            handle = win32_boundary.open_relative_directory(
+                root,
+                name,
+                win32_boundary.R0,
+                kind="test-snapshot-" + name,
+            )
+            opened.append(handle)
+            extras.append((name, handle))
+        for directory_name, parent in parents + tuple(extras):
+            entries = win32_boundary.enumerate_held_directory(
+                parent,
+                maximum_entries=100_000 if directory_name != "tmp" else 32,
+            )
+            for entry in entries:
+                content = None
+                if not entry.is_directory:
+                    leaf = win32_boundary.open_relative_file_if_present(
+                        parent,
+                        entry.name,
+                        maximum=10_000_000,
+                        kind="test-snapshot-leaf",
+                    )
+                    if leaf is None:
+                        raise AssertionError("snapshot leaf disappeared")
+                    try:
+                        content = win32_boundary.read_handle_capped(
+                            leaf,
+                            maximum=10_000_000,
+                        )
+                    finally:
+                        leaf.close()
+                rows.append(
+                    (
+                        directory_name,
+                        entry.name,
+                        entry.file_id,
+                        entry.size,
+                        entry.is_directory,
+                        entry.is_reparse,
+                        content,
+                    )
+                )
+        return tuple(sorted(rows, key=repr))
+    finally:
+        for handle in reversed(opened):
+            handle.close()
+        if owned:
+            session.release_normal()
 
 
 def _reference_source_projection(
@@ -164,6 +281,48 @@ def refresh_inner_digests(payload: dict[str, Any]) -> None:
             "verification_criterion_id": reference["verification_criterion_id"],
         }
         reference["digest"] = domain_digest(EVIDENCE_REFERENCE_DOMAIN, value)
+
+
+def refresh_bundle_seals(payload: dict[str, Any]) -> None:
+    """Refresh test-owned provenance and inner Bundle digests in place."""
+
+    target = deepcopy(payload["target"])
+    target["base_revision"] = target["base_revision"] or ""
+    for receipt in payload["review_receipts"]:
+        provenance = receipt["review_provenance"]
+        if provenance is None:
+            continue
+        digest_payload = {
+            "project_id": payload["project_id"],
+            "task_id": payload["task"]["task_id"],
+            "review_receipt_id": receipt["review_receipt_id"],
+            "receipt_kind": receipt["receipt_kind"],
+            "target": target,
+            **{
+                key: provenance[key]
+                for key in (
+                    "provenance_version",
+                    "reviewer_class",
+                    "model_state",
+                    "declared_model_id",
+                    "skill_state",
+                    "declared_skill_id",
+                    "declared_skill_version",
+                    "review_profiles",
+                    "review_lenses",
+                    "context_relation",
+                    "method_codes",
+                    "assurance_class",
+                    "producer_class",
+                    "producer_version",
+                )
+            },
+        }
+        provenance["digest"] = domain_digest(
+            REVIEW_PROVENANCE_DOMAIN,
+            digest_payload,
+        )
+    refresh_inner_digests(payload)
 
 
 def valid_native_payload() -> dict[str, object]:
@@ -340,6 +499,101 @@ def valid_native_payload() -> dict[str, object]:
     return payload
 
 
+def v1_native_payload(
+    *,
+    reviewer_class: str = "human",
+    model_state: str = "not_applicable",
+    declared_model_id: str | None = None,
+    skill_state: str = "not_applicable",
+    declared_skill_id: str | None = None,
+    declared_skill_version: str | None = None,
+    context_relation: str = "not_applicable",
+) -> dict[str, object]:
+    """Return one literal native Bundle payload with v1 review provenance."""
+
+    payload = valid_native_payload()
+    receipt = payload["review_receipts"][0]
+    receipt.update(
+        {
+            "reviewer_key": "fixture-reviewer",
+            "receipt_kind": "independent",
+            "verdict": "pass",
+            "summary": "No blocking findings.",
+            "review_provenance": {
+                "review_provenance_id": "tg_review_provenance_" + "9" * 16,
+                "provenance_version": 1,
+                "reviewer_class": reviewer_class,
+                "model_state": model_state,
+                "declared_model_id": declared_model_id,
+                "skill_state": skill_state,
+                "declared_skill_id": declared_skill_id,
+                "declared_skill_version": declared_skill_version,
+                "review_profiles": ["general"],
+                "review_lenses": ["correctness"],
+                "context_relation": context_relation,
+                "method_codes": ["review_packet_inspection"],
+                "assurance_class": "bound_attestation",
+                "producer_class": "trusted_caller",
+                "producer_version": 1,
+                "digest": "sha256:" + "9" * 64,
+            },
+        }
+    )
+    payload["task"]["review_tier"] = 1
+    return payload
+
+
+def reidentify_native_payload(
+    payload: dict[str, object],
+    *,
+    suffix: str,
+    cycle_ordinal: int,
+) -> dict[str, object]:
+    """Give a one-Receipt test payload distinct cycle and provenance IDs."""
+
+    if (
+        len(suffix) != 1
+        or suffix not in "0123456789abcdef"
+        or type(cycle_ordinal) is not int
+        or not 1 <= cycle_ordinal <= 99
+        or len(payload["review_receipts"]) != 1
+    ):
+        raise ValueError("invalid M23 native fixture identity")
+    selected = deepcopy(payload)
+    old_cycle_id = selected["completion_cycle_id"]
+    old_receipt_id = selected["review_receipts"][0]["review_receipt_id"]
+    cycle_id = "tg_completion_cycle_" + suffix * 16
+    receipt_id = "tg_review_receipt_" + suffix * 16
+    selected.update(
+        {
+            "bundle_id": "tg_completion_evidence_bundle_" + suffix * 16,
+            "completion_cycle_id": cycle_id,
+            "cycle_ordinal": cycle_ordinal,
+            "sealed_at": f"2026-08-05T00:{cycle_ordinal:02d}:00Z",
+        }
+    )
+    receipt = selected["review_receipts"][0]
+    receipt["review_receipt_id"] = receipt_id
+    provenance = receipt["review_provenance"]
+    if provenance is not None:
+        provenance["review_provenance_id"] = (
+            "tg_review_provenance_" + suffix * 16
+        )
+    for reference in selected["evidence_references"]:
+        if reference["source_kind"] == "review_receipt":
+            if reference["source_id"] != old_receipt_id:
+                raise ValueError("invalid M23 review fixture binding")
+            reference["source_id"] = receipt_id
+        if reference["source_kind"] == "completion_evidence":
+            if reference["source_id"] != old_cycle_id:
+                raise ValueError("invalid M23 completion fixture binding")
+            reference["source_id"] = cycle_id
+        if reference["completion_cycle_id"] == old_cycle_id:
+            reference["completion_cycle_id"] = cycle_id
+    refresh_bundle_seals(selected)
+    return selected
+
+
 def sealed_bundle(payload: dict[str, object] | None = None) -> tuple[dict, bytes]:
     selected = valid_native_payload() if payload is None else deepcopy(payload)
     digest = domain_digest(BUNDLE_DOMAIN, selected)
@@ -399,6 +653,93 @@ def write_evidence_tree(root: Path) -> Path:
         "projection_generation": 7,
         "bundle_count": 1,
         "legacy_count": 1,
+        "entries": entries,
+    }
+    envelope = {
+        "format_version": 1,
+        "index_digest": domain_digest(INDEX_DOMAIN, payload),
+        "payload": payload,
+    }
+    (evidence / "index.json").write_bytes(reference_json_bytes(envelope) + b"\n")
+    return evidence
+
+
+def write_mixed_evidence_tree(root: Path) -> Path:
+    """Write three native cycles and two index-only legacy entries."""
+
+    evidence = root / "evidence"
+    bundles = evidence / "bundles"
+    bundles.mkdir(parents=True)
+    native_payloads = (
+        reidentify_native_payload(
+            v1_native_payload(),
+            suffix="a",
+            cycle_ordinal=2,
+        ),
+        reidentify_native_payload(
+            v1_native_payload(
+                reviewer_class="llm",
+                model_state="declared",
+                declared_model_id="fixture-model-b",
+                skill_state="declared",
+                declared_skill_id="fixture-skill-b",
+                declared_skill_version="1.0",
+                context_relation="forked_context",
+            ),
+            suffix="b",
+            cycle_ordinal=3,
+        ),
+        reidentify_native_payload(
+            valid_native_payload(),
+            suffix="c",
+            cycle_ordinal=4,
+        ),
+    )
+    entries: list[dict[str, object]] = []
+    for payload in native_payloads:
+        bundle, document = sealed_bundle(payload)
+        bundle_id = payload["bundle_id"]
+        (bundles / f"{bundle_id}.json").write_bytes(document)
+        entries.append(
+            {
+                "task_id": payload["task"]["task_id"],
+                "completion_cycle_id": payload["completion_cycle_id"],
+                "cycle_ordinal": payload["cycle_ordinal"],
+                "bundle_state": "native",
+                "bundle_id": bundle_id,
+                "bundle_file": f"bundles/{bundle_id}.json",
+                "bundle_digest": bundle["bundle_digest"],
+                "file_digest": "sha256:" + hashlib.sha256(document).hexdigest(),
+                "sealed_at": payload["sealed_at"],
+            }
+        )
+    for suffix in ("d", "e"):
+        entries.append(
+            {
+                "task_id": "tg_task_" + suffix * 16,
+                "completion_cycle_id": "tg_completion_cycle_" + suffix * 16,
+                "cycle_ordinal": 1,
+                "bundle_state": "legacy_unknown",
+                "bundle_id": None,
+                "bundle_file": None,
+                "bundle_digest": None,
+                "file_digest": None,
+                "sealed_at": None,
+            }
+        )
+    entries.sort(
+        key=lambda item: (
+            item["task_id"].encode("utf-8"),
+            item["cycle_ordinal"],
+            item["completion_cycle_id"].encode("utf-8"),
+        )
+    )
+    payload = {
+        "source_schema_version": 19,
+        "project_id": native_payloads[0]["project_id"],
+        "projection_generation": 7,
+        "bundle_count": len(native_payloads),
+        "legacy_count": 2,
         "entries": entries,
     }
     envelope = {

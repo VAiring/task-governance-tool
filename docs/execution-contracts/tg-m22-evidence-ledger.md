@@ -1744,7 +1744,7 @@ package, tests, and formal contracts agree.
 
 TG-M23 reporting authority is in
 [the M23 mixed contract](tg-m23-derived-evidence.md); TG-M23.1 and bounded
-offline/mock TG-M23.2 are accepted predecessors; TG-M23.3 is current only for offline/mock integrated acceptance.
+offline/mock TG-M23.2 plus TG-M23.3 offline/mock integrated acceptance are accepted predecessors.
 TG-M24 Runner authority is in
 [the M24 conditional contract](tg-m24-verification-runner.md) and remains
 inactive. This M22 document activates no downstream runtime.

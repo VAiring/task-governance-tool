@@ -117,6 +117,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m232_analysis_worker",
         "test_m232_analysis_worker_race",
         "test_m232_codex_analysis_adapter",
+        "test_m233_analysis_integration",
         "test_post_commit_maintenance",
         "test_project_identity_bindings",
         "test_routine_backup",

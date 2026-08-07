@@ -8,6 +8,8 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.m23_test_support import expected_markdown_v1
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
@@ -79,43 +81,12 @@ def report_envelope() -> dict[str, object]:
     return {"report_schema_version": 1, "report_digest": digest, "payload": payload}
 
 
-def expected_markdown(envelope: dict[str, object]) -> bytes:
-    payload = envelope["payload"]
-    identity = {
-        "report_schema_version": envelope["report_schema_version"],
-        "report_digest": envelope["report_digest"],
-        "report_id": payload["report_id"],
-        "analysis_job_id": payload["analysis_job_id"],
-        "source_kind": payload["source_kind"],
-        "source_key": payload["source_key"],
-        "recipe_digest": payload["recipe_digest"],
-        "inference_state": payload["inference_state"],
-    }
-    values = (
-        ("Identity", identity),
-        ("Structural Facts", payload["structural_facts"]),
-        ("Trusted Caller Declarations", payload["trusted_caller_declarations"]),
-        ("Legacy Absence", payload["legacy_absence"]),
-        ("LLM Derived", payload["llm_derived"]),
-        ("Omissions", payload["omissions"]),
-        ("Uncertainties", payload["uncertainties"]),
-        ("Declared Code Occurrences", payload["declared_code_occurrences"]),
-        ("Citations", payload["citations"]),
-        ("Reproducibility", payload["reproducibility"]),
-    )
-    blocks = [
-        b"## " + name.encode("utf-8") + b"\n\n    " + canonical(value)
-        for name, value in values
-    ]
-    return b"# Task Governance Analysis Report v1\n\n" + b"\n\n".join(blocks) + b"\n"
-
-
 class AnalysisRendererTests(unittest.TestCase):
     def test_exact_markdown_v1_framing_order_and_json_escaping(self):
         envelope = report_envelope()
         document = canonical(envelope) + b"\n"
         rendered = render_markdown_v1(document)
-        self.assertEqual(rendered, expected_markdown(envelope))
+        self.assertEqual(rendered, expected_markdown_v1(envelope))
         self.assertEqual(rendered.count(b"\n## "), 10)
         self.assertTrue(rendered.endswith(b"\n"))
         self.assertFalse(rendered.endswith(b"\n\n"))
@@ -152,7 +123,7 @@ class AnalysisRendererTests(unittest.TestCase):
     def test_renderer_enforces_exact_markdown_byte_cap(self):
         envelope = report_envelope()
         document = canonical(envelope) + b"\n"
-        expected = expected_markdown(envelope)
+        expected = expected_markdown_v1(envelope)
         with patch(
             "task_governance_tool.analysis_renderer.REPORT_MARKDOWN_MAX_BYTES",
             len(expected) - 1,

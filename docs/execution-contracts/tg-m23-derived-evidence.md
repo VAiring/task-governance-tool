@@ -1,14 +1,14 @@
-# TG-M23 Derived Evidence Current And Conditional Execution Contract
+# TG-M23 Derived Evidence Accepted Execution Contract
 
 <a id="tg-m23-derived-evidence"></a>
 
 > [!IMPORTANT]
-> MIXED FORMAL AUTHORITY: TG-M23.1 AND BOUNDED OFFLINE/MOCK TG-M23.2 ARE
-> ACCEPTED PREDECESSORS; TG-M23.3 IS CURRENT ONLY FOR OFFLINE/MOCK INTEGRATED
-> ACCEPTANCE. Load this document
+> MIXED FORMAL AUTHORITY: TG-M23.1, BOUNDED OFFLINE/MOCK TG-M23.2, AND
+> TG-M23.3 OFFLINE/MOCK INTEGRATED ACCEPTANCE ARE ACCEPTED PREDECESSORS; NO
+> TG-M23 UNIT IS CURRENT. Load this document
 > only when the current Task Contract or [authority index](../authority.md)
-> routes to TG-M23. Integrated Analyzer product acceptance remains unaccepted
-> until TG-M23.3 gates pass; SQLite, `storage.py`,
+> routes to TG-M23. Network/live Analyzer acceptance remains outside scope;
+> SQLite, `storage.py`,
 > public CLI/Skill, network/live-model action, gate mutation, and Task mutation remain
 > outside scope.
 
@@ -129,8 +129,8 @@ Completion=deterministic dedupe; provenance/citation/status/replay/failure/priva
 
 ## TG-M23.3 Integrated Acceptance
 
-Task `tg_task_0ada32d2b4f9759d` is current only to accept multi-source native/legacy queue/restart/replay/failure; offline/mock; v1/null/legacy; repeated cross-Receipt/Bundle codes; ID/version/digest/pointer traces; legacy cycle/index only; classes/gates separate/inert.
+Task `tg_task_0ada32d2b4f9759d` accepts multi-source native/legacy queue/restart/replay/failure; offline/mock; v1/null/legacy; repeated cross-Receipt/Bundle codes; ID/version/digest/pointer traces; legacy cycle/index only; classes/gates separate/inert.
 
-Execution order=one reviewed authority-activation commit; one focused multi-source integration module reusing shared fixture/oracle; bounded M23.1 corrections only; build the accepted-state synchronization into the intended final snapshot; then exact target, focused/package/performance preflight, full verification and current Receipt, two later clean Tier 2 reviews, commit, and complete.
+Accepted shape=one reviewed authority activation; one focused multi-source integration module reusing shared fixture/oracle; bounded M23.1 corrections only; accepted-state synchronization in the intended final snapshot; exact target, focused/package/performance preflight, full verification and current Receipt, two later clean Tier 2 reviews, commit, and completion.
 
 Required=offline/mock focused/full; privacy; package/release; exact-diff/integration; current Receipt before final reviews. Live=`not_applicable`; later exact credential/data/model/provider-ceiling authority creates a fresh target. SQLite/`storage.py`/schema/public CLI/Skill/network/live call/gate or Task mutation remain outside scope. Stop before M24.

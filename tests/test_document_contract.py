@@ -208,18 +208,18 @@ class DocumentContractTests(unittest.TestCase):
                 "authority_registry",
             ),
             (
-                '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": ["TG-M23.3"],',
+                '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": [],',
                 '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": ["TG-M23.2"],',
                 "authority_registry",
             ),
             (
-                '      "current_units": ["TG-M23.3"],\n      "inactive_units": []',
-                '      "current_units": [],\n      "inactive_units": ["TG-M23.3"]',
+                '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": [],\n      "inactive_units": []',
+                '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": [],\n      "inactive_units": ["TG-M23.3"]',
                 "authority_registry",
             ),
             (
-                '      "current_units": ["TG-M23.3"],\n      "inactive_units": []',
-                '      "current_units": ["TG-M23.3"],\n      "inactive_units": ["TG-M23.2"]',
+                '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": [],\n      "inactive_units": []',
+                '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": ["TG-M23.3"],\n      "inactive_units": ["TG-M23.2"]',
                 "authority_registry",
             ),
             (
@@ -310,14 +310,14 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 contract.M23,
+                "# TG-M23 Derived Evidence Accepted Execution Contract",
                 "# TG-M23 Derived Evidence Current And Conditional Execution Contract",
-                "# TG-M23 Derived Evidence Conditional Execution Contract",
                 "document_role",
             ),
             (
                 contract.M23,
+                "TG-M23.3 OFFLINE/MOCK INTEGRATED ACCEPTANCE ARE ACCEPTED PREDECESSORS",
                 "TG-M23.3 IS CURRENT",
-                "TG-M23.3 IS ACCEPTED BUT INACTIVE",
                 "document_role",
             ),
             (
@@ -346,8 +346,8 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 "README.md",
-                "offline/mock TG-M23.2 are accepted predecessors.",
-                "offline/mock TG-M23.2 remains inactive.",
+                "acceptance are accepted predecessors; M24 remains inactive.",
+                "acceptance remains inactive; M24 remains inactive.",
                 "document_role",
             ),
             (

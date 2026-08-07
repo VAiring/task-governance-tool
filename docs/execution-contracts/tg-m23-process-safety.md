@@ -4,9 +4,9 @@
 
 > [!IMPORTANT]
 > DELEGATED FORMAL AUTHORITY: sole owner of routed TG-M23 Windows
-> process containment, private temp, and atomic publication/recovery. M23.1/
-> M23.2 accepted; M23.3 current scope is offline/mock only. It claims no
-> accepted Analyzer, network/live model, public CLI/Skill, schema, gate, or Task
+> process containment, private temp, and atomic publication/recovery. TG-M23.1-.3
+> offline/mock scope is accepted; no unit is current. It owns no Analyzer
+> acceptance, network/live model, public CLI/Skill, schema, gate, or Task
 > mutation.
 
 The [TG-M23 core owner/router](tg-m23-derived-evidence.md#tg-m23-1) alone owns sequence/Task bounds, descriptor/packet/status/report/provenance/citation semantics, outcome codes, activation, permissions, and gates; [specification](../specification.md)=behavior, [design](../design.md)=structure, Task DB=live state/evidence. This document creates no second owner.

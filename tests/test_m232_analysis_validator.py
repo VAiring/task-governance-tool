@@ -39,17 +39,15 @@ from tests.m23_test_support import (  # noqa: E402
     BUNDLE_DOMAIN,
     domain_digest,
     reference_json_bytes,
-    refresh_inner_digests,
+    refresh_bundle_seals as _refresh_bundle_seals,
     valid_native_payload,
+    v1_native_payload as v1_payload,
 )
 
 
 OUTPUT_DOMAIN = b"taskgov-analysis-output-v1\0"
 REPORT_DOMAIN = b"taskgov-analysis-report-v1\0"
 REPORT_ID_DOMAIN = b"taskgov-analysis-report-id-v1\0"
-REVIEW_PROVENANCE_DOMAIN = b"taskgov-review-provenance-v1\0"
-
-
 def _digest(byte: str) -> str:
     return "sha256:" + byte * 64
 
@@ -100,79 +98,6 @@ def _reference_order(row: dict[str, object]) -> tuple[int, bytes, bytes]:
 
 def native_payload() -> dict[str, object]:
     return valid_native_payload()
-
-
-def _refresh_bundle_seals(payload: dict[str, object]) -> None:
-    target = deepcopy(payload["target"])
-    target["base_revision"] = target["base_revision"] or ""
-    for receipt in payload["review_receipts"]:
-        provenance = receipt["review_provenance"]
-        if provenance is None:
-            continue
-        digest_payload = {
-            "project_id": payload["project_id"],
-            "task_id": payload["task"]["task_id"],
-            "review_receipt_id": receipt["review_receipt_id"],
-            "receipt_kind": receipt["receipt_kind"],
-            "target": target,
-            **{
-                key: provenance[key]
-                for key in (
-                    "provenance_version",
-                    "reviewer_class",
-                    "model_state",
-                    "declared_model_id",
-                    "skill_state",
-                    "declared_skill_id",
-                    "declared_skill_version",
-                    "review_profiles",
-                    "review_lenses",
-                    "context_relation",
-                    "method_codes",
-                    "assurance_class",
-                    "producer_class",
-                    "producer_version",
-                )
-            },
-        }
-        provenance["digest"] = domain_digest(
-            REVIEW_PROVENANCE_DOMAIN,
-            digest_payload,
-        )
-    refresh_inner_digests(payload)
-
-
-def v1_payload() -> dict[str, object]:
-    payload = native_payload()
-    receipt = payload["review_receipts"][0]
-    receipt.update(
-        {
-            "reviewer_key": "human-reviewer",
-            "receipt_kind": "independent",
-            "verdict": "pass",
-            "summary": "No blocking findings.",
-            "review_provenance": {
-                "review_provenance_id": "tg_review_provenance_" + "9" * 16,
-                "provenance_version": 1,
-                "reviewer_class": "human",
-                "model_state": "not_applicable",
-                "declared_model_id": None,
-                "skill_state": "not_applicable",
-                "declared_skill_id": None,
-                "declared_skill_version": None,
-                "review_profiles": ["general"],
-                "review_lenses": ["correctness"],
-                "context_relation": "not_applicable",
-                "method_codes": ["review_packet_inspection"],
-                "assurance_class": "bound_attestation",
-                "producer_class": "trusted_caller",
-                "producer_version": 1,
-                "digest": _digest("9"),
-            },
-        }
-    )
-    payload["task"]["review_tier"] = 1
-    return payload
 
 
 def native_job(

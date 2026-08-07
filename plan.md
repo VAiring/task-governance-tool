@@ -197,20 +197,19 @@ mutation is activated. Accepted TG-M22.4 completed integrated acceptance and
 accepted TG-M23.1 froze the derived-evidence design; accepted TG-M23.2 supplies
 only its bounded offline/mock implementation predecessor.
 
-### Accepted TG-M22.4/TG-M23.1/TG-M23.2 And Current TG-M23.3 Sequence Gateway
+### Accepted TG-M22.4/TG-M23 Sequence And Inactive TG-M24 Gateway
 
 Product behavior established by accepted TG-M22.3 remains owned by the active
 specification and its implementation structure by the active design. Exact
 TG-M22.1A/TG-M22.2/TG-M21.5/TG-M22.3/TG-M22.4 accepted-predecessor detail is
 owned at the stable
 [TG-M22 sequence anchor](docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence).
-Accepted TG-M23.1 design and bounded TG-M23.2 implementation detail plus
-current TG-M23.3 offline/mock integrated-acceptance detail are owned and routed by the [TG-M23 mixed execution contract](docs/execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence). Its exact Windows process-containment, private-temp, and atomic-publication/recovery seam is delegated without overlapping unit ownership to the [TG-M23 process-safety contract](docs/execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety).
-Integrated Analyzer product acceptance remains unaccepted until TG-M23.3 gates
-pass. SQLite, `storage.py`, public CLI/Skill, network/live-model action, gate
-mutation, and Task mutation remain outside TG-M23.3. Sequential ordering and
-Tier 2 gates remain mandatory; M24 stays inactive, and live state and evidence
-remain solely in the Task database.
+Accepted TG-M23.1 design, bounded TG-M23.2 implementation, and TG-M23.3
+offline/mock integrated-acceptance detail are owned and routed by the [TG-M23 mixed execution contract](docs/execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence). Its exact Windows process-containment, private-temp, and atomic-publication/recovery seam is delegated without overlapping unit ownership to the [TG-M23 process-safety contract](docs/execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety).
+No TG-M23 unit is current. SQLite, `storage.py`, public CLI/Skill,
+network/live-model action, gate mutation, and Task mutation remain outside the
+accepted scope. Sequential ordering and Tier 2 gates remain mandatory; M24
+stays inactive, and live state and evidence remain solely in the Task database.
 
 <a id="tg-m24-sequence"></a>
 

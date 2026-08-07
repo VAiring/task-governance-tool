@@ -43,7 +43,7 @@ FIRST_HEADINGS = {
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
     EXECUTION_INDEX: "# Current And Conditional Execution Contract Index",
     M22: "# TG-M22 Evidence Ledger Accepted Execution Contract",
-    M23: "# TG-M23 Derived Evidence Current And Conditional Execution Contract",
+    M23: "# TG-M23 Derived Evidence Accepted Execution Contract",
     M23_PROCESS: "# TG-M23 Windows Process Safety And Atomic Publication Contract",
     M24: "# TG-M24 Verification Runner Conditional Execution Contract",
     HISTORY_INDEX: "# Historical Documentation Index",
@@ -72,10 +72,10 @@ AGENTS_SECTION_DIGESTS = {
     "## Product Contract Routing And Durable Agent Guardrails": "7b0b6336310ec3ec04056d3ebd6eeb0373be73ed42db1fbc390e3a1df815f3aa",
 }
 BANNER_DIGESTS = {
-    EXECUTION_INDEX: "26339aa64dfb89419a41f75e891994617bf5f7f7a79f0b2f458c797967010974",
+    EXECUTION_INDEX: "e347f78975bad531f2b7c00c71e9902b563f65a2eaa72463d83e01582a2bb394",
     M22: "8ca05c46d45e069445eb35838bdd63d41300d2633508da61fcfba72353ac5789",
-    M23: "f584842ffc55a446705752ced67d9295220fa08f27fb31af2d3c1f98660e4858",
-    M23_PROCESS: "a5042cc54c3f31895193050fbf142f9cb980f9e71b3a9fef901aa3571953bfda",
+    M23: "93d432968e32dd7371f732f238afcb0917dc93b92c206dfb37099a8e19564656",
+    M23_PROCESS: "fdc1fd4b45846c8d8ac8aac4e2a6397c96255a7b492722c6653804034bed2ee4",
     M24: "46f92f30d7b9aad7f6eb23436662f4a9939fc57167050eaa0bcf4291a7f346e0",
     HISTORY_INDEX: "934f43005b3038f9d24088b1ba26f85b816f6b42285b39ed29334c1ba1001380",
 }
@@ -106,10 +106,10 @@ ROLE_MARKERS = {
     "docs/design.md": ("This document is the current implementation design for the behavior specified",),
     "plan.md": ("It is not the product contract, execution ledger, or evidence store:", "cross-sequence gateways"),
     EXECUTION_INDEX: ("Each indexed sequence file is the sole detailed execution owner/router for its named units'",),
-    M23: ("this document is the sole TG-M23 unit owner/router", "TG-M23.3 IS CURRENT"), M23_PROCESS: ("This document creates no second owner.",),
+    M23: ("this document is the sole TG-M23 unit owner/router", "TG-M23.3 OFFLINE/MOCK INTEGRATED ACCEPTANCE ARE ACCEPTED PREDECESSORS"), M23_PROCESS: ("This document creates no second owner.",),
     M24: ("This document is the sole detailed owner of the accepted inactive units'",),
 }
-ROLE_DIGESTS = {M22: "5a3c29ae1924ac08bd97bf7df7d8b5f10f3938f58da20bc30c62514c651bade0", M23: "1d8ce36e3731d3812594f492c831fadb182db0a011e197daf57fc380e7d90b70", M23_PROCESS: "ed53bb17563d4775abdec3c61ef110761c28336aa1504d0226656f9ae5b83f91"}
+ROLE_DIGESTS = {M22: "b1355f65a7cc90be8f8b9d9bca55ebc39be3acd97b6900e936af965b3967a645", M23: "c4cac45ed6ffa50f059200c3787b5d039f218574496b02eb042865e1d5877778", M23_PROCESS: "3128da7b46b7b55d5270ece2aa43406981d61ddcac988fedb9623e1e91dc12e7"}
 ROWS_M22 = (
     ("TG-M22.1A / 25", "tg_task_0e1d93d81eb843ab", "accepted TG-M21.4D and completed TG-DOC.1"),
     ("TG-M22.2 / 30", "tg_task_88bfe19eb6cffe2e", "accepted TG-M22.1A"),
@@ -388,7 +388,7 @@ def _expected_registry() -> dict[str, object]:
         "current": ["docs/specification.md", "docs/design.md", "plan.md"],
         "mixed_execution": [
             {"path": M22, "route_anchor": "tg-m22-sequence", "current_units": [], "inactive_units": []},
-            {"path": M23, "route_anchor": "tg-m23-derived-evidence", "current_units": ["TG-M23.3"], "inactive_units": [], "detail_routes": [{"path": M23_PROCESS, "route_anchor": "tg-m23-process-safety", "parent_anchor": "tg-m23-1", "owner_scope": "windows_process_private_temp_atomic_publication"}]},
+            {"path": M23, "route_anchor": "tg-m23-derived-evidence", "current_units": [], "inactive_units": [], "detail_routes": [{"path": M23_PROCESS, "route_anchor": "tg-m23-process-safety", "parent_anchor": "tg-m23-1", "owner_scope": "windows_process_private_temp_atomic_publication"}]},
         ],
         "conditional": [M24],
         "history_index": HISTORY_INDEX,
@@ -528,7 +528,7 @@ def _roles(scans: dict[str, Scan], issues: list[Issue]) -> None:
     if _section_digest(scans[AUTHORITY], "## Trigger Routing") != TRIGGER_ROUTING_SHA256:
         issues.append(Issue("authority_route", AUTHORITY, "Trigger Routing differs from the fixed owner registry"))
     readme = " ".join("\n".join(scans["README.md"].lines).split())
-    for required in ("fixed canonical routing syntax", "not a general Markdown or CommonMark parser", "docs/authority.md", "mixed current/conditional authority", "docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence", "docs/execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety", "TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, and bounded offline/mock TG-M23.2 are accepted predecessors. TG-M23.3 is current only for offline/mock integrated acceptance; M24 remains inactive. Integrated Analyzer product acceptance remains unaccepted until TG-M23.3 gates pass. SQLite, `storage.py`, public CLI or Skill calls, network/live-model actions, gate mutation, and Task mutation remain outside TG-M23.3."):
+    for required in ("fixed canonical routing syntax", "not a general Markdown or CommonMark parser", "docs/authority.md", "mixed current/conditional authority", "docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence", "docs/execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety", "TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer acceptance are accepted predecessors; M24 remains inactive. Network/live Analyzer acceptance still requires separate authority. SQLite, `storage.py`, public CLI or Skill calls, network/live-model actions, gate mutation, and Task mutation remain outside the accepted TG-M23 scope."):
         if required not in readme:
             issues.append(Issue("document_role", "README.md", "documentation-check or authority guidance is incomplete"))
 def _banners(scans: dict[str, Scan], issues: list[Issue]) -> None:

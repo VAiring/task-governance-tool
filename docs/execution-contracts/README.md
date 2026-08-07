@@ -3,9 +3,8 @@
 > [!IMPORTANT]
 > MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M22.1A, TG-M22.2,
 > TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, and bounded offline/mock TG-M23.2
-> are accepted predecessors. TG-M23.3 IS CURRENT only for offline/mock
-> integrated acceptance; TG-M24 remains inactive. Integrated Analyzer product
-> acceptance remains unaccepted until TG-M23.3 gates pass. Load files only when the current
+> plus offline/mock TG-M23.3 integrated Analyzer acceptance are accepted
+> predecessors; no TG-M23 unit is current, and TG-M24 remains inactive. Load files only when the current
 > Task Contract or the
 > [repository authority index](../authority.md) selects their exact path and
 > ASCII anchor. Their presence, indexing, or reading activates no behavior.
@@ -33,13 +32,13 @@ reviews, receipts, or completion history.
   specification and design.
 - [TG-M23 Derived Evidence](tg-m23-derived-evidence.md#tg-m23-derived-evidence)
   is the sole unit owner/router for accepted TG-M23.1 design, accepted bounded
-  TG-M23.2 implementation, and current TG-M23.3 offline/mock acceptance detail.
+  TG-M23.2 implementation, and accepted TG-M23.3 offline/mock acceptance detail.
 - [TG-M23 Process Safety](tg-m23-process-safety.md#tg-m23-process-safety)
   is the sole delegated owner of the routed Windows containment, private-temp,
   and atomic publication/recovery seam. It owns no unit state, core schema, or
-  activation. Current TG-M23.3 permits only its routed offline/mock integrated
-  acceptance; SQLite, `storage.py`, public CLI/Skill, network/live-model
-  action, gate mutation, and Task mutation remain outside scope.
+  activation. Accepted TG-M23.3 covers only its routed offline/mock integrated
+  acceptance; SQLite, `storage.py`, public CLI/Skill, network/live-model action,
+  gate mutation, and Task mutation remain outside scope.
 - [TG-M24 Verification Runner](tg-m24-verification-runner.md#tg-m24-verification-runner)
   owns accepted inactive Runner design, shadow, gate-integration, and
   acceptance detail for the M24 sequence, which remains inactive.

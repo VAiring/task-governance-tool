@@ -15,7 +15,7 @@
     "scripts/task_governance_tool/analysis_packet.py": "sha256:4ed5a131df1f8e80c412524399b0453ef825a14b95c5ad1629395eafc2595357",
     "scripts/task_governance_tool/analysis_renderer.py": "sha256:c87e6e1ae428a660a1037bd7ffbeaf4ac83e4ed11cf4b8159faf473d5690bdb7",
     "scripts/task_governance_tool/analysis_validator.py": "sha256:acee70bf2e6897f80e7fbd09143e659a395aecf9d0571e996a426833fc5707c6",
-    "scripts/task_governance_tool/analysis_worker.py": "sha256:afcc2859ed28952102768803a02050b8de01ae98bfd7d4f3e9915212aed1733e",
+    "scripts/task_governance_tool/analysis_worker.py": "sha256:c5eecac8e8e02cc9466f187ab727bf9c18d267047bf68bc3172ede87da7f2fb7",
     "scripts/task_governance_tool/artifact_lock.py": "sha256:cbaea048859c08d1317f4363ebefa2078b366ad4c0208b7d8fda929c2314420a",
     "scripts/task_governance_tool/artifact_manifest.py": "sha256:64f40bdfe0b546852118a37ebd35c671bfc0d9a853d17f3cf79adac5cbfb162c",
     "scripts/task_governance_tool/backup.py": "sha256:05a4deb5bb8352951f233ee64bc680697c237384caa3731b77f515f59a5ee987",

@@ -525,11 +525,7 @@ def _run_pending(
     if deferred is not None:
         return deferred
     if descriptor["recipe"]["inference_mode"] == "offline":
-        if mock_plan is not None:
-            _failure()
         return _run_offline(session, descriptor, packet, current)
-    if mock_plan is not None and type(mock_plan) is not ClosedMockPlan:
-        _failure()
     return _run_optional(session, descriptor, packet, current, mock_plan)
 
 
@@ -597,7 +593,10 @@ def run_once(
 ) -> RunOnceResult:
     """Consume at most one selected job under one no-wait exclusive lease."""
 
-    if type(paths) is not AnalysisStatePaths:
+    if (
+        type(paths) is not AnalysisStatePaths
+        or (mock_plan is not None and type(mock_plan) is not ClosedMockPlan)
+    ):
         _failure()
     try:
         session = _acquire_session(paths)
@@ -621,8 +620,6 @@ def run_once(
                 current,
                 mock_plan,
             )
-        if mock_plan is not None:
-            _failure()
         if selected.kind == "recover_intent":
             return _run_recovery(
                 session,

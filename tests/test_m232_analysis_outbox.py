@@ -9,7 +9,10 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.m23_test_support import write_evidence_tree
+from tests.m23_test_support import (
+    held_analysis_tree_snapshot as _held_tree_snapshot,
+    write_evidence_tree,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,79 +36,6 @@ from task_governance_tool.evidence_consumer import (  # noqa: E402
 )
 from task_governance_tool.state_paths import analysis_state_paths  # noqa: E402
 from task_governance_tool.state_resolver import canonical_state_paths  # noqa: E402
-
-
-def _held_tree_snapshot(paths, *, session=None):
-    """Exact focused oracle for the handle-only analysis namespaces."""
-
-    owned = session is None
-    if owned:
-        session = AnalysisOutboxSession.acquire(paths)
-    opened = []
-    rows = []
-    try:
-        root = session._borrow_analysis_root()
-        rows.extend(
-            ("analysis", item.name, item.file_id, item.size, item.is_directory)
-            for item in win32_boundary.enumerate_held_directory(
-                root,
-                maximum_entries=6,
-            )
-        )
-        parents = (
-            ("outbox", session._directories.outbox),
-            ("status", session._directories.status),
-        )
-        extras = []
-        for name in ("reports", "rendered", "tmp"):
-            handle = win32_boundary.open_relative_directory(
-                root,
-                name,
-                win32_boundary.R0,
-                kind="test-snapshot-" + name,
-            )
-            opened.append(handle)
-            extras.append((name, handle))
-        for directory_name, parent in parents + tuple(extras):
-            entries = win32_boundary.enumerate_held_directory(
-                parent,
-                maximum_entries=100_000 if directory_name != "tmp" else 32,
-            )
-            for entry in entries:
-                content = None
-                if not entry.is_directory:
-                    leaf = win32_boundary.open_relative_file_if_present(
-                        parent,
-                        entry.name,
-                        maximum=10_000_000,
-                        kind="test-snapshot-leaf",
-                    )
-                    if leaf is None:
-                        raise AssertionError("snapshot leaf disappeared")
-                    try:
-                        content = win32_boundary.read_handle_capped(
-                            leaf,
-                            maximum=10_000_000,
-                        )
-                    finally:
-                        leaf.close()
-                rows.append(
-                    (
-                        directory_name,
-                        entry.name,
-                        entry.file_id,
-                        entry.size,
-                        entry.is_directory,
-                        entry.is_reparse,
-                        content,
-                    )
-                )
-        return tuple(sorted(rows, key=repr))
-    finally:
-        for handle in reversed(opened):
-            handle.close()
-        if owned:
-            session.release_normal()
 
 
 def _force_close_lease(lease) -> None:

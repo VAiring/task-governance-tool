@@ -3,6 +3,7 @@ import json
 import re
 import subprocess
 import unittest
+from collections import Counter
 from pathlib import Path
 
 
@@ -17,6 +18,17 @@ M20_HISTORY_SHA256 = "1164c65d0270aeef35311a061064c23cf14c1726ad647568598e0fcb27
 M20S_RETIREMENT_ANCHOR = "0eaeb9691c0ca4c316ad541ee4dd634287f1ccef"
 M20S_HISTORY_SHA256 = "9f7064d5fb74fe4e6a10c44d4e9ebb70b1b2b6a3969843d7e68775e26668432d"
 PRE_M22_HISTORY_SHA256 = "426d27bb9189349439b7a2c5764bad0b2035d9cdd6dfd40b7152d45d2054728f"
+M23_AUTHORITY_SPLIT_SOURCE_COMMIT = "7313483a9fd160f0ec8127b013d9f5533d2d16ab"
+M23_AUTHORITY_SPLIT_ARCHIVE_SHA256 = (
+    "86058642778a135dca524d7f2ae89091ba9740c6883cff9acedabcf0b1f6ba9c"
+)
+M23_AUTHORITY_SPLIT_SOURCE = (
+    "docs/execution-contracts/tg-m23-derived-evidence.md"
+)
+M23_AUTHORITY_SPLIT_RELATIVE = (
+    "v0.12.0/tg-m23-pre-process-safety-split.md"
+)
+M23_AUTHORITY_SPLIT_CAPTURE = HISTORY_ROOT / M23_AUTHORITY_SPLIT_RELATIVE
 M20S3_TASK = "tg_task_286129dbca4d25ab"
 ROADMAP_SOURCE_COMMIT = "af5e19545e4f5b59817c70fbc5e2763c0dbf2e1e"
 RETIRED_ROADMAP = ROOT / "docs" / "implementation-roadmap.md"
@@ -196,162 +208,65 @@ STUDY_HISTORIES = {
 
 
 class DocumentHistoryTests(unittest.TestCase):
-    def test_m214b_and_m214c_current_contracts_are_routed_explicitly(self):
+    def test_current_m214_contract_owners_are_routed_without_retired_duplicates(self):
+        authority = (ROOT / "docs" / "authority.md").read_text(
+            encoding="utf-8-sig"
+        )
         specification = (ROOT / "docs" / "specification.md").read_text(
             encoding="utf-8-sig"
         )
         design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8-sig")
-        cli_contracts = (
-            ROOT / "task-governance-tool" / "references" / "cli_contracts.md"
-        ).read_text(encoding="utf-8-sig")
-        specification_flat = " ".join(specification.split())
-        design_flat = " ".join(design.split())
-        cli_contracts_flat = " ".join(cli_contracts.split())
 
-        current_heading = (
-            "## Current TG-M21.4B Recovery Candidate Validity Contract"
+        selective_start = authority.index("## Selective Current Authority")
+        selective_end = authority.index("\n## ", selective_start + 1)
+        selective_routes = authority[selective_start:selective_end]
+        self.assertEqual(
+            Counter(re.findall(r"\[[^]]+\]\(([^)]+)\)", selective_routes)),
+            Counter({"specification.md": 1, "design.md": 1, "../plan.md": 1}),
         )
-        current_start = specification.index(current_heading)
-        next_h2_start = specification.index("\n## ", current_start + 1) + 1
-        current_section = specification[current_start:next_h2_start]
-        current_section_flat = " ".join(current_section.split())
-        next_h2 = specification[next_h2_start:].splitlines()[0]
+        self.assertEqual(
+            authority.count('<a id="document-authority-index"></a>'),
+            1,
+        )
 
-        self.assertEqual(
-            next_h2,
-            "## Current TG-M21.4C Stored Task Read And Privacy Contract",
+        current_contracts = (
+            (
+                "## Current TG-M21.4B Recovery Candidate Validity Contract",
+                "tg_task_9b746fbe5fe4927f",
+            ),
+            (
+                "## Current TG-M21.4C Stored Task Read And Privacy Contract",
+                "tg_task_efa90606fed8fba0",
+            ),
+            (
+                "## Current TG-M21.4D Stored Contract Pointer Integrity Contract",
+                "tg_task_7051724dca3f1501",
+            ),
         )
-        self.assertNotIn("At the M22.2 public ingress", current_section)
-        self.assertNotIn("M21.5 changes only", current_section)
-        self.assertIn("Task `tg_task_9b746fbe5fe4927f`", current_section)
+        starts = []
+        for heading, task_id in current_contracts:
+            with self.subTest(heading=heading):
+                self.assertEqual(specification.count(heading), 1)
+                self.assertNotIn(heading, design)
+                start = specification.index(heading)
+                end = specification.find("\n## ", start + 1)
+                section = specification[start : len(specification) if end < 0 else end]
+                self.assertEqual(section.count(f"`{task_id}`"), 1)
+                starts.append(start)
+        self.assertEqual(starts, sorted(starts))
 
-        m214c_start = next_h2_start
-        m214c_next_start = specification.index("\n## ", m214c_start + 1) + 1
-        m214c_section = specification[m214c_start:m214c_next_start]
-        self.assertEqual(
-            specification[m214c_next_start:].splitlines()[0],
-            "## Current TG-M21.4D Stored Contract Pointer Integrity Contract",
+        implementation_owners = (
+            "### Current TG-M21.4C Shared Stored Task Row/Batch Validator",
+            "### Current TG-M21.4D Stored Contract Pointer Relationship Boundary",
         )
-        self.assertIn("Task `tg_task_efa90606fed8fba0`", m214c_section)
-        self.assertIn("project_state_unreadable", m214c_section)
-        self.assertIn("no unrelated whole-table rescan", m214c_section)
-        m214d_start = m214c_next_start
-        m214d_next_start = specification.index("\n## ", m214d_start + 1) + 1
-        m214d_section = specification[m214d_start:m214d_next_start]
-        self.assertEqual(
-            specification[m214d_next_start:].splitlines()[0],
-            "## SQLite, Migration, And Concurrency",
-        )
-        self.assertIn("Task `tg_task_7051724dca3f1501`", m214d_section)
-        self.assertIn(
-            "conversation_decision:2026-08-03:m21-4d-effort-observation",
-            m214d_section,
-        )
-        self.assertIn("exactly one bounded bulk relationship read", m214d_section)
-        self.assertIn("`current_contract_revision=0`", m214d_section)
-        self.assertIn("structural whole-set failure", m214d_section)
-        self.assertIn(
-            "| Observation | Classification and selection | Setup result |",
-            current_section_flat,
-        )
-        self.assertIn(
-            "| The same safe candidate whose stored Task verification alone "
-            "fails privacy or source-schema capacity | candidate-local "
-            "rejection; retain and observe the file but exclude it from "
-            "selection | recover the newest older eligible candidate, or "
-            "`setup_restore_failed` when none remains |",
-            current_section_flat,
-        )
-        self.assertIn(
-            "| Corrupt/unreadable SQLite, unsafe file or sidecar, "
-            "unsupported/newer/incomplete schema, failed quick/FK check, "
-            "foreign identity, binding/lineage divergence, "
-            "metadata/repository/retention/structure inconsistency, duplicate "
-            "or overflow | set-fatal; never skip it to reach another "
-            "candidate | the existing specific journal/busy/newer result "
-            "where applicable, otherwise `project_state_unreadable` |",
-            current_section_flat,
-        )
-        self.assertIn(
-            "| Any candidate addition, removal, replacement, "
-            "stamp/order/content classification change, selected-candidate "
-            "change, or canonical database/journal appearance after planning "
-            "| post-plan recovery/restore/publication drift; fail closed and "
-            "never reselect under the established plan | "
-            "`setup_restore_failed` before restore or canonical publication |",
-            current_section_flat,
-        )
-        self.assertIn(
-            "SQLite storage class `INTEGER` is accepted",
-            current_section_flat,
-        )
-        self.assertIn(
-            "setup records `database_restore` immediately",
-            current_section_flat,
-        )
-        self.assertIn(
-            "returns `database_restore` in the exact durable "
-            "`completed_writes` prefix",
-            current_section_flat,
-        )
-        self.assertNotIn(
-            "### TG-M21.4B Recovery Candidate Validity Matrix",
-            specification,
-        )
-        self.assertIn(
-            "every current-binding candidate locally rejected only for "
-            "Task-verification privacy/capacity",
-            specification,
-        )
-        self.assertIn(
-            "recovery-set structural/set-fatal defect",
-            specification,
-        )
-        self.assertIn(
-            "with only local rejections has no eligible candidate and reaches "
-            "`setup_restore_failed`",
-            design_flat,
-        )
-        self.assertIn(
-            "otherwise reaches `project_state_unreadable`",
-            design_flat,
-        )
-        self.assertIn(
-            "candidate plan exists, drift, copy, normalization, or no-clobber "
-            "publication failure maps to `setup_restore_failed`",
-            design_flat,
-        )
-        self.assertIn("`type(value) is int`", design)
-        self.assertIn(
-            "does not freeze a private helper call count",
-            design_flat,
-        )
-        self.assertIn(
-            "otherwise fail no-write as `project_state_unreadable`",
-            cli_contracts_flat,
-        )
-        self.assertIn(
-            "after a candidate plan is established remains "
-            "`setup_restore_failed`",
-            cli_contracts_flat,
-        )
-        self.assertIn(
-            "solely because every such candidate is locally rejected for "
-            "stored Task-verification privacy/capacity fails with "
-            "`setup_restore_failed`",
-            cli_contracts_flat,
-        )
-        self.assertNotIn(
-            "no valid matching generation fail with",
-            cli_contracts_flat,
-        )
-        self.assertIn(
-            "| recovery-set structural/set-fatal defect | the existing "
-            "specific resolver error where applicable, otherwise "
-            "`project_state_unreadable` |",
-            specification_flat,
-        )
-        self.assertIn("test_m214b_legacy_recovery_boundaries.py", design)
+        for heading in implementation_owners:
+            with self.subTest(implementation_owner=heading):
+                self.assertEqual(design.count(heading), 1)
+                self.assertNotIn(heading, specification)
+
+        retired_owner = "### TG-M21.4B Recovery Candidate Validity Matrix"
+        self.assertNotIn(retired_owner, specification)
+        self.assertNotIn(retired_owner, design)
 
     def test_archives_are_fixed_exact_captures_with_non_authority_banners(self):
         version_root = HISTORY_ROOT / "v0.10.0"
@@ -494,14 +409,67 @@ class DocumentHistoryTests(unittest.TestCase):
         self.assertEqual(actual_archives, indexed_archives)
 
         pre_m22_relative = "v0.11.0/pre-m22-completed-execution.md"
-        pre_m22_text = (HISTORY_ROOT / pre_m22_relative).read_text(
-            encoding="utf-8-sig"
-        )
+        pre_m22_bytes = (HISTORY_ROOT / pre_m22_relative).read_bytes()
         self.assertEqual(
-            hashlib.sha256(pre_m22_text.encode("utf-8")).hexdigest(),
+            hashlib.sha256(pre_m22_bytes).hexdigest(),
             PRE_M22_HISTORY_SHA256,
         )
         self.assertEqual(index.count(f"]({pre_m22_relative})"), 1)
+
+    def test_m23_authority_split_capture_preserves_exact_source_provenance(self):
+        data = M23_AUTHORITY_SPLIT_CAPTURE.read_bytes()
+        self.assertEqual(
+            hashlib.sha256(data).hexdigest(),
+            M23_AUTHORITY_SPLIT_ARCHIVE_SHA256,
+        )
+
+        source = subprocess.run(
+            [
+                "git",
+                "show",
+                f"{M23_AUTHORITY_SPLIT_SOURCE_COMMIT}:"
+                f"{M23_AUTHORITY_SPLIT_SOURCE}",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(source.returncode, 0)
+        self.assertTrue(data.endswith(source.stdout))
+        prefix = data[: -len(source.stdout)].decode("utf-8")
+        for marker in (
+            "NON-AUTHORITATIVE HISTORY",
+            M23_AUTHORITY_SPLIT_SOURCE,
+            M23_AUTHORITY_SPLIT_SOURCE_COMMIT,
+            "Captured body begins below.",
+            "../../execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence",
+            "../../execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety",
+        ):
+            self.assertIn(marker, prefix)
+
+        index = (HISTORY_ROOT / "README.md").read_text(encoding="utf-8")
+        heading = (
+            "Pre-process-safety split capture of "
+            "`docs/execution-contracts/tg-m23-derived-evidence.md`"
+        )
+        sections = re.findall(
+            rf"^### {re.escape(heading)}\n(.*?)(?=^### |^## |\Z)",
+            index,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertEqual(len(sections), 1)
+        section = sections[0]
+        self.assertEqual(
+            index.count(f"]({M23_AUTHORITY_SPLIT_RELATIVE})"),
+            1,
+        )
+        self.assertEqual(section.count(M23_AUTHORITY_SPLIT_SOURCE_COMMIT), 1)
+        self.assertIn("Capture unit: `TG-M23.1`", section)
+        for target in (
+            "../execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence",
+            "../execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety",
+        ):
+            self.assertEqual(section.count(f"]({target})"), 1)
 
     def test_m20_study_is_retired_to_no_rerun_tombstones(self):
         receipt_root = ROOT / "fixtures" / "m20"

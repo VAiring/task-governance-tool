@@ -216,46 +216,94 @@ stays inactive, and live state and evidence remain solely in the Task database.
 ### Approved TG-M24 Verification Runner Sequence
 
 TG-M24 is approved but inactive sequential Tier 2 work in lane
-`TG-M24-VERIFICATION-RUNNER`. Its exact conditional detail is owned by the
-[TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md).
-
-| Unit/order | Task | Dependency | Purpose, permission boundary, and completion gate |
-|---|---|---|---|
-| TG-M24.1 / 10 | `tg_task_29aa63124900ad95` | accepted TG-M23.3 | Design project-owned verification plans, shell-free argv, exact Task/Contract/expectation/target binding, environment/network/mutation/resource policy, sanitized runner-observed evidence, shadow-to-gate staging, and the M21 fallback. Activate no Runner, schema, CLI, Skill, gate, network, credential, or target mutation. Require exact documentation checks and diff, a current Receipt, and two independent Tier 2 reviews. |
-| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1 | Implement only the approved bounded Runner and append-only evidence in shadow mode; existing M21 and completion gates remain unchanged. Execute only an explicit current project-owned plan, and require separate exact authority for any live external-project run. Require migration, safety, package, focused/full offline checks, exact diff, a current Receipt, and two Tier 2 reviews. |
-| TG-M24.3 / 30 | `tg_task_dc015144091f8e60` | accepted TG-M24.2 | Make one qualifying exact-current complete-plan Runner result an explicit versioned completion basis while retaining the M21 caller-attested Receipt for unsupported, manual, visual, external, or unavailable-Runner cases. Analyzer output, arbitrary commands, and new normal-loop LLM leaves gain no gate authority. Require full offline, package/release consistency, exact diff, a current Receipt, and two independent Tier 2 reviews. |
-| TG-M24.4 / 40 | `tg_task_f81f2d126f033a59` | accepted TG-M24.3 | Accept Runner safety, provenance, the completion gate, M21 fallback, Evidence Bundle/JSON, Analyzer coexistence, legacy/history, and realistic supported/unsupported flows, with bounded corrections inside M24.1 only. Runs outside approved fixtures or this repository require separate exact project authority. Require focused/full and authorized forward checks, exact diff, a current Receipt, and two independent Tier 2 reviews. |
+`TG-M24-VERIFICATION-RUNNER`. It starts only after accepted TG-DOC.2. Exact
+unit identity, order, dependency, permission, and gate detail is owned by the
+[TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
+not duplicated in this gateway.
 
 The sequence may advance only in that order. It grants no arbitrary command or
 model choice, analyzer gate authority, raw-output retention, external-project
 execution, publication, push, tag, or Release authority.
 
+<a id="tg-doc-sequence"></a>
+
+### TG-DOC Documentation Governance Sequence
+
+This plan owns the two non-product documentation units and their cross-sequence
+gateways. The Task database remains the sole owner of live status and evidence.
+
+| Unit/order | Task | Lane | Dependency | Authority status and successor gate |
+|---|---|---|---|---|
+| TG-DOC.2 / 40 | `tg_task_bf2aa245019f5c9f` | `TG-M23-DERIVED-EVIDENCE` | accepted TG-M23.3 | accepted predecessor; required before TG-M24.1 |
+| TG-DOC.3 / 20 | `tg_task_99371b8db2d43eb2` | `TG-DOC-LIFECYCLE` | accepted TG-M24.4 and accepted TG-DOC.2 | inactive post-M24 |
+
 <a id="tg-doc-2"></a>
 
-### TG-DOC.2 Post-M24 Documentation Closure
+### TG-DOC.2 Accepted Post-M23 Documentation Governance Reconciliation
 
-TG-DOC.2 `tg_task_bf2aa245019f5c9f` is a sequential Tier 2 documentation unit
-in lane `TG-DOC-LIFECYCLE` at order 20, dependent on accepted TG-M24.4. It
-folds the final supported M21-M24 behavior into subsystem-oriented active
-specification and design sections, routes completed execution narrative to
-indexed non-authoritative history, and leaves this plan limited to unfinished
-static contracts, current decisions, and open issues.
+The canonical row above solely owns TG-DOC.2 identity, lane and order,
+dependency, and successor gate. This section owns its documentation-governance
+scope and gates.
 
-Its write permission is limited to documentation, editorial Skill/reference
-synchronization, repository-local read-only checks, and coupled tests. It may
-not change runtime, schema, migrations, storage, public CLI/JSON, Viewer,
-package/install identity, evidence assurance, fallback or completion gates,
-network behavior, or target-project authority. It may not copy live Task state
-or evidence into Git documents.
+Its scope is governing documentation, `tools/document_contract.py`, coupled
+documentation tests, and repository-local read-only verification. It classifies
+every enforced documentation rule as retain, replace, or remove with an explicit
+owner, rationale, measured consumer, unit, severity, and change procedure where
+applicable. Unsupported hidden reduction thresholds, checker self-size caps,
+wording hashes, global Markdown bans, unexplained line ceilings, and magic-window
+checks are removed or replaced by justified semantic checks. Authority
+completeness, history non-authority and provenance, routes, anchors, links, Task
+identity/order, no-live-state rules, and bounded selective reading remain
+protected with positive and negative tests.
 
-The documentation budget established by TG-DOC.1 is a blocking gate:
-before/after read-set measurements must retain a material reduction, bounded
-document/read-set limits must pass, and TG-DOC.2 may not relax those limits to
-obtain PASS. Completed M21-M24 narratives must be immutably indexed through
-`docs/history/README.md`; history may not fill an active authority gap, and no
-unfinished contract may be retired. Completion requires authority/link/history
-coverage, full offline checks, an exact-diff current Verification Receipt, and
-two independent Tier 2 reviews with no unresolved High or Medium finding.
+TG-DOC.2 changes no supported runtime, schema, migration, storage, public
+CLI/JSON, Viewer, Skill behavior, package/install identity, evidence assurance,
+completion or review gate, network behavior, or target-project authority. Its
+accepted result requires focused document/history/release checks, the full
+offline suite, an exact-target Verification Receipt, and two Tier 2 reviews
+with no unresolved High or Medium finding.
+
+The checker control inventory is complete at the following semantic level.
+Presentation wording and line layout are not control units.
+
+| Rule family | Decision | Owner | Measured consumer and unit | Severity | Rationale and change procedure |
+|---|---|---|---|---|---|
+| required files and deterministic text decoding | retain | `AGENTS.md` start rule and `docs/authority.md` | checker and task agent; canonical path and UTF-8 document bytes | blocking | Missing, linked, undecodable, BOM-prefixed, or unterminated authority is ambiguous. Change only in an atomic Tier 2 authority transition. |
+| registry, owner graph, routes, anchors, and local links | replace | `docs/authority.md` | selective-read agent and checker; owner, path, and `path#anchor` relation | blocking | Validate closed semantic membership, exact-case reachability, and uniqueness without JSON-key order or prose hashes. Change the owner and checker atomically with Tier 2 review. |
+| document role, agent start routing, and authority-status declarations | replace | `AGENTS.md`, `docs/authority.md`, and the execution-contract index | task agent; required role, section, and current/inactive relation | blocking | Required owners and status must remain unambiguous, but equivalent wording is allowed. Change only with the owning authority and Tier 2 review. |
+| M22, M23, M24, and TG-DOC sequence identity | replace | each canonical execution owner; `plan.md#tg-doc-sequence` for TG-DOC | task orchestrator and checker; unit, Task ID, lane/order, dependency, and activation class | blocking | Structural rows replace whole-table digests and the former duplicated M24 prose table. Change requires approved Task authority and Tier 2 synchronization. |
+| live Task/evidence exclusion from Git documents | retain | `AGENTS.md` and `docs/authority.md` | task agent and Task database; active Git-document state constellation or volatile evidence ID | blocking | Git prose must not become a stale status/evidence mirror. Any static exception needs explicit authority and a negative fixture. |
+| history role, safe files, exactly-once index, and immutable provenance | replace | `docs/history/README.md` | lineage auditor; capture path, first visible structural declaration, source commit, and exact archived bytes | blocking | Structural placement replaces the first-2,048-byte heuristic; dedicated history tests retain archive/source hashes. Captures are never edited; add a new capture and index route atomically. |
+| ordinary-search history exclusion | replace | `AGENTS.md` history-search policy | repository search; literal positive `/docs/history/` rule and subsequent actual-subtree negations | blocking | Semantic exclusion replaces exact whole-file `.ignore` bytes and permits unrelated rules without normalizing ineffective whitespace or separators. Change only with the owning search policy and negative fixture. |
+| deterministic read-only checker behavior | retain | `README.md` development checks | local/CI caller; invocation, result, and pre/post file bytes | blocking | The checker must be offline, repeatable, sanitized on failure, and non-mutating. Change with focused tests and Tier 2 review. |
+| document growth observation | replace | this documentation-governance decision | maintainer and reviewer; raw UTF-8 bytes per routed document and mandatory start set | advisory | Report measurements without a pass/fail threshold. A future blocking limit requires a named capacity consumer, measured evidence, explicit user approval, and Tier 2 review. |
+| representative product, algorithm, and process-safety contract canaries | retain | `docs/specification.md`, `docs/design.md`, and the exact routed execution-contract owner | runtime implementer and focused tests; versioned field, byte vector, ownership boundary, or safety invariant | blocking | Preserve representative structural canaries for schema/Viewer/evidence projection, M23 byte framing and layout, and Windows lease/process/publication safety without pinning unrelated prose. Change the owning product authority and coupled focused test together with Tier 2 review. |
+| 90-percent reduction, line ceilings, 650/800 self-caps, active wording/banner/section hashes, global Markdown bans, and giant prose needles | remove | TG-DOC.2 decision | none; no supported consumer or meaningful unit was demonstrated | none | These controls distorted edits or pinned wording without product value. Reintroduction requires a named consumer and unit, measured evidence, explicit user approval, and Tier 2 review. |
+
+Runtime, privacy, packet, output, SQLite, Viewer, Bundle, manifest, and public
+input limits are product controls owned by the specification and design, not
+documentation-budget rules. Immutable history hashes and product digest vectors
+also remain valid provenance or algorithm checks rather than active-prose pins.
+
+<a id="tg-doc-3"></a>
+
+### TG-DOC.3 Inactive Post-M24 Documentation Normalization And History Closure
+
+The canonical row above solely owns TG-DOC.3 identity, lane and order,
+dependencies, and inactive status. This section owns its preserved post-M24
+scope and gates.
+
+It preserves the former post-M24 closure: fold final supported M21-M24 behavior
+into subsystem-oriented active specification and design, route completed
+execution narrative through indexed non-authoritative history, and leave this
+plan limited to unfinished static contracts, current decisions, and open issues.
+Its write boundary is documentation, editorial Skill/reference synchronization,
+coupled tests, and repository-local read-only checks. It may not rewrite history,
+make history authoritative, copy live Task state or evidence into Git, retire an
+unfinished contract, reintroduce unsupported documentation controls, or change
+supported runtime, schema, CLI/JSON, Viewer, package, evidence, gate, network, or
+target-project behavior. Completion requires authority, link, history, release,
+Skill/reference, full offline, exact-target Receipt, and two Tier 2 review gates.
 
 <a id="tg-m12-3"></a>
 

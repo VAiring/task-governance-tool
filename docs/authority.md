@@ -43,6 +43,14 @@ derived-evidence contract is the sole unit owner/router; its process-safety
 route delegates one non-overlapping physical-safety seam and owns no unit state
 or core semantics.
 
+## Documentation Governance Sequence
+
+- [TG-DOC sequence](../plan.md#tg-doc-sequence)
+
+TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
+preserves the inactive post-M24 normalization scope. Neither route changes
+product behavior, and TG-M24 remains conditional and inactive.
+
 ## Conditional Formal Authority
 
 - [TG-M24 Verification Runner](execution-contracts/tg-m24-verification-runner.md)
@@ -70,6 +78,7 @@ current gate.
 | TG-M22 unit purpose, scope, order, dependency, permission, or execution/acceptance gate | Stable `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence` route and its exact accepted-predecessor sections; product behavior and implementation structure remain owned above |
 | TG-M23 unit or core data detail | Exact accepted-predecessor, current activation, or inactive unit in `docs/execution-contracts/tg-m23-derived-evidence.md` and its ASCII anchor above |
 | TG-M23 Windows process, private temporary tree, or atomic publication/recovery detail | Exact delegated route in `docs/execution-contracts/tg-m23-process-safety.md`, only through the TG-M23 core owner/router |
+| Documentation governance or TG-DOC unit detail | [TG-DOC sequence](../plan.md#tg-doc-sequence), then the exact `plan.md#tg-doc-2` or `plan.md#tg-doc-3` unit anchor |
 | TG-M24 unit detail | Exact inactive unit in the routed execution contract and ASCII anchor above |
 | Published artifact, install, upgrade, tag, or Release identity | `docs/release-install.md` |
 | Live status, blocker, target, evidence, review, or completion history | Public CLI and live Task Contract; no Git-document mirror |
@@ -89,32 +98,14 @@ an explicit escalation, not the normal start path.
 
 ## Machine-Readable Registry
 
-The following JSON is the repository-visible TG-DOC.1 routing and size
-baseline. Line and byte ceilings are blocking maintenance gates, not permission
-to omit a current invariant or weaken a contract.
-Within a fixed sequence, a unit named in neither registry array is an accepted
-predecessor.
+The following closed JSON is the repository-visible semantic authority route.
+Within a sequence, a unit named in neither the current nor inactive array is an
+accepted predecessor. JSON object-key order is presentation only; array order,
+owner, route, unit, and current/inactive membership are the enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v3",
-  "baseline": {
-    "commit": "695b240178681a072b5cbd73845dff8e31a281d6",
-    "mandatory_files": 4,
-    "lines": 7404,
-    "bytes": 428058
-  },
-  "budgets": {
-    "AGENTS.md": {"lines": 500, "bytes": 30000},
-    "docs/authority.md": {"lines": 160, "bytes": 16000},
-    "docs/specification.md": {"lines": 2500, "bytes": 150000},
-    "docs/design.md": {"lines": 2450, "bytes": 135000},
-    "plan.md": {"lines": 375, "bytes": 35000},
-    "docs/execution-contracts/tg-m22-evidence-ledger.md": {"lines": 1750, "bytes": 125000},
-    "docs/execution-contracts/tg-m23-derived-evidence.md": {"lines": 250, "bytes": 30000},
-    "docs/execution-contracts/tg-m23-process-safety.md": {"lines": 120, "bytes": 20000},
-    "docs/execution-contracts/tg-m24-verification-runner.md": {"lines": 280, "bytes": 32000}
-  },
+  "schema": "taskgov-document-authority-v4",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md"],
   "mixed_execution": [
@@ -139,6 +130,12 @@ predecessor.
       ]
     }
   ],
+  "documentation_sequence": {
+    "path": "plan.md",
+    "route_anchor": "tg-doc-sequence",
+    "current_units": [],
+    "inactive_units": ["TG-DOC.3"]
+  },
   "conditional": [
     "docs/execution-contracts/tg-m24-verification-runner.md"
   ],

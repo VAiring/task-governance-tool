@@ -446,11 +446,12 @@ git diff --check
 ```
 
 The document checker is offline and read-only. It validates this repository's
-closed authority registry, fixed canonical routing syntax, mixed
-current/conditional sequence tables, history provenance, search exclusion, and
-size budgets. It is not a
-general Markdown or CommonMark parser; unsupported route-bearing forms fail
-closed instead of being interpreted.
+closed semantic authority registry, route-scoped syntax, owner/anchor/link
+reachability, execution-unit identity/order/dependency, history provenance and
+non-authority, search exclusion, and explicit bounded-read controls. It does
+not freeze ordinary prose, impose a repository-wide Markdown dialect, or use
+hidden reduction and checker-size thresholds. Ambiguous syntax in an authority
+route still fails closed instead of being guessed.
 
 For shorter local feedback, replace `all` with `fast`, `integration`, or
 `release`. The three base lanes own every standard-discovery test exactly once;
@@ -487,13 +488,16 @@ coverage.
 - `docs/specification.md`: product contract.
 - `docs/design.md`: implementation design and boundaries.
 - `plan.md`: current decisions, open issues, cross-sequence gateways, and
-  non-delegated static contracts.
+  non-delegated static contracts. Its
+  `plan.md#tg-doc-sequence` route owns accepted post-M23 TG-DOC.2 and inactive
+  post-M24 TG-DOC.3; accepted TG-DOC.2 is the predecessor of M24.1.
 - `docs/execution-contracts/`: indexed mixed current/conditional authority. M22
   routes through
   `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence`;
   TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
   offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer
-  acceptance are accepted predecessors; M24 remains inactive. Network/live
+  acceptance and TG-DOC.2 are accepted predecessors; M24 remains inactive.
+  Network/live
   Analyzer acceptance still requires separate authority. SQLite, `storage.py`,
   public CLI or Skill calls, network/live-model actions, gate mutation, and
   Task mutation remain outside the accepted TG-M23 scope.

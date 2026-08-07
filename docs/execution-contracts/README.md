@@ -17,12 +17,10 @@ a named unit is current, accepted, or inactive. A router may delegate one
 explicit non-overlapping detail seam to a directly indexed sub-owner; the
 sub-owner owns no unit state or parent semantics. Root
 [plan.md](../../plan.md) owns current decisions, open issues, cross-sequence
-gateways, and non-delegated static contracts. Its concise M24 table is an
-intentional non-owning repository-visible index whose Task identity, order,
-dependency, purpose, permission, and gate cells are kept exactly equal to the
-canonical conditional table by the document checker. The Task database owns
-live state and evidence. These files must not mirror status, blockers, targets,
-reviews, receipts, or completion history.
+gateways, and non-delegated static contracts. It routes to the canonical M24
+contract instead of duplicating its complete unit table. The Task database
+owns live state and evidence. These files must not mirror status, blockers,
+targets, reviews, receipts, or completion history.
 
 ## Indexed Contracts
 
@@ -42,6 +40,17 @@ reviews, receipts, or completion history.
 - [TG-M24 Verification Runner](tg-m24-verification-runner.md#tg-m24-verification-runner)
   owns accepted inactive Runner design, shadow, gate-integration, and
   acceptance detail for the M24 sequence, which remains inactive.
+
+## Cross-Sequence Documentation Gateway
+
+- [TG-DOC documentation governance sequence](../../plan.md#tg-doc-sequence)
+  owns the non-product documentation units and their M23-to-M24 gateway.
+- [TG-DOC.2](../../plan.md#tg-doc-2) is the accepted post-M23 predecessor that
+  must complete before the inactive M24 sequence can begin.
+- [TG-DOC.3](../../plan.md#tg-doc-3) preserves the post-M24 normalization scope
+  and remains inactive until accepted TG-M24.4.
+
+These plan routes add no product behavior and do not activate TG-M24.
 
 ## Routing Rules
 

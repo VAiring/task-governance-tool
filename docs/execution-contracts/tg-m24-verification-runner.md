@@ -13,16 +13,17 @@ supported behavior. This document is the sole detailed owner of the accepted
 inactive units' purpose, scope, order, dependencies, permission boundaries,
 and gates below. Root [plan.md](../../plan.md) owns cross-sequence gateways,
 current decisions, open issues, and static contracts not delegated here. Its
-concise M24 table is a non-owning repository index that must match this
-canonical table in every cell. The Task database owns live state and evidence.
+TG-DOC gateway routes here instead of duplicating this canonical table. The
+Task database owns live state and evidence.
 
 ## Sequence Boundary
 
-TG-M24 is sequential Tier 2 work in lane `TG-M24-VERIFICATION-RUNNER`:
+TG-M24 is sequential Tier 2 work in lane `TG-M24-VERIFICATION-RUNNER`. It
+remains inactive and begins only after accepted TG-DOC.2:
 
 | Unit/order | Task | Dependency | Purpose, permission boundary, and completion gate |
 |---|---|---|---|
-| TG-M24.1 / 10 | `tg_task_29aa63124900ad95` | accepted TG-M23.3 | Design project-owned verification plans, shell-free argv, exact Task/Contract/expectation/target binding, environment/network/mutation/resource policy, sanitized runner-observed evidence, shadow-to-gate staging, and the M21 fallback. Activate no Runner, schema, CLI, Skill, gate, network, credential, or target mutation. Require exact documentation checks and diff, a current Receipt, and two independent Tier 2 reviews. |
+| TG-M24.1 / 10 | `tg_task_29aa63124900ad95` | accepted TG-DOC.2 | Design project-owned verification plans, shell-free argv, exact Task/Contract/expectation/target binding, environment/network/mutation/resource policy, sanitized runner-observed evidence, shadow-to-gate staging, and the M21 fallback. Activate no Runner, schema, CLI, Skill, gate, network, credential, or target mutation. Require exact documentation checks and diff, a current Receipt, and two independent Tier 2 reviews. |
 | TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1 | Implement only the approved bounded Runner and append-only evidence in shadow mode; existing M21 and completion gates remain unchanged. Execute only an explicit current project-owned plan, and require separate exact authority for any live external-project run. Require migration, safety, package, focused/full offline checks, exact diff, a current Receipt, and two Tier 2 reviews. |
 | TG-M24.3 / 30 | `tg_task_dc015144091f8e60` | accepted TG-M24.2 | Make one qualifying exact-current complete-plan Runner result an explicit versioned completion basis while retaining the M21 caller-attested Receipt for unsupported, manual, visual, external, or unavailable-Runner cases. Analyzer output, arbitrary commands, and new normal-loop LLM leaves gain no gate authority. Require full offline, package/release consistency, exact diff, a current Receipt, and two independent Tier 2 reviews. |
 | TG-M24.4 / 40 | `tg_task_f81f2d126f033a59` | accepted TG-M24.3 | Accept Runner safety, provenance, the completion gate, M21 fallback, Evidence Bundle/JSON, Analyzer coexistence, legacy/history, and realistic supported/unsupported flows, with bounded corrections inside M24.1 only. Runs outside approved fixtures or this repository require separate exact project authority. Require focused/full and authorized forward checks, exact diff, a current Receipt, and two independent Tier 2 reviews. |

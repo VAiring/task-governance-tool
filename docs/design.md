@@ -3,7 +3,7 @@
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
 snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with managed recovery and stored-Task/Contract relationship validation, accepted TG-M23.1 derived-evidence design, and the accepted bounded offline/mock TG-M23.2 implementation.
-TG-M20S.3, TG-M23.3, and TG-M24 remain inactive. Integrated Analyzer product acceptance remains owned by TG-M23.3. SQLite, `storage.py`, public CLI/Skill, network/live-model paths, gates, and Task mutation remain outside TG-M23.2.
+TG-M20S.3 and TG-M24 remain inactive. TG-M23.3 is current only for offline/mock integrated acceptance; integrated Analyzer product acceptance remains unaccepted until its gates pass. SQLite, `storage.py`, public CLI/Skill, network/live-model paths, gate mutation, and Task mutation remain outside TG-M23.3.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -1054,7 +1054,7 @@ changes advance the snapshot. Migration creates one exact current-basis
 reused only by same-Task kind/digest and never parsed or rewritten.
 
 Every schema-v18-or-later native manifest, Receipt, Finding, and completion source is inserted with one Evidence Reference in the source transaction. One closed dispatch derives assurance/producer/version and exact source projection; the caller supplies none. Completion References use deferred same-cycle ownership; validators recompute ownership, binding, null matrices, dispatch, and digest.
-Schema v19 adds immutable criterion links, Bundle membership/Finding snapshots, completion Bundles, cycle evidence-basis linkage, and Evidence projection state. `evidence_projection.py` assembles and size-checks one canonical Bundle before the storage repository inserts its links, snapshots, Bundle, and cycle atomically; migrated cycles stay version 0/null and receive only `legacy_unknown` index entries. Analyzer and Runner writers remain inactive.
+Schema v19 adds immutable criterion links, Bundle membership/Finding snapshots, completion Bundles, cycle evidence-basis linkage, and Evidence projection state. `evidence_projection.py` assembles and size-checks one canonical Bundle before the storage repository inserts its links, snapshots, Bundle, and cycle atomically; migrated cycles stay version 0/null and receive only `legacy_unknown` index entries. Canonical Analyzer and Runner writers remain inactive.
 `evidence_projection.py` captures one query-only generation, closes SQLite, writes/validates Bundle files, replaces the index last, conditionally records publication, and follows up at most once. It imports nothing; SQLite remains canonical and failure preserves the committed mutation and last-good index.
 
 ### Review Packet

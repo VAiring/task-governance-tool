@@ -3,7 +3,7 @@
 Status: The immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
 snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with strict recovery and stored-Task/Contract-pointer validation, accepted TG-M23.1 derived-evidence design, and the accepted bounded offline/mock TG-M23.2 implementation predecessor.
-TG-M20S.3, TG-M23.3, and TG-M24 remain inactive. Integrated Analyzer product acceptance remains owned by TG-M23.3. SQLite, `storage.py`, public CLI/Skill, network/live-model action, gates, and Task mutation remain outside TG-M23.2. Completed execution narrative is history, and the Task database owns live state and evidence.
+TG-M20S.3 and TG-M24 remain inactive. TG-M23.3 is current only for offline/mock integrated acceptance; integrated Analyzer product acceptance remains unaccepted until its gates pass. SQLite, `storage.py`, public CLI/Skill, network/live-model action, gate mutation, and Task mutation remain outside TG-M23.3. Completed execution narrative is history, and the Task database owns live state and evidence.
 
 This document specifies supported product behavior. The concise
 [authority index](authority.md) routes implementation structure to
@@ -1246,8 +1246,8 @@ completion cycle, and closed assurance/producer/version. Git observation is
 `bound_attestation/trusted_caller/1`; external revisions are
 `external_reference/external_system/1`. Callers cannot select or upgrade those
 classes. Migration synthesizes no historical Reference. Schema-v19 criterion
-links, native Bundles, and Evidence JSON are active; Analyzer and Runner
-writers remain inactive.
+links, native Bundles, and Evidence JSON are active; canonical Analyzer and
+Runner writers remain inactive.
 
 ### Receipt Meaning And Record
 

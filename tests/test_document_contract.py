@@ -208,18 +208,18 @@ class DocumentContractTests(unittest.TestCase):
                 "authority_registry",
             ),
             (
-                '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": [],',
+                '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": ["TG-M23.3"],',
                 '      "path": "docs/execution-contracts/tg-m23-derived-evidence.md",\n      "route_anchor": "tg-m23-derived-evidence",\n      "current_units": ["TG-M23.2"],',
                 "authority_registry",
             ),
             (
-                '      "inactive_units": ["TG-M23.3"]',
-                '      "inactive_units": []',
+                '      "current_units": ["TG-M23.3"],\n      "inactive_units": []',
+                '      "current_units": [],\n      "inactive_units": ["TG-M23.3"]',
                 "authority_registry",
             ),
             (
-                '      "inactive_units": ["TG-M23.3"]',
-                '      "inactive_units": ["TG-M23.2", "TG-M23.3"]',
+                '      "current_units": ["TG-M23.3"],\n      "inactive_units": []',
+                '      "current_units": ["TG-M23.3"],\n      "inactive_units": ["TG-M23.2"]',
                 "authority_registry",
             ),
             (
@@ -312,6 +312,12 @@ class DocumentContractTests(unittest.TestCase):
                 contract.M23,
                 "# TG-M23 Derived Evidence Current And Conditional Execution Contract",
                 "# TG-M23 Derived Evidence Conditional Execution Contract",
+                "document_role",
+            ),
+            (
+                contract.M23,
+                "TG-M23.3 IS CURRENT",
+                "TG-M23.3 IS ACCEPTED BUT INACTIVE",
                 "document_role",
             ),
             (

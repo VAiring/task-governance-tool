@@ -36,9 +36,9 @@ transfer either role.
   - [delegated TG-M23 process safety](execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety)
 
 TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, and bounded
-offline/mock TG-M23.2 are accepted predecessors. No TG-M23 execution unit is
-current; TG-M23.3 remains inactive, and integrated Analyzer product acceptance
-remains owned by that unit. The
+offline/mock TG-M23.2 are accepted predecessors. TG-M23.3 is current only for
+offline/mock integrated acceptance; integrated Analyzer product acceptance
+remains unaccepted until that unit's gates pass. The
 derived-evidence contract is the sole unit owner/router; its process-safety
 route delegates one non-overlapping physical-safety seam and owns no unit state
 or core semantics.
@@ -127,8 +127,8 @@ predecessor.
     {
       "path": "docs/execution-contracts/tg-m23-derived-evidence.md",
       "route_anchor": "tg-m23-derived-evidence",
-      "current_units": [],
-      "inactive_units": ["TG-M23.3"],
+      "current_units": ["TG-M23.3"],
+      "inactive_units": [],
       "detail_routes": [
         {
           "path": "docs/execution-contracts/tg-m23-process-safety.md",

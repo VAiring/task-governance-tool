@@ -4,8 +4,8 @@
 
 > [!IMPORTANT]
 > DELEGATED FORMAL AUTHORITY: sole owner of routed TG-M23 Windows
-> process containment, private temp, and atomic publication/recovery. M23.1 is
-> accepted; bounded offline/mock M23.2 is accepted; M23.3 inactive. It claims no
+> process containment, private temp, and atomic publication/recovery. M23.1/
+> M23.2 accepted; M23.3 current scope is offline/mock only. It claims no
 > accepted Analyzer, network/live model, public CLI/Skill, schema, gate, or Task
 > mutation.
 
@@ -21,7 +21,7 @@ The core passes one bounded attempt input `(analysis_job_id,N,packet_digest,stdi
 
 `C` is the controller, `B` the fixed private one-shot broker, `T` the target, and `J` the per-attempt Job. `S` is `output-schema.json`, `O` is `output.json`, `I` is the sealed input mapping, `Q` is the sealed result mapping, and `Vb/Vc` are the broker/controller synchronization events. Pagefile-backed IPC means no taskgov file; it does not claim absence from OS page, hibernation, or dump storage.
 
-This owner applies only to the ignored `<canonical-package-state>/analysis/` tree and the fixed core namespaces. SQLite, `storage.py`, schema, setup, doctor, maintenance, public CLI, Skill, Task loop, network, and live provider use remain outside M23.1/M23.2.
+This owner applies only to the ignored `<canonical-package-state>/analysis/` tree and the fixed core namespaces. SQLite, `storage.py`, schema, setup, doctor, maintenance, public CLI, Skill, Task loop, network, and live provider use remain outside TG-M23.
 
 ## Lease, Private Tree, And Quarantine
 

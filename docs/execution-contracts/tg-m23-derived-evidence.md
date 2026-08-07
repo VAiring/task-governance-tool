@@ -4,11 +4,12 @@
 
 > [!IMPORTANT]
 > MIXED FORMAL AUTHORITY: TG-M23.1 AND BOUNDED OFFLINE/MOCK TG-M23.2 ARE
-> ACCEPTED PREDECESSORS; TG-M23.3 IS ACCEPTED BUT INACTIVE. Load this document
+> ACCEPTED PREDECESSORS; TG-M23.3 IS CURRENT ONLY FOR OFFLINE/MOCK INTEGRATED
+> ACCEPTANCE. Load this document
 > only when the current Task Contract or [authority index](../authority.md)
-> routes to TG-M23. Integrated Analyzer product acceptance remains owned by
-> TG-M23.3; SQLite, `storage.py`,
-> public CLI/Skill, network/live-model action, gates, and Task mutation remain
+> routes to TG-M23. Integrated Analyzer product acceptance remains unaccepted
+> until TG-M23.3 gates pass; SQLite, `storage.py`,
+> public CLI/Skill, network/live-model action, gate mutation, and Task mutation remain
 > outside scope.
 
 [Specification](../specification.md)=behavior; [design](../design.md)=structure; this document is the sole TG-M23 unit owner/router for sequence, Task boundaries, descriptor, packet, status, report, provenance, citation, activation order, permissions, and gates; [process safety](tg-m23-process-safety.md#tg-m23-process-safety)=the sole delegated owner of Windows containment, private temporary storage, and atomic publication/recovery mechanics; [plan.md](../../plan.md)=other static/cross-sequence; Task DB=live state/evidence. The delegated owner does not own unit state or core data semantics, and this router does not restate its physical safety mechanics.
@@ -25,7 +26,7 @@ TG-M23 is sequential Tier 2 work in lane `TG-M23-DERIVED-EVIDENCE`:
 
 ## Process Safety Route
 
-All TG-M23 Windows process isolation, restricted-token, Job/handle/pipe, timeout/cancel, private-temp/quarantine, and atomic-publication/recovery mechanics are owned only by the [TG-M23 process-safety contract](tg-m23-process-safety.md#tg-m23-process-safety). The route is normative whenever those mechanics are in scope; it does not activate inactive units.
+All TG-M23 Windows process isolation, restricted-token, Job/handle/pipe, timeout/cancel, private-temp/quarantine, and atomic-publication/recovery mechanics are owned only by the [TG-M23 process-safety contract](tg-m23-process-safety.md#tg-m23-process-safety). The route is normative whenever those mechanics are in scope; it does not independently activate a unit.
 
 <a id="tg-m23-1"></a>
 
@@ -128,6 +129,8 @@ Completion=deterministic dedupe; provenance/citation/status/replay/failure/priva
 
 ## TG-M23.3 Integrated Acceptance
 
-Task `tg_task_0ada32d2b4f9759d` accepts multi-source native/legacy queue/restart/replay/failure; offline/mock; v1/null/legacy; repeated cross-Receipt/Bundle codes; ID/version/digest/pointer traces; legacy cycle/index only; classes/gates separate/inert.
+Task `tg_task_0ada32d2b4f9759d` is current only to accept multi-source native/legacy queue/restart/replay/failure; offline/mock; v1/null/legacy; repeated cross-Receipt/Bundle codes; ID/version/digest/pointer traces; legacy cycle/index only; classes/gates separate/inert.
 
-Required=offline/mock focused/full; privacy; package/release; exact-diff/integration; current Receipt; two clean Tier 2 reviews. Live=`not_applicable`; later exact credential/data/model/provider-ceiling authority creates a fresh target; M23.1 fixes bounded.
+Execution order=one reviewed authority-activation commit; one focused multi-source integration module reusing shared fixture/oracle; bounded M23.1 corrections only; build the accepted-state synchronization into the intended final snapshot; then exact target, focused/package/performance preflight, full verification and current Receipt, two later clean Tier 2 reviews, commit, and complete.
+
+Required=offline/mock focused/full; privacy; package/release; exact-diff/integration; current Receipt before final reviews. Live=`not_applicable`; later exact credential/data/model/provider-ceiling authority creates a fresh target. SQLite/`storage.py`/schema/public CLI/Skill/network/live call/gate or Task mutation remain outside scope. Stop before M24.

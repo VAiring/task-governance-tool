@@ -307,3 +307,19 @@ evidence remain available only through the public CLI.
   [TG-M23 process-safety owner](../execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety).
   Use the public CLI for live Task state and evidence. This capture is lineage
   only and cannot fill a current authority gap or satisfy a gate.
+
+## v0.12.0 TG-M24 Pre-Design-Activation Lineage
+
+### Pre-design-activation capture of `docs/execution-contracts/tg-m24-verification-runner.md`
+
+- Immutable history:
+  [v0.12.0/tg-m24-pre-design-activation.md](v0.12.0/tg-m24-pre-design-activation.md)
+- Source commit: `888a77759cfc59376089b8ebdc509e748638f603`
+- Capture unit: `TG-M24.1`
+- Capture purpose: preserve the exact accepted-but-inactive TG-M24 authority
+  body before M24.1 freezes the Runner design and the owner changes from a
+  conditional-only route to mixed accepted-predecessor/inactive authority.
+- Current replacement:
+  [TG-M24 mixed owner](../execution-contracts/tg-m24-verification-runner.md#tg-m24-verification-runner).
+  Use the public CLI for live Task state and evidence. This capture is lineage
+  only and cannot fill a current authority gap or satisfy a gate.

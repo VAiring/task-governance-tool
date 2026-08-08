@@ -197,7 +197,7 @@ mutation is activated. Accepted TG-M22.4 completed integrated acceptance and
 accepted TG-M23.1 froze the derived-evidence design; accepted TG-M23.2 supplies
 only its bounded offline/mock implementation predecessor.
 
-### Accepted TG-M22.4/TG-M23 Sequence And Inactive TG-M24 Gateway
+### Accepted TG-M22.4/TG-M23/TG-M24.1 And Inactive TG-M24 Gateway
 
 Product behavior established by accepted TG-M22.3 remains owned by the active
 specification and its implementation structure by the active design. Exact
@@ -208,20 +208,24 @@ Accepted TG-M23.1 design, bounded TG-M23.2 implementation, and TG-M23.3
 offline/mock integrated-acceptance detail are owned and routed by the [TG-M23 mixed execution contract](docs/execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence). Its exact Windows process-containment, private-temp, and atomic-publication/recovery seam is delegated without overlapping unit ownership to the [TG-M23 process-safety contract](docs/execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety).
 No TG-M23 unit is current. SQLite, `storage.py`, public CLI/Skill,
 network/live-model action, gate mutation, and Task mutation remain outside the
-accepted scope. Sequential ordering and Tier 2 gates remain mandatory; M24
-stays inactive, and live state and evidence remain solely in the Task database.
+accepted scope. Accepted TG-M24.1 freezes only the exact design in the routed
+M24 owner; TG-M24.2 through TG-M24.4 remain inactive. Sequential ordering and
+Tier 2 gates remain mandatory, and live state and evidence remain solely in the
+Task database.
 
 <a id="tg-m24-sequence"></a>
 
-### Approved TG-M24 Verification Runner Sequence
+### Accepted TG-M24.1 Design And Approved TG-M24 Verification Runner Sequence
 
-TG-M24 is approved but inactive sequential Tier 2 work in lane
-`TG-M24-VERIFICATION-RUNNER`. It starts only after accepted TG-DOC.2. Exact
-unit identity, order, dependency, permission, and gate detail is owned by the
+TG-M24 is approved sequential Tier 2 work in lane
+`TG-M24-VERIFICATION-RUNNER`. TG-M24.1 is the accepted design predecessor after
+accepted TG-DOC.2; TG-M24.2 through TG-M24.4 remain inactive. Exact unit
+identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 not duplicated in this gateway.
 
-The sequence may advance only in that order. It grants no arbitrary command or
+The remaining sequence may advance only in that order. Accepted design alone
+activates no Runner, schema, CLI, Skill, or gate. The sequence grants no arbitrary command or
 model choice, analyzer gate authority, raw-output retention, external-project
 execution, publication, push, tag, or Release authority.
 

@@ -2,8 +2,8 @@
 
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
-snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with managed recovery and stored-Task/Contract relationship validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, and accepted TG-M23.3 offline/mock integrated Analyzer acceptance.
-TG-M20S.3 and TG-M24 remain inactive; no TG-M23 unit is current. SQLite, `storage.py`, public CLI/Skill, network/live-model paths, gate mutation, and Task mutation remain outside the accepted TG-M23 scope.
+snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with managed recovery and stored-Task/Contract relationship validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
+TG-M20S.3 and TG-M24.2 through TG-M24.4 remain inactive. No TG-M23 unit is current, and no TG-M24 unit is current. The accepted TG-M24.1 design activates no Runner, process boundary, schema, CLI, Skill, completion gate, network, credential, or target mutation.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 

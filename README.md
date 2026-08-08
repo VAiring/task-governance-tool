@@ -496,7 +496,9 @@ coverage.
   `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence`;
   TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
   offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer
-  acceptance and TG-DOC.2 are accepted predecessors; M24 remains inactive.
+  acceptance, TG-DOC.2, and documentation-only TG-M24.1 are accepted
+  predecessors; TG-M24.2 through TG-M24.4 remain inactive, and no TG-M24 unit
+  is current. Accepted TG-M24.1 activates no Runner, schema, CLI, Skill, or gate.
   Network/live
   Analyzer acceptance still requires separate authority. SQLite, `storage.py`,
   public CLI or Skill calls, network/live-model actions, gate mutation, and

@@ -783,6 +783,19 @@ class DocumentContractTests(unittest.TestCase):
         with self.fixture() as root:
             registry = self.registry(root)
             self.assertEqual(registry["schema"], "taskgov-document-authority-v4")
+            self.assertEqual(registry["conditional"], [])
+            mixed = registry["mixed_execution"]
+            self.assertIsInstance(mixed, list)
+            m24 = next(
+                item
+                for item in mixed
+                if isinstance(item, dict) and item.get("path") == contract.M24
+            )
+            self.assertEqual(m24["current_units"], [])
+            self.assertEqual(
+                m24["inactive_units"],
+                ["TG-M24.2", "TG-M24.3", "TG-M24.4"],
+            )
             self.write_registry(root, dict(reversed(tuple(registry.items()))))
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -798,10 +811,21 @@ class DocumentContractTests(unittest.TestCase):
             assert isinstance(sequence, dict)
             sequence["current_units"] = ["TG-DOC.2"]
 
+        def wrong_m24_status(registry: dict[str, object]) -> None:
+            mixed = registry["mixed_execution"]
+            assert isinstance(mixed, list)
+            m24 = next(
+                item
+                for item in mixed
+                if isinstance(item, dict) and item.get("path") == contract.M24
+            )
+            m24["current_units"] = ["TG-M24.1"]
+
         for name, mutate in (
             ("missing_owner", missing_owner),
             ("unknown_member", unknown_member),
             ("wrong_doc_status", wrong_doc_status),
+            ("wrong_m24_status", wrong_m24_status),
         ):
             with self.subTest(name=name), self.fixture() as root:
                 registry = self.registry(root)
@@ -999,7 +1023,14 @@ class DocumentContractTests(unittest.TestCase):
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
 
-        for subject in ("TG-M24.1", "TG-DOC.2", "TG-M21.5"):
+        for subject in (
+            "TG-M24.1",
+            "TG-M24.2",
+            "TG-M24.3",
+            "TG-M24.4",
+            "TG-DOC.2",
+            "TG-M21.5",
+        ):
             with self.subTest(current_subject=subject), self.fixture() as root:
                 self.append(root, "plan.md", f"\n{subject} is current.\n")
                 self.assertIn(
@@ -1011,7 +1042,7 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "# TG-M24 Verification Runner Conditional Execution Contract",
+                "# TG-M24 Verification Runner Mixed Execution Contract",
                 "# TG-M24 Verification Runner Current Execution Contract",
             )
             self.assertIn(
@@ -1047,8 +1078,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "# TG-M24 Verification Runner Conditional Execution Contract",
-                "# TG-M24 Verification Runner Not Conditional Execution Contract",
+                "# TG-M24 Verification Runner Mixed Execution Contract",
+                "# TG-M24 Verification Runner Not Mixed Execution Contract",
             )
             self.assertIn(
                 "document_role",
@@ -1059,13 +1090,13 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "# TG-M24 Verification Runner Conditional Execution Contract",
-                "TG-M24 Verification Runner Conditional Execution Contract",
+                "# TG-M24 Verification Runner Mixed Execution Contract",
+                "TG-M24 Verification Runner Mixed Execution Contract",
             )
             self.append(
                 root,
                 contract.M24,
-                "\n> # TG-M24 Verification Runner Conditional Execution Contract\n",
+                "\n> # TG-M24 Verification Runner Mixed Execution Contract\n",
             )
             self.assertIn(
                 "document_role",
@@ -1076,14 +1107,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "CONDITIONAL FORMAL AUTHORITY",
-                "NOT CONDITIONAL FORMAL AUTHORITY",
-            )
-            self.replace(
-                root,
-                contract.M24,
-                "ACCEPTED BUT INACTIVE",
-                "ACCEPTED BUT NOT INACTIVE",
+                "MIXED ACCEPTED-PREDECESSOR AND CONDITIONAL FORMAL AUTHORITY.",
+                "NOT MIXED FORMAL AUTHORITY.",
             )
             self.assertIn(
                 "document_role",
@@ -1094,8 +1119,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "ACCEPTED BUT INACTIVE.",
-                "ACCEPTED BUT <!-- INACTIVE -->.",
+                "TG-M24.2, TG-M24.3, and TG-M24.4 are inactive.",
+                "TG-M24.2, TG-M24.3, and TG-M24.4 are not inactive.",
             )
             self.assertIn(
                 "document_role",
@@ -1106,11 +1131,18 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "CONDITIONAL FORMAL AUTHORITY — ACCEPTED BUT INACTIVE.",
-                "FORMAL AUTHORITY.\n"
+                "> MIXED ACCEPTED-PREDECESSOR AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 is the\n"
+                "> accepted design predecessor; TG-M24.2, TG-M24.3, and TG-M24.4 are inactive.\n"
+                "> No TG-M24 unit is current. Loading this document activates no Runner,\n"
+                "> command execution, schema, CLI, Skill behavior, completion gate, network use,\n"
+                "> credential use, or target mutation.",
+                "> FORMAL AUTHORITY.\n"
                 "> - ~~~text\n"
-                ">   CONDITIONAL ACCEPTED INACTIVE\n"
-                ">   ~~~",
+                ">   MIXED ACCEPTED PREDECESSOR INACTIVE\n"
+                ">   ~~~\n"
+                "> No TG-M24 unit is current. Loading this document activates no Runner,\n"
+                "> command execution, schema, CLI, Skill behavior, completion gate, network use,\n"
+                "> credential use, or target mutation.",
             )
             self.assertIn(
                 "document_role",
@@ -1121,8 +1153,14 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "ACCEPTED BUT INACTIVE",
-                "FORMERLY ACCEPTED BUT NO LONGER INACTIVE",
+                "MIXED ACCEPTED-PREDECESSOR AND CONDITIONAL FORMAL AUTHORITY.",
+                "MIXED FORMAL AUTHORITY.",
+            )
+            self.replace(
+                root,
+                contract.M24,
+                "TG-M24.1 is the\n> accepted design predecessor",
+                "TG-M24.1 is a former\n> design unit",
             )
             self.assertIn(
                 "document_role",

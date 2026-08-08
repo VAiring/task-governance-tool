@@ -981,7 +981,8 @@ link IDs and digests; a legacy revision cites only its exact index/cycle
 binding. Both remain outside the sealed bundle and every current gate and
 create no Evidence Reference or criterion link. M24 may later add a versioned
 `verification_runner` producer and a new tagged verification basis. Shadow
-Runner evidence remains gate-ineligible until that later activation; gate
+Runner evidence remains permanently gate-ineligible; later activation requires
+a fresh target and a separately sealed gate-eligibility version. Gate
 integration must preserve the M21 caller Receipt as an explicit fallback and
 must not rewrite any existing class, cycle, bundle, or JSON digest.
 
@@ -1706,7 +1707,8 @@ The M24 Runner may later add a runner-observation table and a new tagged
 verification-basis/bundle version. A Runner can classify only its directly
 observed argv-plan execution facts as machine-observed; project test selection,
 environment authenticity, external effects, and old caller evidence do not
-inherit that class. Shadow evidence remains gate-ineligible. Later gate
+inherit that class. Schema-v20 shadow evidence remains permanently gate-
+ineligible; only fresh schema-v21 target evidence may be selected. Later gate
 activation must retain the M21 Receipt path as an explicit fallback and never
 rewrite existing cycles, bundles, links, or digests.
 
@@ -1746,5 +1748,7 @@ TG-M23 reporting authority is in
 [the M23 mixed contract](tg-m23-derived-evidence.md); TG-M23.1 and bounded
 offline/mock TG-M23.2 plus TG-M23.3 offline/mock integrated acceptance are accepted predecessors.
 TG-M24 Runner authority is in
-[the M24 conditional contract](tg-m24-verification-runner.md) and remains
-inactive. This M22 document activates no downstream runtime.
+[the M24 mixed contract](tg-m24-verification-runner.md#tg-m24-verification-runner).
+TG-M24.1 is an accepted design predecessor; TG-M24.2 through TG-M24.4 remain
+inactive, and no TG-M24 unit is current. This M22 document activates no
+downstream runtime.

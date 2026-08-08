@@ -56,17 +56,13 @@ ROUTE_SECTIONS = (
             "execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence",
             "execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence",
             "execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety",
+            "execution-contracts/tg-m24-verification-runner.md#tg-m24-verification-runner",
         ),
     ),
     (
         AUTHORITY,
         "## Documentation Governance Sequence",
         ("../plan.md#tg-doc-sequence",),
-    ),
-    (
-        AUTHORITY,
-        "## Conditional Formal Authority",
-        ("execution-contracts/tg-m24-verification-runner.md",),
     ),
     (AUTHORITY, "## Non-Authoritative History", ("history/README.md",)),
     (
@@ -180,7 +176,10 @@ TRIGGER_ROUTE_RELATIONS = (
         ("documentation governance", "tg-doc unit"),
         ("../plan.md#tg-doc-sequence", "plan.md#tg-doc-2", "plan.md#tg-doc-3"),
     ),
-    (("tg-m24 unit detail",), ("inactive unit", "execution contract", "ascii anchor")),
+    (
+        ("tg-m24 unit detail",),
+        ("accepted-predecessor", "inactive unit", "mixed execution contract", "ascii anchor"),
+    ),
     (("published artifact", "release identity"), ("docs/release-install.md",)),
     (
         ("live status", "completion history"),
@@ -442,7 +441,7 @@ ROLE_TITLE_TOKENS = {
     M22: ("m22", "evidence", "ledger", "accepted", "contract"),
     M23: ("m23", "derived", "evidence", "accepted", "contract"),
     M23_PROCESS: ("m23", "process", "safety", "contract"),
-    M24: ("m24", "verification", "runner", "conditional", "contract"),
+    M24: ("m24", "verification", "runner", "mixed", "contract"),
     HISTORY_INDEX: ("historical", "documentation", "index"),
     RELEASE_INSTALL: ("release", "install", "record"),
 }
@@ -456,7 +455,7 @@ ROLE_BANNER_STATUS = {
     M22: (("accepted", "predecessor"), False),
     M23: (("accepted", "predecessor"), True),
     M23_PROCESS: (("delegated", "accepted"), True),
-    M24: (("conditional", "accepted", "inactive"), False),
+    M24: (("mixed", "accepted", "predecessor", "inactive"), True),
 }
 
 
@@ -1350,6 +1349,12 @@ def _expected_registry() -> dict[str, object]:
                     }
                 ],
             },
+            {
+                "path": M24,
+                "route_anchor": "tg-m24-verification-runner",
+                "current_units": [],
+                "inactive_units": ["TG-M24.2", "TG-M24.3", "TG-M24.4"],
+            },
         ],
         "documentation_sequence": {
             "path": "plan.md",
@@ -1357,7 +1362,7 @@ def _expected_registry() -> dict[str, object]:
             "current_units": [],
             "inactive_units": ["TG-DOC.3"],
         },
-        "conditional": [M24],
+        "conditional": [],
         "history_index": HISTORY_INDEX,
     }
 
@@ -1772,12 +1777,18 @@ def _registry_routes(
 
     conditional = registry["conditional"]
     assert isinstance(conditional, list)
-    if M24 not in conditional or "tg-m24-verification-runner" not in scans[M24].anchors:
+    m24_routes = [
+        route
+        for route in route_objects
+        if route.get("path") == M24
+        and route.get("route_anchor") == "tg-m24-verification-runner"
+    ]
+    if conditional or len(m24_routes) != 1:
         issues.append(
             Issue(
                 "authority_route",
                 AUTHORITY,
-                "conditional M24 owner or route anchor is unavailable",
+                "mixed M24 owner or route anchor is unavailable",
             )
         )
 

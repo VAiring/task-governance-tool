@@ -3,7 +3,7 @@
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
 snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with managed recovery and stored-Task/Contract relationship validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
-TG-M20S.3 and TG-M24.2 through TG-M24.4 remain inactive. No TG-M23 unit is current, and no TG-M24 unit is current. The accepted TG-M24.1 design activates no Runner, process boundary, schema, CLI, Skill, completion gate, network, credential, or target mutation.
+TG-M20S.3 and TG-M24.2 through TG-M24.4 remain inactive. No TG-M23 unit is current. Current bounded correction authority belongs to TG-M24.1A and changes only the future Win32 LPAC proof seam and mandatory-native lane boundary routed by the M24 contract. The accepted TG-M24.1 design and that correction activate no Runner, process boundary, schema, CLI, Skill, completion gate, network, credential, or target mutation.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -2417,6 +2417,38 @@ Every run first validates the complete manifest. A base lane is an ordered
 filter of standard discovery, while `all` runs the original discovered suite
 in its original order. New `test*.py` modules therefore fail closed until
 classified; new methods in an owned module inherit that module's lane.
+
+`tools/test_lanes.py` also owns one closed mandatory-native set containing
+exactly
+`test_m241a_lpac_portability.RunnerLpacPortabilityNativeTests.test_real_lpac_portability_matrix_and_cleanup`.
+Discovery must resolve that
+stable ID exactly once in the `integration` owner and therefore in `all`.
+After execution, its presence in `unittest`'s skipped results makes the lane
+non-PASS even when `wasSuccessful()` is otherwise true. Missing, renamed,
+duplicate, or non-`integration` assignment is a policy failure; a lane that
+does not select it is unaffected, and unrelated optional SKIPs are not
+promoted to failures. The private, import-inactive implementation seam is
+`_verification_runner_lpac_win32.py`; the direct native fixture and its focused
+pure/fault coverage do not import or activate the broader TG-M24.2 provider or
+process implementation.
+
+The normal control used by the portability matrix is always suspended, never
+resumed, and contained in its own Job. Both children use the same stdio
+configuration and four-attribute shape, but distinct OS handles and distinct
+Jobs; the sole attribute-value difference is the fixed ALL-APPLICATION-
+PACKAGES-policy `DWORD`, exactly `0` for the normal control and exactly opt-out
+`1` for LPAC, so a parent opt-out cannot leak into the control through
+attribute omission. The host's real selector route must be non-SKIP; a
+fault-injected integration test forces the opposite route without being
+labeled native selector evidence, and `WIN://NOALLAPPPKG` is never a decision
+input. Each public-`AccessCheck` descriptor has SYSTEM owner/group and exactly
+two `FILE_READ_DATA` (`0x00000001`) allow ACEs, coordinator user first and the
+selected AAP or exact Package SID second, with no extra ACE. The three required
+outcomes are normal+AAP allow, LPAC+AAP deny, and LPAC+exact-Package allow. The
+portability test calls the seam directly and proves both separate Jobs/tokens,
+no-resume paths, and cleanup without calling `run_process_steps` or depending
+on the full process/registry matrix. That full matrix remains an inactive
+TG-M24.2 non-SKIP completion gate and is not in the current mandatory set.
 
 CI obtains one compact include matrix from this same policy. Pull requests run
 all three base lanes on Python 3.12 and `fast` on 3.14. Pushes to `main` run

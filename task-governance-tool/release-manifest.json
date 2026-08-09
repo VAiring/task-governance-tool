@@ -10,6 +10,7 @@
     "scripts/task_governance_tool/__init__.py": "sha256:44ba80e6d514b0dda7ee4168ef859fd6f443fcc418428a1c4216d98c33da2d88",
     "scripts/task_governance_tool/_analysis_win32.py": "sha256:f6b82f5fd9f93bcd8f4acc9494bc3854ff1919f7627675ada20e8ade3087a7b9",
     "scripts/task_governance_tool/_analysis_windows_process.py": "sha256:549701f1e2197f1488e65e9a7608fb96e003ebb756d5360d50d10a49ac4f4df5",
+    "scripts/task_governance_tool/_verification_runner_lpac_win32.py": "sha256:0063166dc051f0b8cea2df608f83f92fb9fd8b7e448f46b281dc597b87282fa4",
     "scripts/task_governance_tool/analysis_contracts.py": "sha256:e83145fd787dacc68b9a2580be6b59f541ecd914ffd7edf0c59e953cacd44509",
     "scripts/task_governance_tool/analysis_outbox.py": "sha256:1ad5ed9f6c2690a79a314def18c511c8ece7ec157e1fd51443e954edbc967f0c",
     "scripts/task_governance_tool/analysis_packet.py": "sha256:4ed5a131df1f8e80c412524399b0453ef825a14b95c5ad1629395eafc2595357",

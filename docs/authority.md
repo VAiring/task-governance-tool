@@ -39,8 +39,9 @@ transfer either role.
 TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
 offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer acceptance
 are accepted predecessors. TG-M24.1 is also an accepted design predecessor;
-TG-M24.2 through TG-M24.4 remain inactive. No TG-M23 execution unit is current,
-and no TG-M24 execution unit is current; network/live Analyzer acceptance remains outside the accepted scope. The
+current bounded correction authority belongs to TG-M24.1A, and TG-M24.2
+through TG-M24.4 remain inactive. No TG-M23 execution unit is current;
+network/live Analyzer acceptance remains outside the accepted scope. The
 derived-evidence contract is the sole unit owner/router; its process-safety
 route delegates one non-overlapping physical-safety seam and owns no unit state
 or core semantics.
@@ -51,8 +52,9 @@ or core semantics.
 
 TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
 preserves the inactive post-M24 normalization scope. Neither route changes
-product behavior. M24.1 design authority is accepted, later M24 units remain
-inactive, and indexing or reading them activates no behavior.
+product behavior. M24.1 design authority is accepted, M24.1A owns the current
+bounded correction, later M24 units remain inactive, and indexing or reading
+them activates no behavior.
 
 ## Non-Authoritative History
 
@@ -74,7 +76,7 @@ current gate.
 | TG-M23 unit or core data detail | Exact accepted-predecessor, current activation, or inactive unit in `docs/execution-contracts/tg-m23-derived-evidence.md` and its ASCII anchor above |
 | TG-M23 Windows process, private temporary tree, or atomic publication/recovery detail | Exact delegated route in `docs/execution-contracts/tg-m23-process-safety.md`, only through the TG-M23 core owner/router |
 | Documentation governance or TG-DOC unit detail | [TG-DOC sequence](../plan.md#tg-doc-sequence), then the exact `plan.md#tg-doc-2` or `plan.md#tg-doc-3` unit anchor |
-| TG-M24 unit detail | Exact accepted-predecessor or inactive unit in the routed mixed execution contract and ASCII anchor above |
+| TG-M24 unit detail | Exact accepted-predecessor, current, or inactive unit in the routed mixed execution contract and ASCII anchor above |
 | Published artifact, install, upgrade, tag, or Release identity | `docs/release-install.md` |
 | Live status, blocker, target, evidence, review, or completion history | Public CLI and live Task Contract; no Git-document mirror |
 | Historical lineage or retired evidence | `docs/history/README.md`, only after naming the exceptional reason |
@@ -127,7 +129,7 @@ owner, route, unit, and current/inactive membership are the enforced meaning.
     {
       "path": "docs/execution-contracts/tg-m24-verification-runner.md",
       "route_anchor": "tg-m24-verification-runner",
-      "current_units": [],
+      "current_units": ["TG-M24.1A"],
       "inactive_units": ["TG-M24.2", "TG-M24.3", "TG-M24.4"]
     }
   ],

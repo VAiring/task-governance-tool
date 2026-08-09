@@ -1749,6 +1749,6 @@ TG-M23 reporting authority is in
 offline/mock TG-M23.2 plus TG-M23.3 offline/mock integrated acceptance are accepted predecessors.
 TG-M24 Runner authority is in
 [the M24 mixed contract](tg-m24-verification-runner.md#tg-m24-verification-runner).
-TG-M24.1 is an accepted design predecessor; TG-M24.2 through TG-M24.4 remain
-inactive, and no TG-M24 unit is current. This M22 document activates no
-downstream runtime.
+TG-M24.1 is an accepted design predecessor; current bounded correction
+authority belongs to TG-M24.1A, and TG-M24.2 through TG-M24.4 remain inactive.
+This M22 document activates no downstream runtime.

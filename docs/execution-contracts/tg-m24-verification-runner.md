@@ -3,10 +3,11 @@
 <a id="tg-m24-verification-runner"></a>
 
 > [!IMPORTANT]
-> MIXED ACCEPTED-PREDECESSOR AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 is the
-> accepted design predecessor; TG-M24.2, TG-M24.3, and TG-M24.4 are inactive.
-> No TG-M24 unit is current. Loading this document activates no Runner,
-> command execution, schema, CLI, Skill behavior, completion gate, network use,
+> MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 is the accepted
+> design predecessor, current bounded correction authority belongs to
+> TG-M24.1A, and TG-M24.2, TG-M24.3, and TG-M24.4 are inactive. No TG-M24
+> runtime is active. Loading this document activates no Runner, command
+> execution, schema, CLI, Skill behavior, completion gate, network use,
 > credential use, or target mutation.
 
 The active [specification](../specification.md) and [design](../design.md) own
@@ -23,9 +24,10 @@ TG-M24 is sequential Tier 2 work in lane `TG-M24-VERIFICATION-RUNNER`:
 | Unit/order | Task | Dependency | Purpose, permission boundary, and completion gate |
 |---|---|---|---|
 | TG-M24.1 / 10 | `tg_task_29aa63124900ad95` | accepted TG-DOC.2 | Accepted design predecessor: freeze project-owned verification plans, shell-free argv, exact Task/Contract/expectation/target binding, environment/network/mutation/resource policy, sanitized Runner-observed evidence, shadow-to-gate staging, and the M21 fallback. Activate no Runner, schema, CLI, Skill, gate, network, credential, or target mutation. Require exact documentation checks and diff, a current Receipt, and two independent Tier 2 reviews. |
-| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1 | Inactive: implement only the approved bounded Runner and append-only evidence in shadow mode; existing M21 and completion gates remain unchanged. Execute only an explicit current project-owned plan, and require separate exact authority for any live external-project run. Require migration, safety, package, focused/full offline checks, exact diff, a current Receipt, and two Tier 2 reviews. |
+| TG-M24.1A / 15 | `tg_task_56e212c793a42272` | accepted TG-M24.1 | Current bounded correction: retain exact fixed-DWORD class-46 proof where supported and add only the exact error-87 public-`AccessCheck` semantic route with a never-resumed normal-AppContainer control in a separate Job. Give both children the same four attributes and vary only the AAP-policy DWORD (`1` for LPAC, `0` for normal control). Preserve fail-closed no-resume and cleanup guarantees, make the one mandatory native portability test's SKIP non-PASS, and activate no Runner, schema, CLI, Skill, gate, network, credential, or external-project behavior. Require document/release, focused/native/full offline, exact-diff checks, a current Receipt, and two independent Tier 2 reviews. |
+| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1A | Inactive: implement only the approved bounded Runner and append-only evidence in shadow mode; existing M21 and completion gates remain unchanged. Execute only an explicit current project-owned plan, and require separate exact authority for any live external-project run. The full process/registry matrix is a distinct non-SKIP completion gate; registry `0x80070002` and every other registry failure remain fail-closed and never count as success evidence. Require migration, safety, package, focused/full offline checks, exact diff, a current Receipt, and two Tier 2 reviews. |
 | TG-M24.3 / 30 | `tg_task_dc015144091f8e60` | accepted TG-M24.2 | Inactive: make one qualifying exact-current complete-plan Runner result an explicit versioned completion basis while retaining the M21 caller-attested Receipt for unsupported, manual, visual, external, or unavailable-Runner cases. Analyzer output, arbitrary commands, and new normal-loop LLM leaves gain no gate authority. Require full offline, package/release consistency, exact diff, a current Receipt, and two Tier 2 reviews. |
-| TG-M24.4 / 40 | `tg_task_f81f2d126f033a59` | accepted TG-M24.3 | Inactive: accept Runner safety, provenance, the completion gate, M21 fallback, Evidence Bundle/JSON, Analyzer coexistence, legacy/history, and realistic supported/unsupported flows, with bounded corrections inside M24.1 only. Runs outside approved fixtures or this repository require separate exact project authority. Require focused/full and authorized forward checks, exact diff, a current Receipt, and two Tier 2 reviews. |
+| TG-M24.4 / 40 | `tg_task_f81f2d126f033a59` | accepted TG-M24.3 | Inactive: accept Runner safety, provenance, the completion gate, M21 fallback, Evidence Bundle/JSON, Analyzer coexistence, legacy/history, and realistic supported/unsupported flows, with only the bounded M24.1A portability correction to the accepted M24.1 design. Runs outside approved fixtures or this repository require separate exact project authority. Require focused/full and authorized forward checks, exact diff, a current Receipt, and two Tier 2 reviews. |
 
 The sequence never lets an LLM select project tests, synthesize argv, approve a
 plan, choose a fallback, or invoke a Runner leaf. Only a current project-owned
@@ -40,8 +42,9 @@ main-LLM command or decision.
 ## TG-M24.1 Accepted Verification Runner Design
 
 Task `tg_task_29aa63124900ad95` is the accepted documentation/design
-predecessor. The design below is exact authority for TG-M24.2 through
-TG-M24.4, but activates none of it. The current product remains schema v19,
+predecessor. The design below, as boundedly corrected by TG-M24.1A, is exact
+authority for TG-M24.2 through TG-M24.4, but activates none of it. The current
+product remains schema v19,
 Evidence Bundle/JSON v1, Viewer snapshot v4 with source schemas v5-v19, the
 existing public CLI and Skill, and the M21 caller-attested verification gate.
 
@@ -367,15 +370,67 @@ Before process creation, taskgov creates and limits a non-breakaway Job with
 kill-on-close, active-process, job-memory, per-process-memory, CPU-time, and UI
 limits. One `STARTUPINFOEX` attribute list contains exactly
 `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES`,
-`PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY` set to
-`PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT`,
+`PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY` set through a fixed
+`DWORD` whose value is exactly
+`PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT` (`1`),
 `PROC_THREAD_ATTRIBUTE_JOB_LIST`, and `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`.
 `CreateProcessW` uses that list with `EXTENDED_STARTUPINFO_PRESENT`,
 `CREATE_SUSPENDED`, `CREATE_NO_WINDOW`, and `CREATE_UNICODE_ENVIRONMENT`; the
 process is therefore born in the Job rather than assigned afterward. Taskgov
-queries Job membership, limits, `TokenIsAppContainer=1`,
-`TokenIsLessPrivilegedAppContainer=1`, the exact AppContainer SID, the empty
-capability set, and the exact inherited handles, then performs the sole resume. Any
+queries Job membership, limits, `TokenIsAppContainer=1`, the exact
+AppContainer SID, the empty capability set, and the exact inherited handles.
+It queries information class 46, `TokenIsLessPrivilegedAppContainer`, with one
+fixed `DWORD` output buffer and a return-length pointer. A successful query
+qualifies only when the returned length is exactly `sizeof(DWORD)` and the
+value is exactly `1`; zero, another value, or another length fails closed.
+
+Only a false result from that exact well-formed class-46 call with
+`GetLastError()==ERROR_INVALID_PARAMETER (87)` may select the portable proof.
+Here `87` is the Win32 result for unsupported information class on this exact
+call shape; the same value from any other call is not a fallback signal. Every
+other error or unknown result fails closed. The portable proof creates one
+normal-AppContainer control with the same exact application, command line,
+environment, working directory, security-capabilities SID, stdio
+configuration and attribute shape, creation flags, and containment limits as
+the LPAC child, while using distinct OS handles and a distinct creation-time
+Job. It uses the same exact four attributes. The sole attribute-value
+difference is
+`PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY`: its fixed `DWORD` is
+exactly `0` for the normal control and exactly
+`PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT` (`1`) for the LPAC child.
+Explicit zero overrides any parent opt-out inherited by omission; omission is
+not a valid normal-AppContainer control. The control is created suspended, is
+never resumed, never executes project bytes, and is terminated with proved
+Job-zero and closed handles before the LPAC child may resume.
+
+The provider duplicates both primary tokens only at `SecurityImpersonation`
+and performs three bounded in-memory evaluations with public `AccessCheck` and
+one fixed non-generic `FILE_READ_DATA` bit `0x00000001`. Every evaluated
+descriptor has owner and group exactly SYSTEM (`S-1-5-18`) and a protected DACL
+containing exactly two allow ACEs in canonical order: the exact coordinator
+user SID for `FILE_READ_DATA`, then the selected application SID for
+`FILE_READ_DATA`. There is no deny, inherited, generic, or additional ACE. For
+the AAP descriptor the selected application SID is ALL APPLICATION PACKAGES
+`S-1-15-2-1`: the normal AppContainer check must return access allowed and the
+LPAC check must return access denied. For the Package descriptor the selected
+application SID is the exact attempt Package SID: the same LPAC token check
+must return access allowed. All three results are required semantic gates.
+Descriptor owner/group, exact ACE count/order/masks/SIDs, generic mapping,
+token type, privilege-set result, returned granted mask, and access-status
+boolean are revalidated, so an API failure or malformed/ambiguous result cannot
+count as denial or success.
+`WIN://NOALLAPPPKG` may be emitted only as a diagnostic after the semantic
+proof; its presence, absence, or value is never consulted as a selector,
+branch, expected-access, or success/failure input. Existing AppContainer, SID,
+zero-capability, loopback, Job, ACL, and inherited-handle proofs remain
+mandatory.
+
+The separate normal-control Job contributes no CPU, peak-memory, or process
+count to the Runner step observation; its bounded wall time remains inside the
+attempt duration. Any direct or portable proof failure terminates every
+affected suspended child without resume, proves both Jobs empty, closes all
+handles, and follows the existing owned cleanup path. Only after the complete
+proof succeeds may taskgov perform the LPAC child's existing sole resume. Any
 post-create `AssignProcessToJobObject` fallback is forbidden.
 
 `STARTUPINFOEX.StartupInfo.dwFlags` includes `STARTF_USESTDHANDLES`;
@@ -1070,6 +1125,21 @@ this design. The matrix includes:
   governed-root and canonical-state write denial, direct network denial,
   runtime and release-manifest-bound Runner implementation identity/drift,
   handle cleanup, and no weaker-provider fallback;
+- the direct-provider real suspended-child portability matrix exercising the host's actual
+  fixed-DWORD class-46-success or exact error-87 semantic route without SKIP,
+  including, when the host selects error 87, a never-resumed normal-
+  AppContainer control in its separate Job, the identical four-attribute lists
+  whose AAP-policy DWORD alone differs as normal `0` versus LPAC `1`, normal AAP
+  allow, LPAC AAP deny, same-LPAC exact-Package-SID allow, each through the
+  exact SYSTEM-owned/grouped two-ACE coordinator-user-plus-selected-
+  application descriptor with bit `0x00000001` and no extra ACE, non-decisional
+  `WIN://NOALLAPPPKG`, every failure/unknown no-resume path, and complete
+  control/LPAC cleanup; a fault-injected integration test forces the opposite
+  branch, and pure helpers may cover it additionally, without calling either a
+  native selector result or native selector evidence; this direct proof covers
+  both separate Jobs and tokens, the allow/deny/allow triple, no-resume paths,
+  and cleanup without calling `run_process_steps` or depending on the Runner
+  registry route;
 - output flood and secret/traceback/diff-like output proving raw bytes never
   enter SQLite, Bundle, JSON, Viewer, diagnostics, backup, or logs;
 - schema19-to-20-to-21 migration, idempotent setup, too-new rejection,
@@ -1090,9 +1160,61 @@ network destination, or unrelated external project is used without separate
 exact authority. Tests never weaken an assertion or substitute caller
 attestation for a required machine-observed boundary.
 
-This accepted design activates no runtime, process, schema, gate, CLI, Skill,
-network, credential, or target mutation. Those changes remain confined to the
-inactive units and their exact gates below.
+The current repository lane policy owns exactly one mandatory native test:
+`test_m241a_lpac_portability.RunnerLpacPortabilityNativeTests.test_real_lpac_portability_matrix_and_cleanup`.
+When selected by
+`integration` or `all`, its `unittest` SKIP makes that lane non-PASS even when
+the remaining result is otherwise successful. A missing, renamed, duplicate,
+or non-`integration` assignment fails policy validation. A lane that does not
+select the ID is unaffected, and unrelated optional SKIPs retain their
+existing meaning. The normal-AppContainer/LPAC positive matrix therefore
+completes without SKIP on a supported governed Windows lane. Its native
+evidence comes from the direct private-seam proof above, independently of
+`run_process_steps` and the full process/registry matrix. The latter remains
+an inactive TG-M24.2 non-SKIP completion gate and is not part of the current
+mandatory set.
+
+This accepted design and its current bounded correction authority activate no
+runtime, process, schema, gate, CLI, Skill, network, credential, or target
+mutation. Those changes remain confined to the inactive units and their exact
+gates below.
+
+<a id="tg-m24-1a"></a>
+
+## TG-M24.1A Current Windows LPAC Proof Portability Correction
+
+Task `tg_task_56e212c793a42272` may correct only the accepted M24.1 LPAC proof
+through one private, import-inactive package seam,
+`_verification_runner_lpac_win32.py`, its direct suspended-child native fixture
+and focused pure/fault tests in `test_m241a_lpac_portability`, and the one-ID
+repository mandatory-native lane gate. It retains the exact class-46 proof
+where supported and adds only the exact error-87 public-`AccessCheck` route
+above. It does not copy or activate the broader TG-M24.2 provider, process, or
+registry implementation. It changes no platform support, plan, schema,
+storage, public CLI/JSON, Skill, M21 gate, M24.3 behavior, network authority,
+external-project authority, diagnostic retention, or assurance class.
+Registry `0x80070002` and every other registry failure remain fail-closed,
+never count as success evidence, and are owned by inactive TG-M24.2. TG-M24.2
+remains inactive until this correction is accepted.
+
+Completion requires document-contract and release checks; focused private-
+seam, fault, and lane-policy tests; a real suspended-child matrix covering the
+host's actual class-46 or exact error-87 semantic route without SKIP, a
+fault-injected integration test forcing the opposite route without claiming
+native selector evidence, identical four-attribute lists whose sole value
+difference is AAP policy normal `0` versus LPAC `1`, both AAP sentinels, exact
+Package-SID allow, exact SYSTEM owner/group and two-ACE coordinator-user-plus-
+selected-application descriptors with non-generic bit `0x00000001` and no
+extra ACE, no-resume failure/unknown paths, and cleanup; and proof that the
+selected mandatory native test's SKIP makes its lane non-PASS. The portability
+proof does not call `run_process_steps` or depend on the full process/registry
+matrix. The full matrix test,
+`test_m242_runner_process.RunnerProcessNativeTests.test_real_process_matrix_and_cleanup`,
+remains an inactive TG-M24.2 non-SKIP
+completion gate and is not in this Task's lane policy or commit. The remaining
+gates are the full offline suite and exact diff; a current `pass/full`
+Verification Receipt; and two independent Tier 2 PASS reviews with no
+unresolved High or Medium finding.
 
 <a id="tg-m24-2"></a>
 
@@ -1107,7 +1229,12 @@ execution requires its own exact current authority.
 Completion requires the exact parser/materializer/AppContainer/Job/lifecycle/
 privacy boundary, append-only exact-basis observations, inert Bundle/JSON v2
 linkage, no shell or ambient target execution, and real Windows containment
-tests plus migration, state, Viewer compatibility, package, focused/full
+tests, including the full
+`test_m242_runner_process.RunnerProcessNativeTests.test_real_process_matrix_and_cleanup`
+process/registry matrix without SKIP;
+`0x80070002` and every other registry failure fail closed and never count as
+success. The remaining gate includes migration, state, Viewer compatibility,
+package, focused/full
 offline checks, exact diff, a current Verification Receipt, and two independent
 Tier 2 reviews with no unresolved High or Medium finding.
 
@@ -1134,7 +1261,8 @@ unresolved High or Medium finding.
 
 Task `tg_task_f81f2d126f033a59` accepts the exact schema-v20 Runner and
 schema-v21 gate across the complete matrix above. Only bounded corrections
-required by TG-M24.1 are allowed. Realistic supported fixture tasks must
+required by accepted TG-M24.1 and its bounded M24.1A portability correction
+are allowed. Realistic supported fixture tasks must
 complete without a manual Receipt action; honest unsupported/manual cases must
 retain it; failures and uncertainty must never become success.
 
@@ -1146,8 +1274,9 @@ network destination, or credential use needs separate exact authority.
 
 ## Deferred Detail Rule
 
-The exact design above owns the M24.2-M24.4 schema, storage, plan, process,
-projection, gate, compatibility, and acceptance boundary. A correction may
+The exact design above, including the bounded TG-M24.1A portability correction,
+owns the M24.2-M24.4 schema, storage, plan, process, projection, gate,
+compatibility, and acceptance boundary. A correction may
 clarify or repair that boundary but may not add another executable resolver,
 platform/provider, plan field, public leaf, normal-loop action, output-retention
 mode, Analyzer gate, external execution, fallback removal, or assurance

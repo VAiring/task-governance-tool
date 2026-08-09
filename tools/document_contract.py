@@ -178,7 +178,13 @@ TRIGGER_ROUTE_RELATIONS = (
     ),
     (
         ("tg-m24 unit detail",),
-        ("accepted-predecessor", "inactive unit", "mixed execution contract", "ascii anchor"),
+        (
+            "accepted-predecessor",
+            "current",
+            "inactive unit",
+            "mixed execution contract",
+            "ascii anchor",
+        ),
     ),
     (("published artifact", "release identity"), ("docs/release-install.md",)),
     (
@@ -204,7 +210,8 @@ ROWS_M23 = (
 )
 ROWS_M24 = (
     ("TG-M24.1 / 10", "tg_task_29aa63124900ad95", "accepted TG-DOC.2"),
-    ("TG-M24.2 / 20", "tg_task_fafad7bc62df7576", "accepted TG-M24.1"),
+    ("TG-M24.1A / 15", "tg_task_56e212c793a42272", "accepted TG-M24.1"),
+    ("TG-M24.2 / 20", "tg_task_fafad7bc62df7576", "accepted TG-M24.1A"),
     ("TG-M24.3 / 30", "tg_task_dc015144091f8e60", "accepted TG-M24.2"),
     ("TG-M24.4 / 40", "tg_task_f81f2d126f033a59", "accepted TG-M24.3"),
 )
@@ -451,11 +458,11 @@ ROLE_TITLE_TOKENS = {
 # negative relation is required where the owner declares that no unit is
 # current; merely mentioning the word ``current`` is not sufficient.
 ROLE_BANNER_STATUS = {
-    EXECUTION_INDEX: (("mixed", "conditional", "accepted", "inactive"), True),
+    EXECUTION_INDEX: (("mixed", "current", "conditional", "accepted", "inactive"), False),
     M22: (("accepted", "predecessor"), False),
     M23: (("accepted", "predecessor"), True),
     M23_PROCESS: (("delegated", "accepted"), True),
-    M24: (("mixed", "accepted", "predecessor", "inactive"), True),
+    M24: (("mixed", "current", "accepted", "predecessor", "inactive"), False),
 }
 
 
@@ -1352,7 +1359,7 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": [],
+                "current_units": ["TG-M24.1A"],
                 "inactive_units": ["TG-M24.2", "TG-M24.3", "TG-M24.4"],
             },
         ],
@@ -1632,6 +1639,35 @@ def _sequences(scans: dict[str, Scan], issues: list[Issue]) -> None:
                     "sequence_contract",
                     spec.path,
                     f"{spec.heading} Task identity, order, or dependency drifted",
+                )
+            )
+
+    m24 = scans[M24]
+    required_m24_anchors = (
+        "tg-m24-1",
+        "tg-m24-1a",
+        "tg-m24-2",
+        "tg-m24-3",
+        "tg-m24-4",
+    )
+    if any(anchor not in m24.anchors for anchor in required_m24_anchors):
+        issues.append(
+            Issue(
+                "sequence_contract",
+                M24,
+                "M24 unit anchors are incomplete",
+            )
+        )
+    else:
+        positions = tuple(m24.anchors[anchor] for anchor in required_m24_anchors)
+        if positions != tuple(sorted(positions)) or len(set(positions)) != len(
+            positions
+        ):
+            issues.append(
+                Issue(
+                    "sequence_contract",
+                    M24,
+                    "M24 unit anchors are out of order",
                 )
             )
 

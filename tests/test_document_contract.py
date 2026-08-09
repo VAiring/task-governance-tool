@@ -791,7 +791,7 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], [])
+            self.assertEqual(m24["current_units"], ["TG-M24.1A"])
             self.assertEqual(
                 m24["inactive_units"],
                 ["TG-M24.2", "TG-M24.3", "TG-M24.4"],
@@ -819,7 +819,7 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            m24["current_units"] = ["TG-M24.1"]
+            m24["current_units"] = []
 
         for name, mutate in (
             ("missing_owner", missing_owner),
@@ -1107,7 +1107,7 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "MIXED ACCEPTED-PREDECESSOR AND CONDITIONAL FORMAL AUTHORITY.",
+                "MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY.",
                 "NOT MIXED FORMAL AUTHORITY.",
             )
             self.assertIn(
@@ -1131,16 +1131,17 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "> MIXED ACCEPTED-PREDECESSOR AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 is the\n"
-                "> accepted design predecessor; TG-M24.2, TG-M24.3, and TG-M24.4 are inactive.\n"
-                "> No TG-M24 unit is current. Loading this document activates no Runner,\n"
-                "> command execution, schema, CLI, Skill behavior, completion gate, network use,\n"
+                "> MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 is the accepted\n"
+                "> design predecessor, current bounded correction authority belongs to\n"
+                "> TG-M24.1A, and TG-M24.2, TG-M24.3, and TG-M24.4 are inactive. No TG-M24\n"
+                "> runtime is active. Loading this document activates no Runner, command\n"
+                "> execution, schema, CLI, Skill behavior, completion gate, network use,\n"
                 "> credential use, or target mutation.",
                 "> FORMAL AUTHORITY.\n"
                 "> - ~~~text\n"
-                ">   MIXED ACCEPTED PREDECESSOR INACTIVE\n"
+                ">   MIXED CURRENT ACCEPTED PREDECESSOR INACTIVE\n"
                 ">   ~~~\n"
-                "> No TG-M24 unit is current. Loading this document activates no Runner,\n"
+                "> No TG-M24 runtime is active. Loading this document activates no Runner,\n"
                 "> command execution, schema, CLI, Skill behavior, completion gate, network use,\n"
                 "> credential use, or target mutation.",
             )
@@ -1153,13 +1154,13 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "MIXED ACCEPTED-PREDECESSOR AND CONDITIONAL FORMAL AUTHORITY.",
+                "MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY.",
                 "MIXED FORMAL AUTHORITY.",
             )
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.1 is the\n> accepted design predecessor",
+                "TG-M24.1 is the accepted\n> design predecessor",
                 "TG-M24.1 is a former\n> design unit",
             )
             self.assertIn(
@@ -1217,6 +1218,26 @@ class DocumentContractTests(unittest.TestCase):
                 contract.M24,
                 "| TG-M24.1 / 10 | `tg_task_29aa63124900ad95` | accepted TG-DOC.2 |",
                 "| TG-M24.1 / 10 | `tg_task_29aa63124900ad95` | accepted TG-M23.3 |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.1A / 15 | `tg_task_56e212c793a42272` | accepted TG-M24.1 |",
+                "| TG-M24.1A / 15 | `tg_task_0000000000000000` | accepted TG-M24.1 |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.1A / 15 | `tg_task_56e212c793a42272` | accepted TG-M24.1 |",
+                "| TG-M24.1A / 16 | `tg_task_56e212c793a42272` | accepted TG-M24.1 |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.1A / 15 | `tg_task_56e212c793a42272` | accepted TG-M24.1 |",
+                "| TG-M24.1A / 15 | `tg_task_56e212c793a42272` | accepted TG-DOC.2 |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1A |",
+                "| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1 |",
             ),
         )
         documentation_row_mutations = (
@@ -1281,6 +1302,18 @@ class DocumentContractTests(unittest.TestCase):
                     "sequence_contract",
                     self.codes(contract.check_document_contract(root)),
                 )
+
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.M24,
+                '<a id="tg-m24-1a"></a>',
+                '<a id="tg-m24-1b"></a>',
+            )
+            self.assertIn(
+                "sequence_contract",
+                self.codes(contract.check_document_contract(root)),
+            )
 
         for name, mutated_row in documentation_row_mutations:
             with self.subTest(documentation_row=name), self.fixture() as root:

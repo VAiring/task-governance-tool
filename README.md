@@ -459,6 +459,15 @@ an unassigned, duplicate, or stale test module fails before execution. The
 `all` lane preserves the ordered test IDs and suite from
 `python -m unittest discover -s tests`.
 
+The current closed mandatory-native set contains exactly one stable ID,
+`test_m241a_lpac_portability.RunnerLpacPortabilityNativeTests.test_real_lpac_portability_matrix_and_cleanup`.
+It belongs to `integration`
+and therefore `all`; if selected and reported as skipped, that lane is
+non-PASS. A lane that does not select it and unrelated optional SKIPs retain
+their existing behavior. The portability test is a direct private-seam proof.
+The distinct full process/registry matrix remains an inactive TG-M24.2
+non-SKIP completion gate and is not part of the TG-M24.1A lane policy.
+
 CI consumes the same repository-only policy:
 
 | Event | Python 3.12 | Python 3.14 |
@@ -497,8 +506,9 @@ coverage.
   TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
   offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer
   acceptance, TG-DOC.2, and documentation-only TG-M24.1 are accepted
-  predecessors; TG-M24.2 through TG-M24.4 remain inactive, and no TG-M24 unit
-  is current. Accepted TG-M24.1 activates no Runner, schema, CLI, Skill, or gate.
+  predecessors; current bounded LPAC-proof correction authority belongs to
+  TG-M24.1A, and TG-M24.2 through TG-M24.4 remain inactive. Accepted TG-M24.1
+  and the correction activate no Runner, schema, CLI, Skill, or gate.
   Network/live
   Analyzer acceptance still requires separate authority. SQLite, `storage.py`,
   public CLI or Skill calls, network/live-model actions, gate mutation, and

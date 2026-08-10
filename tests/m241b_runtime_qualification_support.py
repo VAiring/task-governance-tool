@@ -54,10 +54,40 @@ _PLANE_KEYS = frozenset(
     {"plane", "outcome", "object_ref", "operation", "policy", "reason"}
 )
 _PLANE_OPERATIONS = {
-    "file_access": frozenset({"file_create"}),
+    "file_access": frozenset(
+        {
+            "file_create",
+            "file_cleanup",
+            "file_close",
+            "file_read",
+            "file_write",
+            "file_set_information",
+            "file_delete",
+            "file_rename",
+            "file_directory_enumeration",
+            "file_flush",
+            "file_query_information",
+            "file_system_control",
+            "file_directory_notification",
+        }
+    ),
     "dll_image_load": frozenset({"image_map"}),
     "registry_access": frozenset(
-        {"registry_open", "registry_query", "registry_query_value"}
+        {
+            "registry_create",
+            "registry_open",
+            "registry_delete",
+            "registry_query",
+            "registry_set_value",
+            "registry_delete_value",
+            "registry_query_value",
+            "registry_enumerate_key",
+            "registry_enumerate_value",
+            "registry_query_multiple_values",
+            "registry_set_information",
+            "registry_flush",
+            "registry_virtualize",
+        }
     ),
     "code_integrity_policy": frozenset({"image_policy_validate"}),
 }

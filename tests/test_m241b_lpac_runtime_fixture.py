@@ -427,7 +427,8 @@ class _FakeAliasLeaseFactory:
 class _FakeChild:
     def __init__(self) -> None:
         self.process_id = 37
-        self.process = object()
+        self.process = lpac.OwnedHandle(777)
+        self.thread = lpac.OwnedHandle(778)
 
 
 class _FakeContext:
@@ -623,12 +624,13 @@ class _FakeCollector:
         inventory: fixture.CollectorInventory,
         process_id: int,
         process_handle: object,
+        thread_handle: object,
     ) -> None:
         self._step("collector.start")
         if not application.is_absolute():
             raise AssertionError("application must be exact and absolute")
         self.inventory = inventory
-        if process_id != 37 or process_handle is None:
+        if process_id != 37 or process_handle is None or thread_handle is None:
             raise AssertionError("collector binding drift")
 
     def stop_and_classify(
@@ -3118,11 +3120,13 @@ class RealtimeCollectorAdapterTests(unittest.TestCase):
                 *,
                 process_id: int,
                 process_handle: int,
+                thread_handle: int,
                 initial_image_object_ref: str,
             ) -> None:
                 log.append("trace.start")
                 test_case.assertEqual(process_id, 37)
                 test_case.assertEqual(process_handle, 777)
+                test_case.assertEqual(thread_handle, 778)
                 test_case.assertEqual(
                     initial_image_object_ref,
                     self.binding.resolve("dll_image_load", str(application)),
@@ -3505,6 +3509,7 @@ class RealtimeCollectorAdapterTests(unittest.TestCase):
             inventory=context.inventory,
             process_id=37,
             process_handle=context.child.process,
+            thread_handle=context.child.thread,
         )
         with self.assertRaises(fixture.RuntimeDiagnosticError) as raised:
             adapter.abort()

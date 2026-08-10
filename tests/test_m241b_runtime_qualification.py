@@ -358,12 +358,21 @@ class RootCauseEvidencePureTests(unittest.TestCase):
                 payload["planes"][plane_index][field] = value  # type: ignore[index]
                 self.assert_invalid(payload)
 
-        for registry_operation in ("registry_query", "registry_query_value"):
+        for registry_operation in sorted(
+            support._PLANE_OPERATIONS["registry_access"]
+        ):
             with self.subTest(registry_operation=registry_operation):
                 payload = _payload()
                 payload["planes"][2]["operation"] = registry_operation  # type: ignore[index]
                 evidence = self.load(payload)
                 self.assertEqual(evidence.planes[2].operation, registry_operation)
+
+        for file_operation in sorted(support._PLANE_OPERATIONS["file_access"]):
+            with self.subTest(file_operation=file_operation):
+                payload = _payload()
+                payload["planes"][0]["operation"] = file_operation  # type: ignore[index]
+                evidence = self.load(payload)
+                self.assertEqual(evidence.planes[0].operation, file_operation)
 
     def test_stock_child_access_denied_proof_is_exact_and_no_raw_status_is_input(self):
         self.assert_invalid(subject_proof="0xC0000005")

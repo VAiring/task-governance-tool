@@ -359,6 +359,7 @@ class DiagnosticCollector(Protocol):
         inventory: CollectorInventory,
         process_id: int,
         process_handle: lpac.OwnedHandle,
+        thread_handle: lpac.OwnedHandle,
     ) -> None: ...
 
     def stop_and_classify(self, *, access_denied: bool) -> CollectorClassification: ...
@@ -1340,6 +1341,7 @@ class _RealtimeCollectorAdapter:
         inventory: CollectorInventory,
         process_id: int,
         process_handle: lpac.OwnedHandle,
+        thread_handle: lpac.OwnedHandle,
     ) -> None:
         if (
             self._terminal
@@ -1350,6 +1352,8 @@ class _RealtimeCollectorAdapter:
             or process_id <= 0
             or not isinstance(process_handle, lpac.OwnedHandle)
             or process_handle.closed
+            or not isinstance(thread_handle, lpac.OwnedHandle)
+            or thread_handle.closed
         ):
             _fail("diagnostic_collector_failed")
         system32_root = self._system32_root or _system32_root()
@@ -1405,6 +1409,7 @@ class _RealtimeCollectorAdapter:
             collector.start_for_suspended_child(
                 process_id=process_id,
                 process_handle=process_handle.value,
+                thread_handle=thread_handle.value,
                 initial_image_object_ref=initial_image_ref,
             )
         except BaseException as error:
@@ -4567,6 +4572,7 @@ def _execute_diagnostic(
                 inventory=context.inventory,
                 process_id=getattr(child, "process_id"),
                 process_handle=getattr(child, "process"),
+                thread_handle=getattr(child, "thread"),
             )
         except RuntimeDiagnosticError as error:
             if error.code == "diagnostic_cleanup_failed":

@@ -12,6 +12,8 @@ from tests import m241b_runtime_trace_win32 as trace
 
 _DEPENDENCY_REF = "inventory-sha256:" + "5" * 64
 _OTHER_IMAGE_REF = "inventory-sha256:" + "6" * 64
+_FILE_OTHER_REF = "inventory-sha256:" + "7" * 64
+_REGISTRY_OTHER_REF = "inventory-sha256:" + "8" * 64
 _OBJECTS = {
     "file_access": ("inventory-sha256:" + "1" * 64,),
     "dll_image_load": (
@@ -42,6 +44,35 @@ def _binding(*, resolver=None, dependency_resolver=None) -> trace.InventoryBindi
     )
 
 
+def _multi_binding() -> trace.InventoryBinding:
+    objects = dict(_OBJECTS)
+    objects["file_access"] = (
+        _OBJECTS["file_access"][0],
+        _FILE_OTHER_REF,
+    )
+    objects["registry_access"] = (
+        _OBJECTS["registry_access"][0],
+        _REGISTRY_OTHER_REF,
+    )
+    routes = {
+        ("file_access", "file-a"): _OBJECTS["file_access"][0],
+        ("file_access", "file-b"): _FILE_OTHER_REF,
+        ("registry_access", "reg-a"): _OBJECTS["registry_access"][0],
+        ("registry_access", "reg-b"): _REGISTRY_OTHER_REF,
+        ("dll_image_load", "image"): _OBJECTS["dll_image_load"][0],
+        ("code_integrity_policy", "ci"): _OBJECTS[
+            "code_integrity_policy"
+        ][0],
+    }
+    return trace.InventoryBinding(
+        runtime_digest=_DIGEST,
+        objects_by_plane=objects,
+        loader_dependency_refs=(_DEPENDENCY_REF,),
+        path_resolver=lambda plane, raw: routes.get((plane, raw)),
+        loader_dependency_resolver=lambda _raw: _DEPENDENCY_REF,
+    )
+
+
 def _bound_reducer() -> trace._TraceReducer:
     reducer = trace._TraceReducer(_binding())
     reducer.bind(
@@ -54,9 +85,54 @@ def _bound_reducer() -> trace._TraceReducer:
     return reducer
 
 
+def _snapshot(
+    *,
+    flags: int = trace.EXACT_KERNEL_ENABLE_FLAGS,
+    mode: int = trace.EXACT_LOG_FILE_MODE,
+    context: int = 1,
+    events_lost: int = 0,
+    log_buffers_lost: int = 0,
+    realtime_buffers_lost: int = 0,
+) -> trace.KernelSessionSnapshot:
+    return trace.KernelSessionSnapshot(
+        flags,
+        mode,
+        context,
+        events_lost,
+        log_buffers_lost,
+        realtime_buffers_lost,
+    )
+
+
+def _kernel_bound_reducer(
+    inventory: trace.InventoryBinding | None = None,
+) -> trace._TraceReducer:
+    reducer = trace._TraceReducer(_binding() if inventory is None else inventory)
+    reducer.prebind_subject(pid=41, primary_thread_id=71)
+    reducer.record_kernel_session_snapshot(stage="start", snapshot=_snapshot())
+    reducer.bind(
+        pid=41,
+        qpc_start=100,
+        initial_image_ref=_OBJECTS["dll_image_load"][0],
+        primary_thread_id=71,
+    )
+    reducer.mark_probe_available("file_access")
+    reducer.mark_probe_available("registry_access")
+    return reducer
+
+
 def _finish(reducer: trace._TraceReducer) -> trace.RuntimeTraceResult:
     reducer.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
     reducer.end_window(200)
+    reducer.mark_cleanup_proved()
+    return reducer.finish()
+
+
+def _finish_kernel(reducer: trace._TraceReducer) -> trace.RuntimeTraceResult:
+    reducer.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
+    reducer.record_kernel_session_snapshot(stage="pre_stop", snapshot=_snapshot())
+    reducer.end_window(200)
+    reducer.record_kernel_session_snapshot(stage="stop", snapshot=_snapshot())
     reducer.mark_cleanup_proved()
     return reducer.finish()
 
@@ -111,7 +187,7 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
             (
                 ("file_access", "inconclusive"),
                 ("dll_image_load", "inconclusive"),
-                ("registry_access", "observed_no_denial"),
+                ("registry_access", "inconclusive"),
                 ("code_integrity_policy", "inconclusive"),
             ),
         )
@@ -134,7 +210,7 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
         self.assertTrue(all(item.lossless for item in result.quality))
         self.assertEqual(
             tuple(item.plane_scope_complete for item in result.quality),
-            (False, False, True, False),
+            (False, False, False, False),
         )
         self.assertTrue(all(item.correlation_complete for item in result.quality))
         for forbidden_claim in ("qualified", "qualification", "pass", "passed"):
@@ -197,7 +273,7 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
                 result = _finish(reducer)
                 self.assertEqual(result.planes[0].outcome, "inconclusive")
 
-    def test_success_followed_by_ambiguity_never_becomes_observed_no_denial(self):
+    def test_exact_non_access_denied_statuses_preserve_correlation(self):
         reducer = _bound_reducer()
         reducer.file_begin(pid=41, timestamp=110, irp=1, raw_identity="known")
         reducer.file_complete(
@@ -227,18 +303,19 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
 
         result = _finish(reducer)
 
-        for index, expected_reason in (
-            (0, "plane_scope_unproved"),
-            (2, "observation_ambiguous"),
-        ):
+        for index in (0, 2):
             with self.subTest(plane=result.planes[index].plane):
                 self.assertEqual(result.planes[index].outcome, "inconclusive")
-                self.assertEqual(result.planes[index].reason, expected_reason)
-                self.assertFalse(result.quality[index].correlation_complete)
+                self.assertEqual(
+                    result.planes[index].reason, "plane_scope_unproved"
+                )
+                self.assertTrue(result.quality[index].correlation_complete)
                 self.assertEqual(
                     result.planes[index].reason,
                     trace._quality_failure_reason(result.quality[index]),
                 )
+        self.assertEqual(reducer._planes["file_access"].successes, 2)
+        self.assertEqual(reducer._planes["registry_access"].successes, 2)
 
     def test_rundown_image_is_never_claimed_as_an_actual_load(self):
         reducer = _bound_reducer()
@@ -323,7 +400,7 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
             (
                 "plane_scope_unproved",
                 "plane_scope_unproved",
-                "cleanup_unproved",
+                "plane_scope_unproved",
                 "plane_scope_unproved",
             ),
         )
@@ -770,6 +847,12 @@ class _FakePort:
         self.events.append("process_id")
         return 41 if process_handle == 900 else 0
 
+    def thread_binding(
+        self, process_handle: int, thread_handle: int
+    ) -> tuple[int, int]:
+        self.events.append("thread_binding")
+        return (41, 71) if (process_handle, thread_handle) == (900, 901) else (0, 0)
+
     def qpc(self) -> int:
         self.events.append("qpc")
         value = self.qpc_value
@@ -792,6 +875,21 @@ class _FakePort:
             raise trace.RuntimeTraceError("trace_unavailable")
         return self.manifest_capable_planes
 
+    def query_session(
+        self, owned_session_handle: int
+    ) -> trace.KernelSessionSnapshot:
+        self.events.append("scope_query")
+        if owned_session_handle != 44:
+            raise trace.RuntimeTraceError("trace_unavailable")
+        return trace.KernelSessionSnapshot(
+            trace.EXACT_KERNEL_ENABLE_FLAGS,
+            trace.EXACT_LOG_FILE_MODE,
+            1,
+            0,
+            0,
+            0,
+        )
+
     def open_consumer(self, record_callback, loss_callback) -> int:
         del record_callback, loss_callback
         self.events.append("open")
@@ -813,6 +911,12 @@ class _FakePort:
         return trace.StopTraceResult(
             self.stop_ok and owned_session_handle == 44,
             *self.loss_counters,
+            trace.KernelSessionSnapshot(
+                trace.EXACT_KERNEL_ENABLE_FLAGS,
+                trace.EXACT_LOG_FILE_MODE,
+                1,
+                *self.loss_counters,
+            ),
         )
 
     def close_consumer(self, trace_handle: int) -> bool:
@@ -829,11 +933,14 @@ class RuntimeTraceControllerPureTests(unittest.TestCase):
             collector.start_for_suspended_child(
                 process_id=41,
                 process_handle=900,
+                thread_handle=901,
                 initial_image_object_ref=_OBJECTS["dll_image_load"][0],
             )
 
         self.assertEqual(raised.exception.code, "trace_session_collision")
-        self.assertEqual(port.events, ["process_id", "query"])
+        self.assertEqual(
+            port.events, ["process_id", "thread_binding", "query"]
+        )
 
     def test_held_process_handle_must_resolve_to_exact_pid_before_start(self):
         port = _FakePort()
@@ -843,6 +950,7 @@ class RuntimeTraceControllerPureTests(unittest.TestCase):
             collector.start_for_suspended_child(
                 process_id=42,
                 process_handle=900,
+                thread_handle=901,
                 initial_image_object_ref=_OBJECTS["dll_image_load"][0],
             )
 
@@ -855,6 +963,7 @@ class RuntimeTraceControllerPureTests(unittest.TestCase):
         collector.start_for_suspended_child(
             process_id=41,
             process_handle=900,
+            thread_handle=901,
             initial_image_object_ref=_OBJECTS["dll_image_load"][0],
         )
         collector.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
@@ -877,6 +986,7 @@ class RuntimeTraceControllerPureTests(unittest.TestCase):
         collector.start_for_suspended_child(
             process_id=41,
             process_handle=900,
+            thread_handle=901,
             initial_image_object_ref=_OBJECTS["dll_image_load"][0],
         )
         collector.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
@@ -899,6 +1009,7 @@ class RuntimeTraceControllerPureTests(unittest.TestCase):
             collector.start_for_suspended_child(
                 process_id=41,
                 process_handle=900,
+                thread_handle=901,
                 initial_image_object_ref=_OBJECTS["dll_image_load"][0],
             )
 
@@ -917,6 +1028,7 @@ class RuntimeTraceControllerPureTests(unittest.TestCase):
         collector.start_for_suspended_child(
             process_id=41,
             process_handle=900,
+            thread_handle=901,
             initial_image_object_ref=_OBJECTS["dll_image_load"][0],
         )
         collector.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
@@ -932,6 +1044,7 @@ class RuntimeTraceControllerPureTests(unittest.TestCase):
         collector.start_for_suspended_child(
             process_id=41,
             process_handle=900,
+            thread_handle=901,
             initial_image_object_ref=_OBJECTS["dll_image_load"][0],
         )
         collector.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
@@ -954,6 +1067,7 @@ class RuntimeTraceControllerPureTests(unittest.TestCase):
         collector.start_for_suspended_child(
             process_id=41,
             process_handle=900,
+            thread_handle=901,
             initial_image_object_ref=_OBJECTS["dll_image_load"][0],
         )
 
@@ -969,6 +1083,7 @@ class RuntimeTraceControllerPureTests(unittest.TestCase):
         collector.start_for_suspended_child(
             process_id=41,
             process_handle=900,
+            thread_handle=901,
             initial_image_object_ref=_OBJECTS["dll_image_load"][0],
         )
         collector.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
@@ -1007,6 +1122,7 @@ class RuntimeTraceControllerPureTests(unittest.TestCase):
         collector.start_for_suspended_child(
             process_id=41,
             process_handle=900,
+            thread_handle=901,
             initial_image_object_ref=_OBJECTS["dll_image_load"][0],
         )
         collector.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
@@ -1038,6 +1154,7 @@ class RuntimeTraceControllerPureTests(unittest.TestCase):
         collector.start_for_suspended_child(
             process_id=41,
             process_handle=900,
+            thread_handle=901,
             initial_image_object_ref=_OBJECTS["dll_image_load"][0],
         )
         collector.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
@@ -1061,7 +1178,7 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
         self.assertEqual(
             str(trace.SESSION_GUID), "82a6642f-b340-4db5-8d53-09dd78e03262"
         )
-        self.assertEqual(trace.EXACT_KERNEL_ENABLE_FLAGS, 0x16020005)
+        self.assertEqual(trace.EXACT_KERNEL_ENABLE_FLAGS, 0x16020007)
         self.assertEqual(trace.EXACT_LOG_FILE_MODE, 0x0A000100)
         self.assertEqual(trace.EXACT_PROCESS_TRACE_MODE, 0x10001100)
         self.assertLessEqual(trace.MAX_DURATION_SECONDS, 15.0)
@@ -1103,12 +1220,41 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
             def ControlTraceW(self, _handle, name, properties, control):
                 props = self._props(properties)
                 self._assert_live(name, props)
+                self._assert_zero_query_input(props)
                 if control == trace._EVENT_TRACE_CONTROL_QUERY:
-                    return trace._ERROR_WMI_INSTANCE_NOT_FOUND
+                    if self.query_absent:
+                        return trace._ERROR_WMI_INSTANCE_NOT_FOUND
+                    props.EnableFlags = trace.EXACT_KERNEL_ENABLE_FLAGS
+                    props.LogFileMode = trace.EXACT_LOG_FILE_MODE
+                    props.Wnode.ClientContext = 1
+                    return 0
+                props.EnableFlags = trace.EXACT_KERNEL_ENABLE_FLAGS
+                props.LogFileMode = trace.EXACT_LOG_FILE_MODE
+                props.Wnode.ClientContext = 1
                 props.EventsLost = 2
                 props.LogBuffersLost = 3
                 props.RealTimeBuffersLost = 4
                 return 0
+
+            @staticmethod
+            def _assert_zero_query_input(props):
+                if any(
+                    int(value)
+                    for value in (
+                        props.Wnode.ClientContext,
+                        props.Wnode.Flags,
+                        props.BufferSize,
+                        props.MinimumBuffers,
+                        props.MaximumBuffers,
+                        props.LogFileMode,
+                        props.FlushTimer,
+                        props.EnableFlags,
+                        props.EventsLost,
+                        props.LogBuffersLost,
+                        props.RealTimeBuffersLost,
+                    )
+                ):
+                    raise AssertionError("QUERY/STOP input was not zeroed")
 
             @staticmethod
             def _assert_live(name, props):
@@ -1124,13 +1270,25 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
         self.assertFalse(port.session_present())
         handle = port.start_session()
         capable = port.enable_session(handle)
+        port._advapi.query_absent = False
+        queried = port.query_session(handle)
         stopped = port.stop_session(handle)
 
         self.assertEqual(handle, 44)
         self.assertEqual(
             capable, frozenset({"file_access", "registry_access"})
         )
-        self.assertEqual(stopped, trace.StopTraceResult(True, 2, 3, 4))
+        self.assertEqual(queried, _snapshot())
+        self.assertEqual(
+            stopped,
+            trace.StopTraceResult(
+                True,
+                2,
+                3,
+                4,
+                _snapshot(events_lost=2, log_buffers_lost=3, realtime_buffers_lost=4),
+            ),
+        )
 
     def test_provider_exception_retains_owned_session_for_abort_retry(self):
         class RetryEnablePort(_FakePort):
@@ -1164,6 +1322,7 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
             collector.start_for_suspended_child(
                 process_id=41,
                 process_handle=900,
+                thread_handle=901,
                 initial_image_object_ref=_OBJECTS["dll_image_load"][0],
             )
 
@@ -1188,8 +1347,9 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
             trace.uuid.UUID("90cbdc39-4a3e-11d1-84f4-0000f80464e3")
         )
         unrelated.EventHeader.EventDescriptor.Opcode = 64
+        unrelated.EventHeader.EventDescriptor.Version = 2
         unrelated.EventHeader.ProcessId = 99
-        unrelated.EventHeader.TimeStamp = 110
+        unrelated.EventHeader.TimeStamp = 99
         port.translate(ctypes.pointer(unrelated))
 
         metadata = trace._EVENT_RECORD()
@@ -1209,8 +1369,9 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
     def test_target_kernel_unknown_opcode_or_version_is_sticky_after_success(self):
         cases = (
             ("file_access", trace._FILE_PROVIDER_UUID, 64, 1, 0),
+            ("file_access", trace._FILE_PROVIDER_UUID, 64, 4, 0),
             ("file_access", trace._FILE_PROVIDER_UUID, 76, 1, 0),
-            ("file_access", trace._FILE_PROVIDER_UUID, 65, 2, 0),
+            ("file_access", trace._FILE_PROVIDER_UUID, 78, 2, 0),
             ("registry_access", trace._REGISTRY_PROVIDER_UUID, 10, 1, 2),
             ("registry_access", trace._REGISTRY_PROVIDER_UUID, 29, 2, 2),
             ("registry_access", trace._REGISTRY_PROVIDER_UUID, 99, 2, 2),
@@ -1287,7 +1448,7 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
                     trace._quality_failure_reason(result.quality[plane_index]),
                 )
 
-    def test_unknown_kernel_downgrade_requires_exact_pid_and_qpc_window(self):
+    def test_unknown_kernel_events_are_global_inside_the_qpc_window(self):
         reducer = _bound_reducer()
         port = object.__new__(trace._WindowsEtwPort)
         port._reducer = reducer
@@ -1297,7 +1458,7 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
         port._string = port._integer
         for provider, opcode, pid, timestamp in (
             (trace._FILE_PROVIDER_UUID, 65, 41, 99),
-            (trace._FILE_PROVIDER_UUID, 65, 42, 110),
+            (trace._FILE_PROVIDER_UUID, 99, 42, 110),
             (trace._REGISTRY_PROVIDER_UUID, 99, 41, 99),
             (trace._REGISTRY_PROVIDER_UUID, 99, 42, 110),
         ):
@@ -1309,8 +1470,8 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
             record.EventHeader.TimeStamp = timestamp
             port.translate(ctypes.pointer(record))
 
-        self.assertTrue(reducer._schema_proved["file_access"])
-        self.assertTrue(reducer._schema_proved["registry_access"])
+        self.assertFalse(reducer._schema_proved["file_access"])
+        self.assertFalse(reducer._schema_proved["registry_access"])
 
     def test_unknown_file_completion_version_uses_pending_target_irp(self):
         for header_pid in (0, 42):
@@ -1384,8 +1545,8 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
 
                 port.translate(ctypes.pointer(record))
 
-                self.assertTrue(reducer._schema_proved["file_access"])
-                self.assertNotIn(
+                self.assertFalse(reducer._schema_proved["file_access"])
+                self.assertIn(
                     "file_access", reducer._kernel_schema_uncertain
                 )
 
@@ -1396,37 +1557,164 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
         self.assertIsNone(exact._integer(ctypes.pointer(drift), "IrpPtr", 8))
         self.assertEqual(exact._integer(ctypes.pointer(drift), "NtStatus", 4), 1)
 
-    def test_kernel_templates_freeze_v2_exact_names_widths_and_registry_semantics(self):
+    def test_kernel_templates_freeze_v2_v3_exact_names_widths_and_registry_semantics(self):
+        self.assertTrue(trace._kernel_partition_is_complete())
+        self.assertEqual(len(trace._KERNEL_EVENT_TEMPLATES), 59)
         summary = {
-            (str(item.provider), item.opcode, item.version): (
-                item.operation,
-                item.fields,
-            )
+            (item.provider, item.opcode, item.version): item
             for item in trace._KERNEL_EVENT_TEMPLATES
         }
         self.assertEqual(
-            summary[(str(trace._FILE_PROVIDER_UUID), 64, 2)],
-            ("file_create", (("IrpPtr", "uint", 8), ("OpenPath", "utf16", None))),
+            {
+                (item.opcode, item.version)
+                for item in trace._KERNEL_EVENT_TEMPLATES
+                if item.provider == trace._FILE_PROVIDER_UUID
+            },
+            {
+                (opcode, version)
+                for version in (2, 3)
+                for opcode in (*trace._FILE_NAME_OPCODES, *range(64, 78))
+            },
         )
         self.assertEqual(
-            summary[(str(trace._FILE_PROVIDER_UUID), 76, 2)],
-            ("file_create", (("IrpPtr", "uint", 8), ("NtStatus", "uint", 4))),
-        )
-        self.assertEqual(
-            summary[(str(trace._IMAGE_PROVIDER_UUID), 10, 2)],
+            summary[(trace._FILE_PROVIDER_UUID, 64, 2)].fields,
             (
-                "image_map",
-                (("ProcessId", "uint", 4), ("FileName", "utf16", None)),
+                ("IrpPtr", "uint", 8),
+                ("TTID", "pointer", 8),
+                ("FileObject", "uint", 8),
+                ("CreateOptions", "uint", 4),
+                ("FileAttributes", "uint", 4),
+                ("ShareAccess", "uint", 4),
+                ("OpenPath", "utf16", None),
             ),
         )
-        for opcode, operation in trace._REGISTRY_OPERATION_BY_OPCODE.items():
+        self.assertEqual(
+            summary[(trace._FILE_PROVIDER_UUID, 76, 2)].fields,
+            (
+                ("IrpPtr", "uint", 8),
+                ("ExtraInfo", "uint", 8),
+                ("NtStatus", "uint", 4),
+            ),
+        )
+        self.assertEqual(
+            summary[(trace._FILE_PROVIDER_UUID, 64, 3)].fields,
+            (
+                ("IrpPtr", "pointer", 8),
+                ("FileObject", "pointer", 8),
+                ("TTID", "uint", 4),
+                ("CreateOptions", "uint", 4),
+                ("FileAttributes", "uint", 4),
+                ("ShareAccess", "uint", 4),
+                ("OpenPath", "utf16", None),
+            ),
+        )
+        self.assertEqual(
+            summary[(trace._FILE_PROVIDER_UUID, 69, 3)].fields,
+            (
+                ("IrpPtr", "pointer", 8),
+                ("FileObject", "pointer", 8),
+                ("FileKey", "pointer", 8),
+                ("ExtraInfo", "pointer", 8),
+                ("TTID", "uint", 4),
+                ("InfoClass", "uint", 4),
+            ),
+        )
+        self.assertEqual(
+            summary[(trace._FILE_PROVIDER_UUID, 76, 3)].fields,
+            (
+                ("IrpPtr", "pointer", 8),
+                ("ExtraInfo", "pointer", 8),
+                ("NtStatus", "uint", 4),
+            ),
+        )
+        for opcode in trace._THREAD_OPCODES:
+            item = summary[(trace._THREAD_PROVIDER_UUID, opcode, 3)]
+            self.assertEqual(item.operation, "thread_lifecycle")
             self.assertEqual(
-                summary[(str(trace._REGISTRY_PROVIDER_UUID), opcode, 2)],
-                (
-                    operation,
-                    (("Status", "uint", 4), ("KeyName", "utf16", None)),
-                ),
+                item.field_contract, "consumed_attribution_subset"
             )
+            self.assertEqual(item.fields, trace._THREAD_V3_FIELDS)
+            self.assertNotIn(
+                "ThreadName", {name for name, _kind, _width in item.fields}
+            )
+        registry_fields = (
+            ("InitialTime", "sint", 8),
+            ("Status", "uint", 4),
+            ("Index", "uint", 4),
+            ("KeyHandle", "uint", 8),
+            ("KeyName", "utf16", None),
+        )
+        for opcode in range(10, 28):
+            item = summary[(trace._REGISTRY_PROVIDER_UUID, opcode, 2)]
+            self.assertEqual(
+                item.operation, trace._REGISTRY_OPERATION_BY_OPCODE[opcode]
+            )
+            self.assertEqual(item.fields, registry_fields)
+
+        original = trace._KERNEL_EVENT_TEMPLATES
+        first = original[0]
+        altered = trace._KernelEventTemplate(
+            first.provider,
+            first.opcode,
+            first.version,
+            first.plane,
+            "tampered_operation",
+            first.fields,
+            first.field_contract,
+        )
+        reordered = trace._KernelEventTemplate(
+            first.provider,
+            first.opcode,
+            first.version,
+            first.plane,
+            first.operation,
+            tuple(reversed(first.fields)),
+            first.field_contract,
+        )
+        wrong_kind = trace._KernelEventTemplate(
+            first.provider,
+            first.opcode,
+            first.version,
+            first.plane,
+            first.operation,
+            (
+                (first.fields[0][0], "sint", first.fields[0][2]),
+                *first.fields[1:],
+            ),
+            first.field_contract,
+        )
+        wrong_contract = trace._KernelEventTemplate(
+            first.provider,
+            first.opcode,
+            first.version,
+            first.plane,
+            first.operation,
+            first.fields,
+            "consumed_attribution_subset",
+        )
+        extra = trace._KernelEventTemplate(
+            trace.uuid.UUID("11111111-1111-1111-1111-111111111111"),
+            1,
+            1,
+            "file_access",
+            "file_name",
+            first.fields,
+        )
+        try:
+            for mutation in (
+                original[:-1],
+                (*original, first),
+                (*original, extra),
+                (altered, *original[1:]),
+                (reordered, *original[1:]),
+                (wrong_kind, *original[1:]),
+                (wrong_contract, *original[1:]),
+            ):
+                with self.subTest(mutation=len(mutation)):
+                    trace._KERNEL_EVENT_TEMPLATES = tuple(mutation)
+                    self.assertFalse(trace._kernel_partition_is_complete())
+        finally:
+            trace._KERNEL_EVENT_TEMPLATES = original
 
     def test_image_load_requires_exact_payload_and_header_process_binding(self):
         def record(header_pid: int) -> trace._EVENT_RECORD:
@@ -2159,6 +2447,2161 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
         self.assertIn("OpenTraceW", source)
         self.assertIn("ProcessTrace", source)
         self.assertIn("EnableTraceEx2", source)
+
+
+class RuntimeTraceKernelRouteProofTests(unittest.TestCase):
+    @staticmethod
+    def _classic_record(
+        provider,
+        opcode: int,
+        version: int,
+        *,
+        pid: int,
+        timestamp: int,
+    ) -> trace._EVENT_RECORD:
+        item = trace._EVENT_RECORD()
+        item.EventHeader.ProviderId = trace._GUID.from_uuid(provider)
+        item.EventHeader.EventDescriptor.Id = trace._CLASSIC_EVENT_ID
+        item.EventHeader.EventDescriptor.Opcode = opcode
+        item.EventHeader.EventDescriptor.Version = version
+        item.EventHeader.Flags = (
+            trace._EVENT_HEADER_FLAG_CLASSIC_HEADER
+            | trace._EVENT_HEADER_FLAG_64_BIT_HEADER
+        )
+        item.EventHeader.ProcessId = pid
+        item.EventHeader.TimeStamp = timestamp
+        item.UserDataLength = 32
+        return item
+
+    @staticmethod
+    def _port_with_values(reducer, values_for_template):
+        port = object.__new__(trace._WindowsEtwPort)
+        port._reducer = reducer
+        port._kernel_values = (
+            lambda _record, template, **_kwargs: values_for_template(template)
+        )
+        return port
+
+    def test_exact_silent_kernel_window_closes_only_file_and_registry(self):
+        result = _finish_kernel(_kernel_bound_reducer())
+
+        self.assertEqual(
+            tuple((item.plane, item.outcome) for item in result.planes),
+            (
+                ("file_access", "observed_no_denial"),
+                ("dll_image_load", "inconclusive"),
+                ("registry_access", "observed_no_denial"),
+                ("code_integrity_policy", "inconclusive"),
+            ),
+        )
+        self.assertTrue(result.quality[0].plane_scope_complete)
+        self.assertTrue(result.quality[2].plane_scope_complete)
+        self.assertFalse(result.quality[1].plane_scope_complete)
+        self.assertFalse(result.quality[3].plane_scope_complete)
+
+        zero_duration = _kernel_bound_reducer()
+        zero_duration.end_window(100)
+        self.assertIsNone(zero_duration._qpc_end)
+        self.assertIn(
+            "observation_ambiguous", zero_duration._global_reasons
+        )
+
+    def test_session_snapshot_drift_loss_missing_stage_and_order_fail_closed(self):
+        bad_snapshots = (
+            _snapshot(flags=trace.EXACT_KERNEL_ENABLE_FLAGS ^ 1),
+            _snapshot(mode=trace.EXACT_LOG_FILE_MODE ^ 1),
+            _snapshot(context=0),
+            _snapshot(events_lost=1),
+            _snapshot(log_buffers_lost=1),
+            _snapshot(realtime_buffers_lost=1),
+        )
+        for snapshot in bad_snapshots:
+            with self.subTest(snapshot=snapshot):
+                reducer = trace._TraceReducer(_binding())
+                reducer.prebind_subject(pid=41, primary_thread_id=71)
+                reducer.record_kernel_session_snapshot(
+                    stage="start", snapshot=snapshot
+                )
+                reducer.bind(
+                    pid=41,
+                    qpc_start=100,
+                    initial_image_ref=_OBJECTS["dll_image_load"][0],
+                    primary_thread_id=71,
+                )
+                reducer.mark_probe_available("file_access")
+                reducer.mark_probe_available("registry_access")
+                result = _finish_kernel(reducer)
+                self.assertEqual(result.planes[0].outcome, "inconclusive")
+                self.assertEqual(result.planes[2].outcome, "inconclusive")
+
+        missing = _kernel_bound_reducer()
+        missing.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
+        missing.end_window(200)
+        missing.mark_cleanup_proved()
+        missing_result = missing.finish()
+        self.assertFalse(missing_result.quality[0].plane_scope_complete)
+        self.assertFalse(missing_result.quality[2].plane_scope_complete)
+
+        wrong_order = _kernel_bound_reducer()
+        wrong_order.record_kernel_session_snapshot(
+            stage="stop", snapshot=_snapshot()
+        )
+        wrong_result = _finish_kernel(wrong_order)
+        self.assertFalse(wrong_result.quality[0].plane_scope_complete)
+        self.assertFalse(wrong_result.quality[2].plane_scope_complete)
+
+    def test_thread_epochs_are_order_independent_and_foreign_events_close(self):
+        for delivery in ("start_first", "file_first"):
+            with self.subTest(delivery=delivery):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                if delivery == "start_first":
+                    reducer.thread_event(
+                        opcode=1, pid=41, thread_id=99, timestamp=110
+                    )
+                    reducer.file_begin(
+                        timestamp=110,
+                        irp=1,
+                        raw_identity="file-a",
+                        thread_id=99,
+                        header_pid=0xFFFFFFFF,
+                        file_object=7,
+                    )
+                else:
+                    reducer.file_begin(
+                        timestamp=110,
+                        irp=1,
+                        raw_identity="file-a",
+                        thread_id=99,
+                        header_pid=0xFFFFFFFF,
+                        file_object=7,
+                    )
+                    reducer.thread_event(
+                        opcode=1, pid=41, thread_id=99, timestamp=110
+                    )
+                self.assertFalse(
+                    reducer._correlation_complete["file_access"]
+                )
+
+        exact = _kernel_bound_reducer(_multi_binding())
+        exact.thread_event(opcode=1, pid=41, thread_id=99, timestamp=109)
+        exact.file_begin(
+            timestamp=110,
+            irp=2,
+            raw_identity="file-a",
+            thread_id=99,
+            header_pid=0xFFFFFFFF,
+            file_object=8,
+        )
+        exact.file_complete(
+            timestamp=111,
+            irp=2,
+            status=trace._STATUS_ACCESS_DENIED,
+            exact_pid_scope=False,
+        )
+        exact_result = _finish_kernel(exact)
+        self.assertEqual(exact_result.planes[0].outcome, "denial")
+        self.assertTrue(exact_result.quality[0].correlation_complete)
+
+        foreign = _kernel_bound_reducer(_multi_binding())
+        foreign.thread_event(opcode=3, pid=42, thread_id=99, timestamp=90)
+        foreign.file_begin(
+            timestamp=110,
+            irp=3,
+            raw_identity=None,
+            thread_id=99,
+            header_pid=0xFFFFFFFF,
+            file_object=8,
+            file_key=9,
+            operation="file_read",
+        )
+        self.assertFalse(foreign._deferred_file_begins)
+        self.assertTrue(foreign._correlation_complete["file_access"])
+
+    def test_thread_reuse_conflict_regression_unknown_and_cap_are_sticky(self):
+        conflict = _kernel_bound_reducer()
+        conflict.thread_event(opcode=1, pid=42, thread_id=71, timestamp=110)
+        self.assertFalse(conflict._correlation_complete["file_access"])
+
+        reuse = _kernel_bound_reducer()
+        reuse.thread_event(opcode=1, pid=41, thread_id=99, timestamp=105)
+        reuse.thread_event(opcode=2, pid=41, thread_id=99, timestamp=110)
+        reuse.thread_event(opcode=1, pid=41, thread_id=99, timestamp=111)
+        self.assertTrue(reuse._correlation_complete["file_access"])
+
+        old_epoch = _kernel_bound_reducer(_multi_binding())
+        old_epoch.file_begin(
+            timestamp=110,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=99,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        old_epoch.thread_event(opcode=2, pid=42, thread_id=99, timestamp=110)
+        old_epoch.thread_event(opcode=1, pid=41, thread_id=99, timestamp=110)
+        self.assertFalse(old_epoch._correlation_complete["file_access"])
+
+        regression = _kernel_bound_reducer()
+        regression.thread_event(opcode=3, pid=42, thread_id=80, timestamp=120)
+        regression.thread_event(opcode=3, pid=42, thread_id=81, timestamp=119)
+        self.assertFalse(regression._correlation_complete["file_access"])
+
+        unknown = _kernel_bound_reducer(_multi_binding())
+        unknown.file_begin(
+            timestamp=110,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=99,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        unknown_result = _finish_kernel(unknown)
+        self.assertEqual(unknown_result.planes[0].outcome, "inconclusive")
+        self.assertFalse(unknown_result.quality[0].correlation_complete)
+
+        old_cap = trace.MAX_TRACKED_THREADS
+        try:
+            trace.MAX_TRACKED_THREADS = 2
+            capped = _kernel_bound_reducer()
+            capped.thread_event(opcode=3, pid=42, thread_id=80, timestamp=90)
+            capped.thread_event(opcode=3, pid=42, thread_id=81, timestamp=91)
+            self.assertTrue(capped._overflowed)
+        finally:
+            trace.MAX_TRACKED_THREADS = old_cap
+
+    def test_every_file_route_reports_its_exact_operation(self):
+        operations = tuple(sorted(trace._OPERATIONS["file_access"]))
+        for denied in (False, True):
+            for index, operation in enumerate(operations):
+                with self.subTest(operation=operation, denied=denied):
+                    reducer = _kernel_bound_reducer(_multi_binding())
+                    file_key = 20 + index
+                    if operation != "file_create":
+                        reducer.file_name(
+                            timestamp=105,
+                            file_object=file_key,
+                            raw_identity="file-a",
+                        )
+                    reducer.file_begin(
+                        timestamp=110,
+                        irp=100 + index,
+                        raw_identity=(
+                            "file-a" if operation == "file_create" else None
+                        ),
+                        thread_id=71,
+                        header_pid=0xFFFFFFFF,
+                        file_object=1000 + index,
+                        file_key=(0 if operation == "file_create" else file_key),
+                        operation=operation,
+                    )
+                    reducer.file_complete(
+                        timestamp=111,
+                        irp=100 + index,
+                        status=(
+                            trace._STATUS_ACCESS_DENIED
+                            if denied
+                            else 0xC0000034
+                        ),
+                        exact_pid_scope=False,
+                    )
+                    result = _finish_kernel(reducer)
+                    self.assertEqual(
+                        result.planes[0].outcome,
+                        "denial" if denied else "observed_no_denial",
+                    )
+                    self.assertEqual(result.planes[0].operation, operation)
+
+    def test_file_pointer_generations_prevent_stale_resurrection(self):
+        stale = _kernel_bound_reducer(_multi_binding())
+        stale.file_begin(
+            timestamp=105,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        stale.file_complete(
+            timestamp=106,
+            irp=1,
+            status=trace._STATUS_SUCCESS,
+            exact_pid_scope=False,
+        )
+        stale.file_begin(
+            timestamp=107,
+            irp=2,
+            raw_identity="unknown",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        stale.file_complete(
+            timestamp=108,
+            irp=2,
+            status=trace._STATUS_ACCESS_DENIED,
+            exact_pid_scope=False,
+        )
+        stale.file_begin(
+            timestamp=109,
+            irp=3,
+            raw_identity=None,
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+            operation="file_read",
+        )
+        stale.file_complete(
+            timestamp=110,
+            irp=3,
+            status=trace._STATUS_ACCESS_DENIED,
+            exact_pid_scope=False,
+        )
+        self.assertEqual(stale._planes["file_access"].denials, set())
+        self.assertIsNone(stale._file_objects[7].object_ref)
+
+        cross = _kernel_bound_reducer(_multi_binding())
+        cross.file_begin(
+            timestamp=104,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        cross.file_complete(
+            timestamp=105,
+            irp=1,
+            status=trace._STATUS_SUCCESS,
+            exact_pid_scope=False,
+        )
+        cross.file_name(timestamp=106, file_object=8, raw_identity="file-a")
+        cross.file_name(
+            timestamp=107,
+            file_object=8,
+            raw_identity="ignored",
+            remove=True,
+        )
+        cross.file_begin(
+            timestamp=108,
+            irp=2,
+            raw_identity=None,
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+            file_key=8,
+            operation="file_read",
+        )
+        cross.file_complete(
+            timestamp=109,
+            irp=2,
+            status=trace._STATUS_ACCESS_DENIED,
+            exact_pid_scope=False,
+        )
+        self.assertEqual(cross._planes["file_access"].denials, set())
+
+        reverse = _kernel_bound_reducer(_multi_binding())
+        reverse.file_begin(
+            timestamp=110,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=9,
+        )
+        reverse.file_begin(
+            timestamp=110,
+            irp=2,
+            raw_identity="file-b",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=9,
+        )
+        reverse.file_complete(
+            timestamp=111,
+            irp=2,
+            status=trace._STATUS_SUCCESS,
+            exact_pid_scope=False,
+        )
+        reverse.file_complete(
+            timestamp=112,
+            irp=1,
+            status=trace._STATUS_SUCCESS,
+            exact_pid_scope=False,
+        )
+        self.assertEqual(reverse._file_objects[9].object_ref, _FILE_OTHER_REF)
+        self.assertFalse(reverse._correlation_complete["file_access"])
+
+        conflict = _kernel_bound_reducer(_multi_binding())
+        conflict.file_begin(
+            timestamp=105,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        conflict.file_complete(
+            timestamp=106,
+            irp=1,
+            status=trace._STATUS_SUCCESS,
+            exact_pid_scope=False,
+        )
+        conflict.file_begin(
+            timestamp=107,
+            irp=2,
+            raw_identity="file-b",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        self.assertNotIn(2, conflict._pending)
+        self.assertIsNone(conflict._file_objects[7].object_ref)
+        self.assertFalse(conflict._correlation_complete["file_access"])
+
+    def test_filekey_equal_and_older_lifecycle_cannot_resurrect(self):
+        reducer = _kernel_bound_reducer(_multi_binding())
+        reducer.file_name(timestamp=105, file_object=7, raw_identity="file-a")
+        reducer.file_name(
+            timestamp=110,
+            file_object=7,
+            raw_identity="ignored",
+            remove=True,
+        )
+        reducer.file_name(timestamp=110, file_object=7, raw_identity="file-a")
+        reducer.file_name(timestamp=109, file_object=7, raw_identity="file-a")
+        self.assertIsNone(reducer._file_keys[7].object_ref)
+        self.assertFalse(reducer._correlation_complete["file_access"])
+
+    def test_every_registry_access_route_reports_exact_operation_and_default_value(self):
+        access_opcodes = (*range(10, 22), 26)
+        for opcode in access_opcodes:
+            with self.subTest(opcode=opcode):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                if opcode not in trace._REGISTRY_DIRECT_KEY_OPCODES:
+                    reducer.registry_lifecycle(
+                        opcode=22,
+                        timestamp=105,
+                        key_handle=7,
+                        raw_identity="reg-a",
+                        status=trace._STATUS_SUCCESS,
+                        initial_time=0,
+                    )
+                reducer.registry_operation(
+                    pid=41,
+                    timestamp=110,
+                    raw_identity=(
+                        "reg-a"
+                        if opcode in trace._REGISTRY_DIRECT_KEY_OPCODES
+                        else ""
+                    ),
+                    status=trace._STATUS_ACCESS_DENIED,
+                    operation=trace._REGISTRY_OPERATION_BY_OPCODE[opcode],
+                    opcode=opcode,
+                    key_handle=7,
+                    initial_time=109,
+                )
+                result = _finish_kernel(reducer)
+                self.assertEqual(result.planes[2].outcome, "denial")
+                self.assertEqual(
+                    result.planes[2].operation,
+                    trace._REGISTRY_OPERATION_BY_OPCODE[opcode],
+                )
+
+    def test_registry_direct_key_routes_conflict_check_but_never_fallback(self):
+        for opcode in (17, 20, 21, 26):
+            with self.subTest(opcode=opcode):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                reducer.registry_lifecycle(
+                    opcode=22,
+                    timestamp=105,
+                    key_handle=7,
+                    raw_identity="reg-a",
+                    status=trace._STATUS_SUCCESS,
+                    initial_time=0,
+                )
+                reducer.registry_operation(
+                    pid=41,
+                    timestamp=110,
+                    raw_identity="reg-b",
+                    status=trace._STATUS_ACCESS_DENIED,
+                    operation=trace._REGISTRY_OPERATION_BY_OPCODE[opcode],
+                    opcode=opcode,
+                    key_handle=7,
+                    initial_time=109,
+                )
+                self.assertFalse(
+                    reducer._correlation_complete["registry_access"]
+                )
+                self.assertEqual(
+                    reducer._planes["registry_access"].denials, set()
+                )
+
+    def test_registry_direct_open_respects_pre_operation_generation_barrier(self):
+        reducer = _kernel_bound_reducer(_multi_binding())
+        reducer.registry_lifecycle(
+            opcode=22,
+            timestamp=110,
+            key_handle=7,
+            raw_identity="unknown",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        reducer.registry_operation(
+            pid=41,
+            timestamp=110,
+            raw_identity="reg-a",
+            status=trace._STATUS_SUCCESS,
+            operation="registry_open",
+            opcode=11,
+            key_handle=7,
+            initial_time=109,
+        )
+        reducer.registry_operation(
+            pid=41,
+            timestamp=120,
+            raw_identity="",
+            status=trace._STATUS_ACCESS_DENIED,
+            operation="registry_query_value",
+            opcode=16,
+            key_handle=7,
+            initial_time=119,
+        )
+        self.assertIsNone(reducer._registry_handles[7].object_ref)
+        self.assertFalse(reducer._correlation_complete["registry_access"])
+        self.assertEqual(reducer._planes["registry_access"].denials, set())
+
+    def test_registry_rebind_and_setup_lifecycle_never_inherit_stale_kcb(self):
+        for status in (trace._STATUS_ACCESS_DENIED, 0xC0000034):
+            with self.subTest(status=status):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                reducer.registry_lifecycle(
+                    opcode=22,
+                    timestamp=105,
+                    key_handle=7,
+                    raw_identity="reg-a",
+                    status=trace._STATUS_SUCCESS,
+                    initial_time=0,
+                )
+                reducer.registry_operation(
+                    pid=41,
+                    timestamp=110,
+                    raw_identity="unknown",
+                    status=status,
+                    operation="registry_open",
+                    opcode=11,
+                    key_handle=7,
+                    initial_time=109,
+                )
+                reducer.registry_operation(
+                    pid=41,
+                    timestamp=111,
+                    raw_identity="",
+                    status=trace._STATUS_ACCESS_DENIED,
+                    operation="registry_query_value",
+                    opcode=16,
+                    key_handle=7,
+                    initial_time=110,
+                )
+                self.assertEqual(
+                    reducer._planes["registry_access"].denials, set()
+                )
+                self.assertIsNone(
+                    reducer._registry_handles[7].object_ref
+                )
+
+        conflict = _kernel_bound_reducer(_multi_binding())
+        conflict.registry_lifecycle(
+            opcode=22,
+            timestamp=105,
+            key_handle=7,
+            raw_identity="reg-a",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        conflict.registry_operation(
+            pid=41,
+            timestamp=110,
+            raw_identity="reg-b",
+            status=trace._STATUS_SUCCESS,
+            operation="registry_open",
+            opcode=11,
+            key_handle=7,
+            initial_time=109,
+        )
+        self.assertIsNone(conflict._registry_handles[7].object_ref)
+        self.assertFalse(conflict._correlation_complete["registry_access"])
+
+        setup = trace._TraceReducer(_multi_binding())
+        setup.prebind_subject(pid=41, primary_thread_id=71)
+        setup.record_kernel_session_snapshot(stage="start", snapshot=_snapshot())
+        setup.registry_lifecycle(
+            opcode=24,
+            timestamp=90,
+            key_handle=7,
+            raw_identity="reg-a",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        setup.registry_lifecycle(
+            opcode=23,
+            timestamp=95,
+            key_handle=7,
+            raw_identity="",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        setup.bind(
+            pid=41,
+            qpc_start=100,
+            initial_image_ref=_OBJECTS["dll_image_load"][0],
+            primary_thread_id=71,
+        )
+        setup.mark_probe_available("file_access")
+        setup.mark_probe_available("registry_access")
+        setup.registry_operation(
+            pid=41,
+            timestamp=110,
+            raw_identity="",
+            status=trace._STATUS_ACCESS_DENIED,
+            operation="registry_query_value",
+            opcode=16,
+            key_handle=7,
+            initial_time=109,
+        )
+        setup_result = _finish_kernel(setup)
+        self.assertEqual(setup_result.planes[2].outcome, "inconclusive")
+        self.assertEqual(setup._planes["registry_access"].denials, set())
+
+    def test_registry_lifecycle_generations_and_empty_names_are_exact(self):
+        for map_opcode in (22, 24, 25):
+            with self.subTest(map_opcode=map_opcode):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                reducer.registry_lifecycle(
+                    opcode=map_opcode,
+                    timestamp=105,
+                    key_handle=7,
+                    raw_identity="reg-a",
+                    status=trace._STATUS_SUCCESS,
+                    initial_time=0,
+                )
+                self.assertEqual(
+                    reducer._registry_handles[7].object_ref,
+                    _OBJECTS["registry_access"][0],
+                )
+        for remove_opcode in (23, 27):
+            with self.subTest(remove_opcode=remove_opcode):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                reducer.registry_lifecycle(
+                    opcode=22,
+                    timestamp=105,
+                    key_handle=7,
+                    raw_identity="reg-a",
+                    status=trace._STATUS_SUCCESS,
+                    initial_time=0,
+                )
+                reducer.registry_lifecycle(
+                    opcode=remove_opcode,
+                    timestamp=106,
+                    key_handle=7,
+                    raw_identity="",
+                    status=trace._STATUS_SUCCESS,
+                    initial_time=0,
+                )
+                self.assertIsNone(
+                    reducer._registry_handles[7].object_ref
+                )
+                self.assertEqual(
+                    reducer._planes["registry_access"].denials, set()
+                )
+
+        equal = _kernel_bound_reducer(_multi_binding())
+        equal.registry_lifecycle(
+            opcode=22,
+            timestamp=110,
+            key_handle=7,
+            raw_identity="reg-a",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        equal.registry_lifecycle(
+            opcode=23,
+            timestamp=110,
+            key_handle=7,
+            raw_identity="",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        equal.registry_lifecycle(
+            opcode=24,
+            timestamp=109,
+            key_handle=7,
+            raw_identity="reg-a",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        self.assertIsNone(equal._registry_handles[7].object_ref)
+        self.assertFalse(equal._correlation_complete["registry_access"])
+
+    def test_registry_lifecycle_non_success_never_promotes_or_removes_authority(self):
+        for opcode in trace._REGISTRY_LIFECYCLE_OPCODES:
+            with self.subTest(opcode=opcode):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                reducer.registry_lifecycle(
+                    opcode=22,
+                    timestamp=105,
+                    key_handle=7,
+                    raw_identity="reg-a",
+                    status=trace._STATUS_SUCCESS,
+                    initial_time=0,
+                )
+
+                def lifecycle_failure_values(template):
+                    values = {
+                        name: ("reg-b" if kind == "utf16" else 0)
+                        for name, kind, _width in template.fields
+                    }
+                    values.update(
+                        InitialTime=1,
+                        Status=0xC0000034,
+                        KeyHandle=7,
+                    )
+                    return values
+
+                port = self._port_with_values(
+                    reducer, lifecycle_failure_values
+                )
+                record = self._classic_record(
+                    trace._REGISTRY_PROVIDER_UUID,
+                    opcode,
+                    2,
+                    pid=0,
+                    timestamp=110,
+                )
+                port.translate(ctypes.pointer(record))
+                reducer.registry_operation(
+                    pid=41,
+                    timestamp=120,
+                    raw_identity="",
+                    status=trace._STATUS_ACCESS_DENIED,
+                    operation="registry_query_value",
+                    opcode=16,
+                    key_handle=7,
+                    initial_time=119,
+                )
+                self.assertIsNone(
+                    reducer._registry_handles[7].object_ref
+                )
+                self.assertFalse(
+                    reducer._correlation_complete["registry_access"]
+                )
+                self.assertEqual(
+                    reducer._planes["registry_access"].denials, set()
+                )
+
+        zero = _kernel_bound_reducer(_multi_binding())
+
+        def zero_handle_values(template):
+            return {
+                name: (
+                    "reg-a"
+                    if kind == "utf16"
+                    else (0xC0000034 if name == "Status" else 0)
+                )
+                for name, kind, _width in template.fields
+            }
+
+        port = self._port_with_values(zero, zero_handle_values)
+        record = self._classic_record(
+            trace._REGISTRY_PROVIDER_UUID,
+            22,
+            2,
+            pid=0,
+            timestamp=110,
+        )
+        port.translate(ctypes.pointer(record))
+        self.assertNotIn(0, zero._registry_handles)
+        self.assertFalse(zero._correlation_complete["registry_access"])
+
+        sentinel = _kernel_bound_reducer(_multi_binding())
+        sentinel.registry_lifecycle(
+            opcode=22,
+            timestamp=105,
+            key_handle=7,
+            raw_identity="reg-a",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        self.assertEqual(
+            sentinel._registry_handles[7].object_ref,
+            _OBJECTS["registry_access"][0],
+        )
+
+        for malformed_initial in (-1, 200):
+            with self.subTest(malformed_initial=malformed_initial):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                reducer.registry_lifecycle(
+                    opcode=22,
+                    timestamp=104,
+                    key_handle=7,
+                    raw_identity="reg-a",
+                    status=trace._STATUS_SUCCESS,
+                    initial_time=0,
+                )
+                reducer.registry_lifecycle(
+                    opcode=22,
+                    timestamp=105,
+                    key_handle=7,
+                    raw_identity="reg-b",
+                    status=trace._STATUS_SUCCESS,
+                    initial_time=malformed_initial,
+                )
+                reducer.registry_operation(
+                    pid=41,
+                    timestamp=110,
+                    raw_identity="",
+                    status=trace._STATUS_ACCESS_DENIED,
+                    operation="registry_query_value",
+                    opcode=16,
+                    key_handle=7,
+                    initial_time=109,
+                )
+                self.assertIsNone(
+                    reducer._registry_handles[7].object_ref
+                )
+                self.assertFalse(
+                    reducer._correlation_complete["registry_access"]
+                )
+                self.assertEqual(
+                    reducer._planes["registry_access"].denials, set()
+                )
+
+    def test_file_rundown_36_tombstones_prebind_and_only_strict_reuse_revives(self):
+        for reuse in (False, True):
+            with self.subTest(reuse=reuse):
+                reducer = trace._TraceReducer(_multi_binding())
+                reducer.prebind_subject(pid=41, primary_thread_id=71)
+                reducer.record_kernel_session_snapshot(
+                    stage="start", snapshot=_snapshot()
+                )
+
+                def name_values(template):
+                    return {
+                        name: ("file-a" if kind == "utf16" else 8)
+                        for name, kind, _width in template.fields
+                    }
+
+                port = self._port_with_values(reducer, name_values)
+                for opcode, timestamp in ((0, 90), (36, 95)):
+                    record = self._classic_record(
+                        trace._FILE_PROVIDER_UUID,
+                        opcode,
+                        2,
+                        pid=0,
+                        timestamp=timestamp,
+                    )
+                    port.translate(ctypes.pointer(record))
+                reducer.bind(
+                    pid=41,
+                    qpc_start=100,
+                    initial_image_ref=_OBJECTS["dll_image_load"][0],
+                    primary_thread_id=71,
+                )
+                reducer.mark_probe_available("file_access")
+                reducer.mark_probe_available("registry_access")
+                if reuse:
+                    record = self._classic_record(
+                        trace._FILE_PROVIDER_UUID,
+                        0,
+                        2,
+                        pid=0,
+                        timestamp=105,
+                    )
+                    port.translate(ctypes.pointer(record))
+                reducer.file_begin(
+                    timestamp=110,
+                    irp=1,
+                    raw_identity=None,
+                    thread_id=71,
+                    header_pid=0xFFFFFFFF,
+                    file_object=7,
+                    file_key=8,
+                    operation="file_read",
+                )
+                reducer.file_complete(
+                    timestamp=111,
+                    irp=1,
+                    status=trace._STATUS_ACCESS_DENIED,
+                    exact_pid_scope=False,
+                )
+                self.assertEqual(
+                    reducer._planes["file_access"].denials,
+                    (
+                        {(_OBJECTS["file_access"][0], "file_read")}
+                        if reuse
+                        else set()
+                    ),
+                )
+
+    def test_full_file_and_registry_native_partitions_translate(self):
+        for version in (2, 3):
+            for opcode in trace._FILE_NAME_OPCODES:
+                with self.subTest(
+                    provider="file-name", version=version, opcode=opcode
+                ):
+                    reducer = _kernel_bound_reducer(_multi_binding())
+                    if opcode in {35, 36}:
+                        reducer.file_name(
+                            timestamp=105,
+                            file_object=8,
+                            raw_identity="file-a",
+                        )
+
+                    def name_values(template):
+                        return {
+                            name: ("file-a" if kind == "utf16" else 8)
+                            for name, kind, _width in template.fields
+                        }
+
+                    port = self._port_with_values(reducer, name_values)
+                    record = self._classic_record(
+                        trace._FILE_PROVIDER_UUID,
+                        opcode,
+                        version,
+                        pid=0,
+                        timestamp=110,
+                    )
+                    port.translate(ctypes.pointer(record))
+                    self.assertIn(8, reducer._file_keys)
+                    self.assertEqual(
+                        reducer._file_keys[8].object_ref,
+                        (
+                            None
+                            if opcode in {35, 36}
+                            else _OBJECTS["file_access"][0]
+                        ),
+                    )
+
+            for opcode in (*range(64, 76), 77):
+                with self.subTest(
+                    provider="file", version=version, opcode=opcode
+                ):
+                    reducer = _kernel_bound_reducer(_multi_binding())
+                    irp = 1000 + opcode
+                    if opcode != 64:
+                        reducer.file_name(
+                            timestamp=105,
+                            file_object=8,
+                            raw_identity="file-a",
+                        )
+
+                    def file_values(template, *, _irp=irp):
+                        values = {
+                            name: ("" if kind == "utf16" else 1)
+                            for name, kind, _width in template.fields
+                        }
+                        values.update(
+                            IrpPtr=_irp,
+                            TTID=71,
+                            FileObject=7,
+                            FileKey=8,
+                            OpenPath="file-a",
+                            NtStatus=0xC0000034,
+                        )
+                        return values
+
+                    port = self._port_with_values(reducer, file_values)
+                    begin = self._classic_record(
+                        trace._FILE_PROVIDER_UUID,
+                        opcode,
+                        version,
+                        pid=0xFFFFFFFF,
+                        timestamp=110,
+                    )
+                    port.translate(ctypes.pointer(begin))
+                    end = self._classic_record(
+                        trace._FILE_PROVIDER_UUID,
+                        76,
+                        version,
+                        pid=0xFFFFFFFF,
+                        timestamp=111,
+                    )
+                    port.translate(ctypes.pointer(end))
+                    result = _finish_kernel(reducer)
+                    self.assertEqual(
+                        result.planes[0].outcome, "observed_no_denial"
+                    )
+                    self.assertEqual(
+                        result.planes[0].operation,
+                        trace._FILE_OPERATION_BY_OPCODE[opcode],
+                    )
+
+        for opcode in (*range(10, 22), 26):
+            with self.subTest(provider="registry", opcode=opcode):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                if opcode not in {10, 11, 12}:
+                    reducer.registry_lifecycle(
+                        opcode=22,
+                        timestamp=105,
+                        key_handle=7,
+                        raw_identity="reg-a",
+                        status=trace._STATUS_SUCCESS,
+                        initial_time=0,
+                    )
+
+                def registry_values(template, *, _opcode=opcode):
+                    values = {
+                        name: ("" if kind == "utf16" else 0)
+                        for name, kind, _width in template.fields
+                    }
+                    values.update(
+                        InitialTime=109,
+                        Status=trace._STATUS_ACCESS_DENIED,
+                        KeyHandle=7,
+                        KeyName=(
+                            "reg-a"
+                            if _opcode in trace._REGISTRY_DIRECT_KEY_OPCODES
+                            else ""
+                        ),
+                    )
+                    return values
+
+                port = self._port_with_values(reducer, registry_values)
+                record = self._classic_record(
+                    trace._REGISTRY_PROVIDER_UUID,
+                    opcode,
+                    2,
+                    pid=41,
+                    timestamp=110,
+                )
+                port.translate(ctypes.pointer(record))
+                result = _finish_kernel(reducer)
+                self.assertEqual(result.planes[2].outcome, "denial")
+                self.assertEqual(
+                    result.planes[2].operation,
+                    trace._REGISTRY_OPERATION_BY_OPCODE[opcode],
+                )
+
+        for opcode in trace._REGISTRY_LIFECYCLE_OPCODES:
+            with self.subTest(provider="registry-lifecycle", opcode=opcode):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                if opcode in {23, 27}:
+                    reducer.registry_lifecycle(
+                        opcode=22,
+                        timestamp=105,
+                        key_handle=7,
+                        raw_identity="reg-a",
+                        status=trace._STATUS_SUCCESS,
+                        initial_time=0,
+                    )
+
+                def lifecycle_values(template, *, _opcode=opcode):
+                    return {
+                        name: (
+                            ("" if _opcode in {23, 27} else "reg-a")
+                            if kind == "utf16"
+                            else (7 if name == "KeyHandle" else 0)
+                        )
+                        for name, kind, _width in template.fields
+                    }
+
+                port = self._port_with_values(reducer, lifecycle_values)
+                record = self._classic_record(
+                    trace._REGISTRY_PROVIDER_UUID,
+                    opcode,
+                    2,
+                    pid=0,
+                    timestamp=110,
+                )
+                port.translate(ctypes.pointer(record))
+                self.assertEqual(
+                    reducer._planes["registry_access"].denials, set()
+                )
+
+    def test_file_v3_missing_fields_and_pointer_width_drift_fail_closed(self):
+        templates = tuple(
+            item
+            for item in trace._KERNEL_EVENT_TEMPLATES
+            if item.provider == trace._FILE_PROVIDER_UUID and item.version == 3
+        )
+        self.assertEqual(len(templates), 18)
+        for template in templates:
+            first_name, _first_kind, first_width = template.fields[0]
+            self.assertEqual(first_width, 8)
+            for fault in ("missing", "width"):
+                with self.subTest(
+                    opcode=template.opcode, version=3, fault=fault
+                ):
+                    reducer = _kernel_bound_reducer(_multi_binding())
+                    port = object.__new__(trace._WindowsEtwPort)
+                    port._reducer = reducer
+
+                    def prop(_record, name):
+                        width = next(
+                            width
+                            for field_name, _kind, width in template.fields
+                            if field_name == name
+                        )
+                        if name == first_name and fault == "missing":
+                            return None
+                        if name == first_name and fault == "width":
+                            width = 4
+                        return (1).to_bytes(width, "little")
+
+                    port._property = prop
+                    port._string = lambda *_args, **_kwargs: "file-a"
+                    record = self._classic_record(
+                        trace._FILE_PROVIDER_UUID,
+                        template.opcode,
+                        3,
+                        pid=41,
+                        timestamp=110,
+                    )
+                    port.translate(ctypes.pointer(record))
+                    self.assertFalse(reducer._schema_proved["file_access"])
+                    self.assertIn(
+                        "file_access", reducer._kernel_schema_uncertain
+                    )
+
+    def test_file_v2_ttid_pointer_slot_is_exact_uint32(self):
+        for opcode in (64, 65, 67, 69, 72):
+            template = next(
+                item
+                for item in trace._KERNEL_EVENT_TEMPLATES
+                if item.provider == trace._FILE_PROVIDER_UUID
+                and item.opcode == opcode
+                and item.version == 2
+            )
+            self.assertIn(("TTID", "pointer", 8), template.fields)
+            for fault in (None, "width4", "upper32"):
+                with self.subTest(opcode=opcode, fault=fault):
+                    reducer = _kernel_bound_reducer(_multi_binding())
+                    if opcode != 64:
+                        reducer.file_name(
+                            timestamp=105,
+                            file_object=8,
+                            raw_identity="file-a",
+                        )
+                    irp = 2000 + opcode
+                    port = object.__new__(trace._WindowsEtwPort)
+                    port._reducer = reducer
+
+                    def prop(_record, name):
+                        width = next(
+                            width
+                            for field_name, _kind, width in template.fields
+                            if field_name == name
+                        )
+                        values = {
+                            "IrpPtr": irp,
+                            "TTID": 71,
+                            "FileObject": 7,
+                            "FileKey": 8,
+                        }
+                        value = values.get(name, 1)
+                        if name == "TTID" and fault == "width4":
+                            width = 4
+                        elif name == "TTID" and fault == "upper32":
+                            value |= 1 << 32
+                        return value.to_bytes(width, "little")
+
+                    port._property = prop
+                    port._string = lambda *_args, **_kwargs: "file-a"
+                    record = self._classic_record(
+                        trace._FILE_PROVIDER_UUID,
+                        opcode,
+                        2,
+                        pid=0xFFFFFFFF,
+                        timestamp=110,
+                    )
+                    port.translate(ctypes.pointer(record))
+                    if fault is None:
+                        self.assertIn(irp, reducer._pending)
+                        self.assertTrue(
+                            reducer._schema_proved["file_access"]
+                        )
+                    else:
+                        self.assertNotIn(irp, reducer._pending)
+                        self.assertFalse(
+                            reducer._schema_proved["file_access"]
+                        )
+
+    def test_classic_header_unknown_global_and_header_pid_guards_are_closed(self):
+        variants = (
+            (0, trace._EVENT_HEADER_FLAG_CLASSIC_HEADER | trace._EVENT_HEADER_FLAG_64_BIT_HEADER),
+            (trace._CLASSIC_EVENT_ID, trace._EVENT_HEADER_FLAG_CLASSIC_HEADER),
+            (
+                trace._CLASSIC_EVENT_ID,
+                trace._EVENT_HEADER_FLAG_CLASSIC_HEADER
+                | trace._EVENT_HEADER_FLAG_64_BIT_HEADER
+                | trace._EVENT_HEADER_FLAG_32_BIT_HEADER,
+            ),
+        )
+        for event_id, flags in variants:
+            with self.subTest(event_id=event_id, flags=flags):
+                reducer = _kernel_bound_reducer()
+                port = self._port_with_values(
+                    reducer,
+                    lambda _template: (_ for _ in ()).throw(
+                        AssertionError("bad classic header decoded")
+                    ),
+                )
+                record = self._classic_record(
+                    trace._FILE_PROVIDER_UUID,
+                    64,
+                    2,
+                    pid=0xFFFFFFFF,
+                    timestamp=110,
+                )
+                record.EventHeader.EventDescriptor.Id = event_id
+                record.EventHeader.Flags = flags
+                port.translate(ctypes.pointer(record))
+                self.assertFalse(reducer._schema_proved["file_access"])
+
+        for provider, opcode, plane in (
+            (trace._FILE_PROVIDER_UUID, 99, "file_access"),
+            (trace._REGISTRY_PROVIDER_UUID, 29, "registry_access"),
+        ):
+            with self.subTest(provider=provider):
+                reducer = _kernel_bound_reducer()
+                port = self._port_with_values(
+                    reducer,
+                    lambda _template: (_ for _ in ()).throw(
+                        AssertionError("unknown classic event decoded")
+                    ),
+                )
+                record = self._classic_record(
+                    provider, opcode, 2, pid=0, timestamp=110
+                )
+                port.translate(ctypes.pointer(record))
+                self.assertFalse(reducer._schema_proved[plane])
+
+        sentinel = _kernel_bound_reducer(_multi_binding())
+        sentinel.file_begin(
+            timestamp=110,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        self.assertIn(1, sentinel._pending)
+        conflicting = _kernel_bound_reducer(_multi_binding())
+        conflicting.file_begin(
+            timestamp=110,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=71,
+            header_pid=42,
+            file_object=7,
+        )
+        self.assertNotIn(1, conflicting._pending)
+        self.assertFalse(conflicting._correlation_complete["file_access"])
+
+    def test_registry_empty_utf16_is_valid_only_when_call_site_allows_it(self):
+        port = object.__new__(trace._WindowsEtwPort)
+        record = trace._EVENT_RECORD()
+        port._property = lambda _record, _name: b"\0\0"
+        self.assertIsNone(port._string(ctypes.pointer(record), "KeyName"))
+        self.assertEqual(
+            port._string(
+                ctypes.pointer(record), "KeyName", allow_empty=True
+            ),
+            "",
+        )
+
+    def test_file_opend_requires_strict_qpc_causality_before_status(self):
+        for status in (trace._STATUS_ACCESS_DENIED, trace._STATUS_SUCCESS):
+            for completion_time in (109, 110):
+                with self.subTest(status=status, completion_time=completion_time):
+                    reducer = _kernel_bound_reducer(_multi_binding())
+                    reducer.file_begin(
+                        timestamp=110,
+                        irp=7,
+                        raw_identity="file-a",
+                        thread_id=71,
+                        header_pid=0xFFFFFFFF,
+                        file_object=7,
+                    )
+                    reducer.file_complete(
+                        timestamp=completion_time,
+                        irp=7,
+                        status=status,
+                        exact_pid_scope=False,
+                    )
+                    self.assertEqual(
+                        reducer._planes["file_access"].denials, set()
+                    )
+                    self.assertEqual(
+                        reducer._planes["file_access"].successes, 0
+                    )
+                    self.assertFalse(
+                        reducer._correlation_complete["file_access"]
+                    )
+                    self.assertIsNone(
+                        reducer._file_objects[7].object_ref
+                    )
+
+        reused = _kernel_bound_reducer(_multi_binding())
+        reused.file_begin(
+            timestamp=105,
+            irp=9,
+            raw_identity="file-a",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        reused.file_complete(
+            timestamp=106,
+            irp=9,
+            status=trace._STATUS_SUCCESS,
+            exact_pid_scope=False,
+        )
+        reused.file_begin(
+            timestamp=110,
+            irp=9,
+            raw_identity="file-b",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=8,
+        )
+        reused.file_complete(
+            timestamp=107,
+            irp=9,
+            status=trace._STATUS_ACCESS_DENIED,
+            exact_pid_scope=False,
+        )
+        self.assertNotIn(
+            (_FILE_OTHER_REF, "file_create"),
+            reused._planes["file_access"].denials,
+        )
+        self.assertFalse(reused._correlation_complete["file_access"])
+
+    def test_kernel_access_qpc_boundaries_are_strict(self):
+        file_start = _kernel_bound_reducer(_multi_binding())
+        file_start.file_begin(
+            timestamp=100,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        self.assertFalse(file_start._correlation_complete["file_access"])
+        self.assertFalse(file_start._pending)
+
+        file_end = _kernel_bound_reducer(_multi_binding())
+        file_end.file_begin(
+            timestamp=110,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        file_end.record_kernel_session_snapshot(
+            stage="pre_stop", snapshot=_snapshot()
+        )
+        file_end.end_window(120)
+        file_end.file_complete(
+            timestamp=120,
+            irp=1,
+            status=trace._STATUS_ACCESS_DENIED,
+            exact_pid_scope=False,
+        )
+        self.assertFalse(file_end._correlation_complete["file_access"])
+        self.assertEqual(file_end._planes["file_access"].denials, set())
+
+        for timestamp, initial_time, qpc_end in (
+            (101, 100, None),
+            (120, 110, 120),
+        ):
+            with self.subTest(
+                plane="registry",
+                timestamp=timestamp,
+                initial_time=initial_time,
+            ):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                if qpc_end is not None:
+                    reducer.record_kernel_session_snapshot(
+                        stage="pre_stop", snapshot=_snapshot()
+                    )
+                    reducer.end_window(qpc_end)
+                reducer.registry_operation(
+                    pid=41,
+                    timestamp=timestamp,
+                    raw_identity="reg-a",
+                    status=trace._STATUS_ACCESS_DENIED,
+                    operation="registry_delete",
+                    opcode=12,
+                    key_handle=7,
+                    initial_time=initial_time,
+                )
+                self.assertFalse(
+                    reducer._correlation_complete["registry_access"]
+                )
+                self.assertEqual(
+                    reducer._planes["registry_access"].denials, set()
+                )
+
+    def test_registry_initialtime_interval_is_signed_and_closed(self):
+        port = object.__new__(trace._WindowsEtwPort)
+        record = trace._EVENT_RECORD()
+        port._property = lambda _record, _name: (-7).to_bytes(
+            8, "little", signed=True
+        )
+        self.assertEqual(
+            port._signed_integer(ctypes.pointer(record), "InitialTime", 8),
+            -7,
+        )
+
+        for initial_time in (-1, 99, 100, 111):
+            with self.subTest(initial_time=initial_time):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                reducer.registry_operation(
+                    pid=41,
+                    timestamp=110,
+                    raw_identity="reg-a",
+                    status=trace._STATUS_ACCESS_DENIED,
+                    operation="registry_delete",
+                    opcode=12,
+                    key_handle=7,
+                    initial_time=initial_time,
+                )
+                self.assertFalse(
+                    reducer._correlation_complete["registry_access"]
+                )
+                self.assertEqual(
+                    reducer._planes["registry_access"].denials, set()
+                )
+        for initial_time in (109, 110):
+            with self.subTest(valid_initial_time=initial_time):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                reducer.registry_operation(
+                    pid=41,
+                    timestamp=110,
+                    raw_identity="reg-a",
+                    status=trace._STATUS_ACCESS_DENIED,
+                    operation="registry_delete",
+                    opcode=12,
+                    key_handle=7,
+                    initial_time=initial_time,
+                )
+                result = _finish_kernel(reducer)
+                self.assertEqual(result.planes[2].outcome, "denial")
+
+    def test_lifecycle_edges_and_target_uses_are_order_independent(self):
+        for order in ("access_first", "delete_first"):
+            with self.subTest(plane="registry", order=order):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                reducer.registry_lifecycle(
+                    opcode=22,
+                    timestamp=105,
+                    key_handle=7,
+                    raw_identity="reg-a",
+                    status=trace._STATUS_SUCCESS,
+                    initial_time=0,
+                )
+
+                def access():
+                    reducer.registry_operation(
+                        pid=41,
+                        timestamp=110,
+                        raw_identity="",
+                        status=trace._STATUS_ACCESS_DENIED,
+                        operation="registry_query_value",
+                        opcode=16,
+                        key_handle=7,
+                        initial_time=109,
+                    )
+
+                def delete():
+                    reducer.registry_lifecycle(
+                        opcode=23,
+                        timestamp=110,
+                        key_handle=7,
+                        raw_identity="",
+                        status=trace._STATUS_SUCCESS,
+                        initial_time=0,
+                    )
+
+                (access(), delete()) if order == "access_first" else (delete(), access())
+                result = _finish_kernel(reducer)
+                self.assertEqual(result.planes[2].outcome, "inconclusive")
+                self.assertFalse(result.quality[2].correlation_complete)
+
+        for order in ("access_first", "end_first", "name_delete_first"):
+            with self.subTest(plane="file", order=order):
+                reducer = _kernel_bound_reducer(_multi_binding())
+                reducer.file_name(
+                    timestamp=105,
+                    file_object=8,
+                    raw_identity="file-a",
+                )
+
+                def access():
+                    reducer.file_begin(
+                        timestamp=110,
+                        irp=1,
+                        raw_identity=None,
+                        thread_id=71,
+                        header_pid=0xFFFFFFFF,
+                        file_object=7,
+                        file_key=8,
+                        operation="file_read",
+                    )
+
+                if order == "access_first":
+                    access()
+                    reducer.thread_event(
+                        opcode=2, pid=41, thread_id=71, timestamp=110
+                    )
+                elif order == "end_first":
+                    reducer.thread_event(
+                        opcode=2, pid=41, thread_id=71, timestamp=110
+                    )
+                    access()
+                else:
+                    reducer.file_name(
+                        timestamp=110,
+                        file_object=8,
+                        raw_identity="",
+                        remove=True,
+                    )
+                    access()
+                self.assertFalse(
+                    reducer._correlation_complete["file_access"]
+                )
+
+    def test_late_setup_and_drain_lifecycle_records_are_not_dropped(self):
+        registry = trace._TraceReducer(_multi_binding())
+        registry.prebind_subject(pid=41, primary_thread_id=71)
+        registry.record_kernel_session_snapshot(
+            stage="start", snapshot=_snapshot()
+        )
+        registry.registry_lifecycle(
+            opcode=24,
+            timestamp=90,
+            key_handle=7,
+            raw_identity="reg-a",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        registry.bind(
+            pid=41,
+            qpc_start=100,
+            initial_image_ref=_OBJECTS["dll_image_load"][0],
+            primary_thread_id=71,
+        )
+        registry.mark_probe_available("file_access")
+        registry.mark_probe_available("registry_access")
+        registry.registry_lifecycle(
+            opcode=23,
+            timestamp=95,
+            key_handle=7,
+            raw_identity="",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        registry.registry_operation(
+            pid=41,
+            timestamp=110,
+            raw_identity="",
+            status=trace._STATUS_ACCESS_DENIED,
+            operation="registry_query_value",
+            opcode=16,
+            key_handle=7,
+            initial_time=109,
+        )
+        self.assertEqual(registry._planes["registry_access"].denials, set())
+
+        file_route = trace._TraceReducer(_multi_binding())
+        file_route.prebind_subject(pid=41, primary_thread_id=71)
+        file_route.record_kernel_session_snapshot(
+            stage="start", snapshot=_snapshot()
+        )
+        file_route.file_name(
+            timestamp=90, file_object=8, raw_identity="file-a"
+        )
+        file_route.bind(
+            pid=41,
+            qpc_start=100,
+            initial_image_ref=_OBJECTS["dll_image_load"][0],
+            primary_thread_id=71,
+        )
+        file_route.mark_probe_available("file_access")
+        file_route.mark_probe_available("registry_access")
+        file_route.file_name(
+            timestamp=95,
+            file_object=8,
+            raw_identity="",
+            remove=True,
+        )
+        file_route.file_begin(
+            timestamp=110,
+            irp=1,
+            raw_identity=None,
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+            file_key=8,
+            operation="file_read",
+        )
+        self.assertIsNone(file_route._pending[1].object_ref)
+
+        file_route.record_kernel_session_snapshot(
+            stage="pre_stop", snapshot=_snapshot()
+        )
+        file_route.end_window(200)
+        file_route.file_name(
+            timestamp=150,
+            file_object=8,
+            raw_identity="file-a",
+        )
+        self.assertEqual(
+            file_route._file_keys[8].object_ref,
+            _OBJECTS["file_access"][0],
+        )
+
+    def test_unresolved_generation_watermarks_block_equal_old_bindings(self):
+        file_route = _kernel_bound_reducer(_multi_binding())
+        file_route.file_name(
+            timestamp=110, file_object=7, raw_identity="unknown"
+        )
+        file_route.file_name(
+            timestamp=110, file_object=7, raw_identity="file-a"
+        )
+        self.assertNotIn(7, file_route._file_keys)
+        self.assertFalse(file_route._correlation_complete["file_access"])
+
+        registry = _kernel_bound_reducer(_multi_binding())
+        registry.registry_lifecycle(
+            opcode=22,
+            timestamp=110,
+            key_handle=7,
+            raw_identity="unknown",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        registry.registry_lifecycle(
+            opcode=24,
+            timestamp=110,
+            key_handle=7,
+            raw_identity="reg-a",
+            status=trace._STATUS_SUCCESS,
+            initial_time=0,
+        )
+        self.assertNotIn(7, registry._registry_handles)
+        self.assertFalse(registry._correlation_complete["registry_access"])
+
+    def test_cleanup_preserves_file_lifetime_until_close(self):
+        reducer = _kernel_bound_reducer(_multi_binding())
+        reducer.file_name(timestamp=104, file_object=8, raw_identity="file-a")
+        reducer.file_begin(
+            timestamp=105,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        reducer.file_complete(
+            timestamp=106,
+            irp=1,
+            status=trace._STATUS_SUCCESS,
+            exact_pid_scope=False,
+        )
+        reducer.file_begin(
+            timestamp=107,
+            irp=2,
+            raw_identity=None,
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+            file_key=8,
+            operation="file_cleanup",
+        )
+        reducer.file_complete(
+            timestamp=108,
+            irp=2,
+            status=trace._STATUS_SUCCESS,
+            exact_pid_scope=False,
+        )
+        self.assertEqual(
+            reducer._file_objects[7].object_ref,
+            _OBJECTS["file_access"][0],
+        )
+        self.assertEqual(
+            reducer._file_keys[8].object_ref,
+            _OBJECTS["file_access"][0],
+        )
+        reducer.file_begin(
+            timestamp=109,
+            irp=3,
+            raw_identity=None,
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+            file_key=8,
+            operation="file_close",
+        )
+        reducer.file_complete(
+            timestamp=110,
+            irp=3,
+            status=trace._STATUS_SUCCESS,
+            exact_pid_scope=False,
+        )
+        self.assertIsNone(reducer._file_objects[7].object_ref)
+        self.assertEqual(
+            reducer._file_keys[8].object_ref,
+            _OBJECTS["file_access"][0],
+        )
+
+    def test_foreign_file_conflicts_and_zero_thread_ids_are_unrelated(self):
+        reducer = _kernel_bound_reducer(_multi_binding())
+        reducer.thread_event(opcode=3, pid=42, thread_id=99, timestamp=90)
+        reducer.file_name(timestamp=104, file_object=8, raw_identity="file-b")
+        reducer.file_begin(
+            timestamp=105,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=71,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        reducer.file_complete(
+            timestamp=106,
+            irp=1,
+            status=trace._STATUS_SUCCESS,
+            exact_pid_scope=False,
+        )
+        reducer.file_begin(
+            timestamp=110,
+            irp=2,
+            raw_identity="file-b",
+            thread_id=99,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+            file_key=8,
+            operation="file_read",
+        )
+        self.assertTrue(reducer._correlation_complete["file_access"])
+
+        reducer.thread_event(opcode=3, pid=0, thread_id=0, timestamp=111)
+        reducer.file_begin(
+            timestamp=112,
+            irp=3,
+            raw_identity="file-b",
+            thread_id=0,
+            header_pid=0,
+            file_object=7,
+        )
+        self.assertTrue(reducer._correlation_complete["file_access"])
+        reducer.file_begin(
+            timestamp=113,
+            irp=4,
+            raw_identity="file-a",
+            thread_id=0,
+            header_pid=41,
+            file_object=7,
+        )
+        self.assertFalse(reducer._correlation_complete["file_access"])
+
+        contradiction = _kernel_bound_reducer(_multi_binding())
+        contradiction.thread_event(
+            opcode=3, pid=42, thread_id=99, timestamp=90
+        )
+        contradiction.file_begin(
+            timestamp=110,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=99,
+            header_pid=41,
+            file_object=7,
+        )
+        self.assertNotIn(1, contradiction._pending)
+        self.assertFalse(
+            contradiction._correlation_complete["file_access"]
+        )
+
+        for opcode in (1, 3):
+            with self.subTest(deferred_foreign_opcode=opcode):
+                deferred = _kernel_bound_reducer(_multi_binding())
+                deferred.file_begin(
+                    timestamp=110,
+                    irp=1,
+                    raw_identity="file-a",
+                    thread_id=99,
+                    header_pid=41,
+                    file_object=7,
+                )
+                self.assertEqual(len(deferred._deferred_file_begins), 1)
+                deferred.thread_event(
+                    opcode=opcode,
+                    pid=42,
+                    thread_id=99,
+                    timestamp=105,
+                )
+                self.assertEqual(deferred._deferred_file_begins, [])
+                self.assertFalse(
+                    deferred._correlation_complete["file_access"]
+                )
+
+        reuse = _kernel_bound_reducer()
+        reuse.thread_event(opcode=3, pid=42, thread_id=99, timestamp=90)
+        reuse.thread_event(opcode=2, pid=42, thread_id=99, timestamp=110)
+        reuse.thread_event(opcode=1, pid=43, thread_id=99, timestamp=120)
+        self.assertTrue(reuse._correlation_complete["file_access"])
+
+    def test_foreign_file_lifetime_edges_tombstone_global_fileobject(self):
+        target_deferred = _kernel_bound_reducer(_multi_binding())
+        target_deferred.file_begin(
+            timestamp=110,
+            irp=1,
+            raw_identity="file-a",
+            thread_id=99,
+            header_pid=0xFFFFFFFF,
+            file_object=7,
+        )
+        self.assertEqual(len(target_deferred._deferred_file_begins), 1)
+        self.assertIsNone(target_deferred._file_objects[7].object_ref)
+        target_deferred.thread_event(
+            opcode=1, pid=41, thread_id=99, timestamp=105
+        )
+        self.assertEqual(target_deferred._deferred_file_begins, [])
+        self.assertIn(1, target_deferred._pending)
+        target_deferred.file_complete(
+            timestamp=111,
+            irp=1,
+            status=trace._STATUS_SUCCESS,
+            exact_pid_scope=False,
+        )
+        self.assertEqual(
+            target_deferred._file_objects[7].object_ref,
+            _OBJECTS["file_access"][0],
+        )
+        self.assertTrue(
+            target_deferred._correlation_complete["file_access"]
+        )
+
+        for version in (2, 3):
+            for operation in ("file_create", "file_close"):
+                for owner_order in ("known", "deferred", "zero"):
+                    opcode = 64 if operation == "file_create" else 66
+                    with self.subTest(
+                        version=version,
+                        operation=operation,
+                        owner_order=owner_order,
+                    ):
+                        reducer = _kernel_bound_reducer(_multi_binding())
+                        if owner_order == "known":
+                            reducer.thread_event(
+                                opcode=3,
+                                pid=42,
+                                thread_id=99,
+                                timestamp=90,
+                            )
+                        reducer.file_begin(
+                            timestamp=105,
+                            irp=1,
+                            raw_identity="file-a",
+                            thread_id=71,
+                            header_pid=0xFFFFFFFF,
+                            file_object=7,
+                        )
+                        reducer.file_complete(
+                            timestamp=106,
+                            irp=1,
+                            status=trace._STATUS_SUCCESS,
+                            exact_pid_scope=False,
+                        )
+
+                        def foreign_values(template):
+                            values = {
+                                name: ("" if kind == "utf16" else 1)
+                                for name, kind, _width in template.fields
+                            }
+                            values.update(
+                                IrpPtr=2,
+                                TTID=(0 if owner_order == "zero" else 99),
+                                FileObject=7,
+                                FileKey=8,
+                                OpenPath="file-b",
+                            )
+                            return values
+
+                        port = self._port_with_values(
+                            reducer, foreign_values
+                        )
+                        record = self._classic_record(
+                            trace._FILE_PROVIDER_UUID,
+                            opcode,
+                            version,
+                            pid=(
+                                42
+                                if owner_order == "zero"
+                                else 0xFFFFFFFF
+                            ),
+                            timestamp=110,
+                        )
+                        port.translate(ctypes.pointer(record))
+                        if owner_order == "deferred":
+                            self.assertEqual(
+                                len(reducer._deferred_file_begins), 1
+                            )
+                            reducer.thread_event(
+                                opcode=3,
+                                pid=42,
+                                thread_id=99,
+                                timestamp=107,
+                            )
+                        self.assertEqual(reducer._deferred_file_begins, [])
+                        self.assertNotIn(2, reducer._pending)
+                        self.assertIsNone(
+                            reducer._file_objects[7].object_ref
+                        )
+                        self.assertTrue(
+                            reducer._correlation_complete["file_access"]
+                        )
+                        reducer.file_begin(
+                            timestamp=120,
+                            irp=3,
+                            raw_identity=None,
+                            thread_id=71,
+                            header_pid=0xFFFFFFFF,
+                            file_object=7,
+                            operation="file_read",
+                        )
+                        reducer.file_complete(
+                            timestamp=121,
+                            irp=3,
+                            status=trace._STATUS_ACCESS_DENIED,
+                            exact_pid_scope=False,
+                        )
+                        self.assertEqual(
+                            reducer._planes["file_access"].denials, set()
+                        )
+
+                        if operation == "file_close":
+                            equal_qpc = _kernel_bound_reducer(
+                                _multi_binding()
+                            )
+                            if owner_order == "known":
+                                equal_qpc.thread_event(
+                                    opcode=3,
+                                    pid=42,
+                                    thread_id=99,
+                                    timestamp=90,
+                                )
+                            equal_qpc.file_begin(
+                                timestamp=105,
+                                irp=1,
+                                raw_identity="file-a",
+                                thread_id=71,
+                                header_pid=0xFFFFFFFF,
+                                file_object=7,
+                            )
+                            equal_qpc.file_complete(
+                                timestamp=106,
+                                irp=1,
+                                status=trace._STATUS_SUCCESS,
+                                exact_pid_scope=False,
+                            )
+                            equal_qpc.file_begin(
+                                timestamp=110,
+                                irp=3,
+                                raw_identity=None,
+                                thread_id=71,
+                                header_pid=0xFFFFFFFF,
+                                file_object=7,
+                                operation="file_read",
+                            )
+                            equal_port = self._port_with_values(
+                                equal_qpc, foreign_values
+                            )
+                            equal_record = self._classic_record(
+                                trace._FILE_PROVIDER_UUID,
+                                opcode,
+                                version,
+                                pid=(
+                                    42
+                                    if owner_order == "zero"
+                                    else 0xFFFFFFFF
+                                ),
+                                timestamp=110,
+                            )
+                            equal_port.translate(
+                                ctypes.pointer(equal_record)
+                            )
+                            if owner_order == "deferred":
+                                equal_qpc.thread_event(
+                                    opcode=3,
+                                    pid=42,
+                                    thread_id=99,
+                                    timestamp=107,
+                                )
+                            equal_qpc.file_complete(
+                                timestamp=111,
+                                irp=3,
+                                status=trace._STATUS_ACCESS_DENIED,
+                                exact_pid_scope=False,
+                            )
+                            self.assertFalse(
+                                equal_qpc._correlation_complete[
+                                    "file_access"
+                                ]
+                            )
+
+    def test_thread_v3_tail_and_pointer_width_are_required(self):
+        widths = {name: width for name, _kind, width in trace._THREAD_V3_FIELDS}
+        for fault in ("missing_tail", "short_pointer"):
+            with self.subTest(fault=fault):
+                reducer = _kernel_bound_reducer()
+                port = object.__new__(trace._WindowsEtwPort)
+                port._reducer = reducer
+
+                def prop(_record, name):
+                    if fault == "missing_tail" and name == "ThreadFlags":
+                        return None
+                    width = widths[name]
+                    if fault == "short_pointer" and name == "StackBase":
+                        width = 4
+                    value = 41 if name == "ProcessId" else 99
+                    return int(value).to_bytes(width, "little")
+
+                port._property = prop
+                record = self._classic_record(
+                    trace._THREAD_PROVIDER_UUID,
+                    1,
+                    3,
+                    pid=999,
+                    timestamp=110,
+                )
+                port.translate(ctypes.pointer(record))
+                self.assertFalse(reducer._schema_proved["file_access"])
+
+    def test_stop_flush_callbacks_inside_end_qpc_are_reduced(self):
+        class DrainPort(_FakePort):
+            def __init__(self) -> None:
+                super().__init__()
+                self.collector = None
+
+            def stop_session(self, owned_session_handle: int):
+                reducer = self.collector._reducer
+                reducer.file_begin(
+                    timestamp=110,
+                    irp=1,
+                    raw_identity="known",
+                    pid=41,
+                )
+                reducer.file_complete(
+                    timestamp=111,
+                    irp=1,
+                    status=trace._STATUS_ACCESS_DENIED,
+                    exact_pid_scope=False,
+                )
+                reducer.registry_operation(
+                    pid=41,
+                    timestamp=112,
+                    raw_identity="known",
+                    status=trace._STATUS_ACCESS_DENIED,
+                    operation="registry_delete",
+                    opcode=12,
+                    key_handle=7,
+                    initial_time=109,
+                )
+                return super().stop_session(owned_session_handle)
+
+        port = DrainPort()
+        collector = trace.RealtimeRuntimeCollector(_binding(), port=port)
+        port.collector = collector
+        collector.start_for_suspended_child(
+            process_id=41,
+            process_handle=900,
+            thread_handle=901,
+            initial_image_object_ref=_OBJECTS["dll_image_load"][0],
+        )
+        collector.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
+        result = collector.stop()
+        self.assertEqual(result.planes[0].outcome, "denial")
+        self.assertEqual(result.planes[2].outcome, "denial")
+
+    def test_process_cancelled_and_buffer_callback_false_are_not_coverage(self):
+        class CancelledPort(_FakePort):
+            def process(self, trace_handle: int) -> int:
+                self.events.append("process")
+                self.stopped.wait(2.0)
+                self.events.append("process_end")
+                return 1223
+
+        port = CancelledPort()
+        collector = trace.RealtimeRuntimeCollector(_binding(), port=port)
+        collector.start_for_suspended_child(
+            process_id=41,
+            process_handle=900,
+            thread_handle=901,
+            initial_image_object_ref=_OBJECTS["dll_image_load"][0],
+        )
+        collector.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
+        result = collector.stop()
+        self.assertFalse(result.cleanup_proved)
+        self.assertTrue(result.has_inconclusive)
+        buffer_source = inspect.getsource(trace._WindowsEtwPort.open_consumer)
+        self.assertIn("return 1", buffer_source)
+        self.assertNotIn("return 0", buffer_source)
+
+    def test_consumer_early_success_before_stop_is_never_silent_coverage(self):
+        class EarlyPort(_FakePort):
+            def process(self, trace_handle: int) -> int:
+                self.events.append("process")
+                return 0 if trace_handle == 55 else -1
+
+        port = EarlyPort()
+        collector = trace.RealtimeRuntimeCollector(_binding(), port=port)
+        with self.assertRaises(trace.RuntimeTraceError) as raised:
+            collector.start_for_suspended_child(
+                process_id=41,
+                process_handle=900,
+                thread_handle=901,
+                initial_image_object_ref=_OBJECTS["dll_image_load"][0],
+            )
+        self.assertIn(
+            raised.exception.code, {"trace_unavailable", "trace_cleanup_unproved"}
+        )
+        self.assertTrue(collector._consumer_returned_early)
+
+    def test_consumer_return_between_precheck_and_stop_is_sticky(self):
+        class RacingPort(_FakePort):
+            def __init__(self) -> None:
+                super().__init__()
+                self.release = threading.Event()
+                self.query_count = 0
+
+            def process(self, trace_handle: int) -> int:
+                self.events.append("process")
+                self.release.wait(2.0)
+                self.events.append("process_end")
+                return 0
+
+            def query_session(self, owned_session_handle: int):
+                self.query_count += 1
+                if self.query_count == 2:
+                    self.release.set()
+                return super().query_session(owned_session_handle)
+
+        port = RacingPort()
+        collector = trace.RealtimeRuntimeCollector(_binding(), port=port)
+        collector.start_for_suspended_child(
+            process_id=41,
+            process_handle=900,
+            thread_handle=901,
+            initial_image_object_ref=_OBJECTS["dll_image_load"][0],
+        )
+        collector.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
+        port.release.set()
+        collector._thread.join(2.0)
+        result = collector.stop()
+        self.assertFalse(result.cleanup_proved)
+        self.assertTrue(result.has_inconclusive)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,10 @@ _OBJECTS = {
     "code_integrity_policy": ("inventory-sha256:" + "4" * 64,),
 }
 _DIGEST = "sha256:" + "a" * 64
+_PROVIDER_BINDINGS = {
+    "dll_image_load": "provider-sha256:" + "b" * 64,
+    "code_integrity_policy": "provider-sha256:" + "c" * 64,
+}
 
 
 def _binding(*, resolver=None) -> trace.InventoryBinding:
@@ -48,10 +52,20 @@ def _finish(reducer: trace._TraceReducer) -> trace.RuntimeTraceResult:
     return reducer.finish()
 
 
+def _close_manifest_window(
+    reducer: trace._TraceReducer, *planes: str
+) -> None:
+    for plane in planes:
+        reducer.bind_manifest_identity(plane, _PROVIDER_BINDINGS[plane])
+        reducer.mark_manifest_available(plane)
+
+
 class RuntimeTraceReducerPureTests(unittest.TestCase):
     def test_exact_pid_qpc_irp_and_manifest_semantics_form_four_closed_planes(self):
         reducer = _bound_reducer()
-        reducer.mark_manifest_available("dll_image_load")
+        _close_manifest_window(
+            reducer, "dll_image_load", "code_integrity_policy"
+        )
         self.assertTrue(reducer.begin_callback())
         self.assertTrue(reducer.inspect_payload(32))
         reducer.file_begin(
@@ -70,13 +84,11 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
             status=0,
             operation="registry_open",
         )
-        reducer.manifest_observation(
-            plane="code_integrity_policy",
-            pid=41,
+        reducer.code_integrity_observation(
             timestamp=113,
-            raw_identity="private-ci-canary",
-            denied=False,
-            operation="image_policy_validate",
+            raw_process_identity="private-python-canary",
+            raw_object_identity="private-ci-canary",
+            semantic="audit",
         )
 
         result = _finish(reducer)
@@ -116,13 +128,11 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
             status=0xC0000022,
             operation="registry_open",
         )
-        reducer.manifest_observation(
-            plane="code_integrity_policy",
-            pid=42,
-            timestamp=110,
-            raw_identity="secret",
-            denied=True,
-            operation="image_policy_validate",
+        reducer.code_integrity_observation(
+            timestamp=99,
+            raw_process_identity="secret",
+            raw_object_identity="secret",
+            semantic="denial",
         )
 
         result = _finish(reducer)
@@ -221,7 +231,7 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
 
     def test_absent_ci_observation_remains_inconclusive(self):
         reducer = _bound_reducer()
-        reducer.mark_manifest_available("dll_image_load")
+        _close_manifest_window(reducer, "dll_image_load")
         reducer.file_begin(pid=41, timestamp=110, irp=1, raw_identity="known")
         reducer.file_complete(
             timestamp=111, irp=1, status=0, exact_pid_scope=False
@@ -258,7 +268,9 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
 
     def test_cleanup_is_unproved_until_controller_marks_full_lifecycle(self):
         reducer = _bound_reducer()
-        reducer.mark_probe_available("dll_image_load")
+        _close_manifest_window(
+            reducer, "dll_image_load", "code_integrity_policy"
+        )
         reducer.file_begin(pid=41, timestamp=110, irp=1, raw_identity="known")
         reducer.file_complete(
             timestamp=111, irp=1, status=0xC0000022, exact_pid_scope=False
@@ -270,13 +282,11 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
             status=0,
             operation="registry_open",
         )
-        reducer.manifest_observation(
-            plane="code_integrity_policy",
-            pid=41,
+        reducer.code_integrity_observation(
             timestamp=113,
-            raw_identity="known",
-            denied=False,
-            operation="image_policy_validate",
+            raw_process_identity="known-process",
+            raw_object_identity="known-image",
+            semantic="audit",
         )
         reducer.record_subject_proof(trace.SUBJECT_ACCESS_DENIED)
         reducer.end_window(200)
@@ -401,6 +411,205 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
                 resolver=lambda _plane, _raw: None,
             )
         self.assertEqual(raised.exception.code, "trace_binding_invalid")
+
+    def test_exact_manifest_callback_never_promotes_negative_window_closure(self):
+        reducer = _bound_reducer()
+        reducer.code_integrity_observation(
+            timestamp=110,
+            raw_process_identity="python-image",
+            raw_object_identity="runtime-image",
+            semantic="audit",
+        )
+
+        result = _finish(reducer)
+
+        ci = result.planes[3]
+        self.assertEqual(ci.outcome, "inconclusive")
+        self.assertEqual(ci.reason, "plane_scope_unproved")
+        self.assertFalse(reducer._negative_window_closure["code_integrity_policy"])
+
+    def test_exact_ci_denial_is_positive_proof_without_negative_closure(self):
+        reducer = _bound_reducer()
+        reducer.code_integrity_observation(
+            timestamp=110,
+            raw_process_identity="python-image",
+            raw_object_identity="runtime-image",
+            semantic="denial",
+        )
+
+        result = _finish(reducer)
+
+        self.assertEqual(result.planes[3].outcome, "denial")
+        self.assertEqual(
+            result.planes[3].object_ref,
+            _OBJECTS["code_integrity_policy"][0],
+        )
+        self.assertTrue(result.quality[3].probe_available)
+        self.assertEqual(
+            result.quality[3].collection_schema, trace.COLLECTION_SCHEMA
+        )
+        self.assertFalse(reducer._negative_window_closure["code_integrity_policy"])
+
+    def test_user_loader_denial_requires_exact_initial_process_and_dependency(self):
+        initial = _OBJECTS["dll_image_load"][0]
+        other = "inventory-sha256:" + "5" * 64
+        objects = dict(_OBJECTS)
+        objects["dll_image_load"] = (initial, other)
+
+        def resolver(plane: str, raw: str) -> str | None:
+            if plane == "dll_image_load":
+                return {
+                    "python.exe": initial,
+                    "other.exe": other,
+                    "dependency.dll": other,
+                }.get(raw)
+            return _OBJECTS[plane][0]
+
+        def build() -> trace._TraceReducer:
+            reducer = trace._TraceReducer(
+                trace.InventoryBinding(
+                    runtime_digest=_DIGEST,
+                    objects_by_plane=objects,
+                    resolver=resolver,
+                )
+            )
+            reducer.bind(pid=41, qpc_start=100, initial_image_ref=initial)
+            reducer.bind_manifest_identity(
+                "dll_image_load", _PROVIDER_BINDINGS["dll_image_load"]
+            )
+            reducer.mark_manifest_available("dll_image_load")
+            return reducer
+
+        exact = build()
+        exact.user_loader_observation(
+            pid=41,
+            timestamp=110,
+            semantic="status_denial",
+            raw_process_identity="python.exe",
+            raw_object_identity="dependency.dll",
+            failure_status=0xC0000022,
+        )
+        self.assertEqual(_finish(exact).planes[1].outcome, "denial")
+
+        mismatch = build()
+        mismatch.user_loader_observation(
+            pid=41,
+            timestamp=110,
+            semantic="status_denial",
+            raw_process_identity="other.exe",
+            raw_object_identity="dependency.dll",
+            failure_status=0xC0000022,
+        )
+        mismatch_result = _finish(mismatch)
+        self.assertEqual(mismatch_result.planes[1].outcome, "inconclusive")
+        self.assertEqual(
+            mismatch_result.planes[1].reason, "plane_scope_unproved"
+        )
+
+        other_status = build()
+        other_status.user_loader_observation(
+            pid=41,
+            timestamp=110,
+            semantic="status_denial",
+            raw_process_identity="python.exe",
+            raw_object_identity="dependency.dll",
+            failure_status=0xC0000034,
+        )
+        self.assertEqual(
+            _finish(other_status).planes[1].reason, "observation_ambiguous"
+        )
+
+    def test_ci_exact_object_with_other_known_process_is_inconclusive(self):
+        initial = _OBJECTS["dll_image_load"][0]
+        other = "inventory-sha256:" + "5" * 64
+        objects = dict(_OBJECTS)
+        objects["dll_image_load"] = (initial, other)
+
+        def resolver(plane: str, raw: str) -> str | None:
+            if plane == "dll_image_load":
+                return {"python.exe": initial, "other.exe": other}.get(raw)
+            if plane == "code_integrity_policy" and raw == "runtime.dll":
+                return _OBJECTS[plane][0]
+            return None
+
+        reducer = trace._TraceReducer(
+            trace.InventoryBinding(
+                runtime_digest=_DIGEST,
+                objects_by_plane=objects,
+                resolver=resolver,
+            )
+        )
+        reducer.bind(pid=41, qpc_start=100, initial_image_ref=initial)
+        reducer.bind_manifest_identity(
+            "code_integrity_policy",
+            _PROVIDER_BINDINGS["code_integrity_policy"],
+        )
+        reducer.mark_manifest_available("code_integrity_policy")
+        reducer.code_integrity_observation(
+            timestamp=110,
+            semantic="denial",
+            raw_process_identity="other.exe",
+            raw_object_identity="runtime.dll",
+        )
+
+        result = _finish(reducer)
+
+        self.assertEqual(result.planes[3].outcome, "inconclusive")
+        self.assertEqual(result.planes[3].reason, "plane_scope_unproved")
+
+    def test_window_binding_commits_verified_provider_descriptor_identity(self):
+        results = []
+        for suffix in ("b", "d"):
+            reducer = _bound_reducer()
+            reducer.bind_manifest_identity(
+                "dll_image_load", "provider-sha256:" + suffix * 64
+            )
+            reducer.mark_manifest_available("dll_image_load")
+            results.append(_finish(reducer).window_binding)
+
+        self.assertNotEqual(results[0], results[1])
+
+    def test_manifest_schema_downgrade_is_sticky_across_later_exact_denial(self):
+        reducer = _bound_reducer()
+        _close_manifest_window(reducer, "code_integrity_policy")
+        reducer.mark_schema_unknown("code_integrity_policy")
+        reducer.code_integrity_observation(
+            timestamp=110,
+            semantic="denial",
+            raw_process_identity="python.exe",
+            raw_object_identity="runtime.dll",
+        )
+
+        result = _finish(reducer)
+
+        self.assertEqual(result.planes[3].outcome, "inconclusive")
+        self.assertEqual(
+            result.planes[3].reason, "collection_schema_unproved"
+        )
+
+    def test_manifest_raw_identifiers_are_callback_local_only(self):
+        process_canary = r"C:\Private\SECRET_PROCESS_CANARY\python.exe"
+        object_canary = "SECRET_DEPENDENCY_CANARY.dll"
+        reducer = _bound_reducer()
+        reducer.user_loader_observation(
+            pid=41,
+            timestamp=110,
+            semantic="status_denial",
+            raw_process_identity=process_canary,
+            raw_object_identity=object_canary,
+            failure_status=0xC0000022,
+        )
+        reducer.code_integrity_observation(
+            timestamp=111,
+            semantic="denial",
+            raw_process_identity=process_canary,
+            raw_object_identity=object_canary,
+        )
+
+        retained = repr(reducer.__dict__) + repr(_finish(reducer))
+
+        self.assertNotIn(process_canary, retained)
+        self.assertNotIn(object_canary, retained)
 
 
 class _FakePort:
@@ -966,8 +1175,7 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
             result.planes[1].reason, "collection_schema_unproved"
         )
 
-    def test_manifest_extension_is_closed_until_exact_tdh_templates_are_frozen(self):
-        self.assertEqual(trace._MANIFEST_TEMPLATES, ())
+    def test_manifest_providers_freeze_keywords_and_host_descriptor_identity(self):
         self.assertEqual(
             tuple(str(item.provider) for item in trace._MANIFEST_PROVIDERS),
             (
@@ -978,6 +1186,656 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
         self.assertEqual(
             tuple(item.plane for item in trace._MANIFEST_PROVIDERS),
             ("dll_image_load", "code_integrity_policy"),
+        )
+        user_loader, code_integrity = trace._MANIFEST_PROVIDERS
+        self.assertEqual(
+            user_loader.any_keyword,
+            0x40 | 0x200 | 0x2000000000000000 | 0x8000000000000000,
+        )
+        self.assertEqual(user_loader.descriptor_count, 12)
+        self.assertEqual(
+            user_loader.descriptor_digest,
+            "b83c0f51b04fd4a2ca1536755e871ca45a2d4cf7bb3f9fcaf0268852f04eb411",
+        )
+        self.assertEqual(code_integrity.descriptor_count, 185)
+        self.assertEqual(code_integrity.any_keyword, 0xC000000000000000)
+        self.assertEqual(
+            code_integrity.descriptor_digest,
+            "838156db3a1d893d43e1cfd39d7908603ad38a5e33077cc0c1db2d753c6a55ea",
+        )
+
+    def test_user_loader_all_twelve_templates_are_exactly_partitioned(self):
+        def field(name, kind="utf16", width=None):
+            return (name, kind, width)
+
+        expected = {
+            1: ("ancillary", None, "FileName", None, (field("FileName"),)),
+            2: (
+                "fatal",
+                "ProcessFileNamePath",
+                None,
+                None,
+                (
+                    field("ProcessFileNamePathLength", "uint", 2),
+                    field("ProcessFileNamePath"),
+                ),
+            ),
+            3: (
+                "status_denial",
+                "ProcessImagePath",
+                "ImportDllName",
+                "FailureReason",
+                (
+                    field("FailureReason", "uint32", 4),
+                    field("ImportDllName"),
+                    field("ProcessImagePath"),
+                ),
+            ),
+            4: ("ancillary", "FileName", None, None, (field("FileName"),)),
+            5: (
+                "ancillary",
+                None,
+                "DLLName",
+                None,
+                (
+                    field("ProcessId", "uint32", 4),
+                    field("SuspendProcessRequest", "uint32", 4),
+                    field("DLLName"),
+                ),
+            ),
+            6: ("fatal", "FileName", None, None, (field("FileName"),)),
+            7: ("fatal", "FileName", None, None, (field("FileName"),)),
+            8: (
+                "status_denial",
+                None,
+                "ImportDllName",
+                "FailureReason",
+                (
+                    field("FailureReason", "uint32", 4),
+                    field("ImportDllName"),
+                    field("ExportModule"),
+                ),
+            ),
+            9: ("fatal", "FileName", None, None, (field("FileName"),)),
+            10: (
+                "status_denial",
+                "ProcessImagePath",
+                "ImportDllName",
+                "FailureReason",
+                (
+                    field("FailureReason", "uint32", 4),
+                    field("ImportDllName"),
+                    field("ProcessImagePath"),
+                ),
+            ),
+            11: (
+                "ancillary",
+                "ProcessImagePath",
+                "FoundDllPath",
+                None,
+                (
+                    field("ProcessImagePath"),
+                    field("CurDirDllPath"),
+                    field("FoundDllPath"),
+                ),
+            ),
+            12: (
+                "fatal",
+                "ProcessImagePath",
+                "CurDirDllPath",
+                None,
+                (field("ProcessImagePath"), field("CurDirDllPath")),
+            ),
+        }
+        actual = {
+            item.event_id: (
+                item.semantic,
+                item.process_field,
+                item.object_field,
+                item.status_field,
+                tuple(
+                    (field.name, field.kind, field.width)
+                    for field in item.fields
+                ),
+            )
+            for item in trace._USER_LOADER_TEMPLATES
+        }
+        self.assertEqual(actual, expected)
+
+    def test_ci_enforced_versions_and_status_spellings_are_closed(self):
+        expected = {}
+        expected_keys = {"denial": set(), "fatal": set(), "audit": set()}
+
+        def add(
+            category,
+            keys,
+            *,
+            semantic,
+            file_field,
+            process_field=None,
+            status_field=None,
+            status_kind="hexint32",
+        ):
+            fields = []
+            if file_field is not None:
+                fields.append((file_field, "utf16", None))
+            if process_field is not None:
+                fields.append((process_field, "utf16", None))
+            if status_field is not None:
+                fields.append((status_field, status_kind, 4))
+            signature = (
+                semantic,
+                process_field,
+                file_field,
+                status_field,
+                tuple(fields),
+            )
+            for key in keys:
+                self.assertNotIn(key, expected)
+                expected[key] = signature
+                expected_keys[category].add(key)
+
+        add(
+            "denial",
+            ((3004, 1),),
+            semantic="denial",
+            file_field="FileNameBuffer",
+            process_field="ProcessNameBuffer",
+        )
+        for event_id, status_kind in ((3033, "uint32"), (3063, "hexint32"), (3068, "uint32")):
+            add(
+                "denial",
+                ((event_id, 0),),
+                semantic="denial",
+                file_field="FileNameBuffer",
+                process_field="ProcessNameBuffer",
+                status_field="Status",
+                status_kind=status_kind,
+            )
+        for event_id, versions, uint_end in (
+            (3077, range(6), 2),
+            (3079, range(4), 2),
+            (3081, range(13), 8),
+        ):
+            for version in versions:
+                add(
+                    "denial",
+                    ((event_id, version),),
+                    semantic="denial",
+                    file_field="File Name",
+                    process_field="Process Name",
+                    status_field="Status",
+                    status_kind="uint32" if version <= uint_end else "hexint32",
+                )
+        add(
+            "denial",
+            ((3086, 0),),
+            semantic="denial",
+            file_field="FileNameBuffer",
+            process_field="ProcessNameBuffer",
+            status_field="Status",
+            status_kind="uint32",
+        )
+        add(
+            "denial",
+            ((3111, 0),),
+            semantic="denial",
+            file_field="FileNameBuffer",
+            process_field="ProcessNameBuffer",
+            status_field="Status",
+        )
+        add(
+            "denial",
+            ((3119, 0),),
+            semantic="denial",
+            file_field="File Name",
+            process_field="Process Name",
+            status_field="Status",
+        )
+
+        for event_id in (3002, 3023, 3036):
+            add(
+                "fatal",
+                ((event_id, 0),),
+                semantic="fatal",
+                file_field="FileNameBuffer",
+            )
+            add(
+                "fatal",
+                ((event_id, 1),),
+                semantic="fatal",
+                file_field="FileNameBuffer",
+                process_field="ProcessNameBuffer",
+            )
+        for event_id in (3004, 3026, 3072, 3073, 3104):
+            add(
+                "fatal",
+                ((event_id, 0),),
+                semantic="fatal",
+                file_field="FileNameBuffer",
+            )
+        add(
+            "fatal",
+            ((3010, 0),),
+            semantic="fatal",
+            file_field="FileNameBuffer",
+        )
+        add(
+            "fatal",
+            ((3010, 1),),
+            semantic="fatal",
+            file_field="FileNameBuffer",
+            status_field="Status",
+        )
+        add(
+            "fatal",
+            ((3074, 0),),
+            semantic="global_fatal",
+            file_field=None,
+            status_field="Status",
+        )
+        add(
+            "fatal",
+            ((3087, 0),),
+            semantic="fatal",
+            file_field="FileNameBuffer",
+            status_field="Status",
+        )
+        add(
+            "fatal",
+            ((3087, 1),),
+            semantic="fatal",
+            file_field="FileNameBuffer",
+            process_field="ProcessNameBuffer",
+            status_field="Status",
+        )
+        for event_id in (3106, 3107):
+            add(
+                "fatal",
+                ((event_id, 0),),
+                semantic="fatal",
+                file_field="FileNameBuffer",
+                status_field="Status",
+            )
+        add(
+            "fatal",
+            ((3092, 0), (3092, 1)),
+            semantic="fatal",
+            file_field="FileName",
+            status_field="StatusCode",
+        )
+        add(
+            "fatal",
+            ((3114, 0),),
+            semantic="fatal",
+            file_field="FileName",
+            process_field="ProcessName",
+            status_field="Status",
+        )
+        add(
+            "fatal",
+            ((3118, 0),),
+            semantic="fatal",
+            file_field="FileNameBuffer",
+            status_field="DefenderStatusCode",
+        )
+
+        for event_id in (3001, 3032):
+            add(
+                "audit",
+                ((event_id, 0),),
+                semantic="audit",
+                file_field="FileNameBuffer",
+            )
+            add(
+                "audit",
+                ((event_id, 1),),
+                semantic="audit",
+                file_field="FileNameBuffer",
+                process_field="ProcessNameBuffer",
+            )
+        add(
+            "audit",
+            ((3034, 0),),
+            semantic="audit",
+            file_field="FileNameBuffer",
+            process_field="ProcessNameBuffer",
+            status_field="Status",
+            status_kind="uint32",
+        )
+        for event_id, status_kind in (
+            (3064, "hexint32"),
+            (3065, "hexint32"),
+            (3066, "uint32"),
+            (3067, "uint32"),
+        ):
+            add(
+                "audit",
+                ((event_id, 0),),
+                semantic="audit",
+                file_field="FileNameBuffer",
+                process_field="ProcessNameBuffer",
+                status_field="Status",
+                status_kind=status_kind,
+            )
+        for event_id, versions, uint_end in (
+            (3076, range(6), 2),
+            (3078, range(4), 2),
+            (3080, range(13), 8),
+        ):
+            for version in versions:
+                add(
+                    "audit",
+                    ((event_id, version),),
+                    semantic="audit",
+                    file_field="File Name",
+                    process_field="Process Name",
+                    status_field="Status",
+                    status_kind="uint32" if version <= uint_end else "hexint32",
+                )
+        add(
+            "audit",
+            ((3082, 0),),
+            semantic="audit",
+            file_field="FileNameBuffer",
+        )
+        for event_id, versions in (
+            (3088, (0,)),
+            (3090, (0,)),
+            (3091, (0, 1)),
+        ):
+            add(
+                "audit",
+                tuple((event_id, version) for version in versions),
+                semantic="audit",
+                file_field="FileName",
+                status_field="StatusCode",
+            )
+        add(
+            "audit",
+            tuple((3089, version) for version in range(4)),
+            semantic="audit",
+            file_field=None,
+        )
+        add(
+            "audit",
+            ((3112, 0),),
+            semantic="audit",
+            file_field="FileNameBuffer",
+            process_field="ProcessNameBuffer",
+            status_field="Status",
+            status_kind="uint32",
+        )
+        add(
+            "audit",
+            ((3115, 0),),
+            semantic="audit",
+            file_field="FileName",
+            process_field="ProcessName",
+            status_field="Status",
+        )
+        add(
+            "audit",
+            ((3117, 0),),
+            semantic="audit",
+            file_field="File Name",
+            process_field="Process Name",
+        )
+
+        categories = {
+            "denial": trace._CI_DENIAL_TEMPLATES,
+            "fatal": trace._CI_FATAL_TEMPLATES,
+            "audit": trace._CI_AUDIT_TEMPLATES,
+        }
+        actual = {}
+        for category, templates in categories.items():
+            keys = {(item.event_id, item.version) for item in templates}
+            self.assertEqual(keys, expected_keys[category])
+            for item in templates:
+                key = (item.event_id, item.version)
+                self.assertNotIn(key, actual)
+                actual[key] = (
+                    item.semantic,
+                    item.process_field,
+                    item.object_field,
+                    item.status_field,
+                    tuple(
+                        (field.name, field.kind, field.width)
+                        for field in item.fields
+                    ),
+                )
+        self.assertEqual(actual, expected)
+        self.assertEqual(actual[(3114, 0)][0], "fatal")
+        self.assertEqual(actual[(3089, 0)][1:4], (None, None, None))
+
+        keys = [
+            (item.provider, item.event_id, item.version)
+            for item in trace._MANIFEST_TEMPLATES
+        ]
+        self.assertEqual(len(keys), len(set(keys)))
+        for capability in trace._MANIFEST_CAPABILITIES:
+            template_keys = {
+                (item.event_id, item.version)
+                for item in trace._MANIFEST_TEMPLATES
+                if item.provider == capability.provider
+            }
+            self.assertTrue(capability.closure_frozen)
+            self.assertEqual(set(capability.required_events), template_keys)
+
+    def test_user_loader_descriptor_digest_covers_all_twelve_host_events(self):
+        descriptors = (
+            (1, 0, 17, 4, 0, 0, 0x2000000000000010),
+            (2, 0, 17, 4, 0, 0, 0x2000000000000020),
+            (3, 0, 17, 4, 0, 0, 0x2000000000000040),
+            (4, 0, 17, 4, 0, 0, 0x2000000000000080),
+            (5, 0, 17, 4, 0, 0, 0x2000000000000100),
+            (6, 0, 17, 3, 0, 0, 0x2000000000000200),
+            (7, 0, 17, 3, 0, 0, 0x2000000000000200),
+            (8, 0, 17, 4, 0, 0, 0x2000000000000000),
+            (9, 0, 17, 1, 0, 0, 0x2000000000000200),
+            (10, 0, 9, 4, 0, 0, 0x8000000000000000),
+            (11, 0, 9, 3, 0, 0, 0x8000000000000000),
+            (12, 0, 9, 2, 0, 0, 0x8000000000000000),
+        )
+        self.assertEqual(
+            trace._provider_descriptor_digest(
+                trace._USER_LOADER_PROVIDER_UUID, descriptors
+            ),
+            trace._MANIFEST_PROVIDERS[0].descriptor_digest,
+        )
+        self.assertIsNone(
+            trace._provider_descriptor_digest(
+                trace._USER_LOADER_PROVIDER_UUID,
+                (descriptors[0], descriptors[0]),
+            )
+        )
+
+    def test_provider_descriptor_enumeration_fails_closed_on_every_drift(self):
+        descriptor = (3, 0, 17, 4, 0, 0, 0x2000000000000040)
+        provider_id = trace.uuid.UUID("b059b83f-d946-4b13-87ca-4292839dc2f2")
+        digest = trace._provider_descriptor_digest(provider_id, (descriptor,))
+        self.assertIsNotNone(digest)
+
+        class FakeTdh:
+            def __init__(
+                self,
+                descriptors,
+                *,
+                first_status=trace._ERROR_INSUFFICIENT_BUFFER,
+                second_status=trace._ERROR_SUCCESS,
+                reserved=0,
+                second_size_delta=0,
+            ):
+                self.descriptors = descriptors
+                self.first_status = first_status
+                self.second_status = second_status
+                self.reserved = reserved
+                self.second_size_delta = second_size_delta
+
+            def TdhEnumerateManifestProviderEvents(
+                self, _guid, buffer, size_pointer
+            ):
+                size = ctypes.sizeof(trace._PROVIDER_EVENT_INFO_HEADER) + (
+                    len(self.descriptors) * ctypes.sizeof(trace._EVENT_DESCRIPTOR)
+                )
+                size_pointer._obj.value = size
+                if buffer is None:
+                    return self.first_status
+                if self.second_status != trace._ERROR_SUCCESS:
+                    return self.second_status
+                raw = ctypes.create_string_buffer(size)
+                header = trace._PROVIDER_EVENT_INFO_HEADER.from_buffer(raw)
+                header.NumberOfEvents = len(self.descriptors)
+                header.Reserved = self.reserved
+                offset = ctypes.sizeof(trace._PROVIDER_EVENT_INFO_HEADER)
+                for index, values in enumerate(self.descriptors):
+                    item = trace._EVENT_DESCRIPTOR.from_buffer(
+                        raw,
+                        offset + index * ctypes.sizeof(trace._EVENT_DESCRIPTOR),
+                    )
+                    (
+                        item.Id,
+                        item.Version,
+                        item.Channel,
+                        item.Level,
+                        item.Opcode,
+                        item.Task,
+                        item.Keyword,
+                    ) = values
+                ctypes.memmove(buffer.value, raw, size)
+                size_pointer._obj.value = size + self.second_size_delta
+                return trace._ERROR_SUCCESS
+
+        def binding(fake_tdh, *, count=1, expected_digest=digest):
+            port = object.__new__(trace._WindowsEtwPort)
+            port._tdh = fake_tdh
+            provider = trace._ManifestProvider(
+                provider_id,
+                0,
+                "dll_image_load",
+                count,
+                expected_digest,
+            )
+            return port._provider_descriptor_binding(provider)
+
+        self.assertEqual(
+            binding(FakeTdh((descriptor,))), "provider-sha256:" + digest
+        )
+        self.assertIsNone(
+            binding(FakeTdh((descriptor,)), expected_digest="0" * 64)
+        )
+        self.assertIsNone(binding(FakeTdh((descriptor,)), count=2))
+        self.assertIsNone(binding(FakeTdh((descriptor, descriptor)), count=2))
+        self.assertIsNone(binding(FakeTdh((descriptor,), reserved=1)))
+        self.assertIsNone(
+            binding(FakeTdh((descriptor,), second_status=trace._ERROR_NOT_FOUND))
+        )
+        self.assertIsNone(
+            binding(FakeTdh((descriptor,), second_size_delta=1))
+        )
+
+    @staticmethod
+    def _manifest_record(
+        provider: trace.uuid.UUID,
+        event_id: int,
+        version: int,
+        *,
+        pid: int,
+        timestamp: int = 110,
+    ) -> trace._EVENT_RECORD:
+        record = trace._EVENT_RECORD()
+        record.EventHeader.ProviderId = trace._GUID.from_uuid(provider)
+        record.EventHeader.EventDescriptor.Id = event_id
+        record.EventHeader.EventDescriptor.Version = version
+        record.EventHeader.ProcessId = pid
+        record.EventHeader.TimeStamp = timestamp
+        record.UserDataLength = 32
+        return record
+
+    def test_user_loader_denial_requires_exact_child_pid_and_status(self):
+        reducer = _bound_reducer()
+        _close_manifest_window(reducer, "dll_image_load")
+        port = object.__new__(trace._WindowsEtwPort)
+        port._reducer = reducer
+        port._integer = lambda _record, name, width: (
+            0xC0000022 if name == "FailureReason" and width == 4 else None
+        )
+        port._string = lambda _record, name: {
+            "ImportDllName": "dependency.dll",
+            "ProcessImagePath": "python.exe",
+        }.get(name)
+
+        wrong_pid = self._manifest_record(
+            trace._USER_LOADER_PROVIDER_UUID, 3, 0, pid=42
+        )
+        port.translate(ctypes.pointer(wrong_pid))
+        self.assertFalse(reducer._planes["dll_image_load"].denials)
+
+        exact = self._manifest_record(
+            trace._USER_LOADER_PROVIDER_UUID, 3, 0, pid=41
+        )
+        port.translate(ctypes.pointer(exact))
+        result = _finish(reducer)
+        self.assertEqual(result.planes[1].outcome, "denial")
+
+    def test_ci_uses_payload_binding_not_header_pid_and_3114_is_never_denial(self):
+        reducer = _bound_reducer()
+        _close_manifest_window(reducer, "code_integrity_policy")
+        port = object.__new__(trace._WindowsEtwPort)
+        port._reducer = reducer
+        port._integer = lambda _record, name, width: (
+            0xC0000022 if name == "Status" and width == 4 else None
+        )
+        port._string = lambda _record, name: {
+            "FileNameBuffer": "runtime.dll",
+            "ProcessNameBuffer": "python.exe",
+        }.get(name)
+        record = self._manifest_record(
+            trace._CI_PROVIDER_UUID, 3033, 0, pid=999
+        )
+
+        port.translate(ctypes.pointer(record))
+        result = _finish(reducer)
+        self.assertEqual(result.planes[3].outcome, "denial")
+
+        single = _bound_reducer()
+        _close_manifest_window(single, "code_integrity_policy")
+        single_port = object.__new__(trace._WindowsEtwPort)
+        single_port._reducer = single
+        single_port._integer = port._integer
+        single_port._string = lambda _record, name: {
+            "FileName": "runtime.dll",
+            "ProcessName": "python.exe",
+        }.get(name)
+        event_3114 = self._manifest_record(
+            trace._CI_PROVIDER_UUID, 3114, 0, pid=41
+        )
+        single_port.translate(ctypes.pointer(event_3114))
+        single_result = _finish(single)
+        self.assertEqual(single_result.planes[3].outcome, "inconclusive")
+        self.assertEqual(
+            single_result.planes[3].reason, "observation_ambiguous"
+        )
+
+    def test_unpartitioned_ci_event_invalidates_full_negative_closure(self):
+        reducer = _bound_reducer()
+        _close_manifest_window(reducer, "code_integrity_policy")
+        port = object.__new__(trace._WindowsEtwPort)
+        port._reducer = reducer
+        port._integer = lambda *_args: (_ for _ in ()).throw(
+            AssertionError("unpartitioned payload decoded")
+        )
+        port._string = port._integer
+        record = self._manifest_record(
+            trace._CI_PROVIDER_UUID, 3038, 2, pid=999
+        )
+
+        port.translate(ctypes.pointer(record))
+        result = _finish(reducer)
+
+        self.assertEqual(result.planes[3].outcome, "inconclusive")
+        self.assertEqual(
+            result.planes[3].reason, "collection_schema_unproved"
         )
 
     def test_native_port_has_no_file_trace_subprocess_or_channel_mutation_route(self):

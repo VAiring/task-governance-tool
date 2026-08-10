@@ -59,6 +59,8 @@ MAX_INSPECTED_PAYLOAD_BYTES = 16 * 1024 * 1024
 MAX_CHILD_RECORDS = 512
 MAX_PENDING_IRPS = 512
 MAX_PROPERTY_BYTES = 64 * 1024
+MAX_PROVIDER_DESCRIPTOR_BYTES = 1024 * 1024
+MAX_PROVIDER_DESCRIPTORS = 4096
 
 PLANE_ORDER = (
     "file_access",
@@ -99,6 +101,7 @@ _POLICY = {
 }
 _OBJECT_ID = re.compile(r"inventory-sha256:[0-9a-f]{64}\Z")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_PROVIDER_BINDING = re.compile(r"provider-sha256:[0-9a-f]{64}\Z")
 
 _STATUS_SUCCESS = 0x00000000
 _STATUS_ACCESS_DENIED = 0xC0000022
@@ -321,6 +324,7 @@ class _TraceReducer:
         self._planes = {plane: _PlaneState() for plane in PLANE_ORDER}
         self._pending: dict[int, _PendingFile] = {}
         self._pid: int | None = None
+        self._initial_image_ref: str | None = None
         self._qpc_start: int | None = None
         self._qpc_end: int | None = None
         self._subject_proof: str | None = None
@@ -342,6 +346,12 @@ class _TraceReducer:
             "registry_access": False,
             "code_integrity_policy": False,
         }
+        self._negative_window_closure = {
+            "dll_image_load": False,
+            "code_integrity_policy": False,
+        }
+        self._manifest_bindings: dict[str, str] = {}
+        self._manifest_schema_uncertain: set[str] = set()
         self._scope_complete = {plane: True for plane in PLANE_ORDER}
         self._correlation_complete = {plane: True for plane in PLANE_ORDER}
         self._lossless = True
@@ -361,6 +371,7 @@ class _TraceReducer:
             ):
                 _fail("trace_binding_invalid")
             self._pid = pid
+            self._initial_image_ref = initial_image_ref
             self._qpc_start = qpc_start
             # A successfully created suspended child proves the initial image was
             # mapped.  This is not an ETW rundown event and proves no CI absence.
@@ -411,6 +422,14 @@ class _TraceReducer:
         return bool(
             self._pid is not None
             and pid == self._pid
+            and self._qpc_start is not None
+            and timestamp >= self._qpc_start
+            and (self._qpc_end is None or timestamp <= self._qpc_end)
+        )
+
+    def _timestamp_in_window(self, timestamp: int) -> bool:
+        return bool(
+            type(timestamp) is int
             and self._qpc_start is not None
             and timestamp >= self._qpc_start
             and (self._qpc_end is None or timestamp <= self._qpc_end)
@@ -471,6 +490,9 @@ class _TraceReducer:
         with self._lock:
             if plane in self._planes:
                 self._schema_proved[plane] = False
+                if plane in self._negative_window_closure:
+                    self._negative_window_closure[plane] = False
+                    self._manifest_schema_uncertain.add(plane)
                 self._reason(plane, "observation_ambiguous")
             else:
                 for item in PLANE_ORDER:
@@ -482,6 +504,8 @@ class _TraceReducer:
             if plane in self._planes:
                 self._probe_available[plane] = False
                 self._schema_proved[plane] = False
+                if plane in self._negative_window_closure:
+                    self._negative_window_closure[plane] = False
                 self._reason(plane, "probe_unavailable")
 
     def mark_probe_available(self, plane: str) -> None:
@@ -492,8 +516,45 @@ class _TraceReducer:
             self._probe_available[plane] = True
             self._schema_proved[plane] = True
 
-    # Kept private and exact for the closed manifest adapter seam.
-    mark_manifest_available = mark_probe_available
+    def bind_manifest_identity(self, plane: str, binding: str) -> None:
+        """Bind a verified full provider descriptor set without retaining it."""
+
+        with self._lock:
+            if (
+                plane not in self._negative_window_closure
+                or type(binding) is not str
+                or _PROVIDER_BINDING.fullmatch(binding) is None
+                or plane in self._manifest_bindings
+            ):
+                if plane in self._planes:
+                    self._reason(plane, "observation_ambiguous")
+                else:
+                    self._global_reasons.add("observation_ambiguous")
+                return
+            self._manifest_bindings[plane] = binding
+
+    def mark_manifest_available(self, plane: str) -> None:
+        """Authorize silence only after exact full-host closure was bound."""
+
+        with self._lock:
+            if (
+                plane not in self._negative_window_closure
+                or plane not in self._manifest_bindings
+                or plane in self._manifest_schema_uncertain
+            ):
+                self.mark_manifest_unavailable(plane)
+                return
+            self._probe_available[plane] = True
+            self._schema_proved[plane] = True
+            self._negative_window_closure[plane] = True
+
+    def _mark_exact_manifest_event(self, plane: str) -> None:
+        if plane not in self._negative_window_closure:
+            self._global_reasons.add("observation_ambiguous")
+            return
+        self._probe_available[plane] = True
+        if plane not in self._manifest_schema_uncertain:
+            self._schema_proved[plane] = True
 
     def expects_file_completion(self) -> bool:
         with self._lock:
@@ -607,35 +668,119 @@ class _TraceReducer:
             else:
                 self._reason("registry_access", "observation_ambiguous")
 
-    def manifest_observation(
+    def user_loader_observation(
         self,
         *,
-        plane: str,
         pid: int,
         timestamp: int,
-        raw_identity: str,
-        denied: bool,
-        operation: str,
+        semantic: str,
+        raw_process_identity: str | None,
+        raw_object_identity: str | None,
+        failure_status: int | None = None,
     ) -> None:
-        """Accept only an exact-template manifest adapter's closed semantic."""
+        """Reduce one exact User-Loader template without retaining raw fields."""
 
         with self._lock:
-            if plane not in {"dll_image_load", "code_integrity_policy"}:
-                self._global_reasons.add("observation_ambiguous")
+            plane = "dll_image_load"
+            if semantic not in {"status_denial", "fatal", "ancillary"}:
+                self._reason(plane, "observation_ambiguous")
                 return
-            self._probe_available[plane] = True
-            self._schema_proved[plane] = True
             if not self._in_window(pid, timestamp):
                 return
             if not self._record(plane):
                 return
-            object_ref = self._inventory.resolve(plane, raw_identity)
-            if denied:
-                self._denial(plane, object_ref, operation)
-            elif object_ref is None:
+            self._mark_exact_manifest_event(plane)
+            if raw_process_identity is not None:
+                process_ref = self._inventory.resolve(
+                    "dll_image_load", raw_process_identity
+                )
+                if process_ref != self._initial_image_ref:
+                    self._reason(plane, "plane_scope_unproved")
+                    return
+            object_ref = (
+                self._inventory.resolve(plane, raw_object_identity)
+                if raw_object_identity is not None
+                else None
+            )
+            if semantic == "status_denial":
+                if failure_status == _STATUS_ACCESS_DENIED:
+                    self._denial(plane, object_ref, "image_map")
+                else:
+                    self._reason(plane, "observation_ambiguous")
+            elif semantic == "fatal":
+                self._reason(plane, "observation_ambiguous")
+            elif raw_object_identity is not None and object_ref is None:
                 self._reason(plane, "plane_scope_unproved")
-            else:
-                self._success(plane, operation)
+            # Ancillary events never authorize an observed-no-denial result.
+            # The successful initial image plus full provider/window closure
+            # supplies that proof; this callback may only validate or downgrade.
+
+    def code_integrity_observation(
+        self,
+        *,
+        timestamp: int,
+        semantic: str,
+        raw_process_identity: str | None,
+        raw_object_identity: str | None,
+    ) -> None:
+        """Bind CI by QPC and payload identities; header PID is not authority."""
+
+        with self._lock:
+            plane = "code_integrity_policy"
+            if semantic not in {"denial", "fatal", "audit", "global_fatal"}:
+                self._reason(plane, "observation_ambiguous")
+                return
+            if not self._timestamp_in_window(timestamp):
+                return
+            if semantic == "global_fatal":
+                if self._record(plane):
+                    self._mark_exact_manifest_event(plane)
+                    self._reason(plane, "observation_ambiguous")
+                return
+
+            process_ref = (
+                self._inventory.resolve("dll_image_load", raw_process_identity)
+                if raw_process_identity is not None
+                else None
+            )
+            object_ref = (
+                self._inventory.resolve(plane, raw_object_identity)
+                if raw_object_identity is not None
+                else None
+            )
+            if raw_process_identity is not None:
+                if process_ref != self._initial_image_ref:
+                    if object_ref is not None:
+                        self._reason(plane, "plane_scope_unproved")
+                    return
+                if object_ref is None:
+                    self._reason(plane, "plane_scope_unproved")
+                    return
+            elif object_ref is None:
+                return
+            if not self._record(plane):
+                return
+            self._mark_exact_manifest_event(plane)
+            if semantic == "denial":
+                self._denial(plane, object_ref, "image_policy_validate")
+            elif semantic == "fatal":
+                self._reason(plane, "observation_ambiguous")
+            elif semantic == "audit":
+                # A known allow/audit event is not an allow oracle.  Negative
+                # evidence remains solely the verified full/lossless window.
+                return
+
+    def mark_unknown_manifest_event(
+        self, *, plane: str, pid: int, timestamp: int
+    ) -> None:
+        with self._lock:
+            in_window = (
+                self._in_window(pid, timestamp)
+                if plane == "dll_image_load"
+                else self._timestamp_in_window(timestamp)
+            )
+            if in_window:
+                self.mark_schema_unknown(plane)
 
     def finish(self) -> RuntimeTraceResult:
         with self._lock:
@@ -662,7 +807,15 @@ class _TraceReducer:
                     if state.operations
                     else _DEFAULT_OPERATION[plane]
                 )
-                if not state.denials and not state.successes:
+                negative_window_observed = bool(
+                    plane in self._negative_window_closure
+                    and self._negative_window_closure[plane]
+                )
+                if (
+                    not state.denials
+                    and not state.successes
+                    and not negative_window_observed
+                ):
                     self._correlation_complete[plane] = False
                 item_quality = PlaneTraceQuality(
                     plane,
@@ -672,7 +825,12 @@ class _TraceReducer:
                     self._probe_available[plane],
                     self._lossless,
                     self._overflowed,
-                    self._scope_complete[plane],
+                    self._scope_complete[plane]
+                    and (
+                        plane not in self._negative_window_closure
+                        or bool(state.denials)
+                        or self._negative_window_closure[plane]
+                    ),
                     self._correlation_complete[plane],
                     self._cleanup_proved,
                 )
@@ -701,7 +859,7 @@ class _TraceReducer:
                             None,
                         )
                     )
-                elif state.successes:
+                elif state.successes or negative_window_observed:
                     planes.append(
                         PlaneTraceResult(
                             plane,
@@ -731,6 +889,10 @@ class _TraceReducer:
                 str(self._pid or 0),
                 str(self._qpc_start or 0),
                 str(self._qpc_end or 0),
+                self._manifest_bindings.get("dll_image_load", "manifest-absent"),
+                self._manifest_bindings.get(
+                    "code_integrity_policy", "manifest-absent"
+                ),
             ):
                 window_digest.update(value.encode("ascii"))
                 window_digest.update(b"\0")
@@ -838,7 +1000,10 @@ class RealtimeRuntimeCollector:
                 ):
                     _fail("trace_unavailable")
                 for plane in capable_planes:
-                    self._reducer.mark_probe_available(plane)
+                    if plane in {"dll_image_load", "code_integrity_policy"}:
+                        self._reducer.mark_manifest_available(plane)
+                    else:
+                        self._reducer.mark_probe_available(plane)
                 self._consumer = self._port.open_consumer(
                     self._record_callback, self._reducer.mark_lost_events
                 )
@@ -1112,6 +1277,10 @@ class _EVENT_DESCRIPTOR(ctypes.Structure):
     )
 
 
+class _PROVIDER_EVENT_INFO_HEADER(ctypes.Structure):
+    _fields_ = (("NumberOfEvents", ULONG), ("Reserved", ULONG))
+
+
 class _EVENT_HEADER(ctypes.Structure):
     _fields_ = (
         ("Size", USHORT),
@@ -1353,6 +1522,15 @@ class _ManifestProvider:
     provider: uuid.UUID
     any_keyword: int
     plane: str
+    descriptor_count: int
+    descriptor_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ManifestField:
+    name: str
+    kind: str
+    width: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1360,8 +1538,10 @@ class _ManifestEventTemplate:
     provider: uuid.UUID
     event_id: int
     version: int
-    property_names: tuple[str, ...]
-    binding_fields: tuple[str, ...]
+    fields: tuple[_ManifestField, ...]
+    process_field: str | None
+    object_field: str | None
+    status_field: str | None
     plane: str
     semantic: str
 
@@ -1377,32 +1557,321 @@ class _ManifestCapability:
 _MANIFEST_PROVIDERS = (
     _ManifestProvider(
         _USER_LOADER_PROVIDER_UUID,
-        0x40 | 0x200 | 0x2000000000000000,
+        0x40 | 0x200 | 0x2000000000000000 | 0x8000000000000000,
         "dll_image_load",
+        12,
+        "b83c0f51b04fd4a2ca1536755e871ca45a2d4cf7bb3f9fcaf0268852f04eb411",
     ),
     _ManifestProvider(
         _CI_PROVIDER_UUID,
         0x8000000000000000 | 0x4000000000000000,
         "code_integrity_policy",
+        185,
+        "838156db3a1d893d43e1cfd39d7908603ad38a5e33077cc0c1db2d753c6a55ea",
     ),
 )
 
-_MANIFEST_CAPABILITIES = (
-    _ManifestCapability(
+def _mf(name: str, kind: str, width: int | None = None) -> _ManifestField:
+    return _ManifestField(name, kind, width)
+
+
+def _ul(
+    event_id: int,
+    fields: tuple[_ManifestField, ...],
+    *,
+    semantic: str,
+    process_field: str | None = None,
+    object_field: str | None = None,
+    status_field: str | None = None,
+) -> _ManifestEventTemplate:
+    return _ManifestEventTemplate(
         _USER_LOADER_PROVIDER_UUID,
+        event_id,
+        0,
+        fields,
+        process_field,
+        object_field,
+        status_field,
         "dll_image_load",
-        ((3, 0), (6, 0), (7, 0), (8, 0), (9, 0)),
-        True,
+        semantic,
+    )
+
+
+_USER_LOADER_TEMPLATES = (
+    _ul(1, (_mf("FileName", "utf16"),), semantic="ancillary", object_field="FileName"),
+    _ul(
+        2,
+        (
+            _mf("ProcessFileNamePathLength", "uint", 2),
+            _mf("ProcessFileNamePath", "utf16"),
+        ),
+        semantic="fatal",
+        process_field="ProcessFileNamePath",
     ),
-    # CI becomes denial-capable only after the complete enforced event-ID and
-    # version set (including ProcessName+FileName binding) is frozen.
-    _ManifestCapability(_CI_PROVIDER_UUID, "code_integrity_policy", (), False),
+    _ul(
+        3,
+        (
+            _mf("FailureReason", "uint32", 4),
+            _mf("ImportDllName", "utf16"),
+            _mf("ProcessImagePath", "utf16"),
+        ),
+        semantic="status_denial",
+        process_field="ProcessImagePath",
+        object_field="ImportDllName",
+        status_field="FailureReason",
+    ),
+    _ul(4, (_mf("FileName", "utf16"),), semantic="ancillary", process_field="FileName"),
+    _ul(
+        5,
+        (
+            _mf("ProcessId", "uint32", 4),
+            _mf("SuspendProcessRequest", "uint32", 4),
+            _mf("DLLName", "utf16"),
+        ),
+        semantic="ancillary",
+        object_field="DLLName",
+    ),
+    *(
+        _ul(
+            event_id,
+            (_mf("FileName", "utf16"),),
+            semantic="fatal",
+            process_field="FileName",
+        )
+        for event_id in (6, 7)
+    ),
+    _ul(
+        8,
+        (
+            _mf("FailureReason", "uint32", 4),
+            _mf("ImportDllName", "utf16"),
+            _mf("ExportModule", "utf16"),
+        ),
+        semantic="status_denial",
+        object_field="ImportDllName",
+        status_field="FailureReason",
+    ),
+    _ul(9, (_mf("FileName", "utf16"),), semantic="fatal", process_field="FileName"),
+    _ul(
+        10,
+        (
+            _mf("FailureReason", "uint32", 4),
+            _mf("ImportDllName", "utf16"),
+            _mf("ProcessImagePath", "utf16"),
+        ),
+        semantic="status_denial",
+        process_field="ProcessImagePath",
+        object_field="ImportDllName",
+        status_field="FailureReason",
+    ),
+    _ul(
+        11,
+        (
+            _mf("ProcessImagePath", "utf16"),
+            _mf("CurDirDllPath", "utf16"),
+            _mf("FoundDllPath", "utf16"),
+        ),
+        semantic="ancillary",
+        process_field="ProcessImagePath",
+        object_field="FoundDllPath",
+    ),
+    _ul(
+        12,
+        (
+            _mf("ProcessImagePath", "utf16"),
+            _mf("CurDirDllPath", "utf16"),
+        ),
+        semantic="fatal",
+        process_field="ProcessImagePath",
+        object_field="CurDirDllPath",
+    ),
 )
 
-# Intentionally empty until an official event version and complete TDH property
-# template is frozen.  A recognized event without an exact template is
-# inconclusive; no undocumented offset/status heuristic is permitted.
-_MANIFEST_TEMPLATES: tuple[_ManifestEventTemplate, ...] = ()
+
+def _ci(
+    event_id: int,
+    version: int,
+    *,
+    semantic: str,
+    file_field: str | None,
+    process_field: str | None = None,
+    status_field: str | None = None,
+    status_kind: str = "hexint32",
+) -> _ManifestEventTemplate:
+    fields: list[_ManifestField] = []
+    if file_field is not None:
+        fields.append(_mf(file_field, "utf16"))
+    if process_field is not None:
+        fields.append(_mf(process_field, "utf16"))
+    if status_field is not None:
+        fields.append(_mf(status_field, status_kind, 4))
+    return _ManifestEventTemplate(
+        _CI_PROVIDER_UUID,
+        event_id,
+        version,
+        tuple(fields),
+        process_field,
+        file_field,
+        status_field,
+        "code_integrity_policy",
+        semantic,
+    )
+
+
+_CI_DENIAL_TEMPLATES = (
+    _ci(3004, 1, semantic="denial", file_field="FileNameBuffer", process_field="ProcessNameBuffer"),
+    _ci(3033, 0, semantic="denial", file_field="FileNameBuffer", process_field="ProcessNameBuffer", status_field="Status", status_kind="uint32"),
+    _ci(3063, 0, semantic="denial", file_field="FileNameBuffer", process_field="ProcessNameBuffer", status_field="Status"),
+    _ci(3068, 0, semantic="denial", file_field="FileNameBuffer", process_field="ProcessNameBuffer", status_field="Status", status_kind="uint32"),
+    *(
+        _ci(3077, version, semantic="denial", file_field="File Name", process_field="Process Name", status_field="Status", status_kind="uint32" if version <= 2 else "hexint32")
+        for version in range(6)
+    ),
+    *(
+        _ci(3079, version, semantic="denial", file_field="File Name", process_field="Process Name", status_field="Status", status_kind="uint32" if version <= 2 else "hexint32")
+        for version in range(4)
+    ),
+    *(
+        _ci(3081, version, semantic="denial", file_field="File Name", process_field="Process Name", status_field="Status", status_kind="uint32" if version <= 8 else "hexint32")
+        for version in range(13)
+    ),
+    _ci(3086, 0, semantic="denial", file_field="FileNameBuffer", process_field="ProcessNameBuffer", status_field="Status", status_kind="uint32"),
+    _ci(3111, 0, semantic="denial", file_field="FileNameBuffer", process_field="ProcessNameBuffer", status_field="Status"),
+    _ci(3119, 0, semantic="denial", file_field="File Name", process_field="Process Name", status_field="Status"),
+)
+
+_CI_FATAL_TEMPLATES = (
+    *(
+        _ci(event_id, version, semantic="fatal", file_field="FileNameBuffer", process_field="ProcessNameBuffer" if version == 1 else None)
+        for event_id in (3002, 3023, 3036)
+        for version in (0, 1)
+    ),
+    _ci(3004, 0, semantic="fatal", file_field="FileNameBuffer"),
+    _ci(3010, 0, semantic="fatal", file_field="FileNameBuffer"),
+    _ci(3010, 1, semantic="fatal", file_field="FileNameBuffer", status_field="Status"),
+    _ci(3026, 0, semantic="fatal", file_field="FileNameBuffer"),
+    _ci(3072, 0, semantic="fatal", file_field="FileNameBuffer"),
+    _ci(3073, 0, semantic="fatal", file_field="FileNameBuffer"),
+    _ci(3074, 0, semantic="global_fatal", file_field=None, status_field="Status"),
+    _ci(3087, 0, semantic="fatal", file_field="FileNameBuffer", status_field="Status"),
+    _ci(3087, 1, semantic="fatal", file_field="FileNameBuffer", process_field="ProcessNameBuffer", status_field="Status"),
+    *(
+        _ci(event_id, 0, semantic="fatal", file_field="FileNameBuffer", status_field="Status" if event_id in {3106, 3107} else None)
+        for event_id in (3104, 3106, 3107)
+    ),
+    *(
+        _ci(3092, version, semantic="fatal", file_field="FileName", status_field="StatusCode")
+        for version in (0, 1)
+    ),
+    _ci(3114, 0, semantic="fatal", file_field="FileName", process_field="ProcessName", status_field="Status"),
+    _ci(3118, 0, semantic="fatal", file_field="FileNameBuffer", status_field="DefenderStatusCode"),
+)
+
+_CI_AUDIT_TEMPLATES = (
+    *(
+        _ci(event_id, version, semantic="audit", file_field="FileNameBuffer", process_field="ProcessNameBuffer" if version == 1 else None)
+        for event_id in (3001, 3032)
+        for version in (0, 1)
+    ),
+    _ci(3034, 0, semantic="audit", file_field="FileNameBuffer", process_field="ProcessNameBuffer", status_field="Status", status_kind="uint32"),
+    *(
+        _ci(event_id, 0, semantic="audit", file_field="FileNameBuffer", process_field="ProcessNameBuffer", status_field="Status", status_kind="hexint32" if event_id in {3064, 3065} else "uint32")
+        for event_id in (3064, 3065, 3066, 3067)
+    ),
+    *(
+        _ci(3076, version, semantic="audit", file_field="File Name", process_field="Process Name", status_field="Status", status_kind="uint32" if version <= 2 else "hexint32")
+        for version in range(6)
+    ),
+    *(
+        _ci(3078, version, semantic="audit", file_field="File Name", process_field="Process Name", status_field="Status", status_kind="uint32" if version <= 2 else "hexint32")
+        for version in range(4)
+    ),
+    *(
+        _ci(3080, version, semantic="audit", file_field="File Name", process_field="Process Name", status_field="Status", status_kind="uint32" if version <= 8 else "hexint32")
+        for version in range(13)
+    ),
+    _ci(3082, 0, semantic="audit", file_field="FileNameBuffer"),
+    *(
+        _ci(event_id, version, semantic="audit", file_field="FileName", status_field="StatusCode")
+        for event_id, versions in ((3088, (0,)), (3090, (0,)), (3091, (0, 1)))
+        for version in versions
+    ),
+    *(
+        _ci(3089, version, semantic="audit", file_field=None)
+        for version in range(4)
+    ),
+    _ci(3112, 0, semantic="audit", file_field="FileNameBuffer", process_field="ProcessNameBuffer", status_field="Status", status_kind="uint32"),
+    _ci(3115, 0, semantic="audit", file_field="FileName", process_field="ProcessName", status_field="Status"),
+    _ci(3117, 0, semantic="audit", file_field="File Name", process_field="Process Name"),
+)
+
+_MANIFEST_TEMPLATES: tuple[_ManifestEventTemplate, ...] = (
+    *_USER_LOADER_TEMPLATES,
+    *_CI_DENIAL_TEMPLATES,
+    *_CI_FATAL_TEMPLATES,
+    *_CI_AUDIT_TEMPLATES,
+)
+
+
+def _manifest_template(
+    provider: bytes, event_id: int, version: int
+) -> _ManifestEventTemplate | None:
+    for template in _MANIFEST_TEMPLATES:
+        if (
+            _GUID.from_uuid(template.provider).key() == provider
+            and template.event_id == event_id
+            and template.version == version
+        ):
+            return template
+    return None
+
+
+_MANIFEST_CAPABILITIES = tuple(
+    _ManifestCapability(
+        provider.provider,
+        provider.plane,
+        tuple(
+            (item.event_id, item.version)
+            for item in _MANIFEST_TEMPLATES
+            if item.provider == provider.provider and item.plane == provider.plane
+        ),
+        True,
+    )
+    for provider in _MANIFEST_PROVIDERS
+)
+
+
+def _provider_descriptor_digest(
+    provider: uuid.UUID,
+    descriptors: tuple[tuple[int, int, int, int, int, int, int], ...],
+) -> str | None:
+    if (
+        type(provider) is not uuid.UUID
+        or type(descriptors) is not tuple
+        or not descriptors
+        or len(set(descriptors)) != len(descriptors)
+        or any(
+            type(item) is not tuple
+            or len(item) != 7
+            or any(type(value) is not int or value < 0 for value in item)
+            for item in descriptors
+        )
+    ):
+        return None
+    canonical = hashlib.sha256()
+    canonical.update(b"taskgov-m241b-provider-descriptor-v1\0")
+    canonical.update(str(provider).encode("ascii"))
+    canonical.update(b"\0")
+    canonical.update(str(len(descriptors)).encode("ascii"))
+    canonical.update(b"\0")
+    for item in sorted(descriptors):
+        canonical.update(
+            (
+                f"{item[0]}:{item[1]}:{item[2]}:{item[3]}:"
+                f"{item[4]}:{item[5]}:{item[6]:016x}\n"
+            ).encode("ascii")
+        )
+    return canonical.hexdigest()
 
 
 class _WindowsEtwPort:
@@ -1468,6 +1937,12 @@ class _WindowsEtwPort:
             ctypes.c_void_p,
         )
         self._tdh.TdhGetProperty.restype = ULONG
+        self._tdh.TdhEnumerateManifestProviderEvents.argtypes = (
+            ctypes.POINTER(_GUID),
+            ctypes.c_void_p,
+            ctypes.POINTER(ULONG),
+        )
+        self._tdh.TdhEnumerateManifestProviderEvents.restype = ULONG
         k.QueryPerformanceCounter.argtypes = (ctypes.POINTER(LONGLONG),)
         k.QueryPerformanceCounter.restype = wintypes.BOOL
         k.GetProcessId.argtypes = (ctypes.c_void_p,)
@@ -1532,6 +2007,81 @@ class _WindowsEtwPort:
             _fail("trace_unavailable")
         return int(handle.value)
 
+    def _provider_descriptor_binding(
+        self, provider: _ManifestProvider
+    ) -> str | None:
+        """Prove the complete registered provider descriptor set in memory."""
+
+        guid = _GUID.from_uuid(provider.provider)
+        size = ULONG()
+        try:
+            status = int(
+                self._tdh.TdhEnumerateManifestProviderEvents(
+                    ctypes.byref(guid), None, ctypes.byref(size)
+                )
+            )
+        except BaseException:
+            return None
+        if (
+            status != _ERROR_INSUFFICIENT_BUFFER
+            or not ctypes.sizeof(_PROVIDER_EVENT_INFO_HEADER)
+            <= int(size.value)
+            <= MAX_PROVIDER_DESCRIPTOR_BYTES
+        ):
+            return None
+        raw = ctypes.create_string_buffer(int(size.value))
+        allocated = len(raw)
+        try:
+            status = int(
+                self._tdh.TdhEnumerateManifestProviderEvents(
+                    ctypes.byref(guid),
+                    ctypes.cast(raw, ctypes.c_void_p),
+                    ctypes.byref(size),
+                )
+            )
+        except BaseException:
+            return None
+        if status != _ERROR_SUCCESS or int(size.value) > allocated:
+            return None
+        header = _PROVIDER_EVENT_INFO_HEADER.from_buffer(raw)
+        count = int(header.NumberOfEvents)
+        required = ctypes.sizeof(_PROVIDER_EVENT_INFO_HEADER) + (
+            count * ctypes.sizeof(_EVENT_DESCRIPTOR)
+        )
+        if (
+            int(header.Reserved) != 0
+            or count != provider.descriptor_count
+            or not 1 <= count <= MAX_PROVIDER_DESCRIPTORS
+            or required > int(size.value)
+        ):
+            return None
+        descriptors: list[tuple[int, int, int, int, int, int, int]] = []
+        offset = ctypes.sizeof(_PROVIDER_EVENT_INFO_HEADER)
+        for index in range(count):
+            item = _EVENT_DESCRIPTOR.from_buffer_copy(
+                raw,
+                offset + index * ctypes.sizeof(_EVENT_DESCRIPTOR),
+            )
+            descriptors.append(
+                (
+                    int(item.Id),
+                    int(item.Version),
+                    int(item.Channel),
+                    int(item.Level),
+                    int(item.Opcode),
+                    int(item.Task),
+                    int(item.Keyword),
+                )
+            )
+        if len(set(descriptors)) != count:
+            return None
+        digest = _provider_descriptor_digest(
+            provider.provider, tuple(descriptors)
+        )
+        if digest != provider.descriptor_digest:
+            return None
+        return "provider-sha256:" + digest
+
     def enable_session(self, owned_session_handle: int) -> frozenset[str]:
         if type(owned_session_handle) is not int or owned_session_handle <= 0:
             _fail("trace_unavailable")
@@ -1554,6 +2104,7 @@ class _WindowsEtwPort:
             if required_registry.issubset(kernel_keys):
                 capable.add("registry_access")
         for provider in _MANIFEST_PROVIDERS:
+            descriptor_binding = self._provider_descriptor_binding(provider)
             guid = _GUID.from_uuid(provider.provider)
             enabled = int(
                 self._advapi.EnableTraceEx2(
@@ -1586,16 +2137,21 @@ class _WindowsEtwPort:
                 and capability is not None
                 and capability.closure_frozen
                 and capability.required_events
-                and set(capability.required_events).issubset(template_keys)
+                and len(capability.required_events) == len(template_keys)
+                and set(capability.required_events) == template_keys
+                and descriptor_binding is not None
                 and any(
                     item.provider == provider.provider
                     and item.plane == provider.plane
                     and item.semantic == "denial"
-                    and item.property_names
-                    and item.binding_fields
+                    and item.fields
+                    and item.object_field is not None
                     for item in _MANIFEST_TEMPLATES
                 )
             ):
+                self._reducer.bind_manifest_identity(
+                    provider.plane, descriptor_binding
+                )
                 capable.add(provider.plane)
         return frozenset(capable)
 
@@ -1720,6 +2276,24 @@ class _WindowsEtwPort:
             return None
         return value
 
+    def _manifest_values(
+        self,
+        record: ctypes.POINTER(_EVENT_RECORD),
+        template: _ManifestEventTemplate,
+    ) -> dict[str, int | str] | None:
+        values: dict[str, int | str] = {}
+        for field in template.fields:
+            if field.kind == "utf16" and field.width is None:
+                value: int | str | None = self._string(record, field.name)
+            elif field.kind in {"uint", "uint32", "hexint32"} and field.width:
+                value = self._integer(record, field.name, field.width)
+            else:
+                return None
+            if value is None:
+                return None
+            values[field.name] = value
+        return values
+
     def translate(self, opaque_record: object) -> None:
         if not isinstance(opaque_record, ctypes._Pointer):  # type: ignore[attr-defined]
             self._reducer.mark_schema_unknown("unknown")
@@ -1837,16 +2411,78 @@ class _WindowsEtwPort:
                 if provider == _USER_LOADER_PROVIDER
                 else "code_integrity_policy"
             )
-            # Closed capability seam: provider/event identity is recognized,
-            # but no event is interpreted until its exact official version and
-            # TDH template has been frozen in _MANIFEST_TEMPLATES.
-            if target_pid is not None and pid == target_pid and (
-                (provider == _USER_LOADER_PROVIDER and event_id in {3, 6, 7, 8, 9})
-                or provider == _CI_PROVIDER
-            ):
-                if not self._reducer.inspect_payload(int(record.contents.UserDataLength)):
+            if provider == _USER_LOADER_PROVIDER:
+                if (
+                    target_pid is None
+                    or pid != target_pid
+                    or not self._reducer._timestamp_in_window(timestamp)
+                ):
                     return
+            elif not self._reducer._timestamp_in_window(timestamp):
+                return
+
+            template = _manifest_template(provider, event_id, version)
+            if template is None:
+                # Full descriptor identity proves shape, not semantics.  An
+                # enabled in-window event outside the explicit semantic
+                # partition therefore invalidates negative closure.
+                if self._reducer.inspect_payload(
+                    int(record.contents.UserDataLength)
+                ):
+                    self._reducer.mark_unknown_manifest_event(
+                        plane=plane, pid=pid, timestamp=timestamp
+                    )
+                return
+            if not self._reducer.inspect_payload(int(record.contents.UserDataLength)):
+                return
+            values = self._manifest_values(record, template)
+            if values is None:
                 self._reducer.mark_schema_unknown(plane)
+                return
+
+            process_identity = (
+                values.get(template.process_field)
+                if template.process_field is not None
+                else None
+            )
+            object_identity = (
+                values.get(template.object_field)
+                if template.object_field is not None
+                else None
+            )
+            status = (
+                values.get(template.status_field)
+                if template.status_field is not None
+                else None
+            )
+            if (
+                process_identity is not None
+                and type(process_identity) is not str
+            ) or (
+                object_identity is not None and type(object_identity) is not str
+            ) or (status is not None and type(status) is not int):
+                self._reducer.mark_schema_unknown(plane)
+                return
+
+            if provider == _USER_LOADER_PROVIDER:
+                if event_id == 5 and values.get("ProcessId") != target_pid:
+                    self._reducer.mark_schema_unknown(plane)
+                    return
+                self._reducer.user_loader_observation(
+                    pid=pid,
+                    timestamp=timestamp,
+                    semantic=template.semantic,
+                    raw_process_identity=process_identity,
+                    raw_object_identity=object_identity,
+                    failure_status=status,
+                )
+            else:
+                self._reducer.code_integrity_observation(
+                    timestamp=timestamp,
+                    semantic=template.semantic,
+                    raw_process_identity=process_identity,
+                    raw_object_identity=object_identity,
+                )
 
 
 __all__ = (

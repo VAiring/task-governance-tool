@@ -298,6 +298,8 @@ class PlaneTraceResult:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeTraceResult:
+    """Intermediate classification evidence; never a qualification/PASS claim."""
+
     candidate_id: str
     runtime_digest: str
     subject_proof: str | None
@@ -415,7 +417,19 @@ class _TraceReducer:
         }
         self._manifest_bindings: dict[str, str] = {}
         self._manifest_schema_uncertain: set[str] = set()
+        self._kernel_schema_uncertain: set[str] = set()
         self._scope_complete = {plane: True for plane in PLANE_ORDER}
+        # Raw classic FileIo header PID is not a proved target identity without
+        # a TTID-to-PID binding, and static PE/API-set/KnownDLL inventory does
+        # not close every route by which the loader may select an image.  No
+        # attribution/route-scope proof exists in this slice.  The enabled CI
+        # keywords likewise do not prove that all 185 registered descriptors
+        # are covered by the closed semantic partition.  Even exact
+        # observations therefore remain intermediate evidence for these
+        # three planes.
+        self._scope_complete["file_access"] = False
+        self._scope_complete["dll_image_load"] = False
+        self._scope_complete["code_integrity_policy"] = False
         self._correlation_complete = {plane: True for plane in PLANE_ORDER}
         self._lossless = True
         self._overflowed = False
@@ -555,6 +569,8 @@ class _TraceReducer:
         with self._lock:
             if plane in self._planes:
                 self._schema_proved[plane] = False
+                if plane in {"file_access", "registry_access"}:
+                    self._kernel_schema_uncertain.add(plane)
                 if plane in self._negative_window_closure:
                     self._negative_window_closure[plane] = False
                     self._manifest_schema_uncertain.add(plane)
@@ -563,6 +579,31 @@ class _TraceReducer:
                 for item in PLANE_ORDER:
                     self._schema_proved[item] = False
                 self._global_reasons.add("observation_ambiguous")
+
+    def mark_unknown_kernel_event(
+        self, *, plane: str, pid: int, timestamp: int
+    ) -> None:
+        """Downgrade only an exact target-child event in the bound QPC window."""
+
+        with self._lock:
+            if plane not in {"file_access", "registry_access"}:
+                self._global_reasons.add("observation_ambiguous")
+                return
+            if type(pid) is not int or type(timestamp) is not int:
+                self._global_reasons.add("observation_ambiguous")
+                return
+            if self._in_window(pid, timestamp):
+                self.mark_schema_unknown(plane)
+
+    def mark_unknown_file_completion_version(self, *, timestamp: int) -> None:
+        """Downgrade a completion drift only while a target IRP is pending."""
+
+        with self._lock:
+            if type(timestamp) is not int:
+                self._global_reasons.add("observation_ambiguous")
+                return
+            if self._pending and self._timestamp_in_window(timestamp):
+                self.mark_schema_unknown("file_access")
 
     def mark_manifest_unavailable(self, plane: str) -> None:
         with self._lock:
@@ -579,7 +620,8 @@ class _TraceReducer:
                 self._global_reasons.add("observation_ambiguous")
                 return
             self._probe_available[plane] = True
-            self._schema_proved[plane] = True
+            if plane not in self._kernel_schema_uncertain:
+                self._schema_proved[plane] = True
 
     def bind_manifest_identity(self, plane: str, binding: str) -> None:
         """Bind a verified full provider descriptor set without retaining it."""
@@ -807,25 +849,28 @@ class _TraceReducer:
                     self._reason(plane, "observation_ambiguous")
                 return
 
-            process_ref = (
-                self._inventory.resolve("dll_image_load", raw_process_identity)
-                if raw_process_identity is not None
-                else None
-            )
             object_ref = (
                 self._inventory.resolve(plane, raw_object_identity)
                 if raw_object_identity is not None
                 else None
             )
-            if raw_process_identity is not None:
-                if process_ref != self._initial_image_ref:
-                    if object_ref is not None:
-                        self._reason(plane, "plane_scope_unproved")
-                    return
-                if object_ref is None:
+            if raw_process_identity is None:
+                # CI header PID is not authority.  A provider event without an
+                # exact payload process identity may be retained only as an
+                # ambiguity and can never become a target-child denial.
+                if self._record(plane):
+                    self._mark_exact_manifest_event(plane)
+                    self._correlation_failure(plane)
+                return
+            process_ref = self._inventory.resolve(
+                "dll_image_load", raw_process_identity
+            )
+            if process_ref != self._initial_image_ref:
+                if object_ref is not None:
                     self._reason(plane, "plane_scope_unproved")
-                    return
-            elif object_ref is None:
+                return
+            if object_ref is None:
+                self._reason(plane, "plane_scope_unproved")
                 return
             if not self._record(plane):
                 return
@@ -1520,7 +1565,6 @@ _REGISTRY_OPERATION_BY_OPCODE = {
     17: "registry_query",
     18: "registry_query_value",
     19: "registry_query_value",
-    29: "registry_query",
 }
 
 
@@ -2384,7 +2428,9 @@ class _WindowsEtwPort:
                 return
             template = _kernel_template(provider, opcode, version)
             if template is None:
-                self._reducer.mark_schema_unknown("file_access")
+                self._reducer.mark_unknown_kernel_event(
+                    plane="file_access", pid=pid, timestamp=timestamp
+                )
                 return
             if not self._reducer.inspect_payload(int(record.contents.UserDataLength)):
                 return
@@ -2404,7 +2450,12 @@ class _WindowsEtwPort:
                 return
             template = _kernel_template(provider, opcode, version)
             if template is None:
-                self._reducer.mark_schema_unknown("file_access")
+                self._reducer.mark_unknown_kernel_event(
+                    plane="file_access", pid=pid, timestamp=timestamp
+                )
+                self._reducer.mark_unknown_file_completion_version(
+                    timestamp=timestamp
+                )
                 return
             if not self._reducer.inspect_payload(int(record.contents.UserDataLength)):
                 return
@@ -2420,6 +2471,11 @@ class _WindowsEtwPort:
                     status=status & 0xFFFFFFFF,
                     exact_pid_scope=pid == self._reducer._pid,
                 )
+            return
+        if provider == _FILE_PROVIDER:
+            self._reducer.mark_unknown_kernel_event(
+                plane="file_access", pid=pid, timestamp=timestamp
+            )
             return
         if provider == _IMAGE_PROVIDER:
             if opcode in {3, 4}:
@@ -2452,12 +2508,19 @@ class _WindowsEtwPort:
                         pid=pid, timestamp=timestamp, raw_identity=path
                     )
             return
-        if provider == _REGISTRY_PROVIDER and opcode in _REGISTRY_OPERATION_BY_OPCODE:
+        if provider == _REGISTRY_PROVIDER:
             if target_pid is None or pid != target_pid:
+                return
+            if opcode not in _REGISTRY_OPERATION_BY_OPCODE:
+                self._reducer.mark_unknown_kernel_event(
+                    plane="registry_access", pid=pid, timestamp=timestamp
+                )
                 return
             template = _kernel_template(provider, opcode, version)
             if template is None:
-                self._reducer.mark_schema_unknown("registry_access")
+                self._reducer.mark_unknown_kernel_event(
+                    plane="registry_access", pid=pid, timestamp=timestamp
+                )
                 return
             if not self._reducer.inspect_payload(int(record.contents.UserDataLength)):
                 return

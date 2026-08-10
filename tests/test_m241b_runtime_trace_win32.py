@@ -70,7 +70,7 @@ def _close_manifest_window(
 
 
 class RuntimeTraceReducerPureTests(unittest.TestCase):
-    def test_exact_pid_qpc_irp_and_manifest_semantics_form_four_closed_planes(self):
+    def test_exact_observations_cannot_close_unproved_file_loader_or_ci_scope(self):
         reducer = _bound_reducer()
         _close_manifest_window(
             reducer, "dll_image_load", "code_integrity_policy"
@@ -109,23 +109,36 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
         self.assertEqual(
             tuple((item.plane, item.outcome) for item in result.planes),
             (
-                ("file_access", "denial"),
-                ("dll_image_load", "observed_no_denial"),
+                ("file_access", "inconclusive"),
+                ("dll_image_load", "inconclusive"),
                 ("registry_access", "observed_no_denial"),
-                ("code_integrity_policy", "observed_no_denial"),
+                ("code_integrity_policy", "inconclusive"),
             ),
         )
-        self.assertEqual(result.planes[0].object_ref, _OBJECTS["file_access"][0])
+        self.assertEqual(
+            reducer._planes["file_access"].denials,
+            {(_OBJECTS["file_access"][0], "file_create")},
+        )
+        self.assertIsNone(result.planes[0].object_ref)
+        self.assertEqual(result.planes[0].reason, "plane_scope_unproved")
         self.assertIsNone(result.planes[1].object_ref)
-        self.assertFalse(result.has_inconclusive)
+        self.assertEqual(result.planes[1].reason, "plane_scope_unproved")
+        self.assertIsNone(result.planes[3].object_ref)
+        self.assertEqual(result.planes[3].reason, "plane_scope_unproved")
+        self.assertTrue(result.has_inconclusive)
         self.assertRegex(result.window_binding, r"\Awindow-sha256:[0-9a-f]{64}\Z")
         self.assertTrue(
             all(item.collection_schema == trace.COLLECTION_SCHEMA for item in result.quality)
         )
         self.assertTrue(all(item.probe_available for item in result.quality))
         self.assertTrue(all(item.lossless for item in result.quality))
-        self.assertTrue(all(item.plane_scope_complete for item in result.quality))
+        self.assertEqual(
+            tuple(item.plane_scope_complete for item in result.quality),
+            (False, False, True, False),
+        )
         self.assertTrue(all(item.correlation_complete for item in result.quality))
+        for forbidden_claim in ("qualified", "qualification", "pass", "passed"):
+            self.assertFalse(hasattr(result, forbidden_claim))
 
     def test_wrong_pid_and_out_of_window_records_do_not_bind_to_child(self):
         reducer = _bound_reducer()
@@ -164,7 +177,7 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
         result = _finish(reducer)
 
         self.assertEqual(result.planes[0].outcome, "inconclusive")
-        self.assertEqual(result.planes[0].reason, "observation_ambiguous")
+        self.assertEqual(result.planes[0].reason, "plane_scope_unproved")
         self.assertFalse(result.quality[0].correlation_complete)
 
     def test_unmatched_pending_irp_and_nonclosed_status_are_inconclusive(self):
@@ -214,12 +227,13 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
 
         result = _finish(reducer)
 
-        for index in (0, 2):
+        for index, expected_reason in (
+            (0, "plane_scope_unproved"),
+            (2, "observation_ambiguous"),
+        ):
             with self.subTest(plane=result.planes[index].plane):
                 self.assertEqual(result.planes[index].outcome, "inconclusive")
-                self.assertEqual(
-                    result.planes[index].reason, "observation_ambiguous"
-                )
+                self.assertEqual(result.planes[index].reason, expected_reason)
                 self.assertFalse(result.quality[index].correlation_complete)
                 self.assertEqual(
                     result.planes[index].reason,
@@ -304,7 +318,15 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
 
         self.assertFalse(result.cleanup_proved)
         self.assertTrue(all(item.outcome == "inconclusive" for item in result.planes))
-        self.assertTrue(all(item.reason == "cleanup_unproved" for item in result.planes))
+        self.assertEqual(
+            tuple(item.reason for item in result.planes),
+            (
+                "plane_scope_unproved",
+                "plane_scope_unproved",
+                "cleanup_unproved",
+                "plane_scope_unproved",
+            ),
+        )
         self.assertTrue(all(not item.cleanup_proved for item in result.quality))
 
     def test_loss_unknown_schema_and_missing_subject_proof_fail_closed(self):
@@ -476,7 +498,7 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
         self.assertEqual(ci.reason, "plane_scope_unproved")
         self.assertFalse(reducer._negative_window_closure["code_integrity_policy"])
 
-    def test_exact_ci_denial_is_positive_proof_without_negative_closure(self):
+    def test_exact_ci_denial_remains_intermediate_without_scope_proof(self):
         reducer = _bound_reducer()
         reducer.code_integrity_observation(
             timestamp=110,
@@ -487,16 +509,39 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
 
         result = _finish(reducer)
 
-        self.assertEqual(result.planes[3].outcome, "denial")
         self.assertEqual(
-            result.planes[3].object_ref,
-            _OBJECTS["code_integrity_policy"][0],
+            reducer._planes["code_integrity_policy"].denials,
+            {(_OBJECTS["code_integrity_policy"][0], "image_policy_validate")},
         )
+        self.assertEqual(result.planes[3].outcome, "inconclusive")
+        self.assertIsNone(result.planes[3].object_ref)
+        self.assertEqual(result.planes[3].reason, "plane_scope_unproved")
         self.assertTrue(result.quality[3].probe_available)
         self.assertEqual(
             result.quality[3].collection_schema, trace.COLLECTION_SCHEMA
         )
         self.assertFalse(reducer._negative_window_closure["code_integrity_policy"])
+
+    def test_ci_denial_without_exact_payload_process_is_only_ambiguous(self):
+        reducer = _bound_reducer()
+        _close_manifest_window(reducer, "code_integrity_policy")
+
+        reducer.code_integrity_observation(
+            timestamp=110,
+            semantic="denial",
+            raw_process_identity=None,
+            raw_object_identity="runtime-image",
+        )
+
+        self.assertFalse(reducer._planes["code_integrity_policy"].denials)
+        self.assertIn(
+            "observation_ambiguous",
+            reducer._planes["code_integrity_policy"].reasons,
+        )
+        result = _finish(reducer)
+        self.assertEqual(result.planes[3].outcome, "inconclusive")
+        self.assertEqual(result.planes[3].reason, "plane_scope_unproved")
+        self.assertFalse(result.quality[3].correlation_complete)
 
     def test_user_loader_denial_requires_exact_initial_process_and_dependency(self):
         initial = _OBJECTS["dll_image_load"][0]
@@ -541,7 +586,13 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
             raw_object_identity="dependency.dll",
             failure_status=0xC0000022,
         )
-        self.assertEqual(_finish(exact).planes[1].outcome, "denial")
+        self.assertEqual(
+            exact._planes["dll_image_load"].denials,
+            {(_DEPENDENCY_REF, "image_map")},
+        )
+        exact_result = _finish(exact)
+        self.assertEqual(exact_result.planes[1].outcome, "inconclusive")
+        self.assertEqual(exact_result.planes[1].reason, "plane_scope_unproved")
 
         mismatch = build()
         mismatch.user_loader_observation(
@@ -590,9 +641,11 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
             raw_object_identity="dependency.dll",
             failure_status=0xC0000034,
         )
+        other_status_result = _finish(other_status)
         self.assertEqual(
-            _finish(other_status).planes[1].reason, "observation_ambiguous"
+            other_status_result.planes[1].reason, "plane_scope_unproved"
         )
+        self.assertFalse(other_status_result.quality[1].correlation_complete)
 
     def test_ci_exact_object_with_other_known_process_is_inconclusive(self):
         initial = _OBJECTS["dll_image_load"][0]
@@ -1153,31 +1206,191 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
         result = reducer.finish()
         self.assertEqual(result.quality[0].collection_schema, trace.COLLECTION_SCHEMA)
 
-    def test_target_kernel_version_and_exact_width_drift_are_inconclusive(self):
+    def test_target_kernel_unknown_opcode_or_version_is_sticky_after_success(self):
+        cases = (
+            ("file_access", trace._FILE_PROVIDER_UUID, 64, 1, 0),
+            ("file_access", trace._FILE_PROVIDER_UUID, 76, 1, 0),
+            ("file_access", trace._FILE_PROVIDER_UUID, 65, 2, 0),
+            ("registry_access", trace._REGISTRY_PROVIDER_UUID, 10, 1, 2),
+            ("registry_access", trace._REGISTRY_PROVIDER_UUID, 29, 2, 2),
+            ("registry_access", trace._REGISTRY_PROVIDER_UUID, 99, 2, 2),
+        )
+        for plane, provider, opcode, version, plane_index in cases:
+            with self.subTest(plane=plane, opcode=opcode, version=version):
+                reducer = _bound_reducer()
+                if plane == "file_access":
+                    reducer.file_begin(
+                        pid=41, timestamp=105, irp=700, raw_identity="known"
+                    )
+                    reducer.file_complete(
+                        timestamp=106,
+                        irp=700,
+                        status=0,
+                        exact_pid_scope=False,
+                    )
+                else:
+                    reducer.registry_operation(
+                        pid=41,
+                        timestamp=105,
+                        raw_identity="known",
+                        status=0,
+                        operation="registry_open",
+                    )
+                self.assertEqual(reducer._planes[plane].successes, 1)
+
+                port = object.__new__(trace._WindowsEtwPort)
+                port._reducer = reducer
+                port._integer = lambda *_args: (_ for _ in ()).throw(
+                    AssertionError("unknown kernel payload decoded")
+                )
+                port._string = port._integer
+                drift = trace._EVENT_RECORD()
+                drift.EventHeader.ProviderId = trace._GUID.from_uuid(provider)
+                drift.EventHeader.EventDescriptor.Opcode = opcode
+                drift.EventHeader.EventDescriptor.Version = version
+                drift.EventHeader.ProcessId = 41
+                drift.EventHeader.TimeStamp = 110
+                drift.UserDataLength = 16
+                port.translate(ctypes.pointer(drift))
+
+                if plane == "file_access":
+                    reducer.file_begin(
+                        pid=41, timestamp=115, irp=701, raw_identity="known"
+                    )
+                    reducer.file_complete(
+                        timestamp=116,
+                        irp=701,
+                        status=0,
+                        exact_pid_scope=False,
+                    )
+                else:
+                    reducer.registry_operation(
+                        pid=41,
+                        timestamp=115,
+                        raw_identity="known",
+                        status=0,
+                        operation="registry_query",
+                    )
+                reducer.mark_probe_available(plane)
+                self.assertEqual(reducer._planes[plane].successes, 2)
+
+                result = _finish(reducer)
+                self.assertEqual(
+                    result.planes[plane_index].outcome, "inconclusive"
+                )
+                self.assertEqual(
+                    result.planes[plane_index].reason,
+                    "collection_schema_unproved",
+                )
+                self.assertEqual(
+                    result.planes[plane_index].reason,
+                    trace._quality_failure_reason(result.quality[plane_index]),
+                )
+
+    def test_unknown_kernel_downgrade_requires_exact_pid_and_qpc_window(self):
         reducer = _bound_reducer()
         port = object.__new__(trace._WindowsEtwPort)
         port._reducer = reducer
         port._integer = lambda *_args: (_ for _ in ()).throw(
-            AssertionError("version drift payload decoded")
+            AssertionError("out-of-scope kernel payload decoded")
         )
         port._string = port._integer
+        for provider, opcode, pid, timestamp in (
+            (trace._FILE_PROVIDER_UUID, 65, 41, 99),
+            (trace._FILE_PROVIDER_UUID, 65, 42, 110),
+            (trace._REGISTRY_PROVIDER_UUID, 99, 41, 99),
+            (trace._REGISTRY_PROVIDER_UUID, 99, 42, 110),
+        ):
+            record = trace._EVENT_RECORD()
+            record.EventHeader.ProviderId = trace._GUID.from_uuid(provider)
+            record.EventHeader.EventDescriptor.Opcode = opcode
+            record.EventHeader.EventDescriptor.Version = 2
+            record.EventHeader.ProcessId = pid
+            record.EventHeader.TimeStamp = timestamp
+            port.translate(ctypes.pointer(record))
 
+        self.assertTrue(reducer._schema_proved["file_access"])
+        self.assertTrue(reducer._schema_proved["registry_access"])
+
+    def test_unknown_file_completion_version_uses_pending_target_irp(self):
+        for header_pid in (0, 42):
+            with self.subTest(header_pid=header_pid):
+                reducer = _bound_reducer()
+                reducer.file_begin(
+                    pid=41, timestamp=105, irp=800, raw_identity="known"
+                )
+                port = object.__new__(trace._WindowsEtwPort)
+                port._reducer = reducer
+                port._integer = lambda *_args: (_ for _ in ()).throw(
+                    AssertionError("unknown completion payload decoded")
+                )
+                port._string = port._integer
+                record = trace._EVENT_RECORD()
+                record.EventHeader.ProviderId = trace._GUID.from_uuid(
+                    trace._FILE_PROVIDER_UUID
+                )
+                record.EventHeader.EventDescriptor.Opcode = 76
+                record.EventHeader.EventDescriptor.Version = 1
+                record.EventHeader.ProcessId = header_pid
+                record.EventHeader.TimeStamp = 110
+                record.UserDataLength = 16
+
+                port.translate(ctypes.pointer(record))
+
+                self.assertTrue(reducer.expects_file_completion())
+                self.assertFalse(reducer._schema_proved["file_access"])
+                self.assertIn(
+                    "file_access", reducer._kernel_schema_uncertain
+                )
+                reducer.mark_probe_available("file_access")
+                self.assertFalse(reducer._schema_proved["file_access"])
+                result = _finish(reducer)
+                self.assertEqual(
+                    result.planes[0].reason,
+                    "collection_schema_unproved",
+                )
+
+    def test_unknown_file_completion_without_pending_or_window_is_ignored(self):
+        cases = (
+            (0, 110, False),
+            (42, 110, False),
+            (0, 99, True),
+        )
+        for header_pid, timestamp, pending in cases:
+            with self.subTest(
+                header_pid=header_pid,
+                timestamp=timestamp,
+                pending=pending,
+            ):
+                reducer = _bound_reducer()
+                if pending:
+                    reducer.file_begin(
+                        pid=41, timestamp=105, irp=801, raw_identity="known"
+                    )
+                port = object.__new__(trace._WindowsEtwPort)
+                port._reducer = reducer
+                port._integer = lambda *_args: (_ for _ in ()).throw(
+                    AssertionError("out-of-scope completion payload decoded")
+                )
+                port._string = port._integer
+                record = trace._EVENT_RECORD()
+                record.EventHeader.ProviderId = trace._GUID.from_uuid(
+                    trace._FILE_PROVIDER_UUID
+                )
+                record.EventHeader.EventDescriptor.Opcode = 76
+                record.EventHeader.EventDescriptor.Version = 1
+                record.EventHeader.ProcessId = header_pid
+                record.EventHeader.TimeStamp = timestamp
+
+                port.translate(ctypes.pointer(record))
+
+                self.assertTrue(reducer._schema_proved["file_access"])
+                self.assertNotIn(
+                    "file_access", reducer._kernel_schema_uncertain
+                )
+
+    def test_exact_integer_width_drift_is_rejected(self):
         drift = trace._EVENT_RECORD()
-        drift.EventHeader.ProviderId = trace._GUID.from_uuid(
-            trace._FILE_PROVIDER_UUID
-        )
-        drift.EventHeader.EventDescriptor.Opcode = 64
-        drift.EventHeader.EventDescriptor.Version = 1
-        drift.EventHeader.ProcessId = 41
-        drift.EventHeader.TimeStamp = 110
-        port.translate(ctypes.pointer(drift))
-        result = _finish(reducer)
-        self.assertEqual(result.planes[0].reason, "collection_schema_unproved")
-        self.assertEqual(
-            result.planes[0].reason,
-            trace._quality_failure_reason(result.quality[0]),
-        )
-
         exact = object.__new__(trace._WindowsEtwPort)
         exact._property = lambda _record, _name: b"\x01\x00\x00\x00"
         self.assertIsNone(exact._integer(ctypes.pointer(drift), "IrpPtr", 8))
@@ -1853,7 +2066,12 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
         )
         port.translate(ctypes.pointer(exact))
         result = _finish(reducer)
-        self.assertEqual(result.planes[1].outcome, "denial")
+        self.assertEqual(
+            reducer._planes["dll_image_load"].denials,
+            {(_DEPENDENCY_REF, "image_map")},
+        )
+        self.assertEqual(result.planes[1].outcome, "inconclusive")
+        self.assertEqual(result.planes[1].reason, "plane_scope_unproved")
 
     def test_ci_uses_payload_binding_not_header_pid_and_3114_is_never_denial(self):
         reducer = _bound_reducer()
@@ -1873,7 +2091,12 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
 
         port.translate(ctypes.pointer(record))
         result = _finish(reducer)
-        self.assertEqual(result.planes[3].outcome, "denial")
+        self.assertEqual(
+            reducer._planes["code_integrity_policy"].denials,
+            {(_OBJECTS["code_integrity_policy"][0], "image_policy_validate")},
+        )
+        self.assertEqual(result.planes[3].outcome, "inconclusive")
+        self.assertEqual(result.planes[3].reason, "plane_scope_unproved")
 
         single = _bound_reducer()
         _close_manifest_window(single, "code_integrity_policy")
@@ -1890,8 +2113,12 @@ class RuntimeTraceNativeDefinitionTests(unittest.TestCase):
         single_port.translate(ctypes.pointer(event_3114))
         single_result = _finish(single)
         self.assertEqual(single_result.planes[3].outcome, "inconclusive")
+        self.assertIn(
+            "observation_ambiguous",
+            single._planes["code_integrity_policy"].reasons,
+        )
         self.assertEqual(
-            single_result.planes[3].reason, "observation_ambiguous"
+            single_result.planes[3].reason, "plane_scope_unproved"
         )
 
     def test_unpartitioned_ci_event_invalidates_full_negative_closure(self):

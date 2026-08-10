@@ -4,9 +4,10 @@
 > MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M22.1A, TG-M22.2,
 > TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, and bounded offline/mock TG-M23.2
 > plus offline/mock TG-M23.3 integrated Analyzer acceptance are accepted
-> predecessors. TG-M24.1 is an accepted design predecessor, current bounded
-> correction authority belongs to TG-M24.1A, and TG-M24.2 through TG-M24.4
-> remain inactive. No TG-M23 unit is current, and no TG-M24 runtime is active.
+> predecessors. TG-M24.1 and its bounded TG-M24.1A correction are accepted
+> predecessors, current shadow-Runner implementation authority belongs to
+> TG-M24.2, and TG-M24.3 through TG-M24.4 remain inactive. No TG-M23 unit is
+> current, and no TG-M24 runtime is active before TG-M24.2 completion.
 > Load files only when the current
 > Task Contract or the
 > [repository authority index](../authority.md) selects their exact path and
@@ -41,10 +42,10 @@ targets, reviews, receipts, or completion history.
   acceptance; SQLite, `storage.py`, public CLI/Skill, network/live-model action,
   gate mutation, and Task mutation remain outside scope.
 - [TG-M24 Verification Runner](tg-m24-verification-runner.md#tg-m24-verification-runner)
-  owns accepted TG-M24.1 Runner design, the current bounded TG-M24.1A LPAC
-  portability correction, and inactive TG-M24.2 shadow, TG-M24.3 gate-
-  integration, and TG-M24.4 acceptance detail. It activates no later-unit
-  behavior.
+  owns accepted TG-M24.1 Runner design and bounded TG-M24.1A LPAC portability
+  correction, current TG-M24.2 shadow-Runner implementation authority, and
+  inactive TG-M24.3 gate-integration and TG-M24.4 acceptance detail. Current
+  authority alone activates no later-unit behavior.
 
 ## Cross-Sequence Documentation Gateway
 

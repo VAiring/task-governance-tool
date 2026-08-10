@@ -38,10 +38,12 @@ transfer either role.
 
 TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
 offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer acceptance
-are accepted predecessors. TG-M24.1 is also an accepted design predecessor;
-current bounded correction authority belongs to TG-M24.1A, and TG-M24.2
-through TG-M24.4 remain inactive. No TG-M23 execution unit is current;
-network/live Analyzer acceptance remains outside the accepted scope. The
+are accepted predecessors. TG-M24.1 and its bounded TG-M24.1A portability
+correction are also accepted predecessors; current shadow-Runner implementation
+authority belongs to TG-M24.2, and TG-M24.3 through TG-M24.4 remain inactive.
+No TG-M23 execution unit is current, and no TG-M24 runtime is active before
+TG-M24.2 completion; network/live Analyzer acceptance remains outside the
+accepted scope. The
 derived-evidence contract is the sole unit owner/router; its process-safety
 route delegates one non-overlapping physical-safety seam and owns no unit state
 or core semantics.
@@ -52,9 +54,9 @@ or core semantics.
 
 TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
 preserves the inactive post-M24 normalization scope. Neither route changes
-product behavior. M24.1 design authority is accepted, M24.1A owns the current
-bounded correction, later M24 units remain inactive, and indexing or reading
-them activates no behavior.
+product behavior. M24.1 design authority and the bounded M24.1A correction are
+accepted, M24.2 owns current shadow-Runner implementation authority, M24.3 and
+M24.4 remain inactive, and indexing or reading them activates no behavior.
 
 ## Non-Authoritative History
 
@@ -129,8 +131,8 @@ owner, route, unit, and current/inactive membership are the enforced meaning.
     {
       "path": "docs/execution-contracts/tg-m24-verification-runner.md",
       "route_anchor": "tg-m24-verification-runner",
-      "current_units": ["TG-M24.1A"],
-      "inactive_units": ["TG-M24.2", "TG-M24.3", "TG-M24.4"]
+      "current_units": ["TG-M24.2"],
+      "inactive_units": ["TG-M24.3", "TG-M24.4"]
     }
   ],
   "documentation_sequence": {

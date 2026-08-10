@@ -3,10 +3,11 @@
 <a id="tg-m24-verification-runner"></a>
 
 > [!IMPORTANT]
-> MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 is the accepted
-> design predecessor, current bounded correction authority belongs to
-> TG-M24.1A, and TG-M24.2, TG-M24.3, and TG-M24.4 are inactive. No TG-M24
-> runtime is active. Loading this document activates no Runner, command
+> MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 and its bounded
+> TG-M24.1A correction are accepted predecessors, current shadow-Runner
+> implementation authority belongs to TG-M24.2, and TG-M24.3 and TG-M24.4 are
+> inactive. No TG-M24 runtime is active before TG-M24.2 completion. Loading
+> this document activates no Runner, command
 > execution, schema, CLI, Skill behavior, completion gate, network use,
 > credential use, or target mutation.
 
@@ -24,8 +25,8 @@ TG-M24 is sequential Tier 2 work in lane `TG-M24-VERIFICATION-RUNNER`:
 | Unit/order | Task | Dependency | Purpose, permission boundary, and completion gate |
 |---|---|---|---|
 | TG-M24.1 / 10 | `tg_task_29aa63124900ad95` | accepted TG-DOC.2 | Accepted design predecessor: freeze project-owned verification plans, shell-free argv, exact Task/Contract/expectation/target binding, environment/network/mutation/resource policy, sanitized Runner-observed evidence, shadow-to-gate staging, and the M21 fallback. Activate no Runner, schema, CLI, Skill, gate, network, credential, or target mutation. Require exact documentation checks and diff, a current Receipt, and two independent Tier 2 reviews. |
-| TG-M24.1A / 15 | `tg_task_56e212c793a42272` | accepted TG-M24.1 | Current bounded correction: retain exact fixed-DWORD class-46 proof where supported and add only the exact error-87 public-`AccessCheck` semantic route with a never-resumed normal-AppContainer control in a separate Job. Give both children the same four attributes and vary only the AAP-policy DWORD (`1` for LPAC, `0` for normal control). Preserve fail-closed no-resume and cleanup guarantees, make the one mandatory native portability test's SKIP non-PASS, and activate no Runner, schema, CLI, Skill, gate, network, credential, or external-project behavior. Require document/release, focused/native/full offline, exact-diff checks, a current Receipt, and two independent Tier 2 reviews. |
-| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1A | Inactive: implement only the approved bounded Runner and append-only evidence in shadow mode; existing M21 and completion gates remain unchanged. Execute only an explicit current project-owned plan, and require separate exact authority for any live external-project run. The full process/registry matrix is a distinct non-SKIP completion gate; registry `0x80070002` and every other registry failure remain fail-closed and never count as success evidence. Require migration, safety, package, focused/full offline checks, exact diff, a current Receipt, and two Tier 2 reviews. |
+| TG-M24.1A / 15 | `tg_task_56e212c793a42272` | accepted TG-M24.1 | Accepted bounded correction: retain exact fixed-DWORD class-46 proof where supported and add only the exact error-87 public-`AccessCheck` semantic route with a never-resumed normal-AppContainer control in a separate Job. Give both children the same four attributes and vary only the AAP-policy DWORD (`1` for LPAC, `0` for normal control). Preserve fail-closed no-resume and cleanup guarantees, make the one mandatory native portability test's SKIP non-PASS, and activate no Runner, schema, CLI, Skill, gate, network, credential, or external-project behavior. Require document/release, focused/native/full offline, exact-diff checks, a current Receipt, and two independent Tier 2 reviews. |
+| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1A | Current authority: implement only the approved bounded Runner and append-only evidence in shadow mode; existing M21 and completion gates remain unchanged. Execute only an explicit current project-owned plan, and require separate exact authority for any live external-project run. Integrate the accepted private LPAC seam, fix the fail-closed registry `0x80070002` boundary without accepting any registry failure as success, and add the full process/registry stable ID to the mandatory-native set with non-SKIP enforcement before acceptance. Require migration, safety, package, focused/full offline checks, exact diff, a current Receipt, and two Tier 2 reviews. |
 | TG-M24.3 / 30 | `tg_task_dc015144091f8e60` | accepted TG-M24.2 | Inactive: make one qualifying exact-current complete-plan Runner result an explicit versioned completion basis while retaining the M21 caller-attested Receipt for unsupported, manual, visual, external, or unavailable-Runner cases. Analyzer output, arbitrary commands, and new normal-loop LLM leaves gain no gate authority. Require full offline, package/release consistency, exact diff, a current Receipt, and two Tier 2 reviews. |
 | TG-M24.4 / 40 | `tg_task_f81f2d126f033a59` | accepted TG-M24.3 | Inactive: accept Runner safety, provenance, the completion gate, M21 fallback, Evidence Bundle/JSON, Analyzer coexistence, legacy/history, and realistic supported/unsupported flows, with only the bounded M24.1A portability correction to the accepted M24.1 design. Runs outside approved fixtures or this repository require separate exact project authority. Require focused/full and authorized forward checks, exact diff, a current Receipt, and two Tier 2 reviews. |
 
@@ -42,16 +43,18 @@ main-LLM command or decision.
 ## TG-M24.1 Accepted Verification Runner Design
 
 Task `tg_task_29aa63124900ad95` is the accepted documentation/design
-predecessor. The design below, as boundedly corrected by TG-M24.1A, is exact
-authority for TG-M24.2 through TG-M24.4, but activates none of it. The current
+predecessor. The design below, as boundedly corrected by accepted TG-M24.1A,
+is exact authority for current TG-M24.2 and inactive TG-M24.3/TG-M24.4, but
+activates none of their runtime behavior. The current
 product remains schema v19,
 Evidence Bundle/JSON v1, Viewer snapshot v4 with source schemas v5-v19, the
 existing public CLI and Skill, and the M21 caller-attested verification gate.
 
 ### Fixed Product And Version Boundary
 
-TG-M24.2 may start the unpublished v0.13.0 candidate and migrate schema v19 to
-schema v20. Schema v20 owns only the shadow Runner foundation, append-only
+TG-M24.2 owns the unpublished v0.13.0/schema-v20 transition, but the candidate
+remains v0.12.0/schema v19 until TG-M24.2 completes. Schema v20 owns only the
+shadow Runner foundation, append-only
 observations, Runner Evidence References, Bundle/JSON v2, and compatibility
 work needed to expose gate-ineligible status. It must continue to write
 verification-basis version 1 completion cycles and require the M21 Receipt.
@@ -267,14 +270,25 @@ folder through `GetAppContainerFolderPath`; any alias, reparse point, unexpected
 owner, extra root, or size/count overflow blocks before resume. It preserves
 coordinator cleanup rights while replacing the profile/scratch DACLs with the
 fixed read-only child policy. After the first child is created suspended,
-taskgov validates its primary token, creates the least-rights impersonation
-duplicate described below, and under that impersonation opens only the current
-profile registry root through `GetAppContainerRegistryLocation` with
-`READ_CONTROL|WRITE_DAC`. It seals that root and all existing descendants
-read-only to the child, reopens/rechecks the descriptors, and reverts
-impersonation before resume. Failure at any point terminates the never-resumed
-Job, follows owned cleanup, and cannot fall back. No registry path string is
-derived or persisted.
+taskgov validates its primary token and creates the least-rights impersonation
+duplicate described below. Through the accepted
+`_verification_runner_lpac_win32.py` private seam, it uses that duplicate only
+to impersonate long enough for
+`GetAppContainerRegistryLocation(READ_CONTROL|WRITE_DAC)` to return the current
+profile-root locator. The HRESULT must be `S_OK` and the locator non-null; it
+then immediately reverts. Under the coordinator token it calls
+`RegOpenKeyExW(locator, NULL, 0, KEY_READ|WRITE_DAC)`, requires success plus a
+non-null, non-alias handle to the same key, and closes the locator before using
+the reopened handle to enumerate, seal, reopen, and recheck the root and every
+existing descendant. After this handoff the LPAC duplicate is used only for
+the explicit `AccessCheck` calls below. Any non-`S_OK` locator result,
+including HRESULT `0x80070002`, any `S_OK`-plus-null result, any
+`RegOpenKeyExW` failure, null or alias handle, or close failure is fail-closed
+and never success evidence. A revert failure gets one
+`SetThreadToken(NULL, NULL)` recovery attempt, still produces
+`sandbox_cleanup_failed`, and forbids resume; failure of that recovery is
+fail-stop. Failure at any point terminates the never-resumed Job, follows owned
+cleanup, and cannot fall back. No registry path string is derived or persisted.
 
 Recovery calls `DeleteAppContainerProfile` only when the same attempt has a durable
 `profile_created` event. An attempt with neither created nor collision event
@@ -324,9 +338,12 @@ and registry security descriptor but makes no effective-token claim. After
 atomic suspended creation it opens and validates the child primary token,
 using a short-lived parent handle with exactly `TOKEN_QUERY|TOKEN_DUPLICATE`,
 then creates a `SecurityImpersonation` duplicate with exactly
-`TOKEN_QUERY|TOKEN_IMPERSONATE`. It uses that duplicate only for
-`SetThreadToken`, `GetAppContainerRegistryLocation`, and every effective
-`AccessCheck` before the sole resume, then reverts and closes it. For
+`TOKEN_QUERY|TOKEN_IMPERSONATE`. It uses that duplicate with
+`SetThreadToken` only for the single `GetAppContainerRegistryLocation` call,
+then immediately reverts before any `RegOpenKeyExW`, enumeration, descriptor
+mutation, or `AccessCheck`. Thereafter it supplies the duplicate only as the
+explicit token argument to every effective `AccessCheck` before the sole
+resume, and closes it after those checks. For
 every protected file/directory and every ancestor directory, `AccessCheck`
 must deny `FILE_ADD_FILE`, `FILE_ADD_SUBDIRECTORY`, `FILE_WRITE_DATA`,
 `FILE_APPEND_DATA`, `FILE_WRITE_EA`, `FILE_WRITE_ATTRIBUTES`, `DELETE`,
@@ -1170,21 +1187,25 @@ select the ID is unaffected, and unrelated optional SKIPs retain their
 existing meaning. The normal-AppContainer/LPAC positive matrix therefore
 completes without SKIP on a supported governed Windows lane. Its native
 evidence comes from the direct private-seam proof above, independently of
-`run_process_steps` and the full process/registry matrix. The latter remains
-an inactive TG-M24.2 non-SKIP completion gate and is not part of the current
-mandatory set.
+`run_process_steps` and the full process/registry matrix. The latter is a
+current TG-M24.2 completion gate but is not yet part of the repository
+mandatory-native set. TG-M24.2 must add exactly
+`test_m242_runner_process.RunnerProcessNativeTests.test_real_process_matrix_and_cleanup`
+as a second closed mandatory-native ID with non-SKIP enforcement before
+acceptance; until then, the standalone portability ID remains the complete
+current set.
 
-This accepted design and its current bounded correction authority activate no
-runtime, process, schema, gate, CLI, Skill, network, credential, or target
-mutation. Those changes remain confined to the inactive units and their exact
-gates below.
+This accepted design and its accepted bounded correction activate no runtime,
+process, schema, gate, CLI, Skill, network, credential, or target mutation.
+Current TG-M24.2 authority permits only implementation toward its exact gates;
+it does not make incomplete Runner code or the full native matrix active.
 
 <a id="tg-m24-1a"></a>
 
-## TG-M24.1A Current Windows LPAC Proof Portability Correction
+## TG-M24.1A Accepted Windows LPAC Proof Portability Correction
 
-Task `tg_task_56e212c793a42272` may correct only the accepted M24.1 LPAC proof
-through one private, import-inactive package seam,
+Task `tg_task_56e212c793a42272` accepted only the bounded M24.1 LPAC proof
+correction through one private, import-inactive package seam,
 `_verification_runner_lpac_win32.py`, its direct suspended-child native fixture
 and focused pure/fault tests in `test_m241a_lpac_portability`, and the one-ID
 repository mandatory-native lane gate. It retains the exact class-46 proof
@@ -1194,8 +1215,9 @@ registry implementation. It changes no platform support, plan, schema,
 storage, public CLI/JSON, Skill, M21 gate, M24.3 behavior, network authority,
 external-project authority, diagnostic retention, or assurance class.
 Registry `0x80070002` and every other registry failure remain fail-closed,
-never count as success evidence, and are owned by inactive TG-M24.2. TG-M24.2
-remains inactive until this correction is accepted.
+never count as success evidence, and are owned by current TG-M24.2. The
+accepted correction is TG-M24.2's required dependency and permanent private
+seam; it does not itself activate the broader Runner.
 
 Completion requires document-contract and release checks; focused private-
 seam, fault, and lane-policy tests; a real suspended-child matrix covering the
@@ -1210,15 +1232,16 @@ selected mandatory native test's SKIP makes its lane non-PASS. The portability
 proof does not call `run_process_steps` or depend on the full process/registry
 matrix. The full matrix test,
 `test_m242_runner_process.RunnerProcessNativeTests.test_real_process_matrix_and_cleanup`,
-remains an inactive TG-M24.2 non-SKIP
-completion gate and is not in this Task's lane policy or commit. The remaining
+is the current TG-M24.2 non-SKIP completion gate and was not in this accepted
+Task's lane policy or commit. It must be added to the repository mandatory-
+native set as part of TG-M24.2's verified completion. The remaining
 gates are the full offline suite and exact diff; a current `pass/full`
 Verification Receipt; and two independent Tier 2 PASS reviews with no
 unresolved High or Medium finding.
 
 <a id="tg-m24-2"></a>
 
-## TG-M24.2 Inactive Shadow Runner And Evidence Capture
+## TG-M24.2 Current Shadow Runner And Evidence Capture Authority
 
 Task `tg_task_fafad7bc62df7576` may implement only the schema-v20 shadow slice
 assigned above. Existing M21 Receipt and completion gates remain authoritative;
@@ -1226,12 +1249,21 @@ a Runner resolution or outcome can neither satisfy nor block completion nor
 mutate Task, Review, Receipt, or selected gate state. Live external-project
 execution requires its own exact current authority.
 
+This authority transition changes no package byte, schema, command, or active
+runtime. Implementation must integrate the accepted
+`_verification_runner_lpac_win32.py` seam rather than duplicate its token and
+LPAC proof. A missing initial registry handoff or cleanup failure forbids the
+final proof and resume. HRESULT `0x80070002` remains a hard failure to diagnose
+and repair through the locator-to-coordinator handoff above, never an absence,
+SKIP, fallback, or successful registry proof.
+
 Completion requires the exact parser/materializer/AppContainer/Job/lifecycle/
 privacy boundary, append-only exact-basis observations, inert Bundle/JSON v2
 linkage, no shell or ambient target execution, and real Windows containment
 tests, including the full
 `test_m242_runner_process.RunnerProcessNativeTests.test_real_process_matrix_and_cleanup`
-process/registry matrix without SKIP;
+process/registry matrix without SKIP and activation of that exact stable ID as
+the second repository mandatory-native gate;
 `0x80070002` and every other registry failure fail closed and never count as
 success. The remaining gate includes migration, state, Viewer compatibility,
 package, focused/full

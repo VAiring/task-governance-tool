@@ -1359,8 +1359,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.1A"],
-                "inactive_units": ["TG-M24.2", "TG-M24.3", "TG-M24.4"],
+                "current_units": ["TG-M24.2"],
+                "inactive_units": ["TG-M24.3", "TG-M24.4"],
             },
         ],
         "documentation_sequence": {

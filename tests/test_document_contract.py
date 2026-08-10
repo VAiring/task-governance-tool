@@ -791,11 +791,13 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.1A"])
+            self.assertEqual(m24["current_units"], ["TG-M24.2"])
             self.assertEqual(
                 m24["inactive_units"],
-                ["TG-M24.2", "TG-M24.3", "TG-M24.4"],
+                ["TG-M24.3", "TG-M24.4"],
             )
+            self.assertNotIn("TG-M24.1A", m24["current_units"])
+            self.assertNotIn("TG-M24.1A", m24["inactive_units"])
             self.write_registry(root, dict(reversed(tuple(registry.items()))))
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -819,7 +821,7 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            m24["current_units"] = []
+            m24["current_units"] = ["TG-M24.1A"]
 
         for name, mutate in (
             ("missing_owner", missing_owner),
@@ -1119,8 +1121,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.2, TG-M24.3, and TG-M24.4 are inactive.",
-                "TG-M24.2, TG-M24.3, and TG-M24.4 are not inactive.",
+                "TG-M24.3 and TG-M24.4 are\n> inactive.",
+                "TG-M24.3 and TG-M24.4 are\n> not inactive.",
             )
             self.assertIn(
                 "document_role",
@@ -1131,10 +1133,11 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "> MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 is the accepted\n"
-                "> design predecessor, current bounded correction authority belongs to\n"
-                "> TG-M24.1A, and TG-M24.2, TG-M24.3, and TG-M24.4 are inactive. No TG-M24\n"
-                "> runtime is active. Loading this document activates no Runner, command\n"
+                "> MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 and its bounded\n"
+                "> TG-M24.1A correction are accepted predecessors, current shadow-Runner\n"
+                "> implementation authority belongs to TG-M24.2, and TG-M24.3 and TG-M24.4 are\n"
+                "> inactive. No TG-M24 runtime is active before TG-M24.2 completion. Loading\n"
+                "> this document activates no Runner, command\n"
                 "> execution, schema, CLI, Skill behavior, completion gate, network use,\n"
                 "> credential use, or target mutation.",
                 "> FORMAL AUTHORITY.\n"
@@ -1160,8 +1163,9 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.1 is the accepted\n> design predecessor",
-                "TG-M24.1 is a former\n> design unit",
+                "TG-M24.1 and its bounded\n"
+                "> TG-M24.1A correction are accepted predecessors",
+                "TG-M24.1 and TG-M24.1A are former\n> design units",
             )
             self.assertIn(
                 "document_role",

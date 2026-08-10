@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import tempfile
 import unittest
 from dataclasses import fields
@@ -21,6 +22,85 @@ from tests import m241b_runtime_trace_win32 as runtime_trace
 _RUNTIME_DIGEST = "sha256:" + "a" * 64
 _DACL_DIGEST = "sha256:" + "d" * 64
 _WINDOW_BINDING = "window-sha256:" + "b" * 64
+
+
+class _FakeAliasLease(fixture._AliasLease):
+    def __init__(
+        self,
+        path: Path,
+        identity_number: int,
+        *,
+        close_failures: int = 0,
+        reprove_fails: bool = False,
+    ) -> None:
+        value = str(path).replace("/", "\\")
+        tail = value[3:] if len(value) > 3 else "root"
+        self.aliases = (
+            "\\\\?\\" + value,
+            "\\Device\\HarddiskVolume9\\" + tail,
+        )
+        self.file_identity = (
+            9,
+            identity_number.to_bytes(16, "little"),
+        )
+        self.close_failures = close_failures
+        self.reprove_fails = reprove_fails
+        self.reprove_calls = 0
+        self.close_calls = 0
+        self.closed = False
+
+    def reprove(self) -> None:
+        self.reprove_calls += 1
+        if self.closed or self.reprove_calls != 1 or self.reprove_fails:
+            raise fixture.RuntimeDiagnosticError("diagnostic_collector_failed")
+
+    def close(self) -> None:
+        self.close_calls += 1
+        if self.close_failures:
+            self.close_failures -= 1
+            raise fixture.RuntimeDiagnosticError("diagnostic_cleanup_failed")
+        self.aliases = ("", "")
+        self.file_identity = (0, b"")
+        self.closed = True
+
+
+class _FakeAliasLeaseFactory:
+    def __init__(
+        self,
+        *,
+        first_close_failures: int = 0,
+        first_reprove_fails: bool = False,
+    ) -> None:
+        self.first_close_failures = first_close_failures
+        self.first_reprove_fails = first_reprove_fails
+        self.leases: list[_FakeAliasLease] = []
+        self.bindings: list[tuple[Path, _FakeAliasLease]] = []
+
+    def __call__(
+        self, path: Path, *, is_directory: bool
+    ) -> _FakeAliasLease:
+        self.assert_directory_shape(path, is_directory)
+        lease = _FakeAliasLease(
+            path,
+            len(self.leases) + 1,
+            close_failures=(
+                self.first_close_failures if not self.leases else 0
+            ),
+            reprove_fails=self.first_reprove_fails and not self.leases,
+        )
+        self.leases.append(lease)
+        self.bindings.append((path, lease))
+        return lease
+
+    @staticmethod
+    def assert_directory_shape(path: Path, is_directory: bool) -> None:
+        expected_directory = path.suffix == "" and path.name not in {
+            "python.exe",
+        }
+        if path.name.casefold().endswith((".dll", ".exe", ".py")):
+            expected_directory = False
+        if is_directory is not expected_directory:
+            raise AssertionError("directory binding drift")
 
 
 class _FakeChild:
@@ -706,7 +786,9 @@ class RuntimeMirrorAndAclPolicyTests(unittest.TestCase):
             Path("C:/source"),
         )
         inventory = fixture.build_collector_inventory(
-            capture, system_images=("kernel32.dll", "ntdll.dll")
+            capture,
+            system_images=("kernel32.dll", "ntdll.dll"),
+            known_dll_contracts=("kernel32.dll", "ntdll.dll"),
         )
         file_ref = inventory.resolve(
             plane="file_access",
@@ -731,6 +813,13 @@ class RuntimeMirrorAndAclPolicyTests(unittest.TestCase):
                 component="runtime/top-level",
             )
         )
+        self.assertIsNotNone(
+            inventory.resolve(
+                plane="dll_image_load",
+                match_kind="exact_loader_dependency",
+                component="logical-dependency:known_dll:kernel32.dll",
+            )
+        )
         self.assertIsNone(
             inventory.resolve(
                 plane="dll_image_load",
@@ -738,6 +827,326 @@ class RuntimeMirrorAndAclPolicyTests(unittest.TestCase):
                 component="system32-image:unknown.dll",
             )
         )
+
+    def test_known_dll_registry_contract_is_bounded_exact_and_collision_closed(self) -> None:
+        class Key:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+        def module(values):
+            def open_key(_hive, path, _reserved, access):
+                self.assertEqual(
+                    path,
+                    r"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs",
+                )
+                self.assertEqual(access, 0x1 | 0x100)
+                return Key()
+
+            return SimpleNamespace(
+                KEY_QUERY_VALUE=0x1,
+                KEY_WOW64_64KEY=0x100,
+                HKEY_LOCAL_MACHINE=object(),
+                REG_SZ=1,
+                OpenKey=open_key,
+                QueryInfoKey=lambda _key: (0, len(values), 0),
+                EnumValue=lambda _key, index: values[index],
+            )
+
+        values = (
+            ("DllDirectory", r"C:\Windows\System32", 1),
+            ("kernel32", "kernel32.dll", 1),
+            ("ntdll", "ntdll.dll", 1),
+        )
+        with patch.dict(sys.modules, {"winreg": module(values)}):
+            self.assertEqual(
+                fixture._verified_known_dll_contracts(
+                    ("kernel32.dll", "ntdll.dll")
+                ),
+                ("kernel32.dll", "ntdll.dll"),
+            )
+
+        duplicate = values + (("KERNEL32-copy", "KERNEL32.DLL", 1),)
+        with patch.dict(sys.modules, {"winreg": module(duplicate)}):
+            with self.assertRaises(fixture.RuntimeDiagnosticError):
+                fixture._verified_known_dll_contracts(
+                    ("kernel32.dll", "ntdll.dll")
+                )
+
+        oversized = module(values)
+        oversized.QueryInfoKey = lambda _key: (
+            0,
+            fixture._KNOWN_DLL_VALUE_LIMIT + 1,
+            0,
+        )
+        with patch.dict(sys.modules, {"winreg": oversized}):
+            with self.assertRaises(fixture.RuntimeDiagnosticError):
+                fixture._verified_known_dll_contracts(
+                    ("kernel32.dll", "ntdll.dll")
+                )
+
+        wrong_type = values + (("ignored", 7, 4),)
+        with patch.dict(sys.modules, {"winreg": module(wrong_type)}):
+            with self.assertRaises(fixture.RuntimeDiagnosticError):
+                fixture._verified_known_dll_contracts(
+                    ("kernel32.dll", "ntdll.dll")
+                )
+
+        metadata_drift = module(values)
+        query_calls = 0
+
+        def drifting_metadata(_key):
+            nonlocal query_calls
+            query_calls += 1
+            return (0, len(values), 1 if query_calls >= 2 else 0)
+
+        metadata_drift.QueryInfoKey = drifting_metadata
+        with patch.dict(sys.modules, {"winreg": metadata_drift}):
+            with self.assertRaises(fixture.RuntimeDiagnosticError):
+                fixture._verified_known_dll_contracts(
+                    ("kernel32.dll", "ntdll.dll")
+                )
+
+        between_pass_drift = module(values)
+        between_query_calls = 0
+
+        def drifting_between_passes(_key):
+            nonlocal between_query_calls
+            between_query_calls += 1
+            return (
+                0,
+                len(values),
+                0 if between_query_calls <= 2 else 1,
+            )
+
+        between_pass_drift.QueryInfoKey = drifting_between_passes
+        with patch.dict(sys.modules, {"winreg": between_pass_drift}):
+            with self.assertRaises(fixture.RuntimeDiagnosticError):
+                fixture._verified_known_dll_contracts(
+                    ("kernel32.dll", "ntdll.dll")
+                )
+
+        value_drift = module(values)
+        enum_calls = 0
+
+        def drifting_value(_key, index):
+            nonlocal enum_calls
+            enum_calls += 1
+            row = values[index]
+            if enum_calls > len(values) and index == 1:
+                return (row[0], "kernelbase.dll", row[2])
+            return row
+
+        value_drift.EnumValue = drifting_value
+        with patch.dict(sys.modules, {"winreg": value_drift}):
+            with self.assertRaises(fixture.RuntimeDiagnosticError):
+                fixture._verified_known_dll_contracts(
+                    ("kernel32.dll", "kernelbase.dll", "ntdll.dll")
+                )
+
+        for attribute, value in (
+            ("KEY_WOW64_64KEY", None),
+            ("KEY_WOW64_64KEY", 0),
+            ("KEY_WOW64_64KEY", "0x100"),
+            ("KEY_QUERY_VALUE", 0),
+        ):
+            with self.subTest(attribute=attribute, value=value):
+                wrong_view = module(values)
+                if value is None:
+                    delattr(wrong_view, attribute)
+                else:
+                    setattr(wrong_view, attribute, value)
+                with patch.dict(sys.modules, {"winreg": wrong_view}):
+                    with self.assertRaises(fixture.RuntimeDiagnosticError):
+                        fixture._verified_known_dll_contracts(
+                            ("kernel32.dll", "ntdll.dll")
+                        )
+
+    def test_resolver_separates_physical_and_logical_domains_and_scrubs_leases(self) -> None:
+        context = _FakeContext([])
+        factory = _FakeAliasLeaseFactory()
+        resolver = fixture._ExactInventoryResolver()
+        resolver.initialize(
+            application=context.application,
+            inventory=context.inventory,
+            system32_root=Path("C:/Windows/System32"),
+            current_user_sid="S-1-5-21-100",
+            alias_lease_factory=factory,
+            ordinal_equal=lambda first, second: first.casefold()
+            == second.casefold(),
+        )
+        initial = context.inventory.resolve(
+            plane="dll_image_load",
+            match_kind="exact_image_identity",
+            component="runtime-image:python.exe",
+        )
+        dependency = context.inventory.resolve(
+            plane="dll_image_load",
+            match_kind="exact_loader_dependency",
+            component="logical-dependency:runtime:python314.dll",
+        )
+        application_lease = next(
+            lease
+            for path, lease in factory.bindings
+            if path == context.application
+        )
+        for alias in application_lease.aliases:
+            self.assertEqual(
+                resolver("dll_image_load", alias.swapcase()), initial
+            )
+        self.assertEqual(
+            resolver.resolve_loader_dependency("PYTHON314.DLL"), dependency
+        )
+        self.assertIsNone(
+            resolver("dll_image_load", "python314.dll")
+        )
+        self.assertIsNone(
+            resolver.resolve_loader_dependency(
+                "C:/private/runtime/python314.dll"
+            )
+        )
+        self.assertIsNone(
+            resolver.resolve_loader_dependency(
+                "api-ms-win-crt-runtime-l1-1-0.dll"
+            )
+        )
+        self.assertIsNone(
+            resolver.resolve_loader_dependency(
+                "ext-ms-win-session-wtsapi32-l1-1-0.dll"
+            )
+        )
+        self.assertFalse(
+            any(
+                "api-ms-" in item.component or "ext-ms-" in item.component
+                for item in context.inventory.objects
+            )
+        )
+        self.assertIsNone(
+            resolver(
+                "dll_image_load",
+                r"\Device\HarddiskVolume9\runtime\..\python.exe",
+            )
+        )
+        resolver.close()
+        self.assertTrue(all(lease.closed for lease in factory.leases))
+        self.assertFalse(resolver._paths["dll_image_load"])
+        self.assertFalse(resolver._loader_dependencies)
+        self.assertIsNone(
+            resolver.resolve_loader_dependency("python314.dll")
+        )
+
+    def test_dependency_origin_collision_and_plane_cap_fail_closed(self) -> None:
+        entries = (
+            fixture.RuntimeEntry(
+                "python.exe", 1, "1" * 64, Path("C:/source/python.exe")
+            ),
+            fixture.RuntimeEntry(
+                "python314.dll",
+                1,
+                "2" * 64,
+                Path("C:/source/python314.dll"),
+            ),
+        )
+        capture = fixture.RuntimeCapture(
+            (3, 14, 0), entries, _RUNTIME_DIGEST, 1, 2, Path("C:/source")
+        )
+        with self.assertRaises(fixture.RuntimeDiagnosticError):
+            fixture.build_collector_inventory(
+                capture,
+                system_images=("python314.dll",),
+                known_dll_contracts=("python314.dll",),
+            )
+
+        many_entries = [entries[0]]
+        for index in range(40):
+            many_entries.append(
+                fixture.RuntimeEntry(
+                    f"runtime{index:02d}.dll",
+                    1,
+                    f"{index + 10:064x}"[-64:],
+                    Path(f"C:/source/runtime{index:02d}.dll"),
+                )
+            )
+        oversized = fixture.RuntimeCapture(
+            (3, 14, 0),
+            tuple(many_entries),
+            _RUNTIME_DIGEST,
+            1,
+            len(many_entries),
+            Path("C:/source"),
+        )
+        with self.assertRaises(fixture.RuntimeDiagnosticError):
+            fixture.build_collector_inventory(oversized)
+
+        runtime_capture = fixture.RuntimeCapture(
+            (3, 14, 0),
+            entries
+            + (
+                fixture.RuntimeEntry(
+                    "shared.dll",
+                    1,
+                    "3" * 64,
+                    Path("C:/source/shared.dll"),
+                ),
+            ),
+            _RUNTIME_DIGEST,
+            1,
+            3,
+            Path("C:/source"),
+        )
+        known_capture = fixture.RuntimeCapture(
+            (3, 14, 0), entries, _RUNTIME_DIGEST, 1, 2, Path("C:/source")
+        )
+        runtime_inventory = fixture.build_collector_inventory(runtime_capture)
+        known_inventory = fixture.build_collector_inventory(
+            known_capture,
+            system_images=("shared.dll",),
+            known_dll_contracts=("shared.dll",),
+        )
+        runtime_ref = runtime_inventory.resolve(
+            plane="dll_image_load",
+            match_kind="exact_loader_dependency",
+            component="logical-dependency:runtime:shared.dll",
+        )
+        known_ref = known_inventory.resolve(
+            plane="dll_image_load",
+            match_kind="exact_loader_dependency",
+            component="logical-dependency:known_dll:shared.dll",
+        )
+        self.assertIsNotNone(runtime_ref)
+        self.assertIsNotNone(known_ref)
+        self.assertNotEqual(runtime_ref, known_ref)
+        self.assertNotEqual(
+            runtime_inventory.manifest.manifest_digest,
+            known_inventory.manifest.manifest_digest,
+        )
+
+    def test_resolver_constructor_fault_closes_every_acquired_lease(self) -> None:
+        context = _FakeContext([])
+        factory = _FakeAliasLeaseFactory()
+
+        def malformed(path: Path, *, is_directory: bool):
+            lease = factory(path, is_directory=is_directory)
+            if len(factory.leases) == 2:
+                lease.aliases = ("not-a-dos-path", "not-an-nt-path")
+            return lease
+
+        resolver = fixture._ExactInventoryResolver()
+        with self.assertRaises(fixture.RuntimeDiagnosticError) as raised:
+            resolver.initialize(
+                application=context.application,
+                inventory=context.inventory,
+                system32_root=Path("C:/Windows/System32"),
+                current_user_sid="S-1-5-21-100",
+                alias_lease_factory=malformed,
+                ordinal_equal=lambda first, second: first.casefold()
+                == second.casefold(),
+            )
+        self.assertEqual(raised.exception.code, "diagnostic_collector_failed")
+        self.assertTrue(factory.leases)
+        self.assertTrue(all(lease.closed for lease in factory.leases))
 
     def test_exact_package_mask_has_no_write_delete_or_broad_principal(self) -> None:
         trustees, masks = fixture._expected_dacl(
@@ -757,6 +1166,254 @@ class RuntimeMirrorAndAclPolicyTests(unittest.TestCase):
         for right in fixture._DENIED_FILE_RIGHTS:
             self.assertEqual(masks[-1] & right, 0)
         self.assertEqual(masks[-1] & 0xF0000000, 0)
+
+    def test_windows_ordinal_comparison_does_not_truncate_astral_paths(self) -> None:
+        calls: list[tuple[str, int, str, int, bool]] = []
+
+        class Kernel:
+            @staticmethod
+            def CompareStringOrdinal(first, first_count, second, second_count, ignore_case):
+                calls.append(
+                    (first, first_count, second, second_count, bool(ignore_case))
+                )
+                return 2 if first.casefold() == second.casefold() else 1
+
+        prefix = "dos:C:\\private\\\U0001F600"
+        with patch.object(
+            fixture,
+            "_dacl_apis",
+            return_value=SimpleNamespace(kernel32=Kernel()),
+        ):
+            self.assertTrue(
+                fixture._windows_ordinal_equal(prefix + "A", prefix + "a")
+            )
+            self.assertFalse(
+                fixture._windows_ordinal_equal(prefix + "A", prefix + "B")
+            )
+        self.assertEqual(
+            tuple(
+                (first_count, second_count, ignore_case)
+                for _, first_count, _, second_count, ignore_case in calls
+            ),
+            ((-1, -1, True), (-1, -1, True)),
+        )
+
+    def test_trusted_alias_lease_binds_same_held_file_and_retries_close(self) -> None:
+        class Kernel:
+            def __init__(self, **faults):
+                self.faults = faults
+                self.file_id_calls = 0
+                self.close_calls = 0
+                self.create_call = None
+
+            def CreateFileW(self, *args):
+                self.create_call = args
+                return 707
+
+            def GetFileInformationByHandleEx(
+                self, _handle, information_class, pointer, _size
+            ):
+                if information_class == fixture.FILE_ATTRIBUTE_TAG_INFO:
+                    value = pointer._obj
+                    value.FileAttributes = (
+                        fixture.FILE_ATTRIBUTE_DIRECTORY
+                        if self.faults.get("directory")
+                        else 0
+                    )
+                    if self.faults.get("reparse"):
+                        value.FileAttributes |= fixture.FILE_ATTRIBUTE_REPARSE_POINT
+                        value.ReparseTag = 0xA000000C
+                    return True
+                if information_class == fixture.FILE_STANDARD_INFO:
+                    value = pointer._obj
+                    value.NumberOfLinks = (
+                        0 if self.faults.get("links_zero") else 1
+                    )
+                    value.DeletePending = bool(
+                        self.faults.get("delete_pending")
+                    )
+                    value.Directory = bool(self.faults.get("directory"))
+                    return True
+                if information_class == fixture.FILE_ID_INFO:
+                    self.file_id_calls += 1
+                    value = pointer._obj
+                    value.VolumeSerialNumber = 9
+                    identity = 2 if (
+                        self.faults.get("identity_drift")
+                        and self.file_id_calls == 2
+                    ) else (3 if self.faults.get("window_identity_drift") else 1)
+                    for index in range(16):
+                        value.FileId.Identifier[index] = (
+                            identity if index == 0 else 0
+                        )
+                    return True
+                return False
+
+            def GetHandleInformation(self, _handle, pointer):
+                pointer._obj.value = (
+                    lpac.HANDLE_FLAG_INHERIT
+                    if self.faults.get("inherited")
+                    else 0
+                )
+                return True
+
+            def GetFinalPathNameByHandleW(
+                self, _handle, buffer, _capacity, flags
+            ):
+                value = (
+                    r"\\?\C:\private\runtime\python.exe"
+                    if flags == fixture.VOLUME_NAME_DOS
+                    else r"\Device\HarddiskVolume9\private\runtime\python.exe"
+                )
+                if self.faults.get("astral_path"):
+                    value = value.replace("runtime", "run\U0001F600time")
+                if self.faults.get("dot_path") and flags == fixture.VOLUME_NAME_NT:
+                    value = r"\Device\HarddiskVolume9\private\..\python.exe"
+                if self.faults.get("window_alias_drift"):
+                    value = value.replace("python.exe", "replaced.exe")
+                buffer.value = value
+                if self.faults.get("bad_length"):
+                    return len(value) + 1
+                if self.faults.get("oversize"):
+                    return len(buffer)
+                return len(value.encode("utf-16-le", "strict")) // 2
+
+            def CompareStringOrdinal(
+                self, first, first_length, second, second_length, ignore_case
+            ):
+                if self.faults.get("compare_failure"):
+                    return 0
+                self.assert_compare = (
+                    first_length,
+                    second_length,
+                    bool(ignore_case),
+                )
+                return 2 if first.casefold() == second.casefold() else 1
+
+            def CloseHandle(self, _handle):
+                self.close_calls += 1
+                return self.close_calls > self.faults.get("close_failures", 0)
+
+        def open_with(kernel, *, is_directory=False):
+            with patch.object(
+                fixture,
+                "_dacl_apis",
+                return_value=SimpleNamespace(kernel32=kernel),
+            ):
+                return fixture._open_trusted_alias_lease(
+                    Path("C:/private/runtime/python.exe"),
+                    is_directory=is_directory,
+                )
+
+        kernel = Kernel()
+        lease = open_with(kernel)
+        self.assertNotEqual(lease.aliases, ("", ""))
+        self.assertEqual(lease.file_identity, (9, b"\x01" + b"\0" * 15))
+        self.assertEqual(kernel.file_id_calls, 2)
+        self.assertEqual(kernel.create_call[1], lpac.FILE_READ_ATTRIBUTES)
+        self.assertEqual(
+            kernel.create_call[2],
+            fixture.FILE_SHARE_READ
+            | fixture.FILE_SHARE_WRITE
+            | fixture.FILE_SHARE_DELETE,
+        )
+        self.assertEqual(
+            kernel.create_call[5], fixture.FILE_FLAG_OPEN_REPARSE_POINT
+        )
+        with patch.object(
+            fixture,
+            "_dacl_apis",
+            return_value=SimpleNamespace(kernel32=kernel),
+        ):
+            lease.reprove()
+            lease.close()
+        self.assertEqual(kernel.file_id_calls, 4)
+        self.assertEqual(kernel.assert_compare[-1], True)
+        self.assertTrue(lease._handle.closed)
+
+        for fault in (
+            "reparse",
+            "identity_drift",
+            "inherited",
+            "directory",
+            "bad_length",
+            "oversize",
+            "dot_path",
+            "delete_pending",
+            "links_zero",
+        ):
+            with self.subTest(fault=fault):
+                broken = Kernel(**{fault: True})
+                invalid = open_with(broken)
+                self.assertEqual(invalid.aliases, ("", ""))
+                with patch.object(
+                    fixture,
+                    "_dacl_apis",
+                    return_value=SimpleNamespace(kernel32=broken),
+                ):
+                    invalid.close()
+                self.assertTrue(invalid._handle.closed)
+
+        directory_kernel = Kernel(directory=True)
+        directory_lease = open_with(directory_kernel, is_directory=True)
+        self.assertEqual(
+            directory_kernel.create_call[5],
+            fixture.FILE_FLAG_OPEN_REPARSE_POINT
+            | fixture.FILE_FLAG_BACKUP_SEMANTICS,
+        )
+        with patch.object(
+            fixture,
+            "_dacl_apis",
+            return_value=SimpleNamespace(kernel32=directory_kernel),
+        ):
+            directory_lease.close()
+
+        close_fault = Kernel(close_failures=1)
+        retained = open_with(close_fault)
+        with patch.object(
+            fixture,
+            "_dacl_apis",
+            return_value=SimpleNamespace(kernel32=close_fault),
+        ):
+            with self.assertRaises(fixture.RuntimeDiagnosticError):
+                retained.close()
+            self.assertFalse(retained._handle.closed)
+            retained.close()
+        self.assertTrue(retained._handle.closed)
+
+        astral_kernel = Kernel(astral_path=True)
+        astral_lease = open_with(astral_kernel)
+        self.assertIn("\U0001F600", astral_lease.aliases[0])
+        with patch.object(
+            fixture,
+            "_dacl_apis",
+            return_value=SimpleNamespace(kernel32=astral_kernel),
+        ):
+            astral_lease.reprove()
+            astral_lease.close()
+        self.assertTrue(astral_lease._handle.closed)
+
+        for fault in (
+            "window_identity_drift",
+            "window_alias_drift",
+            "reparse",
+            "delete_pending",
+            "inherited",
+            "compare_failure",
+        ):
+            with self.subTest(window_fault=fault):
+                window = Kernel()
+                held = open_with(window)
+                window.faults[fault] = True
+                with patch.object(
+                    fixture,
+                    "_dacl_apis",
+                    return_value=SimpleNamespace(kernel32=window),
+                ):
+                    with self.assertRaises(fixture.RuntimeDiagnosticError):
+                        held.reprove()
+                    held.close()
+                self.assertTrue(held._handle.closed)
 
     def test_security_info_rejects_partial_descriptor_without_group(self) -> None:
         def get_security_info(
@@ -982,10 +1639,14 @@ class RealtimeCollectorAdapterTests(unittest.TestCase):
             bindings.append(binding)
             return base_factory(binding)
 
+        aliases = _FakeAliasLeaseFactory()
         adapter = fixture._RealtimeCollectorAdapter(
             collector_factory=factory,
             system32_root=Path("C:/Windows/System32"),
             current_user_sid="S-1-5-21-100",
+            alias_lease_factory=aliases,
+            ordinal_equal=lambda first, second: first.casefold()
+            == second.casefold(),
         )
         result = fixture._execute_diagnostic(context, adapter)
         self.assertTrue(result.root_cause.has_inconclusive)
@@ -1007,14 +1668,44 @@ class RealtimeCollectorAdapterTests(unittest.TestCase):
             ],
         )
         self.assertEqual(len(bindings), 1)
+        self.assertTrue(aliases.leases)
+        self.assertTrue(all(lease.reprove_calls == 1 for lease in aliases.leases))
+        self.assertTrue(all(lease.closed for lease in aliases.leases))
         self.assertIsNone(
             bindings[0].resolve("dll_image_load", str(context.application))
         )
+
+    def test_adapter_discards_classification_when_end_window_reproof_fails(self) -> None:
+        log: list[str] = []
+        context = _FakeContext(log)
+        context.child.process = lpac.OwnedHandle(777)
+        aliases = _FakeAliasLeaseFactory(first_reprove_fails=True)
+        adapter = fixture._RealtimeCollectorAdapter(
+            collector_factory=self._factory(
+                log=log,
+                inventory=context.inventory,
+                application=context.application,
+            ),
+            system32_root=Path("C:/Windows/System32"),
+            current_user_sid="S-1-5-21-100",
+            alias_lease_factory=aliases,
+            ordinal_equal=lambda first, second: first.casefold()
+            == second.casefold(),
+        )
+        with self.assertRaises(fixture.RuntimeDiagnosticError) as raised:
+            fixture._execute_diagnostic(context, adapter)
+        self.assertEqual(raised.exception.code, "diagnostic_collector_failed")
+        self.assertIn("trace.stop", log)
+        self.assertNotIn("context.finish", log)
+        self.assertEqual(log.count("trace.abort"), 1)
+        self.assertTrue(all(lease.reprove_calls == 1 for lease in aliases.leases))
+        self.assertTrue(all(lease.closed for lease in aliases.leases))
 
     def test_adapter_start_failure_calls_owned_abort_and_never_resumes(self) -> None:
         log: list[str] = []
         context = _FakeContext(log)
         context.child.process = lpac.OwnedHandle(777)
+        aliases = _FakeAliasLeaseFactory()
         adapter = fixture._RealtimeCollectorAdapter(
             collector_factory=self._factory(
                 log=log,
@@ -1024,12 +1715,131 @@ class RealtimeCollectorAdapterTests(unittest.TestCase):
             ),
             system32_root=Path("C:/Windows/System32"),
             current_user_sid="S-1-5-21-100",
+            alias_lease_factory=aliases,
+            ordinal_equal=lambda first, second: first.casefold()
+            == second.casefold(),
         )
         with self.assertRaises(fixture.RuntimeDiagnosticError) as raised:
             fixture._execute_diagnostic(context, adapter)
         self.assertEqual(raised.exception.code, "diagnostic_collector_failed")
         self.assertIn("trace.abort", log)
         self.assertNotIn("context.resume", log)
+        self.assertTrue(all(lease.closed for lease in aliases.leases))
+
+    def test_adapter_factory_and_binding_faults_close_alias_ownership(self) -> None:
+        for fault in ("factory", "binding"):
+            with self.subTest(fault=fault):
+                log: list[str] = []
+                context = _FakeContext(log)
+                context.child.process = lpac.OwnedHandle(777)
+                aliases = _FakeAliasLeaseFactory()
+
+                def failing_factory(_binding):
+                    raise RuntimeError("raw factory detail")
+
+                adapter = fixture._RealtimeCollectorAdapter(
+                    collector_factory=(
+                        failing_factory
+                        if fault == "factory"
+                        else self._factory(
+                            log=log,
+                            inventory=context.inventory,
+                            application=context.application,
+                        )
+                    ),
+                    system32_root=Path("C:/Windows/System32"),
+                    current_user_sid="S-1-5-21-100",
+                    alias_lease_factory=aliases,
+                    ordinal_equal=lambda first, second: first.casefold()
+                    == second.casefold(),
+                )
+                binding_patch = (
+                    patch.object(
+                        runtime_trace,
+                        "InventoryBinding",
+                        side_effect=runtime_trace.RuntimeTraceError(
+                            "trace_binding_invalid"
+                        ),
+                    )
+                    if fault == "binding"
+                    else patch.object(
+                        runtime_trace,
+                        "InventoryBinding",
+                        wraps=runtime_trace.InventoryBinding,
+                    )
+                )
+                with binding_patch:
+                    with self.assertRaises(fixture.RuntimeDiagnosticError):
+                        fixture._execute_diagnostic(context, adapter)
+                self.assertNotIn("context.resume", log)
+                self.assertTrue(all(lease.closed for lease in aliases.leases))
+
+    def test_adapter_abort_retries_initialize_fault_close_on_same_lease(self) -> None:
+        log: list[str] = []
+        context = _FakeContext(log)
+        context.child.process = lpac.OwnedHandle(777)
+        aliases = _FakeAliasLeaseFactory(first_close_failures=1)
+
+        def malformed(path: Path, *, is_directory: bool):
+            lease = aliases(path, is_directory=is_directory)
+            if len(aliases.leases) == 2:
+                lease.aliases = ("not-a-dos-path", "not-an-nt-path")
+            return lease
+
+        adapter = fixture._RealtimeCollectorAdapter(
+            collector_factory=self._factory(
+                log=log,
+                inventory=context.inventory,
+                application=context.application,
+            ),
+            system32_root=Path("C:/Windows/System32"),
+            current_user_sid="S-1-5-21-100",
+            alias_lease_factory=malformed,
+            ordinal_equal=lambda first, second: first.casefold()
+            == second.casefold(),
+        )
+        with self.assertRaises(fixture.RuntimeDiagnosticError) as raised:
+            fixture._execute_diagnostic(context, adapter)
+        self.assertEqual(raised.exception.code, "diagnostic_cleanup_failed")
+        self.assertNotIn("trace.factory", log)
+        self.assertNotIn("context.resume", log)
+        self.assertEqual(aliases.leases[0].close_calls, 2)
+        self.assertTrue(all(lease.closed for lease in aliases.leases))
+        self.assertIsNone(adapter._resolver)
+        self.assertTrue(adapter._terminal)
+
+    def test_adapter_abort_retries_retained_alias_close_once(self) -> None:
+        log: list[str] = []
+        context = _FakeContext(log)
+        context.child.process = lpac.OwnedHandle(777)
+        aliases = _FakeAliasLeaseFactory(first_close_failures=1)
+        adapter = fixture._RealtimeCollectorAdapter(
+            collector_factory=self._factory(
+                log=log,
+                inventory=context.inventory,
+                application=context.application,
+            ),
+            system32_root=Path("C:/Windows/System32"),
+            current_user_sid="S-1-5-21-100",
+            alias_lease_factory=aliases,
+            ordinal_equal=lambda first, second: first.casefold()
+            == second.casefold(),
+        )
+        adapter.start_for_suspended_child(
+            application=context.application,
+            inventory=context.inventory,
+            process_id=37,
+            process_handle=context.child.process,
+        )
+        with self.assertRaises(fixture.RuntimeDiagnosticError) as raised:
+            adapter.abort()
+        self.assertEqual(raised.exception.code, "diagnostic_cleanup_failed")
+        self.assertIsNotNone(adapter._resolver)
+        self.assertFalse(adapter._terminal)
+        adapter.abort()
+        self.assertIsNone(adapter._resolver)
+        self.assertTrue(adapter._terminal)
+        self.assertTrue(all(lease.closed for lease in aliases.leases))
 
     def test_adapter_stop_faults_abort_once_and_cleanup_failure_dominates(self) -> None:
         cases = (
@@ -1055,11 +1865,17 @@ class RealtimeCollectorAdapterTests(unittest.TestCase):
                     ),
                     system32_root=Path("C:/Windows/System32"),
                     current_user_sid="S-1-5-21-100",
+                    alias_lease_factory=_FakeAliasLeaseFactory(),
+                    ordinal_equal=lambda first, second: first.casefold()
+                    == second.casefold(),
                 )
                 with self.assertRaises(fixture.RuntimeDiagnosticError) as raised:
                     fixture._execute_diagnostic(context, adapter)
                 self.assertEqual(raised.exception.code, expected_code)
-                self.assertEqual(log.count("trace.abort"), 1)
+                self.assertEqual(
+                    log.count("trace.abort"),
+                    2 if options.get("abort_fails") else 1,
+                )
                 self.assertEqual(log[-1], "context.close")
 
     def test_concrete_realtime_entrypoint_uses_adapter(self) -> None:

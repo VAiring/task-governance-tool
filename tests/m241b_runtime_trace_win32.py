@@ -135,24 +135,39 @@ class InventoryResolver(Protocol):
     def __call__(self, plane: str, raw_identity: str) -> str | None: ...
 
 
+class LoaderDependencyResolver(Protocol):
+    def __call__(self, raw_identity: str) -> str | None: ...
+
+
 class InventoryBinding:
     """Typed allowlist plus a deliberately non-revealing raw identity mapper."""
 
-    __slots__ = ("runtime_digest", "_objects", "_resolver")
+    __slots__ = (
+        "runtime_digest",
+        "_objects",
+        "_path_objects",
+        "_loader_dependency_objects",
+        "_path_resolver",
+        "_loader_dependency_resolver",
+    )
 
     def __init__(
         self,
         *,
         runtime_digest: str,
         objects_by_plane: Mapping[str, tuple[str, ...]],
-        resolver: InventoryResolver,
+        loader_dependency_refs: tuple[str, ...],
+        path_resolver: InventoryResolver,
+        loader_dependency_resolver: LoaderDependencyResolver,
     ) -> None:
         if (
             type(runtime_digest) is not str
             or _DIGEST.fullmatch(runtime_digest) is None
             or type(objects_by_plane) is not dict
             or tuple(objects_by_plane) != PLANE_ORDER
-            or not callable(resolver)
+            or type(loader_dependency_refs) is not tuple
+            or not callable(path_resolver)
+            or not callable(loader_dependency_resolver)
         ):
             _fail("trace_binding_invalid")
         copied: dict[str, frozenset[str]] = {}
@@ -172,21 +187,69 @@ class InventoryBinding:
                 _fail("trace_binding_invalid")
             copied[plane] = frozenset(values)
             all_objects.update(values)
+        if (
+            not loader_dependency_refs
+            or any(
+                type(value) is not str or _OBJECT_ID.fullmatch(value) is None
+                for value in loader_dependency_refs
+            )
+            or len(set(loader_dependency_refs)) != len(loader_dependency_refs)
+        ):
+            _fail("trace_binding_invalid")
+        dependency_objects = frozenset(loader_dependency_refs)
+        dll_objects = copied["dll_image_load"]
+        if (
+            not dependency_objects
+            or len(dependency_objects) != len(loader_dependency_refs)
+            or not dependency_objects < dll_objects
+        ):
+            _fail("trace_binding_invalid")
         self.runtime_digest = runtime_digest
         self._objects = MappingProxyType(copied)
-        self._resolver = resolver
+        self._loader_dependency_objects = dependency_objects
+        self._path_objects = MappingProxyType(
+            {
+                plane: (
+                    copied[plane] - dependency_objects
+                    if plane == "dll_image_load"
+                    else copied[plane]
+                )
+                for plane in PLANE_ORDER
+            }
+        )
+        self._path_resolver = path_resolver
+        self._loader_dependency_resolver = loader_dependency_resolver
 
     def contains(self, plane: str, object_ref: str) -> bool:
         return plane in self._objects and object_ref in self._objects[plane]
+
+    def contains_path(self, plane: str, object_ref: str) -> bool:
+        return plane in self._path_objects and object_ref in self._path_objects[plane]
 
     def resolve(self, plane: str, raw_identity: str) -> str | None:
         if plane not in self._objects or type(raw_identity) is not str:
             return None
         try:
-            value = self._resolver(plane, raw_identity)
+            value = self._path_resolver(plane, raw_identity)
         except BaseException:
             return None
-        if type(value) is not str or value not in self._objects[plane]:
+        if type(value) is not str or value not in self._path_objects[plane]:
+            return None
+        return value
+
+    def resolve_loader_dependency(self, raw_identity: str) -> str | None:
+        """Resolve only an exact prebound logical loader name in the DLL plane."""
+
+        if type(raw_identity) is not str:
+            return None
+        try:
+            value = self._loader_dependency_resolver(raw_identity)
+        except BaseException:
+            return None
+        if (
+            type(value) is not str
+            or value not in self._loader_dependency_objects
+        ):
             return None
         return value
 
@@ -367,7 +430,9 @@ class _TraceReducer:
                 or type(qpc_start) is not int
                 or qpc_start <= 0
                 or type(initial_image_ref) is not str
-                or not self._inventory.contains("dll_image_load", initial_image_ref)
+                or not self._inventory.contains_path(
+                    "dll_image_load", initial_image_ref
+                )
             ):
                 _fail("trace_binding_invalid")
             self._pid = pid
@@ -697,11 +762,15 @@ class _TraceReducer:
                 if process_ref != self._initial_image_ref:
                     self._reason(plane, "plane_scope_unproved")
                     return
-            object_ref = (
-                self._inventory.resolve(plane, raw_object_identity)
-                if raw_object_identity is not None
-                else None
-            )
+            object_ref = None
+            if raw_object_identity is not None:
+                object_ref = (
+                    self._inventory.resolve_loader_dependency(
+                        raw_object_identity
+                    )
+                    if semantic == "status_denial"
+                    else self._inventory.resolve(plane, raw_object_identity)
+                )
             if semantic == "status_denial":
                 if failure_status == _STATUS_ACCESS_DENIED:
                     self._denial(plane, object_ref, "image_map")

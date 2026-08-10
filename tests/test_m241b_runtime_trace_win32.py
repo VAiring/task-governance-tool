@@ -10,9 +10,14 @@ from contextlib import redirect_stderr, redirect_stdout
 from tests import m241b_runtime_trace_win32 as trace
 
 
+_DEPENDENCY_REF = "inventory-sha256:" + "5" * 64
+_OTHER_IMAGE_REF = "inventory-sha256:" + "6" * 64
 _OBJECTS = {
     "file_access": ("inventory-sha256:" + "1" * 64,),
-    "dll_image_load": ("inventory-sha256:" + "2" * 64,),
+    "dll_image_load": (
+        "inventory-sha256:" + "2" * 64,
+        _DEPENDENCY_REF,
+    ),
     "registry_access": ("inventory-sha256:" + "3" * 64,),
     "code_integrity_policy": ("inventory-sha256:" + "4" * 64,),
 }
@@ -23,13 +28,17 @@ _PROVIDER_BINDINGS = {
 }
 
 
-def _binding(*, resolver=None) -> trace.InventoryBinding:
+def _binding(*, resolver=None, dependency_resolver=None) -> trace.InventoryBinding:
     if resolver is None:
         resolver = lambda plane, _raw: _OBJECTS[plane][0]
+    if dependency_resolver is None:
+        dependency_resolver = lambda _raw: _DEPENDENCY_REF
     return trace.InventoryBinding(
         runtime_digest=_DIGEST,
         objects_by_plane=dict(_OBJECTS),
-        resolver=resolver,
+        loader_dependency_refs=(_DEPENDENCY_REF,),
+        path_resolver=resolver,
+        loader_dependency_resolver=dependency_resolver,
     )
 
 
@@ -402,15 +411,54 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
     def test_inventory_binding_is_typed_unique_and_nonrevealing(self):
         binding = _binding()
         self.assertNotIn("private", repr(binding))
+        wrong_path = _binding(
+            resolver=lambda plane, _raw: (
+                _DEPENDENCY_REF
+                if plane == "dll_image_load"
+                else _OBJECTS[plane][0]
+            )
+        )
+        wrong_dependency = _binding(
+            dependency_resolver=lambda _raw: _OBJECTS["dll_image_load"][0]
+        )
+        self.assertIsNone(
+            wrong_path.resolve("dll_image_load", "dependency.dll")
+        )
+        self.assertIsNone(
+            wrong_dependency.resolve_loader_dependency("python314.dll")
+        )
         invalid = dict(_OBJECTS)
         invalid["file_access"] = _OBJECTS["dll_image_load"]
         with self.assertRaises(trace.RuntimeTraceError) as raised:
             trace.InventoryBinding(
                 runtime_digest=_DIGEST,
                 objects_by_plane=invalid,
-                resolver=lambda _plane, _raw: None,
+                loader_dependency_refs=(_DEPENDENCY_REF,),
+                path_resolver=lambda _plane, _raw: None,
+                loader_dependency_resolver=lambda _raw: None,
             )
         self.assertEqual(raised.exception.code, "trace_binding_invalid")
+        for dependency_refs in (
+            (),
+            ("inventory-sha256:" + "f" * 64,),
+            _OBJECTS["dll_image_load"],
+            (["inventory-sha256:" + "f" * 64],),
+        ):
+            with self.subTest(dependency_refs=dependency_refs):
+                with self.assertRaises(trace.RuntimeTraceError):
+                    trace.InventoryBinding(
+                        runtime_digest=_DIGEST,
+                        objects_by_plane=dict(_OBJECTS),
+                        loader_dependency_refs=dependency_refs,
+                        path_resolver=lambda _plane, _raw: None,
+                        loader_dependency_resolver=lambda _raw: None,
+                    )
+        with self.assertRaises(trace.RuntimeTraceError):
+            trace._TraceReducer(_binding()).bind(
+                pid=41,
+                qpc_start=100,
+                initial_image_ref=_DEPENDENCY_REF,
+            )
 
     def test_exact_manifest_callback_never_promotes_negative_window_closure(self):
         reducer = _bound_reducer()
@@ -452,25 +500,29 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
 
     def test_user_loader_denial_requires_exact_initial_process_and_dependency(self):
         initial = _OBJECTS["dll_image_load"][0]
-        other = "inventory-sha256:" + "5" * 64
+        other = _OTHER_IMAGE_REF
         objects = dict(_OBJECTS)
-        objects["dll_image_load"] = (initial, other)
+        objects["dll_image_load"] = (initial, _DEPENDENCY_REF, other)
 
         def resolver(plane: str, raw: str) -> str | None:
             if plane == "dll_image_load":
                 return {
                     "python.exe": initial,
                     "other.exe": other,
-                    "dependency.dll": other,
                 }.get(raw)
             return _OBJECTS[plane][0]
+
+        def dependency_resolver(raw: str) -> str | None:
+            return _DEPENDENCY_REF if raw == "dependency.dll" else None
 
         def build() -> trace._TraceReducer:
             reducer = trace._TraceReducer(
                 trace.InventoryBinding(
                     runtime_digest=_DIGEST,
                     objects_by_plane=objects,
-                    resolver=resolver,
+                    loader_dependency_refs=(_DEPENDENCY_REF,),
+                    path_resolver=resolver,
+                    loader_dependency_resolver=dependency_resolver,
                 )
             )
             reducer.bind(pid=41, qpc_start=100, initial_image_ref=initial)
@@ -506,6 +558,29 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
             mismatch_result.planes[1].reason, "plane_scope_unproved"
         )
 
+        for unresolved_contract in (
+            "api-ms-win-core-file-l1-1-0.dll",
+            "ext-ms-win-session-wtsapi32-l1-1-0.dll",
+        ):
+            with self.subTest(unresolved_contract=unresolved_contract):
+                unresolved = build()
+                unresolved.user_loader_observation(
+                    pid=41,
+                    timestamp=110,
+                    semantic="status_denial",
+                    raw_process_identity="python.exe",
+                    raw_object_identity=unresolved_contract,
+                    failure_status=0xC0000022,
+                )
+                unresolved_result = _finish(unresolved)
+                self.assertEqual(
+                    unresolved_result.planes[1].outcome, "inconclusive"
+                )
+                self.assertEqual(
+                    unresolved_result.planes[1].reason,
+                    "plane_scope_unproved",
+                )
+
         other_status = build()
         other_status.user_loader_observation(
             pid=41,
@@ -521,9 +596,9 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
 
     def test_ci_exact_object_with_other_known_process_is_inconclusive(self):
         initial = _OBJECTS["dll_image_load"][0]
-        other = "inventory-sha256:" + "5" * 64
+        other = _OTHER_IMAGE_REF
         objects = dict(_OBJECTS)
-        objects["dll_image_load"] = (initial, other)
+        objects["dll_image_load"] = (initial, _DEPENDENCY_REF, other)
 
         def resolver(plane: str, raw: str) -> str | None:
             if plane == "dll_image_load":
@@ -536,7 +611,9 @@ class RuntimeTraceReducerPureTests(unittest.TestCase):
             trace.InventoryBinding(
                 runtime_digest=_DIGEST,
                 objects_by_plane=objects,
-                resolver=resolver,
+                loader_dependency_refs=(_DEPENDENCY_REF,),
+                path_resolver=resolver,
+                loader_dependency_resolver=lambda _raw: None,
             )
         )
         reducer.bind(pid=41, qpc_start=100, initial_image_ref=initial)

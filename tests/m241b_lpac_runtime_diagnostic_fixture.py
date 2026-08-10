@@ -25,7 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from ctypes import wintypes
 from dataclasses import dataclass, field
@@ -103,6 +103,8 @@ _SYSTEM_IMAGE_CANDIDATES = (
     "win32u.dll",
     "ws2_32.dll",
 )
+_KNOWN_DLL_VALUE_LIMIT = 256
+_KNOWN_DLL_TEXT_LIMIT = 32_768
 
 _SAFE_ERROR_CODES = frozenset(
     {
@@ -216,6 +218,7 @@ class CollectorObject:
     object_ref: str
     match_kind: str
     component: str = field(repr=False)
+    dependency_origin: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,13 +307,70 @@ def _path_identity(value: str) -> str | None:
     ):
         return None
     normalized = value.replace("/", "\\")
+    if normalized.casefold().startswith("\\\\?\\unc\\"):
+        return None
     for prefix in ("\\\\?\\", "\\??\\"):
         if normalized.startswith(prefix):
             normalized = normalized[len(prefix) :]
             break
     if not re.match(r"^[A-Za-z]:\\", normalized):
         return None
-    return ntpath.normcase(ntpath.normpath(normalized))
+    if any(part in {"", ".", ".."} for part in normalized[3:].split("\\")):
+        return None
+    return ntpath.normpath(normalized)
+
+
+def _nt_path_identity(value: str) -> str | None:
+    if (
+        type(value) is not str
+        or not value
+        or len(value) > 32_768
+        or "\0" in value
+        or not value.casefold().startswith("\\device\\")
+    ):
+        return None
+    raw = value.replace("/", "\\")
+    parts = raw.split("\\")[1:]
+    if any(part in {"", ".", ".."} for part in parts):
+        return None
+    normalized = ntpath.normpath(raw)
+    return normalized if normalized.casefold().startswith("\\device\\") else None
+
+
+def _physical_path_identity(value: str) -> str | None:
+    dos = _path_identity(value)
+    if dos is not None:
+        return "dos:" + dos
+    device = _nt_path_identity(value)
+    return "nt:" + device if device is not None else None
+
+
+def _logical_dependency_identity(value: str) -> str | None:
+    if (
+        type(value) is not str
+        or not value
+        or len(value) > 128
+        or "\0" in value
+        or "/" in value
+        or "\\" in value
+        or ":" in value
+        or _COMPONENT.fullmatch(value) is None
+        or not value.casefold().endswith(".dll")
+    ):
+        return None
+    return value.casefold()
+
+
+def _logical_dependency_component(value: str) -> tuple[str, str] | None:
+    if not value.startswith("logical-dependency:"):
+        return None
+    parts = value.split(":", 2)
+    if len(parts) != 3 or parts[1] not in {"runtime", "known_dll"}:
+        return None
+    name = _logical_dependency_identity(parts[2])
+    if name is None or name != parts[2]:
+        return None
+    return parts[1], name
 
 
 def _registry_identity(value: str) -> str | None:
@@ -325,76 +385,224 @@ def _registry_identity(value: str) -> str | None:
     return normalized.casefold() if normalized else None
 
 
+class _AliasLease:
+    """Sealed test-private ownership protocol for one trusted held file."""
+
+    aliases: tuple[str, str]
+    file_identity: tuple[int, bytes]
+
+    def reprove(self) -> None:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        raise NotImplementedError
+
+
 class _ExactInventoryResolver:
     """Transient exact raw-to-opaque resolver; unknown identities stay unknown."""
 
-    def __init__(
+    def __init__(self) -> None:
+        # Ownership exists before any native alias handle can be acquired.
+        # Callers must publish this object to their cleanup owner, then invoke
+        # initialize(); an initialization failure may retain a close-failed
+        # lease for a later bounded abort retry.
+        self._paths: dict[str, dict[str, str]] = {
+            plane: {} for plane in evidence.PLANE_ORDER
+        }
+        self._registry: dict[str, str] = {}
+        self._loader_dependencies: dict[str, str] = {}
+        self._leases: list[_AliasLease] = []
+        self._closed = False
+        self._initialized = False
+        self._ready = False
+        self._stable_proved = False
+        self._ordinal_equal: Callable[[str, str], bool] | None = None
+
+    def initialize(
         self,
         *,
         application: Path,
         inventory: CollectorInventory,
         system32_root: Path,
         current_user_sid: str,
+        alias_lease_factory: Callable[..., _AliasLease],
+        ordinal_equal: Callable[[str, str], bool],
     ) -> None:
         if (
-            type(inventory) is not CollectorInventory
+            self._initialized
+            or self._closed
+            or type(inventory) is not CollectorInventory
             or not application.is_absolute()
             or application.name.casefold() != "python.exe"
             or not system32_root.is_absolute()
             or type(current_user_sid) is not str
             or not current_user_sid.startswith("S-1-")
+            or not callable(alias_lease_factory)
+            or not callable(ordinal_equal)
         ):
             _fail("diagnostic_collector_failed")
-        self._paths: dict[str, dict[str, str]] = {
-            plane: {} for plane in evidence.PLANE_ORDER
-        }
-        self._registry: dict[str, str] = {}
+        self._initialized = True
+        self._ordinal_equal = ordinal_equal
         runtime_root = application.parent
         attempt_root = runtime_root.parent
-        for item in inventory.objects:
-            raw_values: tuple[str, ...]
-            component = item.component
-            if component == "attempt-root":
-                raw_values = (str(attempt_root),)
-            elif component.startswith("attempt-relative:"):
-                relative = component.removeprefix("attempt-relative:")
-                raw_values = (str(attempt_root.joinpath(*relative.split("/"))),)
-            elif component.startswith("runtime-relative:"):
-                relative = component.removeprefix("runtime-relative:")
-                raw_values = (str(runtime_root.joinpath(*relative.split("/"))),)
-            elif component.startswith("system32-basename:"):
-                raw_values = (
-                    str(system32_root / component.removeprefix("system32-basename:")),
-                )
-            elif component.startswith("runtime-image:"):
-                relative = component.removeprefix("runtime-image:")
-                raw_values = (str(runtime_root.joinpath(*relative.split("/"))),)
-            elif component.startswith("system32-image:"):
-                name = component.removeprefix("system32-image:")
-                raw_values = (
-                    str(system32_root / name),
-                    "\\SystemRoot\\System32\\" + name,
-                )
-            elif component.startswith("registry-key:"):
-                self._add_registry_component(
-                    component.removeprefix("registry-key:"),
-                    item.object_ref,
-                    current_user_sid=current_user_sid,
-                )
-                continue
-            else:
-                _fail("diagnostic_collector_failed")
-            for raw in raw_values:
-                key = _path_identity(raw)
-                if key is None:
-                    # ``\\SystemRoot`` is a deliberate exact alternate form.
-                    key = raw.casefold() if raw.startswith("\\SystemRoot\\") else None
-                if key is None:
+        physical: dict[
+            tuple[str, bool],
+            list[tuple[str, str, str | None, str | None]],
+        ] = {}
+        dependencies: list[CollectorObject] = []
+        try:
+            for item in inventory.objects:
+                component = item.component
+                path: Path | None = None
+                is_directory = False
+                image_name: str | None = None
+                image_origin: str | None = None
+                if component == "attempt-root":
+                    path = attempt_root
+                    is_directory = True
+                elif component.startswith("attempt-relative:"):
+                    relative = component.removeprefix("attempt-relative:")
+                    path = attempt_root.joinpath(*relative.split("/"))
+                    is_directory = True
+                elif component.startswith("runtime-relative:"):
+                    relative = component.removeprefix("runtime-relative:")
+                    path = runtime_root.joinpath(*relative.split("/"))
+                elif component.startswith("system32-basename:"):
+                    name = component.removeprefix("system32-basename:")
+                    path = system32_root / name
+                elif component.startswith("runtime-image:"):
+                    relative = component.removeprefix("runtime-image:")
+                    path = runtime_root.joinpath(*relative.split("/"))
+                    image_name = _logical_dependency_identity(
+                        ntpath.basename(relative)
+                    )
+                    image_origin = "runtime"
+                elif component.startswith("system32-image:"):
+                    name = component.removeprefix("system32-image:")
+                    path = system32_root / name
+                    image_name = _logical_dependency_identity(name)
+                    image_origin = "known_dll"
+                elif component.startswith("logical-dependency:"):
+                    dependency = _logical_dependency_component(component)
+                    if (
+                        dependency is None
+                        or item.dependency_origin != dependency[0]
+                    ):
+                        _fail("diagnostic_collector_failed")
+                    dependencies.append(item)
+                    continue
+                elif component.startswith("registry-key:"):
+                    if item.dependency_origin is not None:
+                        _fail("diagnostic_collector_failed")
+                    self._add_registry_component(
+                        component.removeprefix("registry-key:"),
+                        item.object_ref,
+                        current_user_sid=current_user_sid,
+                    )
+                    continue
+                else:
                     _fail("diagnostic_collector_failed")
-                existing = self._paths[item.plane].get(key)
-                if existing is not None and existing != item.object_ref:
+                if (
+                    item.dependency_origin is not None
+                    or path is None
+                    or not path.is_absolute()
+                ):
                     _fail("diagnostic_collector_failed")
-                self._paths[item.plane][key] = item.object_ref
+                key = (ntpath.normpath(str(path)), is_directory)
+                physical.setdefault(key, []).append(
+                    (item.plane, item.object_ref, image_name, image_origin)
+                )
+
+            images_by_name: dict[
+                str,
+                dict[str, dict[tuple[int, bytes], _AliasLease]],
+            ] = {}
+            identities_by_plane: dict[
+                tuple[str, tuple[int, bytes]], str
+            ] = {}
+            for (raw_path, is_directory), bindings in sorted(
+                physical.items(), key=lambda item: item[0]
+            ):
+                lease = alias_lease_factory(
+                    Path(raw_path), is_directory=is_directory
+                )
+                if not isinstance(lease, _AliasLease):
+                    _fail("diagnostic_collector_failed")
+                self._leases.append(lease)
+                if (
+                    type(lease.aliases) is not tuple
+                    or len(lease.aliases) != 2
+                    or type(lease.file_identity) is not tuple
+                    or len(lease.file_identity) != 2
+                    or type(lease.file_identity[0]) is not int
+                    or lease.file_identity[0] <= 0
+                    or type(lease.file_identity[1]) is not bytes
+                    or len(lease.file_identity[1]) != 16
+                    or not callable(lease.close)
+                ):
+                    _fail("diagnostic_collector_failed")
+                alias_keys = tuple(
+                    _physical_path_identity(value) for value in lease.aliases
+                )
+                if (
+                    None in alias_keys
+                    or len(set(alias_keys)) != 2
+                    or not any(key.startswith("dos:") for key in alias_keys)
+                    or not any(key.startswith("nt:") for key in alias_keys)
+                ):
+                    _fail("diagnostic_collector_failed")
+                for plane, object_ref, image_name, image_origin in bindings:
+                    identity_key = (plane, lease.file_identity)
+                    existing_identity = identities_by_plane.get(identity_key)
+                    if (
+                        existing_identity is not None
+                        and existing_identity != object_ref
+                    ):
+                        _fail("diagnostic_collector_failed")
+                    identities_by_plane[identity_key] = object_ref
+                    for alias_key in alias_keys:
+                        assert alias_key is not None
+                        self._insert_path(plane, alias_key, object_ref)
+                    if image_name is not None:
+                        assert image_origin is not None
+                        images_by_name.setdefault(image_name, {}).setdefault(
+                            image_origin, {}
+                        )[lease.file_identity] = lease
+
+            for item in dependencies:
+                dependency = _logical_dependency_component(item.component)
+                name = dependency[1] if dependency is not None else None
+                if (
+                    item.plane != "dll_image_load"
+                    or name is None
+                    or name in self._loader_dependencies
+                    or item.match_kind != "exact_loader_dependency"
+                ):
+                    _fail("diagnostic_collector_failed")
+                observed_origins = images_by_name.get(name, {})
+                if item.dependency_origin in {"runtime", "known_dll"}:
+                    if (
+                        set(observed_origins) != {item.dependency_origin}
+                        or len(observed_origins[item.dependency_origin]) != 1
+                    ):
+                        _fail("diagnostic_collector_failed")
+                else:
+                    _fail("diagnostic_collector_failed")
+                self._loader_dependencies[name] = item.object_ref
+            self._ready = True
+        except BaseException:
+            cleanup_failed = False
+            try:
+                self.close()
+            except BaseException:
+                cleanup_failed = True
+            if cleanup_failed:
+                raise RuntimeDiagnosticError("diagnostic_cleanup_failed") from None
+            raise RuntimeDiagnosticError("diagnostic_collector_failed") from None
+
+    @property
+    def ready(self) -> bool:
+        return self._ready and not self._closed
 
     def _add_registry_component(
         self,
@@ -441,19 +649,76 @@ class _ExactInventoryResolver:
                 _fail("diagnostic_collector_failed")
             self._registry[key] = object_ref
 
+    def _insert_path(self, plane: str, key: str, object_ref: str) -> None:
+        if self._ordinal_equal is None:
+            _fail("diagnostic_collector_failed")
+        for existing_key, existing_ref in self._paths[plane].items():
+            if self._ordinal_equal(existing_key, key):
+                if existing_ref != object_ref:
+                    _fail("diagnostic_collector_failed")
+                return
+        self._paths[plane][key] = object_ref
+
+    def _lookup_path(self, plane: str, key: str) -> str | None:
+        if self._ordinal_equal is None:
+            return None
+        matches = tuple(
+            object_ref
+            for candidate, object_ref in self._paths.get(plane, {}).items()
+            if self._ordinal_equal(candidate, key)
+        )
+        if len(set(matches)) > 1:
+            return None
+        return matches[0] if matches else None
+
     def __call__(self, plane: str, raw_identity: str) -> str | None:
+        if not self.ready:
+            return None
         if plane == "registry_access":
             key = _registry_identity(raw_identity)
             return self._registry.get(key) if key is not None else None
-        key = _path_identity(raw_identity)
-        if key is None and raw_identity.startswith("\\SystemRoot\\"):
-            key = raw_identity.casefold()
-        return self._paths.get(plane, {}).get(key) if key is not None else None
+        key = _physical_path_identity(raw_identity)
+        return self._lookup_path(plane, key) if key is not None else None
+
+    def resolve_loader_dependency(self, raw_identity: str) -> str | None:
+        if not self.ready:
+            return None
+        key = _logical_dependency_identity(raw_identity)
+        return self._loader_dependencies.get(key) if key is not None else None
+
+    def prove_stable(self) -> None:
+        if not self.ready or self._stable_proved:
+            _fail("diagnostic_collector_failed")
+        failed = False
+        for lease in self._leases:
+            try:
+                lease.reprove()
+            except BaseException:
+                failed = True
+        if failed:
+            _fail("diagnostic_collector_failed")
+        self._stable_proved = True
 
     def close(self) -> None:
+        if self._closed and not self._leases:
+            return
         for values in self._paths.values():
             values.clear()
         self._registry.clear()
+        self._loader_dependencies.clear()
+        cleanup_failed = False
+        retained: list[_AliasLease] = []
+        for lease in reversed(self._leases):
+            try:
+                lease.close()
+            except BaseException:
+                cleanup_failed = True
+                retained.append(lease)
+        self._leases = list(reversed(retained))
+        self._closed = not self._leases
+        self._ready = False
+        if cleanup_failed:
+            _fail("diagnostic_cleanup_failed")
 
 
 class _RealtimeCollectorAdapter:
@@ -465,12 +730,16 @@ class _RealtimeCollectorAdapter:
         collector_factory: object = runtime_trace.RealtimeRuntimeCollector,
         system32_root: Path | None = None,
         current_user_sid: str | None = None,
+        alias_lease_factory: Callable[..., _AliasLease] | None = None,
+        ordinal_equal: Callable[[str, str], bool] | None = None,
     ) -> None:
         if not callable(collector_factory):
             _fail("diagnostic_collector_failed")
         self._factory = collector_factory
         self._system32_root = system32_root
         self._current_user_sid = current_user_sid
+        self._alias_lease_factory = alias_lease_factory
+        self._ordinal_equal = ordinal_equal
         self._collector: object | None = None
         self._resolver: _ExactInventoryResolver | None = None
         self._inventory: CollectorInventory | None = None
@@ -487,6 +756,7 @@ class _RealtimeCollectorAdapter:
         if (
             self._terminal
             or self._collector is not None
+            or self._resolver is not None
             or type(inventory) is not CollectorInventory
             or type(process_id) is not int
             or process_id <= 0
@@ -496,37 +766,77 @@ class _RealtimeCollectorAdapter:
             _fail("diagnostic_collector_failed")
         system32_root = self._system32_root or _system32_root()
         current_user_sid = self._current_user_sid or lpac._current_user_sid()
-        resolver = _ExactInventoryResolver(
+        alias_lease_factory = (
+            self._alias_lease_factory or _open_trusted_alias_lease
+        )
+        ordinal_equal = self._ordinal_equal or _windows_ordinal_equal
+        resolver = _ExactInventoryResolver()
+        self._resolver = resolver
+        resolver.initialize(
             application=application,
             inventory=inventory,
             system32_root=system32_root,
             current_user_sid=current_user_sid,
+            alias_lease_factory=alias_lease_factory,
+            ordinal_equal=ordinal_equal,
         )
-        objects_by_plane = {
-            plane.plane: plane.object_refs for plane in inventory.manifest.planes
-        }
-        binding = runtime_trace.InventoryBinding(
-            runtime_digest=inventory.runtime_digest,
-            objects_by_plane=objects_by_plane,
-            resolver=resolver,
-        )
-        initial_image_ref = inventory.resolve(
-            plane="dll_image_load",
-            match_kind="exact_image_identity",
-            component="runtime-image:python.exe",
-        )
-        if initial_image_ref is None:
-            resolver.close()
-            _fail("diagnostic_collector_failed")
-        collector = self._factory(binding)
-        self._resolver = resolver
-        self._collector = collector
-        self._inventory = inventory
-        collector.start_for_suspended_child(
-            process_id=process_id,
-            process_handle=process_handle.value,
-            initial_image_object_ref=initial_image_ref,
-        )
+        try:
+            if not resolver.ready:
+                _fail("diagnostic_collector_failed")
+            objects_by_plane = {
+                plane.plane: plane.object_refs
+                for plane in inventory.manifest.planes
+            }
+            binding = runtime_trace.InventoryBinding(
+                runtime_digest=inventory.runtime_digest,
+                objects_by_plane=objects_by_plane,
+                loader_dependency_refs=tuple(
+                    item.object_ref
+                    for item in inventory.objects
+                    if item.plane == "dll_image_load"
+                    and item.match_kind == "exact_loader_dependency"
+                ),
+                path_resolver=resolver,
+                loader_dependency_resolver=resolver.resolve_loader_dependency,
+            )
+            initial_image_ref = inventory.resolve(
+                plane="dll_image_load",
+                match_kind="exact_image_identity",
+                component="runtime-image:python.exe",
+            )
+            if initial_image_ref is None:
+                _fail("diagnostic_collector_failed")
+            collector = self._factory(binding)
+            self._collector = collector
+            self._inventory = inventory
+            collector.start_for_suspended_child(
+                process_id=process_id,
+                process_handle=process_handle.value,
+                initial_image_object_ref=initial_image_ref,
+            )
+        except BaseException as error:
+            cleanup_failed = (
+                isinstance(error, runtime_trace.RuntimeTraceError)
+                and error.code == "trace_cleanup_unproved"
+            )
+            if self._collector is not None:
+                try:
+                    self._collector.abort()
+                    self._collector = None
+                except BaseException:
+                    cleanup_failed = True
+            try:
+                resolver.close()
+                self._resolver = None
+            except BaseException:
+                cleanup_failed = True
+            self._inventory = None
+            self._terminal = (
+                self._collector is None and self._resolver is None
+            )
+            if cleanup_failed:
+                raise RuntimeDiagnosticError("diagnostic_cleanup_failed") from None
+            raise RuntimeDiagnosticError("diagnostic_collector_failed") from None
 
     def stop_and_classify(self, *, access_denied: bool) -> CollectorClassification:
         if (
@@ -534,10 +844,13 @@ class _RealtimeCollectorAdapter:
             or self._terminal
             or self._collector is None
             or self._inventory is None
+            or self._resolver is None
+            or not self._resolver.ready
         ):
             _fail("diagnostic_collector_failed")
         collector = self._collector
         inventory = self._inventory
+        resolver = self._resolver
         cleanup_unproved = False
         try:
             collector.record_subject_proof(runtime_trace.SUBJECT_ACCESS_DENIED)
@@ -560,6 +873,10 @@ class _RealtimeCollectorAdapter:
                 != evidence.PLANE_ORDER
             ):
                 _fail("diagnostic_collector_failed")
+            # The held leaf handles authorize the transient DOS/NT aliases only
+            # for this collection window.  Reprove every leaf after the
+            # consumer has joined and before any classification is materialized.
+            resolver.prove_stable()
             quality = evidence.bind_collection_quality(
                 subject_proof=evidence.STOCK_CHILD_ACCESS_DENIED_PROOF,
                 window_binding=result.window_binding,
@@ -619,6 +936,13 @@ class _RealtimeCollectorAdapter:
                 }
             )
             classification = CollectorClassification(document, quality, True)
+            if self._resolver is not None:
+                try:
+                    self._resolver.close()
+                    self._resolver = None
+                except BaseException:
+                    cleanup_unproved = True
+                    raise
         except BaseException as error:
             cleanup_failed = cleanup_unproved or (
                 isinstance(error, runtime_trace.RuntimeTraceError)
@@ -629,42 +953,52 @@ class _RealtimeCollectorAdapter:
                 # a possibly live session.  The concrete collector makes this
                 # idempotent after a clean stop and fail-closed otherwise.
                 collector.abort()
+                self._collector = None
             except BaseException:
                 cleanup_failed = True
-            self._terminal = True
-            self._collector = None
             self._inventory = None
             if self._resolver is not None:
-                self._resolver.close()
-            self._resolver = None
+                try:
+                    self._resolver.close()
+                    self._resolver = None
+                except BaseException:
+                    cleanup_failed = True
+            self._terminal = (
+                self._collector is None and self._resolver is None
+            )
             if cleanup_failed:
                 raise RuntimeDiagnosticError("diagnostic_cleanup_failed") from None
             raise RuntimeDiagnosticError("diagnostic_collector_failed") from None
         self._terminal = True
         self._collector = None
         self._inventory = None
-        if self._resolver is not None:
-            self._resolver.close()
-        self._resolver = None
         return classification
 
     def abort(self) -> None:
-        if self._terminal:
+        if (
+            self._terminal
+            and self._collector is None
+            and self._resolver is None
+        ):
             return
-        pending: BaseException | None = None
-        try:
-            if self._collector is not None:
+        cleanup_failed = False
+        if self._collector is not None:
+            try:
                 self._collector.abort()
-        except BaseException as error:
-            pending = error
-        finally:
-            self._terminal = True
-            self._collector = None
-            self._inventory = None
-            if self._resolver is not None:
+                self._collector = None
+            except BaseException:
+                cleanup_failed = True
+        if self._resolver is not None:
+            try:
                 self._resolver.close()
-            self._resolver = None
-        if pending is not None:
+                self._resolver = None
+            except BaseException:
+                cleanup_failed = True
+        self._terminal = (
+            self._collector is None and self._resolver is None
+        )
+        self._inventory = None
+        if cleanup_failed:
             raise RuntimeDiagnosticError("diagnostic_cleanup_failed") from None
 
 
@@ -1109,6 +1443,7 @@ def build_collector_inventory(
     capture: RuntimeCapture,
     *,
     system_images: tuple[str, ...] = (),
+    known_dll_contracts: tuple[str, ...] = (),
     appcontainer_sid: str = "S-1-15-2-1-1",
 ) -> CollectorInventory:
     """Bind bounded logical targets without exposing source or mirror paths."""
@@ -1124,6 +1459,14 @@ def build_collector_inventory(
             or _COMPONENT.fullmatch(name) is None
             or not name.endswith(".dll")
             for name in system_images
+        )
+        or type(known_dll_contracts) is not tuple
+        or tuple(sorted(known_dll_contracts)) != known_dll_contracts
+        or len(set(known_dll_contracts)) != len(known_dll_contracts)
+        or not set(known_dll_contracts).issubset(system_images)
+        or any(
+            _logical_dependency_identity(name) != name
+            for name in known_dll_contracts
         )
         or type(appcontainer_sid) is not str
         or not appcontainer_sid.startswith("S-1-15-2-")
@@ -1187,6 +1530,28 @@ def build_collector_inventory(
             )
         )
     )
+    runtime_dependency_names: set[str] = set()
+    for item in runtime_images:
+        if Path(item).suffix.casefold() != ".dll":
+            continue
+        canonical = _logical_dependency_identity(item)
+        if canonical is None or canonical in runtime_dependency_names:
+            _fail("diagnostic_unavailable")
+        runtime_dependency_names.add(canonical)
+    physical_system_names = set(system_images)
+    known_names = set(known_dll_contracts)
+    if (
+        runtime_dependency_names & physical_system_names
+    ):
+        _fail("diagnostic_unavailable")
+    logical_dependency_origins = {
+        **{name: "runtime" for name in runtime_dependency_names},
+        **{name: "known_dll" for name in known_names},
+    }
+    logical_dependency_components = tuple(
+        f"logical-dependency:{logical_dependency_origins[name]}:{name}"
+        for name in sorted(logical_dependency_origins)
+    )
     registry_components = (
         "registry-key:HKCU/Environment",
         f"registry-key:HKCU/Software/Python/PythonCore/{version}/PythonPath",
@@ -1198,7 +1563,9 @@ def build_collector_inventory(
     )
     components = {
         "file_access": file_components,
-        "dll_image_load": image_components,
+        "dll_image_load": tuple(
+            sorted((*image_components, *logical_dependency_components))
+        ),
         "registry_access": registry_components,
         "code_integrity_policy": image_components,
     }
@@ -1210,20 +1577,30 @@ def build_collector_inventory(
     objects: list[CollectorObject] = []
     objects_by_plane: dict[str, tuple[str, ...]] = {}
     for plane in evidence.PLANE_ORDER:
-        match_kind = {
-            "file_access": "exact_file_identity",
-            "dll_image_load": "exact_image_identity",
-            "registry_access": "canonical_registry_key",
-            "code_integrity_policy": "exact_ci_image_identity",
-        }[plane]
         plane_objects = tuple(
             sorted(
                 (
                     CollectorObject(
                         plane,
                         _object_ref(capture.runtime_digest, plane, component),
-                        match_kind,
+                        (
+                            "exact_loader_dependency"
+                            if _logical_dependency_component(component)
+                            is not None
+                            else {
+                                "file_access": "exact_file_identity",
+                                "dll_image_load": "exact_image_identity",
+                                "registry_access": "canonical_registry_key",
+                                "code_integrity_policy": "exact_ci_image_identity",
+                            }[plane]
+                        ),
                         component,
+                        (
+                            _logical_dependency_component(component)[0]
+                            if _logical_dependency_component(component)
+                            is not None
+                            else None
+                        ),
                     )
                     for component in components[plane]
                 ),
@@ -1274,6 +1651,108 @@ def _verified_system_image_basenames() -> tuple[str, ...]:
     return result
 
 
+def _verified_known_dll_contracts(
+    system_images: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Read the bounded 64-bit KnownDLL contract and retain only held leaves."""
+
+    if (
+        type(system_images) is not tuple
+        or not system_images
+        or tuple(sorted(system_images)) != system_images
+        or len(set(system_images)) != len(system_images)
+    ):
+        _fail("diagnostic_unavailable")
+    try:
+        import winreg
+
+        query_value = winreg.KEY_QUERY_VALUE
+        wow64_64 = winreg.KEY_WOW64_64KEY
+        if (
+            type(query_value) is not int
+            or query_value != 0x0001
+            or type(wow64_64) is not int
+            or wow64_64 != 0x0100
+        ):
+            _fail("diagnostic_unavailable")
+        access = query_value | wow64_64
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs",
+            0,
+            access,
+        ) as key:
+            def snapshot() -> tuple[
+                tuple[int, int, int], tuple[tuple[str, str, int], ...]
+            ]:
+                before = winreg.QueryInfoKey(key)
+                if (
+                    type(before) is not tuple
+                    or len(before) != 3
+                    or any(type(value) is not int for value in before)
+                    or before[0] < 0
+                    or not 1 <= before[1] <= _KNOWN_DLL_VALUE_LIMIT
+                    or before[2] < 0
+                ):
+                    _fail("diagnostic_unavailable")
+                rows: list[tuple[str, str, int]] = []
+                total_text = 0
+                names: set[str] = set()
+                for index in range(before[1]):
+                    value_name, value_data, value_kind = winreg.EnumValue(
+                        key, index
+                    )
+                    if (
+                        type(value_name) is not str
+                        or not value_name
+                        or "\0" in value_name
+                        or len(value_name) > 1_024
+                        or type(value_data) is not str
+                        or "\0" in value_data
+                        or len(value_data) > 1_024
+                        or type(value_kind) is not int
+                        or value_kind != winreg.REG_SZ
+                    ):
+                        _fail("diagnostic_unavailable")
+                    canonical_name = value_name.casefold()
+                    if canonical_name in names:
+                        _fail("diagnostic_unavailable")
+                    names.add(canonical_name)
+                    total_text += len(value_name) + len(value_data)
+                    if total_text > _KNOWN_DLL_TEXT_LIMIT:
+                        _fail("diagnostic_unavailable")
+                    rows.append((value_name, value_data, value_kind))
+                after = winreg.QueryInfoKey(key)
+                if after != before:
+                    _fail("diagnostic_unavailable")
+                return before, tuple(sorted(rows))
+
+            first_metadata, first = snapshot()
+            second_metadata, second = snapshot()
+            if first_metadata != second_metadata or first != second:
+                _fail("diagnostic_unavailable")
+            contracts: set[str] = set()
+            observed_dll_data: set[str] = set()
+            available = set(system_images)
+            for _value_name, value_data, _value_kind in first:
+                canonical = _logical_dependency_identity(value_data)
+                if canonical is None:
+                    continue
+                if canonical in observed_dll_data:
+                    _fail("diagnostic_unavailable")
+                observed_dll_data.add(canonical)
+                if canonical in available:
+                    contracts.add(canonical)
+    except RuntimeDiagnosticError:
+        raise
+    except BaseException:
+        _fail("diagnostic_unavailable")
+    result = tuple(sorted(contracts))
+    if not {"kernel32.dll", "ntdll.dll"}.issubset(result):
+        _fail("diagnostic_unavailable")
+    return result
+
+
 # The following binding is intentionally smaller than the inactive M24.2
 # provider: it owns only no-follow filesystem DACL application/proof and the
 # two process-lifecycle calls that the accepted seam deliberately omits.
@@ -1289,8 +1768,15 @@ WAIT_TIMEOUT = 258
 FILE_ATTRIBUTE_DIRECTORY = 0x10
 FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 FILE_ATTRIBUTE_TAG_INFO = 9
+FILE_STANDARD_INFO = 1
+FILE_ID_INFO = 18
 FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
 FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+FILE_NAME_NORMALIZED = 0x0
+VOLUME_NAME_DOS = 0x0
+VOLUME_NAME_NT = 0x2
+FINAL_PATH_BUFFER_CHARS = 32_768
+CSTR_EQUAL = 2
 OPEN_EXISTING = 3
 FILE_SHARE_READ = 0x1
 FILE_SHARE_WRITE = 0x2
@@ -1327,6 +1813,27 @@ class _FILE_ATTRIBUTE_TAG_INFORMATION(ctypes.Structure):
     _fields_ = (("FileAttributes", DWORD), ("ReparseTag", DWORD))
 
 
+class _FILE_ID_128(ctypes.Structure):
+    _fields_ = (("Identifier", wintypes.BYTE * 16),)
+
+
+class _FILE_ID_INFORMATION(ctypes.Structure):
+    _fields_ = (
+        ("VolumeSerialNumber", ctypes.c_ulonglong),
+        ("FileId", _FILE_ID_128),
+    )
+
+
+class _FILE_STANDARD_INFORMATION(ctypes.Structure):
+    _fields_ = (
+        ("AllocationSize", ctypes.c_longlong),
+        ("EndOfFile", ctypes.c_longlong),
+        ("NumberOfLinks", DWORD),
+        ("DeletePending", wintypes.BYTE),
+        ("Directory", wintypes.BYTE),
+    )
+
+
 class _DaclApis:
     def __init__(self) -> None:
         if os.name != "nt" or not hasattr(ctypes, "WinDLL"):
@@ -1350,6 +1857,23 @@ class _DaclApis:
                 k.GetHandleInformation,
                 [HANDLE, ctypes.POINTER(DWORD)],
                 wintypes.BOOL,
+            )
+            self._prototype(
+                k.GetFinalPathNameByHandleW,
+                [HANDLE, wintypes.LPWSTR, DWORD, DWORD],
+                DWORD,
+            )
+            self._prototype(k.CloseHandle, [HANDLE], wintypes.BOOL)
+            self._prototype(
+                k.CompareStringOrdinal,
+                [
+                    wintypes.LPCWSTR,
+                    ctypes.c_int,
+                    wintypes.LPCWSTR,
+                    ctypes.c_int,
+                    wintypes.BOOL,
+                ],
+                ctypes.c_int,
             )
             self._prototype(k.ResumeThread, [HANDLE], DWORD)
             self._prototype(k.WaitForSingleObject, [HANDLE, DWORD], DWORD)
@@ -1395,6 +1919,28 @@ def _dacl_apis() -> _DaclApis:
     if _DACL_API is None:
         _DACL_API = _DaclApis()
     return _DACL_API
+
+
+def _windows_ordinal_equal(first: str, second: str) -> bool:
+    if (
+        type(first) is not str
+        or type(second) is not str
+        or not first
+        or not second
+        or len(first) > 32_768
+        or len(second) > 32_768
+        or "\0" in first
+        or "\0" in second
+    ):
+        _fail("diagnostic_collector_failed")
+    result = int(
+        _dacl_apis().kernel32.CompareStringOrdinal(
+            first, -1, second, -1, True
+        )
+    )
+    if result == 0:
+        _fail("diagnostic_collector_failed")
+    return result == CSTR_EQUAL
 
 
 @dataclass(frozen=True, slots=True)
@@ -1489,6 +2035,233 @@ def _native_path(path: Path) -> str:
     if value.startswith("\\\\"):
         return "\\\\?\\UNC\\" + value[2:]
     return "\\\\?\\" + value
+
+
+class _HeldNativeHandle:
+    __slots__ = ("_value",)
+
+    def __init__(self, value: object) -> None:
+        raw = int(value.value or 0) if isinstance(value, ctypes.c_void_p) else int(value or 0)
+        if raw in {0, INVALID_HANDLE_VALUE}:
+            _fail("diagnostic_boundary_violation")
+        self._value = raw
+
+    @property
+    def value(self) -> int:
+        if self._value == 0:
+            _fail("diagnostic_boundary_violation")
+        return self._value
+
+    @property
+    def closed(self) -> bool:
+        return self._value == 0
+
+    def close(self) -> None:
+        if self._value == 0:
+            return
+        if not _dacl_apis().kernel32.CloseHandle(HANDLE(self._value)):
+            _fail("diagnostic_cleanup_failed")
+        self._value = 0
+
+
+class _HeldAliasLease(_AliasLease):
+    """Retain the exact no-follow handle which authorized two path aliases."""
+
+    __slots__ = (
+        "_handle",
+        "_is_directory",
+        "_reproved",
+        "aliases",
+        "file_identity",
+    )
+
+    def __init__(
+        self,
+        handle: _HeldNativeHandle,
+        aliases: tuple[str, str],
+        file_identity: tuple[int, bytes],
+        is_directory: bool,
+    ) -> None:
+        self._handle = handle
+        self._is_directory = is_directory
+        self._reproved = False
+        self.aliases = aliases
+        self.file_identity = file_identity
+
+    def reprove(self) -> None:
+        if self._reproved or self._handle.closed:
+            _fail("diagnostic_collector_failed")
+        _held_leaf_attributes(self._handle, is_directory=self._is_directory)
+        _prove_noninheritable(self._handle)
+        before = _held_file_identity(self._handle)
+        dos_path = _held_final_path(self._handle, VOLUME_NAME_DOS)
+        nt_path = _held_final_path(self._handle, VOLUME_NAME_NT)
+        after = _held_file_identity(self._handle)
+        if (
+            before != self.file_identity
+            or after != self.file_identity
+            or not _windows_ordinal_equal(dos_path, self.aliases[0])
+            or not _windows_ordinal_equal(nt_path, self.aliases[1])
+        ):
+            _fail("diagnostic_collector_failed")
+        self._reproved = True
+
+    def close(self) -> None:
+        self.aliases = ("", "")
+        self.file_identity = (0, b"")
+        if not self._handle.closed:
+            try:
+                self._handle.close()
+            except BaseException:
+                _fail("diagnostic_cleanup_failed")
+
+
+def _held_file_identity(handle: _HeldNativeHandle) -> tuple[int, bytes]:
+    if (
+        ctypes.sizeof(_FILE_ID_128) != 16
+        or ctypes.sizeof(_FILE_ID_INFORMATION) != 24
+        or _FILE_ID_INFORMATION.VolumeSerialNumber.offset != 0
+        or _FILE_ID_INFORMATION.FileId.offset != 8
+    ):
+        _fail("diagnostic_boundary_violation")
+    information = _FILE_ID_INFORMATION()
+    if not _dacl_apis().kernel32.GetFileInformationByHandleEx(
+        HANDLE(handle.value),
+        FILE_ID_INFO,
+        ctypes.byref(information),
+        ctypes.sizeof(information),
+    ):
+        _fail("diagnostic_boundary_violation")
+    identity = (
+        int(information.VolumeSerialNumber),
+        bytes(information.FileId.Identifier),
+    )
+    if identity[0] <= 0 or len(identity[1]) != 16 or not any(identity[1]):
+        _fail("diagnostic_boundary_violation")
+    return identity
+
+
+def _held_leaf_attributes(
+    handle: _HeldNativeHandle, *, is_directory: bool
+) -> _FILE_ATTRIBUTE_TAG_INFORMATION:
+    if (
+        ctypes.sizeof(_FILE_STANDARD_INFORMATION) != 24
+        or _FILE_STANDARD_INFORMATION.AllocationSize.offset != 0
+        or _FILE_STANDARD_INFORMATION.EndOfFile.offset != 8
+        or _FILE_STANDARD_INFORMATION.NumberOfLinks.offset != 16
+        or _FILE_STANDARD_INFORMATION.DeletePending.offset != 20
+        or _FILE_STANDARD_INFORMATION.Directory.offset != 21
+    ):
+        _fail("diagnostic_boundary_violation")
+    attributes = _FILE_ATTRIBUTE_TAG_INFORMATION()
+    standard = _FILE_STANDARD_INFORMATION()
+    for information_class, value in (
+        (FILE_ATTRIBUTE_TAG_INFO, attributes),
+        (FILE_STANDARD_INFO, standard),
+    ):
+        if not _dacl_apis().kernel32.GetFileInformationByHandleEx(
+            HANDLE(handle.value),
+            information_class,
+            ctypes.byref(value),
+            ctypes.sizeof(value),
+        ):
+            _fail("diagnostic_boundary_violation")
+    if (
+        bool(attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        is not is_directory
+        or attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT
+        or int(attributes.ReparseTag) != 0
+        or bool(standard.Directory) is not is_directory
+        or bool(standard.DeletePending)
+        or int(standard.NumberOfLinks) < 1
+    ):
+        _fail("diagnostic_boundary_violation")
+    return attributes
+
+
+def _prove_noninheritable(handle: _HeldNativeHandle) -> None:
+    handle_flags = DWORD()
+    if (
+        not _dacl_apis().kernel32.GetHandleInformation(
+            HANDLE(handle.value), ctypes.byref(handle_flags)
+        )
+        or handle_flags.value & lpac.HANDLE_FLAG_INHERIT
+    ):
+        _fail("diagnostic_boundary_violation")
+
+
+def _held_final_path(handle: _HeldNativeHandle, volume_kind: int) -> str:
+    if volume_kind not in {VOLUME_NAME_DOS, VOLUME_NAME_NT}:
+        _fail("diagnostic_boundary_violation")
+    buffer = ctypes.create_unicode_buffer(FINAL_PATH_BUFFER_CHARS)
+    length = int(
+        _dacl_apis().kernel32.GetFinalPathNameByHandleW(
+            HANDLE(handle.value),
+            buffer,
+            len(buffer),
+            FILE_NAME_NORMALIZED | volume_kind,
+        )
+    )
+    if (
+        length <= 0
+        or length >= len(buffer)
+        or buffer[length] != "\0"
+    ):
+        _fail("diagnostic_boundary_violation")
+    value = buffer.value
+    try:
+        utf16_units = len(value.encode("utf-16-le", "strict")) // 2
+    except UnicodeError:
+        _fail("diagnostic_boundary_violation")
+    if length != utf16_units:
+        _fail("diagnostic_boundary_violation")
+    identity = (
+        _path_identity(value)
+        if volume_kind == VOLUME_NAME_DOS
+        else _nt_path_identity(value)
+    )
+    if identity is None:
+        _fail("diagnostic_boundary_violation")
+    return value
+
+
+def _open_trusted_alias_lease(
+    path: Path, *, is_directory: bool
+) -> _HeldAliasLease:
+    if not path.is_absolute() or type(is_directory) is not bool:
+        _fail("diagnostic_boundary_violation")
+    flags = FILE_FLAG_OPEN_REPARSE_POINT
+    if is_directory:
+        flags |= FILE_FLAG_BACKUP_SEMANTICS
+    raw = _dacl_apis().kernel32.CreateFileW(
+        _native_path(path),
+        lpac.FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        None,
+        OPEN_EXISTING,
+        flags,
+        None,
+    )
+    if int(raw or 0) in {0, INVALID_HANDLE_VALUE}:
+        _fail("diagnostic_boundary_violation")
+    handle = _HeldNativeHandle(raw)
+    lease = _HeldAliasLease(handle, ("", ""), (0, b""), is_directory)
+    try:
+        _held_leaf_attributes(handle, is_directory=is_directory)
+        _prove_noninheritable(handle)
+        before = _held_file_identity(handle)
+        dos_path = _held_final_path(handle, VOLUME_NAME_DOS)
+        nt_path = _held_final_path(handle, VOLUME_NAME_NT)
+        after = _held_file_identity(handle)
+        if before != after:
+            _fail("diagnostic_boundary_violation")
+        lease.aliases = (dos_path, nt_path)
+        lease.file_identity = before
+    except BaseException:
+        # Return the invalid but still-owned lease.  The resolver records it
+        # before shape validation so adapter cleanup can close or retry it.
+        pass
+    return lease
 
 
 @contextmanager
@@ -1977,9 +2750,13 @@ class _RealDiagnosticContext:
                 context._capture, runtime_root
             )
             context._profile.create()
+            system_images = _verified_system_image_basenames()
             context.inventory = build_collector_inventory(
                 context._capture,
-                system_images=_verified_system_image_basenames(),
+                system_images=system_images,
+                known_dll_contracts=_verified_known_dll_contracts(
+                    system_images
+                ),
                 appcontainer_sid=context._profile.sid,
             )
             environment = portability._environment_block(str(scratch))

@@ -41,6 +41,10 @@ from tests import m241b_runtime_trace_win32 as runtime_trace
 RUNTIME_DIGEST_DOMAIN = b"taskgov-verification-runtime-v1\0"
 OBJECT_REF_DOMAIN = b"taskgov-m241b-runtime-object-v1\0"
 TREE_PROOF_DOMAIN = b"taskgov-m241b-runtime-dacl-v1\0"
+PE_IMPORT_PROVENANCE_DOMAIN = b"taskgov-m241b-pe-import-provenance-v1\0"
+API_SET_QUALIFICATION_DOMAIN = b"taskgov-m241b-api-set-qualification-v1\0"
+KNOWN_DLL_QUALIFICATION_DOMAIN = b"taskgov-m241b-known-dll-qualification-v1\0"
+LOADER_RELATION_DOMAIN = b"taskgov-m241b-loader-relation-v1\0"
 RUNTIME_ENTRY_LIMIT = 20_000
 RUNTIME_TRAVERSAL_LIMIT = 20_000
 RUNTIME_FILE_LIMIT = 32 * 1024 * 1024
@@ -48,6 +52,16 @@ RUNTIME_TOTAL_LIMIT = 512 * 1024 * 1024
 RUNTIME_INVENTORY_LIMIT = 16 * 1024 * 1024
 RUNTIME_COPY_CHUNK = 128 * 1024
 RUNTIME_TIMEOUT_SECONDS = 30.0
+PE_IMPORT_TIMEOUT_SECONDS = 15.0
+PE_IMAGE_LIMIT = 8
+PE_SECTION_LIMIT = 96
+PE_IMPORT_DESCRIPTOR_LIMIT = 64
+PE_IMPORT_RELATION_LIMIT = 256
+PE_IMPORT_NAME_LIMIT = 64
+API_SET_CONTRACT_LIMIT = 128
+API_SET_HOST_WCHAR_LIMIT = 260
+API_SET_QUERY_DLL = "api-ms-win-core-apiquery-l2-1-0.dll"
+LOAD_LIBRARY_SEARCH_SYSTEM32 = 0x00000800
 TREE_ENTRY_LIMIT = 100_000
 TREE_DESCRIPTOR_LIMIT = 64 * 1024 * 1024
 TREE_TIMEOUT_SECONDS = 30.0
@@ -57,6 +71,10 @@ FIXED_DIAGNOSTIC_BOOTSTRAP = "raise SystemExit(0)\n"
 
 _COMPONENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}\Z")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_API_SET_CONTRACT = re.compile(
+    r"(?:api|ext)-[a-z0-9]+(?:-[a-z0-9]+)*-l[0-9]+"
+    r"-[0-9]+-[0-9]+\.dll\Z"
+)
 _EXCLUDED_DIRECTORIES = frozenset(
     {
         "__pycache__",
@@ -213,12 +231,60 @@ class RuntimeMirror:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeImportRelation:
+    importer: str = field(repr=False)
+    table: str
+    dependency: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeImportProvenance:
+    runtime_digest: str
+    images: tuple[str, ...] = field(repr=False)
+    relations: tuple[RuntimeImportRelation, ...] = field(repr=False)
+    provenance_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class ApiSetHostRelation:
+    contract: str = field(repr=False)
+    host: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ApiSetQualification:
+    provenance_digest: str
+    relations: tuple[ApiSetHostRelation, ...] = field(repr=False)
+    qualification_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class KnownDllQualification:
+    contracts: tuple[str, ...] = field(repr=False)
+    snapshot_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class LoaderDependencyBinding:
+    logical_name: str = field(repr=False)
+    origin: str
+    host_name: str | None = field(default=None, repr=False)
+    host_object_ref: str | None = field(default=None, repr=False)
+    provenance_digest: str = ""
+    authority_digest: str | None = None
+    relation_digest: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class CollectorObject:
     plane: str
     object_ref: str
     match_kind: str
     component: str = field(repr=False)
     dependency_origin: str | None = field(default=None, repr=False)
+    loader_binding: LoaderDependencyBinding | None = field(
+        default=None, repr=False
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +292,8 @@ class CollectorInventory:
     runtime_digest: str
     manifest: evidence.InventoryManifest
     objects: tuple[CollectorObject, ...] = field(repr=False)
+    api_set_qualification: ApiSetQualification = field(repr=False)
+    known_dll_qualification: KnownDllQualification = field(repr=False)
 
     def resolve(
         self, *, plane: str, match_kind: str, component: str
@@ -361,16 +429,397 @@ def _logical_dependency_identity(value: str) -> str | None:
     return value.casefold()
 
 
-def _logical_dependency_component(value: str) -> tuple[str, str] | None:
-    if not value.startswith("logical-dependency:"):
+def _image_basename_identity(value: str) -> str | None:
+    name = _logical_dependency_identity(value)
+    if name is not None:
+        return name
+    if (
+        type(value) is not str
+        or not value
+        or len(value) > 128
+        or "\0" in value
+        or "/" in value
+        or "\\" in value
+        or ":" in value
+        or _COMPONENT.fullmatch(value) is None
+        or not value.casefold().endswith(".exe")
+    ):
         return None
-    parts = value.split(":", 2)
-    if len(parts) != 3 or parts[1] not in {"runtime", "known_dll"}:
+    return value.casefold()
+
+
+def _api_set_contract_identity(value: str) -> str | None:
+    name = _logical_dependency_identity(value)
+    if name is None or _API_SET_CONTRACT.fullmatch(name) is None:
         return None
-    name = _logical_dependency_identity(parts[2])
-    if name is None or name != parts[2]:
+    return name
+
+
+def _top_level_runtime_images(capture: RuntimeCapture) -> tuple[str, ...]:
+    if type(capture) is not RuntimeCapture:
+        _fail("diagnostic_boundary_violation")
+    images: list[str] = []
+    folded: set[str] = set()
+    for entry in capture.entries:
+        if "/" in entry.path or Path(entry.path).suffix.casefold() not in {
+            ".exe",
+            ".dll",
+        }:
+            continue
+        name = _image_basename_identity(entry.path)
+        if name is None or name != entry.path or name in folded:
+            _fail("diagnostic_unavailable")
+        folded.add(name)
+        images.append(name)
+    result = tuple(sorted(images))
+    if (
+        not 1 <= len(result) <= PE_IMAGE_LIMIT
+        or "python.exe" not in result
+        or not any(
+            name.startswith("python") and name.endswith(".dll")
+            for name in result
+        )
+    ):
+        _fail("diagnostic_unavailable")
+    return result
+
+
+def _bind_runtime_import_provenance(
+    capture: RuntimeCapture,
+    relations: tuple[RuntimeImportRelation, ...],
+) -> RuntimeImportProvenance:
+    images = _top_level_runtime_images(capture)
+    if type(relations) is not tuple:
+        _fail("diagnostic_boundary_violation")
+    canonical_relations: list[RuntimeImportRelation] = []
+    observed: set[tuple[str, str, str]] = set()
+    for relation in relations:
+        if type(relation) is not RuntimeImportRelation:
+            _fail("diagnostic_boundary_violation")
+        importer = _image_basename_identity(relation.importer)
+        dependency = _logical_dependency_identity(relation.dependency)
+        key = (importer or "", relation.table, dependency or "")
+        if (
+            importer is None
+            or importer != relation.importer
+            or importer not in images
+            or relation.table not in {"normal", "delay"}
+            or dependency is None
+            or dependency != relation.dependency
+            or key in observed
+        ):
+            _fail("diagnostic_unavailable")
+        observed.add(key)
+        canonical_relations.append(
+            RuntimeImportRelation(importer, relation.table, dependency)
+        )
+    canonical_relations.sort(
+        key=lambda item: (
+            item.importer.encode("ascii", "strict"),
+            item.table,
+            item.dependency.encode("ascii", "strict"),
+        )
+    )
+    if not 1 <= len(canonical_relations) <= PE_IMPORT_RELATION_LIMIT:
+        _fail("diagnostic_unavailable")
+    canonical = {
+        "format_version": 1,
+        "runtime_digest": capture.runtime_digest,
+        "images": list(images),
+        "relations": [
+            {
+                "importer": item.importer,
+                "table": item.table,
+                "dependency": item.dependency,
+            }
+            for item in canonical_relations
+        ],
+    }
+    return RuntimeImportProvenance(
+        capture.runtime_digest,
+        images,
+        tuple(canonical_relations),
+        _domain_digest(PE_IMPORT_PROVENANCE_DOMAIN, canonical),
+    )
+
+
+def _validated_runtime_import_provenance(
+    capture: RuntimeCapture, provenance: RuntimeImportProvenance
+) -> RuntimeImportProvenance:
+    if type(provenance) is not RuntimeImportProvenance:
+        _fail("diagnostic_boundary_violation")
+    expected = _bind_runtime_import_provenance(capture, provenance.relations)
+    if expected != provenance:
+        _fail("diagnostic_boundary_violation")
+    return expected
+
+
+def _bind_api_set_qualification(
+    provenance: RuntimeImportProvenance,
+    relations: tuple[ApiSetHostRelation, ...],
+) -> ApiSetQualification:
+    if (
+        type(provenance) is not RuntimeImportProvenance
+        or _DIGEST.fullmatch(provenance.provenance_digest) is None
+        or type(relations) is not tuple
+    ):
+        _fail("diagnostic_boundary_violation")
+    required = tuple(
+        sorted(
+            {
+                relation.dependency
+                for relation in provenance.relations
+                if _api_set_contract_identity(relation.dependency) is not None
+            }
+        )
+    )
+    canonical_relations: list[ApiSetHostRelation] = []
+    observed: set[str] = set()
+    for relation in relations:
+        if type(relation) is not ApiSetHostRelation:
+            _fail("diagnostic_boundary_violation")
+        contract = _api_set_contract_identity(relation.contract)
+        host = _logical_dependency_identity(relation.host)
+        if (
+            contract is None
+            or contract != relation.contract
+            or host is None
+            or host != relation.host
+            or host == contract
+            or _api_set_contract_identity(host) is not None
+            or contract in observed
+        ):
+            _fail("diagnostic_unavailable")
+        observed.add(contract)
+        canonical_relations.append(ApiSetHostRelation(contract, host))
+    canonical_relations.sort(key=lambda item: item.contract)
+    if (
+        tuple(item.contract for item in canonical_relations) != required
+        or len(canonical_relations) > API_SET_CONTRACT_LIMIT
+    ):
+        _fail("diagnostic_unavailable")
+    canonical = {
+        "format_version": 1,
+        "provenance_digest": provenance.provenance_digest,
+        "relations": [
+            {"contract": item.contract, "host": item.host}
+            for item in canonical_relations
+        ],
+    }
+    return ApiSetQualification(
+        provenance.provenance_digest,
+        tuple(canonical_relations),
+        _domain_digest(API_SET_QUALIFICATION_DOMAIN, canonical),
+    )
+
+
+def _validated_api_set_qualification(
+    provenance: RuntimeImportProvenance,
+    qualification: ApiSetQualification,
+) -> ApiSetQualification:
+    if type(qualification) is not ApiSetQualification:
+        _fail("diagnostic_boundary_violation")
+    expected = _bind_api_set_qualification(provenance, qualification.relations)
+    if expected != qualification:
+        _fail("diagnostic_boundary_violation")
+    return expected
+
+
+def _bind_known_dll_qualification(
+    system_images: tuple[str, ...],
+    snapshot_metadata: tuple[int, int, int],
+    snapshot_rows: tuple[tuple[str, str, int], ...],
+) -> KnownDllQualification:
+    if (
+        type(system_images) is not tuple
+        or type(snapshot_metadata) is not tuple
+        or len(snapshot_metadata) != 3
+        or any(type(value) is not int for value in snapshot_metadata)
+        or snapshot_metadata[0] < 0
+        or not 1 <= snapshot_metadata[1] <= _KNOWN_DLL_VALUE_LIMIT
+        or snapshot_metadata[2] < 0
+        or type(snapshot_rows) is not tuple
+        or snapshot_metadata[1] != len(snapshot_rows)
+        or tuple(sorted(system_images)) != system_images
+        or len(set(system_images)) != len(system_images)
+        or any(_logical_dependency_identity(name) != name for name in system_images)
+        or tuple(sorted(snapshot_rows)) != snapshot_rows
+        or any(
+            type(row) is not tuple
+            or len(row) != 3
+            or type(row[0]) is not str
+            or not row[0]
+            or "\0" in row[0]
+            or len(row[0]) > 1_024
+            or type(row[1]) is not str
+            or "\0" in row[1]
+            or len(row[1]) > 1_024
+            or type(row[2]) is not int
+            or row[2] not in {1, 2}
+            for row in snapshot_rows
+        )
+    ):
+        _fail("diagnostic_boundary_violation")
+    names: set[str] = set()
+    dll_data: set[str] = set()
+    contracts: list[str] = []
+    available = set(system_images)
+    total_text = 0
+    for value_name, value_data, value_kind in snapshot_rows:
+        canonical_name = value_name.casefold()
+        if canonical_name in names:
+            _fail("diagnostic_unavailable")
+        names.add(canonical_name)
+        total_text += len(value_name) + len(value_data)
+        if total_text > _KNOWN_DLL_TEXT_LIMIT:
+            _fail("diagnostic_unavailable")
+        if value_kind != 1:
+            continue
+        dependency = _logical_dependency_identity(value_data)
+        if dependency is None:
+            continue
+        if dependency in dll_data:
+            _fail("diagnostic_unavailable")
+        dll_data.add(dependency)
+        if dependency in available:
+            contracts.append(dependency)
+    canonical_contracts = tuple(sorted(contracts))
+    if not {"kernel32.dll", "ntdll.dll"}.issubset(canonical_contracts):
+        _fail("diagnostic_unavailable")
+    canonical = {
+        "format_version": 1,
+        "contracts": list(canonical_contracts),
+        "snapshot_metadata": list(snapshot_metadata),
+        "snapshot_rows": [list(row) for row in snapshot_rows],
+    }
+    return KnownDllQualification(
+        canonical_contracts,
+        _domain_digest(KNOWN_DLL_QUALIFICATION_DOMAIN, canonical),
+    )
+
+
+def _validated_known_dll_qualification(
+    system_images: tuple[str, ...], qualification: KnownDllQualification
+) -> KnownDllQualification:
+    if (
+        type(qualification) is not KnownDllQualification
+        or type(qualification.contracts) is not tuple
+        or not qualification.contracts
+        or tuple(sorted(qualification.contracts)) != qualification.contracts
+        or len(set(qualification.contracts)) != len(qualification.contracts)
+        or any(
+            _logical_dependency_identity(name) != name
+            for name in qualification.contracts
+        )
+        or not {"kernel32.dll", "ntdll.dll"}.issubset(
+            qualification.contracts
+        )
+        or not set(qualification.contracts).issubset(system_images)
+        or _DIGEST.fullmatch(qualification.snapshot_digest) is None
+    ):
+        _fail("diagnostic_boundary_violation")
+    return qualification
+
+
+def _bind_loader_dependency(
+    *,
+    logical_name: str,
+    origin: str,
+    host_name: str | None,
+    host_object_ref: str | None,
+    provenance_digest: str,
+    authority_digest: str | None,
+) -> LoaderDependencyBinding:
+    name = _logical_dependency_identity(logical_name)
+    host = (
+        _logical_dependency_identity(host_name)
+        if host_name is not None
+        else None
+    )
+    if (
+        name is None
+        or name != logical_name
+        or _DIGEST.fullmatch(provenance_digest) is None
+        or origin not in {"pe_import", "known_dll", "api_set"}
+    ):
+        _fail("diagnostic_boundary_violation")
+    if origin == "pe_import":
+        if (
+            _api_set_contract_identity(name) is not None
+            or host is not None
+            or host_object_ref is not None
+            or authority_digest is not None
+        ):
+            _fail("diagnostic_boundary_violation")
+    elif origin == "known_dll":
+        if (
+            _api_set_contract_identity(name) is not None
+            or host != name
+            or authority_digest is None
+        ):
+            _fail("diagnostic_boundary_violation")
+    else:
+        if (
+            _api_set_contract_identity(name) != name
+            or host is None
+            or host == name
+            or _api_set_contract_identity(host) is not None
+            or authority_digest is None
+        ):
+            _fail("diagnostic_boundary_violation")
+    if (
+        origin in {"known_dll", "api_set"}
+        and (
+            type(host_object_ref) is not str
+            or re.fullmatch(r"inventory-sha256:[0-9a-f]{64}", host_object_ref)
+            is None
+        )
+    ):
+        _fail("diagnostic_boundary_violation")
+    if authority_digest is not None and _DIGEST.fullmatch(authority_digest) is None:
+        _fail("diagnostic_boundary_violation")
+    canonical = {
+        "format_version": 1,
+        "logical_name": name,
+        "origin": origin,
+        "host_name": host,
+        "host_object_ref": host_object_ref,
+        "provenance_digest": provenance_digest,
+        "authority_digest": authority_digest,
+    }
+    return LoaderDependencyBinding(
+        name,
+        origin,
+        host,
+        host_object_ref,
+        provenance_digest,
+        authority_digest,
+        _domain_digest(LOADER_RELATION_DOMAIN, canonical),
+    )
+
+
+def _logical_dependency_component(value: str) -> str | None:
+    prefix = "logical-dependency:"
+    if type(value) is not str or not value.startswith(prefix):
         return None
-    return parts[1], name
+    suffix = value.removeprefix(prefix)
+    return "sha256:" + suffix if re.fullmatch(r"[0-9a-f]{64}", suffix) else None
+
+
+def _loader_component(binding: LoaderDependencyBinding) -> str:
+    if type(binding) is not LoaderDependencyBinding:
+        _fail("diagnostic_boundary_violation")
+    expected = _bind_loader_dependency(
+        logical_name=binding.logical_name,
+        origin=binding.origin,
+        host_name=binding.host_name,
+        host_object_ref=binding.host_object_ref,
+        provenance_digest=binding.provenance_digest,
+        authority_digest=binding.authority_digest,
+    )
+    if expected != binding:
+        _fail("diagnostic_boundary_violation")
+    return "logical-dependency:" + binding.relation_digest.removeprefix("sha256:")
 
 
 def _registry_identity(value: str) -> str | None:
@@ -398,6 +847,91 @@ class _AliasLease:
         raise NotImplementedError
 
 
+class _InventoryAuthorityLease:
+    """Sealed owner for window-stable loader authority snapshots."""
+
+    def initialize(self, inventory: CollectorInventory) -> None:
+        raise NotImplementedError
+
+    def reprove(self) -> None:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        raise NotImplementedError
+
+
+class _HeldInventoryAuthorityLease(_InventoryAuthorityLease):
+    def __init__(self) -> None:
+        self._inventory: CollectorInventory | None = None
+        self._api: _ApiSetApiLease | None = None
+        self._known: _KnownDllRegistryLease | None = None
+
+    def initialize(self, inventory: CollectorInventory) -> None:
+        if self._inventory is not None or type(inventory) is not CollectorInventory:
+            _fail("diagnostic_collector_failed")
+        self._inventory = inventory
+        try:
+            system_images = tuple(
+                sorted(
+                    item.component.removeprefix("system32-image:")
+                    for item in inventory.objects
+                    if item.plane == "dll_image_load"
+                    and item.match_kind == "exact_image_identity"
+                    and item.component.startswith("system32-image:")
+                )
+            )
+            if inventory.api_set_qualification.relations:
+                self._api = _ApiSetApiLease()
+                self._api.open()
+            self._known = _KnownDllRegistryLease()
+            self._known.open(system_images)
+            self.reprove()
+        except BaseException as error:
+            raise _normalized_error(error) from None
+
+    def reprove(self) -> None:
+        inventory = self._inventory
+        if inventory is None:
+            _fail("diagnostic_collector_failed")
+        try:
+            if inventory.api_set_qualification.relations:
+                if self._api is None:
+                    _fail("diagnostic_collector_failed")
+                _prove_api_set_qualification_with_api(
+                    inventory.api_set_qualification, self._api
+                )
+            if self._known is None:
+                _fail("diagnostic_collector_failed")
+            observed = self._known.qualification()
+            if observed != inventory.known_dll_qualification:
+                _fail("diagnostic_collector_failed")
+        except RuntimeDiagnosticError as error:
+            if error.code == "diagnostic_cleanup_failed":
+                raise
+            _fail("diagnostic_collector_failed")
+        except BaseException:
+            _fail("diagnostic_collector_failed")
+
+    def close(self) -> None:
+        cleanup_failed = False
+        if self._api is not None:
+            try:
+                self._api.close()
+                self._api = None
+            except BaseException:
+                cleanup_failed = True
+        if self._known is not None:
+            try:
+                self._known.close()
+                self._known = None
+            except BaseException:
+                cleanup_failed = True
+        if self._api is None and self._known is None:
+            self._inventory = None
+        if cleanup_failed:
+            _fail("diagnostic_cleanup_failed")
+
+
 class _ExactInventoryResolver:
     """Transient exact raw-to-opaque resolver; unknown identities stay unknown."""
 
@@ -412,6 +946,7 @@ class _ExactInventoryResolver:
         self._registry: dict[str, str] = {}
         self._loader_dependencies: dict[str, str] = {}
         self._leases: list[_AliasLease] = []
+        self._authority: _InventoryAuthorityLease | None = None
         self._closed = False
         self._initialized = False
         self._ready = False
@@ -426,6 +961,9 @@ class _ExactInventoryResolver:
         system32_root: Path,
         current_user_sid: str,
         alias_lease_factory: Callable[..., _AliasLease],
+        authority_lease_factory: Callable[
+            [], _InventoryAuthorityLease
+        ],
         ordinal_equal: Callable[[str, str], bool],
     ) -> None:
         if (
@@ -438,6 +976,7 @@ class _ExactInventoryResolver:
             or type(current_user_sid) is not str
             or not current_user_sid.startswith("S-1-")
             or not callable(alias_lease_factory)
+            or not callable(authority_lease_factory)
             or not callable(ordinal_equal)
         ):
             _fail("diagnostic_collector_failed")
@@ -451,6 +990,11 @@ class _ExactInventoryResolver:
         ] = {}
         dependencies: list[CollectorObject] = []
         try:
+            authority = authority_lease_factory()
+            if not isinstance(authority, _InventoryAuthorityLease):
+                _fail("diagnostic_collector_failed")
+            self._authority = authority
+            authority.initialize(inventory)
             for item in inventory.objects:
                 component = item.component
                 path: Path | None = None
@@ -481,12 +1025,15 @@ class _ExactInventoryResolver:
                     name = component.removeprefix("system32-image:")
                     path = system32_root / name
                     image_name = _logical_dependency_identity(name)
-                    image_origin = "known_dll"
+                    image_origin = "system32"
                 elif component.startswith("logical-dependency:"):
-                    dependency = _logical_dependency_component(component)
+                    dependency = item.loader_binding
                     if (
                         dependency is None
-                        or item.dependency_origin != dependency[0]
+                        or _logical_dependency_component(component)
+                        != dependency.relation_digest
+                        or _loader_component(dependency) != component
+                        or item.dependency_origin != dependency.origin
                     ):
                         _fail("diagnostic_collector_failed")
                     dependencies.append(item)
@@ -504,6 +1051,7 @@ class _ExactInventoryResolver:
                     _fail("diagnostic_collector_failed")
                 if (
                     item.dependency_origin is not None
+                    or item.loader_binding is not None
                     or path is None
                     or not path.is_absolute()
                 ):
@@ -515,7 +1063,10 @@ class _ExactInventoryResolver:
 
             images_by_name: dict[
                 str,
-                dict[str, dict[tuple[int, bytes], _AliasLease]],
+                dict[
+                    str,
+                    dict[tuple[int, bytes], tuple[_AliasLease, str]],
+                ],
             ] = {}
             identities_by_plane: dict[
                 tuple[str, tuple[int, bytes]], str
@@ -563,28 +1114,44 @@ class _ExactInventoryResolver:
                     for alias_key in alias_keys:
                         assert alias_key is not None
                         self._insert_path(plane, alias_key, object_ref)
-                    if image_name is not None:
+                    if image_name is not None and plane == "dll_image_load":
                         assert image_origin is not None
                         images_by_name.setdefault(image_name, {}).setdefault(
                             image_origin, {}
-                        )[lease.file_identity] = lease
+                        )[lease.file_identity] = (lease, object_ref)
 
             for item in dependencies:
-                dependency = _logical_dependency_component(item.component)
-                name = dependency[1] if dependency is not None else None
+                dependency = item.loader_binding
+                name = dependency.logical_name if dependency is not None else None
                 if (
                     item.plane != "dll_image_load"
                     or name is None
                     or name in self._loader_dependencies
-                    or item.match_kind != "exact_loader_dependency"
+                    or item.match_kind
+                    != {
+                        "pe_import": "exact_static_pe_import",
+                        "known_dll": "exact_known_dll_import",
+                        "api_set": "exact_api_set_import",
+                    }.get(dependency.origin)
                 ):
                     _fail("diagnostic_collector_failed")
-                observed_origins = images_by_name.get(name, {})
-                if item.dependency_origin in {"runtime", "known_dll"}:
+                if dependency.origin == "pe_import":
+                    if dependency.host_name is not None:
+                        _fail("diagnostic_collector_failed")
+                elif dependency.origin in {"known_dll", "api_set"}:
+                    host = dependency.host_name
+                    if host is None:
+                        _fail("diagnostic_collector_failed")
+                    observed_origins = images_by_name.get(host, {})
                     if (
-                        set(observed_origins) != {item.dependency_origin}
-                        or len(observed_origins[item.dependency_origin]) != 1
+                        set(observed_origins) != {"system32"}
+                        or len(observed_origins["system32"]) != 1
                     ):
+                        _fail("diagnostic_collector_failed")
+                    (_held, observed_ref), = observed_origins[
+                        "system32"
+                    ].values()
+                    if observed_ref != dependency.host_object_ref:
                         _fail("diagnostic_collector_failed")
                 else:
                     _fail("diagnostic_collector_failed")
@@ -690,6 +1257,16 @@ class _ExactInventoryResolver:
         if not self.ready or self._stable_proved:
             _fail("diagnostic_collector_failed")
         failed = False
+        if self._authority is None:
+            _fail("diagnostic_collector_failed")
+        try:
+            self._authority.reprove()
+        except RuntimeDiagnosticError as error:
+            if error.code == "diagnostic_cleanup_failed":
+                raise
+            failed = True
+        except BaseException:
+            failed = True
         for lease in self._leases:
             try:
                 lease.reprove()
@@ -700,7 +1277,7 @@ class _ExactInventoryResolver:
         self._stable_proved = True
 
     def close(self) -> None:
-        if self._closed and not self._leases:
+        if self._closed and not self._leases and self._authority is None:
             return
         for values in self._paths.values():
             values.clear()
@@ -715,7 +1292,13 @@ class _ExactInventoryResolver:
                 cleanup_failed = True
                 retained.append(lease)
         self._leases = list(reversed(retained))
-        self._closed = not self._leases
+        if self._authority is not None:
+            try:
+                self._authority.close()
+                self._authority = None
+            except BaseException:
+                cleanup_failed = True
+        self._closed = not self._leases and self._authority is None
         self._ready = False
         if cleanup_failed:
             _fail("diagnostic_cleanup_failed")
@@ -731,6 +1314,10 @@ class _RealtimeCollectorAdapter:
         system32_root: Path | None = None,
         current_user_sid: str | None = None,
         alias_lease_factory: Callable[..., _AliasLease] | None = None,
+        authority_lease_factory: Callable[
+            [], _InventoryAuthorityLease
+        ]
+        | None = None,
         ordinal_equal: Callable[[str, str], bool] | None = None,
     ) -> None:
         if not callable(collector_factory):
@@ -739,6 +1326,7 @@ class _RealtimeCollectorAdapter:
         self._system32_root = system32_root
         self._current_user_sid = current_user_sid
         self._alias_lease_factory = alias_lease_factory
+        self._authority_lease_factory = authority_lease_factory
         self._ordinal_equal = ordinal_equal
         self._collector: object | None = None
         self._resolver: _ExactInventoryResolver | None = None
@@ -770,6 +1358,10 @@ class _RealtimeCollectorAdapter:
             self._alias_lease_factory or _open_trusted_alias_lease
         )
         ordinal_equal = self._ordinal_equal or _windows_ordinal_equal
+        authority_lease_factory = (
+            self._authority_lease_factory
+            or _HeldInventoryAuthorityLease
+        )
         resolver = _ExactInventoryResolver()
         self._resolver = resolver
         resolver.initialize(
@@ -778,6 +1370,7 @@ class _RealtimeCollectorAdapter:
             system32_root=system32_root,
             current_user_sid=current_user_sid,
             alias_lease_factory=alias_lease_factory,
+            authority_lease_factory=authority_lease_factory,
             ordinal_equal=ordinal_equal,
         )
         try:
@@ -794,7 +1387,7 @@ class _RealtimeCollectorAdapter:
                     item.object_ref
                     for item in inventory.objects
                     if item.plane == "dll_image_load"
-                    and item.match_kind == "exact_loader_dependency"
+                    and item.loader_binding is not None
                 ),
                 path_resolver=resolver,
                 loader_dependency_resolver=resolver.resolve_loader_dependency,
@@ -1422,6 +2015,472 @@ def mirror_cpython_runtime(capture: RuntimeCapture, root: Path) -> RuntimeMirror
     return mirror
 
 
+def _read_mirror_entry_bytes(
+    entry: RuntimeEntry, *, deadline: float
+) -> bytes:
+    """Read, hash, and reprove one exact mirrored file through one descriptor."""
+
+    descriptor: int | None = None
+    try:
+        if (
+            type(entry) is not RuntimeEntry
+            or time.monotonic() > deadline
+            or not 0 < entry.size_bytes <= RUNTIME_FILE_LIMIT
+            or re.fullmatch(r"[0-9a-f]{64}", entry.sha256) is None
+        ):
+            _fail("diagnostic_unavailable")
+        before = entry.source_path.lstat()
+        if (
+            _is_reparse(entry.source_path)
+            or not stat.S_ISREG(before.st_mode)
+            or before.st_size != entry.size_bytes
+        ):
+            _fail("diagnostic_unavailable")
+        descriptor = os.open(
+            entry.source_path,
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        opened = os.fstat(descriptor)
+        if not _same_file(before, opened) or opened.st_size != entry.size_bytes:
+            _fail("diagnostic_unavailable")
+        digest = hashlib.sha256()
+        chunks: list[bytes] = []
+        total = 0
+        while total < entry.size_bytes:
+            if time.monotonic() > deadline:
+                _fail("diagnostic_unavailable")
+            chunk = os.read(
+                descriptor,
+                min(RUNTIME_COPY_CHUNK, entry.size_bytes - total),
+            )
+            if not chunk:
+                _fail("diagnostic_unavailable")
+            total += len(chunk)
+            if total > entry.size_bytes:
+                _fail("diagnostic_unavailable")
+            digest.update(chunk)
+            chunks.append(chunk)
+        if os.read(descriptor, 1):
+            _fail("diagnostic_unavailable")
+        after = os.fstat(descriptor)
+        path_after = entry.source_path.lstat()
+        if (
+            total != entry.size_bytes
+            or digest.hexdigest() != entry.sha256
+            or not _same_file(opened, after)
+            or not _same_file(before, path_after)
+            or after.st_size != entry.size_bytes
+            or path_after.st_size != entry.size_bytes
+            or _is_reparse(entry.source_path)
+        ):
+            _fail("diagnostic_unavailable")
+        return b"".join(chunks)
+    except RuntimeDiagnosticError:
+        raise
+    except (MemoryError, OSError, RuntimeError):
+        _fail("diagnostic_unavailable")
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                _fail("diagnostic_cleanup_failed")
+
+
+@dataclass(frozen=True, slots=True)
+class _PeSection:
+    virtual_address: int
+    virtual_size: int
+    raw_offset: int
+    raw_size: int
+    characteristics: int
+
+
+class _PeImportReader:
+    """Strict closed PE32+/AMD64 import reader over already-verified bytes."""
+
+    def __init__(
+        self, body: bytes, *, image_name: str, deadline: float
+    ) -> None:
+        if (
+            type(body) is not bytes
+            or not body
+            or len(body) > RUNTIME_FILE_LIMIT
+            or _image_basename_identity(image_name) != image_name
+            or type(deadline) is not float
+        ):
+            _fail("diagnostic_unavailable")
+        self._body = body
+        self._image_name = image_name
+        self._deadline = deadline
+        self._sections: tuple[_PeSection, ...] = ()
+        self._size_of_headers = 0
+
+    def _check(self) -> None:
+        if time.monotonic() > self._deadline:
+            _fail("diagnostic_unavailable")
+
+    def _slice(self, offset: int, size: int) -> bytes:
+        self._check()
+        if (
+            type(offset) is not int
+            or type(size) is not int
+            or offset < 0
+            or size < 0
+            or offset > len(self._body) - size
+        ):
+            _fail("diagnostic_unavailable")
+        return self._body[offset : offset + size]
+
+    def _u16(self, offset: int) -> int:
+        return int.from_bytes(self._slice(offset, 2), "little")
+
+    def _u32(self, offset: int) -> int:
+        return int.from_bytes(self._slice(offset, 4), "little")
+
+    def _u64(self, offset: int) -> int:
+        return int.from_bytes(self._slice(offset, 8), "little")
+
+    @staticmethod
+    def _power_of_two(value: int) -> bool:
+        return value > 0 and value & (value - 1) == 0
+
+    def _initialize_headers(self) -> tuple[tuple[int, int], tuple[int, int]]:
+        if len(self._body) < 64 or self._slice(0, 2) != b"MZ":
+            _fail("diagnostic_unavailable")
+        pe_offset = self._u32(0x3C)
+        if pe_offset < 64 or pe_offset > len(self._body) - 264:
+            _fail("diagnostic_unavailable")
+        if self._slice(pe_offset, 4) != b"PE\0\0":
+            _fail("diagnostic_unavailable")
+        coff = pe_offset + 4
+        if self._u16(coff) != 0x8664:
+            _fail("diagnostic_unavailable")
+        section_count = self._u16(coff + 2)
+        optional_size = self._u16(coff + 16)
+        characteristics = self._u16(coff + 18)
+        if (
+            not 1 <= section_count <= PE_SECTION_LIMIT
+            or optional_size < 128
+            or optional_size > 0xF0
+            or characteristics & 0x0002 == 0
+            or (
+                self._image_name.endswith(".dll")
+                and characteristics & 0x2000 == 0
+            )
+            or (
+                self._image_name.endswith(".exe")
+                and characteristics & 0x2000 != 0
+            )
+        ):
+            _fail("diagnostic_unavailable")
+        optional = coff + 20
+        section_table = optional + optional_size
+        section_table_end = section_table + section_count * 40
+        directory_count = self._u32(optional + 108)
+        if (
+            self._u16(optional) != 0x20B
+            or not 14 <= directory_count <= 16
+            or optional_size != 112 + directory_count * 8
+            or section_table_end > len(self._body)
+        ):
+            _fail("diagnostic_unavailable")
+        section_alignment = self._u32(optional + 32)
+        file_alignment = self._u32(optional + 36)
+        size_of_image = self._u32(optional + 56)
+        size_of_headers = self._u32(optional + 60)
+        if (
+            not self._power_of_two(file_alignment)
+            or not 512 <= file_alignment <= 65_536
+            or not self._power_of_two(section_alignment)
+            or section_alignment < file_alignment
+            or (
+                section_alignment < 4_096
+                and section_alignment != file_alignment
+            )
+            or size_of_image == 0
+            or size_of_image % section_alignment != 0
+            or size_of_headers < section_table_end
+            or size_of_headers > len(self._body)
+            or size_of_headers % file_alignment != 0
+        ):
+            _fail("diagnostic_unavailable")
+        sections: list[_PeSection] = []
+        virtual_ranges: list[tuple[int, int]] = []
+        raw_ranges: list[tuple[int, int]] = []
+        for index in range(section_count):
+            base = section_table + index * 40
+            virtual_size = self._u32(base + 8)
+            virtual_address = self._u32(base + 12)
+            raw_size = self._u32(base + 16)
+            raw_offset = self._u32(base + 20)
+            section_characteristics = self._u32(base + 36)
+            if (
+                section_characteristics & 0x20000000
+                and section_characteristics & 0x80000000
+            ):
+                _fail("diagnostic_unavailable")
+            mapped_size = max(virtual_size, raw_size)
+            if (
+                virtual_address == 0
+                or virtual_address < size_of_headers
+                or virtual_address % section_alignment != 0
+                or mapped_size == 0
+                or virtual_address > size_of_image - mapped_size
+            ):
+                _fail("diagnostic_unavailable")
+            virtual_ranges.append(
+                (virtual_address, virtual_address + mapped_size)
+            )
+            if raw_size:
+                if (
+                    raw_offset < size_of_headers
+                    or raw_offset % file_alignment != 0
+                    or raw_size % file_alignment != 0
+                    or raw_offset > len(self._body) - raw_size
+                ):
+                    _fail("diagnostic_unavailable")
+                raw_ranges.append((raw_offset, raw_offset + raw_size))
+            elif raw_offset != 0:
+                _fail("diagnostic_unavailable")
+            sections.append(
+                _PeSection(
+                    virtual_address,
+                    virtual_size,
+                    raw_offset,
+                    raw_size,
+                    section_characteristics,
+                )
+            )
+        if virtual_ranges != sorted(virtual_ranges) or raw_ranges != sorted(
+            raw_ranges
+        ):
+            _fail("diagnostic_unavailable")
+        for ranges in (virtual_ranges, raw_ranges):
+            ordered = sorted(ranges)
+            if any(
+                current[0] < previous[1]
+                for previous, current in zip(ordered, ordered[1:])
+            ):
+                _fail("diagnostic_unavailable")
+        self._sections = tuple(sections)
+        self._size_of_headers = size_of_headers
+        normal = (self._u32(optional + 120), self._u32(optional + 124))
+        delay = (
+            (self._u32(optional + 216), self._u32(optional + 220))
+            if directory_count > 13
+            else (0, 0)
+        )
+        return normal, delay
+
+    def _rva_window(
+        self, rva: int, *, require_readonly: bool = False
+    ) -> tuple[int, int]:
+        self._check()
+        if type(rva) is not int or rva <= 0:
+            _fail("diagnostic_unavailable")
+        matches: list[tuple[int, int]] = []
+        for section in self._sections:
+            if (
+                section.raw_size
+                and section.virtual_address
+                <= rva
+                < section.virtual_address + section.raw_size
+            ):
+                if (
+                    section.characteristics & 0x40000000 == 0
+                    or (
+                        require_readonly
+                        and section.characteristics & 0x80000000 != 0
+                    )
+                ):
+                    _fail("diagnostic_unavailable")
+                delta = rva - section.virtual_address
+                matches.append(
+                    (
+                        section.raw_offset + delta,
+                        section.raw_size - delta,
+                    )
+                )
+        if len(matches) != 1:
+            _fail("diagnostic_unavailable")
+        return matches[0]
+
+    def _rva_slice(
+        self, rva: int, size: int, *, require_readonly: bool = False
+    ) -> bytes:
+        offset, available = self._rva_window(
+            rva, require_readonly=require_readonly
+        )
+        if size < 0 or size > available:
+            _fail("diagnostic_unavailable")
+        return self._slice(offset, size)
+
+    def _ascii_z(
+        self, rva: int, *, limit: int, require_readonly: bool = False
+    ) -> str:
+        offset, available = self._rva_window(
+            rva, require_readonly=require_readonly
+        )
+        maximum = min(available, limit + 1)
+        raw = self._slice(offset, maximum)
+        terminator = raw.find(b"\0")
+        if terminator <= 0 or terminator > limit:
+            _fail("diagnostic_unavailable")
+        value = raw[:terminator]
+        if any(byte < 0x21 or byte > 0x7E for byte in value):
+            _fail("diagnostic_unavailable")
+        try:
+            return value.decode("ascii", "strict")
+        except UnicodeError:
+            _fail("diagnostic_unavailable")
+
+    def _descriptor_rows(
+        self, *, rva: int, size: int, width: int
+    ) -> tuple[bytes, ...]:
+        if rva == 0 and size == 0:
+            return ()
+        if (
+            rva == 0
+            or size == 0
+            or size % width != 0
+            or size // width > PE_IMPORT_DESCRIPTOR_LIMIT
+        ):
+            _fail("diagnostic_unavailable")
+        body = self._rva_slice(rva, size)
+        rows: list[bytes] = []
+        for index in range(size // width):
+            row = body[index * width : (index + 1) * width]
+            if row == b"\0" * width:
+                if any(body[(index + 1) * width :]):
+                    _fail("diagnostic_unavailable")
+                return tuple(rows)
+            rows.append(row)
+        _fail("diagnostic_unavailable")
+
+    @staticmethod
+    def _row_u32(row: bytes, index: int) -> int:
+        return int.from_bytes(row[index * 4 : index * 4 + 4], "little")
+
+    def _normal_imports(self, rva: int, size: int) -> tuple[str, ...]:
+        names: list[str] = []
+        observed: set[str] = set()
+        for row in self._descriptor_rows(rva=rva, size=size, width=20):
+            original = self._row_u32(row, 0)
+            name_rva = self._row_u32(row, 3)
+            iat = self._row_u32(row, 4)
+            if name_rva == 0 or iat == 0:
+                _fail("diagnostic_unavailable")
+            self._rva_slice(original or iat, 8)
+            self._rva_slice(iat, 8)
+            name = _logical_dependency_identity(
+                self._ascii_z(name_rva, limit=128)
+            )
+            if name is None or name in observed:
+                _fail("diagnostic_unavailable")
+            observed.add(name)
+            names.append(name)
+        return tuple(names)
+
+    def _delay_imports(self, rva: int, size: int) -> tuple[str, ...]:
+        names: list[str] = []
+        observed: set[str] = set()
+        for row in self._descriptor_rows(rva=rva, size=size, width=32):
+            attributes = self._row_u32(row, 0)
+            name_rva = self._row_u32(row, 1)
+            module_handle = self._row_u32(row, 2)
+            iat = self._row_u32(row, 3)
+            import_names = self._row_u32(row, 4)
+            bound_iat = self._row_u32(row, 5)
+            unload_iat = self._row_u32(row, 6)
+            # Current MSVC delayimp uses the sole dlattrRva bit.  Optional
+            # bound/unload RVAs are admitted only when
+            # they remain inside one exact raw-backed readable section.
+            if (
+                attributes != 1
+                or name_rva == 0
+                or module_handle == 0
+                or iat == 0
+                or import_names == 0
+            ):
+                _fail("diagnostic_unavailable")
+            self._rva_slice(module_handle, 8)
+            self._rva_slice(iat, 8)
+            self._rva_slice(import_names, 8)
+            if bound_iat:
+                self._rva_slice(bound_iat, 8)
+            if unload_iat:
+                self._rva_slice(unload_iat, 8)
+            name = _logical_dependency_identity(
+                self._ascii_z(
+                    name_rva, limit=128, require_readonly=True
+                )
+            )
+            if name is None or name in observed:
+                _fail("diagnostic_unavailable")
+            observed.add(name)
+            names.append(name)
+        return tuple(names)
+
+    def imports(self) -> tuple[tuple[str, str], ...]:
+        normal, delay = self._initialize_headers()
+        result = [
+            *(('normal', name) for name in self._normal_imports(*normal)),
+            *(('delay', name) for name in self._delay_imports(*delay)),
+        ]
+        return tuple(result)
+
+
+def extract_runtime_import_provenance(
+    capture: RuntimeCapture, mirror: RuntimeMirror
+) -> RuntimeImportProvenance:
+    if (
+        type(capture) is not RuntimeCapture
+        or type(mirror) is not RuntimeMirror
+        or mirror.runtime_digest != capture.runtime_digest
+        or mirror.canonical_size != capture.canonical_size
+        or mirror.total_bytes != capture.total_bytes
+        or not mirror.root.is_absolute()
+        or mirror.executable != mirror.root / "python.exe"
+        or tuple(item.path for item in mirror.entries)
+        != tuple(item.path for item in capture.entries)
+    ):
+        _fail("diagnostic_boundary_violation")
+    images = _top_level_runtime_images(capture)
+    capture_by_path = {item.path: item for item in capture.entries}
+    mirror_by_path = {item.path: item for item in mirror.entries}
+    if len(capture_by_path) != len(capture.entries) or len(mirror_by_path) != len(
+        mirror.entries
+    ):
+        _fail("diagnostic_boundary_violation")
+    deadline = time.monotonic() + PE_IMPORT_TIMEOUT_SECONDS
+    relations: list[RuntimeImportRelation] = []
+    for image in images:
+        captured = capture_by_path.get(image)
+        mirrored = mirror_by_path.get(image)
+        expected_path = mirror.root / image
+        if (
+            captured is None
+            or mirrored is None
+            or mirrored.canonical_value() != captured.canonical_value()
+            or mirrored.source_path != expected_path
+            or not mirrored.source_path.is_absolute()
+        ):
+            _fail("diagnostic_boundary_violation")
+        body = _read_mirror_entry_bytes(mirrored, deadline=deadline)
+        for table, dependency in _PeImportReader(
+            body, image_name=image, deadline=deadline
+        ).imports():
+            relations.append(RuntimeImportRelation(image, table, dependency))
+            if len(relations) > PE_IMPORT_RELATION_LIMIT:
+                _fail("diagnostic_unavailable")
+    if len({item.dependency for item in relations}) > PE_IMPORT_NAME_LIMIT:
+        _fail("diagnostic_unavailable")
+    return _bind_runtime_import_provenance(capture, tuple(relations))
+
+
 def _object_ref(runtime_digest: str, plane: str, component: str) -> str:
     if (
         _DIGEST.fullmatch(runtime_digest) is None
@@ -1439,14 +2498,16 @@ def _object_ref(runtime_digest: str, plane: str, component: str) -> str:
     return "inventory-sha256:" + digest.hexdigest()
 
 
-def build_collector_inventory(
+def _build_collector_inventory_from_proofs(
     capture: RuntimeCapture,
     *,
-    system_images: tuple[str, ...] = (),
-    known_dll_contracts: tuple[str, ...] = (),
+    import_provenance: RuntimeImportProvenance,
+    api_set_qualification: ApiSetQualification,
+    known_dll_qualification: KnownDllQualification,
+    system_images: tuple[str, ...],
     appcontainer_sid: str = "S-1-15-2-1-1",
 ) -> CollectorInventory:
-    """Bind bounded logical targets without exposing source or mirror paths."""
+    """Bind validated logical contracts without claiming physical resolution."""
 
     if (
         type(capture) is not RuntimeCapture
@@ -1460,25 +2521,21 @@ def build_collector_inventory(
             or not name.endswith(".dll")
             for name in system_images
         )
-        or type(known_dll_contracts) is not tuple
-        or tuple(sorted(known_dll_contracts)) != known_dll_contracts
-        or len(set(known_dll_contracts)) != len(known_dll_contracts)
-        or not set(known_dll_contracts).issubset(system_images)
-        or any(
-            _logical_dependency_identity(name) != name
-            for name in known_dll_contracts
-        )
         or type(appcontainer_sid) is not str
         or not appcontainer_sid.startswith("S-1-15-2-")
         or appcontainer_sid == lpac.ALL_APPLICATION_PACKAGES_SID
     ):
         _fail("diagnostic_boundary_violation")
-    runtime_images = tuple(
-        entry.path
-        for entry in capture.entries
-        if "/" not in entry.path
-        and Path(entry.path).suffix.casefold() in {".exe", ".dll"}
+    provenance = _validated_runtime_import_provenance(
+        capture, import_provenance
     )
+    api_qualification = _validated_api_set_qualification(
+        provenance, api_set_qualification
+    )
+    known_qualification = _validated_known_dll_qualification(
+        system_images, known_dll_qualification
+    )
+    runtime_images = provenance.images
     entry_paths = {entry.path for entry in capture.entries}
     version = f"{capture.version[0]}.{capture.version[1]}"
     startup_candidates = (
@@ -1492,11 +2549,6 @@ def build_collector_inventory(
     startup_files = tuple(
         item for item in startup_candidates if item in entry_paths
     )
-    if "python.exe" not in runtime_images or not any(
-        item.startswith("python") and item.endswith(".dll")
-        for item in runtime_images
-    ):
-        _fail("diagnostic_unavailable")
     runtime_file_components = tuple(
         f"runtime-relative:{item}"
         for item in sorted(set((*runtime_images, *startup_files)))
@@ -1530,27 +2582,73 @@ def build_collector_inventory(
             )
         )
     )
-    runtime_dependency_names: set[str] = set()
-    for item in runtime_images:
-        if Path(item).suffix.casefold() != ".dll":
-            continue
-        canonical = _logical_dependency_identity(item)
-        if canonical is None or canonical in runtime_dependency_names:
-            _fail("diagnostic_unavailable")
-        runtime_dependency_names.add(canonical)
-    physical_system_names = set(system_images)
-    known_names = set(known_dll_contracts)
+    runtime_dll_names = {
+        item for item in runtime_images if item.endswith(".dll")
+    }
+    if runtime_dll_names & set(system_images):
+        _fail("diagnostic_unavailable")
+    imported_names = tuple(
+        sorted({item.dependency for item in provenance.relations})
+    )
+    api_relations = {
+        item.contract: item.host for item in api_qualification.relations
+    }
+    known_names = set(known_qualification.contracts)
+    if set(api_relations) & known_names:
+        _fail("diagnostic_unavailable")
     if (
-        runtime_dependency_names & physical_system_names
+        not set(known_qualification.contracts).issubset(system_images)
+        or not set(api_relations.values()).issubset(system_images)
     ):
         _fail("diagnostic_unavailable")
-    logical_dependency_origins = {
-        **{name: "runtime" for name in runtime_dependency_names},
-        **{name: "known_dll" for name in known_names},
+    loader_bindings: list[LoaderDependencyBinding] = []
+    for name in imported_names:
+        if _api_set_contract_identity(name) is not None:
+            host = api_relations.get(name)
+            if host is None:
+                _fail("diagnostic_unavailable")
+            binding = _bind_loader_dependency(
+                logical_name=name,
+                origin="api_set",
+                host_name=host,
+                host_object_ref=_object_ref(
+                    capture.runtime_digest,
+                    "dll_image_load",
+                    f"system32-image:{host}",
+                ),
+                provenance_digest=provenance.provenance_digest,
+                authority_digest=api_qualification.qualification_digest,
+            )
+        elif name in known_names:
+            binding = _bind_loader_dependency(
+                logical_name=name,
+                origin="known_dll",
+                host_name=name,
+                host_object_ref=_object_ref(
+                    capture.runtime_digest,
+                    "dll_image_load",
+                    f"system32-image:{name}",
+                ),
+                provenance_digest=provenance.provenance_digest,
+                authority_digest=known_qualification.snapshot_digest,
+            )
+        else:
+            binding = _bind_loader_dependency(
+                logical_name=name,
+                origin="pe_import",
+                host_name=None,
+                host_object_ref=None,
+                provenance_digest=provenance.provenance_digest,
+                authority_digest=None,
+            )
+        loader_bindings.append(binding)
+    logical_bindings_by_component = {
+        _loader_component(item): item for item in loader_bindings
     }
+    if len(logical_bindings_by_component) != len(loader_bindings):
+        _fail("diagnostic_unavailable")
     logical_dependency_components = tuple(
-        f"logical-dependency:{logical_dependency_origins[name]}:{name}"
-        for name in sorted(logical_dependency_origins)
+        sorted(logical_bindings_by_component)
     )
     registry_components = (
         "registry-key:HKCU/Environment",
@@ -1584,9 +2682,12 @@ def build_collector_inventory(
                         plane,
                         _object_ref(capture.runtime_digest, plane, component),
                         (
-                            "exact_loader_dependency"
-                            if _logical_dependency_component(component)
-                            is not None
+                            {
+                                "pe_import": "exact_static_pe_import",
+                                "known_dll": "exact_known_dll_import",
+                                "api_set": "exact_api_set_import",
+                            }[logical_bindings_by_component[component].origin]
+                            if component in logical_bindings_by_component
                             else {
                                 "file_access": "exact_file_identity",
                                 "dll_image_load": "exact_image_identity",
@@ -1596,11 +2697,11 @@ def build_collector_inventory(
                         ),
                         component,
                         (
-                            _logical_dependency_component(component)[0]
-                            if _logical_dependency_component(component)
-                            is not None
+                            logical_bindings_by_component[component].origin
+                            if component in logical_bindings_by_component
                             else None
                         ),
+                        logical_bindings_by_component.get(component),
                     )
                     for component in components[plane]
                 ),
@@ -1613,29 +2714,108 @@ def build_collector_inventory(
         runtime_digest=capture.runtime_digest,
         objects_by_plane=objects_by_plane,
     )
-    return CollectorInventory(capture.runtime_digest, manifest, tuple(objects))
+    return CollectorInventory(
+        capture.runtime_digest,
+        manifest,
+        tuple(objects),
+        api_qualification,
+        known_qualification,
+    )
+
+
+def build_collector_inventory(
+    capture: RuntimeCapture,
+    mirror: RuntimeMirror,
+    *,
+    import_provenance: RuntimeImportProvenance,
+    api_set_qualification: ApiSetQualification,
+    known_dll_qualification: KnownDllQualification,
+    system_images: tuple[str, ...],
+    api_authority: _ApiSetApiLease,
+    known_dll_authority: _KnownDllRegistryLease,
+    appcontainer_sid: str = "S-1-15-2-1-1",
+) -> CollectorInventory:
+    """Rederive every production proof while its exact owner remains held."""
+
+    observed = extract_runtime_import_provenance(capture, mirror)
+    if observed != import_provenance:
+        _fail("diagnostic_boundary_violation")
+    if (
+        type(api_authority) is not _ApiSetApiLease
+        or api_authority._module == 0
+        or not callable(api_authority.IsApiSetImplemented)
+        or not callable(api_authority.GetApiSetModuleBaseName)
+        or type(known_dll_authority) is not _KnownDllRegistryLease
+        or known_dll_authority._key is None
+        or known_dll_authority._winreg is None
+        or known_dll_authority._system_images != system_images
+    ):
+        _fail("diagnostic_boundary_violation")
+    observed_api = qualify_api_set_contracts(observed, api=api_authority)
+    observed_known = known_dll_authority.qualification()
+    if (
+        observed_api != api_set_qualification
+        or observed_known != known_dll_qualification
+    ):
+        _fail("diagnostic_boundary_violation")
+    return _build_collector_inventory_from_proofs(
+        capture,
+        import_provenance=observed,
+        api_set_qualification=observed_api,
+        known_dll_qualification=observed_known,
+        system_images=system_images,
+        appcontainer_sid=appcontainer_sid,
+    )
 
 
 def _system32_root() -> Path:
-    buffer = ctypes.create_unicode_buffer(32_768)
-    length = int(
-        portability._apis().kernel32.GetWindowsDirectoryW(buffer, len(buffer))
-    )
-    if length <= 0 or length >= len(buffer):
+    if platform.machine().upper() != "AMD64":
         _fail("diagnostic_unavailable")
-    windows = Path(buffer.value)
-    system32 = windows / "System32"
-    if not windows.is_absolute() or not system32.is_dir() or _is_reparse(system32):
+    buffer = ctypes.create_unicode_buffer(32_768)
+    for index in range(len(buffer)):
+        buffer[index] = "\uffff"
+    length = int(
+        _dacl_apis().kernel32.GetSystemDirectoryW(buffer, len(buffer))
+    )
+    if (
+        length <= 0
+        or length >= len(buffer)
+        or buffer[length] != "\0"
+        or any(buffer[index] == "\0" for index in range(length))
+    ):
+        _fail("diagnostic_unavailable")
+    value = "".join(buffer[index] for index in range(length))
+    try:
+        wchar_count = len(value.encode("utf-16-le", "strict")) // 2
+    except UnicodeError:
+        _fail("diagnostic_unavailable")
+    if wchar_count != length:
+        _fail("diagnostic_unavailable")
+    system32 = Path(value)
+    if not system32.is_absolute() or not system32.is_dir() or _is_reparse(system32):
         _fail("diagnostic_unavailable")
     return system32
 
 
-def _verified_system_image_basenames() -> tuple[str, ...]:
+def _verified_system_image_basenames(
+    additional_hosts: tuple[str, ...] = (),
+) -> tuple[str, ...]:
     """Bind only existing non-reparse System32 image basenames."""
 
+    if (
+        type(additional_hosts) is not tuple
+        or tuple(sorted(additional_hosts)) != additional_hosts
+        or len(set(additional_hosts)) != len(additional_hosts)
+        or any(
+            _logical_dependency_identity(name) != name
+            for name in additional_hosts
+        )
+        or len(additional_hosts) > API_SET_CONTRACT_LIMIT
+    ):
+        _fail("diagnostic_unavailable")
     system32 = _system32_root()
     verified: list[str] = []
-    for name in _SYSTEM_IMAGE_CANDIDATES:
+    for name in sorted(set(_SYSTEM_IMAGE_CANDIDATES) | set(additional_hosts)):
         path = system32 / name
         try:
             observed = path.lstat()
@@ -1646,111 +2826,361 @@ def _verified_system_image_basenames() -> tuple[str, ...]:
         except OSError:
             continue
     result = tuple(sorted(verified))
-    if not {"kernel32.dll", "kernelbase.dll", "ntdll.dll"}.issubset(result):
+    if (
+        not {"kernel32.dll", "kernelbase.dll", "ntdll.dll"}.issubset(result)
+        or not set(additional_hosts).issubset(result)
+    ):
         _fail("diagnostic_unavailable")
     return result
+
+
+class _KnownDllRegistryLease:
+    """Own one exact 64-bit KnownDLL key across an observation window."""
+
+    def __init__(self) -> None:
+        self._winreg: object | None = None
+        self._key: object | None = None
+        self._system_images: tuple[str, ...] = ()
+
+    def open(self, system_images: tuple[str, ...]) -> None:
+        if self._key is not None or self._winreg is not None:
+            _fail("diagnostic_boundary_violation")
+        if (
+            type(system_images) is not tuple
+            or not system_images
+            or tuple(sorted(system_images)) != system_images
+            or len(set(system_images)) != len(system_images)
+        ):
+            _fail("diagnostic_unavailable")
+        try:
+            import winreg
+
+            query_value = winreg.KEY_QUERY_VALUE
+            wow64_64 = winreg.KEY_WOW64_64KEY
+            if (
+                type(query_value) is not int
+                or query_value != 0x0001
+                or type(wow64_64) is not int
+                or wow64_64 != 0x0100
+                or type(winreg.REG_SZ) is not int
+                or winreg.REG_SZ != 1
+                or type(winreg.REG_EXPAND_SZ) is not int
+                or winreg.REG_EXPAND_SZ != 2
+                or not callable(winreg.CloseKey)
+            ):
+                _fail("diagnostic_unavailable")
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs",
+                0,
+                query_value | wow64_64,
+            )
+            self._winreg = winreg
+            self._key = key
+            self._system_images = system_images
+        except RuntimeDiagnosticError:
+            raise
+        except BaseException:
+            _fail("diagnostic_unavailable")
+
+    def _snapshot(
+        self,
+    ) -> tuple[tuple[int, int, int], tuple[tuple[str, str, int], ...]]:
+        winreg = self._winreg
+        key = self._key
+        if winreg is None or key is None:
+            _fail("diagnostic_unavailable")
+        before = winreg.QueryInfoKey(key)
+        if (
+            type(before) is not tuple
+            or len(before) != 3
+            or any(type(value) is not int for value in before)
+            or before[0] < 0
+            or not 1 <= before[1] <= _KNOWN_DLL_VALUE_LIMIT
+            or before[2] < 0
+        ):
+            _fail("diagnostic_unavailable")
+        rows: list[tuple[str, str, int]] = []
+        total_text = 0
+        names: set[str] = set()
+        for index in range(before[1]):
+            value_name, value_data, value_kind = winreg.EnumValue(key, index)
+            if (
+                type(value_name) is not str
+                or not value_name
+                or "\0" in value_name
+                or len(value_name) > 1_024
+                or type(value_data) is not str
+                or "\0" in value_data
+                or len(value_data) > 1_024
+                or type(value_kind) is not int
+                or value_kind not in {winreg.REG_SZ, winreg.REG_EXPAND_SZ}
+            ):
+                _fail("diagnostic_unavailable")
+            canonical_name = value_name.casefold()
+            if canonical_name in names:
+                _fail("diagnostic_unavailable")
+            names.add(canonical_name)
+            total_text += len(value_name) + len(value_data)
+            if total_text > _KNOWN_DLL_TEXT_LIMIT:
+                _fail("diagnostic_unavailable")
+            rows.append((value_name, value_data, value_kind))
+        after = winreg.QueryInfoKey(key)
+        if after != before:
+            _fail("diagnostic_unavailable")
+        return before, tuple(sorted(rows))
+
+    def qualification(self) -> KnownDllQualification:
+        try:
+            first_metadata, first = self._snapshot()
+            second_metadata, second = self._snapshot()
+            if first_metadata != second_metadata or first != second:
+                _fail("diagnostic_unavailable")
+            return _bind_known_dll_qualification(
+                self._system_images, first_metadata, first
+            )
+        except RuntimeDiagnosticError:
+            raise
+        except BaseException:
+            _fail("diagnostic_unavailable")
+
+    def close(self) -> None:
+        if self._key is None:
+            self._winreg = None
+            self._system_images = ()
+            return
+        winreg = self._winreg
+        if winreg is None:
+            _fail("diagnostic_cleanup_failed")
+        try:
+            winreg.CloseKey(self._key)
+        except BaseException:
+            _fail("diagnostic_cleanup_failed")
+        self._key = None
+        self._winreg = None
+        self._system_images = ()
 
 
 def _verified_known_dll_contracts(
     system_images: tuple[str, ...],
-) -> tuple[str, ...]:
-    """Read the bounded 64-bit KnownDLL contract and retain only held leaves."""
+) -> KnownDllQualification:
+    """One-shot helper; production window owners retain the explicit lease."""
 
+    lease = _KnownDllRegistryLease()
+    cleanup_faulted = False
+    try:
+        lease.open(system_images)
+        return lease.qualification()
+    finally:
+        try:
+            lease.close()
+        except BaseException:
+            cleanup_faulted = True
+            try:
+                lease.close()
+            except BaseException:
+                pass
+        if cleanup_faulted:
+            _fail("diagnostic_cleanup_failed")
+
+
+_HRESULT_INSUFFICIENT_BUFFER = 0x8007007A
+
+
+def _hresult_u32(value: object) -> int:
+    if type(value) is not int:
+        _fail("diagnostic_unavailable")
+    return value & 0xFFFFFFFF
+
+
+class _ApiSetApiLease:
+    """Own one fixed apiquery2 HMODULE and its two fixed exports."""
+
+    def __init__(self) -> None:
+        self._module = 0
+        self.IsApiSetImplemented: object | None = None
+        self.GetApiSetModuleBaseName: object | None = None
+
+    def open(self) -> None:
+        if self._module != 0:
+            _fail("diagnostic_boundary_violation")
+        try:
+            kernel32 = _dacl_apis().kernel32
+            module = int(
+                kernel32.LoadLibraryExW(
+                    API_SET_QUERY_DLL,
+                    None,
+                    LOAD_LIBRARY_SEARCH_SYSTEM32,
+                )
+                or 0
+            )
+            if module == 0:
+                _fail("diagnostic_unavailable")
+            self._module = module
+            implemented_address = int(
+                kernel32.GetProcAddress(
+                    ctypes.c_void_p(module), b"IsApiSetImplemented"
+                )
+                or 0
+            )
+            base_name_address = int(
+                kernel32.GetProcAddress(
+                    ctypes.c_void_p(module), b"GetApiSetModuleBaseName"
+                )
+                or 0
+            )
+            if implemented_address == 0 or base_name_address == 0:
+                _fail("diagnostic_unavailable")
+            factory = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)
+            self.IsApiSetImplemented = factory(
+                wintypes.BOOL, ctypes.c_char_p
+            )(implemented_address)
+            self.GetApiSetModuleBaseName = factory(
+                ctypes.c_long,
+                ctypes.c_char_p,
+                ctypes.c_uint32,
+                wintypes.LPWSTR,
+                ctypes.POINTER(ctypes.c_uint32),
+            )(base_name_address)
+        except RuntimeDiagnosticError:
+            raise
+        except BaseException:
+            _fail("diagnostic_unavailable")
+
+    def close(self) -> None:
+        if self._module == 0:
+            self.IsApiSetImplemented = None
+            self.GetApiSetModuleBaseName = None
+            return
+        if not _dacl_apis().kernel32.FreeLibrary(ctypes.c_void_p(self._module)):
+            _fail("diagnostic_cleanup_failed")
+        self._module = 0
+        self.IsApiSetImplemented = None
+        self.GetApiSetModuleBaseName = None
+
+
+def _query_api_set_snapshot(
+    contracts: tuple[str, ...], *, api: object
+) -> tuple[ApiSetHostRelation, ...]:
     if (
-        type(system_images) is not tuple
-        or not system_images
-        or tuple(sorted(system_images)) != system_images
-        or len(set(system_images)) != len(system_images)
+        type(contracts) is not tuple
+        or tuple(sorted(contracts)) != contracts
+        or len(set(contracts)) != len(contracts)
+        or len(contracts) > API_SET_CONTRACT_LIMIT
+        or any(_api_set_contract_identity(item) != item for item in contracts)
     ):
         _fail("diagnostic_unavailable")
     try:
-        import winreg
-
-        query_value = winreg.KEY_QUERY_VALUE
-        wow64_64 = winreg.KEY_WOW64_64KEY
-        if (
-            type(query_value) is not int
-            or query_value != 0x0001
-            or type(wow64_64) is not int
-            or wow64_64 != 0x0100
-        ):
+        is_implemented = api.IsApiSetImplemented
+        get_base_name = api.GetApiSetModuleBaseName
+        if not callable(is_implemented) or not callable(get_base_name):
             _fail("diagnostic_unavailable")
-        access = query_value | wow64_64
-        with winreg.OpenKey(
-            winreg.HKEY_LOCAL_MACHINE,
-            r"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs",
-            0,
-            access,
-        ) as key:
-            def snapshot() -> tuple[
-                tuple[int, int, int], tuple[tuple[str, str, int], ...]
-            ]:
-                before = winreg.QueryInfoKey(key)
-                if (
-                    type(before) is not tuple
-                    or len(before) != 3
-                    or any(type(value) is not int for value in before)
-                    or before[0] < 0
-                    or not 1 <= before[1] <= _KNOWN_DLL_VALUE_LIMIT
-                    or before[2] < 0
-                ):
-                    _fail("diagnostic_unavailable")
-                rows: list[tuple[str, str, int]] = []
-                total_text = 0
-                names: set[str] = set()
-                for index in range(before[1]):
-                    value_name, value_data, value_kind = winreg.EnumValue(
-                        key, index
-                    )
-                    if (
-                        type(value_name) is not str
-                        or not value_name
-                        or "\0" in value_name
-                        or len(value_name) > 1_024
-                        or type(value_data) is not str
-                        or "\0" in value_data
-                        or len(value_data) > 1_024
-                        or type(value_kind) is not int
-                        or value_kind != winreg.REG_SZ
-                    ):
-                        _fail("diagnostic_unavailable")
-                    canonical_name = value_name.casefold()
-                    if canonical_name in names:
-                        _fail("diagnostic_unavailable")
-                    names.add(canonical_name)
-                    total_text += len(value_name) + len(value_data)
-                    if total_text > _KNOWN_DLL_TEXT_LIMIT:
-                        _fail("diagnostic_unavailable")
-                    rows.append((value_name, value_data, value_kind))
-                after = winreg.QueryInfoKey(key)
-                if after != before:
-                    _fail("diagnostic_unavailable")
-                return before, tuple(sorted(rows))
-
-            first_metadata, first = snapshot()
-            second_metadata, second = snapshot()
-            if first_metadata != second_metadata or first != second:
+        rows: list[ApiSetHostRelation] = []
+        for contract in contracts:
+            query = contract.removesuffix(".dll").encode("ascii", "strict")
+            if int(is_implemented(query)) != 1:
                 _fail("diagnostic_unavailable")
-            contracts: set[str] = set()
-            observed_dll_data: set[str] = set()
-            available = set(system_images)
-            for _value_name, value_data, _value_kind in first:
-                canonical = _logical_dependency_identity(value_data)
-                if canonical is None:
-                    continue
-                if canonical in observed_dll_data:
-                    _fail("diagnostic_unavailable")
-                observed_dll_data.add(canonical)
-                if canonical in available:
-                    contracts.add(canonical)
+            required = ctypes.c_uint32(0)
+            first_result = get_base_name(
+                query, 0, None, ctypes.byref(required)
+            )
+            if (
+                _hresult_u32(first_result) != _HRESULT_INSUFFICIENT_BUFFER
+                or not 2 <= required.value <= API_SET_HOST_WCHAR_LIMIT
+            ):
+                _fail("diagnostic_unavailable")
+            output = ctypes.create_unicode_buffer(required.value)
+            for index in range(required.value):
+                output[index] = "\uffff"
+            actual = ctypes.c_uint32(0)
+            second_result = get_base_name(
+                query,
+                required.value,
+                output,
+                ctypes.byref(actual),
+            )
+            if (
+                _hresult_u32(second_result) != 0
+                or actual.value != required.value
+                or output[required.value - 1] != "\0"
+                or any(output[index] == "\0" for index in range(required.value - 1))
+            ):
+                _fail("diagnostic_unavailable")
+            host_raw = "".join(output[index] for index in range(required.value - 1))
+            try:
+                wchar_count = len(host_raw.encode("utf-16-le", "strict")) // 2
+            except UnicodeError:
+                _fail("diagnostic_unavailable")
+            host = _logical_dependency_identity(host_raw)
+            if (
+                wchar_count + 1 != required.value
+                or host is None
+                or host != host_raw
+                or host == contract
+                or _api_set_contract_identity(host) is not None
+            ):
+                _fail("diagnostic_unavailable")
+            rows.append(ApiSetHostRelation(contract, host))
+        return tuple(rows)
     except RuntimeDiagnosticError:
         raise
     except BaseException:
         _fail("diagnostic_unavailable")
-    result = tuple(sorted(contracts))
-    if not {"kernel32.dll", "ntdll.dll"}.issubset(result):
+
+
+def qualify_api_set_contracts(
+    provenance: RuntimeImportProvenance, *, api: object
+) -> ApiSetQualification:
+    if type(provenance) is not RuntimeImportProvenance:
+        _fail("diagnostic_boundary_violation")
+    contracts = tuple(
+        sorted(
+            {
+                item.dependency
+                for item in provenance.relations
+                if _api_set_contract_identity(item.dependency) is not None
+            }
+        )
+    )
+    first = _query_api_set_snapshot(contracts, api=api)
+    second = _query_api_set_snapshot(contracts, api=api)
+    if first != second:
         _fail("diagnostic_unavailable")
-    return result
+    return _bind_api_set_qualification(provenance, first)
+
+
+def _prove_api_set_qualification_with_api(
+    qualification: ApiSetQualification, api: object
+) -> None:
+    if type(qualification) is not ApiSetQualification:
+        _fail("diagnostic_collector_failed")
+    contracts = tuple(item.contract for item in qualification.relations)
+    try:
+        first = _query_api_set_snapshot(contracts, api=api)
+        second = _query_api_set_snapshot(contracts, api=api)
+        canonical = {
+            "format_version": 1,
+            "provenance_digest": qualification.provenance_digest,
+            "relations": [
+                {"contract": item.contract, "host": item.host}
+                for item in first
+            ],
+        }
+        observed_digest = _domain_digest(
+            API_SET_QUALIFICATION_DOMAIN, canonical
+        )
+    except RuntimeDiagnosticError as error:
+        if error.code == "diagnostic_cleanup_failed":
+            raise
+        _fail("diagnostic_collector_failed")
+    except BaseException:
+        _fail("diagnostic_collector_failed")
+    if (
+        first != second
+        or first != qualification.relations
+        or observed_digest != qualification.qualification_digest
+    ):
+        _fail("diagnostic_collector_failed")
 
 
 # The following binding is intentionally smaller than the inactive M24.2
@@ -1836,13 +3266,34 @@ class _FILE_STANDARD_INFORMATION(ctypes.Structure):
 
 class _DaclApis:
     def __init__(self) -> None:
-        if os.name != "nt" or not hasattr(ctypes, "WinDLL"):
+        if (
+            os.name != "nt"
+            or not hasattr(ctypes, "WinDLL")
+            or ctypes.sizeof(HANDLE) != ctypes.sizeof(LPVOID)
+            or ctypes.sizeof(DWORD) != 4
+        ):
             _fail("diagnostic_unavailable")
         try:
             self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
             self.advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
             k = self.kernel32
             a = self.advapi32
+            self._prototype(
+                k.GetSystemDirectoryW,
+                [wintypes.LPWSTR, DWORD],
+                DWORD,
+            )
+            self._prototype(
+                k.LoadLibraryExW,
+                [wintypes.LPCWSTR, HANDLE, DWORD],
+                HANDLE,
+            )
+            self._prototype(
+                k.GetProcAddress,
+                [HANDLE, ctypes.c_char_p],
+                LPVOID,
+            )
+            self._prototype(k.FreeLibrary, [HANDLE], wintypes.BOOL)
             self._prototype(
                 k.CreateFileW,
                 [wintypes.LPCWSTR, DWORD, DWORD, LPVOID, DWORD, DWORD, HANDLE],
@@ -2711,6 +4162,8 @@ class _RealDiagnosticContext:
         self._temporary_path: Path | None = None
         self._capture: RuntimeCapture | None = None
         self._mirror: RuntimeMirror | None = None
+        self._preflight_api: _ApiSetApiLease | None = None
+        self._preflight_known: _KnownDllRegistryLease | None = None
         self._profile = portability._FixtureProfile()
         self._child_job: portability._FixtureJob | None = None
         self._child_stdio: portability._FixtureStdio | None = None
@@ -2731,6 +4184,20 @@ class _RealDiagnosticContext:
         self.runtime_digest = ""
         self.dacl_proof = TreeDaclProof(0, 0, "")
 
+    def _close_preflight_authorities(self) -> None:
+        cleanup_failed = False
+        for attribute in ("_preflight_api", "_preflight_known"):
+            owner = getattr(self, attribute)
+            if owner is None:
+                continue
+            try:
+                owner.close()
+                setattr(self, attribute, None)
+            except BaseException:
+                cleanup_failed = True
+        if cleanup_failed:
+            _fail("diagnostic_cleanup_failed")
+
     @classmethod
     def create(cls) -> "_RealDiagnosticContext":
         context = cls()
@@ -2750,19 +4217,38 @@ class _RealDiagnosticContext:
                 context._capture, runtime_root
             )
             context._profile.create()
-            system_images = _verified_system_image_basenames()
-            context.inventory = build_collector_inventory(
-                context._capture,
-                system_images=system_images,
-                known_dll_contracts=_verified_known_dll_contracts(
-                    system_images
-                ),
-                appcontainer_sid=context._profile.sid,
-            )
-            environment = portability._environment_block(str(scratch))
             context.dacl_proof = _seal_exact_runtime_scope(
                 context._mirror, context._profile.sid
             )
+            prove_runtime_mirror(context._capture, context._mirror)
+            provenance = extract_runtime_import_provenance(
+                context._capture, context._mirror
+            )
+            context._preflight_api = _ApiSetApiLease()
+            context._preflight_api.open()
+            api_qualification = qualify_api_set_contracts(
+                provenance, api=context._preflight_api
+            )
+            api_hosts = tuple(
+                sorted({item.host for item in api_qualification.relations})
+            )
+            system_images = _verified_system_image_basenames(api_hosts)
+            context._preflight_known = _KnownDllRegistryLease()
+            context._preflight_known.open(system_images)
+            known_qualification = context._preflight_known.qualification()
+            context.inventory = build_collector_inventory(
+                context._capture,
+                context._mirror,
+                import_provenance=provenance,
+                api_set_qualification=api_qualification,
+                known_dll_qualification=known_qualification,
+                system_images=system_images,
+                api_authority=context._preflight_api,
+                known_dll_authority=context._preflight_known,
+                appcontainer_sid=context._profile.sid,
+            )
+            context._close_preflight_authorities()
+            environment = portability._environment_block(str(scratch))
             prove_runtime_mirror(context._capture, context._mirror)
             arguments = build_diagnostic_argv(context._mirror.executable)
             context._spec = lpac.SuspendedLaunchSpec(
@@ -2972,6 +4458,23 @@ class _RealDiagnosticContext:
 
     def close(self) -> DiagnosticCleanupProof:
         cleanup_failed = False
+        for attribute in ("_preflight_api", "_preflight_known"):
+            owner = getattr(self, attribute)
+            if owner is None:
+                continue
+            closed = False
+            close_faulted = False
+            for _attempt in range(2):
+                try:
+                    owner.close()
+                    setattr(self, attribute, None)
+                    closed = True
+                    break
+                except BaseException:
+                    close_faulted = True
+                    continue
+            if close_faulted or not closed:
+                cleanup_failed = True
         if self._control is not None or self._control_job is not None:
             try:
                 self._cleanup_control()
@@ -2989,6 +4492,8 @@ class _RealDiagnosticContext:
             and self._control is None
             and self._control_job is None
             and self._control_stdio is None
+            and self._preflight_api is None
+            and self._preflight_known is None
         )
         try:
             self._profile.delete()

@@ -180,7 +180,7 @@ TRIGGER_ROUTE_RELATIONS = (
         ("tg-m24 unit detail",),
         (
             "accepted-predecessor",
-            "current",
+            "current unit",
             "inactive unit",
             "mixed execution contract",
             "ascii anchor",
@@ -211,7 +211,8 @@ ROWS_M23 = (
 ROWS_M24 = (
     ("TG-M24.1 / 10", "tg_task_29aa63124900ad95", "accepted TG-DOC.2"),
     ("TG-M24.1A / 15", "tg_task_56e212c793a42272", "accepted TG-M24.1"),
-    ("TG-M24.2 / 20", "tg_task_fafad7bc62df7576", "accepted TG-M24.1A"),
+    ("TG-M24.1B / 17", "tg_task_bb218653b56f76ed", "accepted TG-M24.1A"),
+    ("TG-M24.2 / 20", "tg_task_fafad7bc62df7576", "accepted TG-M24.1B"),
     ("TG-M24.3 / 30", "tg_task_dc015144091f8e60", "accepted TG-M24.2"),
     ("TG-M24.4 / 40", "tg_task_f81f2d126f033a59", "accepted TG-M24.3"),
 )
@@ -266,10 +267,12 @@ TASK_STATUS_VALUES = {
     "paused",
     "done",
 }
+CURRENT_UNITS = ("TG-M24.1B",)
 NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
     for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
     for row in rows
+    if row[0].split(" /", 1)[0] not in CURRENT_UNITS
 )
 NONCURRENT_SUBJECTS = tuple(
     sorted(
@@ -1359,8 +1362,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.2"],
-                "inactive_units": ["TG-M24.3", "TG-M24.4"],
+                "current_units": ["TG-M24.1B"],
+                "inactive_units": ["TG-M24.2", "TG-M24.3", "TG-M24.4"],
             },
         ],
         "documentation_sequence": {
@@ -1646,6 +1649,7 @@ def _sequences(scans: dict[str, Scan], issues: list[Issue]) -> None:
     required_m24_anchors = (
         "tg-m24-1",
         "tg-m24-1a",
+        "tg-m24-1b",
         "tg-m24-2",
         "tg-m24-3",
         "tg-m24-4",
@@ -1825,6 +1829,259 @@ def _registry_routes(
                 "authority_route",
                 AUTHORITY,
                 "mixed M24 owner or route anchor is unavailable",
+            )
+        )
+
+
+def _m241b_authority_sync(scans: dict[str, Scan], issues: list[Issue]) -> None:
+    scan = scans.get(M24)
+    if scan is None:
+        return
+    bounds = _anchor_section(scan, "tg-m24-1b")
+    if bounds is None:
+        issues.append(Issue("m241b_authority_sync", M24, "M24.1B authority is missing"))
+        return
+    prose = " ".join(
+        " ".join(_semantic_prose(line).lower().split())
+        for line in scan.semantic[bounds[0] : bounds[1]]
+    )
+    ordered = (
+        "the current runtime unchanged",
+        "that runtime under an exact package-sid-only r/x acl on its immutable tree",
+        "a locally supplied official embeddable distribution",
+        "an isolated native host",
+    )
+    required = (
+        "four required planes independently",
+        "file access",
+        "dll/image-load",
+        "registry access",
+        "code integrity/policy",
+        "each plane records exactly one closed outcome",
+        "denial , observed_no_denial , or inconclusive",
+        "at least one denial must identify the exact refused target or component",
+        "bounded sanitized identity",
+        "attempted operation or enforced policy",
+        "any required plane's inconclusive outcome blocks qualification",
+        "category-only result cannot qualify a candidate",
+        "qualification preserves zero capabilities",
+        "independence from all_application_packages",
+        "no acl may grant that principal",
+        "exact package sid receives read/execute only",
+        "package-sid write or delete access remains forbidden",
+        "broad acl",
+        "system-python fallback",
+        "runtime download/network",
+        "probe-only, skip, unknown, tamper, cleanup uncertainty, or profile-absence uncertainty is never success",
+        "custom building or project signing is outside this task",
+        "after all four candidates are evidenced insufficient",
+        "separate explicit decision",
+        "p0 authority freeze",
+        "p1 bounded root-cause classification",
+        "p2 ordered a-d evaluation",
+        "p3 pin and offline supply",
+        "p4 tier 2 completion and downstream handoff",
+        "inconclusive classification or absent locally supplied official artifact is a blocker",
+        "completion supplies bounded root-cause evidence",
+        "one pinned offline runtime artifact",
+        "provenance and signature verification",
+        "exact digest manifest",
+        "offline package",
+        "acl manifest",
+        "dependency inventory",
+        "non-skip native zero-capability lpac qualification probe",
+        "tamper/failure tests",
+        "after the selected runtime digest is fixed",
+        "fresh review-target generation bound to that digest",
+        "rerun the pure suite, coupled suite, and every mandatory native containment matrix without skip",
+        "fresh m24.2 generation must then obtain its own new pass/full verification receipt and two independent tier 2 pass reviews",
+        "tg-m24.3 must later create its own fresh review target bound to the same qualified runtime digest",
+        "tg-m24.3 must later create its own fresh review target bound to the same qualified runtime digest and obtain its own new pass/full verification receipt and two independent tier 2 pass reviews",
+        "no probe, result, receipt, or review from tg-m24.1b or any prior m24.2/m24.3 generation satisfies either successor gate",
+        "intermediate history only",
+    )
+    forbidden_relations = (
+        (
+            r"\ball_application_packages\b",
+            r"\b(?:depends?|requires?|uses?|ace|grants?|allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed))\b",
+        ),
+        (
+            r"\bbroad(?:-principal|\s+acl)\b",
+            r"\b(?:grants?|allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed)|may|can)\b",
+        ),
+        (
+            r"\bsystem[- ]python(?:\s+fallback)?\b",
+            r"\b(?:allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed)|may|can)\b",
+        ),
+        (
+            r"(?:\bpackage[- ]sid\b(?=[^.;]{0,96}\b(?:write|delete)\b)|"
+            r"\b(?:write|delete)\b(?=[^.;]{0,96}\bpackage[- ]sid\b))",
+            r"\b(?:allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed)|may|can)\b",
+        ),
+        (
+            r"\b(?:runtime\s+download|download(?:ing)?\s+the\s+runtime)\b",
+            r"\b(?:allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed)|may|can)\b",
+        ),
+        (
+            r"\b(?:custom\s+build(?:ing)?|project\s+sign(?:ing)?)\b",
+            r"\b(?:allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed)|may\s+proceed|is\s+in\s+scope)\b",
+        ),
+        (
+            r"\b(?:prior|earlier|existing|old)\b[^;]{0,96}\b(?:evidence|results?|receipts?|reviews?|generations?)\b",
+            r"\b(?:reuse|counts?|satisf(?:y|ies)|qualif(?:y|ies)|carry\s+forward|may\s+serve|is\s+valid)\b",
+        ),
+        (
+            r"\b(?:category-only|inconclusive)\b",
+            r"\b(?:qualif(?:y|ies)|success|satisf(?:y|ies)|may\s+pass)\b",
+        ),
+    )
+    negative_polarity = re.compile(
+        r"\b(?:no|not|never|forbidden|outside|blocked|blocker|cannot|"
+        r"must\s+not|may\s+not|does\s+not|do\s+not|only\s+after|"
+        r"history\s+only|intermediate\s+history)\b"
+    )
+    directly_forbidden = (
+        r"\b(?:qualification\s+)?(?:does|need|must|may)\s+not\s+preserve\s+zero\s+capabilities\b",
+        r"\bcapabilit(?:y|ies)\s+sids?\b",
+        r"\badd(?:s|ed|ing)?\s+capabilit(?:y|ies)\b",
+        r"\bcapabilit(?:y|ies)\b[^.;]{0,40}\b(?:is|are)\s+(?:added|granted|used)\b",
+    )
+    contradictory = any(re.search(pattern, prose) for pattern in directly_forbidden)
+    for clause in re.split(r"[.;](?:\s+|$)", prose):
+        if negative_polarity.search(clause):
+            continue
+        if any(
+            re.search(subject, clause) and re.search(permission, clause)
+            for subject, permission in forbidden_relations
+        ):
+            contradictory = True
+            break
+    positions = tuple(prose.find(phrase) for phrase in ordered)
+    candidate_boundary = prose.find("then evaluates these candidates")
+    root_cause = prose if candidate_boundary < 0 else prose[:candidate_boundary]
+    plane_positions = tuple(
+        root_cause.find(plane)
+        for plane in (
+            "file access",
+            "dll/image-load",
+            "registry access",
+            "code integrity/policy",
+        )
+    )
+    if (
+        any(position < 0 for position in positions)
+        or positions != tuple(sorted(positions))
+        or any(position < 0 for position in plane_positions)
+        or plane_positions != tuple(sorted(plane_positions))
+        or any(phrase not in prose for phrase in required)
+        or contradictory
+    ):
+        issues.append(
+            Issue(
+                "m241b_authority_sync",
+                M24,
+                "M24.1B candidate order, safety gates, deliverables, or digest-bound successor gate drifted",
+            )
+        )
+
+
+def _m241b_current_binding(
+    scans: dict[str, Scan],
+    registry: dict[str, object] | None,
+    issues: list[Issue],
+) -> None:
+    scan = scans.get(M24)
+    bounds = None if scan is None else _anchor_section(scan, "tg-m24-1b")
+    headings = (
+        []
+        if scan is None or bounds is None
+        else [
+            heading
+            for level, heading, position in scan.headings
+            if level == 2 and bounds[0] < position < bounds[1]
+        ]
+    )
+    heading_valid = False
+    if len(headings) == 1:
+        heading = headings[0].lower()
+        heading_valid = (
+            re.search(r"\btg-m24\.1b\b", heading) is not None
+            and _positive_status_term(heading, "current")
+            and re.search(r"\b(?:accepted|inactive)\b", heading) is None
+        )
+
+    registry_valid = False
+    if isinstance(registry, dict):
+        mixed = registry.get("mixed_execution")
+        if isinstance(mixed, list):
+            routes = [
+                item
+                for item in mixed
+                if isinstance(item, dict) and item.get("path") == M24
+            ]
+            if len(routes) == 1:
+                current = routes[0].get("current_units")
+                inactive = routes[0].get("inactive_units")
+                registry_valid = (
+                    current == ["TG-M24.1B"]
+                    and isinstance(inactive, list)
+                    and "TG-M24.1B" not in inactive
+                )
+
+    if not heading_valid or not registry_valid:
+        issues.append(
+            Issue(
+                "m241b_current_binding",
+                M24,
+                "M24.1B must be the sole structurally current M24 unit in its heading and registry",
+            )
+        )
+
+
+def _m24_registry_handoff_sync(scans: dict[str, Scan], issues: list[Issue]) -> None:
+    scan = scans.get(M24)
+    if scan is None:
+        return
+    prose = " ".join(
+        " ".join(_semantic_prose(line).lower().split())
+        for line in scan.semantic
+    )
+    ordered = (
+        "getappcontainerregistrylocation(read_control|write_dac) to return the current profile-root locator",
+        "the hresult must be s_ok and the locator non-null; it then immediately reverts",
+        "under the coordinator token it calls regopenkeyexw(locator, null, 0, key_read|write_dac)",
+        "after this handoff the lpac duplicate is used only for the explicit accesscheck calls below",
+    )
+    required = (
+        "requires success plus a non-null, non-alias handle to the same key",
+        "closes the locator before using the reopened handle",
+        "using the reopened handle to enumerate, seal, freshly reopen, and recheck the root and every existing descendant",
+        "including hresult 0x80070002",
+        "plus-null result",
+        "any regopenkeyexw failure, null or alias handle, or close failure is fail-closed",
+        "a revert failure gets one setthreadtoken(null, null) recovery attempt",
+        "failure of that recovery is fail-stop",
+        "then immediately reverts before any regopenkeyexw",
+        "enumeration, descriptor mutation, or accesscheck",
+        "thereafter it supplies the duplicate only as the explicit token argument to every effective accesscheck",
+        "a missing initial registry handoff or cleanup failure forbids the final proof and resume",
+    )
+    forbidden = (
+        "under that impersonation opens only the current profile registry root",
+        "setthreadtoken, getappcontainerregistrylocation, and every effective accesscheck before the sole resume, then reverts",
+    )
+    positions = tuple(prose.find(phrase) for phrase in ordered)
+    if (
+        any(position < 0 for position in positions)
+        or tuple(sorted(positions)) != positions
+        or any(phrase not in prose for phrase in required)
+        or any(phrase in prose for phrase in forbidden)
+    ):
+        issues.append(
+            Issue(
+                "m24_registry_handoff_sync",
+                M24,
+                "LPAC registry discovery must revert before coordinator reopen and AccessCheck",
             )
         )
 
@@ -2573,7 +2830,10 @@ def check_document_contract(repo_root: str | os.PathLike[str]) -> Result:
         registry = _registry(scans[AUTHORITY], issues)
         _links_and_routes(root, scans, issues)
         _sequences(scans, issues)
+        _m241b_current_binding(scans, registry, issues)
         _bounded_reading_controls(scans, issues)
+        _m241b_authority_sync(scans, issues)
+        _m24_registry_handoff_sync(scans, issues)
         _documentation_sequence(scans, issues)
         if registry is not None:
             _registry_routes(scans, registry, issues)

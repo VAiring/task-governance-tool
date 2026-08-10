@@ -1750,7 +1750,7 @@ offline/mock TG-M23.2 plus TG-M23.3 offline/mock integrated acceptance are accep
 TG-M24 Runner authority is in
 [the M24 mixed contract](tg-m24-verification-runner.md#tg-m24-verification-runner).
 TG-M24.1 and its bounded TG-M24.1A correction are accepted predecessors;
-current shadow-Runner implementation authority belongs to TG-M24.2, while
-TG-M24.3 and TG-M24.4 remain inactive. No TG-M24 runtime is active before
-TG-M24.2 completion.
+current runtime qualification-and-supply authority belongs to TG-M24.1B,
+while TG-M24.2, TG-M24.3, and TG-M24.4 remain inactive. No TG-M24 Runner
+runtime is active.
 This M22 document activates no downstream runtime.

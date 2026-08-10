@@ -36,6 +36,7 @@ FIXTURE_LINK_TARGETS = (
     "docs/releases/v0.10.0.md",
     "docs/releases/v0.11.0.md",
     "docs/releases/v0.12.0.md",
+    "docs/releases/v0.13.0.md",
     "task-governance-tool/LICENSE",
 )
 DOC2_ROW = (
@@ -183,6 +184,192 @@ class DocumentContractTests(unittest.TestCase):
             set(payload["metrics"][0]),
             {"bytes", "lines", "path"},
         )
+
+    def test_m241b_authority_order_safety_and_handoff_are_closed(self):
+        mutations = (
+            ("1. file access;", "1. generic filesystem category;"),
+            ("2. DLL/image-load;", "2. generic executable category;"),
+            ("3. registry access; and", "3. combined storage category; and"),
+            ("4. Code Integrity/policy.", "4. generic policy category."),
+            (
+                "Each plane records exactly one closed outcome: `denial`,\n"
+                "`observed_no_denial`, or `inconclusive`.",
+                "Each plane records an arbitrary diagnostic label.",
+            ),
+            (
+                "At least one `denial` must identify\n"
+                "the exact refused target or component",
+                "A denial may identify only a broad category",
+            ),
+            (
+                "Any required plane's `inconclusive` outcome blocks\n"
+                "qualification.",
+                "An inconclusive required plane may still qualify.",
+            ),
+            (
+                "Completion supplies bounded root-cause evidence",
+                "Completion supplies no classification evidence",
+            ),
+            (
+                "independence from\n`ALL_APPLICATION_PACKAGES`; no ACL may grant that principal",
+                "dependence on a broad application group",
+            ),
+            (
+                "system-Python fallback,\n"
+                "shell, runtime download/network",
+                "system-Python and runtime download are allowed",
+            ),
+            (
+                "1. the current runtime unchanged;\n"
+                "2. that runtime under an exact Package-SID-only R/X ACL on its immutable tree;",
+                "1. that runtime under an exact Package-SID-only R/X ACL on its immutable tree;\n"
+                "2. the current runtime unchanged;",
+            ),
+            (
+                "Custom building or project signing is outside\n"
+                "this Task",
+                "Custom building and project signing are authorized by\n"
+                "this Task",
+            ),
+            (
+                "An inconclusive classification or absent locally supplied official artifact is\n"
+                "a blocker, not a SKIP, fallback, or reason to advance to a later candidate.",
+                "An inconclusive classification permits SKIP and candidate advancement.",
+            ),
+            (
+                "digest and rerun the pure suite, coupled suite, and every mandatory native\n"
+                "containment matrix without SKIP.",
+                "digest and reuse prior suite and containment results.",
+            ),
+            (
+                "That fresh M24.2 generation must then obtain\n"
+                "its own new `pass/full` Verification Receipt and two independent Tier 2 PASS\n"
+                "reviews.",
+                "That M24.2 generation may reuse an existing Receipt and review.",
+            ),
+            (
+                "TG-M24.3 must later create its own fresh review target bound to the\n"
+                "same qualified runtime digest",
+                "TG-M24.3 may reuse the M24.2 review target",
+            ),
+            (
+                "and obtain its own new `pass/full` Verification\n"
+                "Receipt and two independent Tier 2 PASS reviews.",
+                "and reuse the M24.2 Receipt and reviews.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old), self.fixture() as root:
+                self.replace(root, contract.M24, old, new)
+                self.assertIn(
+                    "m241b_authority_sync",
+                    self.codes(contract.check_document_contract(root)),
+                )
+
+    def test_m241b_additive_permission_and_evidence_contradictions_fail(self):
+        marker = (
+            "successor gate; all such prior evidence remains intermediate history only."
+        )
+        contradictions = (
+            "The selected runtime depends on `ALL_APPLICATION_PACKAGES`, and an ACE for that principal is required.",
+            "A broad ACL grant is authorized.",
+            "System-Python fallback is permitted.",
+            "Runtime download is allowed.",
+            "Custom building and project signing are authorized by this Task.",
+            "Prior M24.2/M24.3 verification Receipts and reviews may satisfy the fresh successor gates.",
+            "Qualification does not preserve zero capabilities.",
+            "The selected runtime adds capabilities and uses a capability SID.",
+            "The exact Package SID may receive write and delete access.",
+            "A category-only result may qualify a candidate.",
+        )
+        for contradiction in contradictions:
+            with self.subTest(contradiction=contradiction), self.fixture() as root:
+                self.replace(
+                    root,
+                    contract.M24,
+                    marker,
+                    marker + "\n\n" + contradiction,
+                )
+                self.assertIn(
+                    "m241b_authority_sync",
+                    self.codes(contract.check_document_contract(root)),
+                )
+
+    def test_m241b_current_heading_registry_and_trigger_are_structural(self):
+        heading = (
+            "## TG-M24.1B Current Zero-Capability LPAC Runtime Qualification And Supply"
+        )
+        for replacement in (
+            heading.replace(" Current ", " Accepted "),
+            heading.replace(" Current ", " Inactive "),
+            heading.replace(" Current ", " Current And Accepted "),
+            heading.replace(" Current ", " Current And Inactive "),
+        ):
+            with self.subTest(heading=replacement), self.fixture() as root:
+                self.replace(root, contract.M24, heading, replacement)
+                self.assertIn(
+                    "m241b_current_binding",
+                    self.codes(contract.check_document_contract(root)),
+                )
+
+        for inactive_too in (False, True):
+            with self.subTest(inactive_too=inactive_too), self.fixture() as root:
+                registry = self.registry(root)
+                mixed = registry["mixed_execution"]
+                assert isinstance(mixed, list)
+                m24 = next(
+                    item
+                    for item in mixed
+                    if isinstance(item, dict) and item.get("path") == contract.M24
+                )
+                if inactive_too:
+                    inactive = m24["inactive_units"]
+                    assert isinstance(inactive, list)
+                    inactive.insert(0, "TG-M24.1B")
+                else:
+                    m24["current_units"] = []
+                self.write_registry(root, registry)
+                self.assertIn(
+                    "m241b_current_binding",
+                    self.codes(contract.check_document_contract(root)),
+                )
+
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.AUTHORITY,
+                "Exact accepted-predecessor, current unit, or inactive unit",
+                "Exact accepted-predecessor or inactive unit",
+            )
+            self.assertIn(
+                "authority_route",
+                self.codes(contract.check_document_contract(root)),
+            )
+
+    def test_m24_registry_locator_reverts_before_coordinator_reopen(self):
+        with self.fixture() as root:
+            self.replace(
+                root,
+                "docs/execution-contracts/tg-m24-verification-runner.md",
+                "The HRESULT must be `S_OK` and the locator non-null; it\n"
+                "then immediately reverts. Under the coordinator token it calls",
+                "The HRESULT must be `S_OK` and the locator non-null. Under the impersonated token it calls",
+            )
+            result = contract.check_document_contract(root)
+            self.assertIn("m24_registry_handoff_sync", self.codes(result))
+
+        with self.fixture() as root:
+            self.replace(
+                root,
+                "docs/execution-contracts/tg-m24-verification-runner.md",
+                "Thereafter it supplies the duplicate only as the\n"
+                "explicit token argument to every effective `AccessCheck` before the sole\n"
+                "resume",
+                "Thereafter it keeps impersonation active for every effective `AccessCheck` before the sole\n"
+                "resume",
+            )
+            result = contract.check_document_contract(root)
+            self.assertIn("m24_registry_handoff_sync", self.codes(result))
 
     def test_cli_internal_exception_is_sanitized(self):
         secret = "private-internal-exception-sentinel"
@@ -791,10 +978,10 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.2"])
+            self.assertEqual(m24["current_units"], ["TG-M24.1B"])
             self.assertEqual(
                 m24["inactive_units"],
-                ["TG-M24.3", "TG-M24.4"],
+                ["TG-M24.2", "TG-M24.3", "TG-M24.4"],
             )
             self.assertNotIn("TG-M24.1A", m24["current_units"])
             self.assertNotIn("TG-M24.1A", m24["inactive_units"])
@@ -821,7 +1008,7 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            m24["current_units"] = ["TG-M24.1A"]
+            m24["current_units"] = ["TG-M24.2"]
 
         for name, mutate in (
             ("missing_owner", missing_owner),
@@ -1121,8 +1308,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.3 and TG-M24.4 are\n> inactive.",
-                "TG-M24.3 and TG-M24.4 are\n> not inactive.",
+                "TG-M24.2, TG-M24.3, and TG-M24.4 are\n> inactive.",
+                "TG-M24.2, TG-M24.3, and TG-M24.4 are\n> not inactive.",
             )
             self.assertIn(
                 "document_role",
@@ -1133,20 +1320,20 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "> MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 and its bounded\n"
-                "> TG-M24.1A correction are accepted predecessors, current shadow-Runner\n"
-                "> implementation authority belongs to TG-M24.2, and TG-M24.3 and TG-M24.4 are\n"
-                "> inactive. No TG-M24 runtime is active before TG-M24.2 completion. Loading\n"
-                "> this document activates no Runner, command\n"
-                "> execution, schema, CLI, Skill behavior, completion gate, network use,\n"
-                "> credential use, or target mutation.",
+                "> MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 design and the\n"
+                "> TG-M24.1A LPAC portability correction are accepted predecessors. Current\n"
+                "> authority belongs to TG-M24.1B; TG-M24.2, TG-M24.3, and TG-M24.4 are\n"
+                "> inactive. No TG-M24 Runner\n"
+                "> runtime is active. Loading this document activates no\n"
+                "> later gate, Skill branch, network use, credential use, or external-project\n"
+                "> mutation.",
                 "> FORMAL AUTHORITY.\n"
                 "> - ~~~text\n"
-                ">   MIXED CURRENT ACCEPTED PREDECESSOR INACTIVE\n"
+                ">   MIXED ACCEPTED PREDECESSOR INACTIVE\n"
                 ">   ~~~\n"
-                "> No TG-M24 runtime is active. Loading this document activates no Runner,\n"
-                "> command execution, schema, CLI, Skill behavior, completion gate, network use,\n"
-                "> credential use, or target mutation.",
+                "> Current authority belongs to TG-M24.1B. Loading this document activates no\n"
+                "> later gate, Skill branch, network use, credential use, or external-project\n"
+                "> mutation.",
             )
             self.assertIn(
                 "document_role",
@@ -1163,9 +1350,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.1 and its bounded\n"
-                "> TG-M24.1A correction are accepted predecessors",
-                "TG-M24.1 and TG-M24.1A are former\n> design units",
+                "TG-M24.1 design and the\n> TG-M24.1A LPAC portability correction are accepted predecessors",
+                "TG-M24.1 design and the\n> TG-M24.1A LPAC portability correction are former units",
             )
             self.assertIn(
                 "document_role",
@@ -1240,8 +1426,23 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 contract.M24,
+                "| TG-M24.1B / 17 | `tg_task_bb218653b56f76ed` | accepted TG-M24.1A |",
+                "| TG-M24.1B / 17 | `tg_task_0000000000000000` | accepted TG-M24.1A |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.1B / 17 | `tg_task_bb218653b56f76ed` | accepted TG-M24.1A |",
+                "| TG-M24.1B / 18 | `tg_task_bb218653b56f76ed` | accepted TG-M24.1A |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.1B / 17 | `tg_task_bb218653b56f76ed` | accepted TG-M24.1A |",
+                "| TG-M24.1B / 17 | `tg_task_bb218653b56f76ed` | accepted TG-M24.1 |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1B |",
                 "| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1A |",
-                "| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1 |",
             ),
         )
         documentation_row_mutations = (

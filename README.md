@@ -459,18 +459,24 @@ an unassigned, duplicate, or stale test module fails before execution. The
 `all` lane preserves the ordered test IDs and suite from
 `python -m unittest discover -s tests`.
 
-The current closed mandatory-native set contains exactly one stable ID,
-`test_m241a_lpac_portability.RunnerLpacPortabilityNativeTests.test_real_lpac_portability_matrix_and_cleanup`.
-It belongs to `integration`
-and therefore `all`; if selected and reported as skipped, that lane is
-non-PASS. A lane that does not select it and unrelated optional SKIPs retain
-their existing behavior. The portability test is a direct private-seam proof.
-The distinct full process/registry matrix remains a decision-held inactive
-TG-M24.2 completion gate and is not part of the repository mandatory-native
-set. Only after both accepted TG-M24.1B and a separate explicit Runner-
-adoption decision may TG-M24.2 add its stable ID with non-SKIP enforcement
-before acceptance; until then, the accepted standalone
-portability ID remains the complete current set.
+TG-M24 now follows the explicitly adopted trusted-local Runner sequence.
+Only an explicitly selected repository that the user already trusts may be
+eligible; untrusted, external, or unsupported targets use the existing manual
+M21 verification path and are never executed by the Runner. The future Runner
+must use fixed argv with no shell or PATH lookup, exclude credentials from its
+child environment, bound its Job, wall time, process count, resources, and
+output, retire the complete process tree, and remove its private temporary
+tree without retaining raw output. These are process, cleanup, and privacy
+requirements for trusted code, not a claim of hostile-code containment or
+network isolation.
+
+The existing TG-M24.1A LPAC portability fixture may remain discoverable only
+as transitional repository residue until the dedicated M24 inventory and
+physical-deletion units classify and remove it. Candidate C, B-to-C comparison,
+LPAC/AppContainer policy, ETW diagnosis, and recovery infrastructure are no
+longer M24 qualification or completion gates. Their presence must not activate
+a Runner or authorize new tests; physical retirement is handled by the
+separate bounded cleanup units rather than by this authority cutover.
 
 CI consumes the same repository-only policy:
 
@@ -510,11 +516,13 @@ coverage.
   TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
   offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer
   acceptance, TG-DOC.2, documentation-only TG-M24.1, and the bounded
-  TG-M24.1A LPAC-proof correction are accepted predecessors. Current runtime
-  proportional fixed-Candidate-C admission and native qualification authority
-  belongs to TG-M24.1B, while TG-M24.2, TG-M24.3, and TG-M24.4 remain inactive
-  behind a separate explicit Runner-adoption decision. The candidate stays v0.12.0/schema
-  v19 and no Runner, schema, CLI, Skill, or gate is active.
+  TG-M24.1A correction are accepted predecessors. The current TG-M24
+  trusted-local sequence repairs the existing WIP, removes retired security
+  assets, freezes the M25 subsystem boundary, and then implements and accepts
+  an explicit-opt-in Runner in ordered Tier 2 slices. TG-M24.1B's fixed-
+  Candidate-C route is superseded. The candidate remains v0.12.0/schema v19
+  at this authority cutover; no Runner, schema, CLI, Skill, or completion gate
+  is activated until its owning downstream unit is accepted.
   Network/live
   Analyzer acceptance still requires separate authority. SQLite, `storage.py`,
   public CLI or Skill calls, network/live-model actions, gate mutation, and

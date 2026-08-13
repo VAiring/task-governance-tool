@@ -34,17 +34,17 @@ transfer either role.
 - [TG-M22 Evidence Ledger sequence](execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence)
 - [TG-M23 Derived Evidence sequence](execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence)
   - [delegated TG-M23 process safety](execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety)
-- [TG-M24 Verification Runner sequence](execution-contracts/tg-m24-verification-runner.md#tg-m24-verification-runner)
+- [TG-M24 trusted-local Runner repair and acceptance sequence](execution-contracts/tg-m24-verification-runner.md#tg-m24-verification-runner)
 
 TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
 offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer acceptance
-are accepted predecessors. TG-M24.1 design and the TG-M24.1A LPAC portability
-correction are also accepted predecessors. TG-M24.1B owns only current fixed-
-Candidate-C offline admission, materialization, and one bounded native zero-
-capability LPAC qualification; TG-M24.2 through TG-M24.4 remain inactive and
-decision-held behind a separate explicit Runner-adoption decision. Accepted
-TG-M24.1B alone cannot activate or release them. No TG-M23 execution unit is
-current, and no TG-M24 Runner runtime is active;
+are accepted predecessors. TG-M24.1 design and TG-M24.1A are accepted
+predecessors whose adversarial qualification details are no longer current
+gates. TG-M24.1B is superseded and non-gating. TG-M24.R1 is the sole current
+authority-only unit; TG-M24.R2A through TG-M24.CP4 remain inactive in the exact
+sequential order owned by the routed contract. The separate TG-M24.R2 bootstrap
+checkpoint supports R1 but activates no product behavior. No TG-M23 execution
+unit is current, and no TG-M24 Runner runtime is active;
 network/live Analyzer acceptance remains outside the accepted scope. The
 derived-evidence contract is the sole unit owner/router; its process-safety
 route delegates one non-overlapping physical-safety seam and owns no unit state
@@ -55,10 +55,11 @@ or core semantics.
 - [TG-DOC sequence](../plan.md#tg-doc-sequence)
 
 TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
-preserves the inactive post-M24 normalization scope. Neither route changes
-product behavior. M24.1 design and the M24.1A portability correction are
-accepted, M24.1B is current, M24.2/M24.3/M24.4 remain inactive and separately
-decision-held, and indexing or reading them activates no later behavior.
+preserves the inactive post-M24 normalization scope after TG-M24.CP4. Neither
+route changes product behavior. M24.1 design and M24.1A are accepted
+predecessors, M24.1B is superseded, R1 is current, every later repair and
+acceptance unit is inactive, and indexing or reading them activates no product
+behavior.
 
 ## Non-Authoritative History
 
@@ -80,7 +81,7 @@ current gate.
 | TG-M23 unit or core data detail | Exact accepted-predecessor, current activation, or inactive unit in `docs/execution-contracts/tg-m23-derived-evidence.md` and its ASCII anchor above |
 | TG-M23 Windows process, private temporary tree, or atomic publication/recovery detail | Exact delegated route in `docs/execution-contracts/tg-m23-process-safety.md`, only through the TG-M23 core owner/router |
 | Documentation governance or TG-DOC unit detail | [TG-DOC sequence](../plan.md#tg-doc-sequence), then the exact `plan.md#tg-doc-2` or `plan.md#tg-doc-3` unit anchor |
-| TG-M24 unit detail | Exact accepted-predecessor, current unit, or inactive unit in the routed mixed execution contract and ASCII anchor above |
+| TG-M24 unit detail | Exact accepted predecessor, current unit, inactive unit, or superseded unit in the routed current execution contract and ASCII anchor above |
 | Published artifact, install, upgrade, tag, or Release identity | `docs/release-install.md` |
 | Live status, blocker, target, evidence, review, or completion history | Public CLI and live Task Contract; no Git-document mirror |
 | Historical lineage or retired evidence | `docs/history/README.md`, only after naming the exceptional reason |
@@ -100,13 +101,14 @@ an explicit escalation, not the normal start path.
 ## Machine-Readable Registry
 
 The following closed JSON is the repository-visible semantic authority route.
-Within a sequence, a unit named in neither the current nor inactive array is an
-accepted predecessor. JSON object-key order is presentation only; array order,
-owner, route, unit, and current/inactive membership are the enforced meaning.
+Within a sequence, a unit named in none of the current, inactive, or superseded
+arrays is an accepted predecessor. A superseded unit is non-gating and supplies
+no current authority. JSON object-key order is presentation only; array order,
+owner, route, unit, and membership are the enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v4",
+  "schema": "taskgov-document-authority-v5",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md"],
   "mixed_execution": [
@@ -133,8 +135,28 @@ owner, route, unit, and current/inactive membership are the enforced meaning.
     {
       "path": "docs/execution-contracts/tg-m24-verification-runner.md",
       "route_anchor": "tg-m24-verification-runner",
-      "current_units": ["TG-M24.1B"],
-      "inactive_units": ["TG-M24.2", "TG-M24.3", "TG-M24.4"]
+      "current_units": ["TG-M24.R1"],
+      "inactive_units": [
+        "TG-M24.R2A",
+        "TG-M24.R2B",
+        "TG-M24.R2C",
+        "TG-M24.R4A",
+        "TG-M24.R3A",
+        "TG-M24.R3B",
+        "TG-M24.R4B",
+        "TG-M24.R5",
+        "TG-M24.2A",
+        "TG-M24.2B",
+        "TG-M24.2C",
+        "TG-M24.2D",
+        "TG-M24.3",
+        "TG-M24.4A",
+        "TG-M24.4B",
+        "TG-M24.4C",
+        "TG-M24.4D",
+        "TG-M24.CP4"
+      ],
+      "superseded_units": ["TG-M24.1B"]
     }
   ],
   "documentation_sequence": {

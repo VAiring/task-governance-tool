@@ -3,7 +3,14 @@
 Status: The immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
 snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with strict recovery and stored-Task/Contract-pointer validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
-TG-M20S.3 and TG-M24.2 through TG-M24.4 remain inactive. No TG-M23 unit is current. The bounded TG-M24.1A LPAC proof and mandatory-native correction is accepted, and TG-M24.1B owns only fixed-Candidate-C offline admission, materialization, and one bounded native zero-capability LPAC qualification. TG-M24.2 through TG-M24.4 additionally require a separate explicit Runner-adoption decision after accepted TG-M24.1B; qualification alone never activates or releases them. The candidate remains v0.12.0/schema v19 and the repository retains only the accepted standalone portability gate; this authority transition selects no runtime artifact and activates no Runner, execution, schema, CLI, Skill, completion gate, network, credential, or target mutation. Completed execution narrative is history, and the Task database owns live state and evidence.
+TG-M20S.3 remains inactive and no TG-M23 unit is current. TG-M24.1 and
+TG-M24.1A are accepted predecessors; the fixed-Candidate-C and adversarial
+LPAC route formerly owned by TG-M24.1B is superseded. Current TG-M24 authority
+is the ordered repair and implementation sequence for an explicitly adopted
+trusted-local Runner. It activates no product behavior by itself. The candidate
+therefore remains v0.12.0/schema v19 until the owning downstream units are
+accepted. Completed execution narrative is history, and the Task database owns
+live state and evidence.
 
 This document specifies supported product behavior. The concise
 [authority index](authority.md) routes implementation structure to
@@ -2483,6 +2490,36 @@ inspected through the public CLI. Current product, privacy, review, migration,
 and artifact requirements above do not depend on historical text.
 
 ## Deferred Boundaries
+
+### Approved But Inactive TG-M24 Trusted-Local Runner Boundary
+
+The approved execution direction is an explicit-opt-in Runner for repositories
+the user already trusts. Untrusted, external, unsupported, or visually verified
+targets remain on the existing M21 manual verification route and are never made
+eligible by convenience, fallback, or a prior run. Eligibility and execution
+must bind the current Task, Contract, verification criterion, and exact target;
+use fixed argv with no shell or PATH lookup; exclude credentials from the child
+environment; execute only an exact private materialization; and copy no working
+tree or result bytes back to the target.
+
+Each accepted execution must establish its Job and process limits before user
+code runs, bound wall time, process count, resources, and stdout/stderr, retire
+the complete process tree, close handles, and remove its privately owned
+temporary tree. Raw output, command arguments, environment, credentials,
+private paths, and exception bodies remain transient and are never durable
+verification or review evidence. Only the existing closed outcome and bounded
+structural evidence may be retained. Cleanup or privacy uncertainty is a
+blocking failure.
+
+This boundary governs trusted code; it does not claim hostile-code containment,
+network isolation, LPAC/AppContainer confinement, or zero capability. Candidate
+C, Candidate B-to-C comparison, Package-SID ACL qualification, ETW diagnosis,
+claim-bound transfer/recovery, supervisor or trust-root layers, and diagnostic
+fault matrices are not M24 prerequisites or completion gates. Their repository
+and OS-temporary residues are owned by the dedicated inventory and physical-
+retirement units. No Runner command, schema, Skill trigger, completion gate, or
+automatic execution becomes supported until its own sequential TG-M24 unit is
+accepted and synchronized.
 
 The current product deliberately excludes pagination/search in CLI history,
 parent/child Tasks, acceptance checklists, verification-command execution,

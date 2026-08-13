@@ -3,7 +3,13 @@
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
 snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with managed recovery and stored-Task/Contract relationship validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
-TG-M20S.3 and TG-M24.2 through TG-M24.4 remain inactive. No TG-M23 unit is current. The bounded TG-M24.1A Win32 LPAC proof seam and mandatory-native correction is accepted, and TG-M24.1B owns only fixed-Candidate-C offline admission, materialization, and one bounded native zero-capability LPAC qualification. TG-M24.2 through TG-M24.4 additionally require a separate explicit Runner-adoption decision after accepted TG-M24.1B; qualification alone never activates or releases them. The candidate remains v0.12.0/schema v19 and only the standalone portability test is mandatory-native; this authority transition selects no runtime artifact and activates no Runner, process boundary, schema, CLI, Skill, completion gate, network, credential, or target mutation.
+TG-M20S.3 remains inactive and no TG-M23 unit is current. TG-M24.1 and
+TG-M24.1A are accepted predecessors; the fixed-Candidate-C and adversarial
+LPAC route formerly owned by TG-M24.1B is superseded. Current TG-M24 authority
+is the ordered repair and implementation sequence for an explicitly adopted
+trusted-local Runner. It activates no product behavior by itself. The candidate
+therefore remains v0.12.0/schema v19 until the owning downstream units are
+accepted.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -2351,6 +2357,37 @@ must match the specification branch and actual stored effects; self-reported
 intent alone is insufficient. Current behavior is not forward-tested against
 these expectations because activation has not occurred.
 
+## Approved But Inactive TG-M24 Trusted-Local Runner Design Boundary
+
+The future Runner is an explicit-opt-in adapter for a repository the user
+already trusts. Eligibility is deny-by-default and binds the current Task,
+Contract, verification criterion, exact target, and a project-owned fixed plan.
+Untrusted, external, unsupported, or visual-only targets route to existing M21
+manual verification without starting a process. A launch uses an absolute
+executable, literal argv, `shell=false`, no PATH lookup, a closed credential-
+excluding environment, and an exact private materialization. The target working
+tree is never the execution root and receives no copy-back.
+
+The process adapter must establish a Windows Job and its process/resource
+limits before trusted project code runs. It owns wall timeout and cancellation,
+bounded stdout/stderr drains, whole-tree termination and wait, handle closure,
+and one private temporary root. The service layer receives only a typed,
+serializable request and a closed result. The process adapter does not own
+SQLite, CLI policy, or completion decisions; storage does not start processes;
+and one cleanup owner proves process zero and temporary-root absence before any
+outcome is accepted. The exact module/import DAG is frozen by TG-M24.R2C before
+implementation work is consumed.
+
+Raw output, argv, environment, credentials, private paths, and exception bodies
+remain transient and are never stored. Cleanup or privacy uncertainty fails
+closed. This is a reliability and privacy boundary for trusted code, not a
+hostile-code sandbox or a claim of network isolation. Candidate C, B-to-C
+comparison, LPAC/AppContainer, Package-SID ACLs, ETW diagnosis, transfer or
+recovery state machines, supervisors, trust-root hardening, and diagnostic
+fault matrices are retired from the current M24 design. Existing artifacts and
+tests are transitional residue until the inventory and physical-deletion units
+classify and remove them; they are not current qualification gates.
+
 ## Validation And Test Design
 
 The suite is standard-library-first, offline, and isolated. It must not mutate
@@ -2418,43 +2455,14 @@ filter of standard discovery, while `all` runs the original discovered suite
 in its original order. New `test*.py` modules therefore fail closed until
 classified; new methods in an owned module inherit that module's lane.
 
-`tools/test_lanes.py` also owns one closed mandatory-native set containing
-exactly
-`test_m241a_lpac_portability.RunnerLpacPortabilityNativeTests.test_real_lpac_portability_matrix_and_cleanup`.
-Discovery must resolve that
-stable ID exactly once in the `integration` owner and therefore in `all`.
-After execution, its presence in `unittest`'s skipped results makes the lane
-non-PASS even when `wasSuccessful()` is otherwise true. Missing, renamed,
-duplicate, or non-`integration` assignment is a policy failure; a lane that
-does not select it is unaffected, and unrelated optional SKIPs are not
-promoted to failures. The private, import-inactive implementation seam is
-`_verification_runner_lpac_win32.py`; the direct native fixture and its focused
-pure/fault coverage do not import or activate the broader TG-M24.2 provider or
-process implementation.
-
-The normal control used by the portability matrix is always suspended, never
-resumed, and contained in its own Job. Both children use the same stdio
-configuration and four-attribute shape, but distinct OS handles and distinct
-Jobs; the sole attribute-value difference is the fixed ALL-APPLICATION-
-PACKAGES-policy `DWORD`, exactly `0` for the normal control and exactly opt-out
-`1` for LPAC, so a parent opt-out cannot leak into the control through
-attribute omission. The host's real selector route must be non-SKIP; a
-fault-injected integration test forces the opposite route without being
-labeled native selector evidence, and `WIN://NOALLAPPPKG` is never a decision
-input. Each public-`AccessCheck` descriptor has SYSTEM owner/group and exactly
-two `FILE_READ_DATA` (`0x00000001`) allow ACEs, coordinator user first and the
-selected AAP or exact Package SID second, with no extra ACE. The three required
-outcomes are normal+AAP allow, LPAC+AAP deny, and LPAC+exact-Package allow. The
-portability test calls the seam directly and proves both separate Jobs/tokens,
-no-resume paths, and cleanup without calling `run_process_steps` or depending
-on the full process/registry matrix. That full matrix remains an inactive
-TG-M24.2 completion gate and is not in the repository mandatory-native set.
-Only after both accepted TG-M24.1B and a separate explicit Runner-adoption
-decision may TG-M24.2 integrate the accepted private LPAC seam, keep registry
-`0x80070002` and every other registry failure fail-closed, and add the full
-process/registry stable ID with non-SKIP enforcement before acceptance. Until
-those verified completion changes land, no broader Runner process/registry
-implementation is active.
+The existing TG-M24.1A LPAC module and native fixture are transitional residue,
+not a current Runner qualification or M24 completion gate. Until the dedicated
+inventory and physical-deletion units remove them, ordinary discovery may
+still report their established behavior; no new test may depend on that route,
+and its PASS or SKIP cannot qualify the trusted-local Runner. The later test-
+value audit owns retain/delete decisions and prohibits replacement with a new
+meta-test framework, implementation-shape-only assertions, disabled tests, or
+new SKIPs that do not detect a current requirement or regression.
 
 CI obtains one compact include matrix from this same policy. Pull requests run
 all three base lanes on Python 3.12 and `fast` on 3.14. Pushes to `main` run

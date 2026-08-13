@@ -179,10 +179,11 @@ TRIGGER_ROUTE_RELATIONS = (
     (
         ("tg-m24 unit detail",),
         (
-            "accepted-predecessor",
+            "accepted predecessor",
             "current unit",
             "inactive unit",
-            "mixed execution contract",
+            "superseded unit",
+            "current execution contract",
             "ascii anchor",
         ),
     ),
@@ -209,16 +210,29 @@ ROWS_M23 = (
     ("TG-M23.3 / 30", "tg_task_0ada32d2b4f9759d", "accepted TG-M23.2"),
 )
 ROWS_M24 = (
-    ("TG-M24.1 / 10", "tg_task_29aa63124900ad95", "accepted TG-DOC.2"),
-    ("TG-M24.1A / 15", "tg_task_56e212c793a42272", "accepted TG-M24.1"),
-    ("TG-M24.1B / 17", "tg_task_bb218653b56f76ed", "accepted TG-M24.1A"),
     (
-        "TG-M24.2 / 20",
-        "tg_task_fafad7bc62df7576",
-        "separate explicit Runner-adoption decision and accepted TG-M24.1B",
+        "TG-M24.R1 / 10",
+        "tg_task_8af2eee60acb0830",
+        "reviewed R2 bootstrap boundary",
     ),
-    ("TG-M24.3 / 30", "tg_task_dc015144091f8e60", "accepted TG-M24.2"),
-    ("TG-M24.4 / 40", "tg_task_f81f2d126f033a59", "accepted TG-M24.3"),
+    ("TG-M24.R2A / 20", "tg_task_96a03f1d76799f79", "accepted TG-M24.R1"),
+    ("TG-M24.R2B / 25", "tg_task_ca8d0d81cd1962ab", "accepted TG-M24.R2A"),
+    ("TG-M24.R2C / 30", "tg_task_252701fe03f530af", "accepted TG-M24.R2B"),
+    ("TG-M24.R4A / 40", "tg_task_83d2af496ac84982", "accepted TG-M24.R2C"),
+    ("TG-M24.R3A / 50", "tg_task_a6d113455aa2cdfe", "accepted TG-M24.R4A"),
+    ("TG-M24.R3B / 60", "tg_task_c343ed2ec8acedf8", "accepted TG-M24.R3A"),
+    ("TG-M24.R4B / 70", "tg_task_e04fd31e6713cfa1", "accepted TG-M24.R3B"),
+    ("TG-M24.R5 / 80", "tg_task_89e9ac8d34df2e95", "accepted TG-M24.R4B"),
+    ("TG-M24.2A / 90", "tg_task_2c6fd4707ac1e81b", "accepted TG-M24.R5"),
+    ("TG-M24.2B / 100", "tg_task_f8880aeb93c3ad52", "accepted TG-M24.2A"),
+    ("TG-M24.2C / 110", "tg_task_8cc06027db5be49f", "accepted TG-M24.2B"),
+    ("TG-M24.2D / 120", "tg_task_fafad7bc62df7576", "accepted TG-M24.2C"),
+    ("TG-M24.3 / 130", "tg_task_dc015144091f8e60", "accepted TG-M24.2D"),
+    ("TG-M24.4A / 140", "tg_task_0da786589eb5144a", "accepted TG-M24.3"),
+    ("TG-M24.4B / 150", "tg_task_220ff054e445f40e", "accepted TG-M24.4A"),
+    ("TG-M24.4C / 160", "tg_task_b0a3bf776bea1e93", "accepted TG-M24.4B"),
+    ("TG-M24.4D / 170", "tg_task_f81f2d126f033a59", "accepted TG-M24.4C"),
+    ("TG-M24.CP4 / 180", "tg_task_a9e1229d594594d4", "accepted TG-M24.4D"),
 )
 ROWS_DOC = (
     (
@@ -226,13 +240,13 @@ ROWS_DOC = (
         "tg_task_bf2aa245019f5c9f",
         "TG-M23-DERIVED-EVIDENCE",
         "accepted TG-M23.3",
-        "accepted predecessor; required before TG-M24.1",
+        "accepted predecessor; required before TG-M24.R1",
     ),
     (
         "TG-DOC.3 / 20",
         "tg_task_99371b8db2d43eb2",
         "TG-DOC-LIFECYCLE",
-        "accepted TG-M24.4 and accepted TG-DOC.2",
+        "accepted TG-M24.CP4 and accepted TG-DOC.2",
         "inactive post-M24",
     ),
 )
@@ -271,13 +285,13 @@ TASK_STATUS_VALUES = {
     "paused",
     "done",
 }
-CURRENT_UNITS = ("TG-M24.1B",)
+CURRENT_UNITS = ("TG-M24.R1",)
 NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
     for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
     for row in rows
     if row[0].split(" /", 1)[0] not in CURRENT_UNITS
-)
+) + ("TG-M24.1", "TG-M24.1A", "TG-M24.1B")
 NONCURRENT_SUBJECTS = tuple(
     sorted(
         set(NONCURRENT_UNITS) | {"TG-M22", "TG-M23", "TG-M24", "TG-DOC"},
@@ -455,7 +469,7 @@ ROLE_TITLE_TOKENS = {
     M22: ("m22", "evidence", "ledger", "accepted", "contract"),
     M23: ("m23", "derived", "evidence", "accepted", "contract"),
     M23_PROCESS: ("m23", "process", "safety", "contract"),
-    M24: ("m24", "verification", "runner", "mixed", "contract"),
+    M24: ("m24", "verification", "runner", "current", "contract"),
     HISTORY_INDEX: ("historical", "documentation", "index"),
     RELEASE_INSTALL: ("release", "install", "record"),
 }
@@ -469,7 +483,20 @@ ROLE_BANNER_STATUS = {
     M22: (("accepted", "predecessor"), False),
     M23: (("accepted", "predecessor"), True),
     M23_PROCESS: (("delegated", "accepted"), True),
-    M24: (("mixed", "current", "accepted", "predecessor", "inactive"), False),
+    M24: (
+        (
+            "current",
+            "formal",
+            "authority",
+            "accepted",
+            "predecessor",
+            "superseded",
+            "trusted-local",
+            "explicit",
+            "opt-in",
+        ),
+        False,
+    ),
 }
 
 
@@ -1339,7 +1366,7 @@ def _owner_asserted(
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v4",
+        "schema": "taskgov-document-authority-v5",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": ["docs/specification.md", "docs/design.md", "plan.md"],
         "mixed_execution": [
@@ -1366,8 +1393,28 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.1B"],
-                "inactive_units": ["TG-M24.2", "TG-M24.3", "TG-M24.4"],
+                "current_units": ["TG-M24.R1"],
+                "inactive_units": [
+                    "TG-M24.R2A",
+                    "TG-M24.R2B",
+                    "TG-M24.R2C",
+                    "TG-M24.R4A",
+                    "TG-M24.R3A",
+                    "TG-M24.R3B",
+                    "TG-M24.R4B",
+                    "TG-M24.R5",
+                    "TG-M24.2A",
+                    "TG-M24.2B",
+                    "TG-M24.2C",
+                    "TG-M24.2D",
+                    "TG-M24.3",
+                    "TG-M24.4A",
+                    "TG-M24.4B",
+                    "TG-M24.4C",
+                    "TG-M24.4D",
+                    "TG-M24.CP4",
+                ],
+                "superseded_units": ["TG-M24.1B"],
             },
         ],
         "documentation_sequence": {
@@ -1654,9 +1701,25 @@ def _sequences(scans: dict[str, Scan], issues: list[Issue]) -> None:
         "tg-m24-1",
         "tg-m24-1a",
         "tg-m24-1b",
+        "tg-m24-r1",
+        "tg-m24-r2a",
+        "tg-m24-r2b",
+        "tg-m24-r2c",
+        "tg-m24-r4a",
+        "tg-m24-r3a",
+        "tg-m24-r3b",
+        "tg-m24-r4b",
+        "tg-m24-r5",
+        "tg-m24-2a",
+        "tg-m24-2b",
+        "tg-m24-2c",
         "tg-m24-2",
         "tg-m24-3",
+        "tg-m24-4a",
+        "tg-m24-4b",
+        "tg-m24-4c",
         "tg-m24-4",
+        "tg-m24-cp4",
     )
     if any(anchor not in m24.anchors for anchor in required_m24_anchors):
         issues.append(
@@ -1837,130 +1900,10 @@ def _registry_routes(
         )
 
 
-def _m241b_authority_sync(scans: dict[str, Scan], issues: list[Issue]) -> None:
-    scan = scans.get(M24)
-    if scan is None:
-        return
-    bounds = _anchor_section(scan, "tg-m24-1b")
-    if bounds is None:
-        issues.append(Issue("m241b_authority_sync", M24, "M24.1B authority is missing"))
-        return
-    prose = " ".join(
-        " ".join(_semantic_prose(line).lower().split())
-        for line in scan.semantic[bounds[0] : bounds[1]]
-    )
-    required = (
-        "task-governance-tool/runtime/python-3.14.3-embed-amd64.zip",
-        "executable_id=taskgov_python",
-        "candidate c is the sole selectable runtime",
-        "includes candidate b only as an observational, nonselecting control",
-        "b pass or nonzero never changes selection and never qualifies c",
-        "exact outer artifact_digest",
-        "closed 36-member archive manifest",
-        "safe extraction",
-        "distinct canonical runtime_digest",
-        "exact cpython 3.14.3 amd64 dependency and license identities",
-        "offline winverifytrust proof for all 32 pe members",
-        "python.cat may verify only itself",
-        "preserves zero capabilities",
-        "independence from all_application_packages",
-        "no acl may grant that principal",
-        "protected four-ace dacl",
-        "exact package sid as the sole application principal",
-        "only read/execute and synchronize",
-        "proof must complete before the sole resume",
-        "job and process zero",
-        "post-run byte and dacl reproof",
-        "closed handles",
-        "exact profile and temporary-root absence",
-        "system-python",
-        "runtime download/network",
-        "probe-only, skip, unknown, timeout, nonzero c",
-        "containment uncertainty, cleanup uncertainty, or privacy uncertainty is never success",
-        "retired under their separately authorized cleanup boundary before prepare or native qualification",
-        "once the existing prepare passes",
-        "recorded as residual risk rather than a qualification blocker",
-        "at most one non-retaining diagnosis",
-        "one local repair may be consumed",
-        "repeated prepare or preprocessing failure blocks without retry or additional infrastructure",
-        "mandatory four-plane root-cause classification is not a completion gate for tg-m24.1b",
-        "are not completion gates for tg-m24.1b",
-        "candidate b is not a selection or causality gate",
-        "claim-bound diagnostic transfer or reverse transfer",
-        "another supervisor layer",
-        "trust-root hardening",
-        "diagnostic fault matrix",
-        "completion supplies one admitted fixed candidate c plus the final native pass",
-        "current pass/full verification receipt plus two independent tier 2 pass reviews",
-        "never releases or activates tg-m24.2 without a separate explicit runner-adoption decision",
-        "later fresh semantic contract",
-        "do not satisfy any successor gate",
-        "intermediate evidence or wip only",
-    )
-    if any(phrase not in prose for phrase in required):
-        issues.append(
-            Issue(
-                "m241b_authority_sync",
-                M24,
-                "M24.1B fixed-C admission, native safety, cleanup/privacy, or decision-held successor gate drifted",
-            )
-        )
-
-
-def _m241b_current_binding(
-    scans: dict[str, Scan],
-    registry: dict[str, object] | None,
-    issues: list[Issue],
+def _m24_trusted_local_authority_sync(
+    scans: dict[str, Scan], issues: list[Issue]
 ) -> None:
-    scan = scans.get(M24)
-    bounds = None if scan is None else _anchor_section(scan, "tg-m24-1b")
-    headings = (
-        []
-        if scan is None or bounds is None
-        else [
-            heading
-            for level, heading, position in scan.headings
-            if level == 2 and bounds[0] < position < bounds[1]
-        ]
-    )
-    heading_valid = False
-    if len(headings) == 1:
-        heading = headings[0].lower()
-        heading_valid = (
-            re.search(r"\btg-m24\.1b\b", heading) is not None
-            and _positive_status_term(heading, "current")
-            and re.search(r"\b(?:accepted|inactive)\b", heading) is None
-        )
-
-    registry_valid = False
-    if isinstance(registry, dict):
-        mixed = registry.get("mixed_execution")
-        if isinstance(mixed, list):
-            routes = [
-                item
-                for item in mixed
-                if isinstance(item, dict) and item.get("path") == M24
-            ]
-            if len(routes) == 1:
-                current = routes[0].get("current_units")
-                inactive = routes[0].get("inactive_units")
-                registry_valid = (
-                    current == ["TG-M24.1B"]
-                    and isinstance(inactive, list)
-                    and "TG-M24.1B" not in inactive
-                )
-
-    if not heading_valid or not registry_valid:
-        issues.append(
-            Issue(
-                "m241b_current_binding",
-                M24,
-                "M24.1B must be the sole structurally current M24 unit in its heading and registry",
-            )
-        )
-
-
-def _m24_registry_handoff_sync(scans: dict[str, Scan], issues: list[Issue]) -> None:
+    """Keep only the explicit, user-adopted M24 Runner boundary as a canary."""
     scan = scans.get(M24)
     if scan is None:
         return
@@ -1968,42 +1911,59 @@ def _m24_registry_handoff_sync(scans: dict[str, Scan], issues: list[Issue]) -> N
         " ".join(_semantic_prose(line).lower().split())
         for line in scan.semantic
     )
-    ordered = (
-        "getappcontainerregistrylocation(read_control|write_dac) to return the current profile-root locator",
-        "the hresult must be s_ok and the locator non-null; it then immediately reverts",
-        "under the coordinator token it calls regopenkeyexw(locator, null, 0, key_read|write_dac)",
-        "after this handoff the lpac duplicate is used only for the explicit accesscheck calls below",
-    )
     required = (
-        "requires success plus a non-null, non-alias handle to the same key",
-        "closes the locator before using the reopened handle",
-        "using the reopened handle to enumerate, seal, freshly reopen, and recheck the root and every existing descendant",
-        "including hresult 0x80070002",
-        "plus-null result",
-        "any regopenkeyexw failure, null or alias handle, or close failure is fail-closed",
-        "a revert failure gets one setthreadtoken(null, null) recovery attempt",
-        "failure of that recovery is fail-stop",
-        "then immediately reverts before any regopenkeyexw",
-        "enumeration, descriptor mutation, or accesscheck",
-        "thereafter it supplies the duplicate only as the explicit token argument to every effective accesscheck",
-        "a missing initial registry handoff or cleanup failure forbids the final proof and resume",
+        "trusted-local repository",
+        "explicit opt-in",
+        "untrusted or external target uses the m21 manual verification fallback",
+        "fixed argv",
+        "shell=false",
+        "credential-excluding environment",
+        "job object",
+        "timeout",
+        "bounded output",
+        "private temporary",
+        "cleanup",
+        "raw stdout and stderr are transient and are never persisted",
+        "only the closed runner outcome is persisted",
+        "does not claim network isolation, hostile-code containment, or zero capability",
+        "does not activate product code or a runner runtime",
+        "candidate c, b-to-c, lpac, appcontainer, etw, and registry recovery are not current m24 gates",
     )
-    forbidden = (
-        "under that impersonation opens only the current profile registry root",
-        "setthreadtoken, getappcontainerregistrylocation, and every effective accesscheck before the sole resume, then reverts",
+    if any(phrase not in prose for phrase in required):
+        issues.append(
+            Issue(
+                "m24_trusted_local_authority_sync",
+                M24,
+                "trusted-local opt-in, manual fallback, process bounds, cleanup, privacy, or non-activation drifted",
+            )
+        )
+
+    bounds = _anchor_section(scan, "tg-m24-r1")
+    headings = (
+        ()
+        if bounds is None
+        else tuple(
+            line
+            for level, line, position in scan.headings
+            if level == 2 and bounds[0] < position < bounds[1]
+        )
     )
-    positions = tuple(prose.find(phrase) for phrase in ordered)
+    heading = headings[0] if len(headings) == 1 else None
+    normalized_heading = "" if heading is None else heading.lower()
     if (
-        any(position < 0 for position in positions)
-        or tuple(sorted(positions)) != positions
-        or any(phrase not in prose for phrase in required)
-        or any(phrase in prose for phrase in forbidden)
+        heading is None
+        or re.search(r"\btg-m24\.r1\b", normalized_heading) is None
+        or not _positive_status_term(normalized_heading, "current")
+        or any(
+            _positive_status_term(normalized_heading, status)
+            for status in ("accepted", "inactive", "superseded")
+        )
     ):
         issues.append(
             Issue(
-                "m24_registry_handoff_sync",
+                "m24_current_binding",
                 M24,
-                "LPAC registry discovery must revert before coordinator reopen and AccessCheck",
+                "the sole current registry unit is not bound to a current TG-M24.R1 owner section",
             )
         )
 
@@ -2752,10 +2712,8 @@ def check_document_contract(repo_root: str | os.PathLike[str]) -> Result:
         registry = _registry(scans[AUTHORITY], issues)
         _links_and_routes(root, scans, issues)
         _sequences(scans, issues)
-        _m241b_current_binding(scans, registry, issues)
         _bounded_reading_controls(scans, issues)
-        _m241b_authority_sync(scans, issues)
-        _m24_registry_handoff_sync(scans, issues)
+        _m24_trusted_local_authority_sync(scans, issues)
         _documentation_sequence(scans, issues)
         if registry is not None:
             _registry_routes(scans, registry, issues)

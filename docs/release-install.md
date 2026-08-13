@@ -8,9 +8,11 @@ and its exact commit, tag, Release, archive, checksum, and Release body remain
 unchanged. This record also does not authorize installing or overwriting a
 Skill in any project.
 
-Current TG-M24.1B authority qualifies a future pinned offline runtime but does
+Current TG-M24.1B authority may admit and natively qualify only the fixed
+official embeddable Candidate C as a future pinned offline runtime, but it does
 not yet select, supply, sign, publish, or claim one. TG-M24.2 through TG-M24.4
-remain inactive, so the candidate identity below stays v0.12.0/schema v19.
+remain inactive behind a separate explicit Runner-adoption decision, so the
+candidate identity below stays v0.12.0/schema v19.
 
 ## Current Candidate Identity
 

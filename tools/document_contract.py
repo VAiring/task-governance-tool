@@ -212,7 +212,11 @@ ROWS_M24 = (
     ("TG-M24.1 / 10", "tg_task_29aa63124900ad95", "accepted TG-DOC.2"),
     ("TG-M24.1A / 15", "tg_task_56e212c793a42272", "accepted TG-M24.1"),
     ("TG-M24.1B / 17", "tg_task_bb218653b56f76ed", "accepted TG-M24.1A"),
-    ("TG-M24.2 / 20", "tg_task_fafad7bc62df7576", "accepted TG-M24.1B"),
+    (
+        "TG-M24.2 / 20",
+        "tg_task_fafad7bc62df7576",
+        "separate explicit Runner-adoption decision and accepted TG-M24.1B",
+    ),
     ("TG-M24.3 / 30", "tg_task_dc015144091f8e60", "accepted TG-M24.2"),
     ("TG-M24.4 / 40", "tg_task_f81f2d126f033a59", "accepted TG-M24.3"),
 )
@@ -1845,142 +1849,60 @@ def _m241b_authority_sync(scans: dict[str, Scan], issues: list[Issue]) -> None:
         " ".join(_semantic_prose(line).lower().split())
         for line in scan.semantic[bounds[0] : bounds[1]]
     )
-    ordered = (
-        "the current runtime unchanged",
-        "that runtime under an exact package-sid-only r/x acl on its immutable tree",
-        "a locally supplied official embeddable distribution",
-        "an isolated native host",
-    )
     required = (
-        "four required planes independently",
-        "file access",
-        "dll/image-load",
-        "registry access",
-        "code integrity/policy",
-        "each plane records exactly one closed outcome",
-        "denial , observed_no_denial , or inconclusive",
-        "at least one denial must identify the exact refused target or component",
-        "bounded sanitized identity",
-        "attempted operation or enforced policy",
-        "any required plane's inconclusive outcome blocks qualification",
-        "category-only result cannot qualify a candidate",
-        "qualification preserves zero capabilities",
+        "task-governance-tool/runtime/python-3.14.3-embed-amd64.zip",
+        "executable_id=taskgov_python",
+        "candidate c is the sole selectable runtime",
+        "includes candidate b only as an observational, nonselecting control",
+        "b pass or nonzero never changes selection and never qualifies c",
+        "exact outer artifact_digest",
+        "closed 36-member archive manifest",
+        "safe extraction",
+        "distinct canonical runtime_digest",
+        "exact cpython 3.14.3 amd64 dependency and license identities",
+        "offline winverifytrust proof for all 32 pe members",
+        "python.cat may verify only itself",
+        "preserves zero capabilities",
         "independence from all_application_packages",
         "no acl may grant that principal",
-        "exact package sid receives read/execute only",
-        "package-sid write or delete access remains forbidden",
-        "broad acl",
-        "system-python fallback",
+        "protected four-ace dacl",
+        "exact package sid as the sole application principal",
+        "only read/execute and synchronize",
+        "proof must complete before the sole resume",
+        "job and process zero",
+        "post-run byte and dacl reproof",
+        "closed handles",
+        "exact profile and temporary-root absence",
+        "system-python",
         "runtime download/network",
-        "probe-only, skip, unknown, tamper, cleanup uncertainty, or profile-absence uncertainty is never success",
-        "custom building or project signing is outside this task",
-        "after all four candidates are evidenced insufficient",
-        "separate explicit decision",
-        "p0 authority freeze",
-        "p1 bounded root-cause classification",
-        "p2 ordered a-d evaluation",
-        "p3 pin and offline supply",
-        "p4 tier 2 completion and downstream handoff",
-        "inconclusive classification or absent locally supplied official artifact is a blocker",
-        "completion supplies bounded root-cause evidence",
-        "one pinned offline runtime artifact",
-        "provenance and signature verification",
-        "exact digest manifest",
-        "offline package",
-        "acl manifest",
-        "dependency inventory",
-        "non-skip native zero-capability lpac qualification probe",
-        "tamper/failure tests",
-        "after the selected runtime digest is fixed",
-        "fresh review-target generation bound to that digest",
-        "rerun the pure suite, coupled suite, and every mandatory native containment matrix without skip",
-        "fresh m24.2 generation must then obtain its own new pass/full verification receipt and two independent tier 2 pass reviews",
-        "tg-m24.3 must later create its own fresh review target bound to the same qualified runtime digest",
-        "tg-m24.3 must later create its own fresh review target bound to the same qualified runtime digest and obtain its own new pass/full verification receipt and two independent tier 2 pass reviews",
-        "no probe, result, receipt, or review from tg-m24.1b or any prior m24.2/m24.3 generation satisfies either successor gate",
-        "intermediate history only",
+        "probe-only, skip, unknown, timeout, nonzero c",
+        "containment uncertainty, cleanup uncertainty, or privacy uncertainty is never success",
+        "retired under their separately authorized cleanup boundary before prepare or native qualification",
+        "once the existing prepare passes",
+        "recorded as residual risk rather than a qualification blocker",
+        "at most one non-retaining diagnosis",
+        "one local repair may be consumed",
+        "repeated prepare or preprocessing failure blocks without retry or additional infrastructure",
+        "mandatory four-plane root-cause classification is not a completion gate for tg-m24.1b",
+        "are not completion gates for tg-m24.1b",
+        "candidate b is not a selection or causality gate",
+        "claim-bound diagnostic transfer or reverse transfer",
+        "another supervisor layer",
+        "trust-root hardening",
+        "diagnostic fault matrix",
+        "completion supplies one admitted fixed candidate c plus the final native pass",
+        "current pass/full verification receipt plus two independent tier 2 pass reviews",
+        "never releases or activates tg-m24.2 without a separate explicit runner-adoption decision",
+        "later fresh semantic contract",
+        "do not satisfy any successor gate",
+        "intermediate evidence or wip only",
     )
-    forbidden_relations = (
-        (
-            r"\ball_application_packages\b",
-            r"\b(?:depends?|requires?|uses?|ace|grants?|allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed))\b",
-        ),
-        (
-            r"\bbroad(?:-principal|\s+acl)\b",
-            r"\b(?:grants?|allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed)|may|can)\b",
-        ),
-        (
-            r"\bsystem[- ]python(?:\s+fallback)?\b",
-            r"\b(?:allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed)|may|can)\b",
-        ),
-        (
-            r"(?:\bpackage[- ]sid\b(?=[^.;]{0,96}\b(?:write|delete)\b)|"
-            r"\b(?:write|delete)\b(?=[^.;]{0,96}\bpackage[- ]sid\b))",
-            r"\b(?:allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed)|may|can)\b",
-        ),
-        (
-            r"\b(?:runtime\s+download|download(?:ing)?\s+the\s+runtime)\b",
-            r"\b(?:allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed)|may|can)\b",
-        ),
-        (
-            r"\b(?:custom\s+build(?:ing)?|project\s+sign(?:ing)?)\b",
-            r"\b(?:allow(?:s|ed)?|permit(?:s|ted)?|authoriz(?:e|es|ed)|may\s+proceed|is\s+in\s+scope)\b",
-        ),
-        (
-            r"\b(?:prior|earlier|existing|old)\b[^;]{0,96}\b(?:evidence|results?|receipts?|reviews?|generations?)\b",
-            r"\b(?:reuse|counts?|satisf(?:y|ies)|qualif(?:y|ies)|carry\s+forward|may\s+serve|is\s+valid)\b",
-        ),
-        (
-            r"\b(?:category-only|inconclusive)\b",
-            r"\b(?:qualif(?:y|ies)|success|satisf(?:y|ies)|may\s+pass)\b",
-        ),
-    )
-    negative_polarity = re.compile(
-        r"\b(?:no|not|never|forbidden|outside|blocked|blocker|cannot|"
-        r"must\s+not|may\s+not|does\s+not|do\s+not|only\s+after|"
-        r"history\s+only|intermediate\s+history)\b"
-    )
-    directly_forbidden = (
-        r"\b(?:qualification\s+)?(?:does|need|must|may)\s+not\s+preserve\s+zero\s+capabilities\b",
-        r"\bcapabilit(?:y|ies)\s+sids?\b",
-        r"\badd(?:s|ed|ing)?\s+capabilit(?:y|ies)\b",
-        r"\bcapabilit(?:y|ies)\b[^.;]{0,40}\b(?:is|are)\s+(?:added|granted|used)\b",
-    )
-    contradictory = any(re.search(pattern, prose) for pattern in directly_forbidden)
-    for clause in re.split(r"[.;](?:\s+|$)", prose):
-        if negative_polarity.search(clause):
-            continue
-        if any(
-            re.search(subject, clause) and re.search(permission, clause)
-            for subject, permission in forbidden_relations
-        ):
-            contradictory = True
-            break
-    positions = tuple(prose.find(phrase) for phrase in ordered)
-    candidate_boundary = prose.find("then evaluates these candidates")
-    root_cause = prose if candidate_boundary < 0 else prose[:candidate_boundary]
-    plane_positions = tuple(
-        root_cause.find(plane)
-        for plane in (
-            "file access",
-            "dll/image-load",
-            "registry access",
-            "code integrity/policy",
-        )
-    )
-    if (
-        any(position < 0 for position in positions)
-        or positions != tuple(sorted(positions))
-        or any(position < 0 for position in plane_positions)
-        or plane_positions != tuple(sorted(plane_positions))
-        or any(phrase not in prose for phrase in required)
-        or contradictory
-    ):
+    if any(phrase not in prose for phrase in required):
         issues.append(
             Issue(
                 "m241b_authority_sync",
                 M24,
-                "M24.1B candidate order, safety gates, deliverables, or digest-bound successor gate drifted",
+                "M24.1B fixed-C admission, native safety, cleanup/privacy, or decision-held successor gate drifted",
             )
         )
 

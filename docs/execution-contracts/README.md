@@ -5,9 +5,10 @@
 > TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, and bounded offline/mock TG-M23.2
 > plus offline/mock TG-M23.3 integrated Analyzer acceptance are accepted
 > predecessors. TG-M24.1 design and the TG-M24.1A LPAC portability correction
-> are accepted predecessors. Current authority belongs to TG-M24.1B;
-> TG-M24.2, TG-M24.3, and
-> TG-M24.4 remain inactive. No TG-M23 unit is current, and no TG-M24 Runner
+> are accepted predecessors. Current proportional fixed-Candidate-C
+> qualification authority belongs to TG-M24.1B; TG-M24.2, TG-M24.3, and
+> TG-M24.4 remain inactive behind a separate explicit Runner-adoption
+> decision. No TG-M23 unit is current, and no TG-M24 Runner
 > runtime is active. Load files only when the current
 > Task Contract or the
 > [repository authority index](../authority.md) selects their exact path and
@@ -43,9 +44,10 @@ targets, reviews, receipts, or completion history.
   gate mutation, and Task mutation remain outside scope.
 - [TG-M24 Verification Runner](tg-m24-verification-runner.md#tg-m24-verification-runner)
   owns accepted TG-M24.1 Runner design and TG-M24.1A LPAC portability
-  correction, current TG-M24.1B runtime qualification-and-supply authority,
-  and inactive TG-M24.2 shadow implementation, TG-M24.3 gate integration, and
-  TG-M24.4 acceptance detail. It activates no later-unit behavior.
+  correction, current proportional TG-M24.1B fixed-Candidate-C admission and
+  native qualification authority, and decision-held inactive TG-M24.2 shadow
+  implementation, TG-M24.3 gate integration, and TG-M24.4 acceptance detail.
+  It activates no later-unit behavior.
 
 ## Cross-Sequence Documentation Gateway
 

@@ -5,8 +5,10 @@
 > [!IMPORTANT]
 > MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 design and the
 > TG-M24.1A LPAC portability correction are accepted predecessors. Current
-> authority belongs to TG-M24.1B; TG-M24.2, TG-M24.3, and TG-M24.4 are
-> inactive. No TG-M24 Runner
+> proportional fixed-Candidate-C qualification authority belongs to
+> TG-M24.1B; TG-M24.2, TG-M24.3, and TG-M24.4 are inactive behind a separate
+> explicit Runner-adoption decision. Accepted TG-M24.1B alone does not release
+> them. No TG-M24 Runner
 > runtime is active. Loading this document activates no
 > later gate, Skill branch, network use, credential use, or external-project
 > mutation.
@@ -26,8 +28,8 @@ TG-M24 is sequential Tier 2 work in lane `TG-M24-VERIFICATION-RUNNER`:
 |---|---|---|---|
 | TG-M24.1 / 10 | `tg_task_29aa63124900ad95` | accepted TG-DOC.2 | Accepted design predecessor: freeze project-owned verification plans, shell-free argv, exact Task/Contract/expectation/target binding, environment/network/mutation/resource policy, sanitized Runner-observed evidence, shadow-to-gate staging, and the M21 fallback. Activate no Runner, schema, CLI, Skill, gate, network, credential, or target mutation. Require exact documentation checks and diff, a current Receipt, and two independent Tier 2 reviews. |
 | TG-M24.1A / 15 | `tg_task_56e212c793a42272` | accepted TG-M24.1 | Accepted bounded correction: retain exact fixed-DWORD class-46 proof where supported and add only the exact error-87 public-`AccessCheck` semantic route with a never-resumed normal-AppContainer control in a separate Job. Give both children the same four attributes and vary only the AAP-policy DWORD (`1` for LPAC, `0` for normal control). Preserve fail-closed no-resume and cleanup guarantees, make its mandatory native portability test's SKIP non-PASS, and activate no Runner, schema, CLI, Skill, gate, network, credential, or external-project behavior. Require document/release, focused/native/full offline, exact-diff checks, a current Receipt, and two independent Tier 2 reviews. |
-| TG-M24.1B / 17 | `tg_task_bb218653b56f76ed` | accepted TG-M24.1A | Current authority: diagnose the stock mirrored-CPython zero-capability LPAC `0xC0000022` boundary with bounded non-retaining native probes, then qualify or locally supply the first passing candidate in the fixed order below as a pinned offline runtime. Preserve zero capabilities, Package-SID-only immutable-tree R/X, fail-closed cleanup/privacy, and all existing permission boundaries. Activate no Runner, schema, CLI, Skill, gate, network, credential, or external-project behavior. Custom build or project signing requires a separate user decision. Require document/release, focused/native/full offline and tamper/failure checks, exact diff, a current Receipt, and two Tier 2 reviews. |
-| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1B | Inactive: implement only the approved bounded Runner and append-only evidence in shadow mode, bound to the exact qualified runtime digest, while existing M21 and completion gates remain unchanged. Execute only an explicit current project-owned plan, and require separate exact authority for any live external-project run. Integrate the accepted private LPAC seam, preserve every registry failure including `0x80070002` as fail-closed, and add the full process/registry stable ID to the mandatory-native set with non-SKIP enforcement. Require fresh migration, safety, package, focused/full offline checks, exact diff, a current Receipt, and two Tier 2 reviews. |
+| TG-M24.1B / 17 | `tg_task_bb218653b56f76ed` | accepted TG-M24.1A | Current proportional authority: admit and materialize only the fixed official embeddable Candidate C, then run one bounded non-SKIP Candidate B-to-C native qualification in which B is observational and nonselecting and only C may qualify. Preserve zero capabilities, Package-SID-only immutable-tree R/X and `SYNCHRONIZE`, fail-closed containment, cleanup/privacy, and all existing permission boundaries. Mandatory four-plane diagnosis and diagnostic transfer, supervisor, trust-root, and fault-matrix infrastructure are not completion gates. Activate no Runner, schema, CLI, Skill, gate, network, credential, or external-project behavior. Require document/release, focused/native/full offline and tamper/failure checks, exact diff, a current Receipt, and two Tier 2 reviews. |
+| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | separate explicit Runner-adoption decision and accepted TG-M24.1B | Decision-held inactive: only a later explicit Runner-adoption decision and a fresh Contract may authorize the approved bounded Runner and append-only evidence in shadow mode. Existing M21 and completion gates remain unchanged; prior staged work, targets, Receipts, reviews, and observations are not current authority. Any later slice must bind to the exact qualified runtime digest, execute only an explicit current project-owned plan, require separate exact authority for a live external-project run, preserve every registry failure including `0x80070002` as fail-closed, and obtain its own fresh verification and Tier 2 gates. |
 | TG-M24.3 / 30 | `tg_task_dc015144091f8e60` | accepted TG-M24.2 | Inactive: make one qualifying exact-current complete-plan Runner result an explicit versioned completion basis while retaining the M21 caller-attested Receipt for unsupported, manual, visual, external, or unavailable-Runner cases. Analyzer output, arbitrary commands, and new normal-loop LLM leaves gain no gate authority. Require full offline, package/release consistency, exact diff, a current Receipt, and two Tier 2 reviews. |
 | TG-M24.4 / 40 | `tg_task_f81f2d126f033a59` | accepted TG-M24.3 | Inactive: accept Runner safety, provenance, the completion gate, M21 fallback, Evidence Bundle/JSON, Analyzer coexistence, legacy/history, and realistic supported/unsupported flows, with only the bounded M24.1A portability correction to the accepted M24.1 design. Runs outside approved fixtures or this repository require separate exact project authority. Require focused/full and authorized forward checks, exact diff, a current Receipt, and two Tier 2 reviews. |
 
@@ -49,14 +51,17 @@ is exact authority for TG-M24.1B through TG-M24.4. M24.1 itself activated none
 of it: at that acceptance boundary the
 product remained schema v19 with Evidence Bundle/JSON v1 and Viewer-v4 sources
 v5-v19. Current M24.1B selects no runtime artifact and activates no product
-behavior. M24.2 through M24.4 remain inactive; the existing public CLI
+behavior. M24.2 through M24.4 remain inactive behind a separate explicit
+Runner-adoption decision; the existing public CLI
 inventory and Skill flow remain unchanged, and the M21 caller-attested
 verification gate is still the only active verification gate.
 
 ### Fixed Product And Version Boundary
 
-TG-M24.2 may start the unpublished v0.13.0 candidate and migrate schema v19 to
-schema v20. Schema v20 owns only the shadow Runner foundation, append-only
+Only after a separate explicit Runner-adoption decision and accepted
+TG-M24.1B may a later TG-M24.2 Contract start the unpublished v0.13.0 candidate
+and migrate schema v19 to schema v20. Schema v20 owns only the shadow Runner
+foundation, append-only
 observations, Runner Evidence References, Bundle/JSON v2, and compatibility
 work needed to expose gate-ineligible status. It must continue to write
 verification-basis version 1 completion cycles and require the M21 Receipt.
@@ -1213,15 +1218,17 @@ attestation for a required machine-observed boundary.
 The accepted repository lane policy owns exactly one mandatory native test:
 `test_m241a_lpac_portability.RunnerLpacPortabilityNativeTests.test_real_lpac_portability_matrix_and_cleanup`.
 Its `unittest` SKIP makes a selected `integration` or `all` lane non-PASS. The
-full process/registry matrix remains an inactive TG-M24.2 completion gate and
-must not be added to the accepted mandatory set before TG-M24.1B releases that
-unit in a fresh runtime-digest-bound generation.
+full process/registry matrix remains a decision-held inactive TG-M24.2
+completion gate and must not be added to the accepted mandatory set before a
+separate explicit Runner-adoption decision, accepted TG-M24.1B, and a fresh
+runtime-digest-bound TG-M24.2 Contract and generation.
 
 TG-M24.1 itself activated no runtime, process, schema, gate, CLI, Skill,
 network, credential, or target mutation. Accepted TG-M24.1A corrected only its
 LPAC portability proof and mandatory-native boundary. Current TG-M24.1B may
-qualify and supply only the runtime prerequisite below; the TG-M24.2 shadow
-slice and later gate and Skill changes remain inactive.
+qualify and supply only the proportional fixed-Candidate-C runtime prerequisite
+below; the TG-M24.2 shadow slice and later gate and Skill changes remain
+inactive and separately decision-held.
 
 <a id="tg-m24-1a"></a>
 
@@ -1252,90 +1259,76 @@ registry boundary.
 
 <a id="tg-m24-1b"></a>
 
-## TG-M24.1B Current Zero-Capability LPAC Runtime Qualification And Supply
+## TG-M24.1B Current Proportional Fixed Candidate C Qualification And Supply
 
-Task `tg_task_bb218653b56f76ed` owns only the runtime-prerequisite authority
-needed after stock mirrored CPython consistently exited `0xC0000022` after
-resume. It first records bounded, sanitized, non-retaining native evidence and
-classifies these four required planes independently:
+Task `tg_task_bb218653b56f76ed` owns only the fixed package source
+`task-governance-tool/runtime/python-3.14.3-embed-amd64.zip` for sole
+`executable_id=taskgov_python`, its closed admission manifest, offline
+validator/materializer, and the minimal private LPAC qualification seam and
+tests. Candidate C is the sole selectable runtime. The one bounded non-SKIP
+native qualification includes Candidate B only as an observational,
+nonselecting control; B pass or nonzero never changes selection and never
+qualifies C.
 
-1. file access;
-2. DLL/image-load;
-3. registry access; and
-4. Code Integrity/policy.
+Offline admission requires the exact outer `artifact_digest`, a closed
+36-member archive manifest, safe extraction, a distinct canonical
+`runtime_digest`, exact CPython 3.14.3 AMD64 dependency and license identities,
+and offline WinVerifyTrust proof for all 32 PE members. `python.cat` may verify
+only itself; catalog or external-checksum equivalence never substitutes for
+the exact member proofs. Any absent, extra, replaced, wrong-architecture,
+wrong-version, unsafe-path, signature, dependency, digest, or license mismatch
+blocks without fallback.
 
-Each plane records exactly one closed outcome: `denial`,
-`observed_no_denial`, or `inconclusive`. At least one `denial` must identify
-the exact refused target or component by a bounded sanitized identity and its
-attempted operation or enforced policy; raw paths, provider bodies, and event
-payloads are not retained. Any required plane's `inconclusive` outcome blocks
-qualification. A category-only result cannot qualify a candidate. It then
-evaluates these candidates in strict order and stops at the first one that
-satisfies every qualification gate:
+The single native qualification preserves zero capabilities and independence
+from `ALL_APPLICATION_PACKAGES`; no ACL may grant that principal. Candidate C
+must PASS with a protected four-ACE DACL and the exact Package SID as the sole
+application principal, receiving only read/execute and `SYNCHRONIZE` on the
+immutable runtime tree. Broad-principal, broad ACL, write, delete, capability,
+system-Python, shell, ambient runtime, runtime download/network, credential,
+and external-project authority remain forbidden. The accepted TG-M24.1A proof
+must complete before the sole resume. Success additionally requires Job and
+process zero, post-run byte and DACL reproof, closed handles, and exact profile
+and temporary-root absence. Probe-only, SKIP, unknown, timeout, nonzero C,
+tamper, containment uncertainty, cleanup uncertainty, or privacy uncertainty
+is never success.
 
-1. the current runtime unchanged;
-2. that runtime under an exact Package-SID-only R/X ACL on its immutable tree;
-3. a locally supplied official embeddable distribution; and
-4. an isolated native host.
+Existing retained diagnostic assets must be retired under their separately
+authorized cleanup boundary before Prepare or native qualification. Once the
+existing Prepare passes, diagnostic roughness outside the explicit admission,
+containment, cleanup, and privacy gates is recorded as residual risk rather
+than a qualification blocker. At most one non-retaining diagnosis and, only
+when it identifies a cause already inside the fixed-C materializer, private
+dependency, or Package-SID ACL scope, one local repair may be consumed. A
+repeated Prepare or preprocessing failure blocks without retry or additional
+infrastructure.
 
-Qualification preserves zero capabilities and independence from
-`ALL_APPLICATION_PACKAGES`; no ACL may grant that principal. The exact Package
-SID receives read/execute only on the immutable qualified runtime tree.
-Broad-principal or broad ACL grants, write access, system-Python fallback,
-shell, runtime download/network, credential, retained
-raw-diagnostic, and external-project execution authority remain forbidden.
-Package-SID write or delete access remains forbidden.
-Probe-only, SKIP, unknown, tamper, cleanup uncertainty, or profile-absence
-uncertainty is never success. Custom building or project signing is outside
-this Task and may be considered only after all four candidates are evidenced
-insufficient and the user makes a separate explicit decision.
+Mandatory four-plane root-cause classification is not a completion gate for
+TG-M24.1B. Candidate B is not a selection or causality gate. Claim-bound diagnostic
+transfer or reverse transfer, a new transfer method or file, another supervisor
+layer, trust-root hardening, and a diagnostic fault matrix are not completion
+gates for TG-M24.1B. Custom building,
+project signing, Candidate D, an alternate native host, relaxation, and any new
+diagnostic asset require separate authority and are outside this Task.
 
-The compact sequential execution plan is:
-
-- P0 authority freeze: change only governing/release documents and their
-  directly coupled checker/tests; make no artifact or implementation claim.
-- P1 bounded root-cause classification: use non-retaining native probes and
-  change only qualification fixtures/tests needed to classify file access,
-  DLL/image-load, registry access, and Code Integrity/policy independently.
-- P2 ordered A-D evaluation: evaluate the four candidates above without
-  reordering, broadening access, or advancing after the first full PASS.
-- P3 pin and offline supply: change only the owned runtime package, provenance,
-  signature/digest/ACL/dependency manifests, qualification probe, and tamper/
-  failure tests needed for a reproducible offline artifact.
-- P4 Tier 2 completion and downstream handoff: require document/release,
-  focused native, full offline, exact-diff, current Receipt, and two independent
-  Tier 2 PASS gates before recording the digest-bound TG-M24.2 handoff.
-
-An inconclusive classification or absent locally supplied official artifact is
-a blocker, not a SKIP, fallback, or reason to advance to a later candidate.
-
-Completion supplies bounded root-cause evidence and one pinned offline runtime
-artifact with provenance and signature verification, an exact digest manifest,
-offline package, ACL manifest, dependency inventory, a non-SKIP native
-zero-capability LPAC
-qualification probe, and tamper/failure tests. The selected artifact must pass
-under immutable Package-SID-only R/X while preserving fail-closed cleanup,
-profile absence, privacy, document/release checks, full offline checks, exact
-diff, a current Receipt, and two independent Tier 2 reviews.
-
-Only accepted TG-M24.1B may release TG-M24.2. After the selected runtime digest
-is fixed, TG-M24.2 must begin a fresh review-target generation bound to that
-digest and rerun the pure suite, coupled suite, and every mandatory native
-containment matrix without SKIP. That fresh M24.2 generation must then obtain
-its own new `pass/full` Verification Receipt and two independent Tier 2 PASS
-reviews. TG-M24.3 must later create its own fresh review target bound to the
-same qualified runtime digest and obtain its own new `pass/full` Verification
-Receipt and two independent Tier 2 PASS reviews. No probe, result, Receipt, or
-review from TG-M24.1B or any prior M24.2/M24.3 generation satisfies either
-successor gate; all such prior evidence remains intermediate history only.
+Completion supplies one admitted fixed Candidate C plus the final native PASS,
+with containment, cleanup, and privacy proved; document, lane, release,
+focused, full-offline, tamper/failure, and exact-diff checks passing; and a
+current `pass/full` Verification Receipt plus two independent Tier 2 PASS
+reviews with no blocking finding. Accepted TG-M24.1B makes only the exact
+digest pair available. It never releases or activates TG-M24.2 without a
+separate explicit Runner-adoption decision and a later fresh semantic Contract,
+review target, verification, Receipt, and Tier 2 review generation. Prior
+targets, probes, observations, Receipts, reviews, and staged implementation do
+not satisfy any successor gate; they are intermediate evidence or WIP only.
 
 <a id="tg-m24-2"></a>
 
 ## TG-M24.2 Inactive Shadow Runner And Evidence Capture
 
-Task `tg_task_fafad7bc62df7576` may implement only the inactive schema-v20
-shadow slice assigned above after accepted TG-M24.1B and in a fresh generation
-bound to its exact selected-runtime digest. Existing M21 Receipt and completion
+Task `tg_task_fafad7bc62df7576` remains inactive and may implement nothing
+until both a separate explicit Runner-adoption decision and accepted
+TG-M24.1B, followed by a later semantic Contract and fresh generation bound to
+its exact selected-runtime digest. Existing M21 Receipt and completion
 gates remain authoritative;
 a Runner resolution or outcome can neither satisfy nor block completion nor
 mutate Task, Review, Receipt, or selected gate state. Live external-project

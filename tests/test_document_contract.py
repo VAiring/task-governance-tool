@@ -36,7 +36,6 @@ FIXTURE_LINK_TARGETS = (
     "docs/releases/v0.10.0.md",
     "docs/releases/v0.11.0.md",
     "docs/releases/v0.12.0.md",
-    "docs/releases/v0.13.0.md",
     "task-governance-tool/LICENSE",
 )
 DOC2_ROW = (
@@ -187,75 +186,49 @@ class DocumentContractTests(unittest.TestCase):
 
     def test_m241b_authority_order_safety_and_handoff_are_closed(self):
         mutations = (
-            ("1. file access;", "1. generic filesystem category;"),
-            ("2. DLL/image-load;", "2. generic executable category;"),
-            ("3. registry access; and", "3. combined storage category; and"),
-            ("4. Code Integrity/policy.", "4. generic policy category."),
             (
-                "Each plane records exactly one closed outcome: `denial`,\n"
-                "`observed_no_denial`, or `inconclusive`.",
-                "Each plane records an arbitrary diagnostic label.",
+                "Candidate C is the sole selectable runtime.",
+                "Candidate C is one selectable runtime among several.",
             ),
             (
-                "At least one `denial` must identify\n"
-                "the exact refused target or component",
-                "A denial may identify only a broad category",
+                "a closed\n36-member archive manifest",
+                "an open archive manifest",
             ),
             (
-                "Any required plane's `inconclusive` outcome blocks\n"
-                "qualification.",
-                "An inconclusive required plane may still qualify.",
+                "offline WinVerifyTrust proof for all 32 PE members",
+                "online signature sampling for some PE members",
             ),
             (
-                "Completion supplies bounded root-cause evidence",
-                "Completion supplies no classification evidence",
+                "includes Candidate B only as an observational,\nnonselecting control",
+                "Candidate B as a selecting control",
             ),
             (
-                "independence from\n`ALL_APPLICATION_PACKAGES`; no ACL may grant that principal",
-                "dependence on a broad application group",
+                "the exact Package SID as the sole\napplication principal",
+                "the Package SID plus a broad application principal",
             ),
             (
-                "system-Python fallback,\n"
-                "shell, runtime download/network",
-                "system-Python and runtime download are allowed",
+                "The accepted TG-M24.1A proof\nmust complete before the sole resume.",
+                "The accepted TG-M24.1A proof may complete after resume.",
             ),
             (
-                "1. the current runtime unchanged;\n"
-                "2. that runtime under an exact Package-SID-only R/X ACL on its immutable tree;",
-                "1. that runtime under an exact Package-SID-only R/X ACL on its immutable tree;\n"
-                "2. the current runtime unchanged;",
+                "Job and\nprocess zero, post-run byte and DACL reproof, closed handles",
+                "direct-process exit without Job, byte, DACL, or handle proof",
             ),
             (
-                "Custom building or project signing is outside\n"
-                "this Task",
-                "Custom building and project signing are authorized by\n"
-                "this Task",
+                "A\nrepeated Prepare or preprocessing failure blocks without retry or additional\ninfrastructure.",
+                "A repeated Prepare failure authorizes another infrastructure retry.",
             ),
             (
-                "An inconclusive classification or absent locally supplied official artifact is\n"
-                "a blocker, not a SKIP, fallback, or reason to advance to a later candidate.",
-                "An inconclusive classification permits SKIP and candidate advancement.",
+                "Mandatory four-plane root-cause classification is not a completion gate for\nTG-M24.1B.",
+                "Mandatory four-plane root-cause classification is a completion gate for\nTG-M24.1B.",
             ),
             (
-                "digest and rerun the pure suite, coupled suite, and every mandatory native\n"
-                "containment matrix without SKIP.",
-                "digest and reuse prior suite and containment results.",
+                "never releases or activates TG-M24.2 without a\nseparate explicit Runner-adoption decision",
+                "releases TG-M24.2 automatically after acceptance",
             ),
             (
-                "That fresh M24.2 generation must then obtain\n"
-                "its own new `pass/full` Verification Receipt and two independent Tier 2 PASS\n"
-                "reviews.",
-                "That M24.2 generation may reuse an existing Receipt and review.",
-            ),
-            (
-                "TG-M24.3 must later create its own fresh review target bound to the\n"
-                "same qualified runtime digest",
-                "TG-M24.3 may reuse the M24.2 review target",
-            ),
-            (
-                "and obtain its own new `pass/full` Verification\n"
-                "Receipt and two independent Tier 2 PASS reviews.",
-                "and reuse the M24.2 Receipt and reviews.",
+                "current `pass/full` Verification Receipt plus two independent Tier 2 PASS\nreviews",
+                "one prior Receipt and one review",
             ),
         )
         for old, new in mutations:
@@ -266,38 +239,9 @@ class DocumentContractTests(unittest.TestCase):
                     self.codes(contract.check_document_contract(root)),
                 )
 
-    def test_m241b_additive_permission_and_evidence_contradictions_fail(self):
-        marker = (
-            "successor gate; all such prior evidence remains intermediate history only."
-        )
-        contradictions = (
-            "The selected runtime depends on `ALL_APPLICATION_PACKAGES`, and an ACE for that principal is required.",
-            "A broad ACL grant is authorized.",
-            "System-Python fallback is permitted.",
-            "Runtime download is allowed.",
-            "Custom building and project signing are authorized by this Task.",
-            "Prior M24.2/M24.3 verification Receipts and reviews may satisfy the fresh successor gates.",
-            "Qualification does not preserve zero capabilities.",
-            "The selected runtime adds capabilities and uses a capability SID.",
-            "The exact Package SID may receive write and delete access.",
-            "A category-only result may qualify a candidate.",
-        )
-        for contradiction in contradictions:
-            with self.subTest(contradiction=contradiction), self.fixture() as root:
-                self.replace(
-                    root,
-                    contract.M24,
-                    marker,
-                    marker + "\n\n" + contradiction,
-                )
-                self.assertIn(
-                    "m241b_authority_sync",
-                    self.codes(contract.check_document_contract(root)),
-                )
-
     def test_m241b_current_heading_registry_and_trigger_are_structural(self):
         heading = (
-            "## TG-M24.1B Current Zero-Capability LPAC Runtime Qualification And Supply"
+            "## TG-M24.1B Current Proportional Fixed Candidate C Qualification And Supply"
         )
         for replacement in (
             heading.replace(" Current ", " Accepted "),
@@ -1308,8 +1252,10 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.2, TG-M24.3, and TG-M24.4 are\n> inactive.",
-                "TG-M24.2, TG-M24.3, and TG-M24.4 are\n> not inactive.",
+                "TG-M24.2, TG-M24.3, and TG-M24.4 are inactive behind a separate\n"
+                "> explicit Runner-adoption decision.",
+                "TG-M24.2, TG-M24.3, and TG-M24.4 are active without a separate\n"
+                "> explicit Runner-adoption decision.",
             )
             self.assertIn(
                 "document_role",
@@ -1322,8 +1268,10 @@ class DocumentContractTests(unittest.TestCase):
                 contract.M24,
                 "> MIXED CURRENT AND CONDITIONAL FORMAL AUTHORITY. TG-M24.1 design and the\n"
                 "> TG-M24.1A LPAC portability correction are accepted predecessors. Current\n"
-                "> authority belongs to TG-M24.1B; TG-M24.2, TG-M24.3, and TG-M24.4 are\n"
-                "> inactive. No TG-M24 Runner\n"
+                "> proportional fixed-Candidate-C qualification authority belongs to\n"
+                "> TG-M24.1B; TG-M24.2, TG-M24.3, and TG-M24.4 are inactive behind a separate\n"
+                "> explicit Runner-adoption decision. Accepted TG-M24.1B alone does not release\n"
+                "> them. No TG-M24 Runner\n"
                 "> runtime is active. Loading this document activates no\n"
                 "> later gate, Skill branch, network use, credential use, or external-project\n"
                 "> mutation.",
@@ -1441,8 +1389,8 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 contract.M24,
+                "| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | separate explicit Runner-adoption decision and accepted TG-M24.1B |",
                 "| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1B |",
-                "| TG-M24.2 / 20 | `tg_task_fafad7bc62df7576` | accepted TG-M24.1A |",
             ),
         )
         documentation_row_mutations = (

@@ -39,10 +39,12 @@ transfer either role.
 TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
 offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer acceptance
 are accepted predecessors. TG-M24.1 design and the TG-M24.1A LPAC portability
-correction are also accepted predecessors. TG-M24.1B owns current zero-
-capability LPAC runtime qualification-and-supply authority; TG-M24.2 through
-TG-M24.4 remain inactive. No TG-M23 execution unit is current, and no TG-M24
-Runner runtime is active;
+correction are also accepted predecessors. TG-M24.1B owns only current fixed-
+Candidate-C offline admission, materialization, and one bounded native zero-
+capability LPAC qualification; TG-M24.2 through TG-M24.4 remain inactive and
+decision-held behind a separate explicit Runner-adoption decision. Accepted
+TG-M24.1B alone cannot activate or release them. No TG-M23 execution unit is
+current, and no TG-M24 Runner runtime is active;
 network/live Analyzer acceptance remains outside the accepted scope. The
 derived-evidence contract is the sole unit owner/router; its process-safety
 route delegates one non-overlapping physical-safety seam and owns no unit state
@@ -55,8 +57,8 @@ or core semantics.
 TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
 preserves the inactive post-M24 normalization scope. Neither route changes
 product behavior. M24.1 design and the M24.1A portability correction are
-accepted, M24.1B is current, M24.2/M24.3/M24.4 remain inactive, and indexing
-or reading them activates no later behavior.
+accepted, M24.1B is current, M24.2/M24.3/M24.4 remain inactive and separately
+decision-held, and indexing or reading them activates no later behavior.
 
 ## Non-Authoritative History
 

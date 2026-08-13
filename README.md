@@ -465,10 +465,11 @@ It belongs to `integration`
 and therefore `all`; if selected and reported as skipped, that lane is
 non-PASS. A lane that does not select it and unrelated optional SKIPs retain
 their existing behavior. The portability test is a direct private-seam proof.
-The distinct full process/registry matrix remains an inactive TG-M24.2
-completion gate and is not part of the repository mandatory-native set. After
-accepted TG-M24.1B releases that unit, TG-M24.2 must add its stable ID with
-non-SKIP enforcement before acceptance; until then, the accepted standalone
+The distinct full process/registry matrix remains a decision-held inactive
+TG-M24.2 completion gate and is not part of the repository mandatory-native
+set. Only after both accepted TG-M24.1B and a separate explicit Runner-
+adoption decision may TG-M24.2 add its stable ID with non-SKIP enforcement
+before acceptance; until then, the accepted standalone
 portability ID remains the complete current set.
 
 CI consumes the same repository-only policy:
@@ -510,8 +511,9 @@ coverage.
   offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer
   acceptance, TG-DOC.2, documentation-only TG-M24.1, and the bounded
   TG-M24.1A LPAC-proof correction are accepted predecessors. Current runtime
-  qualification-and-supply authority belongs to TG-M24.1B, while TG-M24.2,
-  TG-M24.3, and TG-M24.4 remain inactive. The candidate stays v0.12.0/schema
+  proportional fixed-Candidate-C admission and native qualification authority
+  belongs to TG-M24.1B, while TG-M24.2, TG-M24.3, and TG-M24.4 remain inactive
+  behind a separate explicit Runner-adoption decision. The candidate stays v0.12.0/schema
   v19 and no Runner, schema, CLI, Skill, or gate is active.
   Network/live
   Analyzer acceptance still requires separate authority. SQLite, `storage.py`,

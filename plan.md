@@ -138,8 +138,9 @@ gates. It is not the product contract, execution ledger, or evidence store:
   paths, and cleanup; it does not call `run_process_steps` or depend on the
   full Runner process/registry matrix. That full matrix remains an inactive
   TG-M24.2 completion gate and is not part of the repository mandatory-native
-  set. After accepted TG-M24.1B releases it, TG-M24.2 must add its stable ID
-  with non-SKIP enforcement before acceptance;
+  set. Only after both accepted TG-M24.1B and a separate explicit Runner-
+  adoption decision may TG-M24.2 add its stable ID with non-SKIP enforcement
+  before acceptance;
   until then, the accepted standalone portability ID remains the complete set.
 
 ### Release Vocabulary And Legacy Read Boundary
@@ -211,7 +212,7 @@ mutation is activated. Accepted TG-M22.4 completed integrated acceptance and
 accepted TG-M23.1 froze the derived-evidence design; accepted TG-M23.2 supplies
 only its bounded offline/mock implementation predecessor.
 
-### Accepted TG-M22.4/TG-M23/TG-M24.1/TG-M24.1A, Current TG-M24.1B, And Inactive Later TG-M24 Gateway
+### Accepted TG-M22.4/TG-M23/TG-M24.1/TG-M24.1A, Current Proportional TG-M24.1B, And Decision-Held Later TG-M24 Gateway
 
 Product behavior established by accepted TG-M22.3 remains owned by the active
 specification and its implementation structure by the active design. Exact
@@ -224,8 +225,9 @@ No TG-M23 unit is current. SQLite, `storage.py`, public CLI/Skill,
 network/live-model action, gate mutation, and Task mutation remain outside the
 accepted scope. Accepted TG-M24.1 freezes only the exact design in the routed
 M24 owner, and its bounded TG-M24.1A correction is also accepted. Current
-zero-capability LPAC runtime qualification-and-supply authority belongs to
-TG-M24.1B, while TG-M24.2 through TG-M24.4 remain inactive. The permanent
+fixed-Candidate-C offline admission, materialization, and bounded zero-
+capability LPAC qualification authority belongs to TG-M24.1B, while TG-M24.2
+through TG-M24.4 remain inactive and separately decision-held. The permanent
 correction retains class-46
 proof where supported, adds only the exact error-87 public-`AccessCheck`
 semantic route, gives the LPAC child and never-resumed normal control the same
@@ -236,9 +238,13 @@ opposite route is fault-injected integration rather than native selector
 evidence. Its semantic gate uses SYSTEM-owned/grouped descriptors with exactly
 two non-generic bit-1 allow ACEs (coordinator user plus selected AAP or Package
 SID), no extra ACE, and exact normal-AAP allow / LPAC-AAP deny / LPAC-Package
-allow outcomes. TG-M24.1B may qualify and pin only the first passing runtime
-candidate under its routed safety and decision gates. After accepted TG-M24.1B,
-TG-M24.2 must integrate the accepted private seam, repair the
+allow outcomes. TG-M24.1B may admit only the fixed official embeddable
+Candidate C and run one bounded Candidate B-to-C native qualification; B is an
+observational, nonselecting control and only C may qualify. Mandatory four-
+plane root-cause classification and diagnostic transfer, supervisor, trust-
+root, or fault-matrix infrastructure are not completion gates. Only after both
+accepted TG-M24.1B and a separate explicit Runner-adoption decision may
+TG-M24.2 integrate the accepted private seam, repair the
 fail-closed registry `0x80070002` boundary without accepting any registry
 failure as success, and add the full process/registry matrix stable ID with
 non-SKIP enforcement before acceptance. Until those verified completion
@@ -248,20 +254,22 @@ and evidence remain solely in the Task database.
 
 <a id="tg-m24-sequence"></a>
 
-### Accepted TG-M24.1 Design And TG-M24.1A Correction, Current TG-M24.1B, And Approved TG-M24 Verification Runner Sequence
+### Accepted TG-M24.1 Design And TG-M24.1A Correction, Current TG-M24.1B, And Decision-Held TG-M24 Runner Sequence
 
 TG-M24 is approved sequential Tier 2 work in lane
 `TG-M24-VERIFICATION-RUNNER`. TG-M24.1 is the accepted design predecessor after
 accepted TG-DOC.2, and TG-M24.1A is its accepted bounded correction. Current
-runtime qualification-and-supply authority belongs to TG-M24.1B; TG-M24.2,
-TG-M24.3, and TG-M24.4 remain inactive. Exact unit identity, order, dependency,
+proportional fixed-Candidate-C qualification authority belongs to TG-M24.1B;
+TG-M24.2, TG-M24.3, and TG-M24.4 remain inactive and separately decision-held.
+Exact unit identity, order, dependency,
 permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 not duplicated in this gateway.
 
-TG-M24.1B may consume only its routed qualification scope after accepted
-TG-M24.1A. TG-M24.2 may begin only after accepted TG-M24.1B and must bind a
-fresh generation to its selected runtime digest; TG-M24.3 and TG-M24.4 may
+TG-M24.1B may consume only its routed proportional qualification scope after
+accepted TG-M24.1A. TG-M24.2 may begin only after accepted TG-M24.1B and a
+separate explicit Runner-adoption decision, and must bind a fresh generation
+to its selected runtime digest; TG-M24.3 and TG-M24.4 may
 advance only in order after their accepted predecessors. Current qualification
 authority alone activates no Runner, schema, CLI, Skill, or gate. The sequence
 grants no arbitrary command or
@@ -436,6 +444,10 @@ contract and execution unit.
   paging/retention, multiple receivers, Issue import/sync/priority/triage,
   resulting-Task creation, advanced risk/fixture analysis, signed evidence,
   and child-task structure outside the current Task Skill core.
+- Decide separately whether this product should adopt the automatic TG-M24
+  verification Runner at all. Accepted Candidate C qualification, cleanup, or
+  the presence of conditional TG-M24.2 through TG-M24.4 contracts never makes
+  that adoption decision or activates later-unit work.
 
 ## Reference Material
 

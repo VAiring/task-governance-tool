@@ -3,7 +3,7 @@
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
 snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with managed recovery and stored-Task/Contract relationship validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
-TG-M20S.3 and TG-M24.2 through TG-M24.4 remain inactive. No TG-M23 unit is current. The bounded TG-M24.1A Win32 LPAC proof seam and mandatory-native correction is accepted, and current zero-capability LPAC runtime qualification-and-supply authority belongs to TG-M24.1B. The candidate remains v0.12.0/schema v19 and only the standalone portability test is mandatory-native; this authority transition selects no runtime artifact and activates no Runner, process boundary, schema, CLI, Skill, completion gate, network, credential, or target mutation.
+TG-M20S.3 and TG-M24.2 through TG-M24.4 remain inactive. No TG-M23 unit is current. The bounded TG-M24.1A Win32 LPAC proof seam and mandatory-native correction is accepted, and TG-M24.1B owns only fixed-Candidate-C offline admission, materialization, and one bounded native zero-capability LPAC qualification. TG-M24.2 through TG-M24.4 additionally require a separate explicit Runner-adoption decision after accepted TG-M24.1B; qualification alone never activates or releases them. The candidate remains v0.12.0/schema v19 and only the standalone portability test is mandatory-native; this authority transition selects no runtime artifact and activates no Runner, process boundary, schema, CLI, Skill, completion gate, network, credential, or target mutation.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -2449,8 +2449,8 @@ portability test calls the seam directly and proves both separate Jobs/tokens,
 no-resume paths, and cleanup without calling `run_process_steps` or depending
 on the full process/registry matrix. That full matrix remains an inactive
 TG-M24.2 completion gate and is not in the repository mandatory-native set.
-After accepted TG-M24.1B releases it, TG-M24.2 must integrate the accepted
-private LPAC seam, keep registry
+Only after both accepted TG-M24.1B and a separate explicit Runner-adoption
+decision may TG-M24.2 integrate the accepted private LPAC seam, keep registry
 `0x80070002` and every other registry failure fail-closed, and add the full
 process/registry stable ID with non-SKIP enforcement before acceptance. Until
 those verified completion changes land, no broader Runner process/registry

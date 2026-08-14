@@ -1,34 +1,26 @@
 from __future__ import annotations
 
 import json
-import io
 import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stderr
 from pathlib import Path
-from unittest.mock import patch
 
 from tools.test_lanes import (
     ALL_LANE,
     BASE_LANES,
     CI_POLICY,
     CI_PYTHON_VERSIONS,
-    DiscoveredTests,
     LANE_MODULES,
-    MANDATORY_NATIVE_TEST_IDS,
     RELEASE_CANDIDATE_EVENT,
-    LanePlan,
     TestLaneError,
     build_lane_plan,
     ci_matrix,
     discover_tests,
-    mandatory_native_skips,
     main as lane_main,
     validate_ci_policy,
     validate_ci_selection,
-    validate_mandatory_native_tests,
 )
 
 
@@ -423,147 +415,6 @@ class TestLanePolicyTests(unittest.TestCase):
         self.assertEqual(len(all_modules), len(set(all_modules)))
         for lane in BASE_LANES:
             self.assertEqual(LANE_MODULES[lane], tuple(sorted(LANE_MODULES[lane])))
-
-    def test_mandatory_native_ids_exist_in_the_integration_lane(self):
-        inventory = discover_tests(ROOT)
-
-        validate_mandatory_native_tests(inventory.plan)
-        self.assertEqual(
-            MANDATORY_NATIVE_TEST_IDS,
-            (
-                "test_m241a_lpac_portability.RunnerLpacPortabilityNativeTests."
-                "test_real_lpac_portability_matrix_and_cleanup",
-            ),
-        )
-        self.assertTrue(
-            set(MANDATORY_NATIVE_TEST_IDS).issubset(
-                inventory.plan.ids_for("integration")
-            )
-        )
-
-    def test_mandatory_native_policy_rejects_missing_and_wrong_owner(self):
-        test_id = MANDATORY_NATIVE_TEST_IDS[0]
-        module = test_id.split(".", 1)[0]
-        missing = LanePlan(
-            test_ids=("test_other.Case.test_one",),
-            test_modules=("test_other",),
-            module_owners=(("test_other", "integration"),),
-        )
-        assert_lane_error(
-            self,
-            "mandatory_native_test_missing",
-            lambda: validate_mandatory_native_tests(
-                missing,
-                mandatory_test_ids=(test_id,),
-            ),
-        )
-        wrong_owner = LanePlan(
-            test_ids=(test_id,),
-            test_modules=(module,),
-            module_owners=((module, "fast"),),
-        )
-        assert_lane_error(
-            self,
-            "mandatory_native_test_owner_invalid",
-            lambda: validate_mandatory_native_tests(
-                wrong_owner,
-                mandatory_test_ids=(test_id,),
-            ),
-        )
-
-    def test_only_selected_mandatory_native_skips_make_a_lane_non_pass(self):
-        mandatory_id = MANDATORY_NATIVE_TEST_IDS[0]
-
-        class FakeCase:
-            def __init__(self, test_id: str):
-                self._test_id = test_id
-
-            def id(self) -> str:
-                return self._test_id
-
-        mandatory = FakeCase(mandatory_id)
-        optional = FakeCase("test_optional_native.Case.test_optional")
-        result = unittest.TestResult()
-        result.addSkip(mandatory, "unsupported")
-        result.addSkip(optional, "optional")
-
-        self.assertEqual(
-            mandatory_native_skips(result, (mandatory_id, optional.id())),
-            (mandatory_id,),
-        )
-        self.assertEqual(mandatory_native_skips(result, (optional.id(),)), ())
-
-        optional_only = unittest.TestResult()
-        optional_only.addSkip(optional, "optional")
-        self.assertEqual(
-            mandatory_native_skips(
-                optional_only,
-                (mandatory_id, optional.id()),
-            ),
-            (),
-        )
-
-    def test_lane_command_rejects_mandatory_but_not_optional_skip(self):
-        mandatory_id = MANDATORY_NATIVE_TEST_IDS[0]
-        mandatory_module, mandatory_class, mandatory_name = mandatory_id.rsplit(
-            ".", 2
-        )
-
-        def skipped(_self):
-            raise unittest.SkipTest("fixture")
-
-        mandatory_type = type(
-            mandatory_class,
-            (unittest.TestCase,),
-            {
-                "__module__": mandatory_module,
-                mandatory_name: skipped,
-            },
-        )
-        mandatory_case = mandatory_type(mandatory_name)
-        mandatory_inventory = DiscoveredTests(
-            suite=unittest.TestSuite((mandatory_case,)),
-            cases=(mandatory_case,),
-            plan=LanePlan(
-                test_ids=(mandatory_case.id(),),
-                test_modules=(mandatory_module,),
-                module_owners=((mandatory_module, "integration"),),
-            ),
-        )
-        with patch(
-            "tools.test_lanes.discover_tests",
-            return_value=mandatory_inventory,
-        ), redirect_stderr(io.StringIO()) as mandatory_stderr:
-            self.assertEqual(lane_main(("--lane", "integration")), 1)
-        self.assertIn(
-            "mandatory_native_test_skipped",
-            mandatory_stderr.getvalue(),
-        )
-
-        optional_type = type(
-            "OptionalNativeTests",
-            (unittest.TestCase,),
-            {
-                "__module__": "test_optional_native",
-                "test_optional": skipped,
-            },
-        )
-        optional_case = optional_type("test_optional")
-        optional_inventory = DiscoveredTests(
-            suite=unittest.TestSuite((optional_case,)),
-            cases=(optional_case,),
-            plan=LanePlan(
-                test_ids=(optional_case.id(),),
-                test_modules=("test_optional_native",),
-                module_owners=(("test_optional_native", "integration"),),
-            ),
-        )
-        with patch(
-            "tools.test_lanes.discover_tests",
-            return_value=optional_inventory,
-        ), redirect_stderr(io.StringIO()):
-            self.assertEqual(lane_main(("--lane", "integration")), 0)
-
 
 if __name__ == "__main__":
     unittest.main()

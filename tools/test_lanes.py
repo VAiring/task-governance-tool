@@ -24,14 +24,6 @@ CI_PYTHON_VERSIONS = ("3.12", "3.14")
 CI_PUSH_BRANCHES = ("main",)
 RELEASE_CANDIDATE_EVENT = "workflow_dispatch"
 
-# This native test is release evidence, not optional platform coverage. A
-# selected lane that skips it is non-PASS even when unittest would otherwise
-# report success.
-MANDATORY_NATIVE_TEST_IDS = (
-    "test_m241a_lpac_portability.RunnerLpacPortabilityNativeTests."
-    "test_real_lpac_portability_matrix_and_cleanup",
-)
-
 CI_CHECK_INVOCATION = "python tools/test_lanes.py --repo . --check"
 CI_MATRIX_INVOCATION = (
     'python tools/test_lanes.py --repo . --matrix-event '
@@ -75,6 +67,11 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m232_analysis_renderer",
         "test_m232_analysis_validator",
         "test_m232_evidence_consumer",
+        "test_m242_evidence_compatibility",
+        "test_m242_runner_git",
+        "test_m242_runner_model",
+        "test_m242_runner_plan",
+        "test_m242_runner_runtime",
         "test_project_scope",
         "test_relocation",
         "test_review_evidence",
@@ -126,10 +123,11 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m232_analysis_worker_race",
         "test_m232_codex_analysis_adapter",
         "test_m233_analysis_integration",
-        "test_m241a_lpac_portability",
-        "test_m241b_lpac_runtime_fixture",
-        "test_m241b_runtime_qualification",
-        "test_m241b_runtime_trace_win32",
+        "test_m242_runner_lifecycle",
+        "test_m242_runner_process",
+        "test_m242_runner_service",
+        "test_m242_runner_storage",
+        "test_m242_runner_win32",
         "test_post_commit_maintenance",
         "test_project_identity_bindings",
         "test_routine_backup",
@@ -329,51 +327,6 @@ def build_lane_plan(
     return plan
 
 
-def validate_mandatory_native_tests(
-    plan: LanePlan,
-    *,
-    mandatory_test_ids: Sequence[str] = MANDATORY_NATIVE_TEST_IDS,
-) -> None:
-    """Bind mandatory native evidence to exact integration-lane test IDs."""
-
-    mandatory = tuple(mandatory_test_ids)
-    if (
-        not mandatory
-        or mandatory != tuple(sorted(mandatory))
-        or len(mandatory) != len(set(mandatory))
-        or any(not isinstance(test_id, str) for test_id in mandatory)
-    ):
-        raise TestLaneError("mandatory_native_policy_invalid")
-    discovered = dict(
-        zip(plan.test_ids, plan.test_modules, strict=True)
-    )
-    owners = dict(plan.module_owners)
-    for test_id in mandatory:
-        module = discovered.get(test_id)
-        if module is None:
-            raise TestLaneError("mandatory_native_test_missing")
-        if owners.get(module) != "integration":
-            raise TestLaneError("mandatory_native_test_owner_invalid")
-
-
-def mandatory_native_skips(
-    result: unittest.TestResult,
-    selected_test_ids: Sequence[str],
-    *,
-    mandatory_test_ids: Sequence[str] = MANDATORY_NATIVE_TEST_IDS,
-) -> tuple[str, ...]:
-    """Return selected mandatory test IDs that unittest reported as skipped."""
-
-    selected = frozenset(selected_test_ids)
-    mandatory = frozenset(mandatory_test_ids)
-    skipped = {
-        test.id()
-        for test, _reason in result.skipped
-        if test.id() in selected and test.id() in mandatory
-    }
-    return tuple(test_id for test_id in mandatory_test_ids if test_id in skipped)
-
-
 def discover_tests(
     repo_root: Path,
     *,
@@ -404,7 +357,6 @@ def discover_tests(
     test_ids = tuple(case.id() for case in cases)
     test_modules = tuple(case.__class__.__module__ for case in cases)
     plan = build_lane_plan(test_ids, test_modules)
-    validate_mandatory_native_tests(plan)
     return DiscoveredTests(suite=suite, cases=cases, plan=plan)
 
 
@@ -555,12 +507,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         if result.testsRun != expected_count:
             raise TestLaneError("test_execution_count_mismatch")
-        if mandatory_native_skips(result, inventory.plan.ids_for(lane)):
-            print(
-                "test lane: FAIL (mandatory_native_test_skipped)",
-                file=sys.stderr,
-            )
-            return 1
         return 0
     except TestLaneError as exc:
         print(f"test lanes: ERROR ({exc.code})", file=sys.stderr)

@@ -39,13 +39,15 @@ transfer either role.
 TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
 offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer acceptance
 are accepted predecessors. TG-M24.1 design, TG-M24.1A, TG-M24.R1,
-TG-M24.R2A, and TG-M24.R2B are accepted predecessors whose retired
-adversarial qualification details supply no current gate. TG-M24.1B is
-superseded and non-gating. TG-M24.R2C is the sole current authority-only unit;
-TG-M24.R4A through TG-M24.CP4 remain inactive in the exact sequential order
-owned by the routed contract. The separate TG-M24.R2 bootstrap checkpoint
-supported accepted R1 but activates no product behavior. No TG-M23 execution
-unit is current, and no TG-M24 Runner runtime is active;
+TG-M24.R2A, TG-M24.R2B, TG-M24.R2C, and TG-M24.R4A are accepted predecessors
+whose retired adversarial qualification details supply no current gate.
+Accepted R4A left its inventory-approved retired repository material and
+dedicated tests physically absent, without an archive or dormant copy.
+TG-M24.1B is superseded and non-gating. TG-M24.R3A is the sole current
+authority-only unit; TG-M24.R3B through TG-M24.CP4 remain inactive in the
+exact sequential order owned by the routed contract. The separate TG-M24.R2
+bootstrap checkpoint supported accepted R1 but activates no product behavior.
+No TG-M23 execution unit is current, and no TG-M24 Runner runtime is active;
 network/live Analyzer acceptance remains outside the accepted scope. The
 derived-evidence contract is the sole unit owner/router; its process-safety
 route delegates one non-overlapping physical-safety seam and owns no unit state
@@ -57,10 +59,10 @@ or core semantics.
 
 TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
 preserves the inactive post-M24 normalization scope after TG-M24.CP4. Neither
-route changes product behavior. M24.1 design, M24.1A, R1, R2A, and R2B are
-accepted predecessors, M24.1B is superseded, R2C is current, every later
-repair and acceptance unit is inactive, and indexing or reading them activates
-no product behavior.
+route changes product behavior. M24.1 design, M24.1A, R1, R2A, R2B, R2C, and
+R4A are accepted predecessors, M24.1B is superseded, R3A is current, every
+later repair and acceptance unit is inactive, and indexing or reading them
+activates no product behavior.
 
 ## Non-Authoritative History
 
@@ -136,10 +138,8 @@ owner, route, unit, and membership are the enforced meaning.
     {
       "path": "docs/execution-contracts/tg-m24-verification-runner.md",
       "route_anchor": "tg-m24-verification-runner",
-      "current_units": ["TG-M24.R2C"],
+      "current_units": ["TG-M24.R3A"],
       "inactive_units": [
-        "TG-M24.R4A",
-        "TG-M24.R3A",
         "TG-M24.R3B",
         "TG-M24.R4B",
         "TG-M24.R5",

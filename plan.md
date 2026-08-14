@@ -129,12 +129,12 @@ gates. It is not the product contract, execution ledger, or evidence store:
   authority.
 - The accepted trusted-local Runner decision removes Candidate C, B-to-C,
   LPAC/AppContainer, ETW, and registry-recovery native matrices from current
-  M24 qualification and completion gates. Existing LPAC tests are transitional
-  repository residue until the dedicated inventory, value-audit, and physical-
-  deletion units classify and remove them. They may not qualify the new Runner,
-  trigger new security infrastructure, or justify disabled, duplicate,
-  implementation-shape-only, or new-SKIP tests. Each later Runner acceptance
-  unit owns only the smallest realistic process, cleanup, privacy, migration,
+  M24 qualification and completion gates. Accepted R4A left the inventory-
+  approved retired Candidate, LPAC/AppContainer, profile/ACL, dedicated native,
+  and Candidate-only runtime material and its dedicated tests physically
+  absent, with no archive or dormant copy. Their absence neither qualifies the
+  new Runner nor adds a security gate. Each later Runner acceptance unit owns
+  only the smallest realistic process, cleanup, privacy, migration,
   compatibility, or package test set needed by its current Contract.
 
 ### Release Vocabulary And Legacy Read Boundary
@@ -229,13 +229,14 @@ process retirement, owned-temp cleanup, and non-retention of raw output or
 private execution data. It makes no hostile-code, network-isolation, or zero-
 capability claim.
 
-Accepted TG-M24.R1, R2A, and R2B cut the authority sequence, inventoried the
-mixed WIP, and audited test value without product activation. Current
-TG-M24.R2C freezes only the M25 architecture boundary. Later inactive units
-physically remove retired security assets, stabilize schema/storage and
-Evidence compatibility, repair pre-Runner core regressions, and retire fixed
-diagnostic residue. Only then may the ordered M24.2 implementation and
-M24.3/M24.4 acceptance units activate product behavior.
+Accepted TG-M24.R1, R2A, R2B, R2C, and R4A cut the authority sequence,
+inventoried the mixed WIP, audited test value, froze the M25 architecture
+boundary, and physically removed only the approved retired repository material
+without product activation. Current TG-M24.R3A stabilizes the schema-v20
+migration and storage baseline. Later inactive units reconcile Evidence
+compatibility, repair pre-Runner core regressions, and retire fixed diagnostic
+residue. Only then may the ordered M24.2 implementation and M24.3/M24.4
+acceptance units activate product behavior.
 The final checkpoint requires no unclassified or new measurable debt, no
 retired/archive/dormant residue, no meaningless/disabled/new-SKIP test, a clean
 package and release candidate, and an explicit M25 handoff. Sequential ordering,
@@ -247,19 +248,20 @@ mandatory; live status and evidence remain solely in the Task database.
 ### TG-M24 Trusted-Local Runner Repair And Acceptance Sequence
 
 TG-M24 is approved sequential Tier 2 work in lane
-`TG-M24-TRUSTED-RUNNER`. TG-M24.1, TG-M24.1A, TG-M24.R1, TG-M24.R2A, and
-TG-M24.R2B are accepted predecessors; TG-M24.1B is superseded. Current formal
-authority belongs only to the TG-M24.R2C architecture boundary freeze, while
-TG-M24.R4A and every later unit remain inactive behind their accepted immediate
-predecessor.
+`TG-M24-TRUSTED-RUNNER`. TG-M24.1, TG-M24.1A, TG-M24.R1, TG-M24.R2A,
+TG-M24.R2B, TG-M24.R2C, and TG-M24.R4A are accepted predecessors;
+TG-M24.1B is superseded. Current formal authority belongs only to the
+TG-M24.R3A schema-v20 migration and storage baseline, while TG-M24.R3B and
+every later unit remain inactive behind their accepted immediate predecessor.
 Exact unit identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 not duplicated in this gateway.
 
 Accepted TG-M24.R1 consumed only the reviewed R2 bootstrap boundary and changed
-no product byte; accepted R2A and R2B changed no product behavior. Current R2C
-and its successors advance in exact order, use fresh current evidence, and
-never reuse superseded Candidate-C, LPAC, or diagnostic recovery evidence.
+no product byte; accepted R2A, R2B, R2C, and R4A changed no supported product
+behavior. Current R3A and its successors advance in exact order, use fresh
+current evidence, and never reuse superseded Candidate-C, LPAC, or diagnostic
+recovery evidence.
 The sequence grants no arbitrary command, automatic execution of untrusted or
 external targets, raw-output retention, network action, target-project write,
 publication, push, tag, or Release authority.

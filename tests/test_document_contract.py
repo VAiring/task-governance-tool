@@ -256,16 +256,16 @@ class DocumentContractTests(unittest.TestCase):
                 "logical request/result records activate a serializer, IPC, and worker,",
             ),
             (
-                "transitional nonconformance routed to R4A",
-                "accepted current runtime conformance",
+                "are physically absent after accepted R4A",
+                "remain available after accepted R4A",
             ),
             (
                 "transitional nonconformance routed to R4B",
                 "accepted current dependency conformance",
             ),
             (
-                "changes no R2A/R2B disposition or action selector",
-                "changes R2A/R2B dispositions and action selectors",
+                "changed no R2A/R2B disposition or action selector",
+                "changed R2A/R2B dispositions and action selectors",
             ),
         )
         for old, new in mutations:
@@ -278,7 +278,7 @@ class DocumentContractTests(unittest.TestCase):
 
         design_mutations = (
             (
-                "## Current TG-M24.R2C Trusted-Local Runner Architecture Boundary",
+                "## Accepted TG-M24.R2C Trusted-Local Runner Architecture Boundary",
                 "## Proposed TG-M24.R2C Trusted-Local Runner Architecture Boundary",
             ),
             (
@@ -300,6 +300,10 @@ class DocumentContractTests(unittest.TestCase):
             (
                 "later audit-only integration remains owned by 2C.",
                 "later audit-only integration remains owned by 2C and TG-M24.CP4.",
+            ),
+            (
+                "any retained Runner-specific direct process/native edge is repaired by R4B.",
+                "any retained Runner-specific direct process/native edge is repaired by R4A and R4B.",
             ),
             (
                 "process_adapter -> os_adapter",
@@ -418,9 +422,16 @@ class DocumentContractTests(unittest.TestCase):
                 "that R2C adds no IPC,",
             ),
             (
-                "are transitional R4A physical-deletion scope, not architecture\n"
-                "nodes. Retained dependency violations are R4B scope.",
+                "were accepted R4A physical-deletion scope and are now physically\n"
+                "absent; they are not architecture nodes. Retained dependency violations are\n"
+                "R4B scope.",
                 "are accepted architecture nodes with no successor owner.",
+            ),
+            (
+                "No such residue remains\n"
+                "in the standard test partition, which continues to contain only the three base\n"
+                "lanes `fast`, `integration`, and `release`.",
+                "Retired residue remains in an additional mandatory native lane.",
             ),
             (
                 "R2C adds no IPC,\n"
@@ -479,7 +490,7 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.R2C Current M25-Ready Architecture Boundary Freeze",
+                "## TG-M24.R3A Current Schema-v20 Migration And Storage Baseline",
                 "## TG-M24.R2C Inactive M25-Ready Architecture Boundary Freeze",
             )
             self.assertIn(
@@ -492,7 +503,7 @@ class DocumentContractTests(unittest.TestCase):
                 root,
                 contract.M24,
                 "<a id=\"tg-m24-r4a\"></a>",
-                "## TG-M24.R2C Current Duplicate Owner\n\n"
+                "## TG-M24.R3A Current Duplicate Owner\n\n"
                 "<a id=\"tg-m24-r4a\"></a>",
             )
             self.assertIn(
@@ -504,8 +515,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.R2C Current M25-Ready Architecture Boundary Freeze",
-                "## TG-M24.R2C M25-Ready Current Architecture Boundary Freeze",
+                "## TG-M24.R3A Current Schema-v20 Migration And Storage Baseline",
+                "## TG-M24.R3A Schema-v20 Current Migration And Storage Baseline",
             )
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -1130,14 +1141,16 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.R2C"])
+            self.assertEqual(m24["current_units"], ["TG-M24.R3A"])
             self.assertEqual(
                 m24["inactive_units"],
-                [row[0].split(" /", 1)[0] for row in contract.ROWS_M24[4:]],
+                [row[0].split(" /", 1)[0] for row in contract.ROWS_M24[6:]],
             )
             self.assertEqual(m24["superseded_units"], ["TG-M24.1B"])
             self.assertNotIn("TG-M24.1", m24["current_units"])
             self.assertNotIn("TG-M24.1A", m24["inactive_units"])
+            self.assertNotIn("TG-M24.R2C", m24["inactive_units"])
+            self.assertNotIn("TG-M24.R4A", m24["inactive_units"])
             self.write_registry(root, dict(reversed(tuple(registry.items()))))
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -1368,6 +1381,8 @@ class DocumentContractTests(unittest.TestCase):
         for subject in (
             "TG-M24.1",
             "TG-M24.R2A",
+            "TG-M24.R2C",
+            "TG-M24.R4A",
             "TG-M24.2A",
             "TG-M24.3",
             "TG-M24.4D",
@@ -1457,8 +1472,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.R2C owns current formal authority for the",
-                "TG-M24.R2C is a superseded compatibility route for the",
+                "current formal authority for the schema-v20 migration and storage baseline",
+                "superseded compatibility route for the schema-v20 migration and storage baseline",
             )
             self.assertIn(
                 "document_role",
@@ -1469,8 +1484,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.R2C owns current formal authority for the",
-                "TG-M24.R2C is not current formal authority for the",
+                "current formal authority for the schema-v20 migration and storage baseline",
+                "not current formal authority for the schema-v20 migration and storage baseline",
             )
             self.assertIn(
                 "document_role",
@@ -1494,9 +1509,15 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "every later unit in this document remain inactive until their immediate\n"
-                "> predecessors are accepted.",
-                "every later unit in this document remains inactive only until\n"
+                "TG-M24.R2C and TG-M24.R4A are accepted predecessors",
+                "TG-M24.R2C and TG-M24.R4A are former units",
+            )
+            self.replace(
+                root,
+                contract.M24,
+                "remain inactive until their\n"
+                "> immediate predecessors are accepted.",
+                "remain inactive only until\n"
                 "> later decisions reopen them.",
             )
             self.assertIn(

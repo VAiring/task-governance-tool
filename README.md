@@ -470,13 +470,10 @@ tree without retaining raw output. These are process, cleanup, and privacy
 requirements for trusted code, not a claim of hostile-code containment or
 network isolation.
 
-The existing TG-M24.1A LPAC portability fixture may remain discoverable only
-as transitional repository residue until the dedicated M24 inventory and
-physical-deletion units classify and remove it. Candidate C, B-to-C comparison,
-LPAC/AppContainer policy, ETW diagnosis, and recovery infrastructure are no
-longer M24 qualification or completion gates. Their presence must not activate
-a Runner or authorize new tests; physical retirement is handled by the
-separate bounded cleanup units rather than by this authority cutover.
+The retired TG-M24.1A LPAC portability fixture, Candidate C and B-to-C
+comparison, LPAC/AppContainer policy, ETW diagnosis, and recovery
+infrastructure are physically absent after accepted TG-M24.R4A, with no archive
+or dormant copy. They are not current Runner qualification or completion gates.
 
 CI consumes the same repository-only policy:
 

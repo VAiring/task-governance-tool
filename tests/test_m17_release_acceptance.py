@@ -84,6 +84,9 @@ def preserved_business_projection(connection: sqlite3.Connection) -> dict:
         "completion_bundle_members",
         "completion_bundle_finding_snapshots",
         "evidence_projection_state",
+        "verification_runner_resolutions",
+        "verification_runner_attempts",
+        "verification_runner_observations",
     }
     excluded_columns = {
         "tasks": {
@@ -95,6 +98,7 @@ def preserved_business_projection(connection: sqlite3.Connection) -> dict:
             "review_target_acceptance_criterion_id",
             "review_target_verification_criterion_id",
             "review_target_artifact_manifest_id",
+            "review_target_runner_basis_version",
         },
         "task_events": {"completion_cycle_id"},
         "review_receipts": {
@@ -124,7 +128,7 @@ def preserved_business_projection(connection: sqlite3.Connection) -> dict:
                 key=repr,
             )
         )
-    return projection
+    return {table: rows for table, rows in projection.items() if rows}
 
 
 class M17ReleaseAcceptanceTests(unittest.TestCase):
@@ -164,7 +168,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             )
             self.assertEqual(preview["data"]["completed_writes"], [])
             self.assertEqual(preview["data"]["schema_from"], 2)
-            self.assertEqual(preview["data"]["schema_to"], 19)
+            self.assertEqual(preview["data"]["schema_to"], 20)
             self.assertEqual(
                 preview["data"]["evidence_status"],
                 "not_present",
@@ -196,7 +200,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             migrated = json_payload(migrated_process)
             self.assertEqual(migrated["project_id"], project.project_id)
             self.assertEqual(migrated["data"]["schema_from"], 2)
-            self.assertEqual(migrated["data"]["schema_to"], 19)
+            self.assertEqual(migrated["data"]["schema_to"], 20)
             self.assertEqual(migrated["data"]["evidence_status"], "published")
             self.assertEqual(
                 migrated["data"]["completed_writes"],
@@ -215,7 +219,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    19,
+                    20,
                 )
                 self.assertEqual(
                     connection.execute(
@@ -300,7 +304,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             self.assertEqual(preview["project_id"], project.project_id)
             self.assertEqual(preview["data"]["status"], "relocation_preview")
             self.assertEqual(preview["data"]["schema_from"], 13)
-            self.assertEqual(preview["data"]["schema_to"], 19)
+            self.assertEqual(preview["data"]["schema_to"], 20)
             self.assertEqual(
                 preview["data"]["evidence_status"],
                 "not_present",
@@ -363,7 +367,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    19,
+                    20,
                 )
                 self.assertEqual(
                     connection.execute(

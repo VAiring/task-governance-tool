@@ -252,7 +252,7 @@ ROWS_DOC = (
     ),
 )
 
-R2C_BOUNDARY_HEADING = "## Current TG-M24.R2C Trusted-Local Runner Architecture Boundary"
+R2C_BOUNDARY_HEADING = "## Accepted TG-M24.R2C Trusted-Local Runner Architecture Boundary"
 R2C_BOUNDARY_TABLE_HEADING = "### Closed Runner-Slice Module Registry"
 R2C_TABLE_HEADER_ROLES = {
     "layer": (r"\blayer\b", r"\b(?:id|identifier)\b"),
@@ -285,15 +285,15 @@ R2C_LAYER_IMPORTS = {
     "os_adapter": ("value_model",),
 }
 R2C_LAYER_ROUTE_UNITS = {
-    "cli": ("R4A", "R4B"),
-    "service": ("R4A", "R4B", "2C"),
+    "cli": ("R4B",),
+    "service": ("R4B", "2C"),
     "repository": ("R3A", "R3B", "R4B"),
     "target_plan": ("R4B", "2A"),
     "value_model": ("R4B",),
-    "runtime_identity": ("R4A", "R4B", "2B"),
-    "lifecycle": ("R4A", "R4B", "2B"),
-    "process_adapter": ("R4A", "R4B", "2B"),
-    "os_adapter": ("R4A", "2B"),
+    "runtime_identity": ("R4B", "2B"),
+    "lifecycle": ("R4B", "2B"),
+    "process_adapter": ("R4B", "2B"),
+    "os_adapter": ("2B",),
 }
 R2C_LAYER_RESPONSIBILITY_PATTERNS = {
     "cli": (r"public", r"pars", r"format", r"dispatch.*(?:parent )?service"),
@@ -399,7 +399,7 @@ TASK_STATUS_VALUES = {
     "paused",
     "done",
 }
-CURRENT_UNITS = ("TG-M24.R2C",)
+CURRENT_UNITS = ("TG-M24.R3A",)
 NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
     for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
@@ -1507,10 +1507,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.R2C"],
+                "current_units": ["TG-M24.R3A"],
                 "inactive_units": [
-                    "TG-M24.R4A",
-                    "TG-M24.R3A",
                     "TG-M24.R3B",
                     "TG-M24.R4B",
                     "TG-M24.R5",
@@ -2051,12 +2049,13 @@ def _m24_trusted_local_authority_sync(
         "no raw output, argv, environment, credential, private path, exit code, or exception body crosses that persistence boundary",
         "logical request/result records add no serializer, ipc, worker, process, queue, pipe, socket, rpc, spool, supervisor, retry layer, schema, public cli, or product activation",
         "direct service-to-retired-os seam",
-        "transitional nonconformance routed to r4a",
+        "are physically absent after accepted r4a",
+        "no archive or dormant copy",
         "a retained reverse import",
         "callback in the process adapter",
         "second cleanup-acceptance owner",
         "transitional nonconformance routed to r4b",
-        "r2c repairs none of them and changes no r2a/r2b disposition or action selector",
+        "r2c repaired none of them and changed no r2a/r2b disposition or action selector",
     )
     if any(phrase not in prose for phrase in required):
         issues.append(
@@ -2071,9 +2070,9 @@ def _m24_trusted_local_authority_sync(
         ("tg-m24-r1", "tg-m24.r1", "accepted"),
         ("tg-m24-r2a", "tg-m24.r2a", "accepted"),
         ("tg-m24-r2b", "tg-m24.r2b", "accepted"),
-        ("tg-m24-r2c", "tg-m24.r2c", "current"),
-        ("tg-m24-r4a", "tg-m24.r4a", "inactive"),
-        ("tg-m24-r3a", "tg-m24.r3a", "inactive"),
+        ("tg-m24-r2c", "tg-m24.r2c", "accepted"),
+        ("tg-m24-r4a", "tg-m24.r4a", "accepted"),
+        ("tg-m24-r3a", "tg-m24.r3a", "current"),
         ("tg-m24-r3b", "tg-m24.r3b", "inactive"),
         ("tg-m24-r4b", "tg-m24.r4b", "inactive"),
         ("tg-m24-r5", "tg-m24.r5", "inactive"),
@@ -2123,7 +2122,7 @@ def _m24_trusted_local_authority_sync(
             Issue(
                 "m24_current_binding",
                 M24,
-                "M24 accepted predecessors, sole current R2C unit, or inactive successors drifted",
+                "M24 accepted predecessors, sole current R3A unit, or inactive successors drifted",
             )
         )
 
@@ -2537,13 +2536,24 @@ def _m24_r2c_architecture_boundary(
         r"observable payload.{0,80}one boolean.{0,120}no callback.{0,100}business gate",
         r"trusted code.{0,100}not a hostile-code sandbox.{0,100}network isolation",
         r"not qualification gates",
-        r"transitional r4a physical-deletion scope.{0,120}r4b scope",
+        r"accepted r4a physical-deletion scope.{0,100}physically absent.{0,100}not architecture nodes.{0,100}r4b scope",
         r"2a/2b/2c own.{0,220}r2c repairs or activates none",
+    )
+    design_prose = normalized(
+        " ".join(_semantic_prose(line) for line in design.semantic)
+    )
+    standard_lane_relations = (
+        r"accepted r4a removed.{0,100}tg-m24\.1a lpac module.{0,100}mandatory native fixture.{0,120}dedicated retired-route tests",
+        r"standard test partition.{0,100}only the three base lanes.{0,80}fast.{0,80}integration.{0,80}release",
     )
     valid = (
         valid
         and focused_relations_valid
         and all(re.search(pattern, prose) is not None for pattern in semantic_relations)
+        and all(
+            re.search(pattern, design_prose) is not None
+            for pattern in standard_lane_relations
+        )
     )
     if not valid:
         issues.append(

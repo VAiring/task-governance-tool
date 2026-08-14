@@ -8,10 +8,14 @@
 > TG-M24.1 and TG-M24.1A are accepted predecessors, but their adversarial-code
 > qualification details are excluded from this sequence's gates. TG-M24.1B is
 > superseded and non-gating. TG-M24.R1, TG-M24.R2A, and TG-M24.R2B are accepted
-> predecessors. TG-M24.R2C owns current formal authority for the M25-ready
-> trusted-local explicit opt-in architecture boundary freeze; TG-M24.R4A and
-> every later unit in this document remain inactive until their immediate
-> predecessors are accepted.
+> predecessors. TG-M24.R2C and TG-M24.R4A are accepted predecessors; accepted
+> R4A left its inventory-approved retired repository material and dedicated
+> tests physically absent, with no archive or dormant copy. TG-M24.R3A owns
+> current formal authority for the schema-v20 migration and storage baseline;
+> TG-M24.R3B and every later unit in this document remain inactive until their
+> immediate predecessors are accepted.
+> Its scope remains trusted-local, and its permission boundary is explicit
+> opt-in.
 > The separate TG-M24.R2 bootstrap Task supplies only a reviewed phase-one
 > checkpoint to R1 and activates no Runner or product behavior.
 
@@ -38,6 +42,11 @@ Raw stdout and stderr are transient and are never persisted; only the closed Run
 The Runner does not claim network isolation, hostile-code containment, or zero capability.
 Loading this contract does not activate product code or a Runner runtime.
 Candidate C, B-to-C, LPAC, AppContainer, ETW, and registry recovery are not current M24 gates.
+Accepted R4A physically removed the inventory-approved retired Candidate,
+LPAC/AppContainer, profile/ACL, dedicated native, and Candidate-only runtime
+material and its dedicated tests. No archive, dormant copy, or replacement
+security layer remains. This physical absence does not expand the threat model
+or turn any retired qualification route into a current gate.
 
 The optional Runner is adopted only for a repository that the user treats as
 trusted local code and only after explicit project opt-in. Eligibility is not
@@ -132,7 +141,8 @@ success evidence to a current unit.
 Task `tg_task_56e212c793a42272` remains an accepted predecessor for lineage and
 stable links. Its native portability proof is not a current M24 gate or a
 mandatory test for this sequence. Retained implementation and tests are decided
-only by TG-M24.R2A/R2B inventory and physically removed only by TG-M24.R4A.
+only by TG-M24.R2A/R2B inventory; their approved retired subset was physically
+removed by accepted TG-M24.R4A.
 
 <a id="tg-m24-1b"></a>
 
@@ -191,9 +201,9 @@ and two independent Tier 2 PASS reviews.
 
 <a id="tg-m24-r2c"></a>
 
-## TG-M24.R2C Current M25-Ready Architecture Boundary Freeze
+## TG-M24.R2C Accepted M25-Ready Architecture Boundary Freeze
 
-Task `tg_task_252701fe03f530af` freezes, but does not implement, the closed
+Task `tg_task_252701fe03f530af` froze, but did not implement, the closed
 Runner-slice module registry and acyclic dependency graph in the active
 [design](../design.md#tg-m24-r2c-runner-architecture-boundary). For the Runner
 route, `cli.py` may call only `verification_runner_service.py`; the service is
@@ -218,34 +228,36 @@ The design's logical request/result records add no serializer, IPC, worker,
 process, queue, pipe, socket, RPC, spool, supervisor, retry layer, schema,
 public CLI, or product activation.
 
-Current Candidate/LPAC/AppContainer/profile/ACL/ETW/registry-recovery residue,
-the direct service-to-retired-OS seam, and Candidate-only runtime material are
-transitional nonconformance routed to R4A. A retained reverse import, business-
-freshness callback in the process adapter, cycle, or second cleanup-acceptance
-owner is transitional nonconformance routed to R4B. R3A/R3B and 2A/2B/2C own
+The inventory-approved retired Candidate/LPAC/AppContainer/profile/ACL/ETW/
+registry-recovery residue, direct service-to-retired-OS seam, and Candidate-
+only runtime material are physically absent after accepted R4A. A retained
+reverse import, business-freshness callback in the process adapter, cycle, or
+second cleanup-acceptance owner is transitional nonconformance routed to R4B.
+R3A/R3B and 2A/2B/2C own
 only their already-declared later storage, Evidence, target/plan, process/
-lifecycle, and parent-integration implementation slices. R2C repairs none of
-them and changes no R2A/R2B disposition or action selector. Completion changes
+lifecycle, and parent-integration implementation slices. R2C repaired none of
+them and changed no R2A/R2B disposition or action selector. Acceptance changed
 only the five governing documents, the existing document checker, and its
-existing test module; requires structural status, graph, type/privacy, cleanup-
-owner, transitional-routing, and non-activation checks; and requires one fresh
+existing test module; required structural status, graph, type/privacy, cleanup-
+owner, transitional-routing, and non-activation checks; and required one fresh
 exact-target `pass/full` Receipt plus two independent Tier 2 PASS reviews.
 
 <a id="tg-m24-r4a"></a>
 
-## TG-M24.R4A Inactive Retired Repository Asset Physical Deletion
+## TG-M24.R4A Accepted Retired Repository Asset Physical Deletion
 
-Task `tg_task_83d2af496ac84982` physically deletes only R2A/R2B-approved retired
-repository code, fixtures, tests, manifests, docs, and dormant switches. It
-creates no archive, stash, alternate copy, replacement security layer, or
-unrelated cleanup. Every deletion must have no retained current consumer and
-unrelated WIP must remain byte-identical. Completion requires retained-test
-ownership, package/document/lane consistency, focused and exact-diff checks,
-and two independent Tier 2 PASS reviews.
+Task `tg_task_83d2af496ac84982` physically deleted only R2A/R2B-approved retired
+repository code, fixtures, tests, manifests, docs, and dormant switches. Its
+accepted result leaves that approved set physically absent, with no archive,
+stash, alternate copy, replacement security layer, or unrelated cleanup.
+Retained consumers and unrelated WIP remained outside its write boundary.
+Acceptance required retained-test ownership, package/document/lane
+consistency, focused and exact-diff checks, and two independent Tier 2 PASS
+reviews.
 
 <a id="tg-m24-r3a"></a>
 
-## TG-M24.R3A Inactive Schema-v20 Migration And Storage Baseline
+## TG-M24.R3A Current Schema-v20 Migration And Storage Baseline
 
 Task `tg_task_a6d113455aa2cdfe` stabilizes clean v19-to-v20 migration,
 idempotent v20 setup, repository behavior, Task/Contract/target/Receipt

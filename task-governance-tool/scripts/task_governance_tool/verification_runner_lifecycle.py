@@ -1,0 +1,502 @@
+"""Private fixed-state ownership for bounded verification Runner attempts.
+
+This module owns only deterministic paths, the package-state Runner lock, and
+explicit no-follow directory cleanup.  It owns no SQLite, process, native,
+Evidence, or business-gate responsibility.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import stat
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterator, Sequence
+
+from task_governance_tool.artifact_lock import (
+    ArtifactLockError,
+    zero_wait_artifact_lock,
+)
+from task_governance_tool.state_paths import (
+    StatePathError,
+    ValidatedDirectory,
+    ValidatedFile,
+    VerificationRunnerStatePaths,
+    create_physical_directory_exclusive,
+    hash_physical_file,
+    inspect_physical_directory,
+    path_lexically_exists,
+    remove_explicit_files_and_directories,
+    rename_no_replace,
+    require_contained,
+)
+
+
+RUNNER_FAILURE_MESSAGE = "verification runner state could not be changed safely"
+_ATTEMPT_ID = re.compile(r"tg_verification_runner_attempt_[0-9a-f]{16}\Z")
+_EXPECTED_ATTEMPT_CHILDREN = frozenset({"target", "scratch"})
+_EXPECTED_SCRATCH_CHILDREN = ("tmp", "home", "local", "roaming")
+_MAX_ATTEMPT_FILES = 30_000
+_MAX_ATTEMPT_DIRECTORIES = 30_100
+_MAX_ATTEMPT_DEPTH = 64
+_MAX_ATTEMPT_TOTAL_BYTES = 536_870_912  # 512 MiB materialized target.
+_MAX_ATTEMPT_TRAVERSAL_ENTRIES = _MAX_ATTEMPT_FILES + _MAX_ATTEMPT_DIRECTORIES
+_MAX_LAYOUT_ATTEMPT_ENTRIES = 1
+_MAX_LAYOUT_TRAVERSAL_ENTRIES = 3 + _MAX_LAYOUT_ATTEMPT_ENTRIES
+_TRAVERSAL_TIMEOUT_SECONDS = 30.0
+
+
+@dataclass
+class VerificationRunnerLifecycleError(Exception):
+    code: str
+    message: str = RUNNER_FAILURE_MESSAGE
+
+    def __str__(self) -> str:
+        return self.message
+
+
+@dataclass
+class _TraversalBudget:
+    maximum_entries: int
+    deadline: float
+    observed_entries: int = 0
+
+    def check_deadline(self) -> None:
+        if time.monotonic() > self.deadline:
+            raise _failure()
+
+    def observe(self) -> None:
+        self.check_deadline()
+        if self.observed_entries >= self.maximum_entries:
+            raise _failure()
+        self.observed_entries += 1
+
+
+@dataclass(frozen=True)
+class RunnerLayoutInventory:
+    attempt_ids: tuple[str, ...]
+    quarantine_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RunnerAttemptPaths:
+    attempt_id: str
+    root: Path = field(repr=False)
+    target: Path = field(repr=False)
+    scratch: Path = field(repr=False)
+    quarantine: Path = field(repr=False)
+
+
+def _failure(*, code: str = "runner_state_invalid") -> VerificationRunnerLifecycleError:
+    return VerificationRunnerLifecycleError(code=code)
+
+
+def _attempt_id(value: object) -> str:
+    if not isinstance(value, str) or _ATTEMPT_ID.fullmatch(value) is None:
+        raise _failure()
+    return value
+
+
+def _is_reparse(details: object) -> bool:
+    mode = getattr(details, "st_mode", 0)
+    attributes = getattr(details, "st_file_attributes", 0)
+    return stat.S_ISLNK(mode) or bool(
+        attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    )
+
+
+def _ensure_directory(path: Path, *, owner_root: Path) -> None:
+    if path_lexically_exists(path):
+        inspect_physical_directory(path, root=owner_root)
+        return
+    create_physical_directory_exclusive(path, root=owner_root)
+
+
+def _bounded_sorted_children(
+    directory: Path,
+    *,
+    budget: _TraversalBudget,
+    maximum_items: int | None = None,
+    reverse: bool = False,
+) -> list[Path]:
+    """Collect only a bounded directory fan-out, then sort that bounded set."""
+
+    entries: list[Path] = []
+    try:
+        with os.scandir(directory) as iterator:
+            while True:
+                budget.check_deadline()
+                try:
+                    entry = next(iterator)
+                except StopIteration:
+                    break
+                budget.observe()
+                if maximum_items is not None and len(entries) >= maximum_items:
+                    raise _failure()
+                entries.append(directory / entry.name)
+        entries.sort(
+            key=lambda item: item.name.encode("utf-8"),
+            reverse=reverse,
+        )
+        budget.check_deadline()
+        return entries
+    except VerificationRunnerLifecycleError:
+        raise
+    except (OSError, RuntimeError, UnicodeError) as exc:
+        raise _failure() from exc
+
+
+def ensure_runner_layout(paths: VerificationRunnerStatePaths) -> RunnerLayoutInventory:
+    """Create only the fixed empty layout and return its closed inventory."""
+
+    if not isinstance(paths, VerificationRunnerStatePaths):
+        raise _failure()
+    fixed_root = paths.root.parent
+    try:
+        inspect_physical_directory(fixed_root)
+        _ensure_directory(paths.root, owner_root=fixed_root)
+        _ensure_directory(paths.attempts, owner_root=paths.root)
+        _ensure_directory(paths.quarantine, owner_root=paths.root)
+        return inspect_runner_layout(paths)
+    except (OSError, StatePathError) as exc:
+        raise _failure() from exc
+
+
+def _closed_attempt_names(
+    directory: Path,
+    *,
+    owner_root: Path,
+    budget: _TraversalBudget,
+) -> tuple[str, ...]:
+    inspect_physical_directory(directory, root=owner_root)
+    entries = _bounded_sorted_children(directory, budget=budget)
+    names: list[str] = []
+    for entry in entries:
+        budget.check_deadline()
+        name = _attempt_id(entry.name)
+        inspect_physical_directory(entry, root=owner_root)
+        budget.check_deadline()
+        names.append(name)
+    return tuple(names)
+
+
+def inspect_runner_layout(paths: VerificationRunnerStatePaths) -> RunnerLayoutInventory:
+    """Reject aliases, unexpected children, and non-attempt private roots."""
+
+    if not isinstance(paths, VerificationRunnerStatePaths):
+        raise _failure()
+    try:
+        inspect_physical_directory(paths.root, root=paths.root.parent)
+        deadline = time.monotonic() + _TRAVERSAL_TIMEOUT_SECONDS
+        layout_budget = _TraversalBudget(
+            maximum_entries=_MAX_LAYOUT_TRAVERSAL_ENTRIES,
+            deadline=deadline,
+        )
+        root_entries = _bounded_sorted_children(
+            paths.root,
+            budget=layout_budget,
+            maximum_items=3,
+        )
+        permitted = {paths.lock.name, paths.attempts.name, paths.quarantine.name}
+        if any(entry.name not in permitted for entry in root_entries):
+            raise _failure()
+        for entry in root_entries:
+            layout_budget.check_deadline()
+            if entry.name == paths.lock.name:
+                details = entry.lstat()
+                if (
+                    _is_reparse(details)
+                    or not stat.S_ISREG(details.st_mode)
+                    or int(details.st_size) not in {0, 1}
+                ):
+                    raise _failure()
+            else:
+                inspect_physical_directory(entry, root=paths.root)
+            layout_budget.check_deadline()
+        layout_budget.maximum_entries = (
+            layout_budget.observed_entries + _MAX_LAYOUT_ATTEMPT_ENTRIES
+        )
+        return RunnerLayoutInventory(
+            attempt_ids=_closed_attempt_names(
+                paths.attempts,
+                owner_root=paths.root,
+                budget=layout_budget,
+            ),
+            quarantine_ids=_closed_attempt_names(
+                paths.quarantine,
+                owner_root=paths.root,
+                budget=layout_budget,
+            ),
+        )
+    except VerificationRunnerLifecycleError:
+        raise
+    except (OSError, StatePathError, UnicodeError) as exc:
+        raise _failure() from exc
+
+
+@contextmanager
+def zero_wait_runner_lock(
+    paths: VerificationRunnerStatePaths,
+) -> Iterator[RunnerLayoutInventory]:
+    """Acquire the sole Runner lock after validating the fixed hierarchy."""
+
+    inventory = ensure_runner_layout(paths)
+    try:
+        with zero_wait_artifact_lock(paths.lock):
+            yield inspect_runner_layout(paths)
+    except ArtifactLockError as exc:
+        raise _failure(code="runner_busy" if exc.contended else "runner_state_invalid") from exc
+
+
+def attempt_paths(
+    paths: VerificationRunnerStatePaths,
+    attempt_id: str,
+) -> RunnerAttemptPaths:
+    exact_id = _attempt_id(attempt_id)
+    root = paths.attempts / exact_id
+    quarantine = paths.quarantine / exact_id
+    for candidate in (root, quarantine):
+        require_contained(candidate, paths.root)
+    return RunnerAttemptPaths(
+        attempt_id=exact_id,
+        root=root,
+        target=root / "target",
+        scratch=root / "scratch",
+        quarantine=quarantine,
+    )
+
+
+def create_attempt_directories(
+    paths: VerificationRunnerStatePaths,
+    attempt_id: str,
+) -> RunnerAttemptPaths:
+    """Create an attempt tree only after the caller persisted its owner row."""
+
+    exact = attempt_paths(paths, attempt_id)
+    inspect_runner_layout(paths)
+    if path_lexically_exists(exact.root) or path_lexically_exists(exact.quarantine):
+        raise _failure()
+    created: list[ValidatedDirectory] = []
+    try:
+        created.append(
+            create_physical_directory_exclusive(exact.root, root=paths.root)
+        )
+        for child in (exact.target, exact.scratch):
+            created.append(
+                create_physical_directory_exclusive(child, root=paths.root)
+            )
+        return exact
+    except (OSError, StatePathError) as exc:
+        try:
+            remove_explicit_files_and_directories(
+                root=paths.root,
+                files=(),
+                directories_deepest_first=reversed(created),
+                max_files=0,
+                max_directories=3,
+            )
+        except StatePathError:
+            pass
+        raise _failure() from exc
+
+
+def validate_empty_attempt_tree(
+    paths: VerificationRunnerStatePaths,
+    attempt_id: str,
+) -> RunnerAttemptPaths:
+    """Validate the freshly-created exact two-child attempt tree."""
+
+    exact = attempt_paths(paths, attempt_id)
+    inspect_physical_directory(exact.root, root=paths.root)
+    deadline = time.monotonic() + _TRAVERSAL_TIMEOUT_SECONDS
+    budget = _TraversalBudget(maximum_entries=2, deadline=deadline)
+    children = _bounded_sorted_children(
+        exact.root,
+        budget=budget,
+        maximum_items=2,
+    )
+    if {entry.name for entry in children} != _EXPECTED_ATTEMPT_CHILDREN:
+        raise _failure()
+    for child in (exact.target, exact.scratch):
+        inspect_physical_directory(child, root=paths.root)
+        try:
+            budget.check_deadline()
+            with os.scandir(child) as iterator:
+                if next(iterator, None) is not None:
+                    raise _failure()
+                budget.check_deadline()
+        except (OSError, RuntimeError) as exc:
+            raise _failure() from exc
+    return exact
+
+
+def create_scratch_directories(
+    paths: VerificationRunnerStatePaths,
+    attempt_id: str,
+) -> tuple[Path, ...]:
+    """Create the fixed empty clean-environment directories for one attempt."""
+
+    exact = validate_empty_attempt_tree(paths, attempt_id)
+    created: list[ValidatedDirectory] = []
+    try:
+        for name in _EXPECTED_SCRATCH_CHILDREN:
+            created.append(
+                create_physical_directory_exclusive(
+                    exact.scratch / name,
+                    root=paths.root,
+                )
+            )
+        return tuple(item.path for item in created)
+    except (OSError, StatePathError) as exc:
+        try:
+            remove_explicit_files_and_directories(
+                root=paths.root,
+                files=(),
+                directories_deepest_first=reversed(created),
+                max_files=0,
+                max_directories=len(_EXPECTED_SCRATCH_CHILDREN),
+            )
+        except StatePathError:
+            pass
+        raise _failure() from exc
+
+
+def quarantine_attempt_tree(
+    paths: VerificationRunnerStatePaths,
+    attempt_id: str,
+) -> RunnerAttemptPaths:
+    """Move one validated owned attempt to its non-replacing quarantine name."""
+
+    exact = attempt_paths(paths, attempt_id)
+    source = inspect_physical_directory(exact.root, root=paths.root)
+    try:
+        rename_no_replace(source, exact.quarantine, root=paths.root)
+    except StatePathError as exc:
+        raise _failure() from exc
+    return exact
+
+
+def _enumerate_owned_tree(
+    tree: Path,
+    *,
+    owner_root: Path,
+) -> tuple[tuple[ValidatedFile, ...], tuple[ValidatedDirectory, ...]]:
+    files: list[ValidatedFile] = []
+    directories: list[tuple[int, ValidatedDirectory]] = []
+    total_bytes = 0
+    file_count = 0
+    directory_count = 1
+    pending: list[tuple[Path, int]] = [(tree, 0)]
+    budget = _TraversalBudget(
+        maximum_entries=_MAX_ATTEMPT_TRAVERSAL_ENTRIES - 1,
+        deadline=time.monotonic() + _TRAVERSAL_TIMEOUT_SECONDS,
+    )
+    budget.observe()
+    while pending:
+        budget.check_deadline()
+        current, depth = pending.pop()
+        if depth > _MAX_ATTEMPT_DEPTH:
+            raise _failure()
+        validated = inspect_physical_directory(current, root=owner_root)
+        directories.append((depth, validated))
+        if len(directories) > directory_count:
+            raise _failure()
+        entries = _bounded_sorted_children(
+            current,
+            budget=budget,
+            reverse=True,
+        )
+        for entry in entries:
+            budget.check_deadline()
+            require_contained(entry, owner_root)
+            try:
+                details = entry.lstat()
+            except OSError as exc:
+                raise _failure() from exc
+            budget.check_deadline()
+            if _is_reparse(details):
+                raise _failure()
+            if stat.S_ISDIR(details.st_mode):
+                directory_count += 1
+                if directory_count > _MAX_ATTEMPT_DIRECTORIES:
+                    raise _failure()
+                pending.append((entry, depth + 1))
+            elif stat.S_ISREG(details.st_mode):
+                size = int(details.st_size)
+                if size < 0:
+                    raise _failure()
+                file_count += 1
+                if file_count > _MAX_ATTEMPT_FILES:
+                    raise _failure()
+                remaining_bytes = _MAX_ATTEMPT_TOTAL_BYTES - total_bytes
+                if size > remaining_bytes:
+                    raise _failure()
+                budget.check_deadline()
+                files.append(
+                    hash_physical_file(
+                        entry,
+                        root=owner_root,
+                        expected_size=size,
+                        max_bytes=remaining_bytes,
+                    )
+                )
+                budget.check_deadline()
+                total_bytes += size
+            else:
+                raise _failure()
+    files.sort(key=lambda item: str(item.path).encode("utf-8"))
+    budget.check_deadline()
+    directories.sort(key=lambda item: (-item[0], str(item[1].path).encode("utf-8")))
+    budget.check_deadline()
+    return tuple(files), tuple(item[1] for item in directories)
+
+
+def remove_attempt_tree(
+    paths: VerificationRunnerStatePaths,
+    attempt_id: str,
+) -> None:
+    """Delete one explicit DB-named attempt/quarantine tree, never an unknown."""
+
+    exact = attempt_paths(paths, attempt_id)
+    present = [
+        candidate
+        for candidate in (exact.root, exact.quarantine)
+        if path_lexically_exists(candidate)
+    ]
+    if len(present) > 1:
+        raise _failure()
+    if not present:
+        return
+    try:
+        files, directories = _enumerate_owned_tree(
+            present[0], owner_root=paths.root
+        )
+        remove_explicit_files_and_directories(
+            root=paths.root,
+            files=files,
+            directories_deepest_first=directories,
+            max_files=_MAX_ATTEMPT_FILES,
+            max_directories=_MAX_ATTEMPT_DIRECTORIES,
+        )
+    except (OSError, StatePathError) as exc:
+        raise _failure() from exc
+
+
+def require_known_attempt_inventory(
+    inventory: RunnerLayoutInventory,
+    *,
+    known_attempt_ids: Sequence[str],
+) -> None:
+    """Reject every filesystem owner that is not named by immutable DB state."""
+
+    if not isinstance(inventory, RunnerLayoutInventory):
+        raise _failure()
+    exact_known = tuple(_attempt_id(value) for value in known_attempt_ids)
+    if len(set(exact_known)) != len(exact_known):
+        raise _failure()
+    observed = (*inventory.attempt_ids, *inventory.quarantine_ids)
+    if len(set(observed)) != len(observed) or not set(observed).issubset(exact_known):
+        raise _failure()

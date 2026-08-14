@@ -4,12 +4,14 @@ Status: the immutable published product remains v0.10.0/schema v16/Viewer v4 sou
 The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
 snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with managed recovery and stored-Task/Contract relationship validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
 TG-M20S.3 remains inactive and no TG-M23 unit is current. TG-M24.1,
-TG-M24.1A, TG-M24.R1, TG-M24.R2A, and TG-M24.R2B are accepted predecessors;
-the fixed-Candidate-C and adversarial LPAC route formerly owned by TG-M24.1B
-is superseded. TG-M24.R2C is the sole current TG-M24 authority and freezes only
-the M25-ready Runner architecture boundary below. It activates no product
-behavior. The candidate therefore remains v0.12.0/schema v19 until the owning
-downstream units are accepted.
+TG-M24.1A, TG-M24.R1, TG-M24.R2A, TG-M24.R2B, TG-M24.R2C, and TG-M24.R4A
+are accepted predecessors; the fixed-Candidate-C and adversarial LPAC route
+formerly owned by TG-M24.1B is superseded. Accepted R4A left the inventory-
+approved retired repository material and dedicated tests physically absent,
+without an archive or dormant copy. TG-M24.R3A is the sole current TG-M24
+authority and owns only the schema-v20 migration and storage baseline. It
+activates no Runner launch or completion-gate behavior. The candidate therefore
+remains v0.12.0/schema v19 until the owning downstream units are accepted.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -158,7 +160,7 @@ The implementation keeps these narrow ownership boundaries:
   snapshot reads, strict presentation configuration, safe HTML rendering, and
   generation-based publication.
 
-The current documentation-only Runner slice is the closed architecture
+The accepted documentation-only Runner slice is the closed architecture
 registry at [TG-M24.R2C Runner Architecture Boundary](#tg-m24-r2c-runner-architecture-boundary).
 It narrows future implementation ownership without changing any supported
 module, schema, command, or runtime behavior.
@@ -2364,7 +2366,7 @@ these expectations because activation has not occurred.
 
 <a id="tg-m24-r2c-runner-architecture-boundary"></a>
 
-## Current TG-M24.R2C Trusted-Local Runner Architecture Boundary
+## Accepted TG-M24.R2C Trusted-Local Runner Architecture Boundary
 
 This is a documentation-only freeze for the future explicit-opt-in adapter for
 a repository the user already trusts. Eligibility remains deny-by-default and
@@ -2386,17 +2388,17 @@ and may not import back into a higher Runner layer. Because `cli.py` is shared
 by all public leaves, its unrelated pre-existing imports are outside the
 Runner route; its Runner dispatch has only the `cli -> service` edge.
 
-| Layer id | Exact owned modules | Sole Runner responsibility | Allowed Runner-layer imports | Forbidden responsibility or reverse edge | Transitional nonconformance route |
+| Layer id | Exact owned modules | Sole Runner responsibility | Allowed Runner-layer imports | Forbidden responsibility or reverse edge | Remaining nonconformance route |
 |---|---|---|---|---|---|
-| `cli` | `cli.py` | Parse and format the existing public surface and dispatch the Runner route to the parent service. | `service` | No Runner eligibility, authority, persistence, process, native, or cleanup decision; no Runner dispatch to `process_adapter` or `os_adapter`. | Any Runner-specific direct process/native edge is repaired by R4B after retired branches are removed by R4A. |
-| `service` | `verification_runner_service.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | Direct retired OS/profile/recovery seams are deleted by R4A; any retained direct OS edge or second acceptance owner is repaired by R4B; later audit-only integration remains owned by 2C. |
+| `cli` | `cli.py` | Parse and format the existing public surface and dispatch the Runner route to the parent service. | `service` | No Runner eligibility, authority, persistence, process, native, or cleanup decision; no Runner dispatch to `process_adapter` or `os_adapter`. | Retired direct process/native branches are physically absent; any retained Runner-specific direct process/native edge is repaired by R4B. |
+| `service` | `verification_runner_service.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | Retired OS/profile/recovery seams are physically absent; any retained direct OS edge or second acceptance owner is repaired by R4B; later audit-only integration remains owned by 2C. |
 | `repository` | `storage.py`, `tasks.py`, `contracts.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema and Evidence compatibility remain R3A/R3B; any retained reverse edge or cycle is repaired by R4B. |
 | `target_plan` | `artifact_manifest.py`, `verification_runner_git.py`, `verification_runner_plan.py` | Parent-invoked exact target observation/materialization and fixed-plan decode/validation. | `repository`, `value_model` | No CLI policy, canonical database ownership, completion decision, trusted-code or verification-command launch, terminal publication, or cleanup acceptance. | Dependency repair remains R4B; retained target/plan implementation remains 2A. |
 | `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The current `verification_runner.py -> evidence_ledger.py` reverse edge and resulting cycle are repaired by R4B. |
-| `runtime_identity` | `verification_runner_runtime.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is deleted by R4A; retained runtime implementation remains 2B and dependency repair remains R4B. |
-| `lifecycle` | `verification_runner_lifecycle.py` | Parent-requested creation, inventory, quarantine, removal, and absence proof for the one owned private attempt tree. | none | No process start, Job/stdio/handle ownership, SQLite, Evidence, business gate, terminal publication, or final cleanup acceptance. | Any retired profile/recovery mechanics are deleted by R4A; retained lifecycle implementation remains 2B; any second acceptance owner is repaired by R4B. |
-| `process_adapter` | `verification_runner_process.py` | Consume the closed request, establish the Job before trusted code, enforce process/resource/output/time bounds, drain and discard output, terminate and wait for process-tree zero, close handles, and return the closed result. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Candidate/AppContainer/profile/ACL branches are deleted by R4A; the current business-freshness callback is repaired by R4B; retained adapter implementation remains 2B. |
-| `os_adapter` | `_verification_runner_win32.py` | Thin Windows Job, process, stdio, accounting, termination, wait, and handle primitives. | `value_model` | No parent policy, repository, persistence, gate, cleanup acceptance, LPAC/AppContainer/profile/ACL/ETW/registry-recovery module, or reverse import. | `_verification_runner_lpac_win32.py` and retired native branches are deleted by R4A; retained thin primitives remain 2B. |
+| `runtime_identity` | `verification_runner_runtime.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is physically absent; retained runtime implementation remains 2B and dependency repair remains R4B. |
+| `lifecycle` | `verification_runner_lifecycle.py` | Parent-requested creation, inventory, quarantine, removal, and absence proof for the one owned private attempt tree. | none | No process start, Job/stdio/handle ownership, SQLite, Evidence, business gate, terminal publication, or final cleanup acceptance. | Retired profile/recovery mechanics are physically absent; retained lifecycle implementation remains 2B; any second acceptance owner is repaired by R4B. |
+| `process_adapter` | `verification_runner_process.py` | Consume the closed request, establish the Job before trusted code, enforce process/resource/output/time bounds, drain and discard output, terminate and wait for process-tree zero, close handles, and return the closed result. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Retired Candidate/AppContainer/profile/ACL branches are physically absent; the current business-freshness callback is repaired by R4B; retained adapter implementation remains 2B. |
+| `os_adapter` | `_verification_runner_win32.py` | Thin Windows Job, process, stdio, accounting, termination, wait, and handle primitives. | `value_model` | No parent policy, repository, persistence, gate, cleanup acceptance, LPAC/AppContainer/profile/ACL/ETW/registry-recovery module, or reverse import. | The retired LPAC and native branches are physically absent; retained thin primitives remain 2B. |
 
 The complete inter-layer edge set is therefore exactly:
 
@@ -2558,10 +2560,11 @@ This remains a reliability and privacy boundary for trusted code, not a
 hostile-code sandbox or a claim of network isolation. Candidate C, B-to-C,
 LPAC/AppContainer, Package-SID ACLs, ETW, registry/profile recovery, transfer
 state machines, supervisors, trust-root hardening, and diagnostic fault
-matrices are not qualification gates. Their exact inventory-approved code,
+matrices are not qualification gates. Their inventory-approved retired code,
 tests, fixtures, manifests, Candidate runtime material, and direct retired
-native seams are transitional R4A physical-deletion scope, not architecture
-nodes. Retained dependency violations are R4B scope. R3A/R3B and 2A/2B/2C own
+native seams were accepted R4A physical-deletion scope and are now physically
+absent; they are not architecture nodes. Retained dependency violations are
+R4B scope. R3A/R3B and 2A/2B/2C own
 only their already-routed later storage, Evidence, target/plan, adapter/
 lifecycle, and parent-integration work. R2C repairs or activates none of them
 and changes no R2A inventory or R2B action selector.
@@ -2633,14 +2636,12 @@ filter of standard discovery, while `all` runs the original discovered suite
 in its original order. New `test*.py` modules therefore fail closed until
 classified; new methods in an owned module inherit that module's lane.
 
-The existing TG-M24.1A LPAC module and native fixture are transitional residue,
-not a current Runner qualification or M24 completion gate. Until the dedicated
-inventory and physical-deletion units remove them, ordinary discovery may
-still report their established behavior; no new test may depend on that route,
-and its PASS or SKIP cannot qualify the trusted-local Runner. The later test-
-value audit owns retain/delete decisions and prohibits replacement with a new
-meta-test framework, implementation-shape-only assertions, disabled tests, or
-new SKIPs that do not detect a current requirement or regression.
+Accepted R4A removed the TG-M24.1A LPAC module, mandatory native fixture, and
+dedicated retired-route tests from standard discovery. No such residue remains
+in the standard test partition, which continues to contain only the three base
+lanes `fast`, `integration`, and `release`. No replacement meta-test framework,
+implementation-shape-only assertion, disabled test, or new SKIP may stand in
+for a test that detects a current requirement or regression.
 
 CI obtains one compact include matrix from this same policy. Pull requests run
 all three base lanes on Python 3.12 and `fast` on 3.14. Pushes to `main` run

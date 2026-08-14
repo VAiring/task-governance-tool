@@ -7,9 +7,11 @@
 > This document owns the TG-M24 repair and acceptance sequence.
 > TG-M24.1 and TG-M24.1A are accepted predecessors, but their adversarial-code
 > qualification details are excluded from this sequence's gates. TG-M24.1B is
-> superseded and non-gating. TG-M24.R1 owns current formal authority for the
-> trusted-local explicit opt-in boundary; every later unit in this document
-> remains inactive until its immediate predecessor is accepted.
+> superseded and non-gating. TG-M24.R1, TG-M24.R2A, and TG-M24.R2B are accepted
+> predecessors. TG-M24.R2C owns current formal authority for the M25-ready
+> trusted-local explicit opt-in architecture boundary freeze; TG-M24.R4A and
+> every later unit in this document remain inactive until their immediate
+> predecessors are accepted.
 > The separate TG-M24.R2 bootstrap Task supplies only a reviewed phase-one
 > checkpoint to R1 and activates no Runner or product behavior.
 
@@ -145,9 +147,9 @@ normalization; it is not accepted-predecessor authority.
 
 <a id="tg-m24-r1"></a>
 
-## TG-M24.R1 Current Authority And Sequence Cutover
+## TG-M24.R1 Accepted Authority And Sequence Cutover
 
-Task `tg_task_8af2eee60acb0830` owns one atomic documentation and live-Task
+Task `tg_task_8af2eee60acb0830` owned one atomic documentation and live-Task
 graph switch. It replaces the superseded adversarial qualification route with
 the trusted-local boundary above, keeps the existing product inactive, moves
 the retained legacy Tasks to orders 120, 130, and 170, and leaves CP4 at 180.
@@ -164,7 +166,7 @@ or Medium finding.
 
 <a id="tg-m24-r2a"></a>
 
-## TG-M24.R2A Inactive Debt Asset Baseline Inventory
+## TG-M24.R2A Accepted Debt Asset Baseline Inventory
 
 Task `tg_task_96a03f1d76799f79` inventories every tracked, staged, unstaged,
 untracked, package, authority, test, and temporary M24 delta against baseline
@@ -176,7 +178,7 @@ independent Tier 2 PASS reviews.
 
 <a id="tg-m24-r2b"></a>
 
-## TG-M24.R2B Inactive Test Portfolio Value Audit
+## TG-M24.R2B Accepted Test Portfolio Value Audit
 
 Task `tg_task_ca8d0d81cd1962ab` maps every M24-added or materially changed test
 to one current requirement, observed regression, compatibility boundary, or
@@ -189,16 +191,45 @@ and two independent Tier 2 PASS reviews.
 
 <a id="tg-m24-r2c"></a>
 
-## TG-M24.R2C Inactive M25-Ready Architecture Boundary Freeze
+## TG-M24.R2C Current M25-Ready Architecture Boundary Freeze
 
-Task `tg_task_252701fe03f530af` freezes one-way CLI to service to repository and
-process-adapter dependencies. The parent owns authority, Task/Contract state,
-SQLite, target/plan selection, Evidence, and maintenance. Process code accepts
-and returns only typed, bounded, sanitized values; it opens no canonical state
-and imports no CLI, repository, or business gate. One cleanup owner is explicit.
-This unit adds no IPC, worker, process, schema, public CLI, or supervisor.
-Completion requires documentation/checker consistency and two independent Tier
-2 PASS reviews.
+Task `tg_task_252701fe03f530af` freezes, but does not implement, the closed
+Runner-slice module registry and acyclic dependency graph in the active
+[design](../design.md#tg-m24-r2c-runner-architecture-boundary). For the Runner
+route, `cli.py` may call only `verification_runner_service.py`; the service is
+the parent orchestrator and the sole owner of authority, Task/Contract and
+criterion checks, canonical SQLite/repository coordination, target/plan
+selection, Evidence/terminal persistence, maintenance/recovery coordination,
+and final cleanup acceptance. Repository and persistence modules never launch
+or import the process or OS adapter. The process adapter receives only the
+closed typed bounded request plus its local Boolean cancellation signal,
+returns only the closed bounded sanitized result, opens no canonical state,
+and imports no CLI, service, repository, storage, Task, Contract, review,
+Evidence, completion, setup, backup, maintenance, or business-gate module.
+
+`verification_runner_process.py` owns only Job/process/stdio/timeout/
+termination/wait/handle mechanics and reports process-tree zero and handle
+closure. `verification_runner_lifecycle.py` owns only parent-requested private-
+tree mechanics. `verification_runner_service.py` alone combines the process
+and private-tree proofs, blocks on either uncertainty, and authorizes cleanup
+success or terminal persistence. No raw output, argv, environment, credential,
+private path, exit code, or exception body crosses that persistence boundary.
+The design's logical request/result records add no serializer, IPC, worker,
+process, queue, pipe, socket, RPC, spool, supervisor, retry layer, schema,
+public CLI, or product activation.
+
+Current Candidate/LPAC/AppContainer/profile/ACL/ETW/registry-recovery residue,
+the direct service-to-retired-OS seam, and Candidate-only runtime material are
+transitional nonconformance routed to R4A. A retained reverse import, business-
+freshness callback in the process adapter, cycle, or second cleanup-acceptance
+owner is transitional nonconformance routed to R4B. R3A/R3B and 2A/2B/2C own
+only their already-declared later storage, Evidence, target/plan, process/
+lifecycle, and parent-integration implementation slices. R2C repairs none of
+them and changes no R2A/R2B disposition or action selector. Completion changes
+only the five governing documents, the existing document checker, and its
+existing test module; requires structural status, graph, type/privacy, cleanup-
+owner, transitional-routing, and non-activation checks; and requires one fresh
+exact-target `pass/full` Receipt plus two independent Tier 2 PASS reviews.
 
 <a id="tg-m24-r4a"></a>
 

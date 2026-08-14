@@ -16,6 +16,7 @@ sys.dont_write_bytecode = True
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
 AUTHORITY = "docs/authority.md"
+DESIGN = "docs/design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 EXECUTION_INDEX = "docs/execution-contracts/README.md"
@@ -29,7 +30,7 @@ CANONICAL_DOCS = (
     "README.md",
     AUTHORITY,
     "docs/specification.md",
-    "docs/design.md",
+    DESIGN,
     "plan.md",
     EXECUTION_INDEX,
     M22,
@@ -251,6 +252,119 @@ ROWS_DOC = (
     ),
 )
 
+R2C_BOUNDARY_HEADING = "## Current TG-M24.R2C Trusted-Local Runner Architecture Boundary"
+R2C_BOUNDARY_TABLE_HEADING = "### Closed Runner-Slice Module Registry"
+R2C_TABLE_HEADER_ROLES = {
+    "layer": (r"\blayer\b", r"\b(?:id|identifier)\b"),
+    "modules": (r"\bmodules?\b",),
+    "responsibility": (r"\bresponsibilit", r"\b(?:runner|ownership)\b"),
+    "imports": (r"\bimports?\b",),
+    "forbidden": (r"\b(?:forbidden|reverse)\b",),
+    "route": (r"\b(?:route|owner)\b", r"\b(?:transitional|nonconformance)\b"),
+}
+R2C_LAYER_MODULES = {
+    "cli": ("cli.py",),
+    "service": ("verification_runner_service.py",),
+    "repository": ("storage.py", "tasks.py", "contracts.py", "reviews.py", "verification_receipts.py", "completion.py", "evidence_ledger.py", "evidence_projection.py", "maintenance.py"),
+    "target_plan": ("artifact_manifest.py", "verification_runner_git.py", "verification_runner_plan.py"),
+    "value_model": ("verification_runner.py",),
+    "runtime_identity": ("verification_runner_runtime.py", "self_status.py"),
+    "lifecycle": ("verification_runner_lifecycle.py",),
+    "process_adapter": ("verification_runner_process.py",),
+    "os_adapter": ("_verification_runner_win32.py",),
+}
+R2C_LAYER_IMPORTS = {
+    "cli": ("service",),
+    "service": ("repository", "target_plan", "value_model", "runtime_identity", "lifecycle", "process_adapter"),
+    "repository": ("value_model",),
+    "target_plan": ("repository", "value_model"),
+    "value_model": (),
+    "runtime_identity": ("repository", "value_model"),
+    "lifecycle": (),
+    "process_adapter": ("value_model", "os_adapter"),
+    "os_adapter": ("value_model",),
+}
+R2C_LAYER_ROUTE_UNITS = {
+    "cli": ("R4A", "R4B"),
+    "service": ("R4A", "R4B", "2C"),
+    "repository": ("R3A", "R3B", "R4B"),
+    "target_plan": ("R4B", "2A"),
+    "value_model": ("R4B",),
+    "runtime_identity": ("R4A", "R4B", "2B"),
+    "lifecycle": ("R4A", "R4B", "2B"),
+    "process_adapter": ("R4A", "R4B", "2B"),
+    "os_adapter": ("R4A", "2B"),
+}
+R2C_LAYER_RESPONSIBILITY_PATTERNS = {
+    "cli": (r"public", r"pars", r"format", r"dispatch.*(?:parent )?service"),
+    "service": (r"parent.*orchestrat", r"sole.*(?:eligibility|authority)", r"persistence", r"cleanup acceptance"),
+    "repository": (r"canonical sqlite", r"task/contract", r"business gate", r"parent service"),
+    "target_plan": (r"parent-invoked", r"target", r"plan"),
+    "value_model": (r"pure", r"identifier", r"value validation"),
+    "runtime_identity": (r"parent-invoked", r"executable", r"package-integrity"),
+    "lifecycle": (r"parent-requested", r"private attempt tree", r"(?:removal|absence proof)"),
+    "process_adapter": (r"closed request", r"job", r"output", r"process-tree zero", r"close handles", r"closed result"),
+    "os_adapter": (r"windows job", r"process", r"stdio", r"handle primitives"),
+}
+R2C_LAYER_FORBIDDEN_PATTERNS = {
+    "cli": (r"no runner eligibility", r"no runner dispatch.*process_adapter.*os_adapter"),
+    "service": (r"no os mechanics", r"no delegation.*cleanup acceptance"),
+    "repository": (r"no process launch", r"no import.*process_adapter.*os_adapter", r"no filesystem cleanup"),
+    "target_plan": (r"no cli policy", r"no .*verification-command launch", r"no .*cleanup acceptance"),
+    "value_model": (r"no i/o", r"no import.*cli.*service.*repository", r"business-gate"),
+    "runtime_identity": (r"no process launch", r"no .*database", r"no .*cleanup acceptance"),
+    "lifecycle": (r"no process start", r"no .*job/stdio/handle", r"no .*final cleanup acceptance"),
+    "process_adapter": (r"no canonical state", r"no import.*cli.*service.*repository", r"business gate"),
+    "os_adapter": (r"no parent policy", r"repository", r"cleanup acceptance", r"reverse import"),
+}
+R2C_RECORD_MEMBERS = {
+    "RunnerProcessRequestV1": ("version", "attempt_id", "executable", "materialized_root", "scratch_root", "clean_environment", "steps", "cancel_signal"),
+    "RunnerProcessStepV1": ("ordinal", "step_id", "mode", "entrypoint", "argv", "cwd", "shell", "path_lookup", "timeout_seconds", "cpu_seconds", "memory_mib", "process_limit", "output_byte_limit"),
+    "RunnerProcessResultV1": ("version", "attempt_id", "outcome", "reason", "launch_state", "failed_step_ordinal", "duration_ms", "cpu_time_ms", "peak_job_memory_bytes", "total_process_count", "process_zero", "handles_closed", "raw_output_discarded", "steps"),
+    "RunnerProcessStepResultV1": ("ordinal", "outcome", "reason", "launch_state", "cpu_time_ms", "peak_job_memory_bytes", "total_process_count"),
+    "RunnerPrivateTreeResultV1": ("attempt_id", "state"),
+}
+R2C_BOUND_CONTROLS = {
+    "request_version": ("=", "1"),
+    "accepted_plan_blob_utf8_bytes": ("<=", "65536"),
+    "attempt_id": ("=", "ASCII /tg_verification_runner_attempt_[0-9a-f]{16}/ (47 bytes)"),
+    "identifier": ("=", "ASCII /[a-z0-9][a-z0-9._-]{0,63}/ (1..64 bytes)"),
+    "result_code": ("=", "ASCII /[a-z][a-z0-9_]{0,63}/ (1..64 bytes)"),
+    "absolute_path": ("=", 'well-formed Unicode, absolute normalized Windows path, no NUL or Unicode Cc, no "." or ".." segment, 1..4096 UTF-8 bytes and 1..4096 UTF-16 code units'),
+    "relative_path": ("=", '"." or 1..32 "/"-separated ASCII /[A-Za-z0-9_][A-Za-z0-9._-]{0,127}/ components, no "." or ".." component, total 1..512 bytes'),
+    "script_entrypoint": ("=", 'non-dot relative_path ending in ".py"'),
+    "module_entrypoint": ("=", '1..16 "."-separated ASCII /[A-Za-z_][A-Za-z0-9_]{0,63}/ components, total 1..512 bytes'),
+    "literal_arg": ("=", "well-formed Unicode with no Unicode Cc, 0..4096 UTF-8 bytes and 0..4096 UTF-16 code units"),
+    "path_ownership": ("=", "executable is a parent-verified fixed absolute package-runtime identity outside materialized_root and scratch_root with no PATH lookup; materialized_root and scratch_root are distinct target and scratch children of one owned attempt root; no symlink or reparse traversal"),
+    "resolved_relative_path": ("=", "every entrypoint and cwd resolves beneath materialized_root"),
+    "step_count": ("=", "1..16"),
+    "argv_count_per_step": ("=", "0..64"),
+    "timeout_seconds": ("=", "1..900"),
+    "total_timeout_seconds": ("=", "1..1800"),
+    "cpu_seconds": ("=", "1..900"),
+    "memory_mib": ("=", "64..2048"),
+    "process_limit": ("=", "1..32"),
+    "output_byte_limit": ("=", "1048576"),
+    "command_line_utf16_units": ("<=", "24576 after exact Windows quoting and fixed bootstrap insertion"),
+    "clean_environment_entry_count": ("=", "11"),
+    "clean_environment_value_utf8_bytes": ("=", "1..4096"),
+    "clean_environment_keys": ("=", "APPDATA, HOME, LOCALAPPDATA, PYTHONDONTWRITEBYTECODE, PYTHONNOUSERSITE, PYTHONUTF8, SystemRoot, TEMP, TMP, USERPROFILE, WINDIR"),
+    "clean_environment_paths": ("=", "APPDATA=scratch_root/roaming; HOME=USERPROFILE=scratch_root/home; LOCALAPPDATA=scratch_root/local; TEMP=TMP=scratch_root/tmp; SystemRoot=WINDIR=parent-verified Windows directory"),
+    "clean_environment_literals": ("=", 'PYTHONDONTWRITEBYTECODE=PYTHONNOUSERSITE=PYTHONUTF8="1"'),
+    "clean_environment_block_utf16_units": ("<=", "24576 including the terminal double NUL"),
+    "result_version": ("=", "1"),
+    "result_attempt_id": ("=", "request.attempt_id"),
+    "result_outcome": ("=", "result_code"),
+    "result_reason": ("=", "null or result_code"),
+    "step_result_outcome": ("=", "result_code"),
+    "step_result_reason": ("=", "null or result_code"),
+    "launch_state": ("=", "no_launch|launched"),
+    "private_tree_state": ("=", "absent|uncertain"),
+    "result_step_count": ("=", "0..request.step_count and 0..16"),
+    "result_step_ordinals": ("=", "unique, request-ordered values in 1..request.step_count"),
+    "failed_step_ordinal": ("=", "null or a value in 1..request.step_count"),
+}
+
 VOLATILE_ID = re.compile(
     r"\btg_(?:event|handoff|checkpoint|review_request|review_receipt|"
     r"review_finding|verification_receipt)_[0-9a-f]{16}\b"
@@ -285,7 +399,7 @@ TASK_STATUS_VALUES = {
     "paused",
     "done",
 }
-CURRENT_UNITS = ("TG-M24.R1",)
+CURRENT_UNITS = ("TG-M24.R2C",)
 NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
     for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
@@ -1393,11 +1507,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.R1"],
+                "current_units": ["TG-M24.R2C"],
                 "inactive_units": [
-                    "TG-M24.R2A",
-                    "TG-M24.R2B",
-                    "TG-M24.R2C",
                     "TG-M24.R4A",
                     "TG-M24.R3A",
                     "TG-M24.R3B",
@@ -1928,6 +2039,24 @@ def _m24_trusted_local_authority_sync(
         "does not claim network isolation, hostile-code containment, or zero capability",
         "does not activate product code or a runner runtime",
         "candidate c, b-to-c, lpac, appcontainer, etw, and registry recovery are not current m24 gates",
+        "runner-slice module registry and acyclic dependency graph",
+        "cli.py may call only verification_runner_service.py",
+        "repository and persistence modules never launch or import the process or os adapter",
+        "closed typed bounded request plus its local boolean cancellation signal",
+        "returns only the closed bounded sanitized result",
+        "opens no canonical state",
+        "verification_runner_service.py alone combines the process",
+        "blocks on either uncertainty",
+        "authorizes cleanup success or terminal persistence",
+        "no raw output, argv, environment, credential, private path, exit code, or exception body crosses that persistence boundary",
+        "logical request/result records add no serializer, ipc, worker, process, queue, pipe, socket, rpc, spool, supervisor, retry layer, schema, public cli, or product activation",
+        "direct service-to-retired-os seam",
+        "transitional nonconformance routed to r4a",
+        "a retained reverse import",
+        "callback in the process adapter",
+        "second cleanup-acceptance owner",
+        "transitional nonconformance routed to r4b",
+        "r2c repairs none of them and changes no r2a/r2b disposition or action selector",
     )
     if any(phrase not in prose for phrase in required):
         issues.append(
@@ -1938,32 +2067,490 @@ def _m24_trusted_local_authority_sync(
             )
         )
 
-    bounds = _anchor_section(scan, "tg-m24-r1")
-    headings = (
-        ()
-        if bounds is None
-        else tuple(
-            line
-            for level, line, position in scan.headings
-            if level == 2 and bounds[0] < position < bounds[1]
-        )
+    status_bindings = (
+        ("tg-m24-r1", "tg-m24.r1", "accepted"),
+        ("tg-m24-r2a", "tg-m24.r2a", "accepted"),
+        ("tg-m24-r2b", "tg-m24.r2b", "accepted"),
+        ("tg-m24-r2c", "tg-m24.r2c", "current"),
+        ("tg-m24-r4a", "tg-m24.r4a", "inactive"),
+        ("tg-m24-r3a", "tg-m24.r3a", "inactive"),
+        ("tg-m24-r3b", "tg-m24.r3b", "inactive"),
+        ("tg-m24-r4b", "tg-m24.r4b", "inactive"),
+        ("tg-m24-r5", "tg-m24.r5", "inactive"),
+        ("tg-m24-2a", "tg-m24.2a", "inactive"),
+        ("tg-m24-2b", "tg-m24.2b", "inactive"),
+        ("tg-m24-2c", "tg-m24.2c", "inactive"),
+        ("tg-m24-2", "tg-m24.2d", "inactive"),
+        ("tg-m24-3", "tg-m24.3", "inactive"),
+        ("tg-m24-4a", "tg-m24.4a", "inactive"),
+        ("tg-m24-4b", "tg-m24.4b", "inactive"),
+        ("tg-m24-4c", "tg-m24.4c", "inactive"),
+        ("tg-m24-4", "tg-m24.4d", "inactive"),
+        ("tg-m24-cp4", "tg-m24.cp4", "inactive"),
     )
-    heading = headings[0] if len(headings) == 1 else None
-    normalized_heading = "" if heading is None else heading.lower()
-    if (
-        heading is None
-        or re.search(r"\btg-m24\.r1\b", normalized_heading) is None
-        or not _positive_status_term(normalized_heading, "current")
-        or any(
-            _positive_status_term(normalized_heading, status)
-            for status in ("accepted", "inactive", "superseded")
+    observed_statuses: list[tuple[str, str, str]] = []
+    for anchor, unit, expected_status in status_bindings:
+        bounds = _anchor_section(scan, anchor)
+        headings = (
+            ()
+            if bounds is None
+            else tuple(
+                line
+                for level, line, position in scan.headings
+                if level == 2 and bounds[0] < position < bounds[1]
+            )
         )
-    ):
+        expected_shape = (
+            len(headings) == 2 and headings[1] == "## Expansion Boundary"
+            if anchor == "tg-m24-cp4"
+            else len(headings) == 1
+        )
+        heading = headings[0].lower() if headings else ""
+        status_is_exact = (
+            expected_shape
+            and re.search(rf"\b{re.escape(unit)}\b", heading) is not None
+            and _positive_status_term(heading, expected_status)
+            and all(
+                not _positive_status_term(heading, other)
+                for other in ("accepted", "current", "inactive", "superseded")
+                if other != expected_status
+            )
+        )
+        if status_is_exact:
+            observed_statuses.append((anchor, unit, expected_status))
+    if tuple(observed_statuses) != status_bindings:
         issues.append(
             Issue(
                 "m24_current_binding",
                 M24,
-                "the sole current registry unit is not bound to a current TG-M24.R1 owner section",
+                "M24 accepted predecessors, sole current R2C unit, or inactive successors drifted",
+            )
+        )
+
+
+def _m24_r2c_architecture_boundary(
+    scans: dict[str, Scan], issues: list[Issue]
+) -> None:
+    """Validate R2C structure without treating prose layout as authority."""
+
+    def normalized(value: str) -> str:
+        return " ".join(value.casefold().split())
+
+    def patterns_match(value: str, patterns: tuple[str, ...]) -> bool:
+        semantic = normalized(value)
+        return all(re.search(pattern, semantic) is not None for pattern in patterns)
+
+    def positive_patterns_match(value: str, patterns: tuple[str, ...]) -> bool:
+        semantic = normalized(value)
+        for pattern in patterns:
+            matches = tuple(re.finditer(pattern, semantic))
+            if not matches or any(
+                _relation_occurrence_negated(semantic, match.start(), match.end())
+                or re.search(
+                    r"\b(?:not|no|never)\b"
+                    r"(?:\s+[a-z0-9_/-]+){0,4}\s*$",
+                    semantic[max(0, match.start() - 80) : match.start()],
+                )
+                for match in matches
+            ):
+                return False
+        return True
+
+    def section_blocks(heading: str) -> tuple[str, ...]:
+        section = _section_bounds(design, heading)
+        if section is None:
+            return ()
+        blocks: list[str] = []
+        current: list[str] = []
+        for position in range(section[0] + 1, section[1]):
+            line = _semantic_prose(design.lines[position]).strip()
+            if not line:
+                if current:
+                    blocks.append(normalized(" ".join(current)))
+                    current = []
+                continue
+            current.append(line)
+        if current:
+            blocks.append(normalized(" ".join(current)))
+        return tuple(blocks)
+
+    def header_role(value: str) -> str | None:
+        semantic = normalized(value)
+        matches = tuple(
+            role
+            for role, patterns in R2C_TABLE_HEADER_ROLES.items()
+            if all(re.search(pattern, semantic) is not None for pattern in patterns)
+        )
+        return matches[0] if len(matches) == 1 else None
+
+    def comma_tokens(value: str, pattern: str) -> tuple[str, ...] | None:
+        tokens = tuple(part.strip() for part in value.replace("`", "").split(","))
+        return tokens if tokens and all(re.fullmatch(pattern, token) for token in tokens) else None
+
+    def acyclic(edges: set[tuple[str, str]]) -> bool:
+        visiting: set[str] = set()
+        visited: set[str] = set()
+        graph = {
+            layer: {target for source, target in edges if source == layer}
+            for layer in R2C_LAYER_MODULES
+        }
+
+        def visit(layer: str) -> bool:
+            if layer in visiting:
+                return False
+            if layer in visited:
+                return True
+            visiting.add(layer)
+            if not all(visit(target) for target in graph[layer]):
+                return False
+            visiting.remove(layer)
+            visited.add(layer)
+            return True
+
+        return all(visit(layer) for layer in graph)
+
+    design = scans[DESIGN]
+    bounds = _section_bounds(design, R2C_BOUNDARY_HEADING)
+    table = _sequence_table(design, R2C_BOUNDARY_TABLE_HEADING)
+    valid = (
+        bounds is not None
+        and design.anchors.get("tg-m24-r2c-runner-architecture-boundary", len(design.lines))
+        < bounds[0]
+        and table is not None
+        and len(table) == len(R2C_LAYER_MODULES) + 2
+    )
+
+    observed_edges: set[tuple[str, str]] = set()
+    column_indexes: dict[str, int] = {}
+    if valid and table is not None:
+        header = _cells(table[0])
+        separator = _cells(table[1])
+        roles = tuple(header_role(cell) for cell in header)
+        valid = (
+            len(header) == len(R2C_TABLE_HEADER_ROLES)
+            and None not in roles
+            and set(roles) == set(R2C_TABLE_HEADER_ROLES)
+            and len(separator) == len(header)
+            and all(re.fullmatch(r":?-{3,}:?", cell) for cell in separator)
+        )
+        if valid:
+            column_indexes = {
+                role: index for index, role in enumerate(roles) if role is not None
+            }
+
+    observed_layers: set[str] = set()
+    observed_modules: list[str] = []
+    cleanup_responsibility_layers: set[str] = set()
+    if valid and table is not None:
+        for row in table[2:]:
+            cells = _cells(row)
+            if len(cells) != len(R2C_TABLE_HEADER_ROLES):
+                valid = False
+                break
+            layer = cells[column_indexes["layer"]].strip().strip("`")
+            if re.fullmatch(r"[a-z][a-z0-9_]*", layer) is None:
+                valid = False
+                break
+            modules = comma_tokens(
+                cells[column_indexes["modules"]],
+                r"_?[A-Za-z][A-Za-z0-9_]*\.py",
+            )
+            import_cell = cells[column_indexes["imports"]]
+            imports = (
+                ()
+                if normalized(import_cell).strip("`") == "none"
+                else comma_tokens(import_cell, r"[a-z][a-z0-9_]*")
+            )
+            routes = tuple(
+                re.findall(
+                    r"(?<![A-Za-z0-9])(?:TG-M24\.)?"
+                    r"(R[0-9]+[A-Z]?|CP[0-9]+|[0-9]+[A-Z])"
+                    r"(?![A-Za-z0-9])",
+                    cells[column_indexes["route"]],
+                )
+            )
+            if (
+                layer not in R2C_LAYER_MODULES
+                or layer in observed_layers
+                or modules is None
+                or imports is None
+                or len(modules) != len(set(modules))
+                or set(modules) != set(R2C_LAYER_MODULES[layer])
+                or len(imports) != len(set(imports))
+                or set(imports) != set(R2C_LAYER_IMPORTS[layer])
+                or len(routes) != len(set(routes))
+                or set(routes) != set(R2C_LAYER_ROUTE_UNITS[layer])
+                or not positive_patterns_match(
+                    cells[column_indexes["responsibility"]],
+                    R2C_LAYER_RESPONSIBILITY_PATTERNS[layer],
+                )
+                or not patterns_match(
+                    cells[column_indexes["forbidden"]],
+                    R2C_LAYER_FORBIDDEN_PATTERNS[layer],
+                )
+            ):
+                valid = False
+                break
+            observed_layers.add(layer)
+            observed_modules.extend(modules)
+            observed_edges.update((layer, target) for target in imports)
+            if re.search(
+                r"\bcleanup acceptance\b",
+                normalized(cells[column_indexes["responsibility"]]),
+            ):
+                cleanup_responsibility_layers.add(layer)
+        valid = valid and observed_layers == set(R2C_LAYER_MODULES) and len(
+            observed_modules
+        ) == len(set(observed_modules)) and cleanup_responsibility_layers == {"service"}
+
+    text_blocks = (
+        ()
+        if bounds is None
+        else tuple(
+            tuple(design.lines[start + 1 : end])
+            for info, start, end in design.fences
+            if bounds[0] < start < end < bounds[1] and info.strip() == "text"
+        )
+    )
+    layer_names = "|".join(re.escape(layer) for layer in R2C_LAYER_MODULES)
+    edge_pattern = re.compile(
+        rf"(?<![a-z0-9_])(?P<source>{layer_names})\s*->\s*"
+        rf"(?P<target>{layer_names})(?![a-z0-9_])"
+    )
+    edge_blocks: list[tuple[tuple[str, str], ...]] = []
+    record_blocks: list[dict[str, tuple[str, ...]]] = []
+    bound_blocks: list[dict[str, tuple[str, str]]] = []
+    record_names = "|".join(re.escape(name) for name in R2C_RECORD_MEMBERS)
+    record_pattern = re.compile(
+        rf"\b(?P<name>{record_names})\s*=\s*(?P<body>.*?)"
+        rf"(?=(?:{record_names})\s*=|$)"
+    )
+    control_names = "|".join(
+        re.escape(name) for name in sorted(R2C_BOUND_CONTROLS, key=len, reverse=True)
+    )
+    control_pattern = re.compile(
+        rf"(?<![A-Za-z0-9_])(?P<key>{control_names})\s*"
+        rf"(?P<operator><=|=)\s*"
+    )
+    classified_blocks = 0
+    for block in text_blocks:
+        joined = "\n".join(block).strip()
+        collapsed = " ".join(joined.split())
+        edge_matches = tuple(edge_pattern.finditer(joined))
+        if edge_matches and not edge_pattern.sub("", joined).strip():
+            edge_blocks.append(
+                tuple(
+                    (match.group("source"), match.group("target"))
+                    for match in edge_matches
+                )
+            )
+            classified_blocks += 1
+            continue
+        if re.search(rf"\b(?:{record_names})\s*=", collapsed):
+            matches = tuple(record_pattern.finditer(collapsed))
+            records: dict[str, tuple[str, ...]] = {}
+            records_valid = (
+                bool(matches)
+                and matches[0].start() == 0
+                and matches[-1].end() == len(collapsed)
+            )
+            for match in matches:
+                raw_members = tuple(
+                    member.strip() for member in match.group("body").split(",")
+                )
+                members = tuple(
+                    member for member in raw_members if re.fullmatch(r"[a-z_]+", member)
+                )
+                if (
+                    len(members) != len(raw_members)
+                    or match.group("name") in records
+                ):
+                    records_valid = False
+                records[match.group("name")] = members
+            valid = valid and records_valid
+            record_blocks.append(records)
+            classified_blocks += 1
+            continue
+        header = re.match(r"^RunnerProcessBoundsV1\s*:\s*", collapsed)
+        if header is not None:
+            body = collapsed[header.end() :]
+            matches = tuple(control_pattern.finditer(body))
+            controls: dict[str, tuple[str, str]] = {}
+            controls_valid = bool(matches) and matches[0].start() == 0
+            for index, match in enumerate(matches):
+                end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
+                value = " ".join(body[match.end() : end].strip(" ;").split())
+                key = match.group("key")
+                if not value or key in controls:
+                    controls_valid = False
+                controls[key] = (match.group("operator"), value)
+            valid = valid and controls_valid
+            bound_blocks.append(controls)
+            classified_blocks += 1
+            continue
+        valid = False
+
+    expected_edges = {
+        (layer, target)
+        for layer, targets in R2C_LAYER_IMPORTS.items()
+        for target in targets
+    }
+    explicit_edges = set(edge_blocks[0]) if len(edge_blocks) == 1 else set()
+    valid = (
+        valid
+        and classified_blocks == len(text_blocks) == 3
+        and len(edge_blocks) == 1
+        and len(edge_blocks[0]) == len(explicit_edges)
+        and explicit_edges == expected_edges == observed_edges
+        and acyclic(explicit_edges)
+        and len(record_blocks) == 1
+        and set(record_blocks[0]) == set(R2C_RECORD_MEMBERS)
+        and all(
+            len(record_blocks[0][name]) == len(set(record_blocks[0][name]))
+            and set(record_blocks[0][name]) == set(members)
+            for name, members in R2C_RECORD_MEMBERS.items()
+        )
+        and len(bound_blocks) == 1
+    )
+    expected_controls = {
+        key: (operator, " ".join(value.split()))
+        for key, (operator, value) in R2C_BOUND_CONTROLS.items()
+    }
+    if bound_blocks:
+        valid = valid and bound_blocks[0] == expected_controls
+    else:
+        valid = False
+
+    excluded: set[int] = set()
+    if bounds is not None:
+        for _info, start, end in design.fences:
+            if bounds[0] < start < end < bounds[1]:
+                excluded.update(range(start, end + 1))
+        table_range = _section_table_range(design, R2C_BOUNDARY_TABLE_HEADING)
+        if table_range is not None:
+            excluded.update(range(table_range[0], table_range[1]))
+    prose = normalized(
+        " ".join(
+            _semantic_prose(design.lines[position])
+            for position in range(bounds[0] + 1, bounds[1])
+            if position not in excluded
+        )
+    ) if bounds is not None else ""
+    cleanup_blocks = section_blocks(
+        "### Cleanup Acceptance, Privacy, And Non-Activation"
+    )
+    cleanup_owner_block = next(
+        (
+            block
+            for block in cleanup_blocks
+            if re.search(r"single cleanup-\s*acceptance owner", block)
+        ),
+        "",
+    )
+    privacy_block = next(
+        (block for block in cleanup_blocks if "raw output" in block),
+        "",
+    )
+    architecture_absence_block = next(
+        (block for block in cleanup_blocks if "define no serializer" in block),
+        "",
+    )
+    activation_block = next(
+        (block for block in cleanup_blocks if "r2c adds no ipc" in block),
+        "",
+    )
+    cleanup_inputs = (
+        "verification_runner_service.py",
+        "process-tree zero",
+        "handle closure",
+        "output discard",
+        "private-tree absence",
+        "terminal persistence",
+    )
+    privacy_inputs = (
+        "raw output",
+        "argv",
+        "environment",
+        "credentials",
+        "private paths",
+        "exit codes",
+        "exception bodies",
+    )
+    architecture_absence_elements = (
+        "serializer",
+        "file spool",
+        "queue",
+        "pipe",
+        "socket",
+        "rpc",
+        "worker",
+        "daemon",
+        "subprocess wrapper",
+        "supervisor",
+        "heartbeat",
+        "retry protocol",
+        "secondary state store",
+        "second database connection",
+    )
+    activation_elements = (
+        "ipc",
+        "process",
+        "schema",
+        "public cli",
+        "skill trigger",
+        "completion gate",
+        "product behavior",
+    )
+    cleanup_owner_relation = re.sub(r"-\s+", "-", cleanup_owner_block)
+    focused_relations_valid = (
+        all(term in cleanup_owner_block for term in cleanup_inputs)
+        and all(
+            _positive_relation_term(cleanup_owner_relation, term)
+            for term in (
+                "single cleanup-acceptance owner",
+                "alone combines",
+                "alone authorizes",
+            )
+        )
+        and all(term in privacy_block for term in privacy_inputs)
+        and _positive_relation_term(privacy_block, "remain transient")
+        and _positive_relation_term(privacy_block, "never stored")
+        and all(
+            term in architecture_absence_block
+            for term in architecture_absence_elements
+        )
+        and _positive_relation_term(
+            architecture_absence_block,
+            "define no serializer",
+        )
+        and all(term in activation_block for term in activation_elements)
+        and _positive_relation_term(activation_block, "r2c adds no ipc")
+    )
+    semantic_relations = (
+        r"member sets are closed",
+        r"bounded sanitized structural values.{0,80}not arbitrary text",
+        r"r2c gates only.{0,180}result_code.{0,120}bindings",
+        r"does not define a concrete code taxonomy.{0,100}pairing",
+        r"2b owns.{0,100}membership.{0,80}pairing.{0,180}2c owns.{0,140}mapping.{0,80}projection",
+        r"parent service accepts no arbitrary adapter text.{0,160}persistence owner",
+        r"does not alter.{0,100}existing closed durable outcome",
+        r"observable payload.{0,80}one boolean.{0,120}no callback.{0,100}business gate",
+        r"trusted code.{0,100}not a hostile-code sandbox.{0,100}network isolation",
+        r"not qualification gates",
+        r"transitional r4a physical-deletion scope.{0,120}r4b scope",
+        r"2a/2b/2c own.{0,220}r2c repairs or activates none",
+    )
+    valid = (
+        valid
+        and focused_relations_valid
+        and all(re.search(pattern, prose) is not None for pattern in semantic_relations)
+    )
+    if not valid:
+        issues.append(
+            Issue(
+                "m24_r2c_architecture_boundary",
+                DESIGN,
+                "R2C layer registry, DAG, typed values, cleanup owner, privacy, routing, or non-activation drifted",
             )
         )
 
@@ -2714,6 +3301,7 @@ def check_document_contract(repo_root: str | os.PathLike[str]) -> Result:
         _sequences(scans, issues)
         _bounded_reading_controls(scans, issues)
         _m24_trusted_local_authority_sync(scans, issues)
+        _m24_r2c_architecture_boundary(scans, issues)
         _documentation_sequence(scans, issues)
         if registry is not None:
             _registry_routes(scans, registry, issues)

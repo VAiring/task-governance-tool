@@ -222,6 +222,51 @@ class DocumentContractTests(unittest.TestCase):
                 "Candidate C, B-to-C, LPAC, AppContainer, ETW, and registry recovery are not current M24 gates.",
                 "Candidate C, LPAC, AppContainer, and ETW are current M24 gates.",
             ),
+            (
+                "Runner-slice module registry and acyclic dependency graph",
+                "open Runner-slice module suggestions with cyclic dependencies",
+            ),
+            (
+                "`cli.py` may call only `verification_runner_service.py`",
+                "`cli.py` may call the process and OS adapters directly",
+            ),
+            (
+                "Repository and persistence modules never launch\n"
+                "or import the process or OS adapter.",
+                "Repository and persistence modules may launch or import the process or OS adapter.",
+            ),
+            (
+                "closed typed bounded request plus its local Boolean cancellation signal",
+                "untyped open request plus an arbitrary callback",
+            ),
+            (
+                "returns only the closed bounded sanitized result, opens no canonical state",
+                "returns raw process state and opens canonical state",
+            ),
+            (
+                "`verification_runner_service.py` alone combines the process",
+                "Multiple modules combine the process",
+            ),
+            (
+                "No raw output, argv, environment, credential,",
+                "Raw output, argv, environment, and credentials may persist,",
+            ),
+            (
+                "logical request/result records add no serializer, IPC, worker,",
+                "logical request/result records activate a serializer, IPC, and worker,",
+            ),
+            (
+                "transitional nonconformance routed to R4A",
+                "accepted current runtime conformance",
+            ),
+            (
+                "transitional nonconformance routed to R4B",
+                "accepted current dependency conformance",
+            ),
+            (
+                "changes no R2A/R2B disposition or action selector",
+                "changes R2A/R2B dispositions and action selectors",
+            ),
         )
         for old, new in mutations:
             with self.subTest(old=old), self.fixture() as root:
@@ -231,12 +276,211 @@ class DocumentContractTests(unittest.TestCase):
                     self.codes(contract.check_document_contract(root)),
                 )
 
+        design_mutations = (
+            (
+                "## Current TG-M24.R2C Trusted-Local Runner Architecture Boundary",
+                "## Proposed TG-M24.R2C Trusted-Local Runner Architecture Boundary",
+            ),
+            (
+                "| `value_model` | `verification_runner.py` |",
+                "| `value_model` | `verification_runner.py`, `storage.py` |",
+            ),
+            (
+                "Parent orchestration; sole ownership of opt-in and eligibility,",
+                "Parent orchestration; not sole ownership of opt-in and eligibility,",
+            ),
+            (
+                "Evidence and terminal persistence",
+                "Evidence and no terminal persistence",
+            ),
+            (
+                "and final cleanup acceptance.",
+                "and no final cleanup acceptance.",
+            ),
+            (
+                "later audit-only integration remains owned by 2C.",
+                "later audit-only integration remains owned by 2C and TG-M24.CP4.",
+            ),
+            (
+                "process_adapter -> os_adapter",
+                "os_adapter -> process_adapter",
+            ),
+            (
+                "| `value_model` | `verification_runner.py` | Pure closed Runner "
+                "identifiers, bounded codes, value validation, and domain encoding used "
+                "across the boundary. | none |",
+                "| `value_model` | `verification_runner.py` | Pure closed Runner "
+                "identifiers, bounded codes, value validation, and domain encoding used "
+                "across the boundary. | `service` |",
+            ),
+            (
+                "materialized_root, scratch_root, clean_environment, steps, cancel_signal",
+                "materialized_root, scratch_root, clean_environment, steps, callback",
+            ),
+            (
+                "total_process_count, process_zero, handles_closed, raw_output_discarded,",
+                "total_process_count, raw_output, private_path, exception_body,",
+            ),
+            (
+                "attempt_id = ASCII /tg_verification_runner_attempt_[0-9a-f]{16}/ (47 bytes)",
+                "attempt_id = unrestricted caller text",
+            ),
+            (
+                "result_code = ASCII /[a-z][a-z0-9_]{0,63}/ (1..64 bytes)",
+                "result_code = unrestricted adapter text",
+            ),
+            (
+                "result_outcome = result_code; result_reason = null or result_code",
+                "result_outcome = arbitrary text; result_reason = arbitrary text",
+            ),
+            (
+                "absolute_path = well-formed Unicode, absolute normalized Windows path, "
+                "no NUL or Unicode Cc, no \".\" or \"..\" segment, 1..4096 UTF-8 bytes "
+                "and 1..4096 UTF-16 code units",
+                "absolute_path = any path with no byte or traversal bound",
+            ),
+            (
+                "path_ownership = executable is a parent-verified fixed absolute "
+                "package-runtime identity outside materialized_root and scratch_root with "
+                "no PATH lookup; materialized_root and scratch_root are distinct target "
+                "and scratch children of one owned attempt root; no symlink or reparse "
+                "traversal",
+                "path_ownership = executable and target use ambient shared paths",
+            ),
+            (
+                "step_count = 1..16; argv_count_per_step = 0..64",
+                "step_count = unbounded; argv_count_per_step = unbounded",
+            ),
+            (
+                "clean_environment_keys = APPDATA, HOME, LOCALAPPDATA, "
+                "PYTHONDONTWRITEBYTECODE, PYTHONNOUSERSITE, PYTHONUTF8, SystemRoot, "
+                "TEMP, TMP, USERPROFILE, WINDIR",
+                "clean_environment_keys = ambient process environment",
+            ),
+            (
+                "result_step_count = 0..request.step_count and 0..16; "
+                "result_step_ordinals = unique, request-ordered values in "
+                "1..request.step_count",
+                "result_step_count and ordinals are unbounded and unrelated to the request",
+            ),
+            (
+                "observable payload is\n"
+                "one Boolean; it contains no callback to SQLite, CLI policy, or a business gate,",
+                "observable payload is arbitrary and may call SQLite or a business gate,",
+            ),
+            (
+                "`verification_runner_service.py` is the single cleanup-\n"
+                "acceptance owner:",
+                "The process and lifecycle adapters are cleanup-acceptance owners:",
+            ),
+            (
+                "`verification_runner_service.py` is the single cleanup-\n"
+                "acceptance owner:",
+                "`verification_runner_service.py` is not the single cleanup-\n"
+                "acceptance owner:",
+            ),
+            (
+                "it alone combines process-tree zero, handle closure, output\n"
+                "discard, and private-tree absence",
+                "it alone combines process-tree zero and private-tree absence",
+            ),
+            (
+                "Raw output, argv, environment, credentials, private paths, exit codes, and\n"
+                "exception bodies remain transient and are never stored.",
+                "Raw process and private data may be stored.",
+            ),
+            (
+                "Raw output, argv, environment, credentials, private paths, exit codes, and\n"
+                "exception bodies remain transient and are never stored.",
+                "Raw output and exception bodies remain transient and are never stored.",
+            ),
+            (
+                "Raw output, argv, environment, credentials, private paths, exit codes, and\n"
+                "exception bodies remain transient and are never stored.",
+                "Raw output, argv, environment, credentials, private paths, exit codes, and\n"
+                "exception bodies do not remain transient and are never stored.",
+            ),
+            (
+                "The records above define no serializer, file spool,\n"
+                "queue, pipe, socket, RPC, worker, daemon, subprocess wrapper, supervisor,\n"
+                "heartbeat, retry protocol, secondary state store, or second database\n"
+                "connection.",
+                "The records above define no serializer or second database\n"
+                "connection.",
+            ),
+            (
+                "The records above define no serializer, file spool,",
+                "The records above do not establish that they define no serializer, file spool,",
+            ),
+            (
+                "M25 separation requires later explicit authority; R2C adds no IPC,",
+                "M25 separation requires later explicit authority; it does not establish "
+                "that R2C adds no IPC,",
+            ),
+            (
+                "are transitional R4A physical-deletion scope, not architecture\n"
+                "nodes. Retained dependency violations are R4B scope.",
+                "are accepted architecture nodes with no successor owner.",
+            ),
+            (
+                "R2C adds no IPC,\n"
+                "process, schema, public CLI, Skill trigger, completion gate, or product behavior.",
+                "R2C activates IPC, a process, a public CLI, and product behavior.",
+            ),
+            (
+                "This remains a reliability and privacy boundary for trusted code, not a\n"
+                "hostile-code sandbox or a claim of network isolation.",
+                "This becomes a hostile-code security boundary for trusted code with\n"
+                "network isolation.",
+            ),
+        )
+        for old, new in design_mutations:
+            with self.subTest(old=old), self.fixture() as root:
+                self.replace(root, contract.DESIGN, old, new)
+                self.assertIn(
+                    "m24_r2c_architecture_boundary",
+                    self.codes(contract.check_document_contract(root)),
+                )
+
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.DESIGN,
+                "Parse and format the existing public surface and dispatch the Runner "
+                "route to the parent service.",
+                "Handle public input parsing and response formatting, then dispatch the "
+                "Runner route solely through the parent service.",
+            )
+            self.replace(
+                root,
+                contract.DESIGN,
+                "RunnerProcessRequestV1 = version, attempt_id, executable,\n"
+                "  materialized_root, scratch_root, clean_environment, steps, cancel_signal",
+                "RunnerProcessRequestV1 = version,\n"
+                "  attempt_id, executable, materialized_root, scratch_root,\n"
+                "  clean_environment, steps, cancel_signal",
+            )
+            self.replace(
+                root,
+                contract.DESIGN,
+                "  step_count = 1..16; argv_count_per_step = 0..64",
+                "  step_count = 1..16;\n  argv_count_per_step = 0..64",
+            )
+            self.replace(
+                root,
+                contract.DESIGN,
+                "process_adapter -> os_adapter",
+                "process_adapter\n  -> os_adapter",
+            )
+            result = contract.check_document_contract(root)
+            self.assertTrue(result.ok, result.issues)
+
         with self.fixture() as root:
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.R1 Current Authority And Sequence Cutover",
-                "## TG-M24.R1 Inactive Authority And Sequence Cutover",
+                "## TG-M24.R2C Current M25-Ready Architecture Boundary Freeze",
+                "## TG-M24.R2C Inactive M25-Ready Architecture Boundary Freeze",
             )
             self.assertIn(
                 "m24_current_binding",
@@ -247,14 +491,24 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "<a id=\"tg-m24-r2a\"></a>",
-                "## TG-M24.R1 Inactive Duplicate Owner\n\n"
-                "<a id=\"tg-m24-r2a\"></a>",
+                "<a id=\"tg-m24-r4a\"></a>",
+                "## TG-M24.R2C Current Duplicate Owner\n\n"
+                "<a id=\"tg-m24-r4a\"></a>",
             )
             self.assertIn(
                 "m24_current_binding",
                 self.codes(contract.check_document_contract(root)),
             )
+
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.M24,
+                "## TG-M24.R2C Current M25-Ready Architecture Boundary Freeze",
+                "## TG-M24.R2C M25-Ready Current Architecture Boundary Freeze",
+            )
+            result = contract.check_document_contract(root)
+            self.assertTrue(result.ok, result.issues)
 
     def test_m24_trigger_route_is_structural(self):
         with self.fixture() as root:
@@ -876,10 +1130,10 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.R1"])
+            self.assertEqual(m24["current_units"], ["TG-M24.R2C"])
             self.assertEqual(
                 m24["inactive_units"],
-                [row[0].split(" /", 1)[0] for row in contract.ROWS_M24[1:]],
+                [row[0].split(" /", 1)[0] for row in contract.ROWS_M24[4:]],
             )
             self.assertEqual(m24["superseded_units"], ["TG-M24.1B"])
             self.assertNotIn("TG-M24.1", m24["current_units"])
@@ -1203,8 +1457,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.R1 owns current formal authority for the",
-                "TG-M24.R1 is a superseded compatibility route for the",
+                "TG-M24.R2C owns current formal authority for the",
+                "TG-M24.R2C is a superseded compatibility route for the",
             )
             self.assertIn(
                 "document_role",
@@ -1215,8 +1469,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.R1 owns current formal authority for the",
-                "TG-M24.R1 is not current formal authority for the",
+                "TG-M24.R2C owns current formal authority for the",
+                "TG-M24.R2C is not current formal authority for the",
             )
             self.assertIn(
                 "document_role",
@@ -1233,8 +1487,17 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "until its immediate predecessor is accepted.",
-                "until a later decision reopens it.",
+                "TG-M24.R1, TG-M24.R2A, and TG-M24.R2B are accepted\n"
+                "> predecessors.",
+                "TG-M24.R1, TG-M24.R2A, and TG-M24.R2B are former units.",
+            )
+            self.replace(
+                root,
+                contract.M24,
+                "every later unit in this document remain inactive until their immediate\n"
+                "> predecessors are accepted.",
+                "every later unit in this document remains inactive only until\n"
+                "> later decisions reopen them.",
             )
             self.assertIn(
                 "document_role",

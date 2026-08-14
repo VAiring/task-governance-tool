@@ -3,13 +3,13 @@
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.12.0 with SQLite schema v19, Viewer
 snapshot v4 accepting source schemas v5-v19, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with managed recovery and stored-Task/Contract relationship validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
-TG-M20S.3 remains inactive and no TG-M23 unit is current. TG-M24.1 and
-TG-M24.1A are accepted predecessors; the fixed-Candidate-C and adversarial
-LPAC route formerly owned by TG-M24.1B is superseded. Current TG-M24 authority
-is the ordered repair and implementation sequence for an explicitly adopted
-trusted-local Runner. It activates no product behavior by itself. The candidate
-therefore remains v0.12.0/schema v19 until the owning downstream units are
-accepted.
+TG-M20S.3 remains inactive and no TG-M23 unit is current. TG-M24.1,
+TG-M24.1A, TG-M24.R1, TG-M24.R2A, and TG-M24.R2B are accepted predecessors;
+the fixed-Candidate-C and adversarial LPAC route formerly owned by TG-M24.1B
+is superseded. TG-M24.R2C is the sole current TG-M24 authority and freezes only
+the M25-ready Runner architecture boundary below. It activates no product
+behavior. The candidate therefore remains v0.12.0/schema v19 until the owning
+downstream units are accepted.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -157,6 +157,11 @@ The implementation keeps these narrow ownership boundaries:
 - `viewer.py`, `viewer_config.py`, and `viewer_maintenance.py` own compatible
   snapshot reads, strict presentation configuration, safe HTML rendering, and
   generation-based publication.
+
+The current documentation-only Runner slice is the closed architecture
+registry at [TG-M24.R2C Runner Architecture Boundary](#tg-m24-r2c-runner-architecture-boundary).
+It narrows future implementation ownership without changing any supported
+module, schema, command, or runtime behavior.
 
 The bundled template is a complete offline HTML/CSS/JavaScript application. It
 has no external dependency, server, database connection, or network API.
@@ -2357,36 +2362,209 @@ must match the specification branch and actual stored effects; self-reported
 intent alone is insufficient. Current behavior is not forward-tested against
 these expectations because activation has not occurred.
 
-## Approved But Inactive TG-M24 Trusted-Local Runner Design Boundary
+<a id="tg-m24-r2c-runner-architecture-boundary"></a>
 
-The future Runner is an explicit-opt-in adapter for a repository the user
-already trusts. Eligibility is deny-by-default and binds the current Task,
-Contract, verification criterion, exact target, and a project-owned fixed plan.
-Untrusted, external, unsupported, or visual-only targets route to existing M21
-manual verification without starting a process. A launch uses an absolute
-executable, literal argv, `shell=false`, no PATH lookup, a closed credential-
-excluding environment, and an exact private materialization. The target working
-tree is never the execution root and receives no copy-back.
+## Current TG-M24.R2C Trusted-Local Runner Architecture Boundary
 
-The process adapter must establish a Windows Job and its process/resource
-limits before trusted project code runs. It owns wall timeout and cancellation,
-bounded stdout/stderr drains, whole-tree termination and wait, handle closure,
-and one private temporary root. The service layer receives only a typed,
-serializable request and a closed result. The process adapter does not own
-SQLite, CLI policy, or completion decisions; storage does not start processes;
-and one cleanup owner proves process zero and temporary-root absence before any
-outcome is accepted. The exact module/import DAG is frozen by TG-M24.R2C before
-implementation work is consumed.
+This is a documentation-only freeze for the future explicit-opt-in adapter for
+a repository the user already trusts. Eligibility remains deny-by-default and
+binds the current Task, Contract, verification criterion, exact target, and a
+project-owned fixed plan. Untrusted, external, unsupported, or visual-only
+targets route to existing M21 manual verification without starting a process.
+A future launch uses an absolute executable, literal argv, `shell=false`, no
+PATH lookup, a closed credential-excluding environment, and an exact private
+materialization. The target working tree is never the execution root and
+receives no copy-back.
 
-Raw output, argv, environment, credentials, private paths, and exception bodies
-remain transient and are never stored. Cleanup or privacy uncertainty fails
-closed. This is a reliability and privacy boundary for trusted code, not a
-hostile-code sandbox or a claim of network isolation. Candidate C, B-to-C
-comparison, LPAC/AppContainer, Package-SID ACLs, ETW diagnosis, transfer or
-recovery state machines, supervisors, trust-root hardening, and diagnostic
-fault matrices are retired from the current M24 design. Existing artifacts and
-tests are transitional residue until the inventory and physical-deletion units
-classify and remove them; they are not current qualification gates.
+### Closed Runner-Slice Module Registry
+
+The table is the complete Runner-slice layer registry. `Allowed Runner-layer
+imports` names the only forward edges between these layer identifiers;
+imports within one row are same-layer. Standard-library imports and existing
+shared primitives outside this exact module set transfer no listed ownership
+and may not import back into a higher Runner layer. Because `cli.py` is shared
+by all public leaves, its unrelated pre-existing imports are outside the
+Runner route; its Runner dispatch has only the `cli -> service` edge.
+
+| Layer id | Exact owned modules | Sole Runner responsibility | Allowed Runner-layer imports | Forbidden responsibility or reverse edge | Transitional nonconformance route |
+|---|---|---|---|---|---|
+| `cli` | `cli.py` | Parse and format the existing public surface and dispatch the Runner route to the parent service. | `service` | No Runner eligibility, authority, persistence, process, native, or cleanup decision; no Runner dispatch to `process_adapter` or `os_adapter`. | Any Runner-specific direct process/native edge is repaired by R4B after retired branches are removed by R4A. |
+| `service` | `verification_runner_service.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | Direct retired OS/profile/recovery seams are deleted by R4A; any retained direct OS edge or second acceptance owner is repaired by R4B; later audit-only integration remains owned by 2C. |
+| `repository` | `storage.py`, `tasks.py`, `contracts.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema and Evidence compatibility remain R3A/R3B; any retained reverse edge or cycle is repaired by R4B. |
+| `target_plan` | `artifact_manifest.py`, `verification_runner_git.py`, `verification_runner_plan.py` | Parent-invoked exact target observation/materialization and fixed-plan decode/validation. | `repository`, `value_model` | No CLI policy, canonical database ownership, completion decision, trusted-code or verification-command launch, terminal publication, or cleanup acceptance. | Dependency repair remains R4B; retained target/plan implementation remains 2A. |
+| `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The current `verification_runner.py -> evidence_ledger.py` reverse edge and resulting cycle are repaired by R4B. |
+| `runtime_identity` | `verification_runner_runtime.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is deleted by R4A; retained runtime implementation remains 2B and dependency repair remains R4B. |
+| `lifecycle` | `verification_runner_lifecycle.py` | Parent-requested creation, inventory, quarantine, removal, and absence proof for the one owned private attempt tree. | none | No process start, Job/stdio/handle ownership, SQLite, Evidence, business gate, terminal publication, or final cleanup acceptance. | Any retired profile/recovery mechanics are deleted by R4A; retained lifecycle implementation remains 2B; any second acceptance owner is repaired by R4B. |
+| `process_adapter` | `verification_runner_process.py` | Consume the closed request, establish the Job before trusted code, enforce process/resource/output/time bounds, drain and discard output, terminate and wait for process-tree zero, close handles, and return the closed result. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Candidate/AppContainer/profile/ACL branches are deleted by R4A; the current business-freshness callback is repaired by R4B; retained adapter implementation remains 2B. |
+| `os_adapter` | `_verification_runner_win32.py` | Thin Windows Job, process, stdio, accounting, termination, wait, and handle primitives. | `value_model` | No parent policy, repository, persistence, gate, cleanup acceptance, LPAC/AppContainer/profile/ACL/ETW/registry-recovery module, or reverse import. | `_verification_runner_lpac_win32.py` and retired native branches are deleted by R4A; retained thin primitives remain 2B. |
+
+The complete inter-layer edge set is therefore exactly:
+
+```text
+cli -> service
+service -> repository
+service -> target_plan
+service -> value_model
+service -> runtime_identity
+service -> lifecycle
+service -> process_adapter
+repository -> value_model
+target_plan -> repository
+target_plan -> value_model
+runtime_identity -> repository
+runtime_identity -> value_model
+process_adapter -> value_model
+process_adapter -> os_adapter
+os_adapter -> value_model
+```
+
+An unlisted edge is forbidden, and the graph has no cycle. In particular,
+repository/persistence code never imports or launches the process or OS
+adapter; the process and OS adapters never open the canonical database or
+state resolver and never import a parent or business-gate module. `basis_is_current`
+or an equivalent Task/Contract/criterion/target freshness callback is a
+business-gate reverse edge; the service performs those checks before launch,
+between bounded adapter calls where applicable, and after the returned result.
+
+### Typed Process Value Boundary
+
+The following are logical immutable in-process records, not a public schema or
+implemented transport. Their member sets are closed:
+
+```text
+RunnerProcessRequestV1 = version, attempt_id, executable,
+  materialized_root, scratch_root, clean_environment, steps, cancel_signal
+RunnerProcessStepV1 = ordinal, step_id, mode, entrypoint, argv, cwd,
+  shell, path_lookup, timeout_seconds, cpu_seconds, memory_mib,
+  process_limit, output_byte_limit
+RunnerProcessResultV1 = version, attempt_id, outcome, reason, launch_state,
+  failed_step_ordinal, duration_ms, cpu_time_ms, peak_job_memory_bytes,
+  total_process_count, process_zero, handles_closed, raw_output_discarded,
+  steps
+RunnerProcessStepResultV1 = ordinal, outcome, reason, launch_state,
+  cpu_time_ms, peak_job_memory_bytes, total_process_count
+RunnerPrivateTreeResultV1 = attempt_id, state
+```
+
+The closed scalar, path, and collection bounds are exactly:
+
+```text
+RunnerProcessBoundsV1:
+  request_version = 1
+  accepted_plan_blob_utf8_bytes <= 65536
+  attempt_id = ASCII /tg_verification_runner_attempt_[0-9a-f]{16}/ (47 bytes)
+  identifier = ASCII /[a-z0-9][a-z0-9._-]{0,63}/ (1..64 bytes)
+  result_code = ASCII /[a-z][a-z0-9_]{0,63}/ (1..64 bytes)
+  absolute_path = well-formed Unicode, absolute normalized Windows path, no NUL or Unicode Cc, no "." or ".." segment, 1..4096 UTF-8 bytes and 1..4096 UTF-16 code units
+  relative_path = "." or 1..32 "/"-separated ASCII /[A-Za-z0-9_][A-Za-z0-9._-]{0,127}/ components, no "." or ".." component, total 1..512 bytes
+  script_entrypoint = non-dot relative_path ending in ".py"
+  module_entrypoint = 1..16 "."-separated ASCII /[A-Za-z_][A-Za-z0-9_]{0,63}/ components, total 1..512 bytes
+  literal_arg = well-formed Unicode with no Unicode Cc, 0..4096 UTF-8 bytes and 0..4096 UTF-16 code units
+  path_ownership = executable is a parent-verified fixed absolute package-runtime identity outside materialized_root and scratch_root with no PATH lookup; materialized_root and scratch_root are distinct target and scratch children of one owned attempt root; no symlink or reparse traversal
+  resolved_relative_path = every entrypoint and cwd resolves beneath materialized_root
+  step_count = 1..16; argv_count_per_step = 0..64
+  timeout_seconds = 1..900; total_timeout_seconds = 1..1800
+  cpu_seconds = 1..900; memory_mib = 64..2048; process_limit = 1..32
+  output_byte_limit = 1048576
+  command_line_utf16_units <= 24576 after exact Windows quoting and fixed bootstrap insertion
+  clean_environment_entry_count = 11; clean_environment_value_utf8_bytes = 1..4096
+  clean_environment_keys = APPDATA, HOME, LOCALAPPDATA, PYTHONDONTWRITEBYTECODE, PYTHONNOUSERSITE, PYTHONUTF8, SystemRoot, TEMP, TMP, USERPROFILE, WINDIR
+  clean_environment_paths = APPDATA=scratch_root/roaming; HOME=USERPROFILE=scratch_root/home; LOCALAPPDATA=scratch_root/local; TEMP=TMP=scratch_root/tmp; SystemRoot=WINDIR=parent-verified Windows directory
+  clean_environment_literals = PYTHONDONTWRITEBYTECODE=PYTHONNOUSERSITE=PYTHONUTF8="1"
+  clean_environment_block_utf16_units <= 24576 including the terminal double NUL
+  result_version = 1; result_attempt_id = request.attempt_id
+  result_outcome = result_code; result_reason = null or result_code
+  step_result_outcome = result_code; step_result_reason = null or result_code
+  launch_state = no_launch|launched; private_tree_state = absent|uncertain
+  result_step_count = 0..request.step_count and 0..16; result_step_ordinals = unique, request-ordered values in 1..request.step_count
+  failed_step_ordinal = null or a value in 1..request.step_count
+```
+
+The service constructs the request only after parent-owned eligibility,
+freshness, target, plan, executable, materialization, and credential-exclusion
+checks. No variable-length request member inherits a bound from an inactive
+execution unit. `executable`, `materialized_root`, and `scratch_root` are
+`absolute_path` values observed by the parent without a symlink or reparse
+traversal. `executable` is the parent-verified fixed absolute package-runtime
+identity, uses no `PATH` lookup, and is outside `materialized_root` and
+`scratch_root`. `materialized_root` and `scratch_root` belong to exactly one
+private attempt root as its distinct `target` and `scratch` children. Every
+resolved `entrypoint` and `cwd` remains under `materialized_root`.
+
+`clean_environment` is an ordered tuple containing exactly the 11
+case-insensitively unique keys `APPDATA`, `HOME`, `LOCALAPPDATA`,
+`PYTHONDONTWRITEBYTECODE`, `PYTHONNOUSERSITE`, `PYTHONUTF8`, `SystemRoot`,
+`TEMP`, `TMP`, `USERPROFILE`, and `WINDIR`, in that order. `APPDATA` is
+`scratch_root/roaming`; `HOME` and `USERPROFILE` are `scratch_root/home`;
+`LOCALAPPDATA` is `scratch_root/local`; `TEMP` and `TMP` are
+`scratch_root/tmp`; `SystemRoot` and `WINDIR` are the same parent-verified
+Windows directory; and the three `PYTHON*` values are exactly `"1"`. It has no
+additional or ambient key, and all path values satisfy `absolute_path`.
+
+`steps` is a tuple whose ordinal is its one-based position. `step_id` satisfies
+`identifier`; `mode` is exactly `script|module`; `entrypoint` satisfies the
+matching entrypoint grammar; `argv` is a tuple of `literal_arg`; and `cwd`
+satisfies `relative_path`. These counts, per-member sizes, and aggregate
+command-line/environment-block limits are all enforced before process-adapter
+entry. The request admits no other scalar or collection shape. Resource,
+timeout, and output values use the exact numeric bounds above; `shell` and
+`path_lookup` are exactly false. Request paths, argv, and environment are
+transient and never copied into a result or durable row.
+`cancel_signal` is a local in-process typed signal whose observable payload is
+one Boolean; it contains no callback to SQLite, CLI policy, or a business gate,
+is never persisted, and creates no transport.
+
+For both result records, `outcome` is an adapter-local `result_code` and
+`reason` is either null or an adapter-local `result_code`; `launch_state` uses
+the exact closed set above. These codes are bounded sanitized structural
+values, not arbitrary text. R2C gates only the closed record-member sets, the
+`result_code` grammar, nullability, and those member-to-grammar bindings. It
+does not define a concrete code taxonomy or outcome/reason pairing. Inactive
+2B owns that local membership and pairing, while inactive 2C owns the closed
+durable/public mapping and projection. The parent service accepts no arbitrary
+adapter text, remains the sole business-interpretation and persistence owner,
+and persists only the mapped existing durable outcome. This freeze does not
+alter the specification's existing closed durable outcome. Optional accounting
+is nonnegative and bounded by the request. Result `steps` satisfies the exact
+count, uniqueness, range, and order relation above, so it has at most one
+sanitized result per request step. A result contains no exit code, output byte,
+argv, environment value, credential, path, exception body, or arbitrary text.
+process_zero, handles_closed, and raw_output_discarded must all be true before
+the service can accept process cleanup. The lifecycle layer separately returns
+only the same safe `attempt_id` and the exact `private_tree_state` set above;
+it returns no path or filesystem detail.
+
+### Cleanup Acceptance, Privacy, And Non-Activation
+
+The process adapter is the sole owner of its Job, descendants, drains, and
+handles. The lifecycle layer is the sole mechanic allowed to remove and prove
+absence of the parent-owned private attempt tree. Neither is a business
+acceptance owner. `verification_runner_service.py` is the single cleanup-
+acceptance owner: it alone combines process-tree zero, handle closure, output
+discard, and private-tree absence, blocks on any false or uncertain proof, and
+alone authorizes cleanup success or terminal persistence. No recovery path,
+maintenance module, repository, CLI branch, or later adapter may synthesize a
+second acceptance decision.
+
+Raw output, argv, environment, credentials, private paths, exit codes, and
+exception bodies remain transient and are never stored. Cleanup or privacy
+uncertainty fails closed. The records above define no serializer, file spool,
+queue, pipe, socket, RPC, worker, daemon, subprocess wrapper, supervisor,
+heartbeat, retry protocol, secondary state store, or second database
+connection. M25 separation requires later explicit authority; R2C adds no IPC,
+process, schema, public CLI, Skill trigger, completion gate, or product behavior.
+
+This remains a reliability and privacy boundary for trusted code, not a
+hostile-code sandbox or a claim of network isolation. Candidate C, B-to-C,
+LPAC/AppContainer, Package-SID ACLs, ETW, registry/profile recovery, transfer
+state machines, supervisors, trust-root hardening, and diagnostic fault
+matrices are not qualification gates. Their exact inventory-approved code,
+tests, fixtures, manifests, Candidate runtime material, and direct retired
+native seams are transitional R4A physical-deletion scope, not architecture
+nodes. Retained dependency violations are R4B scope. R3A/R3B and 2A/2B/2C own
+only their already-routed later storage, Evidence, target/plan, adapter/
+lifecycle, and parent-integration work. R2C repairs or activates none of them
+and changes no R2A inventory or R2B action selector.
 
 ## Validation And Test Design
 

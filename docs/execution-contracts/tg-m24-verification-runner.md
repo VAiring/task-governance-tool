@@ -8,10 +8,12 @@
 > TG-M24.1 and TG-M24.1A are accepted predecessors, but their adversarial-code
 > qualification details are excluded from this sequence's gates. TG-M24.1B is
 > superseded and non-gating. TG-M24.R1, TG-M24.R2A, and TG-M24.R2B are accepted
-> predecessors. TG-M24.R2C and TG-M24.R4A are accepted predecessors; accepted
+> predecessors. TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are accepted predecessors; accepted
 > R4A left its inventory-approved retired repository material and dedicated
-> tests physically absent, with no archive or dormant copy. TG-M24.R3A owns
-> current formal authority for the schema-v20 migration and storage baseline;
+> tests physically absent, with no archive or dormant copy. Accepted R4V adds
+> only the dependency-pure, legacy-stable Runner value-model foundation and
+> exact-candidate manifest closure, with no product activation. TG-M24.R3A
+> owns current formal authority for the schema-v20 migration and storage baseline;
 > TG-M24.R3B and every later unit in this document remain inactive until their
 > immediate predecessors are accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
@@ -103,7 +105,8 @@ or evidence.
 | TG-M24.R2B / 25 | `tg_task_ca8d0d81cd1962ab` | accepted TG-M24.R2A | Map changed tests to current requirements or regressions and identify obsolete or meaningless tests without editing behavior. |
 | TG-M24.R2C / 30 | `tg_task_252701fe03f530af` | accepted TG-M24.R2B | Freeze the retained Runner ownership and one-way dependency boundary needed for M25; add no process or IPC layer. |
 | TG-M24.R4A / 40 | `tg_task_83d2af496ac84982` | accepted TG-M24.R2C | Physically delete only inventory-approved retired repository assets and their dedicated tests, with no archive or dormant copy. |
-| TG-M24.R3A / 50 | `tg_task_a6d113455aa2cdfe` | accepted TG-M24.R4A | Stabilize schema-v20 migration and storage without Runner launch or gate authority. |
+| TG-M24.R4V / 45 | `tg_task_006bee9937e25af9` | accepted TG-M24.R4A | Establish the dependency-pure, legacy-stable Runner value model and exact-candidate manifest without product activation. |
+| TG-M24.R3A / 50 | `tg_task_a6d113455aa2cdfe` | accepted TG-M24.R4V | Stabilize schema-v20 migration and storage without Runner launch or gate authority. |
 | TG-M24.R3B / 60 | `tg_task_c343ed2ec8acedf8` | accepted TG-M24.R3A | Reconcile sanitized Runner observations and projections without process launch or gate authority. |
 | TG-M24.R4B / 70 | `tg_task_e04fd31e6713cfa1` | accepted TG-M24.R3B | Repair pre-M24 behavior and frozen dependency violations before execution is enabled. |
 | TG-M24.R5 / 80 | `tg_task_89e9ac8d34df2e95` | accepted TG-M24.R4B | Perform the one authorized physical retirement of fixed OS-temp diagnostic residue. |
@@ -230,9 +233,11 @@ public CLI, or product activation.
 
 The inventory-approved retired Candidate/LPAC/AppContainer/profile/ACL/ETW/
 registry-recovery residue, direct service-to-retired-OS seam, and Candidate-
-only runtime material are physically absent after accepted R4A. A retained
-reverse import, business-freshness callback in the process adapter, cycle, or
-second cleanup-acceptance owner is transitional nonconformance routed to R4B.
+only runtime material are physically absent after accepted R4A. A
+dependency-pure, legacy-stable value-model foundation and its reverse-import repair are
+supplied by accepted R4V. A retained business-freshness callback in the process
+adapter, other cycle, or second cleanup-acceptance owner remains
+transitional nonconformance routed to R4B.
 R3A/R3B and 2A/2B/2C own
 only their already-declared later storage, Evidence, target/plan, process/
 lifecycle, and parent-integration implementation slices. R2C repaired none of
@@ -255,13 +260,31 @@ Acceptance required retained-test ownership, package/document/lane
 consistency, focused and exact-diff checks, and two independent Tier 2 PASS
 reviews.
 
+<a id="tg-m24-r4v"></a>
+
+## TG-M24.R4V Accepted Dependency-Pure Legacy-Stable Runner Value Model Foundation
+
+Task `tg_task_006bee9937e25af9` establishes the pure `verification_runner.py`
+value model between accepted R4A and current R3A. It preserves the opaque
+accepted Runner-policy seal and closed legacy record/projection shapes, uses
+caller-supplied identifier tokens instead of entropy, and has no repository or
+other project-module import. Its exact-candidate v0.12 manifest closes only the
+accepted tree plus this foundation. Temporary provider/policy/instance names
+remain fail-closed import shims only: R3A removes the storage instance consumer,
+R3B removes Evidence provider/policy consumers, and R4B deletes the remaining
+shims and fixed legacy policy API. R4V adds no schema, setup, Runner launch,
+Evidence activation, public CLI, or gate authority. Completion required the
+exact ten-path diff, focused pure-model/document/package checks, one fresh
+exact-target `pass/full` Receipt, and two independent Tier 2 PASS reviews.
+
 <a id="tg-m24-r3a"></a>
 
 ## TG-M24.R3A Current Schema-v20 Migration And Storage Baseline
 
 Task `tg_task_a6d113455aa2cdfe` stabilizes clean v19-to-v20 migration,
 idempotent v20 setup, repository behavior, Task/Contract/target/Receipt
-preservation, legacy reopen, contention, and backup-safe recovery. It launches
+preservation, legacy reopen, contention, backup-safe recovery, and removal of
+the temporary storage instance-shim consumer accepted by R4V. It launches
 no Runner and activates no Evidence projection or completion gate. Completion
 requires focused migration/storage checks, exact diff, and two independent Tier
 2 PASS reviews.
@@ -272,7 +295,8 @@ requires focused migration/storage checks, exact diff, and two independent Tier
 
 Task `tg_task_c343ed2ec8acedf8` reconciles schema-v20 Runner observation and
 Evidence Reference storage with Bundle/JSON, Viewer, backup, recovery, and
-legacy schema compatibility. It launches no process and grants no gate
+legacy schema compatibility, including removal of temporary Evidence
+provider/policy-shim consumers accepted by R4V. It launches no process and grants no gate
 authority. Projections retain no raw output, argv, environment, credential, or
 private path and fabricate no assurance. Completion requires focused
 compatibility checks, exact diff, and two independent Tier 2 PASS reviews.
@@ -284,7 +308,9 @@ compatibility checks, exact diff, and two independent Tier 2 PASS reviews.
 Task `tg_task_e04fd31e6713cfa1` repairs only M1-M23 behavior and R2C dependency
 violations exposed by retained WIP before Runner execution. Every changed core
 module and test must map to current authority; duplicate or meaningless tests
-follow R2B disposition. This unit adds no Runner execution or feature scope.
+follow R2B disposition. It also finalizes deletion of R4V's temporary
+provider/policy/instance import shims and fixed legacy policy API after the
+R3A/R3B consumers are gone. This unit adds no Runner execution or feature scope.
 Completion requires full offline lanes from an exact clean target, exact diff,
 and two independent Tier 2 PASS reviews.
 

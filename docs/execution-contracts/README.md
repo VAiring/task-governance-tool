@@ -7,7 +7,7 @@
 > predecessors. TG-M24.1 design and TG-M24.1A are accepted predecessors whose
 > adversarial qualification details are excluded from this sequence's gates. TG-M24.1B is
 > superseded and non-gating. TG-M24.R1, TG-M24.R2A, and TG-M24.R2B are
-> accepted predecessors. TG-M24.R2C and TG-M24.R4A are also accepted
+> accepted predecessors. TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are also accepted
 > predecessors; accepted R4A left its inventory-approved retired material and
 > dedicated tests physically absent without an archive or dormant copy.
 > TG-M24.R3A owns current authority-only scope; TG-M24.R3B through TG-M24.CP4
@@ -48,7 +48,7 @@ targets, reviews, receipts, or completion history.
   gate mutation, and Task mutation remain outside scope.
 - [TG-M24 Verification Runner](tg-m24-verification-runner.md#tg-m24-verification-runner)
   owns accepted TG-M24.1/TG-M24.1A/TG-M24.R1/TG-M24.R2A/TG-M24.R2B/
-  TG-M24.R2C/TG-M24.R4A routes, the superseded non-gating TG-M24.1B route,
+  TG-M24.R2C/TG-M24.R4A/TG-M24.R4V routes, the superseded non-gating TG-M24.1B route,
   current TG-M24.R3A storage baseline, and inactive TG-M24.R3B-through-
   TG-M24.CP4 repair, implementation, gate, acceptance, and no-debt checkpoint
   detail. Its trusted-local

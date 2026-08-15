@@ -229,14 +229,16 @@ process retirement, owned-temp cleanup, and non-retention of raw output or
 private execution data. It makes no hostile-code, network-isolation, or zero-
 capability claim.
 
-Accepted TG-M24.R1, R2A, R2B, R2C, and R4A cut the authority sequence,
+Accepted TG-M24.R1, R2A, R2B, R2C, R4A, and R4V cut the authority sequence,
 inventoried the mixed WIP, audited test value, froze the M25 architecture
 boundary, and physically removed only the approved retired repository material
-without product activation. Current TG-M24.R3A stabilizes the schema-v20
-migration and storage baseline. Later inactive units reconcile Evidence
-compatibility, repair pre-Runner core regressions, and retire fixed diagnostic
-residue. Only then may the ordered M24.2 implementation and M24.3/M24.4
-acceptance units activate product behavior.
+without product activation. Accepted R4V additionally establishes only the
+dependency-pure, legacy-stable Runner value model and reclosed v0.12 candidate
+manifest. Current TG-M24.R3A stabilizes the schema-v20 migration and storage
+baseline after R4V. Later inactive units reconcile Evidence compatibility,
+repair pre-Runner core regressions, finalize temporary shim/policy retirement,
+and retire fixed diagnostic residue. Only then may the ordered M24.2
+implementation and M24.3/M24.4 acceptance units activate product behavior.
 The final checkpoint requires no unclassified or new measurable debt, no
 retired/archive/dormant residue, no meaningless/disabled/new-SKIP test, a clean
 package and release candidate, and an explicit M25 handoff. Sequential ordering,
@@ -249,7 +251,7 @@ mandatory; live status and evidence remain solely in the Task database.
 
 TG-M24 is approved sequential Tier 2 work in lane
 `TG-M24-TRUSTED-RUNNER`. TG-M24.1, TG-M24.1A, TG-M24.R1, TG-M24.R2A,
-TG-M24.R2B, TG-M24.R2C, and TG-M24.R4A are accepted predecessors;
+TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are accepted predecessors;
 TG-M24.1B is superseded. Current formal authority belongs only to the
 TG-M24.R3A schema-v20 migration and storage baseline, while TG-M24.R3B and
 every later unit remain inactive behind their accepted immediate predecessor.
@@ -258,7 +260,7 @@ Exact unit identity, order, dependency, permission, and gate detail is owned by 
 not duplicated in this gateway.
 
 Accepted TG-M24.R1 consumed only the reviewed R2 bootstrap boundary and changed
-no product byte; accepted R2A, R2B, R2C, and R4A changed no supported product
+no product byte; accepted R2A, R2B, R2C, R4A, and R4V changed no supported product
 behavior. Current R3A and its successors advance in exact order, use fresh
 current evidence, and never reuse superseded Candidate-C, LPAC, or diagnostic
 recovery evidence.

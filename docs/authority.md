@@ -39,7 +39,7 @@ transfer either role.
 TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
 offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer acceptance
 are accepted predecessors. TG-M24.1 design, TG-M24.1A, TG-M24.R1,
-TG-M24.R2A, TG-M24.R2B, TG-M24.R2C, and TG-M24.R4A are accepted predecessors
+TG-M24.R2A, TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are accepted predecessors
 whose retired adversarial qualification details supply no current gate.
 Accepted R4A left its inventory-approved retired repository material and
 dedicated tests physically absent, without an archive or dormant copy.
@@ -59,8 +59,8 @@ or core semantics.
 
 TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
 preserves the inactive post-M24 normalization scope after TG-M24.CP4. Neither
-route changes product behavior. M24.1 design, M24.1A, R1, R2A, R2B, R2C, and
-R4A are accepted predecessors, M24.1B is superseded, R3A is current, every
+route changes product behavior. M24.1 design, M24.1A, R1, R2A, R2B, R2C,
+R4A, and R4V are accepted predecessors, M24.1B is superseded, R3A is current, every
 later repair and acceptance unit is inactive, and indexing or reading them
 activates no product behavior.
 

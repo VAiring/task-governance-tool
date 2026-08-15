@@ -260,6 +260,14 @@ class DocumentContractTests(unittest.TestCase):
                 "remain available after accepted R4A",
             ),
             (
+                "dependency-pure, legacy-stable value-model foundation",
+                "repository-coupled value-model foundation",
+            ),
+            (
+                "supplied by accepted R4V",
+                "deferred to inactive R4B",
+            ),
+            (
                 "transitional nonconformance routed to R4B",
                 "accepted current dependency conformance",
             ),
@@ -304,6 +312,10 @@ class DocumentContractTests(unittest.TestCase):
             (
                 "any retained Runner-specific direct process/native edge is repaired by R4B.",
                 "any retained Runner-specific direct process/native edge is repaired by R4A and R4B.",
+            ),
+            (
+                "Accepted R4V repairs the dependency-pure legacy-stable foundation and reverse edge;",
+                "Accepted R4A repairs the dependency-pure legacy-stable foundation and reverse edge;",
             ),
             (
                 "process_adapter -> os_adapter",
@@ -485,6 +497,18 @@ class DocumentContractTests(unittest.TestCase):
             )
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
+
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.M24,
+                "## TG-M24.R4V Accepted Dependency-Pure Legacy-Stable Runner Value Model Foundation",
+                "## TG-M24.R4V Inactive Dependency-Pure Legacy-Stable Runner Value Model Foundation",
+            )
+            self.assertIn(
+                "m24_current_binding",
+                self.codes(contract.check_document_contract(root)),
+            )
 
         with self.fixture() as root:
             self.replace(
@@ -1144,13 +1168,16 @@ class DocumentContractTests(unittest.TestCase):
             self.assertEqual(m24["current_units"], ["TG-M24.R3A"])
             self.assertEqual(
                 m24["inactive_units"],
-                [row[0].split(" /", 1)[0] for row in contract.ROWS_M24[6:]],
+                [row[0].split(" /", 1)[0] for row in contract.ROWS_M24[7:]],
             )
             self.assertEqual(m24["superseded_units"], ["TG-M24.1B"])
             self.assertNotIn("TG-M24.1", m24["current_units"])
             self.assertNotIn("TG-M24.1A", m24["inactive_units"])
             self.assertNotIn("TG-M24.R2C", m24["inactive_units"])
             self.assertNotIn("TG-M24.R4A", m24["inactive_units"])
+            self.assertNotIn("TG-M24.R4V", m24["current_units"])
+            self.assertNotIn("TG-M24.R4V", m24["inactive_units"])
+            self.assertNotIn("TG-M24.R4V", m24["superseded_units"])
             self.write_registry(root, dict(reversed(tuple(registry.items()))))
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -1383,6 +1410,7 @@ class DocumentContractTests(unittest.TestCase):
             "TG-M24.R2A",
             "TG-M24.R2C",
             "TG-M24.R4A",
+            "TG-M24.R4V",
             "TG-M24.2A",
             "TG-M24.3",
             "TG-M24.4D",
@@ -1509,8 +1537,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.R2C and TG-M24.R4A are accepted predecessors",
-                "TG-M24.R2C and TG-M24.R4A are former units",
+                "TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are accepted predecessors",
+                "TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are former units",
             )
             self.replace(
                 root,
@@ -1580,6 +1608,11 @@ class DocumentContractTests(unittest.TestCase):
                 contract.M24,
                 "| TG-M24.R2B / 25 | `tg_task_ca8d0d81cd1962ab` | accepted TG-M24.R2A |",
                 "| TG-M24.R2B / 25 | `tg_task_ca8d0d81cd1962ab` | accepted TG-M24.R1 |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.R4V / 45 | `tg_task_006bee9937e25af9` | accepted TG-M24.R4A |",
+                "| TG-M24.R4V / 45 | `tg_task_0000000000000000` | accepted TG-M24.R4A |",
             ),
             (
                 contract.M24,

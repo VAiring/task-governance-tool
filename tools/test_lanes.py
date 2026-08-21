@@ -70,7 +70,6 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m242_evidence_compatibility",
         "test_m242_runner_git",
         "test_m242_runner_model",
-        "test_m242_runner_plan",
         "test_m242_runner_runtime",
         "test_project_scope",
         "test_relocation",

@@ -29,6 +29,8 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 PROJECT_ID_HASH_LENGTH = 12
 SCHEMA_VERSION = 19
+PRIVATE_SCHEMA20_VERSION = 20
+PRIVATE_SCHEMA20_MIGRATION_NAME = "verification_runner_shadow"
 VIEWER_MIN_SOURCE_SCHEMA_VERSION = 5
 STORED_TASK_VERIFICATION_LIMIT_V17 = 500
 STORED_TASK_VERIFICATION_LIMIT_V18 = 1_000
@@ -1613,6 +1615,10 @@ _SCHEMA_TABLE_INTRODUCED_VERSION = {
     "completion_bundle_members": 19,
     "completion_bundle_finding_snapshots": 19,
     "evidence_projection_state": 19,
+    "verification_runner_resolutions": 20,
+    "verification_runner_attempts": 20,
+    "verification_runner_sandbox_events": 20,
+    "verification_runner_observations": 20,
 }
 
 _SCHEMA_INDEX_INTRODUCED_VERSION = {
@@ -1648,6 +1654,16 @@ _SCHEMA_INDEX_INTRODUCED_VERSION = {
     "idx_completion_evidence_bundles_task_cycle": 19,
     "idx_completion_bundle_members_reference": 19,
     "idx_completion_bundle_finding_snapshots_order": 19,
+    "idx_verification_runner_resolutions_parent": 20,
+    "idx_verification_runner_resolutions_task_generation": 20,
+    "idx_verification_runner_attempts_parent": 20,
+    "idx_verification_runner_attempts_task_generation": 20,
+    "idx_verification_runner_attempts_resolution": 20,
+    "idx_verification_runner_sandbox_events_attempt_kind": 20,
+    "idx_verification_runner_observations_parent": 20,
+    "idx_verification_runner_observations_task_generation": 20,
+    "idx_verification_runner_observations_resolution": 20,
+    "idx_verification_runner_observations_attempt": 20,
 }
 
 _SCHEMA_TRIGGER_INTRODUCED_VERSION = {
@@ -1698,6 +1714,18 @@ _SCHEMA_TRIGGER_INTRODUCED_VERSION = {
     "trg_completion_bundle_members_matrix_insert": 19,
     "trg_completion_bundle_finding_snapshots_matrix_insert": 19,
     "trg_task_completion_cycles_evidence_basis_insert": 19,
+    "trg_verification_runner_resolutions_no_update": 20,
+    "trg_verification_runner_resolutions_no_delete": 20,
+    "trg_verification_runner_attempts_no_update": 20,
+    "trg_verification_runner_attempts_no_delete": 20,
+    "trg_verification_runner_sandbox_events_no_update": 20,
+    "trg_verification_runner_sandbox_events_no_delete": 20,
+    "trg_verification_runner_observations_no_update": 20,
+    "trg_verification_runner_observations_no_delete": 20,
+    "trg_verification_runner_resolutions_parent_insert": 20,
+    "trg_verification_runner_attempts_parent_insert": 20,
+    "trg_verification_runner_sandbox_events_parent_insert": 20,
+    "trg_verification_runner_observations_parent_insert": 20,
 }
 
 _SCHEMA_COLUMN_INTRODUCED_VERSION = {
@@ -1744,6 +1772,11 @@ _SCHEMA_COLUMN_INTRODUCED_VERSION = {
     "column:task_completion_cycles.subject_verification_criterion_id": 18,
     "column:task_completion_cycles.evidence_basis_version": 19,
     "column:task_completion_cycles.completion_evidence_bundle_id": 19,
+    "column:tasks.review_target_runner_basis_version": 20,
+    "column:task_completion_cycles.verification_basis_kind": 20,
+    "column:task_completion_cycles.verification_runner_observation_id": 20,
+    "column:completion_evidence_bundles.verification_basis_kind": 20,
+    "column:completion_evidence_bundles.verification_runner_observation_id": 20,
 }
 
 _EVIDENCE_LEDGER_REQUIRED_COLUMNS = {
@@ -5420,6 +5453,1206 @@ def completion_evidence_bundle_schema_statements() -> tuple[str, ...]:
     return (*statements, *immutable_triggers, *guard_triggers)
 
 
+_R3A_SCHEMA20_RUNNER_TABLES = (
+    "verification_runner_resolutions",
+    "verification_runner_attempts",
+    "verification_runner_sandbox_events",
+    "verification_runner_observations",
+)
+
+_R3A_SCHEMA20_COLUMN_ALTERS = (
+    """ALTER TABLE tasks
+         ADD COLUMN review_target_runner_basis_version INTEGER NOT NULL DEFAULT 0
+         CHECK (review_target_runner_basis_version IN (0, 2))""",
+    """ALTER TABLE task_completion_cycles
+         ADD COLUMN verification_basis_kind TEXT""",
+    """ALTER TABLE task_completion_cycles
+         ADD COLUMN verification_runner_observation_id TEXT""",
+)
+
+
+def _completion_evidence_bundle_v20_table_sql(
+    table_name: str = "completion_evidence_bundles",
+) -> str:
+    if re.fullmatch(r"[a-z][a-z0-9_]*", table_name) is None:
+        raise AssertionError("invalid private Bundle table name")
+    return f"""
+    CREATE TABLE {table_name} (
+      completion_evidence_bundle_id TEXT PRIMARY KEY CHECK (
+        length(completion_evidence_bundle_id) = 46
+        AND substr(completion_evidence_bundle_id, 1, 30) =
+              'tg_completion_evidence_bundle_'
+        AND substr(completion_evidence_bundle_id, 31)
+              NOT GLOB '*[^0-9a-f]*'
+      ),
+      project_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      completion_cycle_id TEXT NOT NULL,
+      cycle_ordinal INTEGER NOT NULL CHECK (cycle_ordinal > 0),
+      source_schema_version INTEGER NOT NULL,
+      bundle_version INTEGER NOT NULL,
+      contract_revision INTEGER NOT NULL CHECK (contract_revision >= 0),
+      authority_snapshot_id TEXT NOT NULL,
+      acceptance_criterion_id TEXT,
+      verification_criterion_id TEXT,
+      target_kind TEXT NOT NULL CHECK (target_kind IN (
+        'git_commit', 'diff_fingerprint', 'external_revision', 'git_snapshot'
+      )),
+      target_value TEXT NOT NULL CHECK (length(target_value) BETWEEN 1 AND 500),
+      target_base_revision TEXT NOT NULL CHECK (length(target_base_revision) <= 500),
+      target_generation INTEGER NOT NULL CHECK (target_generation > 0),
+      target_capture_version INTEGER NOT NULL CHECK (target_capture_version = 1),
+      artifact_manifest_id TEXT NOT NULL,
+      verification_receipt_id TEXT,
+      verification_basis_kind TEXT CHECK (
+        verification_basis_kind IS NULL
+        OR verification_basis_kind IN ('caller_attestation', 'not_required')
+      ),
+      verification_runner_observation_id TEXT,
+      omission_mask INTEGER NOT NULL CHECK (omission_mask BETWEEN 0 AND 15),
+      sealed_at TEXT NOT NULL,
+      bundle_digest TEXT NOT NULL CHECK (
+        length(bundle_digest) = 71
+        AND substr(bundle_digest, 1, 7) = 'sha256:'
+        AND substr(bundle_digest, 8) NOT GLOB '*[^0-9a-f]*'
+      ),
+      payload_size_bytes INTEGER NOT NULL CHECK (
+        payload_size_bytes BETWEEN 1 AND 16777216
+      ),
+      UNIQUE (project_id, task_id, completion_evidence_bundle_id),
+      UNIQUE (project_id, task_id, completion_cycle_id),
+      CHECK (
+        (source_schema_version = 19 AND bundle_version = 1
+          AND verification_basis_kind IS NULL
+          AND verification_runner_observation_id IS NULL)
+        OR
+        (source_schema_version = 20 AND bundle_version = 2
+          AND verification_basis_kind = 'caller_attestation'
+          AND verification_receipt_id IS NOT NULL
+          AND verification_runner_observation_id IS NULL)
+        OR
+        (source_schema_version = 20 AND bundle_version = 2
+          AND verification_basis_kind = 'not_required'
+          AND verification_receipt_id IS NULL
+          AND verification_runner_observation_id IS NULL)
+      ),
+      FOREIGN KEY (project_id, task_id) REFERENCES tasks(project_id, task_id),
+      FOREIGN KEY (project_id, task_id, authority_snapshot_id)
+        REFERENCES authority_snapshots(project_id, task_id, authority_snapshot_id),
+      FOREIGN KEY (project_id, task_id, acceptance_criterion_id)
+        REFERENCES contract_criteria(project_id, task_id, criterion_id),
+      FOREIGN KEY (project_id, task_id, verification_criterion_id)
+        REFERENCES contract_criteria(project_id, task_id, criterion_id),
+      FOREIGN KEY (project_id, task_id, artifact_manifest_id)
+        REFERENCES artifact_manifests(project_id, task_id, artifact_manifest_id),
+      FOREIGN KEY (verification_receipt_id)
+        REFERENCES verification_receipts(verification_receipt_id),
+      FOREIGN KEY (
+        project_id, task_id, target_generation,
+        verification_runner_observation_id
+      ) REFERENCES verification_runner_observations(
+        project_id, task_id, target_generation,
+        verification_runner_observation_id
+      ) ON UPDATE RESTRICT ON DELETE RESTRICT NOT DEFERRABLE,
+      FOREIGN KEY (completion_cycle_id)
+        REFERENCES task_completion_cycles(completion_cycle_id)
+        DEFERRABLE INITIALLY DEFERRED
+    )
+    """
+
+
+def _verification_runner_table_statements() -> tuple[str, ...]:
+    return (
+        """
+        CREATE TABLE verification_runner_resolutions (
+          verification_runner_resolution_id TEXT PRIMARY KEY CHECK (
+            length(verification_runner_resolution_id) =
+              length('tg_verification_runner_resolution_') + 16
+            AND substr(verification_runner_resolution_id, 1,
+              length('tg_verification_runner_resolution_')) =
+              'tg_verification_runner_resolution_'
+            AND substr(verification_runner_resolution_id,
+              length('tg_verification_runner_resolution_') + 1)
+              NOT GLOB '*[^0-9a-f]*'
+          ),
+          project_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          contract_revision INTEGER NOT NULL CHECK (contract_revision >= 1),
+          authority_snapshot_id TEXT NOT NULL,
+          verification_criterion_id TEXT NOT NULL,
+          verification_expectation_digest TEXT NOT NULL CHECK (
+            length(verification_expectation_digest) = 64
+            AND verification_expectation_digest NOT GLOB '*[^0-9a-f]*'
+          ),
+          verification_criterion_digest TEXT NOT NULL CHECK (
+            length(verification_criterion_digest) = 71
+            AND substr(verification_criterion_digest, 1, 7) = 'sha256:'
+            AND substr(verification_criterion_digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          target_kind TEXT NOT NULL CHECK (
+            length(target_kind) BETWEEN 1 AND 64
+            AND substr(target_kind, 1, 1) GLOB '[a-z]'
+            AND substr(target_kind, 2) NOT GLOB '*[^a-z0-9_]*'
+          ),
+          target_value TEXT NOT NULL CHECK (length(target_value) BETWEEN 1 AND 500),
+          target_base_revision TEXT CHECK (
+            target_base_revision IS NULL
+            OR length(target_base_revision) BETWEEN 1 AND 128
+          ),
+          target_generation INTEGER NOT NULL CHECK (target_generation >= 1),
+          target_capture_version INTEGER NOT NULL CHECK (target_capture_version = 1),
+          artifact_manifest_id TEXT NOT NULL,
+          target_material_digest TEXT CHECK (
+            target_material_digest IS NULL OR (
+              length(target_material_digest) = 71
+              AND substr(target_material_digest, 1, 7) = 'sha256:'
+              AND substr(target_material_digest, 8) NOT GLOB '*[^0-9a-f]*'
+            )
+          ),
+          plan_state TEXT NOT NULL CHECK (
+            length(plan_state) BETWEEN 1 AND 64
+            AND substr(plan_state, 1, 1) GLOB '[a-z]'
+            AND substr(plan_state, 2) NOT GLOB '*[^a-z0-9_]*'
+          ),
+          plan_blob_object_id TEXT CHECK (
+            plan_blob_object_id IS NULL
+            OR length(plan_blob_object_id) BETWEEN 1 AND 500
+          ),
+          plan_raw_digest TEXT CHECK (
+            plan_raw_digest IS NULL OR (
+              length(plan_raw_digest) = 71
+              AND substr(plan_raw_digest, 1, 7) = 'sha256:'
+              AND substr(plan_raw_digest, 8) NOT GLOB '*[^0-9a-f]*'
+            )
+          ),
+          plan_id TEXT CHECK (plan_id IS NULL OR length(plan_id) BETWEEN 1 AND 200),
+          plan_version INTEGER CHECK (plan_version >= 1),
+          plan_semantic_digest TEXT CHECK (
+            plan_semantic_digest IS NULL OR (
+              length(plan_semantic_digest) = 71
+              AND substr(plan_semantic_digest, 1, 7) = 'sha256:'
+              AND substr(plan_semantic_digest, 8) NOT GLOB '*[^0-9a-f]*'
+            )
+          ),
+          selected_entry_digest TEXT CHECK (
+            selected_entry_digest IS NULL OR (
+              length(selected_entry_digest) = 71
+              AND substr(selected_entry_digest, 1, 7) = 'sha256:'
+              AND substr(selected_entry_digest, 8) NOT GLOB '*[^0-9a-f]*'
+            )
+          ),
+          coverage TEXT NOT NULL CHECK (
+            length(coverage) BETWEEN 1 AND 64
+            AND substr(coverage, 1, 1) GLOB '[a-z]'
+            AND substr(coverage, 2) NOT GLOB '*[^a-z0-9_]*'
+          ),
+          step_count INTEGER NOT NULL CHECK (step_count BETWEEN 0 AND 16),
+          runner_contract_version INTEGER NOT NULL CHECK (runner_contract_version = 1),
+          runner_implementation_version TEXT NOT NULL CHECK (
+            runner_implementation_version = 'taskgov-verification-runner/1'
+          ),
+          runner_implementation_digest TEXT NOT NULL CHECK (
+            length(runner_implementation_digest) = 71
+            AND substr(runner_implementation_digest, 1, 7) = 'sha256:'
+            AND substr(runner_implementation_digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          runner_policy_digest TEXT NOT NULL CHECK (
+            length(runner_policy_digest) = 71
+            AND substr(runner_policy_digest, 1, 7) = 'sha256:'
+            AND substr(runner_policy_digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          runtime_digest TEXT CHECK (
+            runtime_digest IS NULL OR (
+              length(runtime_digest) = 71
+              AND substr(runtime_digest, 1, 7) = 'sha256:'
+              AND substr(runtime_digest, 8) NOT GLOB '*[^0-9a-f]*'
+            )
+          ),
+          gate_eligibility_version INTEGER NOT NULL CHECK (gate_eligibility_version = 0),
+          trigger TEXT NOT NULL CHECK (trigger = 'review_target_set_v1'),
+          route TEXT NOT NULL CHECK (
+            length(route) BETWEEN 1 AND 64
+            AND substr(route, 1, 1) GLOB '[a-z]'
+            AND substr(route, 2) NOT GLOB '*[^a-z0-9_]*'
+          ),
+          reason TEXT CHECK (
+            reason IS NULL OR (
+              length(reason) BETWEEN 1 AND 64
+              AND substr(reason, 1, 1) GLOB '[a-z]'
+              AND substr(reason, 2) NOT GLOB '*[^a-z0-9_]*'
+            )
+          ),
+          idempotency_digest TEXT NOT NULL CHECK (
+            length(idempotency_digest) = 71
+            AND substr(idempotency_digest, 1, 7) = 'sha256:'
+            AND substr(idempotency_digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (project_id, task_id)
+            REFERENCES tasks(project_id, task_id)
+            ON UPDATE RESTRICT ON DELETE RESTRICT NOT DEFERRABLE,
+          FOREIGN KEY (project_id, task_id, authority_snapshot_id)
+            REFERENCES authority_snapshots(project_id, task_id, authority_snapshot_id)
+            ON UPDATE RESTRICT ON DELETE RESTRICT NOT DEFERRABLE,
+          FOREIGN KEY (project_id, task_id, verification_criterion_id)
+            REFERENCES contract_criteria(project_id, task_id, criterion_id)
+            ON UPDATE RESTRICT ON DELETE RESTRICT NOT DEFERRABLE,
+          FOREIGN KEY (project_id, task_id, artifact_manifest_id)
+            REFERENCES artifact_manifests(project_id, task_id, artifact_manifest_id)
+            ON UPDATE RESTRICT ON DELETE RESTRICT NOT DEFERRABLE
+        )
+        """,
+        """
+        CREATE TABLE verification_runner_attempts (
+          verification_runner_attempt_id TEXT PRIMARY KEY CHECK (
+            length(verification_runner_attempt_id) =
+              length('tg_verification_runner_attempt_') + 16
+            AND substr(verification_runner_attempt_id, 1,
+              length('tg_verification_runner_attempt_')) =
+              'tg_verification_runner_attempt_'
+            AND substr(verification_runner_attempt_id,
+              length('tg_verification_runner_attempt_') + 1)
+              NOT GLOB '*[^0-9a-f]*'
+          ),
+          project_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          target_generation INTEGER NOT NULL CHECK (target_generation >= 1),
+          gate_eligibility_version INTEGER NOT NULL CHECK (gate_eligibility_version = 0),
+          verification_runner_resolution_id TEXT NOT NULL,
+          target_material_digest TEXT NOT NULL CHECK (
+            length(target_material_digest) = 71
+            AND substr(target_material_digest, 1, 7) = 'sha256:'
+            AND substr(target_material_digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          runner_implementation_digest TEXT NOT NULL CHECK (
+            length(runner_implementation_digest) = 71
+            AND substr(runner_implementation_digest, 1, 7) = 'sha256:'
+            AND substr(runner_implementation_digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          attempt_digest TEXT NOT NULL CHECK (
+            length(attempt_digest) = 71
+            AND substr(attempt_digest, 1, 7) = 'sha256:'
+            AND substr(attempt_digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          intent_recorded_at TEXT NOT NULL,
+          FOREIGN KEY (
+            project_id, task_id, target_generation,
+            verification_runner_resolution_id
+          ) REFERENCES verification_runner_resolutions(
+            project_id, task_id, target_generation,
+            verification_runner_resolution_id
+          ) ON UPDATE RESTRICT ON DELETE RESTRICT NOT DEFERRABLE
+        )
+        """,
+        """
+        CREATE TABLE verification_runner_observations (
+          verification_runner_observation_id TEXT PRIMARY KEY CHECK (
+            length(verification_runner_observation_id) =
+              length('tg_verification_runner_observation_') + 16
+            AND substr(verification_runner_observation_id, 1,
+              length('tg_verification_runner_observation_')) =
+              'tg_verification_runner_observation_'
+            AND substr(verification_runner_observation_id,
+              length('tg_verification_runner_observation_') + 1)
+              NOT GLOB '*[^0-9a-f]*'
+          ),
+          project_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          target_generation INTEGER NOT NULL CHECK (target_generation >= 1),
+          gate_eligibility_version INTEGER NOT NULL CHECK (gate_eligibility_version = 0),
+          verification_runner_resolution_id TEXT NOT NULL,
+          verification_runner_attempt_id TEXT,
+          runner_implementation_digest TEXT NOT NULL CHECK (
+            length(runner_implementation_digest) = 71
+            AND substr(runner_implementation_digest, 1, 7) = 'sha256:'
+            AND substr(runner_implementation_digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          route TEXT NOT NULL CHECK (
+            length(route) BETWEEN 1 AND 64
+            AND substr(route, 1, 1) GLOB '[a-z]'
+            AND substr(route, 2) NOT GLOB '*[^a-z0-9_]*'
+          ),
+          launch_state TEXT NOT NULL CHECK (
+            length(launch_state) BETWEEN 1 AND 64
+            AND substr(launch_state, 1, 1) GLOB '[a-z]'
+            AND substr(launch_state, 2) NOT GLOB '*[^a-z0-9_]*'
+          ),
+          outcome TEXT NOT NULL CHECK (
+            length(outcome) BETWEEN 1 AND 64
+            AND substr(outcome, 1, 1) GLOB '[a-z]'
+            AND substr(outcome, 2) NOT GLOB '*[^a-z0-9_]*'
+          ),
+          reason TEXT CHECK (
+            reason IS NULL OR (
+              length(reason) BETWEEN 1 AND 64
+              AND substr(reason, 1, 1) GLOB '[a-z]'
+              AND substr(reason, 2) NOT GLOB '*[^a-z0-9_]*'
+            )
+          ),
+          complete_plan INTEGER NOT NULL CHECK (complete_plan IN (0, 1)),
+          total_step_count INTEGER NOT NULL CHECK (total_step_count BETWEEN 0 AND 16),
+          completed_step_count INTEGER NOT NULL CHECK (
+            completed_step_count BETWEEN 0 AND total_step_count
+          ),
+          failed_step_ordinal INTEGER CHECK (
+            failed_step_ordinal BETWEEN 1 AND total_step_count
+          ),
+          started_at TEXT NOT NULL,
+          finished_at TEXT NOT NULL,
+          duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+          cpu_time_ms INTEGER CHECK (cpu_time_ms >= 0),
+          peak_job_memory_bytes INTEGER CHECK (
+            peak_job_memory_bytes >= 0
+          ),
+          total_process_count INTEGER CHECK (
+            total_process_count >= 0
+          ),
+          sanitized_result_digest TEXT NOT NULL CHECK (
+            length(sanitized_result_digest) = 71
+            AND substr(sanitized_result_digest, 1, 7) = 'sha256:'
+            AND substr(sanitized_result_digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (
+            project_id, task_id, target_generation,
+            verification_runner_resolution_id
+          ) REFERENCES verification_runner_resolutions(
+            project_id, task_id, target_generation,
+            verification_runner_resolution_id
+          ) ON UPDATE RESTRICT ON DELETE RESTRICT NOT DEFERRABLE,
+          FOREIGN KEY (
+            project_id, task_id, target_generation,
+            verification_runner_attempt_id
+          ) REFERENCES verification_runner_attempts(
+            project_id, task_id, target_generation,
+            verification_runner_attempt_id
+          ) ON UPDATE RESTRICT ON DELETE RESTRICT NOT DEFERRABLE
+        )
+        """,
+        """
+        CREATE TABLE verification_runner_sandbox_events (
+          verification_runner_sandbox_event_id TEXT PRIMARY KEY CHECK (
+            length(verification_runner_sandbox_event_id) =
+              length('tg_verification_runner_sandbox_event_') + 16
+            AND substr(verification_runner_sandbox_event_id, 1,
+              length('tg_verification_runner_sandbox_event_')) =
+              'tg_verification_runner_sandbox_event_'
+            AND substr(verification_runner_sandbox_event_id,
+              length('tg_verification_runner_sandbox_event_') + 1)
+              NOT GLOB '*[^0-9a-f]*'
+          ),
+          project_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          target_generation INTEGER NOT NULL CHECK (target_generation >= 1),
+          verification_runner_attempt_id TEXT NOT NULL,
+          event_kind TEXT NOT NULL CHECK (event_kind = 'attempt_cleanup_succeeded'),
+          event_digest TEXT NOT NULL CHECK (
+            length(event_digest) = 71
+            AND substr(event_digest, 1, 7) = 'sha256:'
+            AND substr(event_digest, 8) NOT GLOB '*[^0-9a-f]*'
+          ),
+          terminal_observation_id TEXT,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (
+            project_id, task_id, target_generation,
+            verification_runner_attempt_id
+          ) REFERENCES verification_runner_attempts(
+            project_id, task_id, target_generation,
+            verification_runner_attempt_id
+          ) ON UPDATE RESTRICT ON DELETE RESTRICT NOT DEFERRABLE,
+          FOREIGN KEY (
+            project_id, task_id, target_generation,
+            terminal_observation_id
+          ) REFERENCES verification_runner_observations(
+            project_id, task_id, target_generation,
+            verification_runner_observation_id
+          ) ON UPDATE RESTRICT ON DELETE RESTRICT
+            DEFERRABLE INITIALLY DEFERRED
+        )
+        """,
+    )
+
+
+def _verification_runner_index_statements() -> tuple[str, ...]:
+    return (
+        """CREATE UNIQUE INDEX idx_verification_runner_resolutions_parent
+             ON verification_runner_resolutions(
+               project_id, task_id, target_generation,
+               verification_runner_resolution_id
+             )""",
+        """CREATE INDEX idx_verification_runner_resolutions_task_generation
+             ON verification_runner_resolutions(
+               project_id, task_id, target_generation
+             )""",
+        """CREATE UNIQUE INDEX idx_verification_runner_attempts_parent
+             ON verification_runner_attempts(
+               project_id, task_id, target_generation,
+               verification_runner_attempt_id
+             )""",
+        """CREATE INDEX idx_verification_runner_attempts_task_generation
+             ON verification_runner_attempts(
+               project_id, task_id, target_generation
+             )""",
+        """CREATE INDEX idx_verification_runner_attempts_resolution
+             ON verification_runner_attempts(
+               project_id, task_id, target_generation,
+               verification_runner_resolution_id
+             )""",
+        """CREATE INDEX idx_verification_runner_sandbox_events_attempt_kind
+             ON verification_runner_sandbox_events(
+               project_id, task_id, target_generation,
+               verification_runner_attempt_id, event_kind
+             )""",
+        """CREATE UNIQUE INDEX idx_verification_runner_observations_parent
+             ON verification_runner_observations(
+               project_id, task_id, target_generation,
+               verification_runner_observation_id
+             )""",
+        """CREATE INDEX idx_verification_runner_observations_task_generation
+             ON verification_runner_observations(
+               project_id, task_id, target_generation
+             )""",
+        """CREATE INDEX idx_verification_runner_observations_resolution
+             ON verification_runner_observations(
+               project_id, task_id, target_generation,
+               verification_runner_resolution_id
+             )""",
+        """CREATE INDEX idx_verification_runner_observations_attempt
+             ON verification_runner_observations(
+               project_id, task_id, target_generation,
+               verification_runner_attempt_id
+             ) WHERE verification_runner_attempt_id IS NOT NULL""",
+    )
+
+
+def _verification_runner_trigger_statements() -> tuple[str, ...]:
+    immutable = tuple(
+        f"""CREATE TRIGGER trg_{table_name}_{suffix}
+              BEFORE {verb} ON {table_name} FOR EACH ROW
+              BEGIN SELECT RAISE(ABORT,'runner_storage_immutable'); END"""
+        for table_name in _R3A_SCHEMA20_RUNNER_TABLES
+        for suffix, verb in (("no_update", "UPDATE"), ("no_delete", "DELETE"))
+    )
+    parent = (
+        """
+        CREATE TRIGGER trg_verification_runner_resolutions_parent_insert
+        BEFORE INSERT ON verification_runner_resolutions FOR EACH ROW
+        WHEN NOT EXISTS (
+          SELECT 1
+            FROM tasks AS t
+            JOIN authority_snapshots AS s
+              ON s.project_id = t.project_id
+             AND s.task_id = t.task_id
+             AND s.authority_snapshot_id = NEW.authority_snapshot_id
+            JOIN artifact_manifests AS m
+              ON m.project_id = t.project_id
+             AND m.task_id = t.task_id
+             AND m.artifact_manifest_id = NEW.artifact_manifest_id
+            JOIN contract_criteria AS vc
+              ON vc.project_id = t.project_id
+             AND vc.task_id = t.task_id
+             AND vc.criterion_id = NEW.verification_criterion_id
+            JOIN authority_snapshot_criteria AS vcm
+              ON vcm.project_id = t.project_id
+             AND vcm.task_id = t.task_id
+             AND vcm.authority_snapshot_id = NEW.authority_snapshot_id
+             AND vcm.criterion_kind = 'verification'
+             AND vcm.criterion_id = NEW.verification_criterion_id
+           WHERE t.project_id = NEW.project_id
+             AND t.task_id = NEW.task_id
+             AND t.current_contract_revision = NEW.contract_revision
+             AND t.review_target_authority_snapshot_id = NEW.authority_snapshot_id
+             AND t.review_target_acceptance_criterion_id IS m.acceptance_criterion_id
+             AND t.review_target_verification_criterion_id =
+                   NEW.verification_criterion_id
+             AND t.review_target_kind = NEW.target_kind
+             AND t.review_target_value = NEW.target_value
+             AND t.review_target_base_revision =
+                   COALESCE(NEW.target_base_revision, '')
+             AND t.review_target_generation = NEW.target_generation
+             AND t.review_target_capture_version = NEW.target_capture_version
+             AND t.review_target_artifact_manifest_id = NEW.artifact_manifest_id
+             AND t.review_target_runner_basis_version = 0
+             AND s.contract_revision = NEW.contract_revision
+             AND s.verification_digest = NEW.verification_expectation_digest
+             AND vc.criterion_kind = 'verification'
+             AND vc.digest = NEW.verification_criterion_digest
+             AND m.authority_snapshot_id = NEW.authority_snapshot_id
+             AND m.acceptance_criterion_id IS
+                   t.review_target_acceptance_criterion_id
+             AND m.verification_criterion_id = NEW.verification_criterion_id
+             AND m.target_kind = NEW.target_kind
+             AND m.target_value = NEW.target_value
+             AND m.target_base_revision = COALESCE(NEW.target_base_revision, '')
+             AND m.target_generation = NEW.target_generation
+             AND (
+               t.review_target_acceptance_criterion_id IS NULL
+               OR EXISTS (
+                 SELECT 1
+                   FROM contract_criteria AS ac
+                   JOIN authority_snapshot_criteria AS acm
+                     ON acm.project_id = ac.project_id
+                    AND acm.task_id = ac.task_id
+                    AND acm.authority_snapshot_id = NEW.authority_snapshot_id
+                    AND acm.criterion_kind = 'acceptance'
+                    AND acm.criterion_id = ac.criterion_id
+                  WHERE ac.project_id = t.project_id
+                    AND ac.task_id = t.task_id
+                    AND ac.criterion_id =
+                          t.review_target_acceptance_criterion_id
+                    AND ac.criterion_kind = 'acceptance'
+               )
+             )
+        )
+        BEGIN SELECT RAISE(ABORT,'runner_parent_inconsistent'); END
+        """,
+        """
+        CREATE TRIGGER trg_verification_runner_attempts_parent_insert
+        BEFORE INSERT ON verification_runner_attempts FOR EACH ROW
+        WHEN NOT EXISTS (
+          SELECT 1 FROM verification_runner_resolutions AS r
+           WHERE r.project_id = NEW.project_id
+             AND r.task_id = NEW.task_id
+             AND r.target_generation = NEW.target_generation
+             AND r.verification_runner_resolution_id =
+                   NEW.verification_runner_resolution_id
+             AND r.target_material_digest = NEW.target_material_digest
+             AND r.runner_implementation_digest =
+                   NEW.runner_implementation_digest
+        )
+        BEGIN SELECT RAISE(ABORT,'runner_parent_inconsistent'); END
+        """,
+        """
+        CREATE TRIGGER trg_verification_runner_observations_parent_insert
+        BEFORE INSERT ON verification_runner_observations FOR EACH ROW
+        WHEN NOT EXISTS (
+          SELECT 1 FROM verification_runner_resolutions AS r
+           WHERE r.project_id = NEW.project_id
+             AND r.task_id = NEW.task_id
+             AND r.target_generation = NEW.target_generation
+             AND r.verification_runner_resolution_id =
+                   NEW.verification_runner_resolution_id
+             AND r.runner_implementation_digest =
+                   NEW.runner_implementation_digest
+             AND (
+               NEW.verification_runner_attempt_id IS NULL
+               OR EXISTS (
+                 SELECT 1 FROM verification_runner_attempts AS a
+                  WHERE a.project_id = NEW.project_id
+                    AND a.task_id = NEW.task_id
+                    AND a.target_generation = NEW.target_generation
+                    AND a.verification_runner_attempt_id =
+                          NEW.verification_runner_attempt_id
+                    AND a.verification_runner_resolution_id =
+                          NEW.verification_runner_resolution_id
+                    AND a.runner_implementation_digest =
+                          NEW.runner_implementation_digest
+               )
+             )
+        )
+        BEGIN SELECT RAISE(ABORT,'runner_parent_inconsistent'); END
+        """,
+        """
+        CREATE TRIGGER trg_verification_runner_sandbox_events_parent_insert
+        BEFORE INSERT ON verification_runner_sandbox_events FOR EACH ROW
+        WHEN NOT EXISTS (
+          SELECT 1 FROM verification_runner_attempts AS a
+           WHERE a.project_id = NEW.project_id
+             AND a.task_id = NEW.task_id
+             AND a.target_generation = NEW.target_generation
+             AND a.verification_runner_attempt_id =
+                   NEW.verification_runner_attempt_id
+             AND (
+               NEW.terminal_observation_id IS NULL
+               OR EXISTS (
+                 SELECT 1 FROM verification_runner_observations AS o
+                  WHERE o.project_id = NEW.project_id
+                    AND o.task_id = NEW.task_id
+                    AND o.target_generation = NEW.target_generation
+                    AND o.verification_runner_observation_id =
+                          NEW.terminal_observation_id
+                    AND o.verification_runner_attempt_id =
+                          NEW.verification_runner_attempt_id
+               )
+             )
+        )
+        BEGIN SELECT RAISE(ABORT,'runner_parent_inconsistent'); END
+        """,
+    )
+    return (*immutable, *parent)
+
+
+def _criterion_evidence_links_v20_matrix_trigger_sql() -> str:
+    return """
+    CREATE TRIGGER trg_criterion_evidence_links_matrix_insert
+    BEFORE INSERT ON criterion_evidence_links
+    WHEN NOT EXISTS (
+      SELECT 1
+        FROM contract_criteria AS criterion
+        JOIN evidence_references AS reference
+          ON reference.project_id = criterion.project_id
+         AND reference.task_id = criterion.task_id
+       WHERE criterion.project_id = NEW.project_id
+         AND criterion.task_id = NEW.task_id
+         AND criterion.criterion_id = NEW.criterion_id
+         AND reference.evidence_reference_id = NEW.evidence_reference_id
+         AND reference.assurance_class = NEW.assurance_class
+         AND reference.producer_class = NEW.producer_class
+         AND reference.producer_version = NEW.producer_version
+         AND (
+           (NEW.relation = 'verification_attestation'
+             AND criterion.criterion_kind = 'verification'
+             AND reference.source_kind = 'verification_receipt')
+           OR
+           (NEW.relation = 'review_assessment'
+             AND criterion.criterion_kind = 'acceptance'
+             AND reference.source_kind = 'review_receipt')
+           OR
+           (NEW.relation = 'review_finding'
+             AND criterion.criterion_kind = 'acceptance'
+             AND reference.source_kind = 'review_finding')
+           OR
+           (NEW.relation = 'completion_basis'
+             AND criterion.criterion_kind = 'acceptance'
+             AND reference.source_kind IN (
+               'artifact_manifest', 'completion_evidence'
+             ))
+           OR
+           (NEW.relation = 'runner_observation'
+             AND criterion.criterion_kind = 'verification'
+             AND reference.source_kind = 'runner_observation'
+             AND reference.verification_criterion_id = NEW.criterion_id
+             AND NEW.assurance_class = 'machine_observed'
+             AND NEW.producer_class = 'verification_runner'
+             AND NEW.producer_version = 1)
+         )
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'invalid_criterion_evidence_link');
+    END
+    """
+
+
+def _verification_runner_shadow_schema_statements() -> tuple[str, ...]:
+    return (
+        *_R3A_SCHEMA20_COLUMN_ALTERS,
+        _completion_evidence_bundle_v20_table_sql(),
+        *_verification_runner_table_statements(),
+        *_verification_runner_index_statements(),
+        *_verification_runner_trigger_statements(),
+        _criterion_evidence_links_v20_matrix_trigger_sql(),
+    )
+
+
+def _verification_runner_resolution_digest_projection(row: Any) -> dict[str, Any]:
+    fields = (
+        "project_id", "task_id", "contract_revision",
+        "authority_snapshot_id", "verification_criterion_id",
+        "verification_expectation_digest", "verification_criterion_digest",
+        "target_kind", "target_value", "target_base_revision",
+        "target_generation", "target_capture_version", "artifact_manifest_id",
+        "target_material_digest", "plan_state", "plan_blob_object_id",
+        "plan_raw_digest", "plan_id", "plan_version",
+        "plan_semantic_digest", "selected_entry_digest", "coverage",
+        "step_count", "runner_contract_version",
+        "runner_implementation_version", "runner_implementation_digest",
+        "runner_policy_digest", "runtime_digest", "gate_eligibility_version",
+        "trigger", "route", "reason",
+    )
+    try:
+        projection = {field: row[field] for field in fields}
+    except (KeyError, IndexError, TypeError) as exc:
+        raise _unreadable_project_state() from exc
+    projection["sandbox_provider"] = None
+    projection["sandbox_policy_digest"] = None
+    return projection
+
+
+def _verification_runner_attempt_digest_projection(row: Any) -> dict[str, Any]:
+    try:
+        return {
+            "project_id": row["project_id"],
+            "task_id": row["task_id"],
+            "target_generation": row["target_generation"],
+            "gate_eligibility_version": row["gate_eligibility_version"],
+            "target_material_digest": row["target_material_digest"],
+            "resolution_id": row["verification_runner_resolution_id"],
+            "runner_implementation_digest": row[
+                "runner_implementation_digest"
+            ],
+            "sandbox_instance_digest": None,
+        }
+    except (KeyError, IndexError, TypeError) as exc:
+        raise _unreadable_project_state() from exc
+
+
+def _bundle_v20_recreated_object_statements() -> tuple[str, ...]:
+    return (
+        """CREATE UNIQUE INDEX idx_completion_evidence_bundles_task_cycle
+             ON completion_evidence_bundles(
+               project_id, task_id, completion_cycle_id
+             )""",
+        """CREATE TRIGGER trg_completion_evidence_bundles_no_update
+             BEFORE UPDATE ON completion_evidence_bundles
+             BEGIN SELECT RAISE(ABORT, 'immutable_completion_evidence'); END""",
+        """CREATE TRIGGER trg_completion_evidence_bundles_no_delete
+             BEFORE DELETE ON completion_evidence_bundles
+             BEGIN SELECT RAISE(ABORT, 'immutable_completion_evidence'); END""",
+    )
+
+
+def _rebuild_completion_evidence_bundle_v20(
+    connection: sqlite3.Connection,
+) -> None:
+    connection.execute("DROP TRIGGER trg_completion_evidence_bundles_no_update")
+    connection.execute("DROP TRIGGER trg_completion_evidence_bundles_no_delete")
+    connection.execute("DROP INDEX idx_completion_evidence_bundles_task_cycle")
+    connection.execute(
+        "ALTER TABLE completion_evidence_bundles "
+        "RENAME TO completion_evidence_bundles_v19"
+    )
+    connection.execute(_completion_evidence_bundle_v20_table_sql())
+    prefix = (
+        "completion_evidence_bundle_id",
+        "project_id",
+        "task_id",
+        "completion_cycle_id",
+        "cycle_ordinal",
+        "source_schema_version",
+        "bundle_version",
+        "contract_revision",
+        "authority_snapshot_id",
+        "acceptance_criterion_id",
+        "verification_criterion_id",
+        "target_kind",
+        "target_value",
+        "target_base_revision",
+        "target_generation",
+        "target_capture_version",
+        "artifact_manifest_id",
+        "verification_receipt_id",
+    )
+    trailing = (
+        "omission_mask",
+        "sealed_at",
+        "bundle_digest",
+        "payload_size_bytes",
+    )
+    destination = (
+        *prefix,
+        "verification_basis_kind",
+        "verification_runner_observation_id",
+        *trailing,
+    )
+    connection.execute(
+        "INSERT INTO completion_evidence_bundles("
+        + ",".join(destination)
+        + ") SELECT "
+        + ",".join(prefix)
+        + ",NULL,NULL,"
+        + ",".join(trailing)
+        + " FROM completion_evidence_bundles_v19"
+    )
+    connection.execute("DROP TABLE completion_evidence_bundles_v19")
+    for statement in _bundle_v20_recreated_object_statements():
+        connection.execute(statement)
+
+
+def _schema20_statement_identity(statement: str) -> tuple[str, str, str]:
+    normalized = _normalized_schema_sql(statement)
+    match = re.match(
+        r"CREATE\s+(TABLE|(?:UNIQUE\s+)?INDEX|TRIGGER)\s+([a-z0-9_]+)",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        raise AssertionError("private schema-v20 object inventory is incomplete")
+    raw_kind, name = match.groups()
+    kind = "index" if "INDEX" in raw_kind.upper() else raw_kind.lower()
+    table_match = re.search(
+        r"\bON\s+([a-z0-9_]+)\b",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    table_name = name if kind == "table" else (
+        table_match.group(1) if table_match is not None else ""
+    )
+    return kind, name, table_name
+
+
+def _schema20_expected_objects() -> dict[str, tuple[str, str, str]]:
+    inherited_bundle_objects = tuple(
+        statement
+        for statement in completion_evidence_bundle_schema_statements()
+        if _normalized_schema_sql(statement).startswith("CREATE ")
+    )
+    statements = (
+        *inherited_bundle_objects,
+        _completion_evidence_bundle_v20_table_sql(),
+        *_verification_runner_table_statements(),
+        *_verification_runner_index_statements(),
+        *_verification_runner_trigger_statements(),
+        *_bundle_v20_recreated_object_statements(),
+        _criterion_evidence_links_v20_matrix_trigger_sql(),
+    )
+    result: dict[str, tuple[str, str, str]] = {}
+    for statement in statements:
+        kind, name, table_name = _schema20_statement_identity(statement)
+        result[name] = (kind, table_name, _normalized_schema_sql(statement))
+    return result
+
+
+def _validate_schema20_column(
+    connection: sqlite3.Connection,
+    *,
+    table_name: str,
+    column_name: str,
+    declared_type: str,
+    notnull: int,
+    default: str | None,
+) -> tuple[str, ...]:
+    rows = connection.execute(
+        f"PRAGMA table_xinfo({_quoted_identifier(table_name)})"
+    ).fetchall()
+    row = next(
+        (candidate for candidate in rows if str(candidate["name"]) == column_name),
+        None,
+    )
+    if (
+        row is None
+        or str(row["type"]).upper() != declared_type
+        or int(row["notnull"]) != notnull
+        or row["dflt_value"] != default
+        or int(row["pk"]) != 0
+        or int(row["hidden"]) != 0
+    ):
+        raise _unreadable_project_state()
+    return tuple(str(candidate["name"]) for candidate in rows)
+
+
+def _validate_schema20_owned_contract(connection: sqlite3.Connection) -> None:
+    if required_schema_objects_missing(
+        connection,
+        schema_version=PRIVATE_SCHEMA20_VERSION,
+    ):
+        raise _unreadable_project_state()
+    for name, (kind, table_name, expected_sql) in (
+        _schema20_expected_objects().items()
+    ):
+        row = connection.execute(
+            "SELECT type, tbl_name, sql FROM sqlite_master WHERE name = ?",
+            (name,),
+        ).fetchone()
+        if (
+            row is None
+            or str(row["type"]) != kind
+            or str(row["tbl_name"]) != table_name
+            or row["sql"] is None
+            or _normalized_schema_sql(str(row["sql"])) != expected_sql
+        ):
+            raise _unreadable_project_state()
+
+    task_columns = _validate_schema20_column(
+        connection,
+        table_name="tasks",
+        column_name="review_target_runner_basis_version",
+        declared_type="INTEGER",
+        notnull=1,
+        default="0",
+    )
+    cycle_columns = _validate_schema20_column(
+        connection,
+        table_name="task_completion_cycles",
+        column_name="verification_basis_kind",
+        declared_type="TEXT",
+        notnull=0,
+        default=None,
+    )
+    _validate_schema20_column(
+        connection,
+        table_name="task_completion_cycles",
+        column_name="verification_runner_observation_id",
+        declared_type="TEXT",
+        notnull=0,
+        default=None,
+    )
+    bundle_columns = tuple(
+        str(row["name"])
+        for row in connection.execute(
+            "PRAGMA table_xinfo(completion_evidence_bundles)"
+        ).fetchall()
+    )
+    expected_bundle_columns = (
+        "completion_evidence_bundle_id",
+        "project_id",
+        "task_id",
+        "completion_cycle_id",
+        "cycle_ordinal",
+        "source_schema_version",
+        "bundle_version",
+        "contract_revision",
+        "authority_snapshot_id",
+        "acceptance_criterion_id",
+        "verification_criterion_id",
+        "target_kind",
+        "target_value",
+        "target_base_revision",
+        "target_generation",
+        "target_capture_version",
+        "artifact_manifest_id",
+        "verification_receipt_id",
+        "verification_basis_kind",
+        "verification_runner_observation_id",
+        "omission_mask",
+        "sealed_at",
+        "bundle_digest",
+        "payload_size_bytes",
+    )
+    if (
+        task_columns[-1:] != ("review_target_runner_basis_version",)
+        or cycle_columns[-2:] != (
+            "verification_basis_kind",
+            "verification_runner_observation_id",
+        )
+        or bundle_columns != expected_bundle_columns
+    ):
+        raise _unreadable_project_state()
+
+
+def _schema20_integrity_checks(connection: sqlite3.Connection) -> None:
+    if [
+        str(row[0]) for row in connection.execute("PRAGMA quick_check").fetchall()
+    ] != ["ok"]:
+        raise _unreadable_project_state()
+    integrity_rows = connection.execute("PRAGMA integrity_check").fetchall()
+    if not integrity_rows or any(str(row[0]) != "ok" for row in integrity_rows):
+        raise _unreadable_project_state()
+    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+        raise _unreadable_project_state()
+
+
+def validate_schema20_storage(connection: sqlite3.Connection) -> None:
+    """Validate the private, non-activated R3A schema-v20 storage foundation."""
+
+    marker = connection.execute(
+        "SELECT name FROM schema_migrations WHERE version = 20"
+    ).fetchone()
+    if (
+        current_schema_version(connection) != PRIVATE_SCHEMA20_VERSION
+        or missing_migration_versions(connection, PRIVATE_SCHEMA20_VERSION)
+        or marker is None
+        or str(marker["name"]) != PRIVATE_SCHEMA20_MIGRATION_NAME
+        or connection.execute(
+            "SELECT 1 FROM schema_migrations WHERE version > 20 LIMIT 1"
+        ).fetchone()
+        is not None
+    ):
+        raise _unreadable_project_state()
+    _validate_schema20_owned_contract(connection)
+    try:
+        validate_completion_cycle_storage(connection)
+        validate_evidence_ledger_storage(connection)
+    except StorageError as exc:
+        if exc.code == "database_busy":
+            raise
+        raise _unreadable_project_state() from exc
+
+    invented_rows = sum(
+        int(
+            connection.execute(
+                f"SELECT COUNT(*) FROM {_quoted_identifier(table_name)}"
+            ).fetchone()[0]
+        )
+        for table_name in _R3A_SCHEMA20_RUNNER_TABLES
+    )
+    invented_rows += int(
+        connection.execute(
+            "SELECT COUNT(*) FROM evidence_references "
+            "WHERE source_kind = 'runner_observation'"
+        ).fetchone()[0]
+    )
+    invented_rows += int(
+        connection.execute(
+            "SELECT COUNT(*) FROM criterion_evidence_links "
+            "WHERE relation = 'runner_observation'"
+        ).fetchone()[0]
+    )
+    nonzero_basis = sum(
+        int(row[0])
+        for row in (
+            connection.execute(
+                "SELECT COUNT(*) FROM tasks "
+                "WHERE review_target_runner_basis_version != 0"
+            ).fetchone(),
+            connection.execute(
+                "SELECT COUNT(*) FROM task_completion_cycles "
+                "WHERE verification_basis_kind IS NOT NULL "
+                "OR verification_runner_observation_id IS NOT NULL"
+            ).fetchone(),
+            connection.execute(
+                "SELECT COUNT(*) FROM completion_evidence_bundles "
+                "WHERE verification_basis_kind IS NOT NULL "
+                "OR verification_runner_observation_id IS NOT NULL"
+            ).fetchone(),
+        )
+        if row is not None
+    )
+    if invented_rows or nonzero_basis:
+        raise _unreadable_project_state()
+    _schema20_integrity_checks(connection)
+
+
+def _private_schema20_failure(fail_stage: str | None, stage: str) -> None:
+    if fail_stage == stage:
+        raise StorageError(
+            "internal_error",
+            "injected private schema-v20 rehearsal failure",
+        )
+
+
+def rehearse_schema20_storage(
+    db_path: Path,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Migrate one caller-owned disposable v19 database in place, privately."""
+
+    allowed_stages = {
+        None,
+        "after_columns",
+        "after_bundle",
+        "after_runner_tables",
+        "after_objects",
+        "after_marker",
+        "before_commit",
+    }
+    path = Path(db_path)
+    if (
+        fail_stage not in allowed_stages
+        or not path.is_absolute()
+        or path.is_symlink()
+        or not path.is_file()
+    ):
+        raise StorageError(
+            "internal_error",
+            "private schema-v20 rehearsal target is invalid",
+        )
+    validate_operational_journal_state(path)
+    try:
+        connection = connect_existing(path)
+    except sqlite3.Error as exc:
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="could not open private rehearsal database",
+        ) from exc
+
+    foreign_keys_disabled = False
+    try:
+        version = current_schema_version(connection)
+        if version == PRIVATE_SCHEMA20_VERSION:
+            connection.execute("BEGIN")
+            try:
+                if current_schema_version(connection) != PRIVATE_SCHEMA20_VERSION:
+                    raise _unreadable_project_state()
+                validate_schema20_storage(connection)
+            finally:
+                connection.rollback()
+            return
+        if version != SCHEMA_VERSION:
+            raise StorageError(
+                "migration_required",
+                "private schema-v20 rehearsal requires complete schema version 19",
+            )
+
+        connection.execute("PRAGMA foreign_keys = OFF")
+        foreign_keys_disabled = True
+        connection.execute("PRAGMA legacy_alter_table = ON")
+        if int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 0:
+            raise _unreadable_project_state()
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            if (
+                current_schema_version(connection) != SCHEMA_VERSION
+                or missing_migration_versions(connection, SCHEMA_VERSION)
+                or schema_objects_inconsistent_with_version(
+                    connection,
+                    SCHEMA_VERSION,
+                )
+            ):
+                raise StorageError(
+                    "migration_required",
+                    "private schema-v20 rehearsal requires complete schema version 19",
+                )
+            _validate_current_schema_structure(connection)
+            validate_completion_cycle_storage(connection)
+            validate_evidence_ledger_storage(connection)
+            _schema20_integrity_checks(connection)
+            preserved_tables = tuple(
+                table_name
+                for table_name, introduced_version in (
+                    _SCHEMA_TABLE_INTRODUCED_VERSION.items()
+                )
+                if table_name != "schema_migrations" and introduced_version <= 19
+            )
+            before = _selected_table_projection_snapshot(
+                connection,
+                preserved_tables,
+            )
+            column_basis = {name: value[0] for name, value in before.items()}
+
+            for statement in _R3A_SCHEMA20_COLUMN_ALTERS:
+                connection.execute(statement)
+            _private_schema20_failure(fail_stage, "after_columns")
+            _rebuild_completion_evidence_bundle_v20(connection)
+            _private_schema20_failure(fail_stage, "after_bundle")
+            for statement in _verification_runner_table_statements():
+                connection.execute(statement)
+            _private_schema20_failure(fail_stage, "after_runner_tables")
+            for statement in (
+                *_verification_runner_index_statements(),
+                *_verification_runner_trigger_statements(),
+            ):
+                connection.execute(statement)
+            connection.execute(
+                "DROP TRIGGER trg_criterion_evidence_links_matrix_insert"
+            )
+            connection.execute(_criterion_evidence_links_v20_matrix_trigger_sql())
+            _private_schema20_failure(fail_stage, "after_objects")
+
+            after = _selected_table_projection_snapshot(
+                connection,
+                preserved_tables,
+                column_basis=column_basis,
+            )
+            if after != before:
+                raise _unreadable_project_state()
+            connection.execute(
+                "INSERT INTO schema_migrations(version, name, applied_at) "
+                "VALUES (20, ?, ?)",
+                (PRIVATE_SCHEMA20_MIGRATION_NAME, utc_now()),
+            )
+            _private_schema20_failure(fail_stage, "after_marker")
+            validate_schema20_storage(connection)
+            _private_schema20_failure(fail_stage, "before_commit")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+    except sqlite3.Error as exc:
+        if is_sqlite_busy_or_locked(exc):
+            raise StorageError("database_busy", DATABASE_BUSY_MESSAGE) from exc
+        raise _unreadable_project_state() from exc
+    finally:
+        try:
+            if foreign_keys_disabled:
+                connection.execute("PRAGMA legacy_alter_table = OFF")
+                connection.execute("PRAGMA foreign_keys = ON")
+                if int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 1:
+                    raise _unreadable_project_state()
+        finally:
+            connection.close()
+
+
 def _normalized_schema_sql(statement: str) -> str:
     return " ".join(statement.strip().removesuffix(";").split())
 
@@ -5427,6 +6660,9 @@ def _normalized_schema_sql(statement: str) -> str:
 def _validate_completion_evidence_bundle_schema_contract(
     connection: sqlite3.Connection,
 ) -> None:
+    if current_schema_version(connection) == PRIVATE_SCHEMA20_VERSION:
+        _validate_schema20_owned_contract(connection)
+        return
     marker = connection.execute(
         "SELECT name FROM schema_migrations WHERE version = 19"
     ).fetchone()
@@ -11512,6 +12748,29 @@ def _validate_evidence_ledger_schema_contract(
                     "evidence_basis_version",
                     "completion_evidence_bundle_id",
                 )
+            if current_schema_version(connection) >= PRIVATE_SCHEMA20_VERSION:
+                if table_name == "tasks":
+                    later_definitions = (
+                        _normalized_schema_sql(
+                            "review_target_runner_basis_version INTEGER NOT NULL "
+                            "DEFAULT 0 CHECK "
+                            "(review_target_runner_basis_version IN (0, 2))"
+                        ),
+                    )
+                    later_columns = ("review_target_runner_basis_version",)
+                elif table_name == "task_completion_cycles":
+                    later_definitions = (
+                        *later_definitions,
+                        _normalized_schema_sql("verification_basis_kind TEXT"),
+                        _normalized_schema_sql(
+                            "verification_runner_observation_id TEXT"
+                        ),
+                    )
+                    later_columns = (
+                        *later_columns,
+                        "verification_basis_kind",
+                        "verification_runner_observation_id",
+                    )
             expected_suffix = (
                 ", "
                 + ", ".join((*expected_definitions, *later_definitions))
@@ -14437,9 +15696,14 @@ def _validate_evidence_ledger_rows(
     )
     if type(expected_project_id) is not str or not expected_project_id:
         raise evidence_ledger_inconsistent()
-    source_schema_version = current_schema_version(connection)
-    if source_schema_version not in {18, 19}:
+    physical_schema_version = current_schema_version(connection)
+    if physical_schema_version not in {18, 19, PRIVATE_SCHEMA20_VERSION}:
         raise evidence_ledger_inconsistent()
+    source_schema_version = (
+        19
+        if physical_schema_version == PRIVATE_SCHEMA20_VERSION
+        else physical_schema_version
+    )
     try:
         task_validation = validate_stored_task_rows(
             task_rows,
@@ -14930,6 +16194,13 @@ def _validate_completion_evidence_bundle_rows(
             or type(row["source_schema_version"]) is not int
             or row["bundle_version"] != 1
             or type(row["bundle_version"]) is not int
+            or (
+                current_schema_version(connection) == PRIVATE_SCHEMA20_VERSION
+                and (
+                    row["verification_basis_kind"] is not None
+                    or row["verification_runner_observation_id"] is not None
+                )
+            )
             or snapshot is None
             or snapshot["project_id"] != row["project_id"]
             or snapshot["task_id"] != row["task_id"]
@@ -17122,7 +18393,7 @@ def _capture_evidence_projection_basis_rows(
 
     if type(project_id) is not str or not project_id:
         raise evidence_ledger_inconsistent()
-    if current_schema_version(connection) != 19:
+    if current_schema_version(connection) not in {19, PRIVATE_SCHEMA20_VERSION}:
         raise evidence_ledger_inconsistent()
     state = read_evidence_projection_state(
         connection,

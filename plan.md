@@ -234,11 +234,23 @@ inventoried the mixed WIP, audited test value, froze the M25 architecture
 boundary, and physically removed only the approved retired repository material
 without product activation. Accepted R4V additionally establishes only the
 dependency-pure, legacy-stable Runner value model and reclosed v0.12 candidate
-manifest. Current TG-M24.R3A stabilizes the schema-v20 migration and storage
-baseline after R4V. Later inactive units reconcile Evidence compatibility,
-repair pre-Runner core regressions, finalize temporary shim/policy retirement,
-and retire fixed diagnostic residue. Only then may the ordered M24.2
-implementation and M24.3/M24.4 acceptance units activate product behavior.
+manifest. Current TG-M24.R3A establishes only a private, non-public schema-v20
+migration and storage rehearsal reached through an injected path after R4V; the
+public candidate remains schema v19. Inactive TG-M24.R3B owns the corresponding
+public schema-v20 activation, Bundle-v2 null-Runner writer, and
+Evidence/Viewer/managed backup/recovery compatibility. Later inactive units
+repair pre-Runner core
+regressions, finalize temporary shim/policy retirement, and retire fixed
+diagnostic residue. R3B activates only schema/storage, Bundle, Evidence, Viewer,
+and recovery compatibility; it creates no Runner rows, links, members, or
+projection and grants no process or completion-gate authority. The first
+durable Runner mapping/write/projection belongs to 2C. Runner launch remains
+owned by the ordered M24.2 implementation, and qualifying completion-gate
+activation remains owned by M24.3/M24.4 acceptance. Schema-v20 shadow evidence
+cannot satisfy that gate; M24.3 requires a separately approved schema-v21
+contract without expanding the M24.2 route here. The downstream final v0.13
+release-candidate identity is schema v21 under that future exact contract;
+schema v20 remains the M24.2 intermediate shadow foundation.
 The final checkpoint requires no unclassified or new measurable debt, no
 retired/archive/dormant residue, no meaningless/disabled/new-SKIP test, a clean
 package and release candidate, and an explicit M25 handoff. Sequential ordering,
@@ -258,6 +270,13 @@ every later unit remain inactive behind their accepted immediate predecessor.
 Exact unit identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 not duplicated in this gateway.
+
+R3A and R3B must remain separate Tasks, commits, and fresh evidence gates. R3A
+acceptance alone does not change the public schema-v19 candidate or authorize
+materialization. R3B owns the integration review for the exact matched commits;
+only its PASS may authorize code/main cutover. Canonical database migration is
+not an implicit consequence of that Git cutover: it requires a later explicit
+public setup action at a separate approval checkpoint.
 
 Accepted TG-M24.R1 consumed only the reviewed R2 bootstrap boundary and changed
 no product byte; accepted R2A, R2B, R2C, R4A, and R4V changed no supported product

@@ -12,6 +12,12 @@ therefore remains v0.12.0/schema v19 until the owning downstream units are
 accepted. Completed execution narrative is history, and the Task database owns
 live state and evidence.
 
+TG-M24.R3A may prepare only a private, non-public schema-v20 storage foundation.
+It does not change the public schema constant or setup target, the supported
+Viewer source range, or the schema-v19 native version-1 Bundle writer. Public
+schema-v20 activation belongs to TG-M24.R3B, and neither unit alone authorizes a
+main or canonical-state cutover.
+
 This document specifies supported product behavior. The concise
 [authority index](authority.md) routes implementation structure to
 `docs/design.md`, durable agent behavior to root `AGENTS.md`, current decisions,
@@ -1781,6 +1787,54 @@ and durable records, and passes `quick_check` and foreign keys. Acceptance
 retains the realistic 12-Task/191-event fixture and historical completion/
 review trace through every supported source version. No migration parses
 private prose to invent structure.
+
+### Private Schema-v20 Foundation And Public Activation Boundary
+
+Throughout TG-M24.R3A, supported product behavior remains schema v19: the
+public `SCHEMA_VERSION` and setup `schema_to` remain 19, setup still accepts
+v1-v18 only as migration inputs, Viewer snapshot v4 still accepts v5-v19, and
+the schema-v19 native version-1 Bundle writer remains unchanged.
+
+R3A's schema-v20 work is restricted to an explicitly injected private database
+path. This is the sole non-public exception to the rule that explicit setup is
+the only migrator: it migrates one caller-owned disposable v19 database in
+place, at the same path, inside one `BEGIN IMMEDIATE` transaction. It performs
+no copy, backup, publication, managed recovery, or canonical-state operation.
+Rollback restores the logical schema and data; SQLite file-byte identity is not
+claimed.
+
+Migration 20 is exactly `verification_runner_shadow`. It preserves every
+existing v19 business row and stable ID, including the canonical payload bytes
+and digest of each existing version-1 Bundle. Existing Task Runner markers are
+zero and existing cycle/Bundle Runner basis fields are null; the four new
+immutable Runner tables and new Runner Evidence rows start empty. Schema-v20
+Bundle version 2 admits only `caller_attestation` or `not_required`, and its
+Runner observation pointer is always null. Any Runner observation, Reference,
+or criterion link remains standalone audit history and is never a completion
+cycle or Bundle basis at schema v20. Every schema-v20 Runner record is
+gate-ineligible version `0`. R3A owns only the complete physical DDL and
+storage-parent integrity defined by the design; 2A-2C own the future plan,
+process, observation, cleanup, and repository/service admission rules.
+Marker-only, partial-owned-object, same-version owned-object drift, a known
+later marker, busy/contention, integrity, or foreign-key failure is fail-closed
+and leaves no partial migration.
+
+TG-M24.R3B adds no schema object or migration. It alone owns the later public
+schema-v20 activation: the public schema constant and setup target, the
+Bundle-v2 null-Runner payload/serialization/digest writer, and schema-v20
+compatibility for the existing M22 Evidence/JSON contract, Viewer, and managed
+backup/recovery. R3B creates no Runner resolution, attempt, sandbox event,
+observation, Evidence Reference/link, Bundle member, or Runner projection; 2C
+owns the first durable Runner mapping, write, and projection. R3A and R3B remain
+separate Tasks, commits, and fresh evidence gates. R3B owns the integration
+review over the exact matched commits. Only that PASS may authorize a code/main
+cutover; canonical database migration remains a later explicit public setup at
+a separate approval checkpoint.
+
+Schema v20 is the intermediate M24.2 shadow foundation and never becomes a
+qualifying Runner gate basis. Before M24.3 can activate that basis, a separate
+Tier 2 contract must define schema v21; this section chooses no schema-v21
+migration marker, tag, or DDL.
 
 ### Operational Read/Write Boundary
 

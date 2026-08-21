@@ -13,9 +13,11 @@ without an archive or dormant copy. Accepted R4V adds only the dependency-pure,
 legacy-stable Runner value model and exact-candidate package-manifest closure;
 it activates no supported Runner, schema, Evidence, CLI, or gate behavior.
 TG-M24.R3A is the sole current TG-M24
-authority and owns only the schema-v20 migration and storage baseline. It
-activates no Runner launch or completion-gate behavior. The candidate therefore
-remains v0.12.0/schema v19 until the owning downstream units are accepted.
+authority and owns only a private, non-public schema-v20 migration and storage
+baseline. It activates no public schema, setup, Runner, Evidence, Viewer, or
+completion-gate behavior. The candidate therefore remains v0.12.0/schema v19
+until R3B supplies the separately reviewed public-activation half of the
+matched pair.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -414,6 +416,373 @@ narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
 Viewer compatibility is independent and accepts source schemas v5-v19.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
+
+### Private Schema-v20 Rehearsal Boundary
+
+R3A adds one internal storage/repository seam for an explicitly injected
+caller-owned disposable v19 database. It migrates that database in place at the
+same path and is the sole non-public exception to the rule that explicit setup
+is the only migrator. It is not routed from the CLI, setup planner,
+canonical-state resolver, maintenance, managed backup/recovery, Evidence, or
+Viewer. It performs no copy, backup, publication, or path replacement. Public
+`SCHEMA_VERSION`, `setup.py`, and all schema-v19 writer/reader routes remain
+unchanged.
+
+The migration marker is exactly version `20`, name
+`verification_runner_shadow`. A complete v19 source is required. To permit the
+Bundle table rebuild, foreign-key enforcement is disabled before
+`BEGIN IMMEDIATE` and remains disabled for the entire migration transaction.
+`PRAGMA foreign_key_check` must return no row before commit; after commit or
+rollback, a `finally` path restores and rechecks foreign-key enforcement as on.
+Any error rolls the transaction back. This guarantees logical schema/data
+restoration, not byte-identical SQLite file restoration. Lock contention maps
+to the existing busy outcome, and no partial column, object, copied row, or
+marker may survive. Reentry on exact v20 is validation-only. A missing or
+changed v20-owned object, a wrong owned column, marker-only state, a known later
+migration marker, a conflicting object using an owned name, integrity failure,
+or foreign-key failure is rejected rather than repaired. An unrelated extra
+object outside the owned names is not, by itself, a schema-v20 failure.
+
+#### Exact Schema-v20 Physical Contract
+
+The final required inventory is 35 tables including `schema_migrations`, 42
+explicit indexes, and 59 triggers. Relative to v19, migration 20 adds four
+tables, ten explicit indexes, and twelve triggers; appends five columns;
+rebuilds only `completion_evidence_bundles`; and replaces one existing
+criterion-link matrix trigger without changing the trigger count. R3B adds no
+DDL.
+
+This contract owns physical structure, not the future Runner decision model.
+The `plan_state`, `coverage`, `route`, `launch_state`, `outcome`, and `reason`
+values are bounded storage codes only. The accepted-R4V `trigger` and
+`event_kind` constants identify structural record kinds without granting
+business meaning. Closed taxonomies and cross-field matrices, pending-cleanup
+admission, and cleanup acceptance belong to 2A, 2B, and 2C repository/service
+validation.
+
+The following predicates are literal DDL abbreviations, not open design slots:
+
+- `runner_id(value,prefix)`: `value` is `TEXT`, its length equals the prefix
+  length plus 16, it starts with `prefix`, and its 16-character suffix contains
+  no character outside `[0-9a-f]`.
+- `hex64(value)`: `value` has length 64 and contains no character outside
+  `[0-9a-f]`.
+- `sha256(value)`: `value` has length 71, starts with `sha256:`, and
+  `hex64(substr(value,8,64))` holds.
+- `code(value)`: `value` has length 1 through 64, its first character is in
+  `[a-z]`, and every later character is in `[a-z0-9_]`; equivalently
+  `length(value) BETWEEN 1 AND 64 AND substr(value,1,1) GLOB '[a-z]' AND
+  substr(value,2) NOT GLOB '*[^a-z0-9_]*'`.
+- `text_n(value,n)`: `value` has length 1 through `n`. A nullable use is exactly
+  `value IS NULL OR` the named predicate.
+
+The four immutable tables have no column defaults and use this exact column
+order and independent column checks:
+
+- `verification_runner_resolutions`: `verification_runner_resolution_id TEXT
+  PRIMARY KEY` with `runner_id` prefix `tg_verification_runner_resolution_`;
+  `project_id TEXT NOT NULL`; `task_id TEXT NOT NULL`; `contract_revision
+  INTEGER NOT NULL CHECK (contract_revision >= 1)`; `authority_snapshot_id TEXT
+  NOT NULL`; `verification_criterion_id TEXT NOT NULL`;
+  `verification_expectation_digest TEXT NOT NULL` with `hex64`;
+  `verification_criterion_digest TEXT NOT NULL` with `sha256`; `target_kind
+  TEXT NOT NULL` with `code`; `target_value TEXT NOT NULL` with
+  `text_n(target_value,500)`; nullable `target_base_revision TEXT` with
+  `text_n(target_base_revision,128)`; `target_generation INTEGER NOT NULL CHECK
+  (target_generation >= 1)`; `target_capture_version INTEGER NOT NULL CHECK
+  (target_capture_version = 1)`; `artifact_manifest_id TEXT NOT NULL`; nullable
+  `target_material_digest TEXT` with `sha256`; `plan_state TEXT NOT NULL` with
+  `code`; nullable `plan_blob_object_id TEXT` with
+  `text_n(plan_blob_object_id,500)`; nullable `plan_raw_digest TEXT` with
+  `sha256`; nullable `plan_id TEXT` with `text_n(plan_id,200)`; nullable
+  `plan_version INTEGER CHECK (plan_version >= 1)`; nullable
+  `plan_semantic_digest TEXT` with `sha256`; nullable `selected_entry_digest
+  TEXT` with `sha256`; `coverage TEXT NOT NULL` with `code`; `step_count INTEGER
+  NOT NULL CHECK (step_count BETWEEN 0 AND 16)`; `runner_contract_version
+  INTEGER NOT NULL CHECK (runner_contract_version = 1)`;
+  `runner_implementation_version TEXT NOT NULL CHECK
+  (runner_implementation_version = 'taskgov-verification-runner/1')`;
+  `runner_implementation_digest TEXT NOT NULL` with `sha256`;
+  `runner_policy_digest TEXT NOT NULL` with `sha256`; nullable `runtime_digest
+  TEXT` with `sha256`; `gate_eligibility_version INTEGER NOT NULL CHECK
+  (gate_eligibility_version = 0)`; `trigger TEXT NOT NULL CHECK
+  (trigger = 'review_target_set_v1')`; `route TEXT NOT NULL` with `code`;
+  nullable `reason TEXT` with `code`;
+  `idempotency_digest TEXT NOT NULL` with `sha256`; `created_at TEXT NOT NULL`.
+- `verification_runner_attempts`: `verification_runner_attempt_id TEXT PRIMARY
+  KEY` with `runner_id` prefix `tg_verification_runner_attempt_`; `project_id
+  TEXT NOT NULL`; `task_id TEXT NOT NULL`; `target_generation INTEGER NOT NULL
+  CHECK (target_generation >= 1)`; `gate_eligibility_version INTEGER NOT NULL
+  CHECK (gate_eligibility_version = 0)`; `verification_runner_resolution_id TEXT
+  NOT NULL`; `target_material_digest TEXT NOT NULL` with `sha256`;
+  `runner_implementation_digest TEXT NOT NULL` with `sha256`; `attempt_digest
+  TEXT NOT NULL` with `sha256`; `intent_recorded_at TEXT NOT NULL`.
+- `verification_runner_sandbox_events`: `verification_runner_sandbox_event_id
+  TEXT PRIMARY KEY` with `runner_id` prefix
+  `tg_verification_runner_sandbox_event_`; `project_id TEXT NOT NULL`; `task_id
+  TEXT NOT NULL`; `target_generation INTEGER NOT NULL CHECK (target_generation
+  >= 1)`; `verification_runner_attempt_id TEXT NOT NULL`; `event_kind TEXT NOT
+  NULL CHECK (event_kind = 'attempt_cleanup_succeeded')`; `event_digest TEXT NOT
+  NULL` with `sha256`; nullable `terminal_observation_id TEXT`; `created_at TEXT
+  NOT NULL`. The fixed accepted-R4V code names the record shape only: no table
+  check requires a terminal observation or treats the row as accepted cleanup.
+- `verification_runner_observations`: `verification_runner_observation_id TEXT
+  PRIMARY KEY` with `runner_id` prefix `tg_verification_runner_observation_`;
+  `project_id TEXT NOT NULL`; `task_id TEXT NOT NULL`; `target_generation
+  INTEGER NOT NULL CHECK (target_generation >= 1)`; `gate_eligibility_version
+  INTEGER NOT NULL CHECK (gate_eligibility_version = 0)`;
+  `verification_runner_resolution_id TEXT NOT NULL`; nullable
+  `verification_runner_attempt_id TEXT`; `runner_implementation_digest TEXT NOT
+  NULL` with `sha256`; `route TEXT NOT NULL` with `code`; `launch_state TEXT NOT
+  NULL` with `code`; `outcome TEXT NOT NULL` with `code`; nullable `reason TEXT`
+  with `code`; `complete_plan INTEGER NOT NULL CHECK (complete_plan IN (0,1))`;
+  `total_step_count INTEGER NOT NULL CHECK (total_step_count BETWEEN 0 AND 16)`;
+  `completed_step_count INTEGER NOT NULL CHECK (completed_step_count BETWEEN 0
+  AND total_step_count)`; nullable `failed_step_ordinal INTEGER CHECK
+  (failed_step_ordinal BETWEEN 1 AND total_step_count)`; `started_at TEXT NOT
+  NULL`; `finished_at TEXT NOT NULL`; `duration_ms INTEGER NOT NULL CHECK
+  (duration_ms >= 0)`; nullable `cpu_time_ms INTEGER CHECK (cpu_time_ms >= 0)`;
+  nullable `peak_job_memory_bytes INTEGER CHECK (peak_job_memory_bytes >= 0)`;
+  nullable `total_process_count INTEGER CHECK (total_process_count >= 0)`;
+  `sanitized_result_digest TEXT NOT NULL` with `sha256`; `created_at TEXT NOT
+  NULL`. No physical check pairs route, launch, outcome, reason, plan completion,
+  resource fields, attempt presence, or cleanup.
+
+Every new migration-20 Runner foreign key uses `ON UPDATE RESTRICT ON DELETE
+RESTRICT`. All new Runner foreign keys are `NOT DEFERRABLE` except the
+event-to-terminal-observation cycle, which is `DEFERRABLE INITIALLY DEFERRED`.
+The exact new column mappings are:
+
+- resolution `(project_id,task_id)` -> Task `(project_id,task_id)`;
+  `(project_id,task_id,authority_snapshot_id)` -> authority snapshot
+  `(project_id,task_id,authority_snapshot_id)`;
+  `(project_id,task_id,verification_criterion_id)` -> Contract criterion
+  `(project_id,task_id,criterion_id)`; and
+  `(project_id,task_id,artifact_manifest_id)` -> artifact manifest
+  `(project_id,task_id,artifact_manifest_id)`;
+- attempt `(project_id,task_id,target_generation,
+  verification_runner_resolution_id)` -> the same four-column resolution
+  parent key;
+- observation `(project_id,task_id,target_generation,
+  verification_runner_resolution_id)` -> the resolution parent key, and its
+  nullable `(project_id,task_id,target_generation,
+  verification_runner_attempt_id)` -> the attempt parent key;
+- sandbox event `(project_id,task_id,target_generation,
+  verification_runner_attempt_id)` -> the attempt parent key, and its nullable
+  `(project_id,task_id,target_generation,terminal_observation_id)` -> the
+  observation parent key;
+- Bundle `(project_id,task_id,target_generation,
+  verification_runner_observation_id)` -> the observation parent key.
+
+The Bundle rebuild restores every pre-v20 foreign-key clause verbatim from the
+accepted v19 definition. It therefore preserves each clause's implicit
+`NO ACTION` behavior without adding explicit `ON UPDATE` or `ON DELETE` text,
+and the existing completion-cycle foreign key remains `DEFERRABLE INITIALLY
+DEFERRED`. The `RESTRICT` rule above applies only to new migration-20 Runner
+foreign keys and does not rewrite an existing Bundle clause.
+
+Migration 20 creates exactly these ten indexes. `UNIQUE` is stated explicitly;
+every other index is non-unique:
+
+| Index | Ordered columns | Constraint |
+|---|---|---|
+| `idx_verification_runner_resolutions_parent` | `project_id, task_id, target_generation, verification_runner_resolution_id` | `UNIQUE` parent key |
+| `idx_verification_runner_resolutions_task_generation` | `project_id, task_id, target_generation` | lookup |
+| `idx_verification_runner_attempts_parent` | `project_id, task_id, target_generation, verification_runner_attempt_id` | `UNIQUE` parent key |
+| `idx_verification_runner_attempts_task_generation` | `project_id, task_id, target_generation` | lookup |
+| `idx_verification_runner_attempts_resolution` | `project_id, task_id, target_generation, verification_runner_resolution_id` | lookup |
+| `idx_verification_runner_sandbox_events_attempt_kind` | `project_id, task_id, target_generation, verification_runner_attempt_id, event_kind` | lookup |
+| `idx_verification_runner_observations_parent` | `project_id, task_id, target_generation, verification_runner_observation_id` | `UNIQUE` parent key |
+| `idx_verification_runner_observations_task_generation` | `project_id, task_id, target_generation` | lookup |
+| `idx_verification_runner_observations_resolution` | `project_id, task_id, target_generation, verification_runner_resolution_id` | lookup |
+| `idx_verification_runner_observations_attempt` | `project_id, task_id, target_generation, verification_runner_attempt_id` | lookup with exact predicate `WHERE verification_runner_attempt_id IS NOT NULL` |
+
+These indexes impose no per-generation or per-parent attempt, event, or
+observation cardinality. Such admission rules belong to 2A-2C.
+
+Migration 20 creates exactly twelve Runner triggers. The eight immutable
+triggers have these exact timing/table/body definitions:
+
+| Trigger | Exact definition |
+|---|---|
+| `trg_verification_runner_resolutions_no_update` | `BEFORE UPDATE ON verification_runner_resolutions FOR EACH ROW BEGIN SELECT RAISE(ABORT,'runner_storage_immutable'); END` |
+| `trg_verification_runner_resolutions_no_delete` | `BEFORE DELETE ON verification_runner_resolutions FOR EACH ROW BEGIN SELECT RAISE(ABORT,'runner_storage_immutable'); END` |
+| `trg_verification_runner_attempts_no_update` | `BEFORE UPDATE ON verification_runner_attempts FOR EACH ROW BEGIN SELECT RAISE(ABORT,'runner_storage_immutable'); END` |
+| `trg_verification_runner_attempts_no_delete` | `BEFORE DELETE ON verification_runner_attempts FOR EACH ROW BEGIN SELECT RAISE(ABORT,'runner_storage_immutable'); END` |
+| `trg_verification_runner_sandbox_events_no_update` | `BEFORE UPDATE ON verification_runner_sandbox_events FOR EACH ROW BEGIN SELECT RAISE(ABORT,'runner_storage_immutable'); END` |
+| `trg_verification_runner_sandbox_events_no_delete` | `BEFORE DELETE ON verification_runner_sandbox_events FOR EACH ROW BEGIN SELECT RAISE(ABORT,'runner_storage_immutable'); END` |
+| `trg_verification_runner_observations_no_update` | `BEFORE UPDATE ON verification_runner_observations FOR EACH ROW BEGIN SELECT RAISE(ABORT,'runner_storage_immutable'); END` |
+| `trg_verification_runner_observations_no_delete` | `BEFORE DELETE ON verification_runner_observations FOR EACH ROW BEGIN SELECT RAISE(ABORT,'runner_storage_immutable'); END` |
+
+Each remaining trigger is `BEFORE INSERT FOR EACH ROW`; its `WHEN NOT EXISTS`
+subquery is the corresponding exact parent predicate below, and its body is
+`BEGIN SELECT RAISE(ABORT,'runner_parent_inconsistent'); END`. There is no
+alternate action. The four exact parent predicates are:
+
+- `trg_verification_runner_resolutions_parent_insert` joins required parents
+  `tasks` as `t`, `authority_snapshots` as `s`, `artifact_manifests` as `m`,
+  verification `contract_criteria` as `vc`, and its required verification
+  `authority_snapshot_criteria` membership. It requires matching
+  `project_id/task_id`; `t.current_contract_revision = NEW.contract_revision`;
+  `t.review_target_authority_snapshot_id = NEW.authority_snapshot_id`;
+  `t.review_target_acceptance_criterion_id IS m.acceptance_criterion_id`;
+  `t.review_target_verification_criterion_id = NEW.verification_criterion_id`;
+  `t.review_target_kind = NEW.target_kind`; `t.review_target_value =
+  NEW.target_value`; `t.review_target_base_revision =
+  COALESCE(NEW.target_base_revision,'')`; `t.review_target_generation =
+  NEW.target_generation`; `t.review_target_capture_version =
+  NEW.target_capture_version`;
+  `t.review_target_artifact_manifest_id = NEW.artifact_manifest_id`; and
+  `t.review_target_runner_basis_version = 0`. Snapshot `s` must have the same
+  owner and ID, `s.contract_revision = NEW.contract_revision`, and
+  `s.verification_digest = NEW.verification_expectation_digest`. Criterion `vc`
+  must have ID `NEW.verification_criterion_id`, kind `verification`, and
+  `vc.digest = NEW.verification_criterion_digest`, with a snapshot membership
+  for `NEW.authority_snapshot_id`. Manifest `m` must have ID
+  `NEW.artifact_manifest_id`; the same `project_id`, `task_id`,
+  `authority_snapshot_id`; `m.acceptance_criterion_id IS
+  t.review_target_acceptance_criterion_id`; `m.verification_criterion_id =
+  NEW.verification_criterion_id`; `m.target_kind = NEW.target_kind`;
+  `m.target_value = NEW.target_value`; `m.target_base_revision =
+  COALESCE(NEW.target_base_revision,'')`; `m.target_generation =
+  NEW.target_generation`. Contract revision is bound by Task plus snapshot, and
+  capture version is bound by Task; `artifact_manifests` has neither column and
+  the trigger performs neither comparison. If
+  `t.review_target_acceptance_criterion_id IS NULL`, no acceptance criterion or
+  acceptance membership is joined or required. Otherwise the same parent
+  predicate additionally requires one same-owner `contract_criteria` row `ac`
+  whose ID is `t.review_target_acceptance_criterion_id` and whose kind is
+  `acceptance`, plus one same-owner snapshot membership for `ac.criterion_id`.
+- `trg_verification_runner_attempts_parent_insert` searches one resolution with
+  the same owner, target generation, and resolution ID and requires
+  `resolution.target_material_digest = NEW.target_material_digest` and
+  `resolution.runner_implementation_digest =
+  NEW.runner_implementation_digest`.
+- `trg_verification_runner_observations_parent_insert` searches one resolution
+  with the same owner, target generation, and resolution ID and requires its
+  Runner-implementation digest to equal NEW. If
+  `NEW.verification_runner_attempt_id` is non-null, the same `EXISTS` predicate
+  also requires one attempt with that owner/generation/ID, the same resolution
+  ID, and the same Runner-implementation digest.
+- `trg_verification_runner_sandbox_events_parent_insert` searches one attempt
+  with the same owner, target generation, and attempt ID. If
+  `NEW.terminal_observation_id` is non-null, the same `EXISTS` predicate also
+  requires one observation with that owner/generation/ID whose attempt ID
+  equals NEW. The fixed event code is not interpreted as cleanup proof.
+
+No trigger scans for an earlier uncleaned attempt or enforces plan, route,
+launch, outcome, reason, resource, or cleanup acceptance.
+
+Migration 20 appends `tasks.review_target_runner_basis_version INTEGER NOT
+NULL DEFAULT 0 CHECK (review_target_runner_basis_version IN (0,2))`. It then
+appends, in this order, nullable `TEXT` columns
+`task_completion_cycles.verification_basis_kind` and
+`task_completion_cycles.verification_runner_observation_id`; neither cycle
+column has a physical `CHECK` or foreign key in schema v20.
+
+`completion_evidence_bundles` is rebuilt from the accepted v19 definition. All
+v19 columns keep their exact order and definitions except that
+`source_schema_version` and `bundle_version` become `INTEGER NOT NULL` with no
+individual single-value `CHECK`; their allowed pair is owned only by the tagged
+union below. Nullable `verification_basis_kind TEXT CHECK
+(verification_basis_kind IS NULL OR verification_basis_kind IN
+('caller_attestation','not_required'))` and nullable
+`verification_runner_observation_id TEXT` are inserted, in that order, before
+the exact trailing columns `omission_mask`, `sealed_at`, `bundle_digest`, and
+`payload_size_bytes`. The rebuild adds the Bundle observation foreign key
+listed above and this exact tagged-union `CHECK`:
+
+```sql
+(
+  source_schema_version = 19
+  AND bundle_version = 1
+  AND verification_basis_kind IS NULL
+  AND verification_runner_observation_id IS NULL
+)
+OR (
+  source_schema_version = 20
+  AND bundle_version = 2
+  AND verification_basis_kind = 'caller_attestation'
+  AND verification_receipt_id IS NOT NULL
+  AND verification_runner_observation_id IS NULL
+)
+OR (
+  source_schema_version = 20
+  AND bundle_version = 2
+  AND verification_basis_kind = 'not_required'
+  AND verification_receipt_id IS NULL
+  AND verification_runner_observation_id IS NULL
+)
+```
+
+The rebuild restores `idx_completion_evidence_bundles_task_cycle`, the Bundle
+immutable trigger pair, and the existing member, Finding-snapshot, and
+cycle-basis matrix triggers from the accepted v19 definitions. It replaces
+`trg_criterion_evidence_links_matrix_insert` with the v19 arms unchanged plus
+one dormant physical arm for relation `runner_observation`: its Evidence
+Reference must use source kind `runner_observation`, its criterion must equal
+the Reference verification criterion, and attribution must be exactly
+`machine_observed`, producer `verification_runner`, version `1`. Migration and
+R3B create no Runner Reference, criterion link, projection, or Bundle member;
+2C owns the first durable mapping and write.
+
+For every v19 row the new Task marker is `0`, both new cycle columns are null,
+and both new Bundle columns are null. All four Runner tables and all new Runner
+Evidence/criterion-link sets are empty. Every pre-v20 table is compared on its
+original ordered columns, so all business rows/IDs and existing version-1
+Bundle payload bytes/digests remain equal. The version-20 marker is inserted
+only after those checks; exact schema validation, full storage validation,
+`quick_check`, and foreign-key check precede commit.
+
+R3A does not use the broad `tests/test_m242_runner_storage.py` module as its
+gate. The code Task extracts its schema/migration oracle into the dedicated
+`tests/test_m242_r3a_schema20_storage.py`, whose product imports are limited to
+`storage.py` and the accepted pure `verification_runner.py` value model.
+Candidate-specific cases and deferred R3B, 2C, business-cardinality, cleanup,
+or public-setup cases follow the accepted R2B disposition: they are physically
+deleted when obsolete or moved to their owning Task, never retained as SKIP or
+disabled tests. The dedicated R3A oracle must cover normalized
+`sqlite_master`, `table_xinfo`, foreign-key, ordered index, and trigger
+inventory; permissive multiple attempts and observations; the null-Runner
+Bundle union; a positive resolution parent with null acceptance criterion and
+present verification criterion; marker-only, partial-owned-object, owned drift,
+and unrelated extra-object behavior; v19 row/ID/Bundle-byte preservation;
+reentry, rollback, contention, and public nonactivation.
+
+Public nonactivation is a compound gate, not an import expansion of the
+storage-only module. The storage-owned boundaries are exercised by
+`tests.test_m242_r3a_schema20_storage.R3ASchema20StorageTests.test_public_schema_remains_19`
+(public `SCHEMA_VERSION` and `apply_migrations()` stay at 19, and the storage
+Viewer snapshot validator rejects a private schema-v20 database) and
+`tests.test_m242_r3a_schema20_storage.R3ASchema20StorageTests.test_private_migration_inventory_preservation_and_reentry`
+(the native storage writer produces and migration preserves a schema-19,
+Bundle-v1 row). The setup-owned boundary is the existing focused
+`tests.test_setup.SetupCommandTests.test_fresh_preview_success_and_idempotent_replay_follow_exact_rows`,
+which must continue to report `schema_to = 19`. All three boundaries must pass;
+the dedicated module does not import or duplicate setup.
+
+The final storage model deliberately omits the accepted R4V legacy shim fields
+`sandbox_provider`, `sandbox_policy_digest`, and `sandbox_instance_digest`.
+When constructing or verifying an accepted R4V digest/source projection, the
+storage adapter supplies literal null for `sandbox_provider` and
+`sandbox_policy_digest` on a resolution and for `sandbox_instance_digest` on an
+attempt. These adapter-only keys are never persisted as schema-v20 columns.
+R3A must remove the storage instance-shim consumer while leaving the temporary
+pure shim itself intact. Omitting provider/policy fields from storage does not
+authorize R3A to remove their Evidence consumers. R3B removes the Evidence
+provider/policy-shim consumers; R4B alone removes the remaining shim bodies and
+fixed-policy API.
+
+R3B consumes this exact schema without adding a migration, table, column,
+index, or trigger. It owns the public schema constant/setup switch, the
+Bundle-v2 null-Runner payload/serialization/digest writer, compatibility for
+the existing M22 Evidence/JSON contract, Viewer and managed backup/recovery,
+and the matched-pair integration review. R3B creates no Runner resolution,
+attempt, sandbox event, observation, Evidence Reference/link, Bundle member, or
+Runner projection; 2C owns their first durable mapping, write, and projection.
+Only PASS for the exact R3A and R3B commits permits a code/main cutover.
+Canonical database migration is a later explicit public setup action at a
+separate approval checkpoint, never an implicit effect of Git materialization.
 
 ## Stable Project Identity, Binding, And Relocation
 

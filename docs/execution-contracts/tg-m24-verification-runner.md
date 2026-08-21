@@ -106,8 +106,8 @@ or evidence.
 | TG-M24.R2C / 30 | `tg_task_252701fe03f530af` | accepted TG-M24.R2B | Freeze the retained Runner ownership and one-way dependency boundary needed for M25; add no process or IPC layer. |
 | TG-M24.R4A / 40 | `tg_task_83d2af496ac84982` | accepted TG-M24.R2C | Physically delete only inventory-approved retired repository assets and their dedicated tests, with no archive or dormant copy. |
 | TG-M24.R4V / 45 | `tg_task_006bee9937e25af9` | accepted TG-M24.R4A | Establish the dependency-pure, legacy-stable Runner value model and exact-candidate manifest without product activation. |
-| TG-M24.R3A / 50 | `tg_task_a6d113455aa2cdfe` | accepted TG-M24.R4V | Stabilize schema-v20 migration and storage without Runner launch or gate authority. |
-| TG-M24.R3B / 60 | `tg_task_c343ed2ec8acedf8` | accepted TG-M24.R3A | Reconcile sanitized Runner observations and projections without process launch or gate authority. |
+| TG-M24.R3A / 50 | `tg_task_a6d113455aa2cdfe` | accepted TG-M24.R4V | Establish only an injected-path private schema-v20 migration/storage rehearsal while the public candidate remains schema v19. |
+| TG-M24.R3B / 60 | `tg_task_c343ed2ec8acedf8` | accepted TG-M24.R3A | Add the separately reviewed public schema-v20 activation and Bundle/Evidence/Viewer/recovery compatibility without process launch or gate authority. |
 | TG-M24.R4B / 70 | `tg_task_e04fd31e6713cfa1` | accepted TG-M24.R3B | Repair pre-M24 behavior and frozen dependency violations before execution is enabled. |
 | TG-M24.R5 / 80 | `tg_task_89e9ac8d34df2e95` | accepted TG-M24.R4B | Perform the one authorized physical retirement of fixed OS-temp diagnostic residue. |
 | TG-M24.2A / 90 | `tg_task_2c6fd4707ac1e81b` | accepted TG-M24.R5 | Implement trusted-plan authority and exact private target materialization without launching a command. |
@@ -116,8 +116,8 @@ or evidence.
 | TG-M24.2D / 120 | `tg_task_fafad7bc62df7576` | accepted TG-M24.2C | Accept the complete shadow Runner and evidence slice; activate no completion-gate authority. |
 | TG-M24.3 / 130 | `tg_task_dc015144091f8e60` | accepted TG-M24.2D | Integrate a qualifying exact-current Runner basis while preserving explicit M21 fallback. |
 | TG-M24.4A / 140 | `tg_task_0da786589eb5144a` | accepted TG-M24.3 | Accept supported, fallback, failure, cleanup, and privacy flows. |
-| TG-M24.4B / 150 | `tg_task_220ff054e445f40e` | accepted TG-M24.4A | Accept legacy, core, migration, recovery, and fresh-state compatibility. |
-| TG-M24.4C / 160 | `tg_task_b0a3bf776bea1e93` | accepted TG-M24.4B | Accept the v0.13/schema-v20 package and release-candidate boundary. |
+| TG-M24.4B / 150 | `tg_task_220ff054e445f40e` | accepted TG-M24.4A | Accept legacy, core, v19-to-v20 and v20-to-v21 migration, recovery, and fresh-schema-v21 compatibility. |
+| TG-M24.4C / 160 | `tg_task_b0a3bf776bea1e93` | accepted TG-M24.4B | Accept the final v0.13/schema-v21 package and release-candidate boundary. |
 | TG-M24.4D / 170 | `tg_task_f81f2d126f033a59` | accepted TG-M24.4C | Perform final integrated Runner acceptance without adding corrective infrastructure. |
 | TG-M24.CP4 / 180 | `tg_task_a9e1229d594594d4` | accepted TG-M24.4D | Close M24 only with a clean, no-new-debt, M25-ready repair checkpoint. |
 
@@ -281,25 +281,81 @@ exact-target `pass/full` Receipt, and two independent Tier 2 PASS reviews.
 
 ## TG-M24.R3A Current Schema-v20 Migration And Storage Baseline
 
-Task `tg_task_a6d113455aa2cdfe` stabilizes clean v19-to-v20 migration,
-idempotent v20 setup, repository behavior, Task/Contract/target/Receipt
-preservation, legacy reopen, contention, backup-safe recovery, and removal of
-the temporary storage instance-shim consumer accepted by R4V. It launches
-no Runner and activates no Evidence projection or completion gate. Completion
-requires focused migration/storage checks, exact diff, and two independent Tier
-2 PASS reviews.
+Task `tg_task_a6d113455aa2cdfe` owns only a private, non-public v19-to-v20
+migration and storage rehearsal reached through an explicitly injected path.
+Its "idempotent v20 setup" means private migration, reentry, validation, and
+database-level rollback; it does not mean public setup activation. During R3A
+the public schema constant and setup target remain 19, Viewer compatibility
+remains v5-v19, and the native schema-v19 version-1 Bundle writer remains
+unchanged.
+
+The rehearsal migrates one caller-owned disposable v19 database in place at the
+same path under `BEGIN IMMEDIATE`; it performs no copy, backup, publication, or
+managed recovery. Rollback restores logical schema/data and claims no
+byte-identical SQLite file. It preserves every existing v19 business row and
+stable ID, including existing version-1 Bundle payload bytes and digests, and
+synthesizes no v20 business, Runner, Reference/link, Bundle, Evidence, or Viewer
+row. It is unreachable from the public CLI, canonical-state resolver, managed
+backup/recovery, and publication paths. It launches no Runner and grants no
+completion-gate authority.
+
+Its exact physical target is migration `20/verification_runner_shadow`: four
+immutable Runner tables, ten required indexes, twelve Runner triggers, the Task
+marker, the two nullable cycle fields, and the Bundle-v2 null-Runner tagged
+union fixed by the design. Existing v19 rows transform only to marker `0` and
+null new fields; new Runner/Evidence rows are zero. Same-version reentry only
+validates. Marker-only, missing or changed owned objects, a known later marker,
+busy/contention, integrity, and foreign-key cases fail closed with no partial
+write. R3A owns physical shape and storage-parent consistency, not the 2A-2C
+plan, process, observation, or cleanup admission rules. R3A also removes the
+storage instance-shim consumer allocated by accepted R4V, but not the shim body.
+
+Completion requires focused private migration, reentry, injected rollback,
+contention, exact row/object preservation, public-nonactivation, and storage
+checks in a dedicated storage-only R3A test module that imports only storage and
+the accepted pure value model. The broad `tests/test_m242_runner_storage.py`
+module is not an R3A gate. Its stale Runner-positive Bundle oracle and other
+candidate-specific/deferred R3B, 2C, business-cardinality, cleanup, or setup
+cases follow R2B disposition: physically delete obsolete cases or move them to
+their owner, with no SKIP/disabled residue. Required R3A oracles are normalized
+schema/table/FK/index/trigger inventory, permissive multiple attempts and
+observations, null-Runner Bundle, marker-only/partial/drift/unrelated-extra
+handling, preservation, reentry, rollback, contention, and public
+nonactivation. Public nonactivation is the compound gate formed by
+`tests.test_m242_r3a_schema20_storage.R3ASchema20StorageTests.test_public_schema_remains_19`
+for the public schema/apply-migrations and storage Viewer boundaries,
+`tests.test_m242_r3a_schema20_storage.R3ASchema20StorageTests.test_private_migration_inventory_preservation_and_reentry`
+for native schema-19/Bundle-v1 generation and preservation, and the existing
+setup-owned
+`tests.test_setup.SetupCommandTests.test_fresh_preview_success_and_idempotent_replay_follow_exact_rows`
+for `schema_to = 19`. The dedicated storage-only module must not import or
+duplicate setup. Completion also requires an exact diff and two independent
+Tier 2 PASS reviews.
 
 <a id="tg-m24-r3b"></a>
 
 ## TG-M24.R3B Inactive Evidence And Projection Compatibility Baseline
 
-Task `tg_task_c343ed2ec8acedf8` reconciles schema-v20 Runner observation and
-Evidence Reference storage with Bundle/JSON, Viewer, backup, recovery, and
-legacy schema compatibility, including removal of temporary Evidence
-provider/policy-shim consumers accepted by R4V. It launches no process and grants no gate
-authority. Projections retain no raw output, argv, environment, credential, or
-private path and fabricate no assurance. Completion requires focused
-compatibility checks, exact diff, and two independent Tier 2 PASS reviews.
+Task `tg_task_c343ed2ec8acedf8` owns the separately reviewed public schema-v20
+activation: the public schema constant and setup target, the Bundle-v2
+null-Runner writer, and schema-v20 Evidence/JSON, Viewer, managed backup,
+recovery, and legacy compatibility. It adds no DDL and must consume the accepted
+R3A private storage baseline without rewriting its acceptance evidence. It
+creates no Runner resolution, attempt, sandbox event, observation, Evidence
+Reference/link, Bundle member, or Runner projection; 2C owns their first durable
+mapping, write, and projection. It launches no process and grants no gate
+authority. Existing M22 projections retain no raw output, argv, environment,
+credential, or private path and fabricate no assurance.
+R3B also removes the Evidence provider/policy-shim consumers allocated by R4V,
+but leaves shim-body deletion to R4B. Completion requires focused compatibility
+and public-activation checks, the matched-pair integration review over the exact
+R3A/R3B commits, an exact diff, and two independent Tier 2 PASS reviews.
+
+R3A and R3B remain distinct sequential Tasks, commits, and fresh evidence
+records. Acceptance of either unit alone authorizes no cutover. R3B's matched-
+pair review may authorize only the code/main cutover. Canonical database
+migration remains a later explicit public setup action at a separately approved
+checkpoint.
 
 <a id="tg-m24-r4b"></a>
 
@@ -386,9 +442,12 @@ plan trusted-local Runner result satisfy verification. Every launched non-pass
 blocks that selected basis; only a closed no-launch fallback may use the M21
 caller-attested Receipt. Unsupported, manual, visual, external, and untrusted
 work always stays manual. Analyzer output, arbitrary commands, old evidence,
-and caller override gain no authority. Completion requires basis/version,
-invalidation/recovery, legacy history, projection, Skill/package, full offline,
-exact-diff, and two independent Tier 2 PASS reviews.
+and caller override gain no authority. Schema-v20 shadow records cannot be
+promoted to this gate; before M24.3 implementation, a separate schema-v21
+contract is required. This contract does not choose a schema-v21 migration,
+tag, or DDL. Completion requires basis/version, invalidation/recovery, legacy
+history, projection, Skill/package, full offline, exact-diff, and two
+independent Tier 2 PASS reviews.
 
 <a id="tg-m24-4a"></a>
 
@@ -405,18 +464,22 @@ independent Tier 2 PASS reviews.
 
 ## TG-M24.4B Inactive Legacy, Core, And Fresh-State Acceptance
 
-Task `tg_task_220ff054e445f40e` validates fresh schema v20, v19-to-v20
-migration, reentry, backup/recovery, Task/Contract/target/Receipt/review/
-completion history, M1-M23 behavior, Evidence Bundle/JSON, Viewer, Analyzer
-coexistence, and exact clean-target reproducibility. No unexpected or newly
-skipped test is accepted. Corrections return to their owner. Completion requires
-full offline lanes, exact diff, and two independent Tier 2 PASS reviews.
+Task `tg_task_220ff054e445f40e` preserves v19-to-v20 compatibility and validates
+the separately approved v20-to-v21 migration, fresh schema v21, reentry,
+backup/recovery, Task/Contract/target/Receipt/review/completion history, M1-M23
+behavior, Evidence Bundle/JSON, Viewer, Analyzer coexistence, and exact clean-
+target reproducibility. The schema-v21 contract is a separate Tier 2 decision
+before M24.3; this document chooses no migration tag or DDL. No unexpected or
+newly skipped test is accepted. Corrections return to their owner. Completion
+requires full offline lanes, exact diff, and two independent Tier 2 PASS
+reviews.
 
 <a id="tg-m24-4c"></a>
 
 ## TG-M24.4C Inactive v0.13 Package And Release-Candidate Acceptance
 
-Task `tg_task_b0a3bf776bea1e93` reconciles the final v0.13/schema-v20 package,
+Task `tg_task_b0a3bf776bea1e93` reconciles the final v0.13/schema-v21 package,
+using the exact schema-v21 contract separately accepted for M24.3, with its
 manifest, active documents, release note, archive inventory, fresh package
 install, upgrade/rollback evidence, and retired-asset absence. It performs no
 publication, push, tag, network action, or product correction. Completion

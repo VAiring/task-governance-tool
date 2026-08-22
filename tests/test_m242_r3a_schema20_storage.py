@@ -275,6 +275,12 @@ EXPECTED_SQL_SHA256 = {
     "trg_verification_runner_observations_parent_insert": "855f23e45b0d19c64f148712dd1d1a0f9d051f0988ed97da9aa2462c68633423",
 }
 
+EXPECTED_RECREATED_BUNDLE_SQL_SHA256 = {
+    "idx_completion_evidence_bundles_task_cycle": "f8afc93c537fedd7dc13fa93ced11a6c3bd922f7d45cf79bc27281b805bf8c8b",
+    "trg_completion_evidence_bundles_no_update": "361c1dea2f76d81fb4923ddbce3c9b5b23ffd42a61317a23c78ede616acb3778",
+    "trg_completion_evidence_bundles_no_delete": "a92bbe3e04c1c41c799395f1ecb472b6e45aab50659cb4993d58ba1c34ac38d7",
+}
+
 
 class _StaticRows:
     def __init__(self, rows: tuple[tuple[str, ...], ...]) -> None:
@@ -1212,6 +1218,19 @@ class R3ASchema20StorageTests(unittest.TestCase):
             ).fetchall()
         }
         self.assertEqual(actual_sql, EXPECTED_SQL_SHA256)
+        actual_recreated_bundle_sql = {
+            str(row["name"]): self._normalized_sql_digest(str(row["sql"]))
+            for row in connection.execute(
+                "SELECT name, sql FROM sqlite_master WHERE name IN ("
+                + ",".join("?" for _ in EXPECTED_RECREATED_BUNDLE_SQL_SHA256)
+                + ")",
+                tuple(EXPECTED_RECREATED_BUNDLE_SQL_SHA256),
+            ).fetchall()
+        }
+        self.assertEqual(
+            actual_recreated_bundle_sql,
+            EXPECTED_RECREATED_BUNDLE_SQL_SHA256,
+        )
         expected_deferrability = {
             "verification_runner_resolutions": (4, 0),
             "verification_runner_attempts": (1, 0),
@@ -1354,6 +1373,7 @@ class R3ASchema20StorageTests(unittest.TestCase):
                 "tasks",
                 "task_completion_cycles",
                 *EXPECTED_SQL_SHA256,
+                *EXPECTED_RECREATED_BUNDLE_SQL_SHA256,
             }
             after_schema = self._schema_projection(connection)
             after_schema_sql = {row[1]: row[3] for row in after_schema}

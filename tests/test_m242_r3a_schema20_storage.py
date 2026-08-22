@@ -7,6 +7,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 from unittest import mock
@@ -32,6 +33,51 @@ FAIL_STAGES = (
     "after_objects",
     "after_marker",
     "before_commit",
+)
+
+V19_TABLES = (
+    "artifact_manifest_entries",
+    "artifact_manifests",
+    "authority_snapshot_criteria",
+    "authority_snapshots",
+    "completion_bundle_finding_snapshots",
+    "completion_bundle_members",
+    "completion_evidence_bundles",
+    "contract_criteria",
+    "criterion_evidence_links",
+    "evidence_projection_state",
+    "evidence_references",
+    "handoff_records",
+    "managed_backup_generations",
+    "project_maintenance",
+    "project_meta",
+    "project_path_binding_history",
+    "review_findings",
+    "review_receipt_provenance",
+    "review_receipt_provenance_codes",
+    "review_receipts",
+    "schema_migrations",
+    "task_checkpoints",
+    "task_completion_cycles",
+    "task_contract_revisions",
+    "task_effort_activity",
+    "task_effort_bases",
+    "task_events",
+    "tasks",
+    "tool_events",
+    "verification_receipts",
+    "viewer_maintenance_state",
+)
+V19_BUSINESS_TABLES = tuple(
+    name for name in V19_TABLES if name != "schema_migrations"
+)
+TASK_R3A_COLUMN_SQL = (
+    "review_target_runner_basis_version INTEGER NOT NULL DEFAULT 0 "
+    "CHECK (review_target_runner_basis_version IN (0, 2))"
+)
+CYCLE_R3A_COLUMN_SQL = (
+    "verification_basis_kind TEXT",
+    "verification_runner_observation_id TEXT",
 )
 
 # Test-owned Step2E matrix.  The expected values are intentionally independent
@@ -228,6 +274,28 @@ EXPECTED_SQL_SHA256 = {
     "trg_verification_runner_sandbox_events_parent_insert": "391f21864f4306b672bd834dfc93539523eab38002cdef85c348c78132e4486b",
     "trg_verification_runner_observations_parent_insert": "855f23e45b0d19c64f148712dd1d1a0f9d051f0988ed97da9aa2462c68633423",
 }
+
+
+class _StaticRows:
+    def __init__(self, rows: tuple[tuple[str, ...], ...]) -> None:
+        self._rows = rows
+
+    def fetchall(self) -> list[tuple[str, ...]]:
+        return list(self._rows)
+
+
+class _BadIntegrityResultConnection:
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self._connection = connection
+
+    def execute(
+        self,
+        statement: str,
+        parameters: tuple[object, ...] = (),
+    ) -> sqlite3.Cursor | _StaticRows:
+        if " ".join(statement.upper().split()) == "PRAGMA INTEGRITY_CHECK":
+            return _StaticRows((("injected integrity failure",),))
+        return self._connection.execute(statement, parameters)
 
 
 def labeled(character: str) -> str:
@@ -771,13 +839,119 @@ class R3ASchema20StorageTests(unittest.TestCase):
             self.assertEqual(storage.current_schema_version(connection), 19)
         return db
 
-    @staticmethod
-    def _v19_tables() -> tuple[str, ...]:
-        return tuple(
-            name
-            for name, introduced in storage._SCHEMA_TABLE_INTRODUCED_VERSION.items()
-            if name != "schema_migrations" and introduced <= 19
+    def _assert_v19_table_inventory(
+        self,
+        connection: sqlite3.Connection,
+    ) -> None:
+        actual = tuple(
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
+                "ORDER BY name"
+            ).fetchall()
         )
+        self.assertEqual(actual, V19_TABLES)
+
+    @staticmethod
+    def _value_token(value: object) -> tuple[str, str]:
+        if value is None:
+            return ("null", "")
+        if type(value) is int:
+            return ("integer", str(value))
+        if type(value) is float:
+            return ("real", value.hex())
+        if type(value) is str:
+            return ("text", value)
+        if type(value) is bytes:
+            return ("blob", value.hex())
+        raise AssertionError(f"unexpected SQLite value type: {type(value)!r}")
+
+    @classmethod
+    def _table_projection_snapshot(
+        cls,
+        connection: sqlite3.Connection,
+        table_names: tuple[str, ...],
+        *,
+        column_basis: dict[str, tuple[str, ...]] | None = None,
+    ) -> tuple[
+        dict[str, tuple[str, ...]],
+        tuple[
+            tuple[
+                str,
+                tuple[str, ...],
+                tuple[tuple[tuple[str, str], ...], ...],
+            ],
+            ...,
+        ],
+    ]:
+        columns = {} if column_basis is None else dict(column_basis)
+        snapshots = []
+        for table_name in table_names:
+            quoted_table = '"' + table_name.replace('"', '""') + '"'
+            if table_name not in columns:
+                columns[table_name] = tuple(
+                    str(row["name"])
+                    for row in connection.execute(
+                        f"PRAGMA table_xinfo({quoted_table})"
+                    ).fetchall()
+                )
+            selected = columns[table_name]
+            quoted_columns = ",".join(
+                '"' + name.replace('"', '""') + '"' for name in selected
+            )
+            rows = tuple(
+                sorted(
+                    tuple(cls._value_token(value) for value in row)
+                    for row in connection.execute(
+                        f"SELECT {quoted_columns} FROM {quoted_table}"
+                    ).fetchall()
+                )
+            )
+            snapshots.append((table_name, selected, rows))
+        return columns, tuple(snapshots)
+
+    def _logical_database_snapshot(
+        self,
+        connection: sqlite3.Connection,
+    ) -> tuple[
+        tuple[tuple[str, str, str, str], ...],
+        tuple[
+            tuple[
+                str,
+                tuple[str, ...],
+                tuple[tuple[tuple[str, str], ...], ...],
+            ],
+            ...,
+        ],
+    ]:
+        table_names = tuple(
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
+                "ORDER BY name"
+            ).fetchall()
+        )
+        _columns, rows = self._table_projection_snapshot(
+            connection,
+            table_names,
+        )
+        return self._schema_projection(connection), rows
+
+    def _assert_rehearsal_error_unchanged(
+        self,
+        db: Path,
+        invoke: Callable[[], None],
+    ) -> storage.StorageError:
+        with closing(storage.connect(db)) as connection:
+            before = self._logical_database_snapshot(connection)
+        with self.assertRaises(storage.StorageError) as raised:
+            invoke()
+        with closing(storage.connect(db)) as connection:
+            after = self._logical_database_snapshot(connection)
+        self.assertEqual(after, before)
+        return raised.exception
 
     @staticmethod
     def _schema_projection(
@@ -788,14 +962,30 @@ class R3ASchema20StorageTests(unittest.TestCase):
                 str(row["type"]),
                 str(row["name"]),
                 str(row["tbl_name"]),
-                "" if row["sql"] is None else storage._normalized_schema_sql(
-                    str(row["sql"])
-                ),
+                ""
+                if row["sql"] is None
+                else " ".join(str(row["sql"]).strip().removesuffix(";").split()),
             )
             for row in connection.execute(
                 "SELECT type, name, tbl_name, sql FROM sqlite_master "
                 "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
             ).fetchall()
+        )
+
+    @staticmethod
+    def _append_table_columns(create_sql: str, *definitions: str) -> str:
+        constraint = re.search(
+            r",\s+(?=(?:UNIQUE|CHECK|FOREIGN\s+KEY)\s*\()",
+            create_sql,
+            flags=re.IGNORECASE,
+        )
+        if constraint is None or not definitions:
+            raise AssertionError("invalid test-owned CREATE TABLE transformation")
+        return (
+            create_sql[: constraint.start()]
+            + ", "
+            + ", ".join(definitions)
+            + create_sql[constraint.start() :]
         )
 
     @staticmethod
@@ -1063,9 +1253,18 @@ class R3ASchema20StorageTests(unittest.TestCase):
         db = self._fresh_v19()
         with closing(storage.connect(db)) as connection:
             fixture, before_payload = self._seed_nonempty_v19_closure(connection)
+            self._assert_v19_table_inventory(connection)
+            independent_columns, independent_before = (
+                self._table_projection_snapshot(
+                    connection,
+                    V19_BUSINESS_TABLES,
+                )
+            )
+            before_schema = self._schema_projection(connection)
+            before_schema_sql = {row[1]: row[3] for row in before_schema}
             before = storage._selected_table_projection_snapshot(
                 connection,
-                self._v19_tables(),
+                V19_BUSINESS_TABLES,
             )
             original_columns = {name: value[0] for name, value in before.items()}
             nonempty = {
@@ -1139,12 +1338,53 @@ class R3ASchema20StorageTests(unittest.TestCase):
             storage.validate_schema20_storage(connection)
             self.assertEqual(storage.current_schema_version(connection), 20)
             self._assert_schema20_oracle(connection)
+            _columns, independent_after = self._table_projection_snapshot(
+                connection,
+                V19_BUSINESS_TABLES,
+                column_basis=independent_columns,
+            )
+            self.assertEqual(independent_after, independent_before)
             after = storage._selected_table_projection_snapshot(
                 connection,
-                self._v19_tables(),
+                V19_BUSINESS_TABLES,
                 column_basis=original_columns,
             )
             self.assertEqual(after, before)
+            changed_or_new = {
+                "tasks",
+                "task_completion_cycles",
+                *EXPECTED_SQL_SHA256,
+            }
+            after_schema = self._schema_projection(connection)
+            after_schema_sql = {row[1]: row[3] for row in after_schema}
+            self.assertEqual(
+                after_schema_sql["tasks"],
+                self._append_table_columns(
+                    before_schema_sql["tasks"],
+                    TASK_R3A_COLUMN_SQL,
+                ),
+            )
+            self.assertEqual(
+                after_schema_sql["task_completion_cycles"],
+                self._append_table_columns(
+                    before_schema_sql["task_completion_cycles"],
+                    *CYCLE_R3A_COLUMN_SQL,
+                ),
+            )
+            self.assertEqual(
+                tuple(row for row in after_schema if row[1] not in changed_or_new),
+                tuple(row for row in before_schema if row[1] not in changed_or_new),
+            )
+            self.assertEqual(
+                tuple(
+                    tuple(row)
+                    for row in connection.execute(
+                        "SELECT version, name FROM schema_migrations "
+                        "WHERE version >= 20 ORDER BY version"
+                    ).fetchall()
+                ),
+                ((20, "verification_runner_shadow"),),
+            )
             self.assertEqual(
                 {
                     table_name: tuple(
@@ -1201,6 +1441,24 @@ class R3ASchema20StorageTests(unittest.TestCase):
             self.assertEqual(
                 int(
                     connection.execute(
+                        "SELECT COUNT(*) FROM evidence_references "
+                        "WHERE source_kind = 'runner_observation'"
+                    ).fetchone()[0]
+                ),
+                0,
+            )
+            self.assertEqual(
+                int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM criterion_evidence_links "
+                        "WHERE relation = 'runner_observation'"
+                    ).fetchone()[0]
+                ),
+                0,
+            )
+            self.assertEqual(
+                int(
+                    connection.execute(
                         "SELECT COUNT(*) FROM task_completion_cycles "
                         "WHERE verification_basis_kind IS NOT NULL "
                         "OR verification_runner_observation_id IS NOT NULL"
@@ -1228,30 +1486,24 @@ class R3ASchema20StorageTests(unittest.TestCase):
                 rollback_db = self._fresh_v19("rollback-" + fail_stage)
                 with closing(storage.connect(rollback_db)) as connection:
                     self._seed_nonempty_v19_closure(connection)
-                    before_rows = storage._selected_table_projection_snapshot(
-                        connection,
-                        self._v19_tables(),
-                    )
-                    before_schema = self._schema_projection(connection)
                     self.assertEqual(
                         int(connection.execute("PRAGMA foreign_keys").fetchone()[0]),
                         1,
                     )
-                with self.assertRaises(storage.StorageError):
-                    storage.rehearse_schema20_storage(
+                error = self._assert_rehearsal_error_unchanged(
+                    rollback_db,
+                    lambda: storage.rehearse_schema20_storage(
                         rollback_db,
                         fail_stage=fail_stage,
-                    )
+                    ),
+                )
+                self.assertEqual(error.code, "internal_error")
+                self.assertEqual(
+                    error.message,
+                    "injected private schema-v20 rehearsal failure",
+                )
                 with closing(storage.connect(rollback_db)) as connection:
                     self.assertEqual(storage.current_schema_version(connection), 19)
-                    self.assertEqual(self._schema_projection(connection), before_schema)
-                    self.assertEqual(
-                        storage._selected_table_projection_snapshot(
-                            connection,
-                            self._v19_tables(),
-                        ),
-                        before_rows,
-                    )
                     self.assertIsNone(
                         connection.execute(
                             "SELECT 1 FROM schema_migrations WHERE version = 20"
@@ -1265,11 +1517,7 @@ class R3ASchema20StorageTests(unittest.TestCase):
         contention_db = self._fresh_v19("contention")
         with closing(storage.connect(contention_db)) as connection:
             self._seed_nonempty_v19_closure(connection)
-            contention_rows = storage._selected_table_projection_snapshot(
-                connection,
-                self._v19_tables(),
-            )
-            contention_schema = self._schema_projection(connection)
+            contention_before = self._logical_database_snapshot(connection)
         original_connect = sqlite3.connect
         with closing(storage.connect(contention_db)) as owner:
             owner.execute("BEGIN IMMEDIATE")
@@ -1284,13 +1532,9 @@ class R3ASchema20StorageTests(unittest.TestCase):
             owner.rollback()
         with closing(storage.connect(contention_db)) as connection:
             self.assertEqual(storage.current_schema_version(connection), 19)
-            self.assertEqual(self._schema_projection(connection), contention_schema)
             self.assertEqual(
-                storage._selected_table_projection_snapshot(
-                    connection,
-                    self._v19_tables(),
-                ),
-                contention_rows,
+                self._logical_database_snapshot(connection),
+                contention_before,
             )
             self.assertEqual(
                 int(connection.execute("PRAGMA foreign_keys").fetchone()[0]),
@@ -1305,23 +1549,49 @@ class R3ASchema20StorageTests(unittest.TestCase):
                 (NOW,),
             )
             connection.commit()
-        with self.assertRaises(storage.StorageError):
-            storage.rehearse_schema20_storage(marker_db)
+        marker_error = self._assert_rehearsal_error_unchanged(
+            marker_db,
+            lambda: storage.rehearse_schema20_storage(marker_db),
+        )
+        self.assertEqual(marker_error.code, "project_state_unreadable")
 
         partial_db = self._fresh_v19("partial")
         with closing(storage.connect(partial_db)) as connection:
             connection.execute("CREATE TABLE verification_runner_resolutions(x TEXT)")
             connection.commit()
-        with self.assertRaises(storage.StorageError):
-            storage.rehearse_schema20_storage(partial_db)
+        partial_error = self._assert_rehearsal_error_unchanged(
+            partial_db,
+            lambda: storage.rehearse_schema20_storage(partial_db),
+        )
+        self.assertEqual(partial_error.code, "migration_required")
+
+        changed_db = self._fresh_v19("changed")
+        storage.rehearse_schema20_storage(changed_db)
+        with closing(storage.connect(changed_db)) as connection:
+            connection.execute(
+                "DROP INDEX idx_verification_runner_attempts_resolution"
+            )
+            connection.execute(
+                "CREATE INDEX idx_verification_runner_attempts_resolution "
+                "ON verification_runner_attempts(project_id, task_id)"
+            )
+            connection.commit()
+        changed_error = self._assert_rehearsal_error_unchanged(
+            changed_db,
+            lambda: storage.rehearse_schema20_storage(changed_db),
+        )
+        self.assertEqual(changed_error.code, "project_state_unreadable")
 
         drift_db = self._fresh_v19("drift")
         storage.rehearse_schema20_storage(drift_db)
         with closing(storage.connect(drift_db)) as connection:
             connection.execute("DROP INDEX idx_verification_runner_attempts_resolution")
             connection.commit()
-        with self.assertRaises(storage.StorageError):
-            storage.rehearse_schema20_storage(drift_db)
+        drift_error = self._assert_rehearsal_error_unchanged(
+            drift_db,
+            lambda: storage.rehearse_schema20_storage(drift_db),
+        )
+        self.assertEqual(drift_error.code, "project_state_unreadable")
 
         later_db = self._fresh_v19("later")
         storage.rehearse_schema20_storage(later_db)
@@ -1332,17 +1602,101 @@ class R3ASchema20StorageTests(unittest.TestCase):
                 (NOW,),
             )
             connection.commit()
-        with self.assertRaises(storage.StorageError):
-            storage.rehearse_schema20_storage(later_db)
+        later_error = self._assert_rehearsal_error_unchanged(
+            later_db,
+            lambda: storage.rehearse_schema20_storage(later_db),
+        )
+        self.assertEqual(later_error.code, "migration_required")
 
         extra_db = self._fresh_v19("extra")
         with closing(storage.connect(extra_db)) as connection:
-            connection.execute("CREATE TABLE unrelated_extension(value TEXT)")
+            connection.execute(
+                "CREATE TABLE unrelated_extension("
+                "key TEXT PRIMARY KEY, integer_value INTEGER, "
+                "real_value REAL, text_value TEXT, blob_value BLOB, "
+                "nullable_value TEXT)"
+            )
+            connection.execute(
+                "INSERT INTO unrelated_extension VALUES (?, ?, ?, ?, ?, ?)",
+                ("row", 7, 1.25, "preserve", b"\x00\xff", None),
+            )
             connection.commit()
+            extra_schema_before = tuple(
+                row
+                for row in self._schema_projection(connection)
+                if row[1] == "unrelated_extension"
+                or row[2] == "unrelated_extension"
+            )
+            extra_columns, extra_rows_before = self._table_projection_snapshot(
+                connection,
+                ("unrelated_extension",),
+            )
         storage.rehearse_schema20_storage(extra_db)
         with closing(storage.connect(extra_db)) as connection:
             storage.validate_schema20_storage(connection)
             self.assertTrue(storage.table_exists(connection, "unrelated_extension"))
+            self.assertEqual(
+                tuple(
+                    row
+                    for row in self._schema_projection(connection)
+                    if row[1] == "unrelated_extension"
+                    or row[2] == "unrelated_extension"
+                ),
+                extra_schema_before,
+            )
+            _columns, extra_rows_after = self._table_projection_snapshot(
+                connection,
+                ("unrelated_extension",),
+                column_basis=extra_columns,
+            )
+            self.assertEqual(extra_rows_after, extra_rows_before)
+
+    def test_integrity_and_foreign_key_failures_roll_back(self) -> None:
+        for mode in ("integrity", "foreign_key"):
+            with self.subTest(mode=mode):
+                db = self._fresh_v19(mode)
+                with closing(storage.connect(db)) as connection:
+                    self._seed_nonempty_v19_closure(connection)
+                original_check = storage._schema20_integrity_checks
+                check_count = 0
+
+                def injected_check(connection: sqlite3.Connection) -> None:
+                    nonlocal check_count
+                    check_count += 1
+                    if check_count == 2 and mode == "integrity":
+                        original_check(_BadIntegrityResultConnection(connection))
+                        return
+                    if check_count == 2 and mode == "foreign_key":
+                        connection.execute(
+                            "INSERT INTO managed_backup_generations("
+                            "generation_id, project_id, published_at, "
+                            "publication_retention) VALUES (?, ?, ?, 1)",
+                            (
+                                "tg_backup_" + "f" * 32,
+                                "tg_project_" + "f" * 32,
+                                NOW,
+                            ),
+                        )
+                    original_check(connection)
+
+                with mock.patch.object(
+                    storage,
+                    "_schema20_integrity_checks",
+                    side_effect=injected_check,
+                ):
+                    error = self._assert_rehearsal_error_unchanged(
+                        db,
+                        lambda: storage.rehearse_schema20_storage(db),
+                    )
+                self.assertEqual(check_count, 2)
+                self.assertEqual(error.code, "project_state_unreadable")
+                with closing(storage.connect(db)) as connection:
+                    self.assertEqual(storage.current_schema_version(connection), 19)
+                    self.assertIsNone(
+                        connection.execute(
+                            "SELECT 1 FROM schema_migrations WHERE version = 20"
+                        ).fetchone()
+                    )
 
     @staticmethod
     def _insert_bundle(

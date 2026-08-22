@@ -408,7 +408,9 @@ enforcement in a `finally` path. Migration validation uses
 `PRAGMA quick_check`, `PRAGMA foreign_key_check`, exact row/object
 preservation, and the sanitized realistic 12-task/191-event fixture with nine
 historical completion hashes and representative review, Contract, handoff,
-checkpoint, maintenance, identity, and completion traces.
+checkpoint, maintenance, identity, and completion traces. The sole current
+exception is the private migration-20 Bundle rebuild's explicit retirement of
+the unsupported attached residue defined below; it changes no other migration.
 
 The fixed-state setup migrator accepts complete source schemas v1-v18 and
 treats v19 as current. Legacy `state/projects` discovery is intentionally
@@ -441,7 +443,15 @@ marker may survive. Reentry on exact v20 is validation-only. A missing or
 changed v20-owned object, a wrong owned column, marker-only state, a known later
 migration marker, a conflicting object using an owned name, integrity failure,
 or foreign-key failure is rejected rather than repaired. An unrelated extra
-object outside the owned names is not, by itself, a schema-v20 failure.
+object outside the owned names and not attached to the owned Bundle table being
+rebuilt is not, by itself, a schema-v20 failure.
+
+A persistent index or trigger with an unowned name but with
+`sqlite_master.tbl_name = 'completion_evidence_bundles'` is unsupported
+attached residue. Successful migration deletes it with the old v19 Bundle
+table and never replays arbitrary attached DDL. Transaction rollback restores
+it, and reentry observes its established absence. No other unrelated object is
+deleted by this rule.
 
 #### Exact Schema-v20 Physical Contract
 
@@ -726,6 +736,12 @@ the Reference verification criterion, and attribution must be exactly
 R3B create no Runner Reference, criterion link, projection, or Bundle member;
 2C owns the first durable mapping and write.
 
+Only those owned Bundle objects are restored. Any persistent unowned index or
+trigger attached to the old Bundle table is deleted with that table on a
+successful migration; its arbitrary DDL is not replayed. A rollback restores
+the attached object transactionally, while unrelated standalone objects remain
+unchanged.
+
 For every v19 row the new Task marker is `0`, both new cycle columns are null,
 and both new Bundle columns are null. All four Runner tables and all new Runner
 Evidence/criterion-link sets are empty. Every pre-v20 table is compared on its
@@ -746,8 +762,10 @@ disabled tests. The dedicated R3A oracle must cover normalized
 inventory; permissive multiple attempts and observations; the null-Runner
 Bundle union; a positive resolution parent with null acceptance criterion and
 present verification criterion; marker-only, partial-owned-object, owned drift,
-and unrelated extra-object behavior; v19 row/ID/Bundle-byte preservation;
-reentry, rollback, contention, and public nonactivation.
+and unrelated standalone extra-object behavior; successful deletion of
+unowned Bundle-attached indexes/triggers, their rollback restoration, and their
+continued absence on reentry; v19 row/ID/Bundle-byte and owned-object
+preservation; reentry, rollback, contention, and public nonactivation.
 
 Public nonactivation is a compound gate, not an import expansion of the
 storage-only module. The storage-owned boundaries are exercised by

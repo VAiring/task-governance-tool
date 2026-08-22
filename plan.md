@@ -236,8 +236,11 @@ without product activation. Accepted R4V additionally establishes only the
 dependency-pure, legacy-stable Runner value model and reclosed v0.12 candidate
 manifest. Current TG-M24.R3A establishes only a private, non-public schema-v20
 migration and storage rehearsal reached through an injected path after R4V; the
-public candidate remains schema v19. Inactive TG-M24.R3B owns the corresponding
-public schema-v20 activation, Bundle-v2 null-Runner writer, and
+public candidate remains schema v19. Its successful Bundle rebuild physically
+removes persistent unowned indexes/triggers attached to that table without
+replaying arbitrary DDL; rollback restores them, and unrelated standalone
+objects remain unchanged. Inactive TG-M24.R3B owns the corresponding public
+schema-v20 activation, Bundle-v2 null-Runner writer, and
 Evidence/Viewer/managed backup/recovery compatibility. Later inactive units
 repair pre-Runner core
 regressions, finalize temporary shim/policy retirement, and retire fixed

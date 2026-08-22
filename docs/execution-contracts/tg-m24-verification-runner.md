@@ -299,6 +299,13 @@ row. It is unreachable from the public CLI, canonical-state resolver, managed
 backup/recovery, and publication paths. It launches no Runner and grants no
 completion-gate authority.
 
+The Bundle table rebuild does not preserve or replay arbitrary caller DDL. A
+persistent unowned index or trigger attached to
+`completion_evidence_bundles` is unsupported residue: successful migration
+physically removes it with the old table, rollback restores it transactionally,
+and reentry preserves its absence. Unrelated standalone objects remain
+unchanged.
+
 Its exact physical target is migration `20/verification_runner_shadow`: four
 immutable Runner tables, ten required indexes, twelve Runner triggers, the Task
 marker, the two nullable cycle fields, and the Bundle-v2 null-Runner tagged
@@ -311,17 +318,20 @@ plan, process, observation, or cleanup admission rules. R3A also removes the
 storage instance-shim consumer allocated by accepted R4V, but not the shim body.
 
 Completion requires focused private migration, reentry, injected rollback,
-contention, exact row/object preservation, public-nonactivation, and storage
-checks in a dedicated storage-only R3A test module that imports only storage and
-the accepted pure value model. The broad `tests/test_m242_runner_storage.py`
+contention, exact business-row/stable-ID/Bundle-byte and owned-object
+preservation, explicit attached-residue deletion and rollback restoration,
+public-nonactivation, and storage checks in a dedicated storage-only R3A test
+module that imports only storage and the accepted pure value model. The broad
+`tests/test_m242_runner_storage.py`
 module is not an R3A gate. Its stale Runner-positive Bundle oracle and other
 candidate-specific/deferred R3B, 2C, business-cardinality, cleanup, or setup
 cases follow R2B disposition: physically delete obsolete cases or move them to
 their owner, with no SKIP/disabled residue. Required R3A oracles are normalized
 schema/table/FK/index/trigger inventory, permissive multiple attempts and
 observations, null-Runner Bundle, marker-only/partial/drift/unrelated-extra
-handling, preservation, reentry, rollback, contention, and public
-nonactivation. Public nonactivation is the compound gate formed by
+handling, attached-residue deletion/rollback/reentry behavior, preservation,
+contention, and public nonactivation. Public nonactivation is the compound gate
+formed by
 `tests.test_m242_r3a_schema20_storage.R3ASchema20StorageTests.test_public_schema_remains_19`
 for the public schema/apply-migrations and storage Viewer boundaries,
 `tests.test_m242_r3a_schema20_storage.R3ASchema20StorageTests.test_private_migration_inventory_preservation_and_reentry`

@@ -1815,6 +1815,12 @@ cycle or Bundle basis at schema v20. Every schema-v20 Runner record is
 gate-ineligible version `0`. R3A owns only the complete physical DDL and
 storage-parent integrity defined by the design; 2A-2C own the future plan,
 process, observation, cleanup, and repository/service admission rules.
+The Bundle table rebuild does not preserve or replay arbitrary caller DDL. A
+persistent index or trigger whose name is not R3A-owned but whose
+`sqlite_master.tbl_name` is `completion_evidence_bundles` is unsupported
+attached residue: successful migration removes it with the old v19 Bundle
+table, while transaction rollback restores it. Unrelated standalone objects
+not attached to the rebuilt table remain unchanged.
 Marker-only, partial-owned-object, same-version owned-object drift, a known
 later marker, busy/contention, integrity, or foreign-key failure is fail-closed
 and leaves no partial migration.

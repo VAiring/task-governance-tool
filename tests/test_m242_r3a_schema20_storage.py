@@ -1500,6 +1500,73 @@ class R3ASchema20StorageTests(unittest.TestCase):
         storage.rehearse_schema20_storage(db)
         self.assertEqual(hashlib.sha256(db.read_bytes()).hexdigest(), before_reentry)
 
+    def test_bundle_rebuild_deletes_unowned_attached_objects_and_rollback_restores(
+        self,
+    ) -> None:
+        expected_attached = (
+            (
+                "index",
+                "unowned_bundle_lookup",
+                "completion_evidence_bundles",
+            ),
+            (
+                "trigger",
+                "unowned_bundle_audit",
+                "completion_evidence_bundles",
+            ),
+        )
+
+        def create_attached_residue(db: Path) -> None:
+            with closing(storage.connect(db)) as connection:
+                self._seed_nonempty_v19_closure(connection)
+                connection.execute(
+                    "CREATE INDEX unowned_bundle_lookup "
+                    "ON completion_evidence_bundles(project_id, target_generation)"
+                )
+                connection.execute(
+                    "CREATE TRIGGER unowned_bundle_audit AFTER INSERT "
+                    "ON completion_evidence_bundles BEGIN SELECT 1; END"
+                )
+                connection.commit()
+
+        def attached_residue(db: Path) -> tuple[tuple[str, str, str], ...]:
+            with closing(storage.connect(db)) as connection:
+                return tuple(
+                    (str(row[0]), str(row[1]), str(row[2]))
+                    for row in connection.execute(
+                        "SELECT type, name, tbl_name FROM sqlite_master "
+                        "WHERE name IN (?, ?) ORDER BY type, name",
+                        ("unowned_bundle_lookup", "unowned_bundle_audit"),
+                    ).fetchall()
+                )
+
+        success_db = self._fresh_v19("attached-residue-success")
+        create_attached_residue(success_db)
+        self.assertEqual(attached_residue(success_db), expected_attached)
+        storage.rehearse_schema20_storage(success_db)
+        self.assertEqual(attached_residue(success_db), ())
+        with closing(storage.connect(success_db)) as connection:
+            storage.validate_schema20_storage(connection)
+        before_reentry = hashlib.sha256(success_db.read_bytes()).hexdigest()
+        storage.rehearse_schema20_storage(success_db)
+        self.assertEqual(attached_residue(success_db), ())
+        self.assertEqual(
+            hashlib.sha256(success_db.read_bytes()).hexdigest(),
+            before_reentry,
+        )
+
+        rollback_db = self._fresh_v19("attached-residue-rollback")
+        create_attached_residue(rollback_db)
+        rollback_error = self._assert_rehearsal_error_unchanged(
+            rollback_db,
+            lambda: storage.rehearse_schema20_storage(
+                rollback_db,
+                fail_stage="after_bundle",
+            ),
+        )
+        self.assertEqual(rollback_error.code, "internal_error")
+        self.assertEqual(attached_residue(rollback_db), expected_attached)
+
     def test_rollback_contention_and_schema_state_fail_closed(self) -> None:
         for fail_stage in FAIL_STAGES:
             with self.subTest(fail_stage=fail_stage):
@@ -1640,6 +1707,14 @@ class R3ASchema20StorageTests(unittest.TestCase):
                 "INSERT INTO unrelated_extension VALUES (?, ?, ?, ?, ?, ?)",
                 ("row", 7, 1.25, "preserve", b"\x00\xff", None),
             )
+            connection.execute(
+                "CREATE INDEX unrelated_extension_integer_lookup "
+                "ON unrelated_extension(integer_value)"
+            )
+            connection.execute(
+                "CREATE TRIGGER unrelated_extension_audit AFTER UPDATE "
+                "ON unrelated_extension BEGIN SELECT 1; END"
+            )
             connection.commit()
             extra_schema_before = tuple(
                 row
@@ -1670,6 +1745,28 @@ class R3ASchema20StorageTests(unittest.TestCase):
                 column_basis=extra_columns,
             )
             self.assertEqual(extra_rows_after, extra_rows_before)
+        extra_before_reentry = hashlib.sha256(extra_db.read_bytes()).hexdigest()
+        storage.rehearse_schema20_storage(extra_db)
+        self.assertEqual(
+            hashlib.sha256(extra_db.read_bytes()).hexdigest(),
+            extra_before_reentry,
+        )
+        with closing(storage.connect(extra_db)) as connection:
+            self.assertEqual(
+                tuple(
+                    row
+                    for row in self._schema_projection(connection)
+                    if row[1] == "unrelated_extension"
+                    or row[2] == "unrelated_extension"
+                ),
+                extra_schema_before,
+            )
+            _columns, extra_rows_after_reentry = self._table_projection_snapshot(
+                connection,
+                ("unrelated_extension",),
+                column_basis=extra_columns,
+            )
+            self.assertEqual(extra_rows_after_reentry, extra_rows_before)
 
     def test_integrity_and_foreign_key_failures_roll_back(self) -> None:
         for mode in ("integrity", "foreign_key"):

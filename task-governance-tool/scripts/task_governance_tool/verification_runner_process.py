@@ -53,7 +53,6 @@ _CLOSED_OUTCOMES = frozenset(
         "output_rejected",
         "process_error",
         "controller_interrupted",
-        "post_launch_drift",
         "sandbox_cleanup_failed",
     }
 )
@@ -75,7 +74,6 @@ _CLOSED_REASONS = frozenset(
         "pipe_drain_failed",
         "job_state_unproved",
         "controller_interrupted",
-        "post_launch_drift",
         "sandbox_cleanup_failed",
     }
 )
@@ -706,7 +704,6 @@ def run_process_steps(
     target_root: str | os.PathLike[str],
     scratch_root: str | os.PathLike[str],
     windows_directory: str | os.PathLike[str],
-    basis_is_current: Callable[[int], bool],
     cancel_requested: Callable[[], bool] = lambda: False,
 ) -> ProcessRunResult:
     started = time.monotonic()
@@ -716,7 +713,6 @@ def run_process_steps(
         or any(not isinstance(step, ProcessStep) for step in steps)
         or len({step.step_id for step in steps}) != len(steps)
         or sum(step.limits.timeout_seconds for step in steps) > 1800
-        or not callable(basis_is_current)
         or not callable(cancel_requested)
     ):
         _fail()
@@ -755,26 +751,6 @@ def run_process_steps(
                 None,
                 None,
                 (),
-            )
-        try:
-            current = basis_is_current(ordinal)
-        except BaseException:
-            current = False
-        if type(current) is not bool or not current:
-            duration = max(0, int((time.monotonic() - started) * 1000))
-            cpu, memory, processes = _aggregate(tuple(completed))
-            outcome = "post_launch_drift" if launched_any else "blocked_prelaunch"
-            reason = "post_launch_drift" if launched_any else "sandbox_setup_failed"
-            return ProcessRunResult(
-                outcome,
-                reason,
-                "launched" if launched_any else "no_launch",
-                None,
-                duration,
-                cpu,
-                memory,
-                processes,
-                tuple(completed),
             )
         result = _execute_step(
             ordinal=ordinal,

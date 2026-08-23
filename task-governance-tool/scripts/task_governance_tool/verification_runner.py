@@ -11,7 +11,6 @@ from typing import Any
 RUNNER_CONTRACT_VERSION = 1
 RUNNER_IMPLEMENTATION_VERSION = "taskgov-verification-runner/1"
 RUNNER_TRIGGER = "review_target_set_v1"
-RUNNER_PROVIDER_ID = None
 RUNNER_EXECUTABLE_ID = "taskgov_python"
 RUNNER_MAX_OUTPUT_BYTES = 1_048_576
 
@@ -20,9 +19,6 @@ ATTEMPT_DIGEST_DOMAIN = b"taskgov-verification-runner-attempt-v1\0"
 SANDBOX_EVENT_DIGEST_DOMAIN = b"taskgov-verification-runner-sandbox-event-v1\0"
 OBSERVATION_DIGEST_DOMAIN = b"taskgov-verification-runner-observation-v1\0"
 
-_LEGACY_RUNNER_POLICY_DIGEST = (
-    "sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8"
-)
 _LOWER_HEX = frozenset("0123456789abcdef")
 
 _RESOLUTION_DIGEST_KEYS = frozenset(
@@ -227,12 +223,6 @@ def verification_runner_attempt_digest(values: Mapping[str, Any]) -> str:
     return _domain_digest(ATTEMPT_DIGEST_DOMAIN, copied)
 
 
-def verification_runner_sandbox_instance_digest(*_args: Any, **_kwargs: Any) -> str:
-    """Fail closed until the remaining storage consumer is removed by R3A."""
-
-    raise VerificationRunnerModelError()
-
-
 def verification_runner_sandbox_event_digest(values: Mapping[str, Any]) -> str:
     copied = _exact_mapping(values, _SANDBOX_EVENT_DIGEST_KEYS)
     if copied["event_kind"] != "attempt_cleanup_succeeded":
@@ -245,18 +235,6 @@ def verification_runner_observation_digest(values: Mapping[str, Any]) -> str:
         OBSERVATION_DIGEST_DOMAIN,
         _exact_mapping(values, _OBSERVATION_DIGEST_KEYS),
     )
-
-
-def verification_runner_policy_digest() -> str:
-    """Return the opaque legacy seal without reconstructing retired policy input."""
-
-    return _LEGACY_RUNNER_POLICY_DIGEST
-
-
-def verification_runner_sandbox_policy_digest(*_args: Any, **_kwargs: Any) -> str:
-    """Fail closed until the remaining Evidence consumer is removed by R3B."""
-
-    raise VerificationRunnerModelError()
 
 
 def runner_observation_source_projection(

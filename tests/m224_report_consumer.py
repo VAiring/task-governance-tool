@@ -28,9 +28,6 @@ INDEX_V2_DOMAIN = b"taskgov-evidence-index-v2\0"
 BUNDLE_V2_DOMAIN = b"taskgov-completion-evidence-bundle-v2\0"
 REVIEW_PROVENANCE_DOMAIN = b"taskgov-review-provenance-v1\0"
 CONTRACT_CRITERION_DOMAIN = b"taskgov-contract-criterion-v1\0"
-EVIDENCE_REFERENCE_DOMAIN = b"taskgov-evidence-reference-v1\0"
-RUNNER_POLICY_DOMAIN = b"taskgov-verification-runner-policy-v1\0"
-RUNNER_OBSERVATION_DOMAIN = b"taskgov-verification-runner-observation-v1\0"
 
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _TASK_ID = re.compile(r"^tg_task_[0-9a-f]{16}$")
@@ -40,21 +37,10 @@ _REVIEW_RECEIPT_ID = re.compile(r"^tg_review_receipt_[0-9a-f]{16}$")
 _VERIFICATION_RECEIPT_ID = re.compile(
     r"^tg_verification_receipt_[0-9a-f]{16}$"
 )
-_RUNNER_OBSERVATION_ID = re.compile(
-    r"^tg_verification_runner_observation_[0-9a-f]{16}$"
-)
-_RUNNER_RESOLUTION_ID = re.compile(
-    r"^tg_verification_runner_resolution_[0-9a-f]{16}$"
-)
-_RUNNER_ATTEMPT_ID = re.compile(
-    r"^tg_verification_runner_attempt_[0-9a-f]{16}$"
-)
 _AUTHORITY_ID = re.compile(r"^tg_authority_snapshot_[0-9a-f]{16}$")
 _CRITERION_ID = re.compile(r"^tg_contract_criterion_[0-9a-f]{16}$")
 _REFERENCE_ID = re.compile(r"^tg_evidence_reference_[0-9a-f]{16}$")
 _LINK_ID = re.compile(r"^tg_criterion_evidence_link_[0-9a-f]{16}$")
-_GIT_OBJECT_ID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
-_RUNNER_PLAN_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _PROVENANCE_ID = re.compile(r"^tg_review_provenance_[0-9a-f]{16}$")
 _DECLARED_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+\-]{0,127}$")
 _DECLARED_SKILL_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+\-]{0,63}$")
@@ -166,159 +152,6 @@ _VERIFICATION_BASIS_KEYS = (
     "kind",
     "runner_observation_id",
     "verification_receipt_id",
-)
-_RUNNER_OBSERVATION_KEYS = frozenset(
-    {
-        "observation_id",
-        "attempt_id",
-        "resolution_id",
-        "project_id",
-        "task_id",
-        "target_generation",
-        "gate_eligibility_version",
-        "route",
-        "reason",
-        "outcome",
-        "launch_state",
-        "complete_plan",
-        "total_step_count",
-        "completed_step_count",
-        "failed_step_ordinal",
-        "started_at",
-        "finished_at",
-        "duration_ms",
-        "cpu_time_ms",
-        "peak_job_memory_bytes",
-        "total_process_count",
-        "plan_blob_object_id",
-        "plan_raw_digest",
-        "plan_id",
-        "plan_version",
-        "plan_semantic_digest",
-        "runner_implementation_version",
-        "runner_implementation_digest",
-        "runner_policy_digest",
-        "sandbox_provider",
-        "sandbox_policy_digest",
-        "runtime_digest",
-        "sanitized_result_digest",
-    }
-)
-_RUNNER_OBSERVATION_DIGEST_KEYS = frozenset(
-    {
-        "attempt_id",
-        "completed_step_count",
-        "complete_plan",
-        "cpu_time_ms",
-        "duration_ms",
-        "failed_step_ordinal",
-        "finished_at",
-        "gate_eligibility_version",
-        "launch_state",
-        "outcome",
-        "peak_job_memory_bytes",
-        "project_id",
-        "reason",
-        "resolution_id",
-        "runner_implementation_digest",
-        "started_at",
-        "target_generation",
-        "task_id",
-        "route",
-        "total_process_count",
-        "total_step_count",
-    }
-)
-_RUNNER_OBSERVATION_REFERENCE_KEYS = _RUNNER_OBSERVATION_KEYS - {
-    "attempt_id",
-    "resolution_id",
-    "project_id",
-    "task_id",
-    "target_generation",
-}
-_RUNNER_ROUTES = frozenset({"runner", "m21_fallback", "blocked"})
-_RUNNER_LAUNCH_STATES = frozenset(
-    {"no_launch", "launch_uncertain", "launched"}
-)
-_RUNNER_OUTCOMES = frozenset(
-    {
-        "not_run",
-        "blocked_prelaunch",
-        "pass",
-        "fail",
-        "timeout",
-        "cancelled",
-        "resource_exceeded",
-        "sandbox_violation",
-        "output_rejected",
-        "process_error",
-        "controller_interrupted",
-        "post_launch_drift",
-        "sandbox_cleanup_failed",
-    }
-)
-_RUNNER_OUTCOME_REASONS = {
-    "not_run": frozenset(
-        {
-            "plan_absent",
-            "plan_disabled",
-            "plan_not_configured",
-            "manual",
-            "visual",
-            "external",
-            "unsupported_toolchain",
-            "unsupported_target",
-            "unsupported_platform",
-            "sandbox_unavailable",
-            "runtime_unavailable",
-        }
-    ),
-    "blocked_prelaunch": frozenset(
-        {
-            "plan_invalid",
-            "plan_ambiguous",
-            "basis_drift",
-            "target_drift",
-            "object_drift",
-            "policy_mismatch",
-            "materialization_failed",
-            "sandbox_setup_failed",
-            "sandbox_boundary_violation",
-            "process_create_failed",
-            "cancelled",
-            "controller_interrupted",
-            "prelaunch_drift",
-            "terminal_missing",
-            "state_inconsistent",
-        }
-    ),
-    "pass": frozenset({None}),
-    "fail": frozenset({"step_nonzero"}),
-    "timeout": frozenset({"timeout"}),
-    "cancelled": frozenset({"cancelled"}),
-    "resource_exceeded": frozenset(
-        {"cpu_limit", "memory_limit", "process_limit"}
-    ),
-    "sandbox_violation": frozenset({"sandbox_boundary_violation"}),
-    "output_rejected": frozenset({"output_limit"}),
-    "process_error": frozenset(
-        {
-            "process_create_failed",
-            "process_resume_failed",
-            "process_wait_failed",
-            "pipe_drain_failed",
-            "job_state_unproved",
-        }
-    ),
-    "controller_interrupted": frozenset({"controller_interrupted"}),
-    "post_launch_drift": frozenset({"post_launch_drift"}),
-    "sandbox_cleanup_failed": frozenset({"sandbox_cleanup_failed"}),
-}
-_RUNNER_REQUIRED_STEP_ORDINAL_OUTCOMES = frozenset(
-    {"fail", "timeout", "resource_exceeded", "output_rejected", "process_error"}
-)
-_RUNNER_OPTIONAL_STEP_ORDINAL_OUTCOMES = frozenset(
-    {"cancelled", "sandbox_violation"}
 )
 _ARTIFACT_MANIFEST_KEYS = (
     "artifact_manifest_id",
@@ -543,257 +376,6 @@ def _canonical_json_bytes(value: Any) -> bytes:
         raise _invalid() from exc
 
 
-def _domain_digest(domain: bytes, value: Any) -> str:
-    return "sha256:" + hashlib.sha256(
-        domain + _canonical_json_bytes(value)
-    ).hexdigest()
-
-
-def _runner_policy_digest() -> str:
-    return _domain_digest(
-        RUNNER_POLICY_DOMAIN,
-        {
-            "runner_contract_version": 1,
-            "executable_id": "taskgov_python",
-            "max_output_bytes": 1_048_576,
-            "environment_profile": "clean_python_v1",
-            "timeout_clock": "monotonic",
-            "stop_on_nonpass": True,
-        },
-    )
-
-
-def _validate_runner_observation(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict) or frozenset(value) != _RUNNER_OBSERVATION_KEYS:
-        raise _invalid()
-    observation = dict(value)
-    _identifier(observation["observation_id"], _RUNNER_OBSERVATION_ID)
-    attempt_id = observation["attempt_id"]
-    if attempt_id is not None:
-        _identifier(attempt_id, _RUNNER_ATTEMPT_ID)
-    _identifier(observation["resolution_id"], _RUNNER_RESOLUTION_ID)
-    _identifier(observation["task_id"], _TASK_ID)
-    if (
-        not _string(observation["project_id"])
-        or not _is_int(observation["target_generation"])
-        or observation["target_generation"] < 1
-    ):
-        raise _invalid()
-    if (
-        not _is_int(observation["gate_eligibility_version"])
-        or observation["gate_eligibility_version"] != 0
-        or observation["route"] not in _RUNNER_ROUTES
-        or observation["launch_state"] not in _RUNNER_LAUNCH_STATES
-        or observation["outcome"] not in _RUNNER_OUTCOMES
-        or observation["reason"]
-        not in _RUNNER_OUTCOME_REASONS[observation["outcome"]]
-        or not _is_int(observation["complete_plan"])
-        or observation["complete_plan"] not in {0, 1}
-        or not _is_int(observation["total_step_count"])
-        or not 0 <= observation["total_step_count"] <= 16
-        or not _is_int(observation["completed_step_count"])
-        or not 0
-        <= observation["completed_step_count"]
-        <= observation["total_step_count"]
-    ):
-        raise _invalid()
-    total = observation["total_step_count"]
-    completed = observation["completed_step_count"]
-    failed_ordinal = observation["failed_step_ordinal"]
-    if failed_ordinal is not None and (
-        not _is_int(failed_ordinal) or not 1 <= failed_ordinal <= total
-    ):
-        raise _invalid()
-    for field in ("started_at", "finished_at"):
-        value_text = _string(observation[field])
-        if not value_text or len(value_text) > 40:
-            raise _invalid()
-    if not _is_nonnegative_int(observation["duration_ms"]):
-        raise _invalid()
-    resource_values = tuple(
-        observation[field]
-        for field in (
-            "cpu_time_ms",
-            "peak_job_memory_bytes",
-            "total_process_count",
-        )
-    )
-    if any(
-        item is not None and not _is_nonnegative_int(item)
-        for item in resource_values
-    ) or sum(item is None for item in resource_values) not in {0, 3}:
-        raise _invalid()
-    for field in (
-        "plan_raw_digest",
-        "plan_semantic_digest",
-        "runner_implementation_digest",
-        "runner_policy_digest",
-        "sandbox_policy_digest",
-        "runtime_digest",
-        "sanitized_result_digest",
-    ):
-        if observation[field] is not None and not _is_digest(observation[field]):
-            raise _invalid()
-    if any(
-        observation[field] is None
-        for field in (
-            "runner_implementation_digest",
-            "runner_policy_digest",
-            "sanitized_result_digest",
-        )
-    ):
-        raise _invalid()
-    object_id = observation["plan_blob_object_id"]
-    if object_id is not None and (
-        not isinstance(object_id, str)
-        or _GIT_OBJECT_ID.fullmatch(object_id) is None
-        or set(object_id) == {"0"}
-    ):
-        raise _invalid()
-    plan_id = observation["plan_id"]
-    if plan_id is not None and (
-        not isinstance(plan_id, str) or _RUNNER_PLAN_ID.fullmatch(plan_id) is None
-    ):
-        raise _invalid()
-    plan_version = observation["plan_version"]
-    if plan_version is not None and (
-        not _is_int(plan_version) or not 1 <= plan_version <= 2_147_483_647
-    ):
-        raise _invalid()
-    plan_semantic = (
-        observation["plan_id"],
-        observation["plan_version"],
-        observation["plan_semantic_digest"],
-    )
-    if (
-        (object_id is None) != (observation["plan_raw_digest"] is None)
-        or not (
-            all(item is None for item in plan_semantic)
-            or all(item is not None for item in plan_semantic)
-        )
-        or (object_id is None and any(item is not None for item in plan_semantic))
-    ):
-        raise _invalid()
-    if (
-        observation["runner_implementation_version"]
-        != "taskgov-verification-runner/1"
-        or observation["runner_policy_digest"] != _runner_policy_digest()
-    ):
-        raise _invalid()
-    provider = observation["sandbox_provider"]
-    sandbox_digest = observation["sandbox_policy_digest"]
-    if provider is None:
-        if sandbox_digest is not None:
-            raise _invalid()
-    if observation["runtime_digest"] is not None and provider is None:
-        raise _invalid()
-
-    route = observation["route"]
-    launch_state = observation["launch_state"]
-    outcome = observation["outcome"]
-    reason = observation["reason"]
-    if outcome == "not_run":
-        if (
-            route != "m21_fallback"
-            or launch_state != "no_launch"
-            or total != 0
-            or completed != 0
-            or failed_ordinal is not None
-        ):
-            raise _invalid()
-    elif outcome == "blocked_prelaunch":
-        if (
-            route != "blocked"
-            or launch_state != "no_launch"
-            or completed != 0
-            or failed_ordinal is not None
-        ):
-            raise _invalid()
-    elif outcome == "controller_interrupted":
-        if (
-            route != "blocked"
-            or launch_state != "launch_uncertain"
-            or total < 1
-            or failed_ordinal is not None
-        ):
-            raise _invalid()
-    elif outcome == "sandbox_cleanup_failed":
-        if route != "blocked" or failed_ordinal is not None:
-            raise _invalid()
-        if (launch_state == "no_launch" and completed != 0) or (
-            launch_state == "launched" and completed < 1
-        ):
-            raise _invalid()
-    elif route != "runner" or launch_state != "launched" or total < 1:
-        raise _invalid()
-
-    if outcome == "pass":
-        if (
-            observation["complete_plan"] != 1
-            or completed != total
-            or failed_ordinal is not None
-        ):
-            raise _invalid()
-    elif observation["complete_plan"] != 0:
-        raise _invalid()
-    if outcome in _RUNNER_REQUIRED_STEP_ORDINAL_OUTCOMES:
-        if failed_ordinal is None or completed != failed_ordinal:
-            raise _invalid()
-    elif outcome in _RUNNER_OPTIONAL_STEP_ORDINAL_OUTCOMES:
-        if failed_ordinal is None:
-            if completed < 1:
-                raise _invalid()
-        elif completed != failed_ordinal:
-            raise _invalid()
-    elif failed_ordinal is not None:
-        raise _invalid()
-    if reason == "process_create_failed":
-        if outcome == "process_error" and failed_ordinal == 1:
-            raise _invalid()
-        if outcome == "blocked_prelaunch" and total < 1:
-            raise _invalid()
-    if outcome == "post_launch_drift" and completed < 1:
-        raise _invalid()
-
-    resources_all_null = all(item is None for item in resource_values)
-    if launch_state in {"no_launch", "launch_uncertain"} or outcome == (
-        "sandbox_cleanup_failed"
-    ):
-        if (
-            not resources_all_null
-            or (
-                launch_state != "launched"
-                and observation["started_at"] != observation["finished_at"]
-            )
-            or (launch_state != "launched" and observation["duration_ms"] != 0)
-        ):
-            raise _invalid()
-    elif reason == "job_state_unproved":
-        if not resources_all_null:
-            raise _invalid()
-    elif resources_all_null:
-        raise _invalid()
-    if launch_state in {"launch_uncertain", "launched"} and (
-        attempt_id is None
-        or object_id is None
-        or provider is None
-        or observation["runtime_digest"] is None
-        or total < 1
-    ):
-        raise _invalid()
-    if outcome == "sandbox_cleanup_failed" and attempt_id is None:
-        raise _invalid()
-    if observation["sanitized_result_digest"] != _domain_digest(
-        RUNNER_OBSERVATION_DOMAIN,
-        {
-            key: observation[key]
-            for key in _RUNNER_OBSERVATION_DIGEST_KEYS
-        },
-    ):
-        raise _invalid()
-    return observation
-
-
 def _criterion_digest(kind: str, text: str) -> str:
     if kind not in {"acceptance", "verification"} or not text.strip():
         raise _invalid()
@@ -803,45 +385,6 @@ def _criterion_digest(kind: str, text: str) -> str:
         + b"\0"
         + text.encode("utf-8")
     ).hexdigest()
-
-
-def _runner_reference_digest(
-    *,
-    project_id: str,
-    task_id: str,
-    contract_revision: int,
-    target: Mapping[str, Any],
-    authority_snapshot_id: str,
-    acceptance_criterion_id: str | None,
-    verification_criterion_id: str,
-    observation: Mapping[str, Any],
-) -> str:
-    return _domain_digest(
-        EVIDENCE_REFERENCE_DOMAIN,
-        {
-            "acceptance_criterion_id": acceptance_criterion_id,
-            "assurance_class": "machine_observed",
-            "authority_snapshot_id": authority_snapshot_id,
-            "completion_cycle_id": None,
-            "contract_revision": contract_revision,
-            "producer_class": "verification_runner",
-            "producer_version": 1,
-            "project_id": project_id,
-            "source_id": observation["observation_id"],
-            "source_kind": "runner_observation",
-            "source_projection": {
-                key: observation[key]
-                for key in _RUNNER_OBSERVATION_REFERENCE_KEYS
-            },
-            "source_state": "recorded",
-            "target_base_revision": target["base_revision"] or "",
-            "target_generation": target["generation"],
-            "target_kind": target["kind"],
-            "target_value": target["value"],
-            "task_id": task_id,
-            "verification_criterion_id": verification_criterion_id,
-        },
-    )
 
 
 def _pairs_without_duplicates(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
@@ -1379,14 +922,12 @@ def _validate_bundle_payload(
         if contract["revision"] == 0:
             if acceptance_criteria:
                 raise _invalid()
-            acceptance_criterion_id = None
         else:
             if (
                 len(acceptance_criteria) != 1
                 or acceptance_criteria[0]["text"] != contract["acceptance"]
             ):
                 raise _invalid()
-            acceptance_criterion_id = acceptance_criteria[0]["criterion_id"]
         verification_specified = bool(task["verification"].strip())
         if verification_specified:
             if (
@@ -1434,7 +975,6 @@ def _validate_bundle_payload(
         elif verification is not None or basis["verification_receipt_id"] is not None:
             raise _invalid()
 
-        runner = payload["runner_observation"]
         reference_ids = [
             _identifier(reference["evidence_reference_id"], _REFERENCE_ID)
             for reference in evidence_references
@@ -1446,86 +986,17 @@ def _validate_bundle_payload(
         if (
             len(reference_ids) != len(set(reference_ids))
             or len(link_ids) != len(set(link_ids))
+            or payload["runner_observation"] is not None
+            or any(
+                reference["source_kind"] == "runner_observation"
+                for reference in evidence_references
+            )
+            or any(
+                link["relation"] == "runner_observation"
+                for link in criterion_links
+            )
         ):
             raise _invalid()
-        runner_references = [
-            reference
-            for reference in evidence_references
-            if reference["source_kind"] == "runner_observation"
-        ]
-        runner_links = [
-            link
-            for link in criterion_links
-            if link["relation"] == "runner_observation"
-        ]
-        if runner is None:
-            if runner_references or runner_links:
-                raise _invalid()
-        else:
-            if verification_criterion_id is None:
-                raise _invalid()
-            runner = _validate_runner_observation(runner)
-            if (
-                runner["project_id"] != project_id
-                or runner["task_id"] != task["task_id"]
-                or runner["target_generation"] != target["generation"]
-            ):
-                raise _invalid()
-            observation_id = runner["observation_id"]
-            if (
-                len(runner_references) != 1
-                or len(runner_links) != 1
-            ):
-                raise _invalid()
-            reference = runner_references[0]
-            link = runner_links[0]
-            expected_reference = {
-                "source_kind": "runner_observation",
-                "source_state": "recorded",
-                "source_id": observation_id,
-                "assurance_class": "machine_observed",
-                "producer_class": "verification_runner",
-                "producer_version": 1,
-                "contract_revision": contract["revision"],
-                "authority_snapshot_id": authority_snapshot_id,
-                "acceptance_criterion_id": acceptance_criterion_id,
-                "verification_criterion_id": verification_criterion_id,
-                "target_kind": target["kind"],
-                "target_value": target["value"],
-                "target_base_revision": target["base_revision"],
-                "target_generation": target["generation"],
-                "completion_cycle_id": None,
-            }
-            if any(reference[field] != expected for field, expected in expected_reference.items()):
-                raise _invalid()
-            expected_reference_digest = _runner_reference_digest(
-                project_id=project_id,
-                task_id=task["task_id"],
-                contract_revision=contract["revision"],
-                target=target,
-                authority_snapshot_id=authority_snapshot_id,
-                acceptance_criterion_id=acceptance_criterion_id,
-                verification_criterion_id=verification_criterion_id,
-                observation=runner,
-            )
-            reference_links = [
-                candidate
-                for candidate in criterion_links
-                if candidate["evidence_reference_id"]
-                == reference["evidence_reference_id"]
-            ]
-            if (
-                reference["digest"] != expected_reference_digest
-                or len(reference_links) != 1
-                or link["evidence_reference_id"]
-                != reference["evidence_reference_id"]
-                or link["criterion_id"]
-                != verification_criterion_id
-                or link["assurance_class"] != "machine_observed"
-                or link["producer_class"] != "verification_runner"
-                or link["producer_version"] != 1
-            ):
-                raise _invalid()
 
     return payload, _validate_review_receipts(payload)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import os
 import subprocess
 import sys
@@ -36,6 +37,21 @@ def _step(step_id: str = "unit") -> process.ProcessStep:
 
 
 class RunnerProcessPureTests(unittest.TestCase):
+    def test_process_boundary_has_no_business_freshness_callback(self):
+        parameters = inspect.signature(process.run_process_steps).parameters
+        self.assertNotIn("basis_is_current", parameters)
+        self.assertEqual(
+            set(parameters),
+            {
+                "steps",
+                "runtime_executable",
+                "target_root",
+                "scratch_root",
+                "windows_directory",
+                "cancel_requested",
+            },
+        )
+
     def test_central_identity_and_fixed_bootstrap(self):
         self.assertEqual(process.RUNNER_CONTRACT_VERSION, RUNNER_CONTRACT_VERSION)
         self.assertEqual(process.RUNNER_IMPLEMENTATION_VERSION, RUNNER_IMPLEMENTATION_VERSION)
@@ -222,7 +238,6 @@ class RunnerProcessPureTests(unittest.TestCase):
                     target_root=target,
                     scratch_root=scratch,
                     windows_directory=windows,
-                    basis_is_current=lambda _ordinal: True,
                 )
         self.assertEqual(calls, [1, 2])
         self.assertEqual(result.outcome, "fail")
@@ -230,39 +245,6 @@ class RunnerProcessPureTests(unittest.TestCase):
         self.assertEqual(result.cpu_time_ms, 4)
         self.assertEqual(result.peak_job_memory_bytes, 100)
         self.assertEqual(result.total_process_count, 5)
-
-    def test_later_step_basis_drift_never_launches_next_job(self):
-        first = process.StepProcessResult(
-            1,
-            "pass",
-            None,
-            "launched",
-            win32.JobAccounting(10_000, 64, 1, 0),
-        )
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary).resolve()
-            for name in ("scratch", "Windows", "target", "runtime"):
-                (root / name).mkdir()
-            for child in ("tmp", "home", "local", "roaming"):
-                (root / "scratch" / child).mkdir()
-            executable = root / "runtime" / "python.exe"
-            executable.write_bytes(b"fixture")
-            with patch.object(
-                process._win32,
-                "verified_windows_directory",
-                return_value=root / "Windows",
-            ), patch.object(process, "_execute_step", return_value=first) as execute:
-                result = process.run_process_steps(
-                    steps=(_step("one"), _step("two")),
-                    runtime_executable=executable,
-                    target_root=root / "target",
-                    scratch_root=root / "scratch",
-                    windows_directory=root / "Windows",
-                    basis_is_current=lambda ordinal: ordinal == 1,
-                )
-        self.assertEqual(execute.call_count, 1)
-        self.assertEqual(result.outcome, "post_launch_drift")
-        self.assertIsNone(result.failed_step_ordinal)
 
     def test_first_and_later_create_failure_matrix_is_exact(self):
         first_no_launch = process.StepProcessResult(
@@ -291,7 +273,6 @@ class RunnerProcessPureTests(unittest.TestCase):
                 target_root=root / "target",
                 scratch_root=root / "scratch",
                 windows_directory=root / "Windows",
-                basis_is_current=lambda _ordinal: True,
             )
             with patch.object(
                 process._win32,
@@ -390,7 +371,6 @@ class RunnerProcessPureTests(unittest.TestCase):
                 target_root=root / "target",
                 scratch_root=root / "scratch",
                 windows_directory=root / "Windows",
-                basis_is_current=lambda _ordinal: True,
             )
             for (
                 later_result,
@@ -425,7 +405,7 @@ class RunnerProcessPureTests(unittest.TestCase):
                 self.assertEqual(len(result.steps), expected_step_count)
                 self.assertEqual(result.steps[0], prior_pass)
 
-    def test_between_job_cancel_precedes_basis_check_and_starts_no_job(self):
+    def test_between_job_cancel_starts_no_next_job(self):
         first = process.StepProcessResult(
             1,
             "pass",
@@ -442,10 +422,6 @@ class RunnerProcessPureTests(unittest.TestCase):
                 (root / "scratch" / child).mkdir()
             executable = root / "runtime" / "python.exe"
             executable.write_bytes(b"fixture")
-
-            def basis(ordinal):
-                observations.append(("basis", ordinal))
-                return True
 
             cancel_calls = {"count": 0}
 
@@ -465,13 +441,12 @@ class RunnerProcessPureTests(unittest.TestCase):
                     target_root=root / "target",
                     scratch_root=root / "scratch",
                     windows_directory=root / "Windows",
-                    basis_is_current=basis,
                     cancel_requested=cancel,
                 )
         self.assertEqual(execute.call_count, 1)
         self.assertEqual(
             observations,
-            [("cancel", 1), ("basis", 1), ("cancel", 2)],
+            [("cancel", 1), ("cancel", 2)],
         )
         self.assertEqual(result.outcome, "cancelled")
         self.assertEqual(result.launch_state, "launched")
@@ -512,7 +487,6 @@ class RunnerProcessPureTests(unittest.TestCase):
                     target_root=root / "target",
                     scratch_root=root / "scratch",
                     windows_directory=root / "Windows",
-                    basis_is_current=lambda _ordinal: True,
                     cancel_requested=cancel,
                 )
 
@@ -522,8 +496,7 @@ class RunnerProcessPureTests(unittest.TestCase):
         self.assertEqual(result.launch_state, "launched")
         self.assertIsNone(result.failed_step_ordinal)
 
-    def test_first_job_cancel_is_closed_before_basis_or_create(self):
-        observations = []
+    def test_first_job_cancel_is_closed_before_create(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             for name in ("scratch", "Windows", "target", "runtime"):
@@ -532,10 +505,6 @@ class RunnerProcessPureTests(unittest.TestCase):
                 (root / "scratch" / child).mkdir()
             executable = root / "runtime" / "python.exe"
             executable.write_bytes(b"fixture")
-
-            def basis(_ordinal):
-                observations.append("basis")
-                return True
 
             with patch.object(
                 process._win32,
@@ -548,11 +517,9 @@ class RunnerProcessPureTests(unittest.TestCase):
                     target_root=root / "target",
                     scratch_root=root / "scratch",
                     windows_directory=root / "Windows",
-                    basis_is_current=basis,
                     cancel_requested=lambda: True,
                 )
         execute.assert_not_called()
-        self.assertEqual(observations, [])
         self.assertEqual(result.outcome, "blocked_prelaunch")
         self.assertEqual(result.reason, "cancelled")
         self.assertEqual(result.launch_state, "no_launch")

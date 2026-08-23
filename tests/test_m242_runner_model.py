@@ -22,7 +22,6 @@ try:
         ATTEMPT_DIGEST_DOMAIN,
         OBSERVATION_DIGEST_DOMAIN,
         RESOLUTION_DIGEST_DOMAIN,
-        RUNNER_PROVIDER_ID,
         SANDBOX_EVENT_DIGEST_DOMAIN,
         VerificationRunnerModelError,
         generate_runner_id,
@@ -30,10 +29,7 @@ try:
         runner_observation_source_projection,
         verification_runner_attempt_digest,
         verification_runner_observation_digest,
-        verification_runner_policy_digest,
         verification_runner_sandbox_event_digest,
-        verification_runner_sandbox_instance_digest,
-        verification_runner_sandbox_policy_digest,
     )
 finally:
     sys.path.pop(0)
@@ -110,7 +106,7 @@ def resolution_values():
         "runner_contract_version": 1,
         "runner_implementation_version": "taskgov-verification-runner/1",
         "runner_implementation_digest": "sha256:" + "4" * 64,
-        "runner_policy_digest": verification_runner_policy_digest(),
+        "runner_policy_digest": POLICY_DIGEST,
         "sandbox_provider": None,
         "sandbox_policy_digest": None,
         "runtime_digest": None,
@@ -265,21 +261,6 @@ class RunnerModelTests(unittest.TestCase):
             resolution_idempotency_digest,
             {**resolution, "runtime_digest": "not-a-digest"},
         )
-
-    def test_fixed_policy_digests_are_stable_and_distinct(self):
-        self.assertIsNone(RUNNER_PROVIDER_ID)
-        self.assertEqual(verification_runner_policy_digest(), POLICY_DIGEST)
-        self.assertNotEqual(
-            verification_runner_policy_digest(),
-            resolution_idempotency_digest(resolution_values()),
-        )
-        for function, args in (
-            (verification_runner_sandbox_policy_digest, ()),
-            (verification_runner_sandbox_policy_digest, ({"retired": True},)),
-            (verification_runner_sandbox_instance_digest, ()),
-            (verification_runner_sandbox_instance_digest, ({"retired": True},)),
-        ):
-            self.assert_sanitized_model_error(function, *args)
 
     def test_reference_projection_has_no_child_or_command_bytes(self):
         resolution = resolution_values()
@@ -462,6 +443,11 @@ class RunnerModelTests(unittest.TestCase):
             "appcontainer_no_capabilities_v1",
             "immutable_target_no_child_write_v1",
             "PROC_THREAD_ATTRIBUTE_JOB_LIST",
+            "RUNNER_PROVIDER_ID",
+            "_LEGACY_RUNNER_POLICY_DIGEST",
+            "verification_runner_sandbox_instance_digest",
+            "verification_runner_policy_digest",
+            "verification_runner_sandbox_policy_digest",
         ):
             self.assertNotIn(retired, source)
 

@@ -75,7 +75,6 @@ from task_governance_tool.verification_runner import (
     resolution_idempotency_digest,
     runner_observation_source_projection,
     verification_runner_observation_digest,
-    verification_runner_policy_digest,
     verification_runner_sandbox_event_digest,
 )
 from task_governance_tool.verification_runner_git import (
@@ -107,6 +106,11 @@ from task_governance_tool.verification_runner_runtime import (
 )
 from task_governance_tool.verification_runner_process import (
     ProcessRunResult,
+)
+
+
+_RUNNER_POLICY_DIGEST = (
+    "sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8"
 )
 
 
@@ -473,7 +477,7 @@ def _resolution_row(
         "runner_contract_version": RUNNER_CONTRACT_VERSION,
         "runner_implementation_version": RUNNER_IMPLEMENTATION_VERSION,
         "runner_implementation_digest": prepared.implementation.implementation_digest,
-        "runner_policy_digest": verification_runner_policy_digest(),
+        "runner_policy_digest": _RUNNER_POLICY_DIGEST,
         "sandbox_provider": None,
         "sandbox_policy_digest": None,
         "runtime_digest": None,
@@ -780,7 +784,7 @@ def _installed_basis_matches(
         == resolution.runner_implementation_version
         and implementation.implementation_digest
         == resolution.runner_implementation_digest
-        and verification_runner_policy_digest() == resolution.runner_policy_digest
+        and _RUNNER_POLICY_DIGEST == resolution.runner_policy_digest
     )
 
 

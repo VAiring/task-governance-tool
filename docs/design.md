@@ -12,12 +12,14 @@ approved retired repository material and dedicated tests physically absent,
 without an archive or dormant copy. Accepted R4V adds only the dependency-pure,
 legacy-stable Runner value model and exact-candidate package-manifest closure;
 it activates no supported Runner, schema, Evidence, CLI, or gate behavior.
-TG-M24.R3A is an accepted predecessor and owns only the private, non-public
-schema-v20 migration and storage baseline. TG-M24.R3B is the sole current
-TG-M24 authority and supplies the separately reviewed public-activation half
-of the matched pair: schema/setup, Bundle-v2 null-Runner, Evidence/Viewer, and
+TG-M24.R3A and TG-M24.R3B are accepted predecessors. R3A owns only the private,
+non-public schema-v20 migration and storage baseline. R3B supplies the
+separately reviewed public-activation half of the matched pair: schema/setup,
+Bundle-v2 null-Runner, Evidence/Viewer, and
 managed backup/recovery compatibility. It activates no Runner execution,
 Runner projection, or completion-gate behavior.
+TG-M24.R4B is the sole current TG-M24 authority and repairs only pre-Runner
+core behavior and frozen dependency violations.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 

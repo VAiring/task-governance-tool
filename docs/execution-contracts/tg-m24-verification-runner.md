@@ -12,9 +12,10 @@
 > R4A left its inventory-approved retired repository material and dedicated
 > tests physically absent, with no archive or dormant copy. Accepted R4V adds
 > only the dependency-pure, legacy-stable Runner value-model foundation and
-> exact-candidate manifest closure, with no product activation. TG-M24.R3A is
-> an accepted predecessor for the schema-v20 migration and storage baseline;
-> TG-M24.R3B owns current formal authority, and every later unit in this
+> exact-candidate manifest closure, with no product activation. TG-M24.R3A and
+> TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and
+> public-activation baseline; TG-M24.R4B owns current formal authority, and
+> every later unit in this
 > document remains inactive until its immediate predecessor is accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
@@ -344,7 +345,7 @@ Tier 2 PASS reviews.
 
 <a id="tg-m24-r3b"></a>
 
-## TG-M24.R3B Current Evidence And Projection Compatibility Baseline
+## TG-M24.R3B Accepted Evidence And Projection Compatibility Baseline
 
 Task `tg_task_c343ed2ec8acedf8` owns the separately reviewed public schema-v20
 activation: the public schema constant and setup target, the Bundle-v2
@@ -379,7 +380,7 @@ checkpoint.
 
 <a id="tg-m24-r4b"></a>
 
-## TG-M24.R4B Inactive Pre-Runner Core And Dependency Repair
+## TG-M24.R4B Current Pre-Runner Core And Dependency Repair
 
 Task `tg_task_e04fd31e6713cfa1` repairs only M1-M23 behavior and R2C dependency
 violations exposed by retained WIP before Runner execution. Every changed core

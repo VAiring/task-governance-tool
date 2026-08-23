@@ -514,8 +514,20 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.R3B Current Evidence And Projection Compatibility Baseline",
-                "## TG-M24.R2C Inactive M25-Ready Architecture Boundary Freeze",
+                "## TG-M24.R3B Accepted Evidence And Projection Compatibility Baseline",
+                "## TG-M24.R3B Inactive Evidence And Projection Compatibility Baseline",
+            )
+            self.assertIn(
+                "m24_current_binding",
+                self.codes(contract.check_document_contract(root)),
+            )
+
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.M24,
+                "## TG-M24.R4B Current Pre-Runner Core And Dependency Repair",
+                "## TG-M24.R4B Inactive Pre-Runner Core And Dependency Repair",
             )
             self.assertIn(
                 "m24_current_binding",
@@ -527,7 +539,7 @@ class DocumentContractTests(unittest.TestCase):
                 root,
                 contract.M24,
                 "<a id=\"tg-m24-r4a\"></a>",
-                "## TG-M24.R3B Current Duplicate Owner\n\n"
+                "## TG-M24.R4B Current Duplicate Owner\n\n"
                 "<a id=\"tg-m24-r4a\"></a>",
             )
             self.assertIn(
@@ -539,8 +551,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.R3B Current Evidence And Projection Compatibility Baseline",
-                "## TG-M24.R3B Evidence And Projection Current Compatibility Baseline",
+                "## TG-M24.R4B Current Pre-Runner Core And Dependency Repair",
+                "## TG-M24.R4B Pre-Runner Core And Dependency Current Repair",
             )
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -1165,10 +1177,10 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.R3B"])
+            self.assertEqual(m24["current_units"], ["TG-M24.R4B"])
             self.assertEqual(
                 m24["inactive_units"],
-                [row[0].split(" /", 1)[0] for row in contract.ROWS_M24[8:]],
+                [row[0].split(" /", 1)[0] for row in contract.ROWS_M24[9:]],
             )
             self.assertEqual(m24["superseded_units"], ["TG-M24.1B"])
             self.assertNotIn("TG-M24.1", m24["current_units"])
@@ -1178,6 +1190,8 @@ class DocumentContractTests(unittest.TestCase):
             self.assertNotIn("TG-M24.R4V", m24["current_units"])
             self.assertNotIn("TG-M24.R4V", m24["inactive_units"])
             self.assertNotIn("TG-M24.R4V", m24["superseded_units"])
+            self.assertNotIn("TG-M24.R3B", m24["current_units"])
+            self.assertNotIn("TG-M24.R3B", m24["inactive_units"])
             self.write_registry(root, dict(reversed(tuple(registry.items()))))
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -1411,6 +1425,7 @@ class DocumentContractTests(unittest.TestCase):
             "TG-M24.R2C",
             "TG-M24.R4A",
             "TG-M24.R4V",
+            "TG-M24.R3B",
             "TG-M24.2A",
             "TG-M24.3",
             "TG-M24.4D",
@@ -1424,6 +1439,83 @@ class DocumentContractTests(unittest.TestCase):
                     "document_role",
                     self.codes(contract.check_document_contract(root)),
                 )
+
+        stale_m24_owner_mutations = (
+            (
+                contract.AUTHORITY,
+                "TG-M24.1B is superseded and non-gating. TG-M24.R3A and TG-M24.R3B "
+                "are accepted\npredecessors; TG-M24.R4B is the sole current unit, and "
+                "TG-M24.R5 through\nTG-M24.CP4 remain inactive",
+                "TG-M24.1B is superseded and non-gating. TG-M24.R3A is an accepted "
+                "predecessor;\nTG-M24.R3B is the sole current unit, and TG-M24.R4B "
+                "through\nTG-M24.CP4 remain inactive",
+            ),
+            (
+                "docs/specification.md",
+                "Accepted TG-M24.R3B publicly activates that\nexisting schema without "
+                "activating Runner execution or a completion gate.\nTG-M24.R4B is the "
+                "sole current unit for pre-Runner core and dependency repair.",
+                "TG-M24.R3B is the sole current unit and publicly activates that\n"
+                "existing schema without activating Runner execution or a completion "
+                "gate.\nTG-M24.R4B remains inactive.",
+            ),
+            (
+                contract.DESIGN,
+                "TG-M24.R3A and TG-M24.R3B are accepted predecessors.",
+                "TG-M24.R3A is an accepted predecessor; TG-M24.R3B is the sole current "
+                "TG-M24 authority.",
+            ),
+            (
+                contract.EXECUTION_INDEX,
+                "TG-M24.R3A and TG-M24.R3B are accepted predecessors; TG-M24.R4B owns "
+                "current\n> authority-only scope, and TG-M24.R5 through TG-M24.CP4 "
+                "remain inactive",
+                "TG-M24.R3A is an accepted predecessor; TG-M24.R3B owns current\n> "
+                "authority-only scope, and TG-M24.R4B through TG-M24.CP4 remain inactive",
+            ),
+            (
+                "plan.md",
+                "accepted predecessors; TG-M24.1B is superseded. Current formal "
+                "authority belongs\nonly to the TG-M24.R4B pre-Runner core and "
+                "dependency repair, while TG-M24.R5 and\nevery later unit remain inactive",
+                "accepted predecessors; TG-M24.1B is superseded. Current formal "
+                "authority belongs\nonly to the TG-M24.R3B Evidence and projection "
+                "compatibility baseline, while TG-M24.R4B and\nevery later unit remain inactive",
+            ),
+        )
+        for relative, current, stale in stale_m24_owner_mutations:
+            with self.subTest(stale_m24_owner=relative), self.fixture() as root:
+                self.replace(root, relative, current, stale)
+                self.assertIn(
+                    "document_role",
+                    self.codes(contract.check_document_contract(root)),
+                )
+
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.AUTHORITY,
+                "TG-M24.R4B is the sole current unit, and TG-M24.R5 through\n"
+                "TG-M24.CP4 remain inactive",
+                "TG-M24.R4B is the sole current unit, and TG-M24.R4B through\n"
+                "TG-M24.CP4 remain inactive",
+            )
+            self.assertIn(
+                "document_role",
+                self.codes(contract.check_document_contract(root)),
+            )
+
+        valid_m24_status_contrasts = (
+            "Current formal authority belongs only to R4B, not R3B.",
+            "Current formal authority belongs only to R4B, while R3B is accepted.",
+            "The current R3B-compatible projection label is documentation only.",
+            "The inactive R4B-compatible example label is documentation only.",
+        )
+        for sentence in valid_m24_status_contrasts:
+            with self.subTest(valid_m24_status_contrast=sentence), self.fixture() as root:
+                self.append(root, "plan.md", f"\n{sentence}\n")
+                result = contract.check_document_contract(root)
+                self.assertTrue(result.ok, result.issues)
 
         with self.fixture() as root:
             self.replace(
@@ -1500,8 +1592,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.R3B owns current formal authority",
-                "TG-M24.R3B is a superseded compatibility route",
+                "TG-M24.R4B owns current formal authority",
+                "TG-M24.R4B is a superseded compatibility route",
             )
             self.assertIn(
                 "document_role",
@@ -1512,8 +1604,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.R3B owns current formal authority",
-                "TG-M24.R3B is not current formal authority",
+                "TG-M24.R4B owns current formal authority",
+                "TG-M24.R4B is not current formal authority",
             )
             self.assertIn(
                 "document_role",
@@ -1543,9 +1635,10 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "TG-M24.R3A is\n"
-                "> an accepted predecessor for the schema-v20 migration and storage baseline;",
-                "TG-M24.R3A is a former schema-v20 storage unit;",
+                "TG-M24.R3A and\n"
+                "> TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and\n"
+                "> public-activation baseline;",
+                "TG-M24.R3A and TG-M24.R3B are former schema-v20 units;",
             )
             self.replace(
                 root,

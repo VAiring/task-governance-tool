@@ -241,11 +241,11 @@ migration and storage rehearsal reached through an injected path after R4V; its
 accepted result left the public candidate at schema v19. Its successful Bundle rebuild physically
 removes persistent unowned indexes/triggers attached to that table without
 replaying arbitrary DDL; rollback restores them, and unrelated standalone
-objects remain unchanged. Current TG-M24.R3B owns the corresponding public
+objects remain unchanged. Accepted TG-M24.R3B owns the corresponding public
 schema-v20 activation, Bundle-v2 null-Runner writer, and
-Evidence/Viewer/managed backup/recovery compatibility. Later inactive units
-repair pre-Runner core
-regressions, finalize temporary shim/policy retirement, and retire fixed
+Evidence/Viewer/managed backup/recovery compatibility. Current TG-M24.R4B
+repairs pre-Runner core regressions and finalizes temporary shim/policy
+retirement. Later inactive units retire fixed
 diagnostic residue. R3B activates only schema/storage, Bundle, Evidence, Viewer,
 and recovery compatibility; it creates no Runner rows, links, members, or
 projection and grants no process or completion-gate authority. The first
@@ -268,10 +268,10 @@ mandatory; live status and evidence remain solely in the Task database.
 
 TG-M24 is approved sequential Tier 2 work in lane
 `TG-M24-TRUSTED-RUNNER`. TG-M24.1, TG-M24.1A, TG-M24.R1, TG-M24.R2A,
-TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, TG-M24.R4V, and TG-M24.R3A are accepted
-predecessors; TG-M24.1B is superseded. Current formal authority belongs only to
-the TG-M24.R3B Evidence and projection compatibility baseline, while TG-M24.R4B
-and every later unit remain inactive behind their accepted immediate predecessor.
+TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, TG-M24.R4V, TG-M24.R3A, and TG-M24.R3B are
+accepted predecessors; TG-M24.1B is superseded. Current formal authority belongs
+only to the TG-M24.R4B pre-Runner core and dependency repair, while TG-M24.R5 and
+every later unit remain inactive behind their accepted immediate predecessor.
 Exact unit identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 not duplicated in this gateway.
@@ -285,7 +285,7 @@ public setup action at a separate approval checkpoint.
 
 Accepted TG-M24.R1 consumed only the reviewed R2 bootstrap boundary and changed
 no product byte; accepted R2A, R2B, R2C, R4A, and R4V changed no supported product
-behavior. Current R3B and its successors advance in exact order, use fresh
+behavior. Current R4B and its successors advance in exact order, use fresh
 current evidence, and never reuse superseded Candidate-C, LPAC, or diagnostic
 recovery evidence.
 The sequence grants no arbitrary command, automatic execution of untrusted or

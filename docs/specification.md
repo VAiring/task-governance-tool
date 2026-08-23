@@ -8,14 +8,15 @@ TG-M24.1A are accepted predecessors; the fixed-Candidate-C and adversarial
 LPAC route formerly owned by TG-M24.1B is superseded. Current TG-M24 authority
 is the ordered repair and implementation sequence for an explicitly adopted
 trusted-local Runner. Accepted TG-M24.R3A supplied only the private schema-v20
-migration/storage foundation. TG-M24.R3B is the sole current unit and publicly
-activates that existing schema without activating Runner execution or a
-completion gate. Completed execution narrative is history, and the Task
+migration/storage foundation. Accepted TG-M24.R3B publicly activates that
+existing schema without activating Runner execution or a completion gate.
+TG-M24.R4B is the sole current unit for pre-Runner core and dependency repair.
+Completed execution narrative is history, and the Task
 database owns live state and evidence.
 
 Accepted TG-M24.R3A prepared only a private, non-public schema-v20 storage
 foundation and left the public schema constant, setup target, Viewer source
-range, and schema-v19 native version-1 Bundle writer unchanged. Current
+range, and schema-v19 native version-1 Bundle writer unchanged. Accepted
 TG-M24.R3B activates public schema v20, the Bundle-v2 null-Runner writer, and
 Evidence/Viewer/managed backup/recovery compatibility. It creates no Runner
 record, Reference/link/member/projection, process launch, or gate authority,

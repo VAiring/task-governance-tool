@@ -400,7 +400,7 @@ TASK_STATUS_VALUES = {
     "paused",
     "done",
 }
-CURRENT_UNITS = ("TG-M24.R3B",)
+CURRENT_UNITS = ("TG-M24.R4B",)
 NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
     for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
@@ -416,6 +416,29 @@ NONCURRENT_SUBJECTS = tuple(
 CURRENT_STATUS_CLAIM = re.compile(
     rf"\b(?:{'|'.join(re.escape(value) for value in NONCURRENT_SUBJECTS)})\b"
     r"(?:\s+(?:sequence|unit|units))?\s+(?:is|are)\s+(?:the\s+)?current\b",
+    re.IGNORECASE,
+)
+M24_R3B_ALIAS = r"(?:TG-M24\.)?R3B"
+M24_R4B_ALIAS = r"(?:TG-M24\.)?R4B"
+M24_LATER_UNIT_ALIAS = r"(?:TG-M24\.)?(?:R[0-9]+[A-Z]?|[0-9]+[A-Z]?|CP[0-9]+)"
+M24_R3B_TOKEN = rf"{M24_R3B_ALIAS}(?![A-Za-z0-9_-])"
+M24_R4B_TOKEN = rf"{M24_R4B_ALIAS}(?![A-Za-z0-9_-])"
+M24_R3B_CURRENT_CLAIM = re.compile(
+    rf"(?:\bcurrent\s+{M24_R3B_TOKEN}"
+    rf"|\b{M24_R3B_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
+    r"(?:(?:is|are|remains?)\s+(?:the\s+)?(?:sole\s+)?current\b"
+    r"|owns?\s+(?:the\s+)?current(?:\s+formal)?\s+authority\b)"
+    r"|\bcurrent\s+(?:formal\s+)?authority\s+belongs(?:\s+only)?\s+to\b"
+    rf"\s+(?:the\s+)?{M24_R3B_TOKEN})",
+    re.IGNORECASE,
+)
+M24_R4B_INACTIVE_CLAIM = re.compile(
+    rf"(?:\binactive\s+{M24_R4B_TOKEN}"
+    rf"|\b{M24_R4B_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
+    r"(?:is|are|remains?)\s+(?:(?:an?|the)\s+)?inactive\b"
+    rf"|\b{M24_R4B_TOKEN}(?:\s+through\s+{M24_LATER_UNIT_ALIAS}"
+    r"|\s+and\s+(?:every\s+)?later\s+units?)\s+"
+    r"(?:are|remain)\s+inactive\b)",
     re.IGNORECASE,
 )
 UNIT_CURRENT_CLAIM = re.compile(
@@ -1508,9 +1531,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.R3B"],
+                "current_units": ["TG-M24.R4B"],
                 "inactive_units": [
-                    "TG-M24.R4B",
                     "TG-M24.R5",
                     "TG-M24.2A",
                     "TG-M24.2B",
@@ -2075,8 +2097,8 @@ def _m24_trusted_local_authority_sync(
         ("tg-m24-r4a", "tg-m24.r4a", "accepted"),
         ("tg-m24-r4v", "tg-m24.r4v", "accepted"),
         ("tg-m24-r3a", "tg-m24.r3a", "accepted"),
-        ("tg-m24-r3b", "tg-m24.r3b", "current"),
-        ("tg-m24-r4b", "tg-m24.r4b", "inactive"),
+        ("tg-m24-r3b", "tg-m24.r3b", "accepted"),
+        ("tg-m24-r4b", "tg-m24.r4b", "current"),
         ("tg-m24-r5", "tg-m24.r5", "inactive"),
         ("tg-m24-2a", "tg-m24.2a", "inactive"),
         ("tg-m24-2b", "tg-m24.2b", "inactive"),
@@ -2124,7 +2146,7 @@ def _m24_trusted_local_authority_sync(
             Issue(
                 "m24_current_binding",
                 M24,
-                "M24 accepted predecessors, sole current R3B unit, or inactive successors drifted",
+                "M24 accepted predecessors, sole current R4B unit, or inactive successors drifted",
             )
         )
 
@@ -2658,7 +2680,12 @@ def _negative_current_relation(text: str) -> bool:
 def _has_current_status_contradiction(text: str) -> bool:
     return any(
         not _directly_negated(text, match.start())
-        for match in CURRENT_STATUS_CLAIM.finditer(text)
+        for pattern in (
+            CURRENT_STATUS_CLAIM,
+            M24_R3B_CURRENT_CLAIM,
+            M24_R4B_INACTIVE_CLAIM,
+        )
+        for match in pattern.finditer(text)
     )
 
 

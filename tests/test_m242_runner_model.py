@@ -67,8 +67,6 @@ PROJECTION_KEYS = (
     "runner_implementation_version",
     "runner_implementation_digest",
     "runner_policy_digest",
-    "sandbox_provider",
-    "sandbox_policy_digest",
     "runtime_digest",
     "sanitized_result_digest",
 )
@@ -296,13 +294,11 @@ class RunnerModelTests(unittest.TestCase):
             resolution=resolution,
         )
         self.assertEqual(tuple(projection), PROJECTION_KEYS)
-        self.assertEqual(len(projection), 28)
+        self.assertEqual(len(projection), 26)
         self.assertEqual(
             projection["observation_id"],
             observation["verification_runner_observation_id"],
         )
-        self.assertIsNone(projection["sandbox_provider"])
-        self.assertIsNone(projection["sandbox_policy_digest"])
         self.assertIsNone(projection["runtime_digest"])
 
         runtime = {**resolution, "runtime_digest": "sha256:" + "9" * 64}
@@ -333,12 +329,6 @@ class RunnerModelTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, projection)
 
-        for field in ("sandbox_provider", "sandbox_policy_digest"):
-            self.assert_sanitized_model_error(
-                runner_observation_source_projection,
-                observation=projection_observation(resolution),
-                resolution={**resolution, field: "retired"},
-            )
         self.assert_sanitized_model_error(
             runner_observation_source_projection,
             observation={},

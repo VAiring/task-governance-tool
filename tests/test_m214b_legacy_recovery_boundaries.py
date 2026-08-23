@@ -365,5 +365,5 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                     "SELECT COUNT(*) FROM tasks WHERE title = ?",
                     ("Mixed-schema rejected head",),
                 ).fetchone()[0]
-            self.assertEqual(schema_version, 19)
+            self.assertEqual(schema_version, 20)
             self.assertEqual(rejected_title_count, 0)

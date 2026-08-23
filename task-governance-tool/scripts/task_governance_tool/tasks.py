@@ -4170,7 +4170,7 @@ def edit_task(
                 completion_cycle_id=completion_identity.completion_cycle_id,
                 cycle_ordinal=completion_identity.saved_cycle_ordinal,
                 source_schema_version=SCHEMA_VERSION,
-                bundle_version=1,
+                bundle_version=2,
                 contract_revision=cycle.contract_revision,
                 authority_snapshot_id=(
                     completion_binding.authority_snapshot_id
@@ -4194,6 +4194,8 @@ def edit_task(
                 verification_receipt_id=(
                     qualifying_verification_receipt_id
                 ),
+                verification_basis_kind=cycle.verification_basis_kind,
+                verification_runner_observation_id=None,
                 omission_mask=bundle_plan.omission_mask,
                 sealed_at=now,
                 bundle_digest=bundle_plan.artifact.bundle_digest,

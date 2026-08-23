@@ -3,14 +3,15 @@
 Use this reference when exact public commands, arguments, JSON fields, bounds,
 or error behavior matter.
 
-The current v0.12.0 package uses task schema v19 and offline snapshot v4 with
-source schemas v5 through v19. The published v0.10.0 release remains the
+The current v0.12.0 package uses task schema v20 and offline snapshot v4 with
+source schemas v5 through v20. The published v0.10.0 release remains the
 immutable schema-v16 predecessor.
 
-Schema v19 seals native completion Bundles and maintains fixed Evidence JSON
-v1 automatically. It adds no export/projection command, Runner, Analyzer,
-Viewer Evidence surface, network/model invocation, public leaf, or normal-loop
-call.
+Schema v19 sealed native Bundle v1. Schema v20 preserves existing v1 bytes and
+digests, seals native Bundle v2 with a derived verification basis and null
+Runner observation, and maintains fixed Evidence index v2 automatically. It
+adds no export/projection command, Runner, Analyzer, Viewer Evidence surface,
+network/model invocation, public leaf, or normal-loop call.
 
 ## Contents
 
@@ -226,7 +227,7 @@ Expired or stale context requires a fresh preview and fresh user approval.
     "viewer_publish"
   ],
   "schema_from": null,
-  "schema_to": 19,
+  "schema_to": 20,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -265,7 +266,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=19`. A later-stage failure reports only
+null observed values except `schema_to=20`. A later-stage failure reports only
 the durable ordered prefix.
 
 Setup is noninteractive and idempotent. It does not create a second
@@ -318,8 +319,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 19,
-      "required_schema_version": 19
+      "schema_version": 20,
+      "required_schema_version": 20
     },
     "task_summary": {
       "code": "ready",
@@ -409,7 +410,7 @@ dependent-state use, or use as a write basis. Exact SQLite storage classes,
 privacy/capacity, enums, and Task cross-field matrices are checked without
 coercion or repair. Bounded list/current/next commands validate only their
 selected complete-row batch and add no unrelated whole-table rescan.
-For source schemas v8-v19, the same boundary performs one bulk relationship
+For source schemas v8-v20, the same boundary performs one bulk relationship
 read for only those selected Task IDs. Revision zero requires no Contract row;
 a positive `current_contract_revision` must exist as the latest exact INTEGER
 revision owned by the same project and Task. Dangling, foreign, nonlatest,
@@ -422,7 +423,7 @@ faults use the same fixed error; genuine busy/locked state remains
 `database_busy`. Doctor, Viewer, setup, and recovery validate every Task row,
 including stored project ownership, as one whole batch.
 
-Any current schema-v19 stored Task fault returns exit 2, code
+Any current schema-v20 stored Task fault returns exit 2, code
 `project_state_unreadable`, and message
 `project state could not be read safely`. The command keeps its existing empty
 data shape and emits no warning, partial Task projection, rejected content, or
@@ -1122,9 +1123,13 @@ daemon, thread, timer, detached process, queue, scheduler, service, or network.
 Evidence JSON paths are fixed at `state/current/evidence/index.json` and
 `state/current/evidence/bundles/<completion-evidence-bundle-id>.json`, with the lock at
 `state/current/evidence/taskgov-evidence.lock`; callers cannot select them.
-Native entries reference one immutable Bundle, pre-v19 cycles are index-only
-`legacy_unknown`, the index is published last, SQLite remains canonical, and
-JSON is never imported or displayed by the Viewer.
+A schema-v20 index uses `format_version=2` and adds
+`bundle_format_version`: null for `legacy_unknown`, 1 for a preserved Bundle
+v1, and 2 for a native Bundle v2. New v20 Bundles use `format_version=2`, a
+derived `caller_attestation` or `not_required` basis, and null Runner
+observation; preserved v1 bytes and digests are unchanged. The index is
+published last, SQLite remains canonical, and JSON is never imported or
+displayed by the Viewer.
 
 The optional physical `config/viewer.json` is browser-presentation policy, not
 a CLI or normal-loop choice. Taskgov never creates it; absence means the
@@ -1149,15 +1154,16 @@ command, or normal-loop decision is added.
 
 These operations add no Skill command or LLM judgment. Their artifacts and
 paths are absent from public command output. Snapshot v4 reads source schemas
-5 through 19. Sources 5-14 receive an empty, legacy-incomplete completion
-history; sources 15-19 use stored cycles. Every Task receives the same bounded
+5 through 20. Sources 5-14 receive an empty, legacy-incomplete completion
+history; sources 15-20 use stored cycles. Every Task receives the same bounded
 five-key projection as `task show` without exposing internal event links,
 maintenance data, or checkpoint content.
 
 For sources v18+, Viewer capture validates Review Receipt provenance and
-verification-subject/capture bindings; v19 also validates the Bundle discriminator. It discards those fields
-from snapshot v4. It adds no provenance UI, filter, panel, snapshot key, or
-normal-loop behavior.
+verification-subject/capture bindings; v19-v20 also validate the Bundle
+discriminator, and v20 additionally validates the Bundle-v2 verification basis
+and null Runner observation. It discards those fields from snapshot v4. It
+adds no provenance UI, filter, panel, snapshot key, or normal-loop behavior.
 
 Viewer capture validates the complete source-aware Task batch before rendering
 or replacement, including the source-v8+ Contract-pointer relationship. A

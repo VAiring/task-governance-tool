@@ -135,8 +135,6 @@ _RUNNER_OBSERVATION_SOURCE_KEYS = (
     "runner_implementation_version",
     "runner_implementation_digest",
     "runner_policy_digest",
-    "sandbox_provider",
-    "sandbox_policy_digest",
     "runtime_digest",
     "sanitized_result_digest",
 )
@@ -300,15 +298,11 @@ def runner_observation_source_projection(
                 "runner_implementation_digest"
             ],
             "runner_policy_digest": resolution["runner_policy_digest"],
-            "sandbox_provider": resolution["sandbox_provider"],
-            "sandbox_policy_digest": resolution["sandbox_policy_digest"],
             "runtime_digest": resolution["runtime_digest"],
             "sanitized_result_digest": observation["sanitized_result_digest"],
         }
         if (
             tuple(source) != _RUNNER_OBSERVATION_SOURCE_KEYS
-            or source["sandbox_provider"] is not None
-            or source["sandbox_policy_digest"] is not None
             or (
                 source["runtime_digest"] is not None
                 and not _is_labeled_digest(source["runtime_digest"])

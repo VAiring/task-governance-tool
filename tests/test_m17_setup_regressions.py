@@ -540,7 +540,7 @@ class M17SetupRegressionTests(unittest.TestCase):
             self.assertTrue(install.db_path.is_file())
             self.assertFalse(install.legacy_root.exists())
             with closing(connect(install.db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 19)
+                self.assertEqual(current_schema_version(connection), 20)
                 maintenance = connection.execute(
                     """
                     SELECT enabled_at, backup_interval_minutes,

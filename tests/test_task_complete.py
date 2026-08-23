@@ -32,6 +32,7 @@ from task_governance_tool.completion import (  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
     apply_completion_evidence_bundle_migration,
     apply_evidence_ledger_capture_migration,
+    apply_migrations,
     connect,
     resolve_database_target,
 )
@@ -1040,6 +1041,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                 connection.commit()
                 apply_evidence_ledger_capture_migration(connection)
                 apply_completion_evidence_bundle_migration(connection)
+                self.assertEqual(apply_migrations(connection), ([20], []))
                 legacy_provenance = connection.execute(
                     """
                     SELECT COUNT(*)

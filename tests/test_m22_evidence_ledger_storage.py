@@ -954,10 +954,11 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
         )
 
     def test_schema_version_and_verification_capacity_are_layered(self):
-        self.assertEqual(SCHEMA_VERSION, 19)
+        self.assertEqual(SCHEMA_VERSION, 20)
         self.assertEqual(stored_task_verification_limit(17), 500)
         self.assertEqual(stored_task_verification_limit(18), 1_000)
         self.assertEqual(stored_task_verification_limit(19), 1_000)
+        self.assertEqual(stored_task_verification_limit(20), 1_000)
         self.assertEqual(TASK_VERIFICATION_INPUT_LIMIT, 1_000)
 
     def test_migration_rejects_v17_overflow_and_v18_captures_one_thousand(self):
@@ -1183,9 +1184,9 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         validate_evidence_ledger_storage(connection)
 
                         applied, warnings = apply_migrations(connection)
-                        self.assertEqual(applied, [19])
+                        self.assertEqual(applied, [19, 20])
                         self.assertEqual(warnings, [])
-                        self.assertEqual(current_schema_version(connection), 19)
+                        self.assertEqual(current_schema_version(connection), 20)
                         self.assertEqual(
                             connection.execute(
                                 "SELECT constraints_text "
@@ -2051,6 +2052,16 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
             },
         )
 
+    def test_authority_privacy_cache_never_records_a_rejection(self):
+        privacy_success_cache: set[tuple[str, str, str]] = set()
+        with self.assertRaises(StorageError):
+            storage_module._validate_evidence_ledger_stored_privacy(
+                "description",
+                "Authorization: private-cache-value",
+                privacy_success_cache=privacy_success_cache,
+            )
+        self.assertEqual(privacy_success_cache, set())
+
     def test_current_task_storage_class_must_match_snapshot_without_coercion(self):
         with tempfile.TemporaryDirectory() as temp:
             repo, db = initialize(Path(temp))
@@ -2165,7 +2176,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                 connection.commit()
 
                 with self.assertRaises(StorageError) as failure:
-                    apply_evidence_ledger_capture_migration(connection)
+                    apply_migrations(connection)
                 self.assertEqual(failure.exception.code, "project_state_unreadable")
 
     def test_reentry_rejects_manifest_and_closed_reference_corruption(self):
@@ -2221,7 +2232,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             )
                         connection.commit()
                         with self.assertRaises(StorageError) as failure:
-                            apply_evidence_ledger_capture_migration(connection)
+                            apply_migrations(connection)
                         self.assertEqual(
                             failure.exception.code, "project_state_unreadable"
                         )
@@ -2300,7 +2311,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                     "invalid_verification_evidence",
                 )
                 with self.assertRaises(StorageError) as failure:
-                    apply_evidence_ledger_capture_migration(connection)
+                    apply_migrations(connection)
                 self.assertEqual(failure.exception.code, "project_state_unreadable")
 
     def test_historical_cycle_subject_must_match_its_manifest(self):
@@ -2370,7 +2381,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                 connection.execute(trigger_sql)
                 connection.commit()
                 with self.assertRaises(StorageError) as failure:
-                    apply_evidence_ledger_capture_migration(connection)
+                    apply_migrations(connection)
                 self.assertEqual(failure.exception.code, "project_state_unreadable")
 
     def test_historical_cycle_must_match_its_qualifying_verification_receipt(self):
@@ -3294,6 +3305,10 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         with closing(connect(db)) as connection:
                             apply_evidence_ledger_capture_migration(connection)
                             apply_completion_evidence_bundle_migration(connection)
+                            self.assertEqual(
+                                apply_migrations(connection),
+                                ([20], []),
+                            )
 
                     corrupt_owner = "corrupt-verification-project-owner"
                     with closing(connect(db)) as connection:
@@ -3344,6 +3359,10 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         with closing(connect(db)) as connection:
                             apply_evidence_ledger_capture_migration(connection)
                             apply_completion_evidence_bundle_migration(connection)
+                            self.assertEqual(
+                                apply_migrations(connection),
+                                ([20], []),
+                            )
 
                     with closing(connect(db)) as connection:
                         connection.execute("PRAGMA foreign_keys = OFF")
@@ -3937,6 +3956,10 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         if source_schema_version == 18:
                             apply_evidence_ledger_capture_migration(connection)
                             apply_completion_evidence_bundle_migration(connection)
+                            self.assertEqual(
+                                apply_migrations(connection),
+                                ([20], []),
+                            )
 
                     with closing(connect(target.db_path)) as connection:
                         connection.execute("PRAGMA foreign_keys = OFF")

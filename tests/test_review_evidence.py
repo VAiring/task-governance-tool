@@ -947,6 +947,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             with closing(connect_existing(db)) as connection:
                 apply_evidence_ledger_capture_migration(connection)
                 apply_completion_evidence_bundle_migration(connection)
+                storage_service.apply_migrations(connection)
                 self.assertEqual(
                     connection.execute(
                         "SELECT review_provenance_basis_version "
@@ -1037,6 +1038,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                     with closing(connect_existing(db)) as connection:
                         apply_evidence_ledger_capture_migration(connection)
                         apply_completion_evidence_bundle_migration(connection)
+                        storage_service.apply_migrations(connection)
                     self._set_current_two_passes(db, repo, task_id)
 
                     alias_id = (

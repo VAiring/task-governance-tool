@@ -392,7 +392,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             connection.execute(
                 "SELECT MAX(version) FROM schema_migrations"
             ).fetchone()[0],
-            19,
+            20,
         )
         generations = connection.execute(
             """
@@ -443,7 +443,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             artifacts[0].name,
         )
 
-    def test_v2_fixture_setup_migrates_to_v19_without_losing_observed_state(self):
+    def test_v2_fixture_setup_migrates_to_current_without_losing_observed_state(self):
         fixture = load_fixture()
         self.assertEqual(fixture["schema_version"], 2)
         self.assertEqual(len(fixture["tasks"]), 12)
@@ -473,7 +473,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(migrated)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 2)
-            self.assertEqual(payload["data"]["schema_to"], 19)
+            self.assertEqual(payload["data"]["schema_to"], 20)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 MIGRATION_SETUP_WRITES,
@@ -650,7 +650,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 )
                 self.assert_single_seeded_managed_backup(connection, db_path)
 
-    def test_v5_v6_v12_and_v13_setup_migrate_to_v19_with_review_evidence_intact(self):
+    def test_v5_v6_v12_and_v13_setup_migrate_to_current_with_review_evidence_intact(self):
         fixture = load_fixture()
         for source_version in (5, 6, 12, 13):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
@@ -673,7 +673,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 payload = json_payload(migrated)
                 self.assertEqual(payload["data"]["schema_from"], source_version)
-                self.assertEqual(payload["data"]["schema_to"], 19)
+                self.assertEqual(payload["data"]["schema_to"], 20)
                 self.assertEqual(
                     payload["data"]["completed_writes"],
                     MIGRATION_SETUP_WRITES,
@@ -885,7 +885,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(recovered)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 12)
-            self.assertEqual(payload["data"]["schema_to"], 19)
+            self.assertEqual(payload["data"]["schema_to"], 20)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 RECOVERY_MIGRATION_SETUP_WRITES,

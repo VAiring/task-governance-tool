@@ -10,19 +10,20 @@ Skill in any project.
 
 Current TG-M24 authority replaces the former fixed-Candidate-C and adversarial
 LPAC route with an ordered trusted-local Runner repair and implementation
-sequence. This authority cutover does not select, supply, sign, publish, or
-claim a runtime and does not activate a Runner, schema, CLI, Skill, or gate.
-The candidate identity below therefore remains v0.12.0/schema v19 until the
-owning downstream units produce and accept a coherent release candidate.
-Untrusted or external targets remain on the M21 manual verification path.
+sequence. Accepted R3A supplied the schema-v20 storage baseline, and the
+current candidate now adopts R3B's public schema-v20 activation, Bundle-v2
+null-Runner writer, Evidence index v2, and Viewer/managed compatibility. This
+does not select, sign, publish, or claim a Runner runtime and activates no
+process launch, new CLI or Skill trigger, or gate. Untrusted or external
+targets remain on the M21 manual verification path.
 
 ## Current Candidate Identity
 
 | Item | Value |
 |---|---|
 | Package version | `0.12.0` |
-| SQLite schema | v19 |
-| Viewer snapshot | v4, accepting source schemas v5-v19 (v5 through v19) |
+| SQLite schema | v20 |
+| Viewer snapshot | v4, accepting source schemas v5-v20 (v5 through v20) |
 | Public command leaves | 21 |
 | Supported runtime | Python 3.12 or newer on Windows |
 | Verified platform | Windows |
@@ -156,7 +157,7 @@ one-way opt-in to bounded local maintenance and directly publishes or repairs
 canonical Evidence JSON and Viewer. It is explicit, noninteractive, idempotent, and limited
 to the supported physical project-scoped package.
 
-Setup reports `schema_to=19` and `evidence_status` as `not_present`, `current`,
+Setup reports `schema_to=20` and `evidence_status` as `not_present`, `current`,
 `published`, or `repair_required`. Its ordered write vocabulary includes
 `evidence_projection_publish` after maintenance/binding and before
 `viewer_publish`; read-only preview plans it without writing.
@@ -246,10 +247,14 @@ and versioned Review provenance. It raises durable/read verification capacity
 to 1,000 characters; explicit public Task add/edit admission is also 1,000.
 Schema v19 adds immutable completion Bundles, criterion links/Finding snapshots,
 cycle evidence-basis linkage, and fixed Evidence JSON projection state.
-Migration from v1-v18 and schema-v19 activation/reentry is ordered and
-repeatable. A migrated capture-version-0 target remains read-only lineage and
-must be replaced with a fresh capture-version-1 target before a new Receipt,
-Finding, or completion source can be recorded.
+Schema v20 adds the dormant Runner storage foundation and completion-cycle
+verification-basis discriminator, writes Bundle v2 with a null Runner
+observation for new native completions, and publishes Evidence index v2. It
+creates no Runner row, Reference, link, member, projection, process launch, or
+gate authority. Migration from v1-v19 to v20 and schema-v20 activation/reentry
+are ordered and repeatable. A migrated capture-version-0 target remains
+read-only lineage and must be replaced with a fresh capture-version-1 target
+before a new Receipt, Finding, or completion source can be recorded.
 
 Installation alone and ordinary task commands never migrate. After replacing
 packaged core files while preserving local state, run `setup`; it performs any
@@ -261,16 +266,17 @@ migration.
 The immutable v0.10.0 release acceptance rehearsed the transition from the
 exact legacy v0.1.0/schema-v2 baseline to v0.10.0/schema v16. The current
 v0.12.0 candidate must separately rehearse that isolated baseline through
-schema v19, including schema-v17 Receipt/completion preservation, subject and
+schema v20, including schema-v17 Receipt/completion preservation, subject and
 provenance migration, capture-v0/fresh retargeting, 500/1,000 capacity,
-Bundle/projection recovery, backup recovery, and no-partial-write behavior before it can become a release.
+preserved Bundle-v1 and native Bundle-v2 projection recovery, backup recovery,
+and no-partial-write behavior before it can become a release.
 The v0.11.0 candidate note remains immutable lineage and its rehearsal cannot
 satisfy this current gate. Neither rehearsal selects or mutates
 user-wide, linked, junction, or custom-`--db` state.
 
 Rollback restores one matched pre-migration package, database, and managed
 artifact set as a single compatibility point, then proves that the legacy
-package can read that restored state. Running old code against schema v19,
+package can read that restored state. Running old code against schema v20,
 reverse-migrating in place, mixing generations, or treating a Git checkout
 alone as rollback is unsupported. After cutover, a defect is handled by a
 forward fix and new candidate/version, not a force update, history rewrite,
@@ -318,22 +324,26 @@ separate model decision. Every changed mutation may retry due Evidence work,
 but only cycle insertion advances its source generation; Handoff-only writes
 do not change either projection generation. Setup publishes Evidence then Viewer directly.
 
-Evidence JSON v1 is generated only at fixed `state/current/evidence/index.json`
-and `state/current/evidence/bundles/<completion-evidence-bundle-id>.json`, with the zero-wait
-lock at `state/current/evidence/taskgov-evidence.lock`. Native entries bind one
-immutable Bundle; pre-v19 cycles are index-only `legacy_unknown`. The index is
+Evidence JSON is generated only at fixed `state/current/evidence/index.json`
+and `state/current/evidence/bundles/<completion-evidence-bundle-id>.json`, with
+the zero-wait lock at `state/current/evidence/taskgov-evidence.lock`. A
+schema-v20 publication uses index format 2 and adds `bundle_format_version`:
+null for `legacy_unknown`, 1 for a preserved Bundle v1, and 2 for a native
+Bundle v2. Existing v1 Bundle bytes and digests remain unchanged. The index is
 published last, SQLite remains canonical, and JSON is never imported. Failure
 preserves the committed mutation and last-good index with one fixed warning.
 
 The Viewer is a self-contained, read-only `file://` projection under the
-ignored package state. Snapshot v4 accepts source schemas v5-v19 and includes
+ignored package state. Snapshot v4 accepts source schemas v5-v20 and includes
 the same bounded newest-first completion history as `task show`; sources v5-v14
-receive an empty, legacy-incomplete history. It omits internal event links,
+receive an empty, legacy-incomplete history and sources v15-v20 use stored
+cycles. It omits internal event links,
 storage paths, maintenance internals, checkpoint content, handoffs,
 Verification Receipt data, Review provenance, raw evidence, environment data,
 and secrets. For sources v18+ it validates subject/provenance/capture bindings;
-v19 also validates and discards Bundle linkage. It performs no network request and
-provides no database or task write control.
+v19-v20 also validate and discard Bundle linkage, and v20 additionally
+validates the Bundle-v2 verification basis and null Runner observation. It
+performs no network request and provides no database or task write control.
 
 An optional browser-only refresh profile may exist at the physical installed
 package's `config/viewer.json`. Taskgov never creates or edits it, and the file
@@ -534,10 +544,12 @@ supplies that authorization.
 
 Version 0.12.0 is an unpublished local candidate. Schema v19 retains the
 schema-v18 capture ledger, subjects/provenance, retargeting, and 1,000-character
-capacity, then activates native Bundles and fixed Evidence JSON v1. Pre-v19
-cycles remain index-only `legacy_unknown`; setup repairs, doctor observes, and
+capacity, then activates Bundle v1 and fixed Evidence JSON v1. Schema v20
+preserves those Bundle bytes and digests, writes Bundle v2 with a null Runner
+observation for new native completions, and publishes Evidence index v2.
+Pre-v19 cycles remain `legacy_unknown`; setup repairs, doctor observes, and
 post-commit order is Evidence, Viewer, then backup. Viewer snapshot v4 accepts
-source schemas v5-v19 while exposing no Evidence UI. No Runner, Analyzer,
+source schemas v5-v20 while exposing no Evidence UI. No Runner, Analyzer,
 network/model invocation, command leaf, or normal-loop call is activated. The
 public inventory is exactly 21 leaves, and the normal no-finding
 Tier 2 flow remains bounded to ten calls, or eleven with the enabled Effort

@@ -400,7 +400,7 @@ TASK_STATUS_VALUES = {
     "paused",
     "done",
 }
-CURRENT_UNITS = ("TG-M24.R3A",)
+CURRENT_UNITS = ("TG-M24.R3B",)
 NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
     for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
@@ -1508,9 +1508,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.R3A"],
+                "current_units": ["TG-M24.R3B"],
                 "inactive_units": [
-                    "TG-M24.R3B",
                     "TG-M24.R4B",
                     "TG-M24.R5",
                     "TG-M24.2A",
@@ -2075,8 +2074,8 @@ def _m24_trusted_local_authority_sync(
         ("tg-m24-r2c", "tg-m24.r2c", "accepted"),
         ("tg-m24-r4a", "tg-m24.r4a", "accepted"),
         ("tg-m24-r4v", "tg-m24.r4v", "accepted"),
-        ("tg-m24-r3a", "tg-m24.r3a", "current"),
-        ("tg-m24-r3b", "tg-m24.r3b", "inactive"),
+        ("tg-m24-r3a", "tg-m24.r3a", "accepted"),
+        ("tg-m24-r3b", "tg-m24.r3b", "current"),
         ("tg-m24-r4b", "tg-m24.r4b", "inactive"),
         ("tg-m24-r5", "tg-m24.r5", "inactive"),
         ("tg-m24-2a", "tg-m24.2a", "inactive"),
@@ -2125,7 +2124,7 @@ def _m24_trusted_local_authority_sync(
             Issue(
                 "m24_current_binding",
                 M24,
-                "M24 accepted predecessors, sole current R3A unit, or inactive successors drifted",
+                "M24 accepted predecessors, sole current R3B unit, or inactive successors drifted",
             )
         )
 

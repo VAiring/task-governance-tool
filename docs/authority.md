@@ -43,10 +43,11 @@ TG-M24.R2A, TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are accepted pred
 whose retired adversarial qualification details supply no current gate.
 Accepted R4A left its inventory-approved retired repository material and
 dedicated tests physically absent, without an archive or dormant copy.
-TG-M24.1B is superseded and non-gating. TG-M24.R3A is the sole current
-authority-only unit; TG-M24.R3B through TG-M24.CP4 remain inactive in the
-exact sequential order owned by the routed contract. The separate TG-M24.R2
-bootstrap checkpoint supported accepted R1 but activates no product behavior.
+TG-M24.1B is superseded and non-gating. TG-M24.R3A is an accepted predecessor;
+TG-M24.R3B is the sole current unit, and TG-M24.R4B through TG-M24.CP4 remain
+inactive in the exact sequential order owned by the routed contract. The
+separate TG-M24.R2 bootstrap checkpoint supported accepted R1 but activates no
+product behavior.
 No TG-M23 execution unit is current, and no TG-M24 Runner runtime is active;
 network/live Analyzer acceptance remains outside the accepted scope. The
 derived-evidence contract is the sole unit owner/router; its process-safety
@@ -60,9 +61,9 @@ or core semantics.
 TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
 preserves the inactive post-M24 normalization scope after TG-M24.CP4. Neither
 route changes product behavior. M24.1 design, M24.1A, R1, R2A, R2B, R2C,
-R4A, and R4V are accepted predecessors, M24.1B is superseded, R3A is current, every
-later repair and acceptance unit is inactive, and indexing or reading them
-activates no product behavior.
+R4A, R4V, and R3A are accepted predecessors, M24.1B is superseded, R3B is
+current, every later repair and acceptance unit is inactive, and indexing or
+reading them activates no product behavior.
 
 ## Non-Authoritative History
 
@@ -138,9 +139,8 @@ owner, route, unit, and membership are the enforced meaning.
     {
       "path": "docs/execution-contracts/tg-m24-verification-runner.md",
       "route_anchor": "tg-m24-verification-runner",
-      "current_units": ["TG-M24.R3A"],
+      "current_units": ["TG-M24.R3B"],
       "inactive_units": [
-        "TG-M24.R3B",
         "TG-M24.R4B",
         "TG-M24.R5",
         "TG-M24.2A",

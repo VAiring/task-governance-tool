@@ -10,6 +10,7 @@ from unittest import mock
 from tests.m14_test_support import SOURCE_SKILL_ROOT
 
 from task_governance_tool import backup as backup_service
+from task_governance_tool import tasks as tasks_service
 from task_governance_tool.backup import (
     discover_managed_backup_metadata,
     managed_backup_lock,
@@ -20,6 +21,7 @@ from task_governance_tool.storage import (
     StorageError,
     begin_initialized_write,
     configure_project_maintenance,
+    connect_existing,
     connect_initialized,
     initialize_database,
     read_managed_backup_repository,
@@ -27,6 +29,7 @@ from task_governance_tool.storage import (
     record_managed_backup,
     resolve_database_target,
 )
+from task_governance_tool.tasks import add_task
 
 
 SCRIPT_PATH = SOURCE_SKILL_ROOT / "scripts" / "taskgov.py"
@@ -75,6 +78,354 @@ def repository(target):
 
 
 class RoutineBackupTests(unittest.TestCase):
+    def test_copy_reuses_only_local_successful_privacy_checks_and_rechecks_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp))
+            title = "Backup privacy cache task"
+            description = "Backup privacy cache description"
+            with closing(connect_initialized(target)) as connection:
+                add_task(
+                    connection,
+                    target.project,
+                    database_target=target,
+                    title=title,
+                    description=description,
+                )
+                connection.commit()
+
+            real_detector = tasks_service.reject_private_or_raw_content
+            with mock.patch.object(
+                tasks_service,
+                "reject_private_or_raw_content",
+                wraps=real_detector,
+            ) as detector:
+                backup_service._copy(target, metadata(1, 0, 3))
+
+            observed = [call.args for call in detector.call_args_list]
+            self.assertEqual(observed.count(("title", title)), 1)
+            self.assertEqual(observed.count(("description", description)), 1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp))
+            with closing(connect_initialized(target)) as connection:
+                task = add_task(
+                    connection,
+                    target.project,
+                    database_target=target,
+                    title="Backup drift task",
+                    description="Initial safe description",
+                ).task
+                connection.commit()
+
+            forbidden = "Authorization: private-backup-value"
+            real_fsync = backup_service.os.fsync
+
+            def mutate_current_after_copy(file_descriptor):
+                real_fsync(file_descriptor)
+                with closing(connect_existing(target.db_path)) as connection:
+                    connection.execute(
+                        "UPDATE tasks SET description = ? WHERE task_id = ?",
+                        (forbidden, task["task_id"]),
+                    )
+                    connection.commit()
+
+            with (
+                mock.patch.object(
+                    backup_service.os,
+                    "fsync",
+                    side_effect=mutate_current_after_copy,
+                ),
+                mock.patch.object(
+                    backup_service.os,
+                    "replace",
+                    wraps=backup_service.os.replace,
+                ) as replace_file,
+                mock.patch.object(
+                    tasks_service,
+                    "reject_private_or_raw_content",
+                    wraps=real_detector,
+                ) as detector,
+            ):
+                with self.assertRaises(StorageError):
+                    backup_service._copy(target, metadata(2, 1, 3))
+
+            replace_file.assert_not_called()
+            self.assertEqual(
+                [call.args for call in detector.call_args_list].count(
+                    ("description", forbidden)
+                ),
+                1,
+            )
+            self.assertEqual(discover_managed_backup_metadata(target), ())
+
+    def test_routine_seeds_only_immediate_post_reconcile_and_clears_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp))
+            title = "Routine privacy seed task"
+            description = "Routine privacy seed description"
+            with closing(connect_initialized(target)) as connection:
+                add_task(
+                    connection,
+                    target.project,
+                    database_target=target,
+                    title=title,
+                    description=description,
+                )
+                connection.commit()
+
+            real_copy = backup_service._copy
+            real_reconcile = backup_service._reconcile_v11
+            real_publication_validation = backup_service._validate_publication_source
+            real_artifact_validation = backup_service._artifact_schema_version
+            real_detector = tasks_service.reject_private_or_raw_content
+            root_caches = []
+
+            def capture_copy(*args, **kwargs):
+                root_caches.append(kwargs["_privacy_success_cache"])
+                return real_copy(*args, **kwargs)
+
+            with (
+                mock.patch.object(
+                    backup_service,
+                    "_copy",
+                    side_effect=capture_copy,
+                ),
+                mock.patch.object(
+                    backup_service,
+                    "_reconcile_v11",
+                    wraps=real_reconcile,
+                ) as reconcile,
+                mock.patch.object(
+                    backup_service,
+                    "_validate_publication_source",
+                    wraps=real_publication_validation,
+                ) as publication_validation,
+                mock.patch.object(
+                    backup_service,
+                    "_artifact_schema_version",
+                    wraps=real_artifact_validation,
+                ) as artifact_validation,
+                mock.patch.object(
+                    tasks_service,
+                    "reject_private_or_raw_content",
+                    wraps=real_detector,
+                ) as detector,
+            ):
+                first = run_routine_backup(target, observed_at=timestamp(0))
+
+                self.assertEqual((first.code, first.attempted), ("succeeded", True))
+                observed = [call.args for call in detector.call_args_list]
+                self.assertEqual(observed.count(("title", title)), 1)
+                self.assertEqual(observed.count(("description", description)), 1)
+                self.assertEqual(publication_validation.call_count, 3)
+                self.assertEqual(artifact_validation.call_count, 1)
+                self.assertEqual(len(reconcile.call_args_list), 2)
+                self.assertIsNone(
+                    reconcile.call_args_list[0].kwargs.get("_privacy_success_seed")
+                )
+                first_seed = reconcile.call_args_list[1].kwargs[
+                    "_privacy_success_seed"
+                ]
+                self.assertIs(type(first_seed), frozenset)
+                self.assertTrue(first_seed)
+                self.assertEqual(root_caches[0], set())
+
+                detector.reset_mock()
+                publication_validation.reset_mock()
+                artifact_validation.reset_mock()
+                reconcile.reset_mock()
+
+                second = run_routine_backup(target, observed_at=timestamp(30))
+
+                self.assertEqual(
+                    (second.code, second.attempted),
+                    ("succeeded", True),
+                )
+                observed = [call.args for call in detector.call_args_list]
+                self.assertEqual(observed.count(("title", title)), 2)
+                self.assertEqual(observed.count(("description", description)), 2)
+                self.assertEqual(publication_validation.call_count, 3)
+                self.assertEqual(artifact_validation.call_count, 3)
+                self.assertEqual(len(reconcile.call_args_list), 2)
+                self.assertIsNone(
+                    reconcile.call_args_list[0].kwargs.get("_privacy_success_seed")
+                )
+                second_seed = reconcile.call_args_list[1].kwargs[
+                    "_privacy_success_seed"
+                ]
+                self.assertIs(type(second_seed), frozenset)
+                self.assertTrue(second_seed)
+
+            self.assertEqual(len(root_caches), 2)
+            self.assertIsNot(root_caches[0], root_caches[1])
+            self.assertTrue(all(cache == set() for cache in root_caches))
+
+    def test_post_reconcile_artifacts_copy_seed_without_cross_artifact_merge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp))
+            for item in (metadata(1, 0, 3), metadata(2, 1, 3)):
+                backup_service._copy(target, item)
+                record_managed_backup(target, item)
+
+            seed = frozenset({("ordinary", "title", "seed-only-value")})
+            artifact_local = (
+                "ordinary",
+                "description",
+                "artifact-local-value",
+            )
+            real_validator = backup_service.validate_evidence_ledger_storage
+            observed_before = []
+            local_caches = []
+
+            def observe_artifact_cache(connection, **kwargs):
+                cache = kwargs["_privacy_success_cache"]
+                observed_before.append(set(cache))
+                local_caches.append(cache)
+                result = real_validator(connection, **kwargs)
+                cache.add(artifact_local)
+                return result
+
+            with mock.patch.object(
+                backup_service,
+                "validate_evidence_ledger_storage",
+                side_effect=observe_artifact_cache,
+            ):
+                artifacts = backup_service._discover(
+                    target,
+                    _privacy_success_seed=seed,
+                )
+
+            self.assertEqual(len(artifacts), 2)
+            self.assertEqual(observed_before, [set(seed), set(seed)])
+            self.assertTrue(all(cache == set() for cache in local_caches))
+            self.assertEqual(seed, frozenset({("ordinary", "title", "seed-only-value")}))
+
+            with mock.patch.object(
+                backup_service,
+                "_artifact_schema_version",
+                wraps=backup_service._artifact_schema_version,
+            ) as artifact_validation:
+                with self.assertRaises(StorageError):
+                    backup_service._discover(
+                        target,
+                        _privacy_success_seed=frozenset(
+                            {("unsupported", "title", "invalid-mode")}
+                        ),
+                    )
+            artifact_validation.assert_not_called()
+            with self.assertRaises(StorageError):
+                backup_service._copy(
+                    target,
+                    metadata(3, 2, 3),
+                    _privacy_success_cache={
+                        ("ordinary", "title", "preseeded-root")
+                    },
+                )
+
+    def test_post_reconcile_rechecks_new_artifact_value_and_clears_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp))
+            with closing(connect_initialized(target)) as connection:
+                task = add_task(
+                    connection,
+                    target.project,
+                    database_target=target,
+                    title="Post reconcile drift task",
+                    description="Initial post reconcile description",
+                ).task
+                connection.commit()
+
+            forbidden = "Authorization: post-reconcile-private-value"
+            real_copy = backup_service._copy
+            real_record = backup_service.record_managed_backup
+            real_detector = tasks_service.reject_private_or_raw_content
+            root_caches = []
+            mutated_artifacts = []
+
+            def capture_copy(*args, **kwargs):
+                root_caches.append(kwargs["_privacy_success_cache"])
+                return real_copy(*args, **kwargs)
+
+            def record_then_mutate(*args, **kwargs):
+                result = real_record(*args, **kwargs)
+                published = args[1]
+                artifact_path = (
+                    target.resolved_backups_path
+                    / backup_service._filename(published)
+                )
+                mutated_artifacts.append(artifact_path)
+                with closing(connect_existing(artifact_path)) as connection:
+                    connection.execute(
+                        "UPDATE tasks SET description = ? WHERE task_id = ?",
+                        (forbidden, task["task_id"]),
+                    )
+                    connection.commit()
+                return result
+
+            with (
+                mock.patch.object(
+                    backup_service,
+                    "_copy",
+                    side_effect=capture_copy,
+                ),
+                mock.patch.object(
+                    backup_service,
+                    "record_managed_backup",
+                    side_effect=record_then_mutate,
+                ),
+                mock.patch.object(
+                    tasks_service,
+                    "reject_private_or_raw_content",
+                    wraps=real_detector,
+                ) as detector,
+            ):
+                result = run_routine_backup(target, observed_at=timestamp(0))
+
+            self.assertEqual((result.code, result.attempted), ("failed", True))
+            self.assertEqual(len(root_caches), 1)
+            self.assertEqual(root_caches[0], set())
+            self.assertEqual(
+                [call.args for call in detector.call_args_list].count(
+                    ("description", forbidden)
+                ),
+                1,
+            )
+            self.assertEqual(repository(target).generations, ())
+            self.assertEqual(discover_managed_backup_metadata(target), ())
+            self.assertEqual(len(mutated_artifacts), 1)
+            self.assertTrue(mutated_artifacts[0].is_file())
+
+    def test_routine_clears_copy_cache_when_generation_record_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_target(Path(tmp))
+            real_copy = backup_service._copy
+            root_caches = []
+
+            def capture_copy(*args, **kwargs):
+                root_caches.append(kwargs["_privacy_success_cache"])
+                return real_copy(*args, **kwargs)
+
+            with (
+                mock.patch.object(
+                    backup_service,
+                    "_copy",
+                    side_effect=capture_copy,
+                ),
+                mock.patch.object(
+                    backup_service,
+                    "record_managed_backup",
+                    side_effect=StorageError(
+                        "internal_error",
+                        "injected generation record failure",
+                    ),
+                ),
+            ):
+                result = run_routine_backup(target, observed_at=timestamp(0))
+
+            self.assertEqual((result.code, result.attempted), ("failed", True))
+            self.assertEqual(len(root_caches), 1)
+            self.assertEqual(root_caches[0], set())
+
     def test_opt_in_and_exact_due_offsets_attempt_only_zero_thirty_sixty(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

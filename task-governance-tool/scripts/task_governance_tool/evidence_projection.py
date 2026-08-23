@@ -52,10 +52,12 @@ from task_governance_tool.storage import (
 
 
 BUNDLE_DOMAIN = b"taskgov-completion-evidence-bundle-v1\0"
+BUNDLE_V2_DOMAIN = b"taskgov-completion-evidence-bundle-v2\0"
 FINDING_SNAPSHOT_DOMAIN = (
     b"taskgov-completion-bundle-finding-snapshot-v1\0"
 )
 INDEX_DOMAIN = b"taskgov-evidence-index-v1\0"
+INDEX_V2_DOMAIN = b"taskgov-evidence-index-v2\0"
 
 BUNDLE_MAX_BYTES = 16_777_216
 INDEX_MAX_BYTES = 67_108_864
@@ -114,6 +116,9 @@ _PAYLOAD_KEYS = frozenset(
         "task",
         "verification_receipt",
     }
+)
+_PAYLOAD_V2_KEYS = frozenset(
+    {*_PAYLOAD_KEYS, "verification_basis", "runner_observation"}
 )
 _ARTIFACT_KEYS = frozenset(
     {
@@ -250,6 +255,14 @@ _VERIFICATION_SUBJECT_KEYS = frozenset(
         "verification_criterion_id",
     }
 )
+_VERIFICATION_BASIS_KEYS = frozenset(
+    {
+        "basis_version",
+        "kind",
+        "runner_observation_id",
+        "verification_receipt_id",
+    }
+)
 _INDEX_PAYLOAD_KEYS = frozenset(
     {
         "source_schema_version",
@@ -273,6 +286,7 @@ _INDEX_ENTRY_KEYS = frozenset(
         "sealed_at",
     }
 )
+_INDEX_V2_ENTRY_KEYS = frozenset({*_INDEX_ENTRY_KEYS, "bundle_format_version"})
 
 
 @dataclass(frozen=True)
@@ -505,8 +519,12 @@ def finding_snapshot_digest(snapshot: Mapping[str, Any]) -> str:
 def _validate_bundle_payload(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    _exact_integer(payload["source_schema_version"], 19)
-    _exact_integer(payload["bundle_version"], 1)
+    source_schema_version = _integer(payload["source_schema_version"])
+    bundle_version = _integer(payload["bundle_version"])
+    version_pair = (source_schema_version, bundle_version)
+    if version_pair not in {(19, 1), (20, 2)}:
+        raise _inconsistent()
+    is_v2 = version_pair == (20, 2)
     _utf8(payload["project_id"])
     _utf8(payload["completion_cycle_id"])
     _utf8(payload["sealed_at"])
@@ -633,6 +651,11 @@ def _validate_bundle_payload(
         )
     )
     payload["evidence_references"] = references
+    if is_v2 and (
+        any(item["relation"] == "runner_observation" for item in links)
+        or any(item["source_kind"] == "runner_observation" for item in references)
+    ):
+        raise _inconsistent()
 
     findings = [
         _mapping(item, _FINDING_KEYS)
@@ -714,6 +737,34 @@ def _validate_bundle_payload(
         _integer(verification["duration_ms"])
         verification["verification_subject"] = subject
     payload["verification_receipt"] = verification
+    if is_v2:
+        verification_basis = _mapping(
+            payload["verification_basis"],
+            _VERIFICATION_BASIS_KEYS,
+        )
+        _exact_integer(verification_basis["basis_version"], 1)
+        kind = verification_basis["kind"]
+        receipt_id = (
+            verification["verification_receipt_id"]
+            if verification is not None
+            else None
+        )
+        if (
+            verification_basis["runner_observation_id"] is not None
+            or payload["runner_observation"] is not None
+            or verification_basis["verification_receipt_id"] != receipt_id
+            or (
+                kind == "caller_attestation"
+                and verification is None
+            )
+            or (
+                kind == "not_required"
+                and verification is not None
+            )
+            or kind not in {"caller_attestation", "not_required"}
+        ):
+            raise _inconsistent()
+        payload["verification_basis"] = verification_basis
     canonical_json_bytes(payload)
     return payload
 
@@ -721,8 +772,29 @@ def _validate_bundle_payload(
 def assemble_bundle_payload(
     basis: Mapping[str, Any],
 ) -> dict[str, Any]:
-    payload = _mapping(basis, _PAYLOAD_KEYS)
+    if not isinstance(basis, Mapping):
+        raise _inconsistent()
+    version_pair = (
+        basis.get("source_schema_version"),
+        basis.get("bundle_version"),
+    )
+    keys = _PAYLOAD_V2_KEYS if version_pair == (20, 2) else _PAYLOAD_KEYS
+    payload = _mapping(basis, keys)
     return _validate_bundle_payload(payload)
+
+
+def _bundle_domain_and_format(payload: Mapping[str, Any]) -> tuple[bytes, int]:
+    if (
+        payload["source_schema_version"],
+        payload["bundle_version"],
+    ) == (19, 1):
+        return BUNDLE_DOMAIN, 1
+    if (
+        payload["source_schema_version"],
+        payload["bundle_version"],
+    ) == (20, 2):
+        return BUNDLE_V2_DOMAIN, 2
+    raise _inconsistent()
 
 
 def bundle_payload_digest(payload: Mapping[str, Any]) -> str:
@@ -730,7 +802,8 @@ def bundle_payload_digest(payload: Mapping[str, Any]) -> str:
     encoded = canonical_json_bytes(normalized)
     if len(encoded) > BUNDLE_MAX_BYTES:
         raise _too_large()
-    return _domain_digest(BUNDLE_DOMAIN, encoded)
+    domain, _ = _bundle_domain_and_format(normalized)
+    return _domain_digest(domain, encoded)
 
 
 def build_bundle_artifact(
@@ -740,10 +813,11 @@ def build_bundle_artifact(
     payload_bytes = canonical_json_bytes(payload)
     if len(payload_bytes) > BUNDLE_MAX_BYTES:
         raise _too_large()
-    digest = _domain_digest(BUNDLE_DOMAIN, payload_bytes)
+    domain, format_version = _bundle_domain_and_format(payload)
+    digest = _domain_digest(domain, payload_bytes)
     envelope = {
         "bundle_digest": digest,
-        "format_version": 1,
+        "format_version": format_version,
         "payload": payload,
     }
     document = canonical_json_document_bytes(envelope)
@@ -1045,7 +1119,7 @@ def build_native_bundle_plan(
             "digest": snapshot["basis_digest"],
         },
         "bundle_id": completion_identity.completion_evidence_bundle_id,
-        "bundle_version": 1,
+        "bundle_version": 2,
         "completion_cycle_id": completion_identity.completion_cycle_id,
         "cycle_ordinal": completion_identity.saved_cycle_ordinal,
         "sealed_at": sealed_at,
@@ -1088,7 +1162,7 @@ def build_native_bundle_plan(
         "omissions": omissions,
         "project_id": cycle.project_id,
         "review_receipts": review_receipts,
-        "source_schema_version": 19,
+        "source_schema_version": 20,
         "target": {
             "kind": cycle.review_target_kind,
             "value": cycle.review_target_value,
@@ -1104,6 +1178,13 @@ def build_native_bundle_plan(
             if basis.verification_receipt is not None
             else None
         ),
+        "verification_basis": {
+            "basis_version": 1,
+            "kind": cycle.verification_basis_kind,
+            "runner_observation_id": None,
+            "verification_receipt_id": cycle.verification_receipt_id,
+        },
+        "runner_observation": None,
     }
     artifact = build_bundle_artifact(payload)
     reference_ids = tuple(
@@ -1137,6 +1218,8 @@ def build_native_bundle_plan(
 
 def _validate_index_entry(
     entry: dict[str, Any],
+    *,
+    index_format_version: int,
 ) -> dict[str, Any]:
     _utf8(entry["task_id"])
     _utf8(entry["completion_cycle_id"])
@@ -1149,11 +1232,21 @@ def _validate_index_entry(
         "file_digest",
         "sealed_at",
     )
+    if index_format_version == 2:
+        identity_fields = (*identity_fields, "bundle_format_version")
     if state == "legacy_unknown":
         if any(entry[field] is not None for field in identity_fields):
             raise _inconsistent()
     elif state == "native":
-        if any(type(entry[field]) is not str for field in identity_fields):
+        string_identity_fields = tuple(
+            field for field in identity_fields if field != "bundle_format_version"
+        )
+        if any(type(entry[field]) is not str for field in string_identity_fields):
+            raise _inconsistent()
+        if (
+            index_format_version == 2
+            and _integer(entry["bundle_format_version"]) not in {1, 2}
+        ):
             raise _inconsistent()
         bundle_id = entry["bundle_id"]
         if (
@@ -1175,13 +1268,24 @@ def assemble_index_payload(
     basis: Mapping[str, Any],
 ) -> dict[str, Any]:
     payload = _mapping(basis, _INDEX_PAYLOAD_KEYS)
-    _exact_integer(payload["source_schema_version"], 19)
+    source_schema_version = _integer(payload["source_schema_version"])
+    if source_schema_version not in {19, 20}:
+        raise _inconsistent()
+    index_format_version = 1 if source_schema_version == 19 else 2
     _utf8(payload["project_id"])
     _integer(payload["projection_generation"])
     _integer(payload["bundle_count"])
     _integer(payload["legacy_count"])
     entries = [
-        _validate_index_entry(_mapping(item, _INDEX_ENTRY_KEYS))
+        _validate_index_entry(
+            _mapping(
+                item,
+                _INDEX_ENTRY_KEYS
+                if index_format_version == 1
+                else _INDEX_V2_ENTRY_KEYS,
+            ),
+            index_format_version=index_format_version,
+        )
         for item in _array(payload["entries"])
     ]
     if len(entries) > INDEX_MAX_ENTRIES:
@@ -1212,8 +1316,13 @@ def assemble_index_payload(
 
 def index_payload_digest(payload: Mapping[str, Any]) -> str:
     normalized = assemble_index_payload(payload)
+    domain = (
+        INDEX_DOMAIN
+        if normalized["source_schema_version"] == 19
+        else INDEX_V2_DOMAIN
+    )
     return _domain_digest(
-        INDEX_DOMAIN,
+        domain,
         canonical_json_bytes(normalized),
     )
 
@@ -1223,9 +1332,11 @@ def build_index_artifact(
 ) -> IndexArtifact:
     payload = assemble_index_payload(basis)
     payload_bytes = canonical_json_bytes(payload)
-    digest = _domain_digest(INDEX_DOMAIN, payload_bytes)
+    format_version = 1 if payload["source_schema_version"] == 19 else 2
+    domain = INDEX_DOMAIN if format_version == 1 else INDEX_V2_DOMAIN
+    digest = _domain_digest(domain, payload_bytes)
     envelope = {
-        "format_version": 1,
+        "format_version": format_version,
         "index_digest": digest,
         "payload": payload,
     }
@@ -1442,6 +1553,19 @@ def _build_projection_bundle_artifact(
             else None
         ),
     }
+    version_pair = (bundle.source_schema_version, bundle.bundle_version)
+    if version_pair == (20, 2):
+        payload["verification_basis"] = {
+            "basis_version": 1,
+            "kind": bundle.verification_basis_kind,
+            "runner_observation_id": (
+                bundle.verification_runner_observation_id
+            ),
+            "verification_receipt_id": bundle.verification_receipt_id,
+        }
+        payload["runner_observation"] = None
+    elif version_pair != (19, 1):
+        raise _inconsistent()
     artifact = build_bundle_artifact(payload)
     if (
         artifact.bundle_digest != bundle.bundle_digest
@@ -1461,7 +1585,7 @@ def _render_projection(
         or basis.source_generation < 0
     ):
         raise _inconsistent()
-    _exact_integer(basis.source_schema_version, 19)
+    _exact_integer(basis.source_schema_version, 20)
 
     bundle_rows = {
         bundle.completion_evidence_bundle_id: bundle
@@ -1498,6 +1622,7 @@ def _render_projection(
                     "bundle_digest": None,
                     "file_digest": None,
                     "sealed_at": None,
+                    "bundle_format_version": None,
                 }
             )
             continue
@@ -1528,6 +1653,7 @@ def _render_projection(
                 "bundle_digest": artifact.bundle_digest,
                 "file_digest": artifact.file_digest,
                 "sealed_at": stored.sealed_at,
+                "bundle_format_version": stored.bundle_version,
             }
         )
     if used_bundle_ids != set(rendered_by_id):
@@ -1535,7 +1661,7 @@ def _render_projection(
 
     index = build_index_artifact(
         {
-            "source_schema_version": 19,
+            "source_schema_version": basis.source_schema_version,
             "project_id": basis.project_id,
             "projection_generation": basis.source_generation,
             "bundle_count": len(rendered_by_id),

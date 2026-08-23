@@ -48,8 +48,10 @@ from task_governance_tool.storage import (
     record_backup_attempt_outcome,
     record_managed_backup,
     record_setup_backup,
+    schema_objects_inconsistent_with_version,
     utc_now,
     validate_current_database,
+    validate_current_schema20_admitted_rows,
     validate_evidence_ledger_storage,
     validate_evidence_ledger_storage_for_recovery,
     validate_migration_backup_metadata,
@@ -117,6 +119,24 @@ def _failure() -> StorageError:
 
 def _restore_failure() -> StorageError:
     return StorageError("setup_restore_failed", _RESTORE_FAILURE_MESSAGE)
+
+
+def _validated_privacy_success_seed(
+    seed: frozenset[tuple[str, str, str]] | None,
+) -> frozenset[tuple[str, str, str]] | None:
+    if seed is None:
+        return None
+    if type(seed) is not frozenset:
+        raise _failure()
+    for item in seed:
+        if (
+            type(item) is not tuple
+            or len(item) != 3
+            or any(type(value) is not str for value in item)
+            or item[0] not in {"ordinary", "legacy_m19_7_stored"}
+        ):
+            raise _failure()
+    return seed
 
 
 def _canonical_rollback_journal_present(target: DatabaseTarget) -> bool:
@@ -321,6 +341,7 @@ def _validate_database(
             or version > SCHEMA_VERSION
             or (expected_version is not None and version != expected_version)
             or missing_migration_versions(connection, version)
+            or schema_objects_inconsistent_with_version(connection, version)
         ):
             raise _failure()
         projects = connection.execute(
@@ -349,11 +370,16 @@ def _validate_publication_source(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
     expected_version: int | None = None,
+    *,
+    privacy_success_cache: set[tuple[str, str, str]] | None = None,
 ) -> int:
     version = _validate_database(connection, target, expected_version)
     if version == SCHEMA_VERSION:
         validate_current_database(connection, target)
-        validate_evidence_ledger_storage(connection)
+        validate_evidence_ledger_storage(
+            connection,
+            _privacy_success_cache=privacy_success_cache,
+        )
     return version
 
 
@@ -364,6 +390,7 @@ def _recovery_content_valid(
 ) -> bool:
     try:
         if version == SCHEMA_VERSION:
+            validate_current_schema20_admitted_rows(connection)
             validate_evidence_ledger_storage_for_recovery(connection)
         else:
             validate_stored_task_verification(
@@ -385,26 +412,53 @@ def _valid_artifact(
     path: Path,
     target: DatabaseTarget,
     identity: tuple[int, int, int, int],
+    *,
+    _privacy_success_seed: frozenset[tuple[str, str, str]] | None = None,
 ) -> bool:
-    return _artifact_schema_version(path, target, identity) is not None
+    return (
+        _artifact_schema_version(
+            path,
+            target,
+            identity,
+            _privacy_success_seed=_privacy_success_seed,
+        )
+        is not None
+    )
 
 
 def _artifact_schema_version(
     path: Path,
     target: DatabaseTarget,
     identity: tuple[int, int, int, int],
+    *,
+    _privacy_success_seed: frozenset[tuple[str, str, str]] | None = None,
 ) -> int | None:
+    privacy_success_cache = (
+        set(_privacy_success_seed) if _privacy_success_seed is not None else None
+    )
     try:
         with closing(connect_readonly(path)) as connection:
             version = _validate_database(connection, target)
             if version == SCHEMA_VERSION:
-                validate_evidence_ledger_storage(connection)
+                validate_current_schema20_admitted_rows(connection)
+                validate_evidence_ledger_storage(
+                    connection,
+                    _privacy_success_cache=privacy_success_cache,
+                )
         return version if _file_identity(path) == identity else None
     except (OSError, sqlite3.Error, StorageError):
         return None
+    finally:
+        if privacy_success_cache is not None:
+            privacy_success_cache.clear()
 
 
-def _discover(target: DatabaseTarget) -> list[_Artifact]:
+def _discover(
+    target: DatabaseTarget,
+    *,
+    _privacy_success_seed: frozenset[tuple[str, str, str]] | None = None,
+) -> list[_Artifact]:
+    privacy_success_seed = _validated_privacy_success_seed(_privacy_success_seed)
     directory = _directory(target, create=False)
     if not directory.exists():
         return []
@@ -420,7 +474,12 @@ def _discover(target: DatabaseTarget) -> list[_Artifact]:
             continue
         path = directory / name
         identity = _file_identity(path)
-        if identity is None or not _valid_artifact(path, target, identity):
+        if identity is None or not _valid_artifact(
+            path,
+            target,
+            identity,
+            _privacy_success_seed=privacy_success_seed,
+        ):
             continue
         if metadata.generation_id in identities:
             raise _failure()
@@ -1113,13 +1172,17 @@ def _reconcile_v11(
     *,
     observed_at: str,
     migration_source: bool = False,
+    _privacy_success_seed: frozenset[tuple[str, str, str]] | None = None,
 ) -> bool:
     """Repair one bounded v11 generation set before any new publication."""
     timestamp = validate_utc_timestamp(
         observed_at,
         field="backup reconciliation time",
     )
-    artifacts = _discover(target)
+    artifacts = _discover(
+        target,
+        _privacy_success_seed=_privacy_success_seed,
+    )
     artifact_by_id = {
         artifact.metadata.generation_id: artifact for artifact in artifacts
     }
@@ -1251,12 +1314,29 @@ def _reconciliation_needed(
     )
 
 
-def _copy(target: DatabaseTarget, metadata: MigrationBackupMetadata) -> int:
+def _copy(
+    target: DatabaseTarget,
+    metadata: MigrationBackupMetadata,
+    *,
+    _privacy_success_cache: set[tuple[str, str, str]] | None = None,
+) -> int:
     temporary: Path | None = None
     descriptor: int | None = None
+    caller_owns_privacy_success_cache = _privacy_success_cache is not None
+    if caller_owns_privacy_success_cache:
+        if type(_privacy_success_cache) is not set or _privacy_success_cache:
+            raise _failure()
+        privacy_success_cache = _privacy_success_cache
+    else:
+        privacy_success_cache: set[tuple[str, str, str]] = set()
+    succeeded = False
     try:
         with closing(connect_readonly(target.db_path)) as source:
-            source_version = _validate_publication_source(source, target)
+            source_version = _validate_publication_source(
+                source,
+                target,
+                privacy_success_cache=privacy_success_cache,
+            )
             directory = _directory(target, create=True)
             directory_identity = _directory_identity(directory)
             final = directory / _filename(metadata)
@@ -1278,6 +1358,7 @@ def _copy(target: DatabaseTarget, metadata: MigrationBackupMetadata) -> int:
                     destination,
                     target,
                     source_version,
+                    privacy_success_cache=privacy_success_cache,
                 )
 
         if (
@@ -1291,13 +1372,21 @@ def _copy(target: DatabaseTarget, metadata: MigrationBackupMetadata) -> int:
         with temporary.open("r+b") as stream:
             os.fsync(stream.fileno())
         with closing(connect_readonly(target.db_path)) as current:
-            _validate_publication_source(current, target, source_version)
+            _validate_publication_source(
+                current,
+                target,
+                source_version,
+                privacy_success_cache=privacy_success_cache,
+            )
             os.replace(temporary, final)
         temporary = None
+        succeeded = True
         return source_version
     except (OSError, sqlite3.Error) as exc:
         raise _failure() from exc
     finally:
+        if not caller_owns_privacy_success_cache or not succeeded:
+            privacy_success_cache.clear()
         if descriptor is not None:
             with suppress(OSError):
                 os.close(descriptor)
@@ -1412,11 +1501,26 @@ def run_routine_backup(
                     else None
                 ),
             )
-            _copy(target, metadata)
-            record_managed_backup(target, metadata)
-            if not _reconcile_v11(target, observed_at=timestamp):
-                raise _failure()
-            return RoutineBackupResult(code="succeeded", attempted=True)
+            privacy_success_cache: set[tuple[str, str, str]] = set()
+            privacy_success_seed: frozenset[tuple[str, str, str]] | None = None
+            try:
+                _copy(
+                    target,
+                    metadata,
+                    _privacy_success_cache=privacy_success_cache,
+                )
+                record_managed_backup(target, metadata)
+                privacy_success_seed = frozenset(privacy_success_cache)
+                if not _reconcile_v11(
+                    target,
+                    observed_at=timestamp,
+                    _privacy_success_seed=privacy_success_seed,
+                ):
+                    raise _failure()
+                return RoutineBackupResult(code="succeeded", attempted=True)
+            finally:
+                privacy_success_cache.clear()
+                privacy_success_seed = None
     except StorageError as exc:
         code = "deferred" if exc.code == "backup_lock_contended" else "failed"
         _record_attempt_outcome(

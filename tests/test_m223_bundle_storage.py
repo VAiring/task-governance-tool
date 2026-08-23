@@ -15,6 +15,7 @@ from tests.m223_test_support import (
     V19_TRIGGERS,
     logical_database_digest,
     remove_v19_bundle_storage_for_test,
+    remove_v20_runner_shadow_for_test,
 )
 from tests.verification_receipt_test_support import (
     add_receipt,
@@ -34,6 +35,7 @@ from task_governance_tool.storage import (
     SCHEMA_VERSION,
     StorageError,
     apply_completion_evidence_bundle_migration,
+    apply_migrations,
     capture_evidence_projection_basis,
     connect,
     current_schema_version,
@@ -173,11 +175,12 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
                 1,
             )
 
-    def test_fresh_schema_v19_has_exact_bundle_foundation_and_reenters(self):
+    def test_complete_schema_v19_has_exact_bundle_foundation_and_reenters(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path = self._initialized_database(Path(directory))
             with closing(connect(db_path)) as connection:
-                self.assertEqual(SCHEMA_VERSION, 19)
+                self.assertEqual(SCHEMA_VERSION, 20)
+                remove_v20_runner_shadow_for_test(connection)
                 self.assertEqual(current_schema_version(connection), 19)
                 marker = connection.execute(
                     "SELECT name FROM schema_migrations WHERE version = 19"
@@ -424,7 +427,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
                 ),
             )
             for mismatch, trigger_name, update_sql in corruptions:
-                for check in ("stored_validator", "v19_reentry"):
+                for check in ("stored_validator", "current_reentry"):
                     with self.subTest(mismatch=mismatch, check=check):
                         case_db = root / f"persisted-{mismatch}-{check}.sqlite"
                         shutil.copyfile(completed_db, case_db)
@@ -445,9 +448,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
                                 )
                             else:
                                 with self.assertRaises(StorageError) as raised:
-                                    apply_completion_evidence_bundle_migration(
-                                        connection
-                                    )
+                                    apply_migrations(connection)
                                 self.assertEqual(
                                     raised.exception.code,
                                     "project_state_unreadable",

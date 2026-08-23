@@ -29,9 +29,6 @@ try:
         require_capture_v1,
         verification_expectation_digest,
     )
-    from task_governance_tool.verification_runner import (
-        verification_runner_policy_digest,
-    )
 finally:
     sys.path.pop(0)
 
@@ -370,126 +367,6 @@ class AuthoritySnapshotTests(unittest.TestCase):
 
 
 class EvidenceReferenceTests(unittest.TestCase):
-    def test_runner_observation_is_machine_observed_with_closed_projection(self):
-        observation_id = "tg_verification_runner_observation_3333333333333333"
-        projection = {
-            "observation_id": observation_id,
-            "gate_eligibility_version": 0,
-            "route": "m21_fallback",
-            "reason": "plan_absent",
-            "outcome": "not_run",
-            "launch_state": "no_launch",
-            "complete_plan": 0,
-            "total_step_count": 0,
-            "completed_step_count": 0,
-            "failed_step_ordinal": None,
-            "started_at": "2026-01-01T00:00:00Z",
-            "finished_at": "2026-01-01T00:00:00Z",
-            "duration_ms": 0,
-            "cpu_time_ms": None,
-            "peak_job_memory_bytes": None,
-            "total_process_count": None,
-            "plan_blob_object_id": None,
-            "plan_raw_digest": None,
-            "plan_id": None,
-            "plan_version": None,
-            "plan_semantic_digest": None,
-            "runner_implementation_version": "taskgov-verification-runner/1",
-            "runner_implementation_digest": "sha256:" + "f" * 64,
-            "runner_policy_digest": verification_runner_policy_digest(),
-            "sandbox_provider": None,
-            "sandbox_policy_digest": None,
-            "runtime_digest": None,
-            "sanitized_result_digest": "sha256:" + "4" * 64,
-        }
-        source = EvidenceSource(
-            source_kind="runner_observation",
-            source_state="recorded",
-            source_id=observation_id,
-            source_projection=projection,
-        )
-        result = build_evidence_reference(
-            source=source,
-            project_id=PROJECT_ID,
-            task_id=TASK_ID,
-            contract_revision=3,
-            binding=binding(),
-        )
-        self.assertEqual(
-            (result.attribution.assurance_class, result.attribution.producer_class),
-            ("machine_observed", "verification_runner"),
-        )
-        self.assertEqual(result.attribution.producer_version, 1)
-        self.assertTrue(result.digest.startswith("sha256:"))
-
-        with self.assertRaises(EvidenceLedgerError):
-            EvidenceSource(
-                source_kind="runner_observation",
-                source_state="recorded",
-                source_id=observation_id,
-                source_projection={**projection, "stdout": "forbidden"},
-            )
-
-        uncertain_cleanup = {
-            **projection,
-            "complete_plan": 0,
-            "completed_step_count": 1,
-            "cpu_time_ms": None,
-            "duration_ms": 0,
-            "failed_step_ordinal": None,
-            "finished_at": projection["started_at"],
-            "launch_state": "launch_uncertain",
-            "outcome": "sandbox_cleanup_failed",
-            "peak_job_memory_bytes": None,
-            "total_process_count": None,
-            "reason": "sandbox_cleanup_failed",
-            "route": "blocked",
-            "total_step_count": 2,
-        }
-        with self.assertRaises(EvidenceLedgerError) as raised:
-            EvidenceSource(
-                source_kind="runner_observation",
-                source_state="recorded",
-                source_id=observation_id,
-                source_projection=uncertain_cleanup,
-            )
-        self.assertEqual(raised.exception.code, "evidence_ledger_inconsistent")
-        self.assertEqual(
-            str(raised.exception),
-            "stored evidence ledger is inconsistent",
-        )
-
-        invalid_changes = (
-            {"runner_policy_digest": "sha256:" + "9" * 64},
-            {
-                "complete_plan": 0,
-                "failed_step_ordinal": 1,
-                "outcome": "fail",
-                "reason": "timeout",
-            },
-            {
-                "complete_plan": 0,
-                "failed_step_ordinal": None,
-                "outcome": "fail",
-                "reason": "step_nonzero",
-            },
-            {
-                "complete_plan": 0,
-                "failed_step_ordinal": 1,
-                "outcome": "process_error",
-                "reason": "process_create_failed",
-            },
-        )
-        for changes in invalid_changes:
-            with self.subTest(changes=changes):
-                with self.assertRaises(EvidenceLedgerError):
-                    EvidenceSource(
-                        source_kind="runner_observation",
-                        source_state="recorded",
-                        source_id=observation_id,
-                        source_projection={**projection, **changes},
-                    )
-
     def test_closed_manifest_dispatch_and_exact_reference_digest(self):
         source = EvidenceSource(
             source_kind="artifact_manifest",

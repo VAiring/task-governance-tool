@@ -19,8 +19,8 @@ from task_governance_tool.storage import (  # noqa: E402
     SCHEMA_VERSION,
     DatabaseTarget,
     StorageError,
-    apply_completion_cycle_capture_activation_migration,
     apply_completion_cycle_history_migration,
+    apply_migrations,
     connect,
     connect_initialized_readonly,
     connect_snapshot_readonly,
@@ -804,9 +804,7 @@ class CompletionCycleHistoryTests(unittest.TestCase):
             ) as setup_validator:
                 with closing(connect(target.db_path)) as connection:
                     self.assertFalse(connection.in_transaction)
-                    apply_completion_cycle_capture_activation_migration(
-                        connection
-                    )
+                    apply_migrations(connection)
                     self.assertFalse(connection.in_transaction)
                 self.assertGreaterEqual(setup_validator.call_count, 1)
 
@@ -934,9 +932,7 @@ class CompletionCycleHistoryTests(unittest.TestCase):
             with closing(connect(target.db_path)) as connection:
                 self.assertFalse(connection.in_transaction)
                 with self.assertRaises(StorageError) as reentry_error:
-                    apply_completion_cycle_capture_activation_migration(
-                        connection
-                    )
+                    apply_migrations(connection)
                 self.assertEqual(
                     reentry_error.exception.code,
                     "project_state_unreadable",

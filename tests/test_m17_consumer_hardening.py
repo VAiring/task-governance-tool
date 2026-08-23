@@ -289,7 +289,7 @@ class M17ConsumerHardeningTests(unittest.TestCase):
                 {
                     "code": "unreadable",
                     "schema_version": None,
-                    "required_schema_version": 19,
+                    "required_schema_version": 20,
                 },
             )
             self.assertEqual(

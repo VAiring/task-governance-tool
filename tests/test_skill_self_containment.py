@@ -368,8 +368,14 @@ class SkillSelfContainmentTests(unittest.TestCase):
             ):
                 self.assertIn(phrase, normalized)
         self.assertIn("schema v18", contracts.lower())
-        self.assertIn("source schemas 5 through 19", readme.lower())
-        self.assertIn("source schemas v5-v19", release_note.lower())
+        self.assertIn(
+            f"source schemas {VIEWER_MIN_SOURCE_SCHEMA_VERSION} through {SCHEMA_VERSION}",
+            readme.lower(),
+        )
+        self.assertIn(
+            f"source schemas v{VIEWER_MIN_SOURCE_SCHEMA_VERSION}-v{SCHEMA_VERSION}",
+            release_note.lower(),
+        )
         self.assertEqual(manifest["package_version"], "0.12.0")
         documented_uuid = re.search(
             r'"project_id": "(tg_project_[0-9a-f]{32})"',

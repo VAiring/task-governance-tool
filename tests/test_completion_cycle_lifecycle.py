@@ -35,6 +35,7 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_completion_cycle_capture_activation_migration,
     apply_completion_evidence_bundle_migration,
     apply_evidence_ledger_capture_migration,
+    apply_migrations,
     apply_verification_receipts_migration,
     connect,
     connect_initialized_readonly,
@@ -1257,7 +1258,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     "code": "migration_required",
                     "message": (
                         "database schema version 17 does not match supported "
-                        "version 19; run setup to migrate"
+                        "version 20; run setup to migrate"
                     ),
                 }],
             )
@@ -1266,6 +1267,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             with closing(connect(db)) as connection:
                 apply_evidence_ledger_capture_migration(connection)
                 apply_completion_evidence_bundle_migration(connection)
+                self.assertEqual(apply_migrations(connection), ([20], []))
 
             reopened, reopen_payload = run_json(
                 *reopen_args(

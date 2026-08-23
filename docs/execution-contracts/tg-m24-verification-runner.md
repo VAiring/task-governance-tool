@@ -12,10 +12,10 @@
 > R4A left its inventory-approved retired repository material and dedicated
 > tests physically absent, with no archive or dormant copy. Accepted R4V adds
 > only the dependency-pure, legacy-stable Runner value-model foundation and
-> exact-candidate manifest closure, with no product activation. TG-M24.R3A
-> owns current formal authority for the schema-v20 migration and storage baseline;
-> TG-M24.R3B and every later unit in this document remain inactive until their
-> immediate predecessors are accepted.
+> exact-candidate manifest closure, with no product activation. TG-M24.R3A is
+> an accepted predecessor for the schema-v20 migration and storage baseline;
+> TG-M24.R3B owns current formal authority, and every later unit in this
+> document remains inactive until its immediate predecessor is accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
 > The separate TG-M24.R2 bootstrap Task supplies only a reviewed phase-one
@@ -265,7 +265,7 @@ reviews.
 ## TG-M24.R4V Accepted Dependency-Pure Legacy-Stable Runner Value Model Foundation
 
 Task `tg_task_006bee9937e25af9` establishes the pure `verification_runner.py`
-value model between accepted R4A and current R3A. It preserves the opaque
+value model between accepted R4A and accepted R3A. It preserves the opaque
 accepted Runner-policy seal and closed legacy record/projection shapes, uses
 caller-supplied identifier tokens instead of entropy, and has no repository or
 other project-module import. Its exact-candidate v0.12 manifest closes only the
@@ -279,7 +279,7 @@ exact-target `pass/full` Receipt, and two independent Tier 2 PASS reviews.
 
 <a id="tg-m24-r3a"></a>
 
-## TG-M24.R3A Current Schema-v20 Migration And Storage Baseline
+## TG-M24.R3A Accepted Schema-v20 Migration And Storage Baseline
 
 Task `tg_task_a6d113455aa2cdfe` owns only a private, non-public v19-to-v20
 migration and storage rehearsal reached through an explicitly injected path.
@@ -344,7 +344,7 @@ Tier 2 PASS reviews.
 
 <a id="tg-m24-r3b"></a>
 
-## TG-M24.R3B Inactive Evidence And Projection Compatibility Baseline
+## TG-M24.R3B Current Evidence And Projection Compatibility Baseline
 
 Task `tg_task_c343ed2ec8acedf8` owns the separately reviewed public schema-v20
 activation: the public schema constant and setup target, the Bundle-v2
@@ -357,9 +357,19 @@ mapping, write, and projection. It launches no process and grants no gate
 authority. Existing M22 projections retain no raw output, argv, environment,
 credential, or private path and fabricate no assurance.
 R3B also removes the Evidence provider/policy-shim consumers allocated by R4V,
-but leaves shim-body deletion to R4B. Completion requires focused compatibility
-and public-activation checks, the matched-pair integration review over the exact
-R3A/R3B commits, an exact diff, and two independent Tier 2 PASS reviews.
+but leaves shim-body deletion to R4B. A complete v19 database must migrate to
+exact schema v20, fresh setup must create exact v20, and complete v20 reentry is
+validation-only. A database declared as v19 but containing any recognized
+v20-owned table, index, trigger, or column must fail closed before mutation in
+the resolver, setup inspection/migration, Viewer, and managed backup/recovery
+paths; unrelated extra objects retain the governed R3A policy. Completion
+requires exact Bundle-v2 null-Runner payload/digest, the format-v2 Evidence
+index with explicit per-entry Bundle format, and preserved Bundle-v1
+compatibility, focused compatibility and public-activation checks, all
+applicable offline/document/release checks, a fresh exact-target `pass/full`
+Verification Receipt, the matched-pair integration review over the exact
+R3A/R3B commits, an exact diff, and two independent Tier 2 PASS reviews with no
+open High or Medium finding.
 
 R3A and R3B remain distinct sequential Tasks, commits, and fresh evidence
 records. Acceptance of either unit alone authorizes no cutover. R3B's matched-

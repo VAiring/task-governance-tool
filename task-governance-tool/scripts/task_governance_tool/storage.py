@@ -28,7 +28,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 PRIVATE_SCHEMA20_VERSION = 20
 PRIVATE_SCHEMA20_MIGRATION_NAME = "verification_runner_shadow"
 VIEWER_MIN_SOURCE_SCHEMA_VERSION = 5
@@ -608,6 +608,8 @@ class CompletionCycle:
     subject_verification_criterion_id: str | None = None
     evidence_basis_version: int = 0
     completion_evidence_bundle_id: str | None = None
+    verification_basis_kind: str | None = None
+    verification_runner_observation_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -684,6 +686,8 @@ class PreparedCompletionEvidenceBundle:
     target_capture_version: int
     artifact_manifest_id: str
     verification_receipt_id: str | None
+    verification_basis_kind: str | None
+    verification_runner_observation_id: str | None
     omission_mask: int
     sealed_at: str
     bundle_digest: str
@@ -1841,6 +1845,7 @@ _EVIDENCE_LEDGER_REQUIRED_COLUMNS = {
         "target_kind", "target_value", "target_base_revision",
         "target_generation", "target_capture_version",
         "artifact_manifest_id", "verification_receipt_id",
+        "verification_basis_kind", "verification_runner_observation_id",
         "omission_mask", "sealed_at", "bundle_digest",
         "payload_size_bytes",
     },
@@ -1886,21 +1891,29 @@ def _schema_requirement_is_present(
     requirement: str,
 ) -> bool:
     kind, name = requirement.split(":", 1)
-    if kind == "table":
-        return table_exists(connection, name)
     if kind == "column":
         table_name, column_name = name.split(".", 1)
-        return table_exists(connection, table_name) and column_exists(
-            connection,
-            table_name,
-            column_name,
+        table_row = connection.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type = 'table' AND name = ? COLLATE NOCASE",
+            (table_name,),
+        ).fetchone()
+        if table_row is None:
+            return False
+        return (
+            connection.execute(
+                "SELECT 1 FROM pragma_table_xinfo(?, 'main') "
+                "WHERE name = ? COLLATE NOCASE",
+                (str(table_row[0]), column_name),
+            ).fetchone()
+            is not None
         )
-    if kind not in {"index", "trigger"}:
+    if kind not in {"table", "index", "trigger"}:
         raise AssertionError(f"unknown schema requirement kind: {kind}")
     return (
         connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?",
-            (kind, name),
+            "SELECT 1 FROM sqlite_master WHERE name = ? COLLATE NOCASE",
+            (name,),
         ).fetchone()
         is not None
     )
@@ -1929,12 +1942,30 @@ def newer_schema_markers_present(
             for name, introduced_version in _SCHEMA_COLUMN_INTRODUCED_VERSION.items()
         ),
     )
-    return [
+    detected = [
         marker
         for marker, introduced_version in markers
         if introduced_version > schema_version
         if _schema_requirement_is_present(connection, marker)
     ]
+    if schema_version < PRIVATE_SCHEMA20_VERSION:
+        matrix_trigger = connection.execute(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type = 'trigger' "
+            "AND name = 'trg_criterion_evidence_links_matrix_insert'"
+        ).fetchone()
+        if (
+            matrix_trigger is not None
+            and matrix_trigger["sql"] is not None
+            and _normalized_schema_sql(str(matrix_trigger["sql"]))
+            == _normalized_schema_sql(
+                _criterion_evidence_links_v20_matrix_trigger_sql()
+            )
+        ):
+            detected.append(
+                "trigger:trg_criterion_evidence_links_matrix_insert"
+            )
+    return detected
 
 
 def required_schema_objects_missing(
@@ -6431,8 +6462,75 @@ def _schema20_integrity_checks(connection: sqlite3.Connection) -> None:
         raise _unreadable_project_state()
 
 
-def validate_schema20_storage(connection: sqlite3.Connection) -> None:
-    """Validate the private, non-activated R3A schema-v20 storage foundation."""
+def _validate_schema20_admitted_rows(
+    connection: sqlite3.Connection,
+    *,
+    allow_native_bundle_v2: bool,
+) -> None:
+    invented_rows = sum(
+        int(
+            connection.execute(
+                f"SELECT COUNT(*) FROM {_quoted_identifier(table_name)}"
+            ).fetchone()[0]
+        )
+        for table_name in _R3A_SCHEMA20_RUNNER_TABLES
+    )
+    invented_rows += int(
+        connection.execute(
+            "SELECT COUNT(*) FROM evidence_references "
+            "WHERE source_kind = 'runner_observation'"
+        ).fetchone()[0]
+    )
+    invented_rows += int(
+        connection.execute(
+            "SELECT COUNT(*) FROM criterion_evidence_links "
+            "WHERE relation = 'runner_observation'"
+        ).fetchone()[0]
+    )
+    cycle_basis_predicate = "verification_runner_observation_id IS NOT NULL"
+    bundle_basis_predicate = "verification_runner_observation_id IS NOT NULL"
+    if not allow_native_bundle_v2:
+        cycle_basis_predicate += " OR verification_basis_kind IS NOT NULL"
+        bundle_basis_predicate += " OR verification_basis_kind IS NOT NULL"
+    forbidden_runner_basis = sum(
+        int(row[0])
+        for row in (
+            connection.execute(
+                "SELECT COUNT(*) FROM tasks "
+                "WHERE review_target_runner_basis_version != 0"
+            ).fetchone(),
+            connection.execute(
+                "SELECT COUNT(*) FROM task_completion_cycles WHERE "
+                + cycle_basis_predicate
+            ).fetchone(),
+            connection.execute(
+                "SELECT COUNT(*) FROM completion_evidence_bundles WHERE "
+                + bundle_basis_predicate
+            ).fetchone(),
+        )
+        if row is not None
+    )
+    if invented_rows or forbidden_runner_basis:
+        raise _unreadable_project_state()
+
+
+def validate_current_schema20_admitted_rows(
+    connection: sqlite3.Connection,
+) -> None:
+    """Reject Runner residue while admitting R3B's native Bundle-v2 basis."""
+
+    _validate_schema20_admitted_rows(
+        connection,
+        allow_native_bundle_v2=True,
+    )
+
+
+def validate_schema20_storage(
+    connection: sqlite3.Connection,
+    *,
+    allow_native_bundle_v2: bool = False,
+) -> None:
+    """Validate the exact schema-v20 storage foundation and its admitted rows."""
 
     marker = connection.execute(
         "SELECT name FROM schema_migrations WHERE version = 20"
@@ -6457,48 +6555,10 @@ def validate_schema20_storage(connection: sqlite3.Connection) -> None:
             raise
         raise _unreadable_project_state() from exc
 
-    invented_rows = sum(
-        int(
-            connection.execute(
-                f"SELECT COUNT(*) FROM {_quoted_identifier(table_name)}"
-            ).fetchone()[0]
-        )
-        for table_name in _R3A_SCHEMA20_RUNNER_TABLES
+    _validate_schema20_admitted_rows(
+        connection,
+        allow_native_bundle_v2=allow_native_bundle_v2,
     )
-    invented_rows += int(
-        connection.execute(
-            "SELECT COUNT(*) FROM evidence_references "
-            "WHERE source_kind = 'runner_observation'"
-        ).fetchone()[0]
-    )
-    invented_rows += int(
-        connection.execute(
-            "SELECT COUNT(*) FROM criterion_evidence_links "
-            "WHERE relation = 'runner_observation'"
-        ).fetchone()[0]
-    )
-    nonzero_basis = sum(
-        int(row[0])
-        for row in (
-            connection.execute(
-                "SELECT COUNT(*) FROM tasks "
-                "WHERE review_target_runner_basis_version != 0"
-            ).fetchone(),
-            connection.execute(
-                "SELECT COUNT(*) FROM task_completion_cycles "
-                "WHERE verification_basis_kind IS NOT NULL "
-                "OR verification_runner_observation_id IS NOT NULL"
-            ).fetchone(),
-            connection.execute(
-                "SELECT COUNT(*) FROM completion_evidence_bundles "
-                "WHERE verification_basis_kind IS NOT NULL "
-                "OR verification_runner_observation_id IS NOT NULL"
-            ).fetchone(),
-        )
-        if row is not None
-    )
-    if invented_rows or nonzero_basis:
-        raise _unreadable_project_state()
     _schema20_integrity_checks(connection)
 
 
@@ -6510,42 +6570,15 @@ def _private_schema20_failure(fail_stage: str | None, stage: str) -> None:
         )
 
 
-def rehearse_schema20_storage(
-    db_path: Path,
+def _migrate_schema20_connection(
+    connection: sqlite3.Connection,
     *,
     fail_stage: str | None = None,
-) -> None:
-    """Migrate one caller-owned disposable v19 database in place, privately."""
+    allow_native_bundle_v2_reentry: bool = False,
+) -> bool:
+    """Apply or validate migration 20 on one caller-owned connection."""
 
-    allowed_stages = {
-        None,
-        "after_columns",
-        "after_bundle",
-        "after_runner_tables",
-        "after_objects",
-        "after_marker",
-        "before_commit",
-    }
-    path = Path(db_path)
-    if (
-        fail_stage not in allowed_stages
-        or not path.is_absolute()
-        or path.is_symlink()
-        or not path.is_file()
-    ):
-        raise StorageError(
-            "internal_error",
-            "private schema-v20 rehearsal target is invalid",
-        )
-    validate_operational_journal_state(path)
-    try:
-        connection = connect_existing(path)
-    except sqlite3.Error as exc:
-        raise operational_sqlite_error(
-            exc,
-            fallback_message="could not open private rehearsal database",
-        ) from exc
-
+    source_version = PRIVATE_SCHEMA20_VERSION - 1
     foreign_keys_disabled = False
     try:
         version = current_schema_version(connection)
@@ -6554,14 +6587,17 @@ def rehearse_schema20_storage(
             try:
                 if current_schema_version(connection) != PRIVATE_SCHEMA20_VERSION:
                     raise _unreadable_project_state()
-                validate_schema20_storage(connection)
+                validate_schema20_storage(
+                    connection,
+                    allow_native_bundle_v2=allow_native_bundle_v2_reentry,
+                )
             finally:
                 connection.rollback()
-            return
-        if version != SCHEMA_VERSION:
+            return False
+        if version != source_version:
             raise StorageError(
                 "migration_required",
-                "private schema-v20 rehearsal requires complete schema version 19",
+                "schema-v20 migration requires complete schema version 19",
             )
 
         connection.execute("PRAGMA foreign_keys = OFF")
@@ -6572,18 +6608,17 @@ def rehearse_schema20_storage(
         connection.execute("BEGIN IMMEDIATE")
         try:
             if (
-                current_schema_version(connection) != SCHEMA_VERSION
-                or missing_migration_versions(connection, SCHEMA_VERSION)
+                current_schema_version(connection) != source_version
+                or missing_migration_versions(connection, source_version)
                 or schema_objects_inconsistent_with_version(
                     connection,
-                    SCHEMA_VERSION,
+                    source_version,
                 )
             ):
                 raise StorageError(
                     "migration_required",
-                    "private schema-v20 rehearsal requires complete schema version 19",
+                    "schema-v20 migration requires complete schema version 19",
                 )
-            _validate_current_schema_structure(connection)
             validate_completion_cycle_storage(connection)
             validate_evidence_ledger_storage(connection)
             _schema20_integrity_checks(connection)
@@ -6592,7 +6627,10 @@ def rehearse_schema20_storage(
                 for table_name, introduced_version in (
                     _SCHEMA_TABLE_INTRODUCED_VERSION.items()
                 )
-                if table_name != "schema_migrations" and introduced_version <= 19
+                if (
+                    table_name != "schema_migrations"
+                    and introduced_version <= source_version
+                )
             )
             before = _selected_table_projection_snapshot(
                 connection,
@@ -6635,6 +6673,7 @@ def rehearse_schema20_storage(
             validate_schema20_storage(connection)
             _private_schema20_failure(fail_stage, "before_commit")
             connection.commit()
+            return True
         except Exception:
             connection.rollback()
             raise
@@ -6643,14 +6682,53 @@ def rehearse_schema20_storage(
             raise StorageError("database_busy", DATABASE_BUSY_MESSAGE) from exc
         raise _unreadable_project_state() from exc
     finally:
-        try:
-            if foreign_keys_disabled:
-                connection.execute("PRAGMA legacy_alter_table = OFF")
-                connection.execute("PRAGMA foreign_keys = ON")
-                if int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 1:
-                    raise _unreadable_project_state()
-        finally:
-            connection.close()
+        if foreign_keys_disabled:
+            connection.execute("PRAGMA legacy_alter_table = OFF")
+            connection.execute("PRAGMA foreign_keys = ON")
+            if int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 1:
+                raise _unreadable_project_state()
+
+
+def rehearse_schema20_storage(
+    db_path: Path,
+    *,
+    fail_stage: str | None = None,
+) -> None:
+    """Migrate one caller-owned disposable v19 database in place, privately."""
+
+    allowed_stages = {
+        None,
+        "after_columns",
+        "after_bundle",
+        "after_runner_tables",
+        "after_objects",
+        "after_marker",
+        "before_commit",
+    }
+    path = Path(db_path)
+    if (
+        fail_stage not in allowed_stages
+        or not path.is_absolute()
+        or path.is_symlink()
+        or not path.is_file()
+    ):
+        raise StorageError(
+            "internal_error",
+            "private schema-v20 rehearsal target is invalid",
+        )
+    validate_operational_journal_state(path)
+    try:
+        connection = connect_existing(path)
+    except sqlite3.Error as exc:
+        raise operational_sqlite_error(
+            exc,
+            fallback_message="could not open private rehearsal database",
+        ) from exc
+
+    try:
+        _migrate_schema20_connection(connection, fail_stage=fail_stage)
+    finally:
+        connection.close()
 
 
 def _normalized_schema_sql(statement: str) -> str:
@@ -7995,6 +8073,22 @@ def _cycle_from_row(row: sqlite3.Row) -> CompletionCycle:
             )
             else None
         ),
+        verification_basis_kind=(
+            str(row["verification_basis_kind"])
+            if (
+                "verification_basis_kind" in row_fields
+                and row["verification_basis_kind"] is not None
+            )
+            else None
+        ),
+        verification_runner_observation_id=(
+            str(row["verification_runner_observation_id"])
+            if (
+                "verification_runner_observation_id" in row_fields
+                and row["verification_runner_observation_id"] is not None
+            )
+            else None
+        ),
         completion_evidence_kind=str(row["completion_evidence_kind"]),
         completion_evidence_revision=str(row["completion_evidence_revision"]),
         completion_evidence_reason=str(row["completion_evidence_reason"]),
@@ -8042,6 +8136,26 @@ def _validate_completion_cycle(cycle: CompletionCycle) -> None:
     _completion_int(cycle.verification_basis_version, maximum=1)
     _completion_int(cycle.verification_subject_basis_version, maximum=1)
     _completion_int(cycle.evidence_basis_version, maximum=1)
+    if cycle.verification_runner_observation_id is not None:
+        raise completion_history_inconsistent()
+    if cycle.verification_basis_kind is None:
+        pass
+    elif cycle.verification_basis_kind == "caller_attestation":
+        if (
+            cycle.origin != "native_done"
+            or cycle.verification_expectation != "specified"
+            or cycle.verification_receipt_id is None
+        ):
+            raise completion_history_inconsistent()
+    elif cycle.verification_basis_kind == "not_required":
+        if (
+            cycle.origin != "native_done"
+            or cycle.verification_expectation != "unspecified"
+            or cycle.verification_receipt_id is not None
+        ):
+            raise completion_history_inconsistent()
+    else:
+        raise completion_history_inconsistent()
     if cycle.evidence_basis_version == 0:
         if cycle.completion_evidence_bundle_id is not None:
             raise completion_history_inconsistent()
@@ -9754,6 +9868,10 @@ def _persist_completion_cycle_locked(
         "completion_evidence_bundle_id": (
             cycle.completion_evidence_bundle_id
         ),
+        "verification_basis_kind": cycle.verification_basis_kind,
+        "verification_runner_observation_id": (
+            cycle.verification_runner_observation_id
+        ),
         "completion_evidence_kind": cycle.completion_evidence_kind,
         "completion_evidence_revision": cycle.completion_evidence_revision,
         "completion_evidence_reason": cycle.completion_evidence_reason,
@@ -9851,6 +9969,26 @@ def _persist_completion_cycle_locked(
         if has_evidence_basis
         else ""
     )
+    has_runner_basis = column_exists(
+        connection,
+        "task_completion_cycles",
+        "verification_basis_kind",
+    )
+    if not has_runner_basis and (
+        cycle.verification_basis_kind is not None
+        or cycle.verification_runner_observation_id is not None
+    ):
+        raise completion_history_inconsistent()
+    runner_columns = (
+        ", verification_basis_kind, verification_runner_observation_id"
+        if has_runner_basis
+        else ""
+    )
+    runner_values = (
+        ", :verification_basis_kind, :verification_runner_observation_id"
+        if has_runner_basis
+        else ""
+    )
     try:
         connection.execute(
             f"""
@@ -9868,7 +10006,7 @@ def _persist_completion_cycle_locked(
               changes_requested_count, open_high_count, open_medium_count,
               fresh_review_required_count, qualifying_receipt_id_1,
               qualifying_receipt_id_2{verification_columns}{subject_columns}
-              {evidence_columns}
+              {evidence_columns}{runner_columns}
             ) VALUES (
               :completion_cycle_id, :project_id, :task_id,
               :saved_cycle_ordinal, :origin, :completeness, :completed_at,
@@ -9884,7 +10022,7 @@ def _persist_completion_cycle_locked(
               :changes_requested_count, :open_high_count, :open_medium_count,
               :fresh_review_required_count, :qualifying_receipt_id_1,
               :qualifying_receipt_id_2{verification_values}{subject_values}
-              {evidence_values}
+              {evidence_values}{runner_values}
             )
             """,
             parameters,
@@ -9950,7 +10088,7 @@ def _require_completion_capture_activation_locked(
     ):
         raise StorageError(
             "migration_required",
-            "completion capture requires schema version 19",
+            f"completion capture requires schema version {SCHEMA_VERSION}",
         )
     if required_schema_objects_missing(
         connection,
@@ -10153,6 +10291,27 @@ def prepare_native_completion_cycle_locked(
         completion_evidence_bundle_id=(
             completion_identity.completion_evidence_bundle_id
         ),
+        verification_basis_kind=(
+            "caller_attestation"
+            if (
+                column_exists(
+                    connection,
+                    "task_completion_cycles",
+                    "verification_basis_kind",
+                )
+                and exact_verification.strip()
+            )
+            else (
+                "not_required"
+                if column_exists(
+                    connection,
+                    "task_completion_cycles",
+                    "verification_basis_kind",
+                )
+                else None
+            )
+        ),
+        verification_runner_observation_id=None,
         completion_evidence_kind=str(
             proposed.get("completion_evidence_kind", "")
         ),
@@ -10359,12 +10518,9 @@ def _match_current_done_completion_cycle_locked(
     if validate_structure:
         version = current_schema_version(connection)
         if (
-            version not in {15, 16, 17, 18, 19}
+            version not in {15, 16, 17, 18, 19, 20}
             or missing_migration_versions(connection, version)
-            or required_schema_objects_missing(
-                connection,
-                schema_version=version,
-            )
+            or schema_objects_inconsistent_with_version(connection, version)
         ):
             raise completion_history_inconsistent()
         _validate_completion_history_structure(connection)
@@ -11806,6 +11962,20 @@ def apply_migrations(
                 "database backup or inspect the migration history"
             ),
         )
+    if version > 0 and schema_objects_inconsistent_with_version(
+        connection,
+        version,
+    ):
+        raise StorageError(
+            "migration_required",
+            "database schema is inconsistent with its declared version",
+        )
+    if version == PRIVATE_SCHEMA20_VERSION:
+        _migrate_schema20_connection(
+            connection,
+            allow_native_bundle_v2_reentry=True,
+        )
+        return [], []
 
     applied: list[int] = []
     warnings: list[dict[str, str]] = []
@@ -11910,8 +12080,15 @@ def apply_migrations(
     if version < 19:
         apply_completion_evidence_bundle_migration(connection)
         applied.append(19)
-    else:
+        version = 19
+    elif version == 19:
         apply_completion_evidence_bundle_migration(connection)
+    if connection.in_transaction:
+        connection.commit()
+    if version < PRIVATE_SCHEMA20_VERSION:
+        if _migrate_schema20_connection(connection):
+            applied.append(PRIVATE_SCHEMA20_VERSION)
+        version = PRIVATE_SCHEMA20_VERSION
     return applied, warnings
 
 
@@ -15416,6 +15593,7 @@ def _validated_authority_context(
     connection: sqlite3.Connection,
     *,
     snapshot_ids: set[str] | None = None,
+    privacy_success_cache: set[tuple[str, str, str]] | None = None,
 ) -> _ValidatedAuthorityContext:
     """Validate all or one selected historical authority subgraph."""
 
@@ -15455,13 +15633,23 @@ def _validated_authority_context(
     except sqlite3.Error as exc:
         raise evidence_ledger_sqlite_error(exc) from exc
 
-    privacy_success_cache: set[tuple[str, str, str]] = set()
+    if privacy_success_cache is None:
+        privacy_success_cache = set()
+    observed_ordinary_privacy_successes: set[tuple[str, str]] = set()
     required_contract_keys: set[tuple[str, str, int]] = set()
     observed_snapshot_ids: set[str] = set()
     for row in snapshot_rows:
         _validate_authority_snapshot_storage_classes(
             row,
             privacy_success_cache=privacy_success_cache,
+        )
+        observed_ordinary_privacy_successes.update(
+            (field_name, row[column_name])
+            for field_name, column_name in (
+                ("title", "task_title"),
+                ("description", "task_description"),
+                ("verification", "verification"),
+            )
         )
         observed_snapshot_ids.add(row["authority_snapshot_id"])
         if row["contract_revision"] > 0:
@@ -15614,12 +15802,7 @@ def _validated_authority_context(
         generation_state=generation_state,
         contracts_by_revision=contracts_by_revision,
         ordinary_privacy_successes=frozenset(
-            (field_name, value)
-            for privacy_mode, field_name, value in privacy_success_cache
-            if (
-                privacy_mode == "ordinary"
-                and field_name in _AUTHORITY_TASK_PRIVACY_REUSE_FIELDS
-            )
+            observed_ordinary_privacy_successes
         ),
     )
 
@@ -15675,8 +15858,12 @@ def _validate_evidence_ledger_rows(
     connection: sqlite3.Connection,
     *,
     verification_rejection_is_local: bool = False,
+    privacy_success_cache: set[tuple[str, str, str]] | None = None,
 ) -> tuple[sqlite3.Row, ...]:
-    authority = _validated_authority_context(connection)
+    authority = _validated_authority_context(
+        connection,
+        privacy_success_cache=privacy_success_cache,
+    )
     snapshots = authority.snapshots
     criteria = authority.criteria
     links = authority.links
@@ -15949,6 +16136,41 @@ def _criterion_link_relation_valid(
     )
 
 
+def _completion_bundle_version_basis_valid(
+    *,
+    source_schema_version: object,
+    bundle_version: object,
+    verification_basis_kind: object,
+    verification_runner_observation_id: object,
+    verification_receipt_id: object,
+    cycle: CompletionCycle,
+) -> bool:
+    if type(source_schema_version) is not int or type(bundle_version) is not int:
+        return False
+    if (source_schema_version, bundle_version) == (19, 1):
+        return (
+            verification_basis_kind is None
+            and verification_runner_observation_id is None
+            and cycle.verification_basis_kind is None
+            and cycle.verification_runner_observation_id is None
+        )
+    if (source_schema_version, bundle_version) != (20, 2):
+        return False
+    if (
+        verification_runner_observation_id is not None
+        or cycle.verification_runner_observation_id is not None
+        or verification_basis_kind != cycle.verification_basis_kind
+    ):
+        return False
+    return (
+        verification_basis_kind == "caller_attestation"
+        and verification_receipt_id is not None
+    ) or (
+        verification_basis_kind == "not_required"
+        and verification_receipt_id is None
+    )
+
+
 def _validate_completion_evidence_bundle_rows(
     connection: sqlite3.Connection,
 ) -> None:
@@ -16179,6 +16401,17 @@ def _validate_completion_evidence_bundle_rows(
         manifest = manifests.get(str(row["artifact_manifest_id"]))
         owner_links = snapshot_links.get(str(row["authority_snapshot_id"]), {})
         verification_receipt_id = row["verification_receipt_id"]
+        row_fields = set(row.keys())
+        verification_basis_kind = (
+            row["verification_basis_kind"]
+            if "verification_basis_kind" in row_fields
+            else None
+        )
+        verification_runner_observation_id = (
+            row["verification_runner_observation_id"]
+            if "verification_runner_observation_id" in row_fields
+            else None
+        )
         omission_mask = row["omission_mask"]
         payload_size = row["payload_size_bytes"]
         if (
@@ -16190,16 +16423,15 @@ def _validate_completion_evidence_bundle_rows(
             or cycle.task_id != row["task_id"]
             or cycle.saved_cycle_ordinal != row["cycle_ordinal"]
             or cycle.contract_revision != row["contract_revision"]
-            or row["source_schema_version"] != 19
-            or type(row["source_schema_version"]) is not int
-            or row["bundle_version"] != 1
-            or type(row["bundle_version"]) is not int
-            or (
-                current_schema_version(connection) == PRIVATE_SCHEMA20_VERSION
-                and (
-                    row["verification_basis_kind"] is not None
-                    or row["verification_runner_observation_id"] is not None
-                )
+            or not _completion_bundle_version_basis_valid(
+                source_schema_version=row["source_schema_version"],
+                bundle_version=row["bundle_version"],
+                verification_basis_kind=verification_basis_kind,
+                verification_runner_observation_id=(
+                    verification_runner_observation_id
+                ),
+                verification_receipt_id=verification_receipt_id,
+                cycle=cycle,
             )
             or snapshot is None
             or snapshot["project_id"] != row["project_id"]
@@ -16465,9 +16697,14 @@ def validate_completion_evidence_bundle_storage(
 
 def _validate_evidence_ledger_storage_with_task_rows(
     connection: sqlite3.Connection,
+    *,
+    privacy_success_cache: set[tuple[str, str, str]] | None = None,
 ) -> tuple[sqlite3.Row, ...]:
     _validate_evidence_ledger_schema_contract(connection)
-    task_rows = _validate_evidence_ledger_rows(connection)
+    task_rows = _validate_evidence_ledger_rows(
+        connection,
+        privacy_success_cache=privacy_success_cache,
+    )
     if current_schema_version(connection) >= 19:
         validate_completion_evidence_bundle_storage(connection)
     return task_rows
@@ -16475,10 +16712,26 @@ def _validate_evidence_ledger_storage_with_task_rows(
 
 def validate_evidence_ledger_storage(
     connection: sqlite3.Connection,
+    *,
+    _privacy_success_cache: set[tuple[str, str, str]] | None = None,
 ) -> None:
     """Validate the complete current Evidence storage and row relations."""
 
-    _validate_evidence_ledger_storage_with_task_rows(connection)
+    if _privacy_success_cache is not None and (
+        type(_privacy_success_cache) is not set
+        or any(
+            type(item) is not tuple
+            or len(item) != 3
+            or any(type(value) is not str for value in item)
+            or item[0] not in {"ordinary", "legacy_m19_7_stored"}
+            for item in _privacy_success_cache
+        )
+    ):
+        raise evidence_ledger_inconsistent()
+    _validate_evidence_ledger_storage_with_task_rows(
+        connection,
+        privacy_success_cache=_privacy_success_cache,
+    )
 
 
 def validate_evidence_ledger_storage_for_recovery(
@@ -17402,10 +17655,16 @@ def _validate_prepared_completion_bundle(
         or bundle.task_id != expected_cycle.task_id
         or bundle.completion_cycle_id != expected_cycle.completion_cycle_id
         or bundle.cycle_ordinal != expected_cycle.saved_cycle_ordinal
-        or bundle.source_schema_version != 19
-        or type(bundle.source_schema_version) is not int
-        or bundle.bundle_version != 1
-        or type(bundle.bundle_version) is not int
+        or not _completion_bundle_version_basis_valid(
+            source_schema_version=bundle.source_schema_version,
+            bundle_version=bundle.bundle_version,
+            verification_basis_kind=bundle.verification_basis_kind,
+            verification_runner_observation_id=(
+                bundle.verification_runner_observation_id
+            ),
+            verification_receipt_id=bundle.verification_receipt_id,
+            cycle=expected_cycle,
+        )
         or bundle.contract_revision != expected_cycle.contract_revision
         or type(bundle.contract_revision) is not int
         or bundle.contract_revision < 0
@@ -17680,9 +17939,19 @@ def persist_completion_evidence_bundle_locked(
     try:
         for link in bundle.criterion_links:
             persist_criterion_evidence_link_locked(connection, link=link)
-        bundle_fields = (
-            _EVIDENCE_LEDGER_REQUIRED_COLUMNS["completion_evidence_bundles"]
-        )
+        available_bundle_fields = {
+            str(row["name"])
+            for row in connection.execute(
+                "PRAGMA table_info(completion_evidence_bundles)"
+            ).fetchall()
+        }
+        bundle_fields = {
+            field
+            for field in _EVIDENCE_LEDGER_REQUIRED_COLUMNS[
+                "completion_evidence_bundles"
+            ]
+            if field in available_bundle_fields
+        }
         bundle_values = _prepared_row(bundle, bundle_fields)
         ordered_bundle_fields = tuple(sorted(bundle_fields))
         connection.execute(
@@ -17787,6 +18056,16 @@ def read_completion_evidence_bundle(
         target_capture_version=row["target_capture_version"],
         artifact_manifest_id=str(row["artifact_manifest_id"]),
         verification_receipt_id=row["verification_receipt_id"],
+        verification_basis_kind=(
+            row["verification_basis_kind"]
+            if "verification_basis_kind" in row.keys()
+            else None
+        ),
+        verification_runner_observation_id=(
+            row["verification_runner_observation_id"]
+            if "verification_runner_observation_id" in row.keys()
+            else None
+        ),
         omission_mask=row["omission_mask"],
         sealed_at=str(row["sealed_at"]),
         bundle_digest=str(row["bundle_digest"]),
@@ -17832,7 +18111,7 @@ def ensure_evidence_projection_state_row(
     if current_schema_version(connection) != SCHEMA_VERSION:
         raise StorageError(
             "migration_required",
-            "Evidence projection state requires schema version 19",
+            f"Evidence projection state requires schema version {SCHEMA_VERSION}",
         )
     if type(project_id) is not str or not project_id:
         raise evidence_ledger_inconsistent()
@@ -18657,6 +18936,16 @@ def _capture_evidence_projection_basis_rows(
             target_capture_version=row["target_capture_version"],
             artifact_manifest_id=str(row["artifact_manifest_id"]),
             verification_receipt_id=row["verification_receipt_id"],
+            verification_basis_kind=(
+                row["verification_basis_kind"]
+                if "verification_basis_kind" in row.keys()
+                else None
+            ),
+            verification_runner_observation_id=(
+                row["verification_runner_observation_id"]
+                if "verification_runner_observation_id" in row.keys()
+                else None
+            ),
             omission_mask=row["omission_mask"],
             sealed_at=str(row["sealed_at"]),
             bundle_digest=str(row["bundle_digest"]),
@@ -18758,7 +19047,7 @@ def _capture_evidence_projection_basis_rows(
             )
         )
     return EvidenceProjectionBasis(
-        source_schema_version=19,
+        source_schema_version=SCHEMA_VERSION,
         project_id=project_id,
         source_generation=state.source_generation,
         cycles=cycles,
@@ -18776,7 +19065,7 @@ def capture_evidence_projection_basis(
 
     if type(project_id) is not str or not project_id:
         raise evidence_ledger_inconsistent()
-    if current_schema_version(connection) != 19:
+    if current_schema_version(connection) != SCHEMA_VERSION:
         raise evidence_ledger_inconsistent()
     _validate_evidence_ledger_schema_contract(connection)
     _validate_evidence_ledger_rows(connection)
@@ -18832,7 +19121,7 @@ def _validate_current_schema_structure(
     if missing_migration_versions(connection, version):
         raise _unreadable_project_state()
 
-    if required_schema_objects_missing(connection):
+    if schema_objects_inconsistent_with_version(connection, version):
         raise _unreadable_project_state()
     try:
         _validate_completion_history_structure(connection)
@@ -18842,6 +19131,8 @@ def _validate_current_schema_structure(
         if exc.code == "database_busy":
             raise
         raise _unreadable_project_state() from exc
+    if version == PRIVATE_SCHEMA20_VERSION:
+        validate_current_schema20_admitted_rows(connection)
     return version
 
 
@@ -18918,6 +19209,11 @@ def validate_managed_backup_source_database(
         raise StorageError(
             "migration_required",
             "managed backup migration history is incomplete",
+        )
+    if schema_objects_inconsistent_with_version(connection, version):
+        raise StorageError(
+            "migration_required",
+            "managed backup source schema is inconsistent with its declared version",
         )
     existing_project_id = read_project_meta_id(connection)
     if existing_project_id is None:
@@ -20146,16 +20442,15 @@ def _validate_snapshot_database_state(
             "migration_required",
             "database migration history is incomplete",
         )
+    if schema_objects_inconsistent_with_version(connection, version):
+        raise StorageError(
+            "migration_required",
+            "database schema is inconsistent with its declared version",
+        )
+    if version == PRIVATE_SCHEMA20_VERSION:
+        validate_current_schema20_admitted_rows(connection)
     validated_task_rows: tuple[sqlite3.Row, ...] | None = None
     if version >= 15:
-        if required_schema_objects_missing(
-            connection,
-            schema_version=version,
-        ):
-            raise StorageError(
-                "migration_required",
-                "database schema is incomplete for Viewer snapshot version 4",
-            )
         try:
             _validate_completion_history_structure(connection)
             if version >= 18:
@@ -20258,7 +20553,7 @@ def validate_snapshot_database_for_viewer(
     """Validate a Viewer source and issue one current Evidence Task proof."""
 
     version, task_rows = _validate_snapshot_database_state(connection, target)
-    if version not in {18, 19}:
+    if version not in {18, 19, 20}:
         return ViewerSnapshotDatabaseValidation(source_schema_version=version)
     if task_rows is None:
         raise _unreadable_project_state()
@@ -20333,7 +20628,7 @@ def _consume_validated_viewer_task_batch(
         or query_only != 1
         or type(data_version) is not int
         or data_version != issuance.data_version
-        or source_schema_version not in {18, 19}
+        or source_schema_version not in {18, 19, 20}
         or issuance.source_schema_version != source_schema_version
         or type(project_id) is not str
         or not project_id
@@ -20417,6 +20712,11 @@ def read_setup_state(
                 "project_state_unreadable",
                 "project state could not be read safely",
             )
+        if schema_objects_inconsistent_with_version(connection, version):
+            raise StorageError(
+                "project_state_unreadable",
+                "project state could not be read safely",
+            )
         if not table_exists(connection, "project_meta"):
             raise StorageError(
                 "project_state_unreadable",
@@ -20438,6 +20738,8 @@ def read_setup_state(
                 "project_mismatch",
                 "task database belongs to a different project",
             )
+        if version == PRIVATE_SCHEMA20_VERSION:
+            validate_current_schema20_admitted_rows(connection)
         from task_governance_tool.tasks import validate_stored_task_rows
 
         try:
@@ -20612,12 +20914,9 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
         with closing(connect_readonly(db_path)) as connection:
             version = current_schema_version(connection)
             if (
-                version not in {15, 16, 17, 18, 19}
+                version not in {15, 16, 17, 18, 19, 20}
                 or missing_migration_versions(connection, version)
-                or required_schema_objects_missing(
-                    connection,
-                    schema_version=version,
-                )
+                or schema_objects_inconsistent_with_version(connection, version)
             ):
                 return False
             _validate_completion_history_structure(connection)
@@ -20633,6 +20932,13 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
                 ).fetchall()
             }
             expected_object_counts = (
+                {
+                    "index": 42,
+                    "table": 35,
+                    "trigger": 59,
+                }
+                if version == 20
+                else
                 {
                     "index": 32,
                     "table": 31,

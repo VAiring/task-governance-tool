@@ -22,6 +22,7 @@ from task_governance_tool.verification_runner import (
     resolution_idempotency_digest,
     verification_runner_attempt_digest,
 )
+from tests.m223_test_support import remove_v20_runner_shadow_for_test
 
 
 NOW = "2026-08-21T00:00:00Z"
@@ -842,6 +843,7 @@ class R3ASchema20StorageTests(unittest.TestCase):
         )
         storage.initialize_database(target)
         with closing(storage.connect(db)) as connection:
+            remove_v20_runner_shadow_for_test(connection)
             self.assertEqual(storage.current_schema_version(connection), 19)
         return db
 
@@ -2143,6 +2145,13 @@ class R3ASchema20StorageTests(unittest.TestCase):
         self,
         connection: sqlite3.Connection,
     ) -> tuple[dict[str, object], bytes]:
+        with mock.patch.object(storage, "SCHEMA_VERSION", 19):
+            return self._seed_nonempty_v19_closure_with_v19_runtime(connection)
+
+    def _seed_nonempty_v19_closure_with_v19_runtime(
+        self,
+        connection: sqlite3.Connection,
+    ) -> tuple[dict[str, object], bytes]:
         connection.execute("BEGIN IMMEDIATE")
         basis = self._seed_target(
             connection,
@@ -2441,6 +2450,8 @@ class R3ASchema20StorageTests(unittest.TestCase):
             verification_receipt_id=str(
                 verification_receipt["verification_receipt_id"]
             ),
+            verification_basis_kind=None,
+            verification_runner_observation_id=None,
             omission_mask=int(plan["omission_mask"]),
             sealed_at=NOW,
             bundle_digest=str(plan["bundle_digest"]),
@@ -2732,27 +2743,6 @@ class R3ASchema20StorageTests(unittest.TestCase):
                         self._resolution_values(basis, str(index)),
                     )
                 connection.rollback()
-
-    def test_public_schema_remains_19(self) -> None:
-        db = self._fresh_v19("public")
-        self.assertEqual(storage.SCHEMA_VERSION, 19)
-        with closing(storage.connect(db)) as connection:
-            applied, warnings = storage.apply_migrations(connection)
-            self.assertEqual((applied, warnings), ([], []))
-            self.assertEqual(storage.current_schema_version(connection), 19)
-
-        private_db = self._fresh_v19("private-viewer")
-        storage.rehearse_schema20_storage(private_db)
-        private_target = storage.resolve_database_target(
-            repo=self.root / "private-viewer" / "repo",
-            db=private_db,
-            script_path=ROOT / "task-governance-tool" / "scripts" / "taskgov.py",
-        )
-        with closing(storage.connect_readonly(private_db)) as connection:
-            with self.assertRaises(storage.StorageError) as raised:
-                storage.validate_snapshot_database(connection, private_target)
-            self.assertEqual(raised.exception.code, "migration_required")
-
 
 if __name__ == "__main__":
     unittest.main()

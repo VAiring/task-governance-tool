@@ -170,7 +170,7 @@ class SetupCommandTests(unittest.TestCase):
                     "planned_writes": FRESH_WRITES,
                     "completed_writes": [],
                     "schema_from": None,
-                    "schema_to": 19,
+                    "schema_to": 20,
                     "maintenance_enabled": False,
                     "backup_interval_minutes": 30,
                     "backup_generations": 3,
@@ -197,7 +197,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(completed_data["planned_writes"], FRESH_WRITES)
             self.assertEqual(completed_data["completed_writes"], FRESH_WRITES)
             self.assertEqual(completed_data["schema_from"], None)
-            self.assertEqual(completed_data["schema_to"], 19)
+            self.assertEqual(completed_data["schema_to"], 20)
             self.assertTrue(completed_data["maintenance_enabled"])
             self.assertEqual(completed_data["backup_interval_minutes"], 30)
             self.assertEqual(completed_data["backup_generations"], 3)
@@ -334,7 +334,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(preview.returncode, 0, preview.stderr)
             preview_data = self.assert_setup_shape(json_payload(preview))
             self.assertEqual(preview_data["schema_from"], 17)
-            self.assertEqual(preview_data["schema_to"], 19)
+            self.assertEqual(preview_data["schema_to"], 20)
             self.assertEqual(
                 preview_data["planned_writes"],
                 MIGRATION_WRITES,
@@ -347,7 +347,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             migrated_data = self.assert_setup_shape(json_payload(migrated))
             self.assertEqual(migrated_data["schema_from"], 17)
-            self.assertEqual(migrated_data["schema_to"], 19)
+            self.assertEqual(migrated_data["schema_to"], 20)
             self.assertEqual(
                 migrated_data["completed_writes"],
                 MIGRATION_WRITES,
@@ -380,7 +380,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": [],
                         "completed_writes": [],
                         "schema_from": None,
-                        "schema_to": 19,
+                        "schema_to": 20,
                         "maintenance_enabled": None,
                         "backup_interval_minutes": None,
                         "backup_generations": None,
@@ -774,7 +774,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": planned,
                         "completed_writes": completed,
                         "schema_from": schema_from,
-                        "schema_to": 19,
+                        "schema_to": 20,
                         "maintenance_enabled": maintenance_enabled,
                         "backup_interval_minutes": 30,
                         "backup_generations": 3,
@@ -832,7 +832,7 @@ class SetupCommandTests(unittest.TestCase):
                         "planned_writes": [],
                         "completed_writes": [],
                         "schema_from": None,
-                        "schema_to": 19,
+                        "schema_to": 20,
                         "maintenance_enabled": None,
                         "backup_interval_minutes": None,
                         "backup_generations": None,
@@ -1144,7 +1144,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             data = self.assert_setup_shape(json_payload(migrated))
             self.assertEqual(data["schema_from"], 9)
-            self.assertEqual(data["schema_to"], 19)
+            self.assertEqual(data["schema_to"], 20)
             self.assertEqual(
                 data["planned_writes"],
                 LEGACY_MIGRATION_WRITES,
@@ -1175,7 +1175,7 @@ class SetupCommandTests(unittest.TestCase):
             with closing(sqlite3.connect(install.db_path)) as connection:
                 self.assertEqual(
                     connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0],
-                    19,
+                    20,
                 )
                 row = connection.execute(
                     """
@@ -1207,7 +1207,7 @@ class SetupCommandTests(unittest.TestCase):
             data = self.assert_setup_shape(json_payload(migrated))
             expected_writes = CONFIGURED_LEGACY_MIGRATION_WRITES
             self.assertEqual(data["schema_from"], 10)
-            self.assertEqual(data["schema_to"], 19)
+            self.assertEqual(data["schema_to"], 20)
             self.assertEqual(data["planned_writes"], expected_writes)
             self.assertEqual(data["completed_writes"], expected_writes)
             self.assertFalse(install.legacy_db_path.exists())
@@ -1277,7 +1277,7 @@ class SetupCommandTests(unittest.TestCase):
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 data = self.assert_setup_shape(json_payload(migrated))
                 self.assertEqual(data["schema_from"], 12)
-                self.assertEqual(data["schema_to"], 19)
+                self.assertEqual(data["schema_to"], 20)
                 self.assertEqual(
                     data["planned_writes"],
                     CONFIGURED_LEGACY_MIGRATION_WRITES,
@@ -1303,7 +1303,7 @@ class SetupCommandTests(unittest.TestCase):
                         connection.execute(
                             "SELECT MAX(version) FROM schema_migrations"
                         ).fetchone()[0],
-                        19,
+                        20,
                     )
                     self.assertIsNotNone(
                         connection.execute(

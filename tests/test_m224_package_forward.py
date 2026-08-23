@@ -249,7 +249,7 @@ class M224PackageForwardTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    19,
+                    20,
                 )
                 self.assertEqual(
                     connection.execute(
@@ -340,7 +340,7 @@ class M224PackageForwardTests(unittest.TestCase):
             index_path = install.fixed_root / "evidence" / "index.json"
             index_bytes = index_path.read_bytes()
             index = json.loads(index_bytes)
-            self.assertEqual(index["format_version"], 1)
+            self.assertEqual(index["format_version"], 2)
             self.assertEqual(index["payload"]["bundle_count"], 0)
             self.assertEqual(index["payload"]["legacy_count"], 1)
             self.assertEqual(
@@ -356,6 +356,7 @@ class M224PackageForwardTests(unittest.TestCase):
                         "bundle_digest": None,
                         "file_digest": None,
                         "sealed_at": None,
+                        "bundle_format_version": None,
                     }
                 ],
             )

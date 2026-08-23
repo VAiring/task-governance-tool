@@ -720,7 +720,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
         )
         rendered = projection._render_projection(
             EvidenceProjectionBasis(
-                source_schema_version=19,
+                source_schema_version=20,
                 project_id=PROJECT_ID,
                 source_generation=2,
                 cycles=(cycle,),
@@ -742,6 +742,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                     "bundle_digest": None,
                     "file_digest": None,
                     "sealed_at": None,
+                    "bundle_format_version": None,
                 }
             ],
         )

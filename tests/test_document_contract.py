@@ -514,7 +514,7 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.R3A Current Schema-v20 Migration And Storage Baseline",
+                "## TG-M24.R3B Current Evidence And Projection Compatibility Baseline",
                 "## TG-M24.R2C Inactive M25-Ready Architecture Boundary Freeze",
             )
             self.assertIn(
@@ -527,7 +527,7 @@ class DocumentContractTests(unittest.TestCase):
                 root,
                 contract.M24,
                 "<a id=\"tg-m24-r4a\"></a>",
-                "## TG-M24.R3A Current Duplicate Owner\n\n"
+                "## TG-M24.R3B Current Duplicate Owner\n\n"
                 "<a id=\"tg-m24-r4a\"></a>",
             )
             self.assertIn(
@@ -539,8 +539,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.R3A Current Schema-v20 Migration And Storage Baseline",
-                "## TG-M24.R3A Schema-v20 Current Migration And Storage Baseline",
+                "## TG-M24.R3B Current Evidence And Projection Compatibility Baseline",
+                "## TG-M24.R3B Evidence And Projection Current Compatibility Baseline",
             )
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -1165,10 +1165,10 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.R3A"])
+            self.assertEqual(m24["current_units"], ["TG-M24.R3B"])
             self.assertEqual(
                 m24["inactive_units"],
-                [row[0].split(" /", 1)[0] for row in contract.ROWS_M24[7:]],
+                [row[0].split(" /", 1)[0] for row in contract.ROWS_M24[8:]],
             )
             self.assertEqual(m24["superseded_units"], ["TG-M24.1B"])
             self.assertNotIn("TG-M24.1", m24["current_units"])
@@ -1500,8 +1500,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "current formal authority for the schema-v20 migration and storage baseline",
-                "superseded compatibility route for the schema-v20 migration and storage baseline",
+                "TG-M24.R3B owns current formal authority",
+                "TG-M24.R3B is a superseded compatibility route",
             )
             self.assertIn(
                 "document_role",
@@ -1512,8 +1512,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "current formal authority for the schema-v20 migration and storage baseline",
-                "not current formal authority for the schema-v20 migration and storage baseline",
+                "TG-M24.R3B owns current formal authority",
+                "TG-M24.R3B is not current formal authority",
             )
             self.assertIn(
                 "document_role",
@@ -1543,10 +1543,16 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "remain inactive until their\n"
-                "> immediate predecessors are accepted.",
-                "remain inactive only until\n"
-                "> later decisions reopen them.",
+                "TG-M24.R3A is\n"
+                "> an accepted predecessor for the schema-v20 migration and storage baseline;",
+                "TG-M24.R3A is a former schema-v20 storage unit;",
+            )
+            self.replace(
+                root,
+                contract.M24,
+                "every later unit in this\n"
+                "> document remains inactive until its immediate predecessor is accepted.",
+                "every later unit in this document proceeds only when later decisions reopen it.",
             )
             self.assertIn(
                 "document_role",

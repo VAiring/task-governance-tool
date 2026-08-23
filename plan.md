@@ -2,8 +2,8 @@
 
 Decision baseline: v0.10.0 is the immutable published release; its exact
 identity lives in `docs/release-install.md`. The current unpublished local
-candidate is v0.12.0/schema v19/Viewer snapshot v4 with source compatibility
-v5-v19 and 21 public command leaves. This plan retains current decisions,
+candidate is v0.12.0/schema v20/Viewer snapshot v4 with source compatibility
+v5-v20 and 21 public command leaves. This plan retains current decisions,
 unfinished static contracts, and open issues only. Completed execution
 narrative is indexed as non-authoritative history, while the Task database,
 queried through the public CLI, solely owns live execution status and evidence.
@@ -184,7 +184,7 @@ outside until separately supported. The exact Task DB record owns live state.
 ### Current Verification Receipt Decision
 
 The schema-v18-origin Verification Receipt behavior retained by current schema
-v19 is defined by the active [specification](docs/specification.md) and
+v20 is defined by the active [specification](docs/specification.md) and
 [design](docs/design.md). Completed
 M21 design, activation, acceptance, and correction narrative is preserved only
 in [indexed non-authoritative history](docs/history/v0.11.0/pre-m22-completed-execution.md).
@@ -192,17 +192,19 @@ That history supplies no current gate or implementation authority.
 
 <a id="tg-m22-1a"></a>
 
-### Current Schema-v19 Evidence Bundle And JSON Decision
+### Current Schema-v20 Evidence Bundle And JSON Decision
 
 The v0.12.0 candidate retains the accepted TG-M22.2 capture foundation,
 TG-M21.5 admission boundary, and TG-M22.3 schema-v19 immutable native
 completion Bundles, criterion links and Finding snapshots, plus the
-fixed one-way Evidence JSON v1 projection. Pre-v19 cycles remain index-only as
-`legacy_unknown`; SQLite remains canonical. Setup repairs the projection,
+fixed one-way Evidence JSON projection. Current schema-v20 native completions
+write Bundle v2 with a null Runner observation, while the format-v2 index can
+reference preserved Bundle-v1 bytes without rewriting them. Pre-v19 cycles
+remain index-only as `legacy_unknown`; SQLite remains canonical. Setup repairs the projection,
 doctor observes it read-only, and post-commit maintenance runs Evidence,
-Viewer, then backup. Viewer snapshot v4 accepts v5-v19 but adds no Evidence UI.
-No Runner, public leaf, normal-loop call, network/live-model action, or target
-mutation is activated. Accepted TG-M22.4 completed integrated acceptance and
+Viewer, then backup. Viewer snapshot v4 accepts v5-v20 but adds no Evidence UI.
+No Runner writer, process, projection, completion gate, public leaf, normal-loop
+call, network/live-model action, or target mutation is activated. Accepted TG-M22.4 completed integrated acceptance and
 accepted TG-M23.1 froze the derived-evidence design; accepted TG-M23.2 supplies
 only its bounded offline/mock implementation predecessor.
 
@@ -229,17 +231,17 @@ process retirement, owned-temp cleanup, and non-retention of raw output or
 private execution data. It makes no hostile-code, network-isolation, or zero-
 capability claim.
 
-Accepted TG-M24.R1, R2A, R2B, R2C, R4A, and R4V cut the authority sequence,
+Accepted TG-M24.R1, R2A, R2B, R2C, R4A, R4V, and R3A cut the authority sequence,
 inventoried the mixed WIP, audited test value, froze the M25 architecture
 boundary, and physically removed only the approved retired repository material
 without product activation. Accepted R4V additionally establishes only the
 dependency-pure, legacy-stable Runner value model and reclosed v0.12 candidate
-manifest. Current TG-M24.R3A establishes only a private, non-public schema-v20
-migration and storage rehearsal reached through an injected path after R4V; the
-public candidate remains schema v19. Its successful Bundle rebuild physically
+manifest. Accepted TG-M24.R3A established only a private, non-public schema-v20
+migration and storage rehearsal reached through an injected path after R4V; its
+accepted result left the public candidate at schema v19. Its successful Bundle rebuild physically
 removes persistent unowned indexes/triggers attached to that table without
 replaying arbitrary DDL; rollback restores them, and unrelated standalone
-objects remain unchanged. Inactive TG-M24.R3B owns the corresponding public
+objects remain unchanged. Current TG-M24.R3B owns the corresponding public
 schema-v20 activation, Bundle-v2 null-Runner writer, and
 Evidence/Viewer/managed backup/recovery compatibility. Later inactive units
 repair pre-Runner core
@@ -266,16 +268,16 @@ mandatory; live status and evidence remain solely in the Task database.
 
 TG-M24 is approved sequential Tier 2 work in lane
 `TG-M24-TRUSTED-RUNNER`. TG-M24.1, TG-M24.1A, TG-M24.R1, TG-M24.R2A,
-TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are accepted predecessors;
-TG-M24.1B is superseded. Current formal authority belongs only to the
-TG-M24.R3A schema-v20 migration and storage baseline, while TG-M24.R3B and
-every later unit remain inactive behind their accepted immediate predecessor.
+TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, TG-M24.R4V, and TG-M24.R3A are accepted
+predecessors; TG-M24.1B is superseded. Current formal authority belongs only to
+the TG-M24.R3B Evidence and projection compatibility baseline, while TG-M24.R4B
+and every later unit remain inactive behind their accepted immediate predecessor.
 Exact unit identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 not duplicated in this gateway.
 
 R3A and R3B must remain separate Tasks, commits, and fresh evidence gates. R3A
-acceptance alone does not change the public schema-v19 candidate or authorize
+acceptance left the public candidate at schema v19 and authorized no
 materialization. R3B owns the integration review for the exact matched commits;
 only its PASS may authorize code/main cutover. Canonical database migration is
 not an implicit consequence of that Git cutover: it requires a later explicit
@@ -283,7 +285,7 @@ public setup action at a separate approval checkpoint.
 
 Accepted TG-M24.R1 consumed only the reviewed R2 bootstrap boundary and changed
 no product byte; accepted R2A, R2B, R2C, R4A, and R4V changed no supported product
-behavior. Current R3A and its successors advance in exact order, use fresh
+behavior. Current R3B and its successors advance in exact order, use fresh
 current evidence, and never reuse superseded Candidate-C, LPAC, or diagnostic
 recovery evidence.
 The sequence grants no arbitrary command, automatic execution of untrusted or

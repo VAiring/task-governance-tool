@@ -373,6 +373,10 @@ class BundleAssemblyPureTests(unittest.TestCase):
             external_revision_approved=False,
             completion_commit_required=False,
             completion_commit_hash="",
+            verification_basis_kind="caller_attestation",
+            verification_receipt_id=payload["verification_receipt"][
+                "verification_receipt_id"
+            ],
         )
         completion_identity = SimpleNamespace(
             completion_evidence_bundle_id=BUNDLE_ID,

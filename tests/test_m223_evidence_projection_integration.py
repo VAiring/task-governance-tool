@@ -53,7 +53,7 @@ def _database_observation(repo: Path, db_path: Path):
             binding_generation=1,
             canonical_path_hash=current.canonical_path_hash,
             display_name=current.display_name,
-            source_schema_version=19,
+            source_schema_version=20,
             binding_lineage=(current.canonical_path_hash,),
         ),
         generation_rows=(),

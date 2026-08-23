@@ -10,8 +10,9 @@
 > accepted predecessors. TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are also accepted
 > predecessors; accepted R4A left its inventory-approved retired material and
 > dedicated tests physically absent without an archive or dormant copy.
-> TG-M24.R3A owns current authority-only scope; TG-M24.R3B through TG-M24.CP4
-> remain inactive in their routed exact sequence.
+> TG-M24.R3A is an accepted predecessor; TG-M24.R3B owns current
+> authority-only scope, and TG-M24.R4B through TG-M24.CP4 remain inactive in
+> their routed exact sequence.
 > TG-M23 authority is accepted-predecessor only, and no TG-M24 Runner runtime
 > is active. Load files only when the current
 > Task Contract or the
@@ -35,7 +36,7 @@ targets, reviews, receipts, or completion history.
 
 - [TG-M22 Evidence Ledger](tg-m22-evidence-ledger.md#tg-m22-sequence)
   owns accepted TG-M22.1A/TG-M22.2/TG-M21.5/TG-M22.3/TG-M22.4 predecessor
-  detail; its supported schema-v19 behavior remains active through the
+  detail; its accepted predecessor behavior remains active through the current
   specification and design.
 - [TG-M23 Derived Evidence](tg-m23-derived-evidence.md#tg-m23-derived-evidence)
   is the sole unit owner/router for accepted TG-M23.1 design, accepted bounded
@@ -48,11 +49,11 @@ targets, reviews, receipts, or completion history.
   gate mutation, and Task mutation remain outside scope.
 - [TG-M24 Verification Runner](tg-m24-verification-runner.md#tg-m24-verification-runner)
   owns accepted TG-M24.1/TG-M24.1A/TG-M24.R1/TG-M24.R2A/TG-M24.R2B/
-  TG-M24.R2C/TG-M24.R4A/TG-M24.R4V routes, the superseded non-gating TG-M24.1B route,
-  current TG-M24.R3A storage baseline, and inactive TG-M24.R3B-through-
-  TG-M24.CP4 repair, implementation, gate, acceptance, and no-debt checkpoint
-  detail. Its trusted-local
-  explicit-opt-in boundary leaves
+  TG-M24.R2C/TG-M24.R4A/TG-M24.R4V/TG-M24.R3A routes, the superseded
+  non-gating TG-M24.1B route, current TG-M24.R3B Evidence/projection
+  compatibility baseline, and inactive TG-M24.R4B-through-TG-M24.CP4 repair,
+  implementation, gate, acceptance, and no-debt checkpoint detail. Its
+  trusted-local explicit-opt-in boundary leaves
   untrusted and external work on the M21 manual fallback, and loading it
   activates no product or later-unit behavior.
 

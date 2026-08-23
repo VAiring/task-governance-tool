@@ -148,7 +148,7 @@ class RelocationTokenCodecTests(unittest.TestCase):
             old_path_hash=OLD_HASH,
             new_path_hash=NEW_HASH,
             source_layout="fixed_current_v1",
-            source_schema_version=19,
+            source_schema_version=20,
         )
 
         token = encode_relocation_token(context, issued_at=ISSUED_AT)
@@ -214,7 +214,7 @@ class RelocationTokenCodecTests(unittest.TestCase):
         self.assert_invalid(
             legacy_context,
             source_layout="fixed_current_v1",
-            source_schema_version=20,
+            source_schema_version=21,
         )
 
     def test_encode_rejects_invalid_context_time_and_oversized_transport(self):

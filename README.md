@@ -5,8 +5,8 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.12.0` uses SQLite schema v19 and Viewer snapshot v4 with source
-schemas 5 through 19 as the current unpublished local candidate contract. It
+Release `0.12.0` uses SQLite schema v20 and Viewer snapshot v4 with source
+schemas 5 through 20 as the current unpublished local candidate contract. It
 has not been pushed, tagged, or published. The immutable published release
 remains v0.10.0 at its recorded commit, tag, and GitHub prerelease.
 
@@ -95,8 +95,12 @@ Evidence JSON at fixed `state/current/evidence/index.json` and
 `state/current/evidence/bundles/<completion-evidence-bundle-id>.json` paths,
 with its lock at `state/current/evidence/taskgov-evidence.lock`. Pre-v19 cycles remain
 index-only `legacy_unknown`. SQLite stays canonical and JSON is never imported.
-This activates no Runner, Analyzer, network/model invocation, Viewer Evidence
-surface, new public leaf, or new normal-loop call.
+Schema v20 preserves existing Bundle-v1 bytes and digests, seals Bundle v2 with
+a derived verification basis and null Runner observation for each new native
+completion, and publishes Evidence index v2 with `bundle_format_version` null,
+1, or 2 for legacy, preserved-v1, or native-v2 entries. This activates no
+Runner, Analyzer, network/model invocation, Viewer Evidence surface, new public
+leaf, or new normal-loop call.
 
 A binding mismatch is an exceptional relocation flow, not a normal Task-loop
 step. Normal commands and `doctor` never rebind state. Run
@@ -137,9 +141,9 @@ single bounded effective-ignore preflight may inspect Git. Doctor is optional
 and is not a prerequisite for setup or normal task work.
 
 Candidate validation rehearses the isolated transition from the exact legacy
-v0.1.0/schema-v2 baseline to v0.12.0/schema v19. Paired rollback restores the
+v0.1.0/schema-v2 baseline to v0.12.0/schema v20. Paired rollback restores the
 matched pre-migration package, database, and managed artifacts together; it
-never runs legacy code against schema v19 or treats a Git checkout alone as
+never runs legacy code against schema v20 or treats a Git checkout alone as
 state rollback. The published v0.10.0/schema-v16 and unpublished
 v0.11.0/schema-v17 rehearsal records remain immutable lineage and do not
 satisfy the current candidate gate. See
@@ -307,12 +311,13 @@ Taskgov starts no daemon, timer, background process, queue, service, browser,
 or maintenance command. Generated Evidence JSON, Viewer, and managed backups
 remain runtime artifacts under the ignored Skill `state/` directory. Evidence
 projection failure keeps the mutation successful and the last-good index,
-leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 19 and includes the same
+leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 20 and includes the same
 bounded newest-first completion history as `task show`. Sources 5-14 are shown
 honestly as empty legacy-incomplete history. The Viewer contains only sanitized
 task/review/audit projections and has no write controls or network dependency.
-It validates schema-v18+ subject/provenance/capture bindings and the schema-v19
-Bundle discriminator but adds no provenance/Bundle field, panel, filter, or
+It validates schema-v18+ subject/provenance/capture bindings, the schema-v19
+and schema-v20 Bundle discriminators, and the schema-v20 Bundle-v2 basis/null
+Runner observation, but adds no provenance/Bundle field, panel, filter, or
 other snapshot-v4 UI surface.
 
 Viewer auto-refresh is a separate opt-in browser presentation policy. Taskgov
@@ -517,9 +522,9 @@ coverage.
   trusted-local sequence repairs the existing WIP, removes retired security
   assets, freezes the M25 subsystem boundary, and then implements and accepts
   an explicit-opt-in Runner in ordered Tier 2 slices. TG-M24.1B's fixed-
-  Candidate-C route is superseded. The candidate remains v0.12.0/schema v19
-  at this authority cutover; no Runner, schema, CLI, Skill, or completion gate
-  is activated until its owning downstream unit is accepted.
+  Candidate-C route is superseded. The candidate is now v0.12.0/schema v20;
+  its R3B compatibility path activates no Runner runtime, process launch, new
+  CLI or Skill trigger, or completion-gate authority.
   Network/live
   Analyzer acceptance still requires separate authority. SQLite, `storage.py`,
   public CLI or Skill calls, network/live-model actions, gate mutation, and

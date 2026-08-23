@@ -37,6 +37,8 @@ from task_governance_tool.state_paths import (
 
 INDEX_DOMAIN = b"taskgov-evidence-index-v1\0"
 BUNDLE_DOMAIN = b"taskgov-completion-evidence-bundle-v1\0"
+INDEX_V2_DOMAIN = b"taskgov-evidence-index-v2\0"
+BUNDLE_V2_DOMAIN = b"taskgov-completion-evidence-bundle-v2\0"
 REVIEW_PROVENANCE_DOMAIN = b"taskgov-review-provenance-v1\0"
 FINDING_SNAPSHOT_DOMAIN = b"taskgov-completion-bundle-finding-snapshot-v1\0"
 CRITERION_DOMAIN = b"taskgov-contract-criterion-v1\0"
@@ -307,6 +309,7 @@ _INDEX_ENTRY_KEYS = (
     "file_digest",
     "sealed_at",
 )
+_INDEX_V2_ENTRY_KEYS = (*_INDEX_ENTRY_KEYS, "bundle_format_version")
 _BUNDLE_ENVELOPE_KEYS = ("bundle_digest", "format_version", "payload")
 _BUNDLE_PAYLOAD_KEYS = (
     "artifact_manifest",
@@ -329,6 +332,17 @@ _BUNDLE_PAYLOAD_KEYS = (
     "target",
     "task",
     "verification_receipt",
+)
+_BUNDLE_PAYLOAD_V2_KEYS = (
+    *_BUNDLE_PAYLOAD_KEYS,
+    "verification_basis",
+    "runner_observation",
+)
+_VERIFICATION_BASIS_KEYS = (
+    "basis_version",
+    "kind",
+    "runner_observation_id",
+    "verification_receipt_id",
 )
 _ARTIFACT_KEYS = (
     "artifact_manifest_id",
@@ -1076,8 +1090,19 @@ def _validate_completion(value: object) -> dict[str, Any]:
     return completion
 
 
-def _validate_index_entry(value: object) -> dict[str, Any]:
-    entry = _mapping(value, _INDEX_ENTRY_KEYS)
+def _validate_index_entry(
+    value: object,
+    *,
+    index_format_version: int = 1,
+) -> dict[str, Any]:
+    if index_format_version not in {1, 2}:
+        _invalid()
+    entry = _mapping(
+        value,
+        _INDEX_ENTRY_KEYS
+        if index_format_version == 1
+        else _INDEX_V2_ENTRY_KEYS,
+    )
     _identifier(entry["task_id"], _TASK_ID)
     _identifier(entry["completion_cycle_id"], _CYCLE_ID)
     _integer(entry["cycle_ordinal"], minimum=1)
@@ -1089,6 +1114,8 @@ def _validate_index_entry(value: object) -> dict[str, Any]:
         "file_digest",
         "sealed_at",
     )
+    if index_format_version == 2:
+        bundle_fields = (*bundle_fields, "bundle_format_version")
     if state == "legacy_unknown":
         if any(entry[field] is not None for field in bundle_fields):
             _invalid()
@@ -1099,9 +1126,20 @@ def _validate_index_entry(value: object) -> dict[str, Any]:
         _digest(entry["bundle_digest"])
         _digest(entry["file_digest"])
         _utc_second(entry["sealed_at"])
+        if (
+            index_format_version == 2
+            and _integer(entry["bundle_format_version"]) not in {1, 2}
+        ):
+            _invalid()
     else:
         _invalid()
     return entry
+
+
+def _analysis_entry(entry: Mapping[str, Any]) -> dict[str, Any]:
+    """Project an index-v2 entry onto the unchanged M23 source basis."""
+
+    return {field: entry[field] for field in _INDEX_ENTRY_KEYS}
 
 
 def _validate_index_envelope(value: object) -> dict[str, Any]:
@@ -1110,22 +1148,33 @@ def _validate_index_envelope(value: object) -> dict[str, Any]:
     envelope = _mapping(value, _INDEX_ENVELOPE_KEYS)
     payload = _mapping(envelope["payload"], _INDEX_PAYLOAD_KEYS)
     _project_id(payload["project_id"])
-    if (
-        _integer(payload["source_schema_version"]) != 19
-        or _integer(envelope["format_version"]) != 1
-    ):
+    version_pair = (
+        _integer(payload["source_schema_version"]),
+        _integer(envelope["format_version"]),
+    )
+    if version_pair not in {(19, 1), (20, 2)}:
         _invalid()
+    index_format_version = version_pair[1]
     _integer(payload["projection_generation"])
     bundle_count = _integer(payload["bundle_count"])
     legacy_count_declared = _integer(payload["legacy_count"])
     index_digest = _digest(envelope["index_digest"])
     try:
-        expected_digest = _domain_digest(INDEX_DOMAIN, payload)
+        expected_digest = _domain_digest(
+            INDEX_DOMAIN if index_format_version == 1 else INDEX_V2_DOMAIN,
+            payload,
+        )
     except AnalysisContractError as exc:
         raise EvidenceConsumerError() from exc
     if index_digest != expected_digest:
         _invalid()
-    entries = [_validate_index_entry(item) for item in _array(payload["entries"])]
+    entries = [
+        _validate_index_entry(
+            item,
+            index_format_version=index_format_version,
+        )
+        for item in _array(payload["entries"])
+    ]
     if len(entries) > INDEX_MAX_ENTRIES:
         _invalid()
     expected = sorted(
@@ -1722,12 +1771,30 @@ def _validate_bundle_payload(
     *,
     entry: Mapping[str, Any],
     project_id: str,
+    bundle_format_version: int,
 ) -> dict[str, Any]:
-    payload = _mapping(value, _BUNDLE_PAYLOAD_KEYS)
+    if bundle_format_version not in {1, 2}:
+        _invalid()
+    payload = _mapping(
+        value,
+        _BUNDLE_PAYLOAD_KEYS
+        if bundle_format_version == 1
+        else _BUNDLE_PAYLOAD_V2_KEYS,
+    )
     sealed_at = _utc_second(payload["sealed_at"])
+    expected_version_pair = (
+        (19, 1) if bundle_format_version == 1 else (20, 2)
+    )
     if (
-        _integer(payload["source_schema_version"]) != 19
-        or _integer(payload["bundle_version"]) != 1
+        (
+            _integer(payload["source_schema_version"]),
+            _integer(payload["bundle_version"]),
+        )
+        != expected_version_pair
+        or (
+            "bundle_format_version" in entry
+            and entry["bundle_format_version"] != bundle_format_version
+        )
         or payload["project_id"] != project_id
         or payload["bundle_id"] != entry["bundle_id"]
         or payload["completion_cycle_id"] != entry["completion_cycle_id"]
@@ -1867,6 +1934,42 @@ def _validate_bundle_payload(
     elif verification is not None:
         _invalid()
 
+    if bundle_format_version == 2:
+        verification_basis = _mapping(
+            payload["verification_basis"],
+            _VERIFICATION_BASIS_KEYS,
+        )
+        _integer(verification_basis["basis_version"], minimum=1)
+        verification_receipt_id = (
+            verification["verification_receipt_id"]
+            if verification is not None
+            else None
+        )
+        if verification_basis["verification_receipt_id"] is not None:
+            _identifier(
+                verification_basis["verification_receipt_id"],
+                _VERIFICATION_ID,
+            )
+        if (
+            verification_basis["basis_version"] != 1
+            or verification_basis["runner_observation_id"] is not None
+            or payload["runner_observation"] is not None
+            or verification_basis["verification_receipt_id"]
+            != verification_receipt_id
+            or (
+                verification_basis["kind"] == "caller_attestation"
+                and verification is None
+            )
+            or (
+                verification_basis["kind"] == "not_required"
+                and verification is not None
+            )
+            or verification_basis["kind"]
+            not in {"caller_attestation", "not_required"}
+        ):
+            _invalid()
+        payload["verification_basis"] = verification_basis
+
     _validate_relations(
         payload=payload,
         criteria=criteria,
@@ -1920,19 +2023,28 @@ class ValidatedEvidenceIndex:
         projection_generation: int,
         index_digest: str,
         entries: Sequence[Mapping[str, Any]],
+        *,
+        format_version: int = 1,
+        source_schema_version: int = 19,
     ) -> None:
         if type(entries) not in {list, tuple}:
             _invalid()
-        normalized_entries = [_validate_index_entry(item) for item in entries]
+        normalized_entries = [
+            _validate_index_entry(
+                item,
+                index_format_version=format_version,
+            )
+            for item in entries
+        ]
         bundle_count = sum(
             item["bundle_state"] == "native" for item in normalized_entries
         )
         envelope = _validate_index_envelope(
             {
-                "format_version": 1,
+                "format_version": format_version,
                 "index_digest": index_digest,
                 "payload": {
-                    "source_schema_version": 19,
+                    "source_schema_version": source_schema_version,
                     "project_id": project_id,
                     "projection_generation": projection_generation,
                     "bundle_count": bundle_count,
@@ -1964,6 +2076,16 @@ class ValidatedEvidenceIndex:
         return str(self._fresh_envelope()["index_digest"])
 
     @property
+    def format_version(self) -> int:
+        return int(self._fresh_envelope()["format_version"])
+
+    @property
+    def source_schema_version(self) -> int:
+        return int(
+            self._fresh_envelope()["payload"]["source_schema_version"]
+        )
+
+    @property
     def entries(self) -> tuple[dict[str, Any], ...]:
         return tuple(self._fresh_envelope()["payload"]["entries"])
 
@@ -1982,8 +2104,29 @@ class ValidatedEvidenceSource:
         source_basis: object,
         source: object | None,
     ) -> None:
+        expected_bundle_format_version: int | None = None
+        normalized_source_basis = source_basis
+        if isinstance(source_basis, Mapping):
+            copied_basis = dict(source_basis)
+            candidate_entry = copied_basis.get("entry")
+            if (
+                isinstance(candidate_entry, Mapping)
+                and set(candidate_entry) == set(_INDEX_V2_ENTRY_KEYS)
+            ):
+                full_entry = _validate_index_entry(
+                    candidate_entry,
+                    index_format_version=2,
+                )
+                expected_bundle_format_version = full_entry[
+                    "bundle_format_version"
+                ]
+                copied_basis["entry"] = _analysis_entry(full_entry)
+                normalized_source_basis = copied_basis
         try:
-            basis = validate_source_basis(source_basis, source_kind=source_kind)
+            basis = validate_source_basis(
+                normalized_source_basis,
+                source_kind=source_kind,
+            )
         except AnalysisContractError as exc:
             raise EvidenceConsumerError() from exc
         _project_id(basis["project_id"])
@@ -1996,8 +2139,14 @@ class ValidatedEvidenceSource:
             source_bytes = None
         elif source_kind == "native_bundle":
             envelope = _mapping(source, _BUNDLE_ENVELOPE_KEYS)
+            bundle_format_version = _integer(envelope["format_version"])
             if (
-                _integer(envelope["format_version"]) != 1
+                bundle_format_version not in {1, 2}
+                or (
+                    expected_bundle_format_version is not None
+                    and bundle_format_version
+                    != expected_bundle_format_version
+                )
                 or envelope["bundle_digest"] != entry["bundle_digest"]
             ):
                 _invalid()
@@ -2005,8 +2154,14 @@ class ValidatedEvidenceSource:
                 envelope["payload"],
                 entry=entry,
                 project_id=basis["project_id"],
+                bundle_format_version=bundle_format_version,
             )
-            if envelope["bundle_digest"] != _domain_digest(BUNDLE_DOMAIN, payload):
+            domain = (
+                BUNDLE_DOMAIN
+                if bundle_format_version == 1
+                else BUNDLE_V2_DOMAIN
+            )
+            if envelope["bundle_digest"] != _domain_digest(domain, payload):
                 _invalid()
             source_bytes = canonical_json_bytes(envelope)
             if entry["file_digest"] != (
@@ -2047,6 +2202,8 @@ def revalidate_validated_index(value: object) -> ValidatedEvidenceIndex:
         payload["projection_generation"],
         envelope["index_digest"],
         payload["entries"],
+        format_version=envelope["format_version"],
+        source_schema_version=payload["source_schema_version"],
     )
 
 
@@ -2092,6 +2249,8 @@ def read_evidence_index(
         payload["projection_generation"],
         envelope["index_digest"],
         payload["entries"],
+        format_version=envelope["format_version"],
+        source_schema_version=payload["source_schema_version"],
     )
 
 
@@ -2129,8 +2288,13 @@ def _load_evidence_source(
         )
     except (StatePathError, AnalysisContractError, OSError) as exc:
         raise EvidenceConsumerError() from exc
+    expected_bundle_format_version = selected.get(
+        "bundle_format_version",
+        1,
+    )
+    bundle_format_version = _integer(envelope["format_version"])
     if (
-        _integer(envelope["format_version"]) != 1
+        bundle_format_version != expected_bundle_format_version
         or envelope["bundle_digest"] != selected["bundle_digest"]
     ):
         _invalid()
@@ -2138,8 +2302,12 @@ def _load_evidence_source(
         envelope["payload"],
         entry=selected,
         project_id=index.project_id,
+        bundle_format_version=bundle_format_version,
     )
-    if envelope["bundle_digest"] != _domain_digest(BUNDLE_DOMAIN, payload):
+    domain = (
+        BUNDLE_DOMAIN if bundle_format_version == 1 else BUNDLE_V2_DOMAIN
+    )
+    if envelope["bundle_digest"] != _domain_digest(domain, payload):
         _invalid()
     return ValidatedEvidenceSource(source_kind, basis, envelope)
 
@@ -2151,7 +2319,10 @@ def validate_evidence_source(
     """Bind one exact current index entry and its independently checked source."""
 
     stable_index = revalidate_validated_index(index)
-    selected = _validate_index_entry(entry)
+    selected = _validate_index_entry(
+        entry,
+        index_format_version=stable_index.format_version,
+    )
     if selected not in stable_index.entries:
         _invalid()
     source_kind = (
@@ -2163,7 +2334,7 @@ def validate_evidence_source(
                 "project_id": stable_index.project_id,
                 "projection_generation": stable_index.projection_generation,
                 "index_digest": stable_index.index_digest,
-                "entry": selected,
+                "entry": _analysis_entry(selected),
             },
             source_kind=source_kind,
         )
@@ -2199,13 +2370,19 @@ def revalidate_descriptor_source(
         )
     except AnalysisContractError as exc:
         raise EvidenceConsumerError() from exc
-    selected = _validate_index_entry(basis["entry"])
+    basis_entry = _validate_index_entry(basis["entry"])
     _project_id(basis["project_id"])
+    matching_entries = [
+        item
+        for item in stable_index.entries
+        if _analysis_entry(item) == basis_entry
+    ]
     if (
         basis["project_id"] != stable_index.project_id
-        or selected not in stable_index.entries
+        or len(matching_entries) != 1
     ):
         _invalid()
+    selected = matching_entries[0]
     return _load_evidence_source(
         stable_index,
         selected=selected,

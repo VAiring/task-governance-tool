@@ -43,9 +43,10 @@ TG-M24.R2A, TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are accepted pred
 whose retired adversarial qualification details supply no current gate.
 Accepted R4A left its inventory-approved retired repository material and
 dedicated tests physically absent, without an archive or dormant copy.
-TG-M24.1B is superseded and non-gating. TG-M24.R3A and TG-M24.R3B are accepted
-predecessors; TG-M24.R4B is the sole current unit, and TG-M24.R5 through
-TG-M24.CP4 remain inactive in the exact sequential order owned by the routed contract. The
+TG-M24.1B is superseded and non-gating. TG-M24.R3A, TG-M24.R3B, and TG-M24.R4B
+are accepted predecessors; TG-M24.R5 is the sole current unit, and TG-M24.2A
+through TG-M24.CP4 remain inactive in the exact sequential order owned by the
+routed contract. The
 separate TG-M24.R2 bootstrap checkpoint supported accepted R1 but activates no
 product behavior.
 No TG-M23 execution unit is current, and no TG-M24 Runner runtime is active;
@@ -61,8 +62,8 @@ or core semantics.
 TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
 preserves the inactive post-M24 normalization scope after TG-M24.CP4. Neither
 route changes product behavior. M24.1 design, M24.1A, R1, R2A, R2B, R2C,
-R4A, R4V, R3A, and R3B are accepted predecessors, M24.1B is superseded, R4B is
-current, every later repair and acceptance unit is inactive, and indexing or
+R4A, R4V, R3A, R3B, and R4B are accepted predecessors, M24.1B is superseded,
+R5 is current, every later repair and acceptance unit is inactive, and indexing or
 reading them activates no product behavior.
 
 ## Non-Authoritative History
@@ -139,9 +140,8 @@ owner, route, unit, and membership are the enforced meaning.
     {
       "path": "docs/execution-contracts/tg-m24-verification-runner.md",
       "route_anchor": "tg-m24-verification-runner",
-      "current_units": ["TG-M24.R4B"],
+      "current_units": ["TG-M24.R5"],
       "inactive_units": [
-        "TG-M24.R5",
         "TG-M24.2A",
         "TG-M24.2B",
         "TG-M24.2C",

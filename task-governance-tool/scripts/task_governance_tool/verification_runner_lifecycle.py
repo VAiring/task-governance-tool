@@ -21,16 +21,17 @@ from task_governance_tool.artifact_lock import (
     zero_wait_artifact_lock,
 )
 from task_governance_tool.state_paths import (
+    DirectoryIdentity,
+    FileIdentity,
     StatePathError,
     ValidatedDirectory,
-    ValidatedFile,
-    VerificationRunnerStatePaths,
     create_physical_directory_exclusive,
-    hash_physical_file,
     inspect_physical_directory,
+    inspect_physical_file,
     path_lexically_exists,
     remove_explicit_files_and_directories,
     rename_no_replace,
+    rmdir_validated_directory,
     require_contained,
 )
 
@@ -42,7 +43,6 @@ _EXPECTED_SCRATCH_CHILDREN = ("tmp", "home", "local", "roaming")
 _MAX_ATTEMPT_FILES = 30_000
 _MAX_ATTEMPT_DIRECTORIES = 30_100
 _MAX_ATTEMPT_DEPTH = 64
-_MAX_ATTEMPT_TOTAL_BYTES = 536_870_912  # 512 MiB materialized target.
 _MAX_ATTEMPT_TRAVERSAL_ENTRIES = _MAX_ATTEMPT_FILES + _MAX_ATTEMPT_DIRECTORIES
 _MAX_LAYOUT_ATTEMPT_ENTRIES = 1
 _MAX_LAYOUT_TRAVERSAL_ENTRIES = 3 + _MAX_LAYOUT_ATTEMPT_ENTRIES
@@ -56,6 +56,47 @@ class VerificationRunnerLifecycleError(Exception):
 
     def __str__(self) -> str:
         return self.message
+
+
+@dataclass(frozen=True)
+class VerificationRunnerStatePaths:
+    """Closed caller-owned paths for the private Runner lifecycle tree."""
+
+    root: Path = field(repr=False)
+    lock: Path = field(repr=False)
+    attempts: Path = field(repr=False)
+    quarantine: Path = field(repr=False)
+
+    def __post_init__(self) -> None:
+        values = (self.root, self.lock, self.attempts, self.quarantine)
+        if any(not isinstance(value, Path) or not value.is_absolute() for value in values):
+            raise _failure()
+        root_key = os.path.normcase(os.path.normpath(str(self.root)))
+        expected = (
+            (self.lock, "taskgov-verification-runner.lock"),
+            (self.attempts, "attempts"),
+            (self.quarantine, "quarantine"),
+        )
+        for candidate, name in expected:
+            if (
+                candidate.name != name
+                or os.path.normcase(os.path.normpath(str(candidate.parent)))
+                != root_key
+            ):
+                raise _failure()
+
+
+def verification_runner_state_paths(root: Path) -> VerificationRunnerStatePaths:
+    """Derive the one fixed internal lifecycle layout from its owned root."""
+
+    if not isinstance(root, Path) or not root.is_absolute():
+        raise _failure()
+    return VerificationRunnerStatePaths(
+        root=root,
+        lock=root / "taskgov-verification-runner.lock",
+        attempts=root / "attempts",
+        quarantine=root / "quarantine",
+    )
 
 
 @dataclass
@@ -92,6 +133,33 @@ class RunnerAttemptPaths:
 
 def _failure(*, code: str = "runner_state_invalid") -> VerificationRunnerLifecycleError:
     return VerificationRunnerLifecycleError(code=code)
+
+
+@dataclass(frozen=True)
+class RunnerPrivateTreeResultV1:
+    attempt_id: str
+    state: str
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.attempt_id) is not str
+            or _ATTEMPT_ID.fullmatch(self.attempt_id) is None
+            or self.state not in {"absent", "uncertain"}
+        ):
+            raise _failure()
+
+
+@dataclass(frozen=True)
+class _RunnerOwnerDirectoryIdentities:
+    root: DirectoryIdentity
+    attempts: DirectoryIdentity
+    quarantine: DirectoryIdentity
+
+
+@dataclass(frozen=True)
+class _OwnedDeletionFile:
+    path: Path = field(repr=False)
+    identity: FileIdentity
 
 
 def _attempt_id(value: object) -> str:
@@ -383,16 +451,16 @@ def _enumerate_owned_tree(
     tree: Path,
     *,
     owner_root: Path,
-) -> tuple[tuple[ValidatedFile, ...], tuple[ValidatedDirectory, ...]]:
-    files: list[ValidatedFile] = []
+    deadline: float,
+) -> tuple[tuple[_OwnedDeletionFile, ...], tuple[ValidatedDirectory, ...]]:
+    files: list[_OwnedDeletionFile] = []
     directories: list[tuple[int, ValidatedDirectory]] = []
-    total_bytes = 0
     file_count = 0
     directory_count = 1
     pending: list[tuple[Path, int]] = [(tree, 0)]
     budget = _TraversalBudget(
         maximum_entries=_MAX_ATTEMPT_TRAVERSAL_ENTRIES - 1,
-        deadline=time.monotonic() + _TRAVERSAL_TIMEOUT_SECONDS,
+        deadline=deadline,
     )
     budget.observe()
     while pending:
@@ -431,20 +499,18 @@ def _enumerate_owned_tree(
                 file_count += 1
                 if file_count > _MAX_ATTEMPT_FILES:
                     raise _failure()
-                remaining_bytes = _MAX_ATTEMPT_TOTAL_BYTES - total_bytes
-                if size > remaining_bytes:
-                    raise _failure()
                 budget.check_deadline()
+                validated_path, identity = inspect_physical_file(
+                    entry,
+                    root=owner_root,
+                )
                 files.append(
-                    hash_physical_file(
-                        entry,
-                        root=owner_root,
-                        expected_size=size,
-                        max_bytes=remaining_bytes,
+                    _OwnedDeletionFile(
+                        path=validated_path,
+                        identity=identity,
                     )
                 )
                 budget.check_deadline()
-                total_bytes += size
             else:
                 raise _failure()
     files.sort(key=lambda item: str(item.path).encode("utf-8"))
@@ -454,13 +520,50 @@ def _enumerate_owned_tree(
     return tuple(files), tuple(item[1] for item in directories)
 
 
-def remove_attempt_tree(
+def _remove_validated_tree(
+    *,
+    root: Path,
+    files: tuple[_OwnedDeletionFile, ...],
+    directories: tuple[ValidatedDirectory, ...],
+    deadline: float,
+) -> None:
+    if len(files) > _MAX_ATTEMPT_FILES or len(directories) > _MAX_ATTEMPT_DIRECTORIES:
+        raise _failure()
+    for file in files:
+        if time.monotonic() > deadline:
+            raise _failure()
+        validated_path, identity = inspect_physical_file(file.path, root=root)
+        if identity != file.identity:
+            raise _failure()
+        try:
+            validated_path.unlink()
+        except OSError as exc:
+            raise _failure() from exc
+        if time.monotonic() > deadline:
+            raise _failure()
+    for directory in directories:
+        if time.monotonic() > deadline:
+            raise _failure()
+        rmdir_validated_directory(directory, root=root)
+        if time.monotonic() > deadline:
+            raise _failure()
+
+
+def _remove_attempt_tree_or_raise(
     paths: VerificationRunnerStatePaths,
     attempt_id: str,
+    expected_owners: _RunnerOwnerDirectoryIdentities,
 ) -> None:
     """Delete one explicit DB-named attempt/quarantine tree, never an unknown."""
 
     exact = attempt_paths(paths, attempt_id)
+    inventory = inspect_runner_layout(paths)
+    require_known_attempt_inventory(
+        inventory,
+        known_attempt_ids=(attempt_id,),
+    )
+    if _capture_owner_directory_identities(paths) != expected_owners:
+        raise _failure()
     present = [
         candidate
         for candidate in (exact.root, exact.quarantine)
@@ -471,18 +574,90 @@ def remove_attempt_tree(
     if not present:
         return
     try:
+        deadline = time.monotonic() + _TRAVERSAL_TIMEOUT_SECONDS
         files, directories = _enumerate_owned_tree(
-            present[0], owner_root=paths.root
+            present[0],
+            owner_root=paths.root,
+            deadline=deadline,
         )
-        remove_explicit_files_and_directories(
+        if _capture_owner_directory_identities(paths) != expected_owners:
+            raise _failure()
+        _remove_validated_tree(
             root=paths.root,
             files=files,
-            directories_deepest_first=directories,
-            max_files=_MAX_ATTEMPT_FILES,
-            max_directories=_MAX_ATTEMPT_DIRECTORIES,
+            directories=directories,
+            deadline=deadline,
         )
     except (OSError, StatePathError) as exc:
         raise _failure() from exc
+
+
+def _capture_owner_directory_identities(
+    paths: VerificationRunnerStatePaths,
+) -> _RunnerOwnerDirectoryIdentities:
+    return _RunnerOwnerDirectoryIdentities(
+        root=inspect_physical_directory(
+            paths.root,
+            root=paths.root.parent,
+        ).identity,
+        attempts=inspect_physical_directory(
+            paths.attempts,
+            root=paths.root,
+        ).identity,
+        quarantine=inspect_physical_directory(
+            paths.quarantine,
+            root=paths.root,
+        ).identity,
+    )
+
+
+def _attempt_absence_is_proved(
+    paths: VerificationRunnerStatePaths,
+    attempt_id: str,
+    expected_owners: _RunnerOwnerDirectoryIdentities,
+) -> bool:
+    inventory = inspect_runner_layout(paths)
+    require_known_attempt_inventory(
+        inventory,
+        known_attempt_ids=(attempt_id,),
+    )
+    exact = attempt_paths(paths, attempt_id)
+    owners_unchanged = _capture_owner_directory_identities(paths) == expected_owners
+    return bool(
+        owners_unchanged
+        and attempt_id not in inventory.attempt_ids
+        and attempt_id not in inventory.quarantine_ids
+        and not path_lexically_exists(exact.root)
+        and not path_lexically_exists(exact.quarantine)
+    )
+
+
+def cleanup_attempt_tree(
+    paths: VerificationRunnerStatePaths,
+    attempt_id: str,
+) -> RunnerPrivateTreeResultV1:
+    """Remove one valid owned tree and return only absent or uncertainty."""
+
+    if not isinstance(paths, VerificationRunnerStatePaths):
+        raise _failure()
+    exact_id = _attempt_id(attempt_id)
+    try:
+        owner_identities = _capture_owner_directory_identities(paths)
+        _remove_attempt_tree_or_raise(paths, exact_id, owner_identities)
+        state = (
+            "absent"
+            if _attempt_absence_is_proved(paths, exact_id, owner_identities)
+            else "uncertain"
+        )
+    except (
+        OSError,
+        RuntimeError,
+        UnicodeError,
+        StatePathError,
+        VerificationRunnerLifecycleError,
+    ):
+        state = "uncertain"
+    return RunnerPrivateTreeResultV1(exact_id, state)
 
 
 def require_known_attempt_inventory(

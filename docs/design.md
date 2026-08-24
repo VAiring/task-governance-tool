@@ -3096,6 +3096,26 @@ case-insensitively unique keys `APPDATA`, `HOME`, `LOCALAPPDATA`,
 Windows directory; and the three `PYTHON*` values are exactly `"1"`. It has no
 additional or ambient key, and all path values satisfy `absolute_path`.
 
+Current 2B fixes the package-runtime executable source to the operating-system
+image path of the current parent process. `sys.executable` is used only to
+corroborate the same physical file; neither value is resolved through `PATH`,
+configuration, a plan, or target material. The runtime-identity layer observes
+every path component without following a symlink or reparse point, requires a
+normalized absolute regular `python.exe` outside the owned target and scratch
+trees, and holds a non-inheritable read handle that denies write and delete
+sharing. The parent keeps that lease open from the final identity observation
+through the complete process-adapter call and closes it on every exit. Failure
+to establish or retain the lease is a sanitized admission failure with no
+alternate executable. The process adapter consumes only the leased absolute
+path in the closed request and does not import the runtime-identity layer.
+Each lease serializes executable access, context state, and native close with a
+private non-reentrant lock, so no two native close attempts overlap and access
+cannot observe an in-progress close. Context entry is single-depth; nested
+entry and direct close while a context is active fail closed, while the
+matching context exit performs the one release transition. A definitive native
+close failure retains ownership for a later serialized retry, whereas an
+interrupted native close becomes uncertain and is never retried.
+
 `steps` is a tuple whose ordinal is its one-based position. `step_id` satisfies
 `identifier`; `mode` is exactly `script|module`; `entrypoint` satisfies the
 matching entrypoint grammar; `argv` is a tuple of `literal_arg`; and `cwd`
@@ -3124,10 +3144,67 @@ is nonnegative and bounded by the request. Result `steps` satisfies the exact
 count, uniqueness, range, and order relation above, so it has at most one
 sanitized result per request step. A result contains no exit code, output byte,
 argv, environment value, credential, path, exception body, or arbitrary text.
+
+Current 2B closes the adapter-local pairings exactly as follows; a slash joins
+`outcome / reason / launch_state`, and `null` is the only absent reason:
+
+`RunnerProcessStepPairingsV1`:
+
+  blocked_prelaunch / runtime_unavailable|process_setup_failed|process_boundary_unproved|process_create_failed / no_launch
+  pass / null / launched
+  fail / step_nonzero / launched
+  timeout / timeout / launched
+  cancelled / cancelled / launched
+  resource_exceeded / cpu_limit|memory_limit / launched
+  output_rejected / output_limit / launched
+  process_error / process_boundary_unproved|process_resume_failed|process_wait_failed|pipe_drain_failed|process_tree_unproved / launched
+  process_error / process_create_failed / no_launch
+  controller_interrupted / controller_interrupted / no_launch|launched
+  cleanup_failed / process_cleanup_failed / no_launch|launched
+
+`RunnerProcessResultPairingsV1`:
+
+  blocked_prelaunch / runtime_unavailable|process_setup_failed|process_boundary_unproved|process_create_failed|cancelled|controller_interrupted / no_launch
+  pass / null / launched
+  fail / step_nonzero / launched
+  timeout / timeout / launched
+  cancelled / cancelled / launched
+  resource_exceeded / cpu_limit|memory_limit / launched
+  output_rejected / output_limit / launched
+  process_error / runtime_unavailable|process_setup_failed|process_boundary_unproved|process_create_failed|process_resume_failed|process_wait_failed|pipe_drain_failed|process_tree_unproved / launched
+  controller_interrupted / controller_interrupted / no_launch|launched
+  cleanup_failed / process_cleanup_failed / no_launch|launched
+
+`cpu_time_ms` is total user CPU time, `peak_job_memory_bytes` is the peak Job
+memory observation, and `total_process_count` is the cumulative number of
+processes created in the applicable per-step Jobs. Each is absent as one group
+or is a nonnegative signed-64-bit integer. CPU and memory observations on a
+successful or ordinary nonzero step do not exceed that step's request limit.
+`process_limit` bounds simultaneously active processes in each Job; it is not
+an invalid upper bound on the cumulative `total_process_count`. Request-level
+CPU and process counts are checked sums and request-level memory is the checked
+maximum. A limit or cleanup failure may omit accounting, but it never changes
+the three mandatory Boolean cleanup proofs. Windows rejects creation beyond the
+active-process limit, while the child may surface that rejection only as the
+ordinary sanitized `step_nonzero`; 2B adds no completion-port or notification
+infrastructure solely to reclassify it as a resource result.
+
 process_zero, handles_closed, and raw_output_discarded must all be true before
 the service can accept process cleanup. The lifecycle layer separately returns
 only the same safe `attempt_id` and the exact `private_tree_state` set above;
 it returns no path or filesystem detail.
+
+The 2B lifecycle cleanup call accepts only its fixed parent-owned Runner paths
+and one valid `attempt_id`. It returns `state=absent` only after a bounded
+no-follow removal and a fresh proof that both the exact attempt and quarantine
+entries are absent while their owning parent-directory identities remain
+unchanged. Already-absent is an idempotent `absent` result. Simultaneous
+attempt/quarantine entries, a foreign entry, reparse or identity change,
+traversal bound or timeout, partial deletion, reappearance, or any observation
+or deletion failure returns `state=uncertain`; it never authorizes an
+out-of-root deletion, copy-back, alternate cleanup root, or diagnostic detail.
+An invalid attempt identifier is rejected before cleanup rather than converted
+to either result state.
 
 ### Cleanup Acceptance, Privacy, And Non-Activation
 

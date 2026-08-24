@@ -62,6 +62,25 @@ class ReleaseManifest:
     release_origin: str
     core_files: dict[str, str]
 
+    def canonical_value(self) -> dict[str, Any]:
+        """Return the closed release-core identity used by internal consumers."""
+
+        return {
+            "core_files": dict(sorted(self.core_files.items())),
+            "manifest_version": self.manifest_version,
+            "package_name": self.package_name,
+            "package_version": self.package_version,
+        }
+
+
+class ReleaseManifestVerificationError(RuntimeError):
+    """One sanitized failure for strict internal release-core verification."""
+
+    code = "package_core_unverified"
+
+    def __init__(self) -> None:
+        super().__init__("packaged core identity could not be verified")
+
 
 @dataclass(frozen=True)
 class PackageSelfStatus:
@@ -453,6 +472,76 @@ def _unknown_status(
         changed_core_paths_truncated=False,
         unknown_reasons=(reason,),
     )
+
+
+def verify_release_manifest_core(
+    skill_root: str | os.PathLike[str],
+    *,
+    expected_package_version: str,
+) -> ReleaseManifest:
+    """Verify the complete manifest-owned package core or fail sanitarily.
+
+    Unlike the diagnostic status projection, this internal boundary has no
+    warning state: every identity, inventory, or observation uncertainty is a
+    single closed failure.  It returns no changed path or other filesystem
+    detail.
+    """
+
+    try:
+        root = Path(skill_root)
+        if (
+            type(expected_package_version) is not str
+            or len(expected_package_version) > MAX_PACKAGE_VERSION_LENGTH
+            or _VERSION_PATTERN.fullmatch(expected_package_version) is None
+        ):
+            raise _ManifestInvalid("expected package version is invalid")
+        _observe_directory(root)
+        manifest = _load_manifest(root)
+        if (
+            manifest.manifest_version != MANIFEST_VERSION
+            or manifest.package_name != PACKAGE_NAME
+            or manifest.package_version != expected_package_version
+        ):
+            raise _ManifestInvalid("release manifest identity does not match")
+
+        actual_files, non_regular_paths, directory_observations = (
+            _scan_core_entries(root)
+        )
+        _revalidate_directories(directory_observations)
+        expected_paths = set(manifest.core_files)
+        if non_regular_paths or set(actual_files) != expected_paths:
+            raise _ManifestInvalid("release core inventory does not match")
+
+        total_hashed_bytes = 0
+        for relative_path in sorted(expected_paths):
+            digest, byte_count = _hash_core_file(
+                root / Path(*relative_path.split("/")),
+                remaining_total_bytes=MAX_TOTAL_CORE_BYTES - total_hashed_bytes,
+            )
+            total_hashed_bytes += byte_count
+            if digest != manifest.core_files[relative_path]:
+                raise _ManifestInvalid("release core digest does not match")
+        _revalidate_directories(directory_observations)
+        _observe_directory(root)
+        return ReleaseManifest(
+            manifest_version=manifest.manifest_version,
+            package_name=manifest.package_name,
+            package_version=manifest.package_version,
+            release_origin=manifest.release_origin,
+            core_files=dict(sorted(manifest.core_files.items())),
+        )
+    except ReleaseManifestVerificationError:
+        raise
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+        _InspectionIncomplete,
+        _ManifestInvalid,
+    ) as exc:
+        raise ReleaseManifestVerificationError() from exc
 
 
 def inspect_local_package(

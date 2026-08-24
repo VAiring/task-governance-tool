@@ -15,7 +15,7 @@ import time
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NoReturn
+from typing import Callable, NoReturn
 
 
 _SAFE_CODES = frozenset(
@@ -119,11 +119,8 @@ EXACT_JOB_LIMIT_FLAGS = (
     | JOB_OBJECT_LIMIT_PROCESS_MEMORY
     | JOB_OBJECT_LIMIT_JOB_TIME
 )
-EXACT_JOB_UI_FLAGS = 0xFF
 JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION = 1
-JOB_OBJECT_BASIC_UI_RESTRICTIONS = 4
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
-JOB_OBJECT_LIMIT_VIOLATION_INFORMATION = 13
 
 
 class _SECURITY_ATTRIBUTES(ctypes.Structure):
@@ -209,10 +206,6 @@ class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
     )
 
 
-class _JOBOBJECT_BASIC_UI_RESTRICTIONS(ctypes.Structure):
-    _fields_ = (("UIRestrictionsClass", DWORD),)
-
-
 class _JOBOBJECT_BASIC_ACCOUNTING_INFORMATION_STRUCT(ctypes.Structure):
     _fields_ = (
         ("TotalUserTime", LONGLONG),
@@ -226,23 +219,6 @@ class _JOBOBJECT_BASIC_ACCOUNTING_INFORMATION_STRUCT(ctypes.Structure):
     )
 
 
-class _JOBOBJECT_LIMIT_VIOLATION_INFORMATION(ctypes.Structure):
-    _fields_ = (
-        ("LimitFlags", DWORD),
-        ("ViolationLimitFlags", DWORD),
-        ("IoReadBytes", ULONGLONG),
-        ("IoReadBytesLimit", ULONGLONG),
-        ("IoWriteBytes", ULONGLONG),
-        ("IoWriteBytesLimit", ULONGLONG),
-        ("PerJobUserTime", LONGLONG),
-        ("PerJobUserTimeLimit", LONGLONG),
-        ("JobMemory", ULONGLONG),
-        ("JobMemoryLimit", ULONGLONG),
-        ("RateControlTolerance", DWORD),
-        ("RateControlToleranceLimit", DWORD),
-    )
-
-
 def abi_layout() -> dict[str, int]:
     return {
         "pointer_size": ctypes.sizeof(ctypes.c_void_p),
@@ -253,9 +229,6 @@ def abi_layout() -> dict[str, int]:
         "job_extended_limit_size": ctypes.sizeof(_JOBOBJECT_EXTENDED_LIMIT_INFORMATION),
         "job_accounting_size": ctypes.sizeof(
             _JOBOBJECT_BASIC_ACCOUNTING_INFORMATION_STRUCT
-        ),
-        "job_limit_violation_size": ctypes.sizeof(
-            _JOBOBJECT_LIMIT_VIOLATION_INFORMATION
         ),
     }
 
@@ -273,7 +246,6 @@ def _assert_supported_abi() -> None:
         or ctypes.sizeof(_JOBOBJECT_BASIC_LIMIT_INFORMATION) != 64
         or ctypes.sizeof(_JOBOBJECT_EXTENDED_LIMIT_INFORMATION) != 144
         or ctypes.sizeof(_JOBOBJECT_BASIC_ACCOUNTING_INFORMATION_STRUCT) != 48
-        or ctypes.sizeof(_JOBOBJECT_LIMIT_VIOLATION_INFORMATION) != 80
     ):
         _fail("sandbox_unavailable")
 
@@ -432,7 +404,7 @@ def _apis() -> _Apis:
 
 
 class OwnedHandle:
-    __slots__ = ("_value",)
+    __slots__ = ("_state", "_value")
 
     def __init__(self, value: object) -> None:
         raw = (
@@ -443,20 +415,36 @@ class OwnedHandle:
         if raw in {0, INVALID_HANDLE_VALUE}:
             _fail("sandbox_boundary_violation")
         self._value = raw
+        self._state = "open"
 
     @property
     def value(self) -> int:
-        if self._value == 0:
+        if self._state != "open" or self._value == 0:
             _fail("sandbox_boundary_violation")
         return self._value
 
     @property
     def closed(self) -> bool:
-        return self._value == 0
+        return self._state == "closed"
 
     def close(self) -> None:
-        raw, self._value = self._value, 0
-        if raw and not _apis().kernel32.CloseHandle(HANDLE(raw)):
+        if self._state == "closed":
+            return
+        if self._state != "open" or self._value == 0:
+            _fail("sandbox_cleanup_failed")
+        raw = self._value
+        try:
+            if not _apis().kernel32.CloseHandle(HANDLE(raw)):
+                _fail("sandbox_cleanup_failed")
+            self._value = 0
+            self._state = "closed"
+        except RunnerWin32Error:
+            raise
+        except BaseException:
+            # The native call may already have closed and recycled the value.
+            # Never retry an ownership-uncertain handle.
+            self._value = 0
+            self._state = "uncertain"
             _fail("sandbox_cleanup_failed")
 
     def __enter__(self) -> "OwnedHandle":
@@ -464,6 +452,93 @@ class OwnedHandle:
 
     def __exit__(self, *_args: object) -> None:
         self.close()
+
+
+class _HandleSlot:
+    __slots__ = ("owned", "raw", "uncertain")
+
+    def __init__(self, raw: object = 0) -> None:
+        self.raw = raw
+        self.owned: OwnedHandle | None = None
+        self.uncertain = False
+
+
+class _HandleScope:
+    """Own native acquisitions until their final aggregate is committed."""
+
+    __slots__ = ("_slots",)
+
+    def __init__(self) -> None:
+        self._slots: list[_HandleSlot] = []
+
+    def output_slot(self) -> _HandleSlot:
+        slot = _HandleSlot(HANDLE())
+        self._slots.append(slot)
+        return slot
+
+    def acquire_return(
+        self,
+        invoke: Callable[[], object],
+        *,
+        failure_code: str,
+    ) -> _HandleSlot:
+        slot = _HandleSlot()
+        self._slots.append(slot)
+        try:
+            slot.raw = invoke()
+        except BaseException:
+            # A return-handle API may have acquired a native handle before a
+            # Python-level interruption prevents the value from being stored.
+            slot.uncertain = True
+            raise
+        if not _raw_handle_value(slot.raw):
+            _fail(failure_code)
+        return slot
+
+    def adopt(self, slot: _HandleSlot) -> OwnedHandle:
+        if slot not in self._slots or slot.owned is not None:
+            _fail("sandbox_boundary_violation")
+        owned = OwnedHandle(slot.raw)
+        slot.owned = owned
+        return owned
+
+    def release(self, *handles: OwnedHandle) -> None:
+        expected = {id(handle) for handle in handles}
+        observed: set[int] = set()
+        for slot in self._slots:
+            owned = slot.owned
+            if isinstance(owned, OwnedHandle):
+                if not owned.closed:
+                    observed.add(id(owned))
+            elif _raw_handle_value(slot.raw):
+                _fail("sandbox_boundary_violation")
+        if len(expected) != len(handles) or observed != expected:
+            _fail("sandbox_boundary_violation")
+
+    def close_all(self) -> bool:
+        cleanup_succeeded = True
+        seen: set[int] = set()
+        for slot in reversed(self._slots):
+            try:
+                raw = _raw_handle_value(slot.raw)
+            except BaseException:
+                cleanup_succeeded = False
+                continue
+            if slot.uncertain and not raw:
+                cleanup_succeeded = False
+            if not raw or raw in seen:
+                continue
+            seen.add(raw)
+            owned = slot.owned
+            try:
+                if isinstance(owned, OwnedHandle):
+                    if not owned.closed:
+                        owned.close()
+                elif not _apis().kernel32.CloseHandle(HANDLE(raw)):
+                    cleanup_succeeded = False
+            except BaseException:
+                cleanup_succeeded = False
+        return cleanup_succeeded
 
 
 def _windows_directory() -> Path:
@@ -520,16 +595,6 @@ class NativeJob:
             or extended.JobMemoryLimit != expected_memory
         ):
             _fail("job_state_unproved")
-        ui = _JOBOBJECT_BASIC_UI_RESTRICTIONS()
-        if not _apis().kernel32.QueryInformationJobObject(
-            HANDLE(self._handle.value),
-            JOB_OBJECT_BASIC_UI_RESTRICTIONS,
-            ctypes.byref(ui),
-            ctypes.sizeof(ui),
-            ctypes.byref(returned),
-        ) or returned.value != ctypes.sizeof(ui) or ui.UIRestrictionsClass != EXACT_JOB_UI_FLAGS:
-            _fail("job_state_unproved")
-
     def contains(self, process: OwnedHandle) -> bool:
         member = wintypes.BOOL()
         if not _apis().kernel32.IsProcessInJob(
@@ -570,25 +635,6 @@ class NativeJob:
     def limit_violation_reason(self, accounting: JobAccounting) -> str | None:
         if not isinstance(accounting, JobAccounting):
             _fail("job_state_unproved")
-        information = _JOBOBJECT_LIMIT_VIOLATION_INFORMATION()
-        returned = DWORD()
-        if not _apis().kernel32.QueryInformationJobObject(
-            HANDLE(self._handle.value),
-            JOB_OBJECT_LIMIT_VIOLATION_INFORMATION,
-            ctypes.byref(information),
-            ctypes.sizeof(information),
-            ctypes.byref(returned),
-        ) or returned.value != ctypes.sizeof(information):
-            _fail("job_state_unproved")
-        violation = int(information.ViolationLimitFlags)
-        if violation & JOB_OBJECT_LIMIT_JOB_TIME:
-            return "cpu_limit"
-        if violation & (
-            JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_JOB_MEMORY
-        ):
-            return "memory_limit"
-        if violation & JOB_OBJECT_LIMIT_ACTIVE_PROCESS:
-            return "process_limit"
         if accounting.total_user_time_100ns >= self.limits.cpu_seconds * 10_000_000:
             return "cpu_limit"
         if accounting.peak_job_memory_bytes >= self.limits.memory_mib * 1_048_576:
@@ -629,11 +675,13 @@ class NativeJob:
 def create_job(limits: JobLimits) -> NativeJob:
     if not isinstance(limits, JobLimits):
         _fail("sandbox_setup_failed")
-    raw = _apis().kernel32.CreateJobObjectW(None, None)
-    if int(raw or 0) in {0, INVALID_HANDLE_VALUE}:
-        _fail("sandbox_setup_failed")
-    job = NativeJob(OwnedHandle(raw), limits)
+    scope = _HandleScope()
     try:
+        slot = scope.acquire_return(
+            lambda: _apis().kernel32.CreateJobObjectW(None, None),
+            failure_code="sandbox_setup_failed",
+        )
+        job = NativeJob(scope.adopt(slot), limits)
         extended = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
         extended.BasicLimitInformation.LimitFlags = EXACT_JOB_LIMIT_FLAGS
         extended.BasicLimitInformation.PerJobUserTimeLimit = (
@@ -649,18 +697,12 @@ def create_job(limits: JobLimits) -> NativeJob:
             ctypes.sizeof(extended),
         ):
             _fail("sandbox_setup_failed")
-        ui = _JOBOBJECT_BASIC_UI_RESTRICTIONS(EXACT_JOB_UI_FLAGS)
-        if not _apis().kernel32.SetInformationJobObject(
-            HANDLE(job.handle.value),
-            JOB_OBJECT_BASIC_UI_RESTRICTIONS,
-            ctypes.byref(ui),
-            ctypes.sizeof(ui),
-        ):
-            _fail("sandbox_setup_failed")
         job.prove_configuration()
+        scope.release(job.handle)
         return job
     except BaseException:
-        job.close()
+        if not scope.close_all():
+            _fail("sandbox_cleanup_failed")
         raise
 
 
@@ -686,52 +728,47 @@ def _prove_inheritability(handle: OwnedHandle, expected: bool) -> None:
         _fail("sandbox_boundary_violation")
 
 
-def _duplicate_inheritable(source: OwnedHandle) -> OwnedHandle:
-    raw = HANDLE()
+def _duplicate_inheritable(
+    source: OwnedHandle,
+    scope: _HandleScope,
+) -> OwnedHandle:
+    slot = scope.output_slot()
     process = _apis().kernel32.GetCurrentProcess()
     if not _apis().kernel32.DuplicateHandle(
         process,
         HANDLE(source.value),
         process,
-        ctypes.byref(raw),
+        ctypes.byref(slot.raw),
         0,
         True,
         DUPLICATE_SAME_ACCESS,
     ):
         _fail("sandbox_setup_failed")
-    duplicate = OwnedHandle(raw)
-    try:
-        _prove_inheritability(duplicate, True)
-        return duplicate
-    except BaseException:
-        duplicate.close()
-        raise
+    duplicate = scope.adopt(slot)
+    _prove_inheritability(duplicate, True)
+    return duplicate
 
 
-def _pipe() -> tuple[OwnedHandle, OwnedHandle]:
-    read = HANDLE()
-    write = HANDLE()
+def _pipe(scope: _HandleScope) -> tuple[OwnedHandle, OwnedHandle]:
+    read_slot = scope.output_slot()
+    write_slot = scope.output_slot()
     attributes = _SECURITY_ATTRIBUTES(
         ctypes.sizeof(_SECURITY_ATTRIBUTES), None, False
     )
     if not _apis().kernel32.CreatePipe(
-        ctypes.byref(read), ctypes.byref(write), ctypes.byref(attributes), 0
+        ctypes.byref(read_slot.raw),
+        ctypes.byref(write_slot.raw),
+        ctypes.byref(attributes),
+        0,
     ):
         _fail("sandbox_setup_failed")
-    read_handle = OwnedHandle(read)
-    write_handle = OwnedHandle(write)
-    try:
-        _make_noninheritable(read_handle)
-        _make_noninheritable(write_handle)
-        duplicate = _duplicate_inheritable(write_handle)
-        write_handle.close()
-        return read_handle, duplicate
-    except BaseException:
-        if not read_handle.closed:
-            read_handle.close()
-        if not write_handle.closed:
-            write_handle.close()
-        raise
+    read_handle = scope.adopt(read_slot)
+    write_handle = scope.adopt(write_slot)
+    _make_noninheritable(read_handle)
+    _make_noninheritable(write_handle)
+    duplicate = _duplicate_inheritable(write_handle, scope)
+    write_handle.close()
+    return read_handle, duplicate
 
 
 class StdioPipes:
@@ -779,7 +816,7 @@ class StdioPipes:
             if not handle.closed:
                 try:
                     handle.close()
-                except RunnerWin32Error:
+                except BaseException:
                     errors = True
         if errors:
             _fail("sandbox_cleanup_failed")
@@ -790,37 +827,32 @@ class StdioPipes:
             if not handle.closed:
                 try:
                     handle.close()
-                except RunnerWin32Error:
+                except BaseException:
                     errors = True
         if errors:
             _fail("sandbox_cleanup_failed")
 
 
 def create_stdio_pipes() -> StdioPipes:
-    stdout_parent, stdout_child = _pipe()
+    scope = _HandleScope()
     try:
-        stderr_parent, stderr_child = _pipe()
-    except BaseException:
-        stdout_parent.close()
-        stdout_child.close()
-        raise
-    nul = None
-    stdin_child = None
-    try:
-        raw = _apis().kernel32.CreateFileW(
-            "NUL",
-            GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            None,
-            OPEN_EXISTING,
-            0,
-            None,
+        stdout_parent, stdout_child = _pipe(scope)
+        stderr_parent, stderr_child = _pipe(scope)
+        nul_slot = scope.acquire_return(
+            lambda: _apis().kernel32.CreateFileW(
+                "NUL",
+                GENERIC_READ,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                None,
+                OPEN_EXISTING,
+                0,
+                None,
+            ),
+            failure_code="sandbox_setup_failed",
         )
-        if int(raw or 0) in {0, INVALID_HANDLE_VALUE}:
-            _fail("sandbox_setup_failed")
-        nul = OwnedHandle(raw)
+        nul = scope.adopt(nul_slot)
         _make_noninheritable(nul)
-        stdin_child = _duplicate_inheritable(nul)
+        stdin_child = _duplicate_inheritable(nul, scope)
         nul.close()
         pipes = StdioPipes(
             stdin_child,
@@ -830,23 +862,16 @@ def create_stdio_pipes() -> StdioPipes:
             stderr_parent,
         )
         pipes.prove_before_create()
+        scope.release(
+            stdin_child,
+            stdout_child,
+            stderr_child,
+            stdout_parent,
+            stderr_parent,
+        )
         return pipes
     except BaseException:
-        cleanup_failed = False
-        for handle in (
-            stdin_child,
-            nul,
-            stdout_parent,
-            stdout_child,
-            stderr_parent,
-            stderr_child,
-        ):
-            if isinstance(handle, OwnedHandle) and not handle.closed:
-                try:
-                    handle.close()
-                except RunnerWin32Error:
-                    cleanup_failed = True
-        if cleanup_failed:
+        if not scope.close_all():
             _fail("sandbox_cleanup_failed")
         raise
 
@@ -924,12 +949,14 @@ class SuspendedChild:
         self.thread.close()
 
     def poll(self) -> int | None:
+        if not self.wait(0):
+            return None
         code = DWORD()
         if not _apis().kernel32.GetExitCodeProcess(
             HANDLE(self.process.value), ctypes.byref(code)
         ):
             _fail("process_wait_failed")
-        return None if code.value == STILL_ACTIVE else int(code.value)
+        return int(code.value)
 
     def wait(self, milliseconds: int) -> bool:
         if milliseconds < 0 or milliseconds > 60_000:
@@ -951,7 +978,7 @@ class SuspendedChild:
             if not handle.closed:
                 try:
                     handle.close()
-                except RunnerWin32Error:
+                except BaseException:
                     errors = True
         if errors:
             _fail("sandbox_cleanup_failed")
@@ -968,6 +995,58 @@ def command_line_to_argv(command_line: str) -> tuple[str, ...]:
         return tuple(pointer[index] for index in range(count.value))
     finally:
         _apis().kernel32.LocalFree(pointer)
+
+
+def _raw_handle_value(value: object) -> int:
+    raw = (
+        int(value.value or 0)
+        if isinstance(value, ctypes.c_void_p)
+        else int(value or 0)
+    )
+    return 0 if raw in {0, INVALID_HANDLE_VALUE} else raw
+
+
+def _process_information_has_handle(process_info: _PROCESS_INFORMATION) -> bool:
+    try:
+        return bool(
+            _raw_handle_value(process_info.hProcess)
+            or _raw_handle_value(process_info.hThread)
+        )
+    except BaseException:
+        return True
+
+
+def _retire_created_process_handles(
+    *,
+    job: NativeJob,
+    process_info: _PROCESS_INFORMATION,
+    process_handle: OwnedHandle | None,
+    thread_handle: OwnedHandle | None,
+) -> bool:
+    """Best-effort each post-CreateProcess owner exactly once."""
+
+    cleanup_failed = False
+    try:
+        job.terminate()
+    except BaseException:
+        cleanup_failed = True
+    for owned, raw in (
+        (thread_handle, process_info.hThread),
+        (process_handle, process_info.hProcess),
+    ):
+        try:
+            if isinstance(owned, OwnedHandle):
+                if not owned.closed:
+                    owned.close()
+                continue
+            raw_value = _raw_handle_value(raw)
+            if not raw_value or not _apis().kernel32.CloseHandle(
+                HANDLE(raw_value)
+            ):
+                cleanup_failed = True
+        except BaseException:
+            cleanup_failed = True
+    return not cleanup_failed
 
 
 def create_suspended_child(
@@ -1003,51 +1082,57 @@ def create_suspended_child(
         _fail("sandbox_setup_failed")
     stdio.prove_before_create()
     job.prove_configuration()
-    with _AttributeList(2) as attributes:
-        job_handles = (HANDLE * 1)(HANDLE(job.handle.value))
-        inherited = (HANDLE * 3)(
-            *(HANDLE(value) for value in stdio.inherited_values)
-        )
-        attributes.add(
-            PROC_THREAD_ATTRIBUTE_JOB_LIST,
-            job_handles,
-            ctypes.sizeof(job_handles),
-        )
-        attributes.add(
-            PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-            inherited,
-            ctypes.sizeof(inherited),
-        )
-        startup = _STARTUPINFOEXW()
-        startup.StartupInfo.cb = ctypes.sizeof(startup)
-        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES
-        startup.StartupInfo.hStdInput = HANDLE(stdio.stdin_child.value)
-        startup.StartupInfo.hStdOutput = HANDLE(stdio.stdout_child.value)
-        startup.StartupInfo.hStdError = HANDLE(stdio.stderr_child.value)
-        startup.lpAttributeList = attributes.pointer
-        process_info = _PROCESS_INFORMATION()
-        command_buffer = ctypes.create_unicode_buffer(command_line)
-        environment_buffer = ctypes.create_unicode_buffer(environment_block)
-        created = _apis().kernel32.CreateProcessW(
-            str(application_path),
-            command_buffer,
-            None,
-            None,
-            True,
-            EXTENDED_STARTUPINFO_PRESENT
-            | CREATE_SUSPENDED
-            | CREATE_NO_WINDOW
-            | CREATE_UNICODE_ENVIRONMENT,
-            ctypes.cast(environment_buffer, LPVOID),
-            str(cwd_path),
-            ctypes.byref(startup.StartupInfo),
-            ctypes.byref(process_info),
-        )
-        if not created:
-            _fail("process_create_failed")
-        process_handle = None
-        thread_handle = None
-        try:
+    process_info = _PROCESS_INFORMATION()
+    process_handle = None
+    thread_handle = None
+    child = None
+    create_entered = False
+    created = False
+    try:
+        with _AttributeList(2) as attributes:
+            job_handles = (HANDLE * 1)(HANDLE(job.handle.value))
+            inherited = (HANDLE * 3)(
+                *(HANDLE(value) for value in stdio.inherited_values)
+            )
+            attributes.add(
+                PROC_THREAD_ATTRIBUTE_JOB_LIST,
+                job_handles,
+                ctypes.sizeof(job_handles),
+            )
+            attributes.add(
+                PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                inherited,
+                ctypes.sizeof(inherited),
+            )
+            startup = _STARTUPINFOEXW()
+            startup.StartupInfo.cb = ctypes.sizeof(startup)
+            startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES
+            startup.StartupInfo.hStdInput = HANDLE(stdio.stdin_child.value)
+            startup.StartupInfo.hStdOutput = HANDLE(stdio.stdout_child.value)
+            startup.StartupInfo.hStdError = HANDLE(stdio.stderr_child.value)
+            startup.lpAttributeList = attributes.pointer
+            command_buffer = ctypes.create_unicode_buffer(command_line)
+            environment_buffer = ctypes.create_unicode_buffer(environment_block)
+            create_entered = True
+            created = bool(
+                _apis().kernel32.CreateProcessW(
+                    str(application_path),
+                    command_buffer,
+                    None,
+                    None,
+                    True,
+                    EXTENDED_STARTUPINFO_PRESENT
+                    | CREATE_SUSPENDED
+                    | CREATE_NO_WINDOW
+                    | CREATE_UNICODE_ENVIRONMENT,
+                    ctypes.cast(environment_buffer, LPVOID),
+                    str(cwd_path),
+                    ctypes.byref(startup.StartupInfo),
+                    ctypes.byref(process_info),
+                )
+            )
+            if not created:
+                _fail("process_create_failed")
             process_handle = OwnedHandle(process_info.hProcess)
             thread_handle = OwnedHandle(process_info.hThread)
             child = SuspendedChild(
@@ -1057,41 +1142,49 @@ def create_suspended_child(
             )
             if not job.contains(child.process):
                 _fail("job_state_unproved", after_create=True)
-            return child
-        except RunnerWin32Error as error:
-            cleanup_failed = False
-            try:
-                job.terminate()
-            except RunnerWin32Error:
-                cleanup_failed = True
-            for handle in (thread_handle, process_handle):
-                if isinstance(handle, OwnedHandle) and not handle.closed:
-                    try:
-                        handle.close()
-                    except RunnerWin32Error:
-                        cleanup_failed = True
+        if child is None:
+            _fail("sandbox_boundary_violation", after_create=True)
+        return child
+    except RunnerWin32Error as error:
+        after_create = bool(
+            error.after_create
+            or created
+            or _process_information_has_handle(process_info)
+        )
+        if not after_create:
+            raise
+        cleanup_succeeded = _retire_created_process_handles(
+            job=job,
+            process_info=process_info,
+            process_handle=process_handle,
+            thread_handle=thread_handle,
+        )
+        _fail(
+            error.code if cleanup_succeeded else "sandbox_cleanup_failed",
+            after_create=True,
+        )
+    except BaseException:
+        after_create = bool(
+            create_entered
+            or created
+            or _process_information_has_handle(process_info)
+        )
+        if after_create:
+            cleanup_succeeded = _retire_created_process_handles(
+                job=job,
+                process_info=process_info,
+                process_handle=process_handle,
+                thread_handle=thread_handle,
+            )
             _fail(
-                "sandbox_cleanup_failed" if cleanup_failed else error.code,
+                (
+                    "sandbox_boundary_violation"
+                    if cleanup_succeeded
+                    else "sandbox_cleanup_failed"
+                ),
                 after_create=True,
             )
-        except BaseException:
-            cleanup_failed = False
-            try:
-                job.terminate()
-            except RunnerWin32Error:
-                cleanup_failed = True
-            for handle in (thread_handle, process_handle):
-                if isinstance(handle, OwnedHandle) and not handle.closed:
-                    try:
-                        handle.close()
-                    except RunnerWin32Error:
-                        cleanup_failed = True
-            _fail(
-                "sandbox_cleanup_failed"
-                if cleanup_failed
-                else "sandbox_boundary_violation",
-                after_create=True,
-            )
+        raise
 
 
 def read_pipe_chunk(handle: OwnedHandle, maximum: int = 65_536) -> bytes | None:

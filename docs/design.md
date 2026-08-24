@@ -2904,6 +2904,121 @@ or an equivalent Task/Contract/criterion/target freshness callback is a
 business-gate reverse edge; the service performs those checks before launch,
 between bounded adapter calls where applicable, and after the returned result.
 
+### TG-M24.2A Target-Plan Implementation
+
+TG-M24.2A realizes only the `target_plan` registry row. It adds
+`verification_runner_git.py` and `verification_runner_plan.py`; it does not add
+or change CLI dispatch, the parent service, SQLite, Evidence, completion,
+runtime identity, lifecycle, process, or native behavior. The modules may use
+the existing read-only Git/artifact primitives, pure Evidence canonical JSON,
+shared physical-path primitives, and `verification_runner.py` constants. They
+must not import a higher Runner layer or any process or OS adapter.
+
+`verification_runner_git.py` owns these immutable in-process values and calls:
+
+```
+RunnerTargetEntry = relative_posix_path, mode, object_id
+RunnerTargetObservation = artifact, object_format, entries,
+  target_material_digest
+RunnerMaterialization = target, object_sizes, total_bytes,
+  target_material_digest
+MaterializedRunnerTarget = target_material_digest, entry_count,
+  directory_count, total_bytes
+
+observe_staged_runner_target(repo)
+observe_commit_runner_target(repo, revision)
+preflight_runner_material(repo, observation)
+materialize_runner_target(repo, material, destination)
+```
+
+Observation reuses the established stable stage-zero index or exact commit
+capture, then captures the complete ordered leaf set twice around a repeated
+artifact observation. It admits only modes `100644` and `100755`, validates the
+portable path and case/normalization collision set, derives all directories,
+and never selects a plan from target material. The target digest is
+`sha256(TARGET_MATERIAL_DOMAIN || canonical_json(target kind/value/base,
+object format, ordered entries))`, where
+`TARGET_MATERIAL_DOMAIN` is
+`taskgov-verification-runner-target-material-v1\0`.
+
+Preflight batch-checks every distinct target object as a blob, binds its exact
+size, enforces the 10,000-file, 30,000-derived-directory (excluding the supplied
+destination root), depth-64, and 512-MiB target bounds, and repeats target
+capture before returning. It never reads or identifies a plan.
+Materialization accepts only that preflight value and an existing
+empty physical destination. It creates derived directories and regular files
+exclusively, streams each blob with the established bounded Git reader,
+recomputes the Git object ID including its blob header, and performs a bounded
+no-follow inventory/hash comparison against the complete admitted set. A final
+target recapture must still match. It never reads working-tree file content,
+extracts an archive, follows a link/reparse, replaces an entry, copies back, or
+launches target code. Failure leaves cleanup acceptance to the separate
+`lifecycle` owner.
+
+`verification_runner_plan.py` owns:
+
+```
+VerificationRunnerPlanSource = raw_blob, raw_digest
+VerificationRunnerPlanStep = ordinal plus normalized StepV1,
+  with shell=false and path_lookup=false
+VerificationRunnerPlanResolution = plan_state, route, reason,
+  plan_blob_object_id, plan_raw_digest, plan_id, plan_version,
+  plan_semantic_digest, selected_entry_digest, coverage, steps
+
+capture_verification_runner_plan(repo, physical_package_root)
+  -> VerificationRunnerPlanSource | None
+resolve_verification_runner_plan(source,
+  task_id, contract_revision, verification_expectation_digest,
+  verification_criterion_digest)
+```
+
+Capture reads only `config/verification-runner.json` beneath the already
+resolved physical package. An absent config directory or absent file returns
+`None`, not an empty source; an alias, reparse, non-regular file, over-bound
+file, link count other than one, identity change, or read uncertainty blocks.
+Before and after the stable
+read, one fixed shell-free Git check requires the exact repo-relative plan path
+to have no literal case-insensitive current-index match and the physical
+spelling to match effective ignore policy. A Git failure, timeout, unexpected
+output, non-ignored result, or registered case variant blocks; the check never
+writes Git state.
+The file is independent of the selected Git target and stays excluded from the
+release manifest. A same-named target entry is not consulted. The resolver
+decodes strict UTF-8 JSON with duplicate-member, float, non-finite,
+unknown-member, and type rejection. It validates the exact specification shape
+and only the plan-known scalar/collection bounds before selection. Final
+Windows quoting, fixed executable/bootstrap insertion, materialized absolute
+paths, and the `command_line_utf16_units` bound remain TG-M24.2B request
+admission and are not evaluated by this module. Raw bytes use ordinary
+labeled SHA-256. Canonical normalized plan and selected-entry values use the
+domains `taskgov-verification-runner-plan-v1\0` and
+`taskgov-verification-runner-plan-entry-v1\0`. `trusted_local = true` plus one
+exact basis selects `plan_state=runner`, `route=runner`; false opt-in, absence,
+or no current-Task entry is a closed M21 fallback; a current-Task mismatch,
+duplicate basis, ambiguity, or malformed input raises one sanitized bounded
+plan error. Successful resolutions use exactly the specification matrix:
+`absent/m21_fallback/plan_absent`,
+`disabled/m21_fallback/trusted_local_disabled`,
+`no_match/m21_fallback/plan_entry_absent`, or
+`runner/runner/null`. The absent case has no raw, id, version, semantic, or
+selected-entry value. The two present-plan fallbacks retain raw/id/version/
+semantic identity but no selected entry; every fallback has
+`coverage=not_applicable` and empty steps. The runner case has those plan
+identities plus a selected-entry digest, `coverage=full`, and one through 16
+steps. The existing nullable `plan_blob_object_id` stays null in every case;
+raw and semantic digests provide the physical-plan binding. Arguments and
+private values remain in-process only and are not members of the resolution
+digest or any durable projection.
+
+The 2A integration gate assembles actual plan-resolution and target-
+materialization outputs into the existing pure
+`resolution_idempotency_digest`. That seal already binds Task/Contract,
+authority/criterion, review-target kind/value/base/generation, target material,
+and plan raw/semantic/selected-entry identities without including plan bytes,
+argv, or steps. `target_plan` does not import or invoke the parent service;
+TG-M24.2C remains the owner of orchestration, persistence, and dispatch
+consumption.
+
 ### Typed Process Value Boundary
 
 The following are logical immutable in-process records, not a public schema or

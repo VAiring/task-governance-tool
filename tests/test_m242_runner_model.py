@@ -14,6 +14,8 @@ MODEL_PATH = (
     / "task_governance_tool"
     / "verification_runner.py"
 )
+GIT_TARGET_PATH = MODEL_PATH.with_name("verification_runner_git.py")
+PLAN_PATH = MODEL_PATH.with_name("verification_runner_plan.py")
 MANIFEST_PATH = ROOT / "task-governance-tool" / "release-manifest.json"
 SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
@@ -461,14 +463,14 @@ class RunnerModelTests(unittest.TestCase):
             manifest["release_origin"],
             "github:VAiring/task-governance-tool",
         )
-        self.assertEqual(len(core), 60)
-        self.assertNotIn(
-            "scripts/task_governance_tool/verification_runner_git.py",
-            core,
+        self.assertEqual(len(core), 62)
+        self.assertEqual(
+            core["scripts/task_governance_tool/verification_runner_git.py"],
+            "sha256:" + hashlib.sha256(GIT_TARGET_PATH.read_bytes()).hexdigest(),
         )
-        self.assertNotIn(
-            "scripts/task_governance_tool/verification_runner_plan.py",
-            core,
+        self.assertEqual(
+            core["scripts/task_governance_tool/verification_runner_plan.py"],
+            "sha256:" + hashlib.sha256(PLAN_PATH.read_bytes()).hexdigest(),
         )
         self.assertEqual(
             core[model_name],

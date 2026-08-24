@@ -416,6 +416,34 @@ stale basis, ambient execution, copy-back, repository mutation, and process
 launch are forbidden. Completion requires focused offline target and privacy
 checks plus two independent Tier 2 PASS reviews.
 
+The implementation is one bounded sequential slice: first close the dormant
+PlanV1/state/digest and exact-Git-material contracts in the active specification
+and design; then add `verification_runner_plan.py`,
+`verification_runner_git.py`, their focused tests, directly coupled lane and
+package-manifest reconciliation. The dormant parent service remains unchanged
+and is not a TG-M24.2A consumer; its target/plan integration remains TG-M24.2C
+scope. Read-only Git plumbing is permitted solely
+to observe and stream exact objects. No target code or verification command is
+launched. Service dispatch/persistence behavior, CLI/JSON, Skill guidance,
+schema, DDL/migration, durable Runner rows/Evidence/projection,
+runtime/process/native adapters, cleanup acceptance, and every successor remain
+unchanged and inactive.
+
+The 2A integration gate uses actual plan and target outputs with the existing
+pure `resolution_idempotency_digest` to prove the closed current-basis,
+review-target, target-material, and plan-digest composition without argv or raw
+plan bytes. This is no service activation or durable Runner evidence; 2C still
+owns orchestration, persistence, and dispatch consumption.
+
+Verification must prove absent/false/no-match fallback; local-plan index
+registration, non-ignore, and check-uncertainty denial; exact current-basis
+selection; mismatch, ambiguity, malformed, over-bound, unsafe-path, symlink,
+submodule, sparse, object-loss, drift, nonempty destination, reparse, and extra-
+entry denial; exact commit and staged-index bytes; unstaged/untracked omission;
+plan and target digest stability; zero copy-back and zero target-code launch;
+package/lane/document consistency; exact diff; and two fresh independent Tier
+2 PASS reviews with no unresolved High or Medium finding.
+
 <a id="tg-m24-2b"></a>
 
 ## TG-M24.2B Inactive Bounded Local Process Runner

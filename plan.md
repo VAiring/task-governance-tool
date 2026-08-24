@@ -246,8 +246,9 @@ schema-v20 activation, Bundle-v2 null-Runner writer, and
 Evidence/Viewer/managed backup/recovery compatibility. Accepted TG-M24.R4B
 repaired pre-Runner core regressions and finalized temporary shim/policy
 retirement. Accepted TG-M24.R5 retired only the already identified fixed
-diagnostic residue. Current TG-M24.2A owns only trusted-local plan authority,
-exact target binding, and safe private materialization without process launch.
+diagnostic residue. Accepted TG-M24.2A supplied trusted-local plan authority,
+exact target binding, and safe private materialization. Current TG-M24.2B owns
+only bounded local process execution and deterministic cleanup.
 R3B activates only schema/storage, Bundle, Evidence, Viewer,
 and recovery compatibility; it creates no Runner rows, links, members, or
 projection and grants no process or completion-gate authority. The first
@@ -271,10 +272,10 @@ mandatory; live status and evidence remain solely in the Task database.
 TG-M24 is approved sequential Tier 2 work in lane
 `TG-M24-TRUSTED-RUNNER`. TG-M24.1, TG-M24.1A, TG-M24.R1, TG-M24.R2A,
 TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, TG-M24.R4V, TG-M24.R3A, TG-M24.R3B,
-TG-M24.R4B, and TG-M24.R5 are accepted predecessors; TG-M24.1B is superseded.
-Current formal authority belongs only to TG-M24.2A trusted plan and exact target
-materialization, while TG-M24.2B and every later unit remain inactive behind
-their accepted immediate predecessor.
+TG-M24.R4B, TG-M24.R5, and TG-M24.2A are accepted predecessors; TG-M24.1B is
+superseded. Current formal authority belongs only to TG-M24.2B bounded local
+process execution and deterministic cleanup, while TG-M24.2C and every later
+unit remain inactive behind their accepted immediate predecessor.
 Exact unit identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 not duplicated in this gateway.
@@ -288,7 +289,7 @@ public setup action at a separate approval checkpoint.
 
 Accepted TG-M24.R1 consumed only the reviewed R2 bootstrap boundary and changed
 no product byte; accepted R2A, R2B, R2C, R4A, and R4V changed no supported product
-behavior. Current 2A and its successors advance in exact order, use fresh
+behavior. Current 2B and its successors advance in exact order, use fresh
 current evidence, and never reuse superseded Candidate-C, LPAC, or diagnostic
 recovery evidence.
 The sequence grants no arbitrary command, automatic execution of untrusted or

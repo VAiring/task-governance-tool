@@ -14,8 +14,8 @@
 > only the dependency-pure, legacy-stable Runner value-model foundation and
 > exact-candidate manifest closure, with no product activation. TG-M24.R3A and
 > TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and
-> public-activation baseline; TG-M24.R4B and TG-M24.R5 are accepted predecessors.
-> TG-M24.2A owns current formal authority, and every later unit in this
+> public-activation baseline; TG-M24.R4B, TG-M24.R5, and TG-M24.2A are accepted
+> predecessors. TG-M24.2B owns current formal authority, and every later unit in this
 > document remains inactive until its immediate predecessor is accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
@@ -406,7 +406,7 @@ independent Tier 2 PASS reviews.
 
 <a id="tg-m24-2a"></a>
 
-## TG-M24.2A Current Trusted Plan And Exact Target Materialization
+## TG-M24.2A Accepted Trusted Plan And Exact Target Materialization
 
 Task `tg_task_2c6fd4707ac1e81b` implements explicit trusted-local opt-in,
 project-owned plan authority independent of untrusted target changes, exact
@@ -424,10 +424,11 @@ package-manifest reconciliation. The dormant parent service remains unchanged
 and is not a TG-M24.2A consumer; its target/plan integration remains TG-M24.2C
 scope. Read-only Git plumbing is permitted solely
 to observe and stream exact objects. No target code or verification command is
-launched. Service dispatch/persistence behavior, CLI/JSON, Skill guidance,
-schema, DDL/migration, durable Runner rows/Evidence/projection,
-runtime/process/native adapters, cleanup acceptance, and every successor remain
-unchanged and inactive.
+launched. Current 2B now owns only runtime identity, lifecycle, process/native
+adapters, and deterministic cleanup mechanics. Service dispatch/persistence
+behavior, CLI/JSON, Skill guidance, schema, DDL/migration, durable Runner
+rows/Evidence/projection, parent-service cleanup acceptance, and 2C onward
+remain unchanged and inactive.
 
 The 2A integration gate uses actual plan and target outputs with the existing
 pure `resolution_idempotency_digest` to prove the closed current-basis,
@@ -446,7 +447,7 @@ package/lane/document consistency; exact diff; and two fresh independent Tier
 
 <a id="tg-m24-2b"></a>
 
-## TG-M24.2B Inactive Bounded Local Process Runner
+## TG-M24.2B Current Bounded Local Process Runner
 
 Task `tg_task_f8880aeb93c3ad52` implements shell-free literal argv, fixed
 executable resolution without `PATH`, credential-clean environment, a private

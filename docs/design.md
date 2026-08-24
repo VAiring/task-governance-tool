@@ -20,9 +20,11 @@ managed backup/recovery compatibility. It activates no Runner execution,
 Runner projection, or completion-gate behavior.
 Accepted TG-M24.R4B repaired only pre-Runner core behavior and frozen dependency
 violations. Accepted TG-M24.R5 retired only the already identified fixed
-OS-temp diagnostic residue. TG-M24.2A is the sole current TG-M24 authority and
-owns only explicit trusted-local plan authority, exact target binding, and safe
-bounded private materialization without process launch or gate activation.
+OS-temp diagnostic residue. Accepted TG-M24.2A supplied explicit trusted-local
+plan authority, exact target binding, and safe bounded private materialization.
+TG-M24.2B is the sole current TG-M24 authority and owns only the bounded local
+runtime, lifecycle, process, native-adapter, and deterministic-cleanup slice;
+service, persistence, CLI, Skill, and completion-gate activation remain later.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -3112,7 +3114,7 @@ For both result records, `outcome` is an adapter-local `result_code` and
 the exact closed set above. These codes are bounded sanitized structural
 values, not arbitrary text. R2C gates only the closed record-member sets, the
 `result_code` grammar, nullability, and those member-to-grammar bindings. It
-does not define a concrete code taxonomy or outcome/reason pairing. Inactive
+does not define a concrete code taxonomy or outcome/reason pairing. Current
 2B owns that local membership and pairing, while inactive 2C owns the closed
 durable/public mapping and projection. The parent service accepts no arbitrary
 adapter text, remains the sole business-interpretation and persistence owner,

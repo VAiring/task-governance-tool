@@ -400,7 +400,7 @@ TASK_STATUS_VALUES = {
     "paused",
     "done",
 }
-CURRENT_UNITS = ("TG-M24.2A",)
+CURRENT_UNITS = ("TG-M24.2B",)
 NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
     for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
@@ -422,12 +422,14 @@ M24_R3B_ALIAS = r"(?:TG-M24\.)?R3B"
 M24_R4B_ALIAS = r"(?:TG-M24\.)?R4B"
 M24_R5_ALIAS = r"(?:TG-M24\.)?R5"
 M24_2A_ALIAS = r"(?:TG-M24\.)?2A"
+M24_2B_ALIAS = r"(?:TG-M24\.)?2B"
 M24_1B_ALIAS = r"(?:TG-M24\.)?1B"
 M24_LATER_UNIT_ALIAS = r"(?:TG-M24\.)?(?:R[0-9]+[A-Z]?|[0-9]+[A-Z]?|CP[0-9]+)"
 M24_R3B_TOKEN = rf"{M24_R3B_ALIAS}(?![A-Za-z0-9_-])"
 M24_R4B_TOKEN = rf"{M24_R4B_ALIAS}(?![A-Za-z0-9_-])"
 M24_R5_TOKEN = rf"{M24_R5_ALIAS}(?![A-Za-z0-9_-])"
 M24_2A_TOKEN = rf"{M24_2A_ALIAS}(?![A-Za-z0-9_-])"
+M24_2B_TOKEN = rf"{M24_2B_ALIAS}(?![A-Za-z0-9_-])"
 M24_1B_TOKEN = rf"{M24_1B_ALIAS}(?![A-Za-z0-9_-])"
 M24_1B_CURRENT_CLAIM = re.compile(
     rf"(?:\bcurrent\s+{M24_1B_TOKEN}"
@@ -466,6 +468,15 @@ M24_R5_CURRENT_CLAIM = re.compile(
     rf"\s+(?:the\s+)?{M24_R5_TOKEN})",
     re.IGNORECASE,
 )
+M24_2A_CURRENT_CLAIM = re.compile(
+    rf"(?:\bcurrent\s+{M24_2A_TOKEN}"
+    rf"|\b{M24_2A_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
+    r"(?:(?:is|are|remains?)\s+(?:the\s+)?(?:sole\s+)?current\b"
+    r"|owns?\s+(?:the\s+)?current(?:\s+formal)?\s+authority\b)"
+    r"|\bcurrent\s+(?:formal\s+)?authority\s+belongs(?:\s+only)?\s+to\b"
+    rf"\s+(?:the\s+)?{M24_2A_TOKEN})",
+    re.IGNORECASE,
+)
 M24_R4B_INACTIVE_CLAIM = re.compile(
     rf"(?:\binactive\s+{M24_R4B_TOKEN}"
     rf"|\b{M24_R4B_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
@@ -486,9 +497,22 @@ M24_R5_INACTIVE_CLAIM = re.compile(
 )
 M24_2A_INACTIVE_CLAIM = re.compile(
     rf"(?:\binactive\s+{M24_2A_TOKEN}"
+    rf"|\binactive\s+{M24_2A_ALIAS}-through-{M24_LATER_UNIT_ALIAS}"
+    r"(?![A-Za-z0-9_-])"
     rf"|\b{M24_2A_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
     r"(?:is|are|remains?)\s+(?:(?:an?|the)\s+)?inactive\b"
     rf"|\b{M24_2A_TOKEN}(?:\s+through\s+{M24_LATER_UNIT_ALIAS}"
+    r"|\s+and\s+(?:every\s+)?later\s+units?)\s+"
+    r"(?:are|remain)\s+inactive\b)",
+    re.IGNORECASE,
+)
+M24_2B_INACTIVE_CLAIM = re.compile(
+    rf"(?:\binactive\s+{M24_2B_TOKEN}"
+    rf"|\binactive\s+{M24_2B_ALIAS}-through-{M24_LATER_UNIT_ALIAS}"
+    r"(?![A-Za-z0-9_-])"
+    rf"|\b{M24_2B_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
+    r"(?:is|are|remains?)\s+(?:(?:an?|the)\s+)?inactive\b"
+    rf"|\b{M24_2B_TOKEN}(?:\s+through\s+{M24_LATER_UNIT_ALIAS}"
     r"|\s+and\s+(?:every\s+)?later\s+units?)\s+"
     r"(?:are|remain)\s+inactive\b)",
     re.IGNORECASE,
@@ -1588,9 +1612,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.2A"],
+                "current_units": ["TG-M24.2B"],
                 "inactive_units": [
-                    "TG-M24.2B",
                     "TG-M24.2C",
                     "TG-M24.2D",
                     "TG-M24.3",
@@ -2155,8 +2178,8 @@ def _m24_trusted_local_authority_sync(
         ("tg-m24-r3b", "tg-m24.r3b", "accepted"),
         ("tg-m24-r4b", "tg-m24.r4b", "accepted"),
         ("tg-m24-r5", "tg-m24.r5", "accepted"),
-        ("tg-m24-2a", "tg-m24.2a", "current"),
-        ("tg-m24-2b", "tg-m24.2b", "inactive"),
+        ("tg-m24-2a", "tg-m24.2a", "accepted"),
+        ("tg-m24-2b", "tg-m24.2b", "current"),
         ("tg-m24-2c", "tg-m24.2c", "inactive"),
         ("tg-m24-2", "tg-m24.2d", "inactive"),
         ("tg-m24-3", "tg-m24.3", "inactive"),
@@ -2201,7 +2224,7 @@ def _m24_trusted_local_authority_sync(
             Issue(
                 "m24_current_binding",
                 M24,
-                "M24 accepted predecessors, sole current 2A unit, or inactive successors drifted",
+                "M24 accepted predecessors, sole current 2B unit, or inactive successors drifted",
             )
         )
 
@@ -2741,9 +2764,11 @@ def _has_current_status_contradiction(text: str) -> bool:
             M24_R3B_CURRENT_CLAIM,
             M24_R4B_CURRENT_CLAIM,
             M24_R5_CURRENT_CLAIM,
+            M24_2A_CURRENT_CLAIM,
             M24_R4B_INACTIVE_CLAIM,
             M24_R5_INACTIVE_CLAIM,
             M24_2A_INACTIVE_CLAIM,
+            M24_2B_INACTIVE_CLAIM,
             M24_STALE_SHADOW_FUTURE_CLAIM,
         )
         for match in pattern.finditer(text)

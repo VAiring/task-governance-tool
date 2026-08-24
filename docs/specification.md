@@ -14,8 +14,10 @@ Accepted TG-M24.R4B repaired only pre-Runner core behavior and dependency
 violations. Accepted TG-M24.R5 retired only the already identified fixed
 OS-temp diagnostic residue. Accepted TG-M24.2A supplied explicit trusted-local
 plan authority, exact target binding, and bounded private materialization.
-TG-M24.2B is the sole current unit for the bounded local process adapter and
-deterministic cleanup; it activates no public Runner or completion gate.
+Accepted TG-M24.2B supplied the bounded local process adapter and deterministic
+cleanup without activating a public Runner or completion gate. TG-M24.2C is the
+sole current unit for parent-service orchestration and audit-only schema-v20
+observation and Evidence capture; it cannot satisfy verification or completion.
 Completed execution narrative is history, and the Task
 database owns live state and evidence.
 
@@ -2609,10 +2611,12 @@ and artifact requirements above do not depend on historical text.
 
 ### Staged TG-M24 Trusted-Local Runner Boundary
 
-This boundary is staged. The 2A slice covers only physical plan capture, strict
-plan selection, exact target observation, and private materialization;
-process launch and every later observation, Evidence, completion-gate, and
-release portion remain inactive behind their owning sequential units.
+This boundary is staged. Accepted 2A covers only physical plan capture, strict
+plan selection, exact target observation, and private materialization. Accepted
+2B covers only the bounded runtime/process adapter and deterministic cleanup.
+Current 2C owns parent-service orchestration plus audit-only schema-v20
+observation and Evidence capture; completion-gate and release portions remain
+inactive behind their owning sequential units.
 
 The approved execution direction is an explicit-opt-in Runner for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified

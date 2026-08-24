@@ -14,9 +14,10 @@
 > only the dependency-pure, legacy-stable Runner value-model foundation and
 > exact-candidate manifest closure, with no product activation. TG-M24.R3A and
 > TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and
-> public-activation baseline; TG-M24.R4B, TG-M24.R5, and TG-M24.2A are accepted
-> predecessors. TG-M24.2B owns current formal authority, and every later unit in this
-> document remains inactive until its immediate predecessor is accepted.
+> public-activation baseline; TG-M24.R4B, TG-M24.R5, TG-M24.2A, and TG-M24.2B
+> are accepted predecessors. TG-M24.2C owns current formal authority, and every
+> later unit in this document remains inactive until its immediate predecessor
+> is accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
 > The separate TG-M24.R2 bootstrap Task supplies only a reviewed phase-one
@@ -424,11 +425,11 @@ package-manifest reconciliation. The dormant parent service remains unchanged
 and is not a TG-M24.2A consumer; its target/plan integration remains TG-M24.2C
 scope. Read-only Git plumbing is permitted solely
 to observe and stream exact objects. No target code or verification command is
-launched. Current 2B now owns only runtime identity, lifecycle, process/native
-adapters, and deterministic cleanup mechanics. Service dispatch/persistence
-behavior, CLI/JSON, Skill guidance, schema, DDL/migration, durable Runner
-rows/Evidence/projection, parent-service cleanup acceptance, and 2C onward
-remain unchanged and inactive.
+launched. Accepted 2B supplied only runtime identity, lifecycle, process/native
+adapters, and deterministic cleanup mechanics. Current 2C owns service
+dispatch/persistence behavior, durable audit-only Runner rows/Evidence/
+projection, and parent-service cleanup acceptance. CLI/JSON, Skill guidance,
+schema, and DDL/migration remain unchanged; 2D onward remains inactive.
 
 The 2A integration gate uses actual plan and target outputs with the existing
 pure `resolution_idempotency_digest` to prove the closed current-basis,
@@ -447,7 +448,7 @@ package/lane/document consistency; exact diff; and two fresh independent Tier
 
 <a id="tg-m24-2b"></a>
 
-## TG-M24.2B Current Bounded Local Process Runner
+## TG-M24.2B Accepted Bounded Local Process Runner
 
 Task `tg_task_f8880aeb93c3ad52` implements shell-free literal argv, fixed
 executable resolution without `PATH`, credential-clean environment, a private
@@ -460,7 +461,7 @@ plus two independent Tier 2 PASS reviews.
 
 <a id="tg-m24-2c"></a>
 
-## TG-M24.2C Inactive Shadow Observation And Evidence Capture
+## TG-M24.2C Current Shadow Observation And Evidence Capture
 
 Task `tg_task_8cc06027db5be49f` integrates bounded Runner outcomes as audit-only
 schema-v20 observations and Evidence links. Runner absence, ineligibility, or a

@@ -22,9 +22,11 @@ Accepted TG-M24.R4B repaired only pre-Runner core behavior and frozen dependency
 violations. Accepted TG-M24.R5 retired only the already identified fixed
 OS-temp diagnostic residue. Accepted TG-M24.2A supplied explicit trusted-local
 plan authority, exact target binding, and safe bounded private materialization.
-TG-M24.2B is the sole current TG-M24 authority and owns only the bounded local
-runtime, lifecycle, process, native-adapter, and deterministic-cleanup slice;
-service, persistence, CLI, Skill, and completion-gate activation remain later.
+Accepted TG-M24.2B supplied only the bounded local runtime, lifecycle, process,
+native-adapter, and deterministic-cleanup slice. TG-M24.2C is the sole current
+TG-M24 authority and owns only parent-service orchestration, durable audit-only
+observation/Evidence mapping, and sanitized projection; CLI, Skill, and
+completion-gate activation remain later.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -2869,7 +2871,7 @@ Runner route; its Runner dispatch has only the `cli -> service` edge.
 | Layer id | Exact owned modules | Sole Runner responsibility | Allowed Runner-layer imports | Forbidden responsibility or reverse edge | Remaining nonconformance route |
 |---|---|---|---|---|---|
 | `cli` | `cli.py` | Parse and format the existing public surface and dispatch the Runner route to the parent service. | `service` | No Runner eligibility, authority, persistence, process, native, or cleanup decision; no Runner dispatch to `process_adapter` or `os_adapter`. | Retired direct process/native branches are physically absent; any retained Runner-specific direct process/native edge is repaired by R4B. |
-| `service` | `verification_runner_service.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | Retired OS/profile/recovery seams are physically absent; any retained direct OS edge or second acceptance owner is repaired by R4B; later audit-only integration remains owned by 2C. |
+| `service` | `verification_runner_service.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | Retired OS/profile/recovery seams are physically absent; any retained direct OS edge or second acceptance owner is repaired by R4B; current audit-only integration is owned by 2C. |
 | `repository` | `storage.py`, `tasks.py`, `contracts.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema and Evidence compatibility remain R3A/R3B; any retained reverse edge or cycle is repaired by R4B. |
 | `target_plan` | `artifact_manifest.py`, `verification_runner_git.py`, `verification_runner_plan.py` | Parent-invoked exact target observation/materialization and fixed-plan decode/validation. | `repository`, `value_model` | No CLI policy, canonical database ownership, completion decision, trusted-code or verification-command launch, terminal publication, or cleanup acceptance. | Dependency repair remains R4B; retained target/plan implementation remains 2A. |
 | `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | Accepted R4V repairs the dependency-pure legacy-stable foundation and reverse edge; R3A removes the storage instance-shim consumer, R3B removes Evidence provider/policy-shim consumers, and R4B deletes the temporary shims and fixed legacy policy API. |
@@ -3096,7 +3098,7 @@ case-insensitively unique keys `APPDATA`, `HOME`, `LOCALAPPDATA`,
 Windows directory; and the three `PYTHON*` values are exactly `"1"`. It has no
 additional or ambient key, and all path values satisfy `absolute_path`.
 
-Current 2B fixes the package-runtime executable source to the operating-system
+Accepted 2B fixes the package-runtime executable source to the operating-system
 image path of the current parent process. `sys.executable` is used only to
 corroborate the same physical file; neither value is resolved through `PATH`,
 configuration, a plan, or target material. The runtime-identity layer observes
@@ -3134,8 +3136,8 @@ For both result records, `outcome` is an adapter-local `result_code` and
 the exact closed set above. These codes are bounded sanitized structural
 values, not arbitrary text. R2C gates only the closed record-member sets, the
 `result_code` grammar, nullability, and those member-to-grammar bindings. It
-does not define a concrete code taxonomy or outcome/reason pairing. Current
-2B owns that local membership and pairing, while inactive 2C owns the closed
+does not define a concrete code taxonomy or outcome/reason pairing. Accepted
+2B owns that local membership and pairing, while current 2C owns the closed
 durable/public mapping and projection. The parent service accepts no arbitrary
 adapter text, remains the sole business-interpretation and persistence owner,
 and persists only the mapped existing durable outcome. This freeze does not
@@ -3145,7 +3147,7 @@ count, uniqueness, range, and order relation above, so it has at most one
 sanitized result per request step. A result contains no exit code, output byte,
 argv, environment value, credential, path, exception body, or arbitrary text.
 
-Current 2B closes the adapter-local pairings exactly as follows; a slash joins
+Accepted 2B closes the adapter-local pairings exactly as follows; a slash joins
 `outcome / reason / launch_state`, and `null` is the only absent reason:
 
 `RunnerProcessStepPairingsV1`:

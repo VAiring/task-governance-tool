@@ -11,9 +11,10 @@ trusted-local Runner. Accepted TG-M24.R3A supplied only the private schema-v20
 migration/storage foundation. Accepted TG-M24.R3B publicly activates that
 existing schema without activating Runner execution or a completion gate.
 Accepted TG-M24.R4B repaired only pre-Runner core behavior and dependency
-violations. TG-M24.R5 is the sole current unit for the bounded physical
-retirement of already identified fixed OS-temp diagnostic residue; it activates
-no Runner execution or completion gate.
+violations. Accepted TG-M24.R5 retired only the already identified fixed
+OS-temp diagnostic residue. TG-M24.2A is the sole current unit for explicit
+trusted-local plan authority, exact target binding, and bounded private
+materialization; it launches no process and activates no completion gate.
 Completed execution narrative is history, and the Task
 database owns live state and evidence.
 

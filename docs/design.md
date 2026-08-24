@@ -19,9 +19,10 @@ Bundle-v2 null-Runner, Evidence/Viewer, and
 managed backup/recovery compatibility. It activates no Runner execution,
 Runner projection, or completion-gate behavior.
 Accepted TG-M24.R4B repaired only pre-Runner core behavior and frozen dependency
-violations. TG-M24.R5 is the sole current TG-M24 authority and owns only the
-bounded physical retirement of already identified fixed OS-temp diagnostic
-residue; it adds no supported Runner, schema, Evidence, CLI, or gate behavior.
+violations. Accepted TG-M24.R5 retired only the already identified fixed
+OS-temp diagnostic residue. TG-M24.2A is the sole current TG-M24 authority and
+owns only explicit trusted-local plan authority, exact target binding, and safe
+bounded private materialization without process launch or gate activation.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 

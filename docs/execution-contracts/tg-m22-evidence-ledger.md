@@ -1703,8 +1703,11 @@ criterion links. It may not update a bundle, create canonical evidence, change
 a Task or gate, or read SQLite directly. M22 activates no worker, outbox,
 remote model, report narrative, retry policy, or canonical analyzer writer.
 
-The M24 Runner may later add a runner-observation table and a new tagged
-verification-basis/bundle version. A Runner can classify only its directly
+Accepted downstream M24 schema-v20 storage already provides the dormant
+Runner-observation and Bundle-v2 null-Runner structural foundation. The routed
+M24 contract owns every durable mapping, writer, projection, and later tagged
+verification-basis/Bundle transition; M22 reserves only the producer/relation
+vocabulary and activates none of them. A Runner can classify only its directly
 observed argv-plan execution facts as machine-observed; project test selection,
 environment authenticity, external effects, and old caller evidence do not
 inherit that class. Schema-v20 shadow evidence remains permanently gate-
@@ -1749,8 +1752,7 @@ TG-M23 reporting authority is in
 offline/mock TG-M23.2 plus TG-M23.3 offline/mock integrated acceptance are accepted predecessors.
 TG-M24 Runner authority is in
 [the M24 mixed contract](tg-m24-verification-runner.md#tg-m24-verification-runner).
-TG-M24.1 and its bounded TG-M24.1A correction are accepted predecessors;
-current runtime qualification-and-supply authority belongs to TG-M24.1B,
-while TG-M24.2, TG-M24.3, and TG-M24.4 remain inactive. No TG-M24 Runner
-runtime is active.
-This M22 document activates no downstream runtime.
+Current, accepted, inactive, and superseded TG-M24 membership is owned solely by
+the [repository authority index](../authority.md) and that routed M24 contract.
+This M22 document mirrors no downstream unit state and activates no downstream
+runtime.

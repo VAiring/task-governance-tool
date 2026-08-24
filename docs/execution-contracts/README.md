@@ -10,9 +10,9 @@
 > accepted predecessors. TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are also accepted
 > predecessors; accepted R4A left its inventory-approved retired material and
 > dedicated tests physically absent without an archive or dormant copy.
-> TG-M24.R3A, TG-M24.R3B, and TG-M24.R4B are accepted predecessors; TG-M24.R5
-> owns current authority-only scope, and TG-M24.2A through TG-M24.CP4 remain
-> inactive in their routed exact sequence.
+> TG-M24.R3A, TG-M24.R3B, TG-M24.R4B, and TG-M24.R5 are accepted predecessors;
+> TG-M24.2A owns current authority-only scope, and TG-M24.2B through TG-M24.CP4
+> remain inactive in their routed exact sequence.
 > TG-M23 authority is accepted-predecessor only, and no TG-M24 Runner runtime
 > is active. Load files only when the current
 > Task Contract or the
@@ -49,9 +49,10 @@ targets, reviews, receipts, or completion history.
   gate mutation, and Task mutation remain outside scope.
 - [TG-M24 Verification Runner](tg-m24-verification-runner.md#tg-m24-verification-runner)
   owns accepted TG-M24.1/TG-M24.1A/TG-M24.R1/TG-M24.R2A/TG-M24.R2B/
-  TG-M24.R2C/TG-M24.R4A/TG-M24.R4V/TG-M24.R3A/TG-M24.R3B/TG-M24.R4B routes, the
-  superseded non-gating TG-M24.1B route, current TG-M24.R5 fixed diagnostic
-  residue retirement, and inactive TG-M24.2A-through-TG-M24.CP4
+  TG-M24.R2C/TG-M24.R4A/TG-M24.R4V/TG-M24.R3A/TG-M24.R3B/TG-M24.R4B/
+  TG-M24.R5 routes, the superseded non-gating TG-M24.1B route, current
+  TG-M24.2A trusted-plan and exact-target materialization, and inactive
+  TG-M24.2B-through-TG-M24.CP4
   implementation, gate, acceptance, and no-debt checkpoint detail. Its
   trusted-local explicit-opt-in boundary leaves
   untrusted and external work on the M21 manual fallback, and loading it

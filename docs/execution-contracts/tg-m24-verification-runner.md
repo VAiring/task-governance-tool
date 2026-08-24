@@ -14,8 +14,8 @@
 > only the dependency-pure, legacy-stable Runner value-model foundation and
 > exact-candidate manifest closure, with no product activation. TG-M24.R3A and
 > TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and
-> public-activation baseline; TG-M24.R4B is an accepted predecessor.
-> TG-M24.R5 owns current formal authority, and every later unit in this
+> public-activation baseline; TG-M24.R4B and TG-M24.R5 are accepted predecessors.
+> TG-M24.2A owns current formal authority, and every later unit in this
 > document remains inactive until its immediate predecessor is accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
@@ -393,7 +393,7 @@ and two independent Tier 2 PASS reviews.
 
 <a id="tg-m24-r5"></a>
 
-## TG-M24.R5 Current Fixed Diagnostic Residue Retirement
+## TG-M24.R5 Accepted Fixed Diagnostic Residue Retirement
 
 Task `tg_task_89e9ac8d34df2e95` proves the fixed literal identities, owned
 inventories, and process/session/profile zero for the already identified
@@ -406,7 +406,7 @@ independent Tier 2 PASS reviews.
 
 <a id="tg-m24-2a"></a>
 
-## TG-M24.2A Inactive Trusted Plan And Exact Target Materialization
+## TG-M24.2A Current Trusted Plan And Exact Target Materialization
 
 Task `tg_task_2c6fd4707ac1e81b` implements explicit trusted-local opt-in,
 project-owned plan authority independent of untrusted target changes, exact

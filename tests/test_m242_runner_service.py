@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -13,6 +14,8 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tests.m14_test_support import (
+    _copy_skill,
+    file_snapshot,
     initialize_taskgov_internal,
     run_taskgov_internal,
 )
@@ -48,6 +51,9 @@ from task_governance_tool.verification_runner_git import (  # noqa: E402
 from task_governance_tool.verification_runner_plan import (  # noqa: E402
     VerificationRunnerPlanResolution,
     VerificationRunnerPlanStep,
+)
+from task_governance_tool.verification_runner_lifecycle import (  # noqa: E402
+    inspect_runner_layout,
 )
 from task_governance_tool.verification_runner_process import (  # noqa: E402
     RunnerProcessError,
@@ -1489,6 +1495,227 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertIsNone(generation["observation"].reason)
             self.assertEqual(generation["observation"].complete_plan, 1)
             self.assertIsNotNone(generation["cleanup_event"].terminal_observation_id)
+
+    @unittest.skipUnless(os.name == "nt", "integrated Windows shadow Runner")
+    def test_real_windows_shadow_runner_integrates_plan_git_process_lifecycle_and_audit_only_evidence(
+        self,
+    ):
+        raw_output_secret = "TG_M242D_RAW_OUTPUT_MUST_NOT_PERSIST_7f20c1"
+        credential_name = "TG_M242D_PARENT_CREDENTIAL"
+        credential_value = "TG_M242D_PARENT_CREDENTIAL_VALUE_91d5a4"
+        committed_source = "print('staged')\n"
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            skill_parent = fixture.repo / ".agents" / "skills"
+            skill_parent.mkdir(parents=True)
+            skill_root = _copy_skill(skill_parent)
+            fixture.target = replace(fixture.target, skill_root=skill_root)
+
+            (fixture.repo / ".gitignore").write_text(
+                "/.agents/skills/task-governance-tool/config/\n"
+                "/.agents/skills/task-governance-tool/state/\n",
+                encoding="utf-8",
+            )
+            checks = fixture.repo / "checks"
+            checks.mkdir()
+            (checks / "run.py").write_text(
+                "import os\n"
+                "from pathlib import Path\n"
+                f"raw_output_secret = {raw_output_secret!r}\n"
+                "root = Path.cwd()\n"
+                "valid = (\n"
+                f"    (root / 'focused.py').read_text(encoding='utf-8') == {committed_source!r}\n"
+                "    and not (root / 'ambient-untracked.txt').exists()\n"
+                "    and not (root / '.agents' / 'skills' / 'task-governance-tool' / "
+                "'config' / 'verification-runner.json').exists()\n"
+                f"    and {credential_name!r} not in os.environ\n"
+                ")\n"
+                "print(raw_output_secret)\n"
+                "raise SystemExit(0 if valid else 9)\n",
+                encoding="utf-8",
+            )
+
+            authority = fixture.authority()
+            plan_path = skill_root / "config" / "verification-runner.json"
+            plan_path.parent.mkdir()
+            plan_path.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "plan_id": "m242d-integrated",
+                        "trusted_local": True,
+                        "entries": [
+                            {
+                                "task_id": fixture.task_id,
+                                "contract_revision": int(
+                                    authority.task["current_contract_revision"]
+                                ),
+                                "verification_expectation_digest": (
+                                    authority.verification_expectation_digest
+                                ),
+                                "verification_criterion_digest": (
+                                    authority.verification_criterion_digest
+                                ),
+                                "coverage": "full",
+                                "steps": [
+                                    {
+                                        "step_id": "integrated",
+                                        "mode": "script",
+                                        "entrypoint": "checks/run.py",
+                                        "argv": [],
+                                        "cwd": ".",
+                                        "timeout_seconds": 30,
+                                        "cpu_seconds": 20,
+                                        "memory_mib": 128,
+                                        "process_limit": 2,
+                                        "output_byte_limit": 1_048_576,
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            git(
+                fixture.repo,
+                "add",
+                ".gitignore",
+                ".agents",
+                "checks/run.py",
+                "focused.py",
+            )
+            git(fixture.repo, "commit", "--quiet", "-m", "integrated target")
+            revision = (
+                git(fixture.repo, "rev-parse", "HEAD")
+                .stdout.decode("ascii")
+                .strip()
+            )
+
+            (fixture.repo / "focused.py").write_text(
+                "print('ambient staged')\n",
+                encoding="utf-8",
+            )
+            git(fixture.repo, "add", "focused.py")
+            (fixture.repo / "ambient-untracked.txt").write_text(
+                "ambient only\n",
+                encoding="utf-8",
+            )
+            repo_before = file_snapshot(fixture.repo)
+
+            with mock.patch.dict(
+                os.environ,
+                {credential_name: credential_value},
+            ):
+                result = service.set_review_target_with_shadow_runner(
+                    fixture.target,
+                    fixture.task_id,
+                    kind="git_commit",
+                    revision=revision,
+                )
+
+            self.assertEqual(file_snapshot(fixture.repo), repo_before)
+            self.assertEqual(result.task["review_target_generation"], 1)
+            self.assertEqual(result.task["review_target_kind"], "git_commit")
+            self.assertEqual(result.task["review_target_value"], revision)
+            self.assertNotIn("runner_observation", result.task)
+            self.assertEqual(
+                row_counts(fixture.db),
+                {
+                    "verification_runner_resolutions": 1,
+                    "verification_runner_attempts": 1,
+                    "verification_runner_observations": 1,
+                    "verification_runner_sandbox_events": 1,
+                },
+            )
+
+            generation = fixture.generation(1)
+            self.assertEqual(generation["state"], "terminal")
+            self.assertEqual(generation["resolution"].plan_state, "runner")
+            self.assertEqual(generation["resolution"].route, "runner")
+            observation = generation["observation"]
+            self.assertEqual(
+                (
+                    observation.route,
+                    observation.launch_state,
+                    observation.outcome,
+                    observation.reason,
+                    observation.complete_plan,
+                    observation.completed_step_count,
+                ),
+                ("runner", "launched", "pass", None, 1, 1),
+            )
+            self.assertEqual(
+                generation["cleanup_event"].terminal_observation_id,
+                observation.verification_runner_observation_id,
+            )
+            inventory = inspect_runner_layout(service._runner_paths(fixture.target))
+            self.assertEqual(inventory.attempt_ids, ())
+            self.assertEqual(inventory.quarantine_ids, ())
+
+            with closing(sqlite3.connect(fixture.db)) as connection:
+                references = connection.execute(
+                    "SELECT evidence_reference_id FROM evidence_references "
+                    "WHERE source_kind = 'runner_observation'"
+                ).fetchall()
+                links = connection.execute(
+                    "SELECT criterion_evidence_link_id FROM criterion_evidence_links "
+                    "WHERE relation = 'runner_observation'"
+                ).fetchall()
+                self.assertEqual(len(references), 1)
+                self.assertEqual(len(links), 1)
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM completion_bundle_members "
+                        "WHERE evidence_reference_id = ? "
+                        "OR criterion_evidence_link_id = ?",
+                        (references[0][0], links[0][0]),
+                    ).fetchone()[0],
+                    0,
+                )
+
+            shown_result = run_taskgov_internal(
+                "task",
+                "show",
+                "--repo",
+                str(fixture.repo),
+                "--db",
+                str(fixture.db),
+                fixture.task_id,
+                "--json",
+                maintenance_enabled=False,
+            )
+            self.assertEqual(shown_result.returncode, 0, shown_result.stdout)
+            shown = json.loads(shown_result.stdout)["data"]
+            self.assertEqual(
+                shown["verification_evidence"]["gate"],
+                {
+                    "blocking_code": "verification_receipt_required",
+                    "qualifying_receipt_id": None,
+                    "required": True,
+                    "satisfied": False,
+                },
+            )
+            self.assertEqual(
+                shown["verification_evidence"]["counts"],
+                {
+                    "blocking_exact_current": 0,
+                    "qualifying_exact_current": 0,
+                    "receipts_exact_current": 0,
+                    "receipts_total": 0,
+                },
+            )
+
+            for state_file in fixture.db.parent.rglob("*"):
+                if not state_file.is_file():
+                    continue
+                retained = state_file.read_bytes()
+                self.assertNotIn(raw_output_secret.encode("utf-8"), retained)
+                self.assertNotIn(credential_value.encode("utf-8"), retained)
 
     def test_owner_cleanup_failure_overrides_passing_result_and_remains_pending(self):
         for cleanup_state in ("open", "uncertain"):

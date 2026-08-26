@@ -15,9 +15,12 @@ violations. Accepted TG-M24.R5 retired only the already identified fixed
 OS-temp diagnostic residue. Accepted TG-M24.2A supplied explicit trusted-local
 plan authority, exact target binding, and bounded private materialization.
 Accepted TG-M24.2B supplied the bounded local process adapter and deterministic
-cleanup without activating a public Runner or completion gate. TG-M24.2C is the
-sole current unit for parent-service orchestration and audit-only schema-v20
+cleanup without activating a public Runner or completion gate. Accepted
+TG-M24.2C supplied parent-service orchestration and audit-only schema-v20
 observation and Evidence capture; it cannot satisfy verification or completion.
+TG-M24.2D is the sole current unit and accepts only the already-implemented
+shadow slice from one fresh exact target; it activates no additional product
+behavior or Runner completion gate.
 Completed execution narrative is history, and the Task
 database owns live state and evidence.
 
@@ -1339,14 +1342,18 @@ completion evidence, or Handoff. A second attempt, including after `fail`,
 otherwise it fails with `verification_receipt_already_recorded` and message
 `verification evidence is already recorded for the current target`.
 
-Taskgov does not run verification, authenticate the caller or process, assess
-test quality, infer
-coverage, or prove the result or that the run actually exercised the copied
-target. Invoking Receipt add is the caller's attestation of those facts. It
-stores no command body or argument, exit code, stdout/stderr, log, environment,
-exception, stack trace, prompt/chat, diff, credential, or free-form coverage
-prose. Approved exceptions, result-file import, configured runners,
-signatures, and debug retention are outside this initial contract.
+The public `verification receipt add` command does not run the caller-attested
+verification represented by that Receipt, authenticate its caller or process,
+assess test quality, infer coverage, or prove the result or that the run
+actually exercised the copied target. Invoking Receipt add is the caller's
+attestation of those facts. It stores no command body or argument, exit code,
+stdout/stderr, log, environment, exception, stack trace, prompt/chat, diff,
+credential, or free-form coverage prose. The accepted audit-only TG-M24.2C
+Runner is separate: it may launch an eligible trusted-local plan after explicit
+opt-in, but it neither creates nor qualifies a Receipt and cannot satisfy the
+M21 verification or completion gate. Approved exceptions, result-file import,
+configured runners that create, import, or qualify Receipts, signatures, and
+debug retention are outside this initial Receipt contract.
 
 ### Current Eligibility And Completion Gate
 
@@ -1601,7 +1608,7 @@ domain, bytes, and digest are unchanged.
 
 Evidence JSON is a deterministic one-way SQLite projection. Canonical sorted-key compact UTF-8 JSON uses integer-only JSON values where numeric, preserves valid Unicode without normalization, and ends each file with one LF. A schema-v20 index uses envelope `format_version=2`, digest domain `taskgov-evidence-index-v2\0`, and adds exactly nullable `bundle_format_version` to each entry: null for `legacy_unknown`, 1 for a preserved v1 Bundle, and 2 for a native v2 Bundle. Native entries reference `bundles/<completion-evidence-bundle-id>.json`; a schema-v20 projection may therefore reference both preserved version-1 Bundles and new version-2 Bundles without rewriting existing payload bytes or digests. Pre-v19 entries are `legacy_unknown` with null Bundle/file fields.
 The index includes every cycle, is ordered by Task ID, ordinal, and cycle ID, and is capped at 100,000 entries and 64 MiB without truncation. Publication flushes immutable Bundle files and atomically replaces `index.json` last; SQLite remains canonical, unreferenced files are ignored, and JSON is never imported or used to repair the database.
-Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. There is no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, network action, Analyzer, Runner, or additional normal-loop call.
+Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, or network action; it invokes or projects neither Analyzer nor Runner and adds no normal-loop call.
 
 ## Current TG-M21.4B Recovery Candidate Validity Contract
 
@@ -2629,9 +2636,10 @@ and artifact requirements above do not depend on historical text.
 This boundary is staged. Accepted 2A covers only physical plan capture, strict
 plan selection, exact target observation, and private materialization. Accepted
 2B covers only the bounded runtime/process adapter and deterministic cleanup.
-Current 2C owns parent-service orchestration plus audit-only schema-v20
-observation and Evidence capture; completion-gate and release portions remain
-inactive behind their owning sequential units.
+Accepted 2C owns parent-service orchestration plus audit-only schema-v20
+observation and Evidence capture. Current 2D owns only integrated acceptance of
+that shadow slice; completion-gate and release portions remain inactive behind
+their owning sequential units.
 
 The approved execution direction is an explicit-opt-in Runner for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified
@@ -2887,8 +2895,8 @@ the existing target-set operation; qualifying gate authority remains inactive
 until its later sequential unit is accepted and synchronized.
 
 The current product deliberately excludes pagination/search in CLI history,
-parent/child Tasks, acceptance checklists, verification-command execution,
-generic
+parent/child Tasks, acceptance checklists, a public command or Skill trigger for
+standalone verification-command execution, generic
 result/receipt-file import, action aliases, general/manual backup or restore,
 custom export, browser launch/server, durable/general browser persistence
 beyond the one-shot envelope, external Issue lifecycle/sync until its intake

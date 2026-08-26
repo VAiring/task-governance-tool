@@ -400,7 +400,7 @@ TASK_STATUS_VALUES = {
     "paused",
     "done",
 }
-CURRENT_UNITS = ("TG-M24.2C",)
+CURRENT_UNITS = ("TG-M24.2D",)
 NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
     for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
@@ -424,6 +424,7 @@ M24_R5_ALIAS = r"(?:TG-M24\.)?R5"
 M24_2A_ALIAS = r"(?:TG-M24\.)?2A"
 M24_2B_ALIAS = r"(?:TG-M24\.)?2B"
 M24_2C_ALIAS = r"(?:TG-M24\.)?2C"
+M24_2D_ALIAS = r"(?:TG-M24\.)?2D"
 M24_1B_ALIAS = r"(?:TG-M24\.)?1B"
 M24_LATER_UNIT_ALIAS = r"(?:TG-M24\.)?(?:R[0-9]+[A-Z]?|[0-9]+[A-Z]?|CP[0-9]+)"
 M24_R3B_TOKEN = rf"{M24_R3B_ALIAS}(?![A-Za-z0-9_-])"
@@ -432,6 +433,7 @@ M24_R5_TOKEN = rf"{M24_R5_ALIAS}(?![A-Za-z0-9_-])"
 M24_2A_TOKEN = rf"{M24_2A_ALIAS}(?![A-Za-z0-9_-])"
 M24_2B_TOKEN = rf"{M24_2B_ALIAS}(?![A-Za-z0-9_-])"
 M24_2C_TOKEN = rf"{M24_2C_ALIAS}(?![A-Za-z0-9_-])"
+M24_2D_TOKEN = rf"{M24_2D_ALIAS}(?![A-Za-z0-9_-])"
 M24_1B_TOKEN = rf"{M24_1B_ALIAS}(?![A-Za-z0-9_-])"
 M24_1B_CURRENT_CLAIM = re.compile(
     rf"(?:\bcurrent\s+{M24_1B_TOKEN}"
@@ -488,6 +490,15 @@ M24_2B_CURRENT_CLAIM = re.compile(
     rf"\s+(?:the\s+)?{M24_2B_TOKEN})",
     re.IGNORECASE,
 )
+M24_2C_CURRENT_CLAIM = re.compile(
+    rf"(?:\bcurrent\s+{M24_2C_TOKEN}"
+    rf"|\b{M24_2C_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
+    r"(?:(?:is|are|remains?)\s+(?:the\s+)?(?:sole\s+)?current\b"
+    r"|owns?\s+(?:the\s+)?current(?:\s+formal)?\s+authority\b)"
+    r"|\bcurrent\s+(?:formal\s+)?authority\s+belongs(?:\s+only)?\s+to\b"
+    rf"\s+(?:the\s+)?{M24_2C_TOKEN})",
+    re.IGNORECASE,
+)
 M24_R4B_INACTIVE_CLAIM = re.compile(
     rf"(?:\binactive\s+{M24_R4B_TOKEN}"
     rf"|\b{M24_R4B_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
@@ -539,9 +550,42 @@ M24_2C_INACTIVE_CLAIM = re.compile(
     r"(?:are|remain)\s+inactive\b)",
     re.IGNORECASE,
 )
+M24_2D_INACTIVE_CLAIM = re.compile(
+    rf"(?:\binactive\s+{M24_2D_TOKEN}"
+    rf"|\binactive\s+{M24_2D_ALIAS}-through-{M24_LATER_UNIT_ALIAS}"
+    r"(?![A-Za-z0-9_-])"
+    rf"|\b{M24_2D_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
+    r"(?:is|are|remains?)\s+(?:(?:an?|the)\s+)?inactive\b"
+    rf"|\b{M24_2D_TOKEN}(?:\s+through\s+{M24_LATER_UNIT_ALIAS}"
+    r"|\s+and\s+(?:every\s+)?later\s+units?)\s+"
+    r"(?:are|remain)\s+inactive\b)",
+    re.IGNORECASE,
+)
 M24_STALE_SHADOW_FUTURE_CLAIM = re.compile(
     r"\bThe\s+M24\s+Runner\s+may\s+later\s+add\s+a\s+runner-observation\s+table\s+"
     r"and\s+a\s+new\s+tagged\s+verification-basis/bundle\s+version\b",
+    re.IGNORECASE,
+)
+M24_STALE_NO_RUNTIME_CLAIM = re.compile(
+    r"\bTG-M23\s+authority\s+is\s+accepted-predecessor\s+only,\s+and\s+no\s+"
+    r"TG-M24\s+Runner\s+runtime\s+is\s+active\.\s+Load\s+files\s+only\b",
+    re.IGNORECASE,
+)
+M24_STALE_UNQUALIFIED_RUNNER_ABSENCE_CLAIM = re.compile(
+    r"\bdoctor\s+only\s+reports\s+stored\s+projection\s+facts\.\s+There\s+is\s+"
+    r"no\s+Evidence\s+command\b[^.]{0,256}"
+    r"\bAnalyzer,\s+Runner,\s+or\s+additional\s+normal-loop\s+call\b",
+    re.IGNORECASE,
+)
+M24_STALE_UNQUALIFIED_VERIFICATION_EXECUTION_CLAIM = re.compile(
+    r"(?:\bThe\s+current\s+product\s+deliberately\s+excludes\b[^.]{0,256}"
+    r"\bacceptance\s+checklists,\s+verification-command\s+execution,\s+generic\b"
+    r"|\bDeferred\s+work\s+includes\s+profile\s+authoring,\s+"
+    r"verification-command\s+execution,\s+external\s+Issue\s+delivery\b"
+    r"|\bTaskgov\s+does\s+not\s+run\s+verification,\s+authenticate\s+the\s+"
+    r"caller\s+or\s+process,\s+assess\s+test\s+quality,\s+infer\s+coverage,\s+"
+    r"or\s+prove\s+the\s+result\s+or\s+that\s+the\s+run\s+actually\s+"
+    r"exercised\s+the\s+copied\s+target\b)",
     re.IGNORECASE,
 )
 UNIT_CURRENT_CLAIM = re.compile(
@@ -1634,9 +1678,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.2C"],
+                "current_units": ["TG-M24.2D"],
                 "inactive_units": [
-                    "TG-M24.2D",
                     "TG-M24.3",
                     "TG-M24.4A",
                     "TG-M24.4B",
@@ -2201,8 +2244,8 @@ def _m24_trusted_local_authority_sync(
         ("tg-m24-r5", "tg-m24.r5", "accepted"),
         ("tg-m24-2a", "tg-m24.2a", "accepted"),
         ("tg-m24-2b", "tg-m24.2b", "accepted"),
-        ("tg-m24-2c", "tg-m24.2c", "current"),
-        ("tg-m24-2", "tg-m24.2d", "inactive"),
+        ("tg-m24-2c", "tg-m24.2c", "accepted"),
+        ("tg-m24-2", "tg-m24.2d", "current"),
         ("tg-m24-3", "tg-m24.3", "inactive"),
         ("tg-m24-4a", "tg-m24.4a", "inactive"),
         ("tg-m24-4b", "tg-m24.4b", "inactive"),
@@ -2245,7 +2288,7 @@ def _m24_trusted_local_authority_sync(
             Issue(
                 "m24_current_binding",
                 M24,
-                "M24 accepted predecessors, sole current 2C unit, or inactive successors drifted",
+                "M24 accepted predecessors, sole current 2D unit, or inactive successors drifted",
             )
         )
 
@@ -2787,12 +2830,17 @@ def _has_current_status_contradiction(text: str) -> bool:
             M24_R5_CURRENT_CLAIM,
             M24_2A_CURRENT_CLAIM,
             M24_2B_CURRENT_CLAIM,
+            M24_2C_CURRENT_CLAIM,
             M24_R4B_INACTIVE_CLAIM,
             M24_R5_INACTIVE_CLAIM,
             M24_2A_INACTIVE_CLAIM,
             M24_2B_INACTIVE_CLAIM,
             M24_2C_INACTIVE_CLAIM,
+            M24_2D_INACTIVE_CLAIM,
             M24_STALE_SHADOW_FUTURE_CLAIM,
+            M24_STALE_NO_RUNTIME_CLAIM,
+            M24_STALE_UNQUALIFIED_RUNNER_ABSENCE_CLAIM,
+            M24_STALE_UNQUALIFIED_VERIFICATION_EXECUTION_CLAIM,
         )
         for match in pattern.finditer(text)
     )

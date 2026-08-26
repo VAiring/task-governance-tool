@@ -23,10 +23,11 @@ violations. Accepted TG-M24.R5 retired only the already identified fixed
 OS-temp diagnostic residue. Accepted TG-M24.2A supplied explicit trusted-local
 plan authority, exact target binding, and safe bounded private materialization.
 Accepted TG-M24.2B supplied only the bounded local runtime, lifecycle, process,
-native-adapter, and deterministic-cleanup slice. TG-M24.2C is the sole current
-TG-M24 authority and owns only parent-service orchestration, durable audit-only
-observation/Evidence mapping, and sanitized projection; CLI, Skill, and
-completion-gate activation remain later.
+native-adapter, and deterministic-cleanup slice. Accepted TG-M24.2C supplied
+parent-service orchestration, durable audit-only observation/Evidence mapping,
+and sanitized projection. TG-M24.2D is the sole current TG-M24 authority and
+owns only integrated acceptance of that already-implemented shadow slice; CLI,
+Skill, and completion-gate activation remain later.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -3170,7 +3171,7 @@ the exact closed set above. These codes are bounded sanitized structural
 values, not arbitrary text. R2C gates only the closed record-member sets, the
 `result_code` grammar, nullability, and those member-to-grammar bindings. It
 does not define a concrete code taxonomy or outcome/reason pairing. Accepted
-2B owns that local membership and pairing, while current 2C owns the closed
+2B owns that local membership and pairing, while accepted 2C owns the closed
 durable/public mapping and projection. The parent service accepts no arbitrary
 adapter text, remains the sole business-interpretation and persistence owner,
 and persists only the mapped existing durable outcome. This freeze does not
@@ -3496,8 +3497,9 @@ loosening a deterministic bound or adding asynchronous architecture.
 
 ## Deferred Boundaries
 
-Deferred work includes profile authoring, verification-command execution,
-external Issue delivery, dependency graphs, task import, pagination/search,
+Deferred work includes profile authoring, a public command or Skill trigger for
+standalone verification-command execution, external Issue delivery, dependency
+graphs, task import, pagination/search,
 stale detection, parent/child/checklist execution units, manual backup/restore/
 export, generic browser-state persistence, live server, browser launch,
 network synchronization, and update checking.

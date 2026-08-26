@@ -468,9 +468,67 @@ schema-v20 observations and Evidence links. Runner absence, ineligibility, or a
 closed pre-launch failure does not block ordinary exact review-target capture;
 storage or lifecycle atomicity uncertainty still fails closed. Runner results
 cannot satisfy verification or completion, and M21 semantics remain unchanged.
-Completion requires drift, idempotency/concurrency/restart, sanitized
-projection, compatibility, full offline, and two independent Tier 2 PASS
-reviews.
+
+The approved narrow implementation is exact:
+
+- Before T1, an absent verification criterion, plan
+  `absent|disabled|no_match`, an unsupported or non-addressable target, or a
+  definite closed Runner-only pre-attempt failure takes the existing target-
+  only path and creates zero durable Runner rows. TG-M24.2A malformed,
+  ambiguous, stale, inconsistent, and over-bound cases remain blocking and
+  create no target or Runner row.
+- After preflight and before an eligible T1, acquire one zero-wait Runner lock
+  and retain it through pending reconciliation, T1, process/lifecycle work,
+  and terminal T2. Lock contention or lifecycle uncertainty fails closed with
+  no T1; no SQLite writer is held across filesystem or process work.
+- For an eligible route, the one short T1 writer atomically captures the
+  ordinary exact target and exactly one resolution plus one attempt intent.
+  A later failure preserves that committed target/intent prefix, invokes no
+  maintenance, and returns a sanitized error without Runner success.
+- Per target generation there is at most one resolution, attempt, cleanup
+  event, and observation. A terminal observation has exactly one standalone
+  Evidence Reference and one `runner_observation` verification-criterion link.
+  A restart may instead have one cleanup event and no observation/Reference/
+  link when the prior result is unknowable.
+- After intent, only an accepted 2B result with process zero, handles closed,
+  raw output discarded, and exact private-tree absence may become terminal.
+  Launched results use `route=runner`; closed no-launch results use
+  `route=m21_fallback`; result outcome/reason/launch state are otherwise mapped
+  without a new code. `cleanup_failed` and any uncertain proof are not
+  persistable observations.
+- Restart never relaunches an attempt. Only the exact database-named known tree
+  may be cleaned. Multiple pending attempts, a foreign tree, owner/basis/
+  implementation drift, or cleanup uncertainty fails closed; proved drift
+  cleanup may append only the null-observation cleanup event before error. The
+  cleanup-performing call creates no new T1 and invokes no maintenance, but
+  that cleanup-only state closes its old generation rather than permanently
+  blocking Runner use; a later independent call may admit a new generation
+  after zero actual pending attempts and empty fixed inventory are proved.
+- Schema 20 and its DDL, all public commands and JSON success shapes, Skill,
+  Bundle v2, Viewer UI, Evidence JSON, Task Runner markers, and every M21
+  verification/completion gate remain unchanged. The private root and fixed
+  `verification Runner orchestration policy v1` digest are exactly those
+  owned by the current specification and design. Because 2B supplies no
+  durable canonical runtime digest, resolution and source-projection
+  `runtime_digest` are always null;
+  execution identity is only the manifest-bound implementation digest and the
+  fixed policy label.
+
+Boundary failure is an explicit inspection checkpoint for this execution
+unit. At the first T1 atomicity, intent/process, cleanup, restart, or terminal-
+persistence failure, preserve the exact state and bounded diagnostics, do not
+automatically relaunch or repeat a materially equivalent repair, and inspect
+the boundary before continuing. Ask the user before any repair that would
+change this narrow contract; a test is never weakened to pass.
+
+Completion requires focused zero-row fallback, pre-T1 lock serialization,
+atomic T1, launched and closed no-launch mapping, proof rejection,
+cardinality/replay, concurrency, restart cleanup-only and next-generation
+admission, drift, sanitized Reference/link, valid/malformed schema-v20 graph
+admission, Bundle/Viewer non-projection, backup/recovery and v19/v20
+compatibility checks; an exact diff;
+full offline PASS; and two fresh independent Tier 2 PASS reviews with no open
+High or Medium finding.
 
 <a id="tg-m24-2"></a>
 

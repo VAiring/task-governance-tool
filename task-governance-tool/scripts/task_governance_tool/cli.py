@@ -82,7 +82,6 @@ from task_governance_tool.reviews import (
     add_review_finding,
     add_review_receipt,
     resolve_review_finding,
-    set_requested_review_target,
 )
 from task_governance_tool.review_packet import (
     OVERSIZED_PACKET_MESSAGE,
@@ -109,6 +108,10 @@ from task_governance_tool.tasks import (
 from task_governance_tool.verification_receipts import (
     VerificationReceiptError,
     add_verification_receipt,
+)
+from task_governance_tool.verification_runner_service import (
+    VerificationRunnerServiceError,
+    set_review_target_with_shadow_runner,
 )
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
@@ -2995,93 +2998,98 @@ def handle_review_command(context: CommandContext) -> CommandResult:
         )
 
     try:
-        with closing(connect_initialized(target)) as connection:
-            with connection:
-                if context.command == "review.target.set":
-                    result = set_requested_review_target(
-                        connection,
-                        target.project,
-                        getattr(context.args, "task_id", ""),
-                        kind=getattr(context.args, "kind", ""),
-                        revision=getattr(context.args, "revision", None),
-                        database_target=target,
-                    )
-                    data = {
-                        "task": result.task,
-                        "changed_fields": result.changed_fields,
-                        "event": result.event,
-                    }
-                elif context.command == "review.receipt.add":
-                    result = add_review_receipt(
-                        connection,
-                        target.project,
-                        getattr(context.args, "task_id", ""),
-                        reviewer=getattr(context.args, "reviewer", ""),
-                        kind=getattr(context.args, "kind", ""),
-                        verdict=getattr(context.args, "verdict", ""),
-                        summary=getattr(context.args, "summary", ""),
-                        user_approved=bool(getattr(context.args, "user_approved", False)),
-                        reviewer_class=getattr(context.args, "reviewer_class", None),
-                        model_state=getattr(context.args, "model_state", None),
-                        declared_model_id=getattr(
-                            context.args,
-                            "declared_model_id",
-                            None,
-                        ),
-                        skill_state=getattr(context.args, "skill_state", None),
-                        declared_skill_id=getattr(
-                            context.args,
-                            "declared_skill_id",
-                            None,
-                        ),
-                        declared_skill_version=getattr(
-                            context.args,
-                            "declared_skill_version",
-                            None,
-                        ),
-                        review_profiles=getattr(
-                            context.args,
-                            "review_profiles",
-                            None,
-                        ),
-                        review_lenses=getattr(
-                            context.args,
-                            "review_lenses",
-                            None,
-                        ),
-                        context_relation=getattr(
-                            context.args,
-                            "context_relation",
-                            None,
-                        ),
-                        review_methods=getattr(
-                            context.args,
-                            "review_methods",
-                            None,
-                        ),
-                        database_target=target,
-                    )
-                    data = {"receipt": result.receipt, "event": result.event}
-                elif context.command == "review.finding.add":
-                    result = add_review_finding(
-                        connection,
-                        target.project,
-                        getattr(context.args, "task_id", ""),
-                        receipt_id=getattr(context.args, "receipt_id", ""),
-                        severity=getattr(context.args, "severity", ""),
-                        summary=getattr(context.args, "summary", ""),
-                        database_target=target,
-                    )
-                    data = {"finding": result.finding, "event": result.event}
-                else:
-                    result = resolve_review_finding(
-                        connection,
-                        target.project,
-                        getattr(context.args, "finding_id", ""),
-                        resolution=getattr(context.args, "resolution", ""),
-                        database_target=target,
-                    )
-                    data = {"finding": result.finding, "event": result.event}
+        if context.command == "review.target.set":
+            result = set_review_target_with_shadow_runner(
+                target,
+                getattr(context.args, "task_id", ""),
+                kind=getattr(context.args, "kind", ""),
+                revision=getattr(context.args, "revision", None),
+            )
+            data = {
+                "task": result.task,
+                "changed_fields": result.changed_fields,
+                "event": result.event,
+            }
+        else:
+            with closing(connect_initialized(target)) as connection:
+                with connection:
+                    if context.command == "review.receipt.add":
+                        result = add_review_receipt(
+                            connection,
+                            target.project,
+                            getattr(context.args, "task_id", ""),
+                            reviewer=getattr(context.args, "reviewer", ""),
+                            kind=getattr(context.args, "kind", ""),
+                            verdict=getattr(context.args, "verdict", ""),
+                            summary=getattr(context.args, "summary", ""),
+                            user_approved=bool(
+                                getattr(context.args, "user_approved", False)
+                            ),
+                            reviewer_class=getattr(
+                                context.args,
+                                "reviewer_class",
+                                None,
+                            ),
+                            model_state=getattr(context.args, "model_state", None),
+                            declared_model_id=getattr(
+                                context.args,
+                                "declared_model_id",
+                                None,
+                            ),
+                            skill_state=getattr(context.args, "skill_state", None),
+                            declared_skill_id=getattr(
+                                context.args,
+                                "declared_skill_id",
+                                None,
+                            ),
+                            declared_skill_version=getattr(
+                                context.args,
+                                "declared_skill_version",
+                                None,
+                            ),
+                            review_profiles=getattr(
+                                context.args,
+                                "review_profiles",
+                                None,
+                            ),
+                            review_lenses=getattr(
+                                context.args,
+                                "review_lenses",
+                                None,
+                            ),
+                            context_relation=getattr(
+                                context.args,
+                                "context_relation",
+                                None,
+                            ),
+                            review_methods=getattr(
+                                context.args,
+                                "review_methods",
+                                None,
+                            ),
+                            database_target=target,
+                        )
+                        data = {"receipt": result.receipt, "event": result.event}
+                    elif context.command == "review.finding.add":
+                        result = add_review_finding(
+                            connection,
+                            target.project,
+                            getattr(context.args, "task_id", ""),
+                            receipt_id=getattr(context.args, "receipt_id", ""),
+                            severity=getattr(context.args, "severity", ""),
+                            summary=getattr(context.args, "summary", ""),
+                            database_target=target,
+                        )
+                        data = {"finding": result.finding, "event": result.event}
+                    else:
+                        result = resolve_review_finding(
+                            connection,
+                            target.project,
+                            getattr(context.args, "finding_id", ""),
+                            resolution=getattr(context.args, "resolution", ""),
+                            database_target=target,
+                        )
+                        data = {"finding": result.finding, "event": result.event}
     except (TaskValidationError, ReviewEvidenceError) as exc:
         return review_failure_result(
             context,
@@ -3097,6 +3105,14 @@ def handle_review_command(context: CommandContext) -> CommandResult:
             code=exc.code,
             message=exc.message,
             exit_code=EXIT_TOOL_ERROR if exc.code == "internal_error" else EXIT_USAGE,
+        )
+    except VerificationRunnerServiceError as exc:
+        return review_failure_result(
+            context,
+            project_id=project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_TOOL_ERROR,
         )
     except StorageError as exc:
         return review_failure_result(

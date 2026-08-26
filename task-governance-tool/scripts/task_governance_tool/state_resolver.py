@@ -106,6 +106,7 @@ class CanonicalStatePaths:
     evidence_index: Path = field(repr=False)
     evidence_bundles: Path = field(repr=False)
     evidence_lock: Path = field(repr=False)
+    verification_runner_root: Path = field(repr=False)
     analysis_root: Path = field(repr=False)
     analysis_lock: Path = field(repr=False)
     analysis_outbox: Path = field(repr=False)
@@ -263,6 +264,7 @@ def canonical_state_paths(skill_root: Path) -> CanonicalStatePaths:
         evidence_index=evidence_root / EVIDENCE_INDEX_FILENAME,
         evidence_bundles=evidence_root / EVIDENCE_BUNDLES_DIRECTORY_NAME,
         evidence_lock=evidence_root / EVIDENCE_LOCK_FILENAME,
+        verification_runner_root=fixed_root / "verification-runner",
         analysis_root=analysis.root,
         analysis_lock=analysis.lock,
         analysis_outbox=analysis.outbox,
@@ -373,6 +375,7 @@ def resolve_staged_project_state(
         evidence_index=evidence_root / EVIDENCE_INDEX_FILENAME,
         evidence_bundles=evidence_root / EVIDENCE_BUNDLES_DIRECTORY_NAME,
         evidence_lock=evidence_root / EVIDENCE_LOCK_FILENAME,
+        verification_runner_root=fixed_root / "verification-runner",
         analysis_root=analysis.root,
         analysis_lock=analysis.lock,
         analysis_outbox=analysis.outbox,
@@ -929,6 +932,7 @@ def _database_target(
         evidence_index = paths.evidence_index
         evidence_bundles = paths.evidence_bundles
         evidence_lock = paths.evidence_lock
+        verification_runner_root = paths.verification_runner_root
     else:
         artifact_root = (
             backups_path.parent
@@ -939,6 +943,7 @@ def _database_target(
         evidence_index = evidence_root / EVIDENCE_INDEX_FILENAME
         evidence_bundles = evidence_root / EVIDENCE_BUNDLES_DIRECTORY_NAME
         evidence_lock = evidence_root / EVIDENCE_LOCK_FILENAME
+        verification_runner_root = artifact_root / "verification-runner"
     return DatabaseTarget(
         project=ProjectIdentity(
             project_id=stored.project_id,
@@ -951,6 +956,7 @@ def _database_target(
         evidence_index=evidence_index,
         evidence_bundles=evidence_bundles,
         evidence_lock=evidence_lock,
+        verification_runner_root=verification_runner_root,
         explicit_db=explicit_db,
         binding_path_hash=stored.canonical_path_hash,
         binding_generation=stored.binding_generation,

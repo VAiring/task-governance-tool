@@ -1,18 +1,20 @@
-"""Synchronous review-target trigger for the schema-v20 shadow Runner.
+"""Parent orchestration for the schema-v20 audit-only verification Runner.
 
-The coordinator keeps Git/OS work outside SQLite, uses one no-wait package
-Runner lock, and enters short transactions only to persist the target intent or
-append terminal evidence.
+The existing review-target command is the sole trigger. Ineligible and
+definite pre-intent fallback paths persist only the ordinary target. A Runner
+route commits the target, resolution, and attempt intent atomically before any
+private tree is created, then publishes terminal audit evidence only after all
+process and lifecycle cleanup proofs succeed.
 """
 
 from __future__ import annotations
 
-import sqlite3
-from collections.abc import Callable
+import os
+import secrets
 from contextlib import closing
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from task_governance_tool.artifact_manifest import (
     ArtifactManifestError,
@@ -22,6 +24,7 @@ from task_governance_tool.artifact_manifest import (
     opaque_artifact_observation,
 )
 from task_governance_tool.evidence_ledger import (
+    EvidenceLedgerError,
     EvidenceSource,
     TargetCaptureBinding,
     build_evidence_reference,
@@ -29,7 +32,6 @@ from task_governance_tool.evidence_ledger import (
 from task_governance_tool.git_snapshot import GitSnapshotError
 from task_governance_tool.reviews import (
     REVIEW_TARGET_KINDS,
-    ReviewEvidenceError,
     ReviewTargetAuthorityBasis,
     ReviewTargetResult,
     generate_review_id,
@@ -39,78 +41,78 @@ from task_governance_tool.reviews import (
     review_error,
     validate_revision_review_target_input,
 )
-from task_governance_tool.state_paths import VerificationRunnerStatePaths
 from task_governance_tool.storage import (
     DatabaseTarget,
     PreparedCriterionEvidenceLink,
     StorageError,
-    VerificationRunnerObservation,
     VerificationRunnerAttempt,
+    VerificationRunnerObservation,
     VerificationRunnerResolution,
     VerificationRunnerSandboxEvent,
     begin_initialized_write,
     connect_initialized,
     connect_initialized_readonly,
-    has_pending_verification_runner_cleanup,
     insert_verification_runner_resolution_locked,
-    persist_verification_runner_recovery_terminal_locked,
+    persist_verification_runner_restart_cleanup_locked,
     persist_verification_runner_terminal_locked,
     read_current_verification_runner_target_basis,
     read_pending_verification_runner_cleanup,
-    read_verification_runner_resolution_locked,
-    read_verification_runner_public_projection,
     utc_now,
 )
-from task_governance_tool.tasks import (
-    TaskRepositoryError,
-    TaskValidationError,
-    validate_choice,
-    validate_task_id,
-)
+from task_governance_tool.tasks import validate_choice, validate_task_id
 from task_governance_tool.verification_runner import (
     RUNNER_CONTRACT_VERSION,
     RUNNER_IMPLEMENTATION_VERSION,
+    RUNNER_POLICY_DIGEST,
     RUNNER_TRIGGER,
     generate_runner_id,
     resolution_idempotency_digest,
     runner_observation_source_projection,
+    verification_runner_attempt_digest,
     verification_runner_observation_digest,
     verification_runner_sandbox_event_digest,
 )
 from task_governance_tool.verification_runner_git import (
+    TARGET_STALE_MESSAGE,
     RunnerMaterialization,
+    RunnerTargetObservation,
     VerificationRunnerGitError,
+    materialize_runner_target,
     observe_commit_runner_target,
     observe_staged_runner_target,
     preflight_runner_material,
 )
 from task_governance_tool.verification_runner_lifecycle import (
-    RunnerLayoutInventory,
+    RUNNER_FAILURE_MESSAGE,
     VerificationRunnerLifecycleError,
-    attempt_paths,
-    inspect_runner_layout,
-    quarantine_attempt_tree,
-    remove_attempt_tree,
+    VerificationRunnerStatePaths,
+    cleanup_attempt_tree,
+    create_attempt_directories,
+    create_scratch_directories,
     require_known_attempt_inventory,
+    verification_runner_state_paths,
     zero_wait_runner_lock,
 )
 from task_governance_tool.verification_runner_plan import (
     VerificationRunnerPlanError,
     VerificationRunnerPlanResolution,
+    capture_verification_runner_plan,
     resolve_verification_runner_plan,
 )
+from task_governance_tool.verification_runner_process import (
+    RunnerCancelSignal,
+    RunnerProcessError,
+    RunnerProcessRequestV1,
+    RunnerProcessResultV1,
+    RunnerProcessStepV1,
+    build_clean_environment,
+    run_process_request,
+)
 from task_governance_tool.verification_runner_runtime import (
+    RunnerFixedExecutableLease,
     RunnerImplementationIdentity,
     VerificationRunnerRuntimeError,
     capture_runner_implementation,
-)
-from task_governance_tool.verification_runner_process import (
-    ProcessRunResult,
-)
-
-
-_RUNNER_POLICY_DIGEST = (
-    "sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8"
 )
 
 
@@ -123,70 +125,41 @@ class VerificationRunnerServiceError(Exception):
         return self.message
 
 
-@dataclass(frozen=True)
-class RunnerReviewTargetResult:
-    review: ReviewTargetResult
-    verification_runner: dict[str, Any]
+_POST_INTENT_TYPED_ERRORS = (
+    EvidenceLedgerError,
+    StorageError,
+    VerificationRunnerLifecycleError,
+    VerificationRunnerServiceError,
+)
 
 
 @dataclass(frozen=True)
-class _CapturedTarget:
-    observation: ArtifactObservation
-    material: RunnerMaterialization | None
-    addressable: bool
-    closed_reason: str | None
-
-
-@dataclass(frozen=True)
-class _PreparedResolution:
+class _PreparedRunner:
+    authority: ReviewTargetAuthorityBasis
+    target: RunnerTargetObservation
+    material: RunnerMaterialization
     plan: VerificationRunnerPlanResolution
     implementation: RunnerImplementationIdentity
-    route: str
-    reason: str | None
 
 
 @dataclass(frozen=True)
-class _RunnerLaunchIntent:
+class _LaunchIntent:
     review: ReviewTargetResult
     resolution: VerificationRunnerResolution
     attempt: VerificationRunnerAttempt
-    verification_runner: dict[str, Any]
+    acceptance_criterion_id: str | None
 
 
 def _service_error(code: str, message: str) -> VerificationRunnerServiceError:
-    return VerificationRunnerServiceError(code, message)
+    return VerificationRunnerServiceError(code=code, message=message)
+
+
+def _state_invalid() -> VerificationRunnerServiceError:
+    return _service_error("runner_state_invalid", RUNNER_FAILURE_MESSAGE)
 
 
 def _runner_paths(target: DatabaseTarget) -> VerificationRunnerStatePaths:
-    return VerificationRunnerStatePaths(
-        root=target.resolved_verification_runner_root,
-        lock=target.resolved_verification_runner_lock,
-        attempts=target.resolved_verification_runner_attempts,
-        quarantine=target.resolved_verification_runner_quarantine,
-    )
-
-
-def _plan_relative_path(target: DatabaseTarget) -> str:
-    if target.skill_root is None:
-        raise _service_error(
-            "runner_state_invalid",
-            "verification Runner package identity is unavailable",
-        )
-    repo = Path(target.project.canonical_repo).resolve(strict=False)
-    skill = Path(target.skill_root).resolve(strict=False)
-    try:
-        relative = skill.relative_to(repo)
-    except ValueError as exc:
-        raise _service_error(
-            "runner_state_invalid",
-            "verification Runner package identity is unavailable",
-        ) from exc
-    if not relative.parts:
-        raise _service_error(
-            "runner_state_invalid",
-            "verification Runner package identity is unavailable",
-        )
-    return (relative / "config" / "verification-runner.json").as_posix()
+    return verification_runner_state_paths(target.resolved_verification_runner_root)
 
 
 def _capture_ordinary_target(
@@ -195,51 +168,6 @@ def _capture_ordinary_target(
     kind: str,
     revision: Any,
 ) -> ArtifactObservation:
-    if kind == "git_snapshot":
-        if revision is not None:
-            raise review_error(
-                "invalid_review_evidence",
-                "git_snapshot captures the current staged index and does not accept --revision",
-                "review_target_value",
-            )
-        return observe_staged_git_manifest(target.project.canonical_repo)
-    if revision is None:
-        raise review_error(
-            "invalid_review_evidence",
-            "--revision is required unless review target kind is git_snapshot",
-            "review_target_value",
-        )
-    target_kind, value = normalize_revision_review_target(
-        target.project,
-        kind,
-        revision,
-    )
-    if target_kind == "git_commit":
-        return observe_git_commit_manifest(target.project.canonical_repo, value)
-    return opaque_artifact_observation(
-        target_kind=target_kind,
-        target_value=value,
-    )
-
-
-def _capture_runner_target(
-    target: DatabaseTarget,
-    *,
-    kind: str,
-    revision: Any,
-    plan_relative_path: str,
-) -> _CapturedTarget:
-    if kind not in {"git_snapshot", "git_commit"}:
-        return _CapturedTarget(
-            observation=_capture_ordinary_target(
-                target,
-                kind=kind,
-                revision=revision,
-            ),
-            material=None,
-            addressable=False,
-            closed_reason="unsupported_target",
-        )
     try:
         if kind == "git_snapshot":
             if revision is not None:
@@ -248,207 +176,148 @@ def _capture_runner_target(
                     "git_snapshot captures the current staged index and does not accept --revision",
                     "review_target_value",
                 )
-            observed = observe_staged_runner_target(
-                target.project.canonical_repo,
-                plan_relative_path=plan_relative_path,
-            )
-        else:
-            if revision is None:
-                raise review_error(
-                    "invalid_review_evidence",
-                    "--revision is required unless review target kind is git_snapshot",
-                    "review_target_value",
-                )
-            _kind, value = normalize_revision_review_target(
-                target.project,
-                kind,
-                revision,
-            )
-            observed = observe_commit_runner_target(
-                target.project.canonical_repo,
-                value,
-                plan_relative_path=plan_relative_path,
-            )
-        try:
-            material = preflight_runner_material(
-                target.project.canonical_repo,
-                observed,
-            )
-        except VerificationRunnerGitError as exc:
-            if exc.code == "unsupported_target":
-                return _CapturedTarget(
-                    observation=observed.artifact,
-                    material=None,
-                    addressable=False,
-                    closed_reason=exc.code,
-                )
-            raise _service_error(exc.code, exc.message) from exc
-        return _CapturedTarget(
-            observation=observed.artifact,
-            material=material,
-            addressable=True,
-            closed_reason=None,
+            return observe_staged_git_manifest(target.project.canonical_repo)
+        target_kind, value = normalize_revision_review_target(
+            target.project,
+            kind,
+            revision,
         )
-    except VerificationRunnerGitError as exc:
-        if exc.code != "unsupported_target":
-            raise _service_error(exc.code, exc.message) from exc
-        return _CapturedTarget(
-            observation=_capture_ordinary_target(
-                target,
-                kind=kind,
-                revision=revision,
-            ),
-            material=None,
-            addressable=False,
-            closed_reason=exc.code,
+        if target_kind == "git_commit":
+            return observe_git_commit_manifest(target.project.canonical_repo, value)
+        return opaque_artifact_observation(
+            target_kind=target_kind,
+            target_value=value,
         )
-    except (ArtifactManifestError, GitSnapshotError) as exc:
-        code = getattr(exc, "code", "invalid_review_evidence")
-        message = getattr(exc, "message", "review target could not be captured")
-        raise _service_error(code, message) from exc
+    except ArtifactManifestError as exc:
+        raise review_error(exc.code, exc.message) from exc
+    except GitSnapshotError as exc:
+        raise review_error(exc.code, exc.message, exc.field) from exc
 
 
-def _capture_runner_target_for_install(
+def _persist_ordinary_target(
     target: DatabaseTarget,
+    authority: ReviewTargetAuthorityBasis,
+    observation: ArtifactObservation,
+) -> ReviewTargetResult:
+    with closing(connect_initialized(target)) as connection:
+        with connection:
+            return persist_prepared_review_target_capture(
+                connection,
+                target.project,
+                authority.task,
+                observation=observation,
+                database_target=target,
+            )
+
+
+def _prepare_runner(
+    target: DatabaseTarget,
+    authority: ReviewTargetAuthorityBasis,
     *,
     kind: str,
     revision: Any,
-) -> _CapturedTarget:
-    """Resolve the production plan path, retaining only the injected test seam."""
-
-    plan_relative_path = ""
-    if kind in {"git_snapshot", "git_commit"}:
-        try:
-            plan_relative_path = _plan_relative_path(target)
-        except VerificationRunnerServiceError:
-            if not target.explicit_db:
-                raise
-            return _CapturedTarget(
-                observation=_capture_ordinary_target(
-                    target,
-                    kind=kind,
-                    revision=revision,
-                ),
-                material=None,
-                addressable=False,
-                closed_reason="unsupported_target",
-            )
-    return _capture_runner_target(
-        target,
-        kind=kind,
-        revision=revision,
-        plan_relative_path=plan_relative_path,
-    )
-
-
-def _invalid_plan_resolution(
-    material: RunnerMaterialization,
-    *,
-    reason: str,
-) -> VerificationRunnerPlanResolution:
-    return VerificationRunnerPlanResolution(
-        plan_state="invalid",
-        route="blocked",
-        reason=reason,
-        plan_blob_object_id=material.plan_blob_object_id,
-        plan_raw_digest=material.plan_raw_digest,
-        plan_id=None,
-        plan_version=None,
-        plan_semantic_digest=None,
-        selected_entry_digest=None,
-        coverage="not_applicable",
-        steps=(),
-    )
-
-
-def _not_addressable_plan(reason: str) -> VerificationRunnerPlanResolution:
-    return VerificationRunnerPlanResolution(
-        plan_state="not_addressable",
-        route=("m21_fallback" if reason == "unsupported_target" else "blocked"),
-        reason=reason,
-        plan_blob_object_id=None,
-        plan_raw_digest=None,
-        plan_id=None,
-        plan_version=None,
-        plan_semantic_digest=None,
-        selected_entry_digest=None,
-        coverage="not_applicable",
-        steps=(),
-    )
-
-
-def _prepare_resolution(
-    target: DatabaseTarget,
-    authority: ReviewTargetAuthorityBasis,
-    captured: _CapturedTarget,
-) -> _PreparedResolution | None:
-    if target.skill_root is None:
+) -> _PreparedRunner | None:
+    if (
+        authority.verification_criterion_id is None
+        or authority.verification_criterion_digest is None
+        or int(authority.task["current_contract_revision"]) <= 0
+        or target.skill_root is None
+        or kind not in {"git_snapshot", "git_commit"}
+    ):
         return None
+    repo = Path(target.project.canonical_repo)
+    package_root = Path(target.skill_root)
     try:
-        implementation = capture_runner_implementation(Path(target.skill_root))
-    except VerificationRunnerRuntimeError as exc:
-        if exc.code == "policy_mismatch":
-            # The Runner is an audit-only consumer of an otherwise valid review
-            # target.  An unauthenticated implementation therefore leaves the
-            # current generation with no Runner row instead of blocking exact
-            # target installation.  Lifecycle and storage uncertainty remain
-            # outside this boundary and continue to fail closed.
-            return None
-        raise _service_error(
-            exc.code,
-            "verification Runner implementation is unavailable",
-        ) from exc
+        source = capture_verification_runner_plan(repo, package_root)
+        plan = resolve_verification_runner_plan(
+            source,
+            task_id=str(authority.task["task_id"]),
+            contract_revision=int(authority.task["current_contract_revision"]),
+            verification_expectation_digest=(
+                authority.verification_expectation_digest
+            ),
+            verification_criterion_digest=authority.verification_criterion_digest,
+        )
+    except VerificationRunnerPlanError as exc:
+        raise _service_error(exc.code, exc.message) from exc
+    if plan.route == "m21_fallback":
+        return None
 
-    if not captured.addressable or captured.material is None:
-        plan = _not_addressable_plan(captured.closed_reason or "unsupported_target")
-    else:
-        try:
-            plan = resolve_verification_runner_plan(
-                captured.material.plan_raw_blob,
-                plan_blob_object_id=captured.material.plan_blob_object_id,
-                task_id=str(authority.task["task_id"]),
-                contract_revision=int(authority.task["current_contract_revision"]),
-                verification_expectation_digest=authority.verification_expectation_digest,
-                verification_criterion_digest=str(
-                    authority.verification_criterion_digest
-                ),
+    # Package-integrity failure is a definite pre-intent ineligibility. The
+    # ordinary exact target remains usable and no Runner row is created.
+    try:
+        implementation = capture_runner_implementation(package_root)
+    except VerificationRunnerRuntimeError:
+        return None
+
+    try:
+        observed = (
+            observe_staged_runner_target(repo)
+            if kind == "git_snapshot"
+            else observe_commit_runner_target(
+                repo,
+                normalize_revision_review_target(
+                    target.project,
+                    kind,
+                    revision,
+                )[1],
             )
-        except VerificationRunnerPlanError as exc:
-            plan = _invalid_plan_resolution(captured.material, reason=exc.code)
-
-    route = plan.route
-    reason = plan.reason
-    if plan.plan_state == "runner" and route == "runner":
-        # R4A has physically retired the Candidate-only runtime.  Until the
-        # later bounded-process unit supplies an authorized fixed executable,
-        # a trusted plan remains an inert shadow observation with no attempt.
-        route = "m21_fallback"
-        reason = "sandbox_unavailable"
-    return _PreparedResolution(
+        )
+        material = preflight_runner_material(repo, observed)
+    except VerificationRunnerGitError as exc:
+        if exc.code == "target_unsupported":
+            return None
+        raise _service_error(exc.code, exc.message) from exc
+    return _PreparedRunner(
+        authority=authority,
+        target=observed,
+        material=material,
         plan=plan,
         implementation=implementation,
-        route=route,
-        reason=reason,
     )
+
+
+def _revalidate_prepared_runner(
+    target: DatabaseTarget,
+    prepared: _PreparedRunner,
+    *,
+    kind: str,
+    revision: Any,
+) -> _PreparedRunner | None:
+    """Reapply the complete pre-T1 physical admission matrix under the lock."""
+
+    current = _prepare_runner(
+        target,
+        prepared.authority,
+        kind=kind,
+        revision=revision,
+    )
+    if current is None:
+        return None
+    if current.target != prepared.target or current.material != prepared.material:
+        raise _service_error("target_stale", TARGET_STALE_MESSAGE)
+    if (
+        current.plan != prepared.plan
+        or current.implementation != prepared.implementation
+    ):
+        raise _state_invalid()
+    return current
+
+
+def _new_runner_id(kind: str) -> str:
+    return generate_runner_id(kind, secrets.token_hex(8))
 
 
 def _resolution_row(
-    *,
     current: dict[str, Any],
-    prepared: _PreparedResolution,
-    captured: _CapturedTarget,
-    resolution_id: str,
+    prepared: _PreparedRunner,
+    *,
     created_at: str,
 ) -> VerificationRunnerResolution:
     plan = prepared.plan
-    target_material_digest = (
-        captured.material.target_material_digest
-        if plan.plan_state == "runner" and captured.material is not None
-        else None
-    )
-    values = {
-        "project_id": current["project_id"],
-        "task_id": current["task_id"],
+    digest_values = {
+        "project_id": prepared.authority.task["project_id"],
+        "task_id": prepared.authority.task["task_id"],
         "contract_revision": current["contract_revision"],
         "authority_snapshot_id": current["authority_snapshot_id"],
         "verification_criterion_id": current["verification_criterion_id"],
@@ -460,11 +329,11 @@ def _resolution_row(
         ],
         "target_kind": current["target_kind"],
         "target_value": current["target_value"],
-        "target_base_revision": current["target_base_revision"],
+        "target_base_revision": current["target_base_revision"] or None,
         "target_generation": current["target_generation"],
         "target_capture_version": current["target_capture_version"],
         "artifact_manifest_id": current["artifact_manifest_id"],
-        "target_material_digest": target_material_digest,
+        "target_material_digest": prepared.material.target_material_digest,
         "plan_state": plan.plan_state,
         "plan_blob_object_id": plan.plan_blob_object_id,
         "plan_raw_digest": plan.plan_raw_digest,
@@ -476,57 +345,48 @@ def _resolution_row(
         "step_count": plan.step_count,
         "runner_contract_version": RUNNER_CONTRACT_VERSION,
         "runner_implementation_version": RUNNER_IMPLEMENTATION_VERSION,
-        "runner_implementation_digest": prepared.implementation.implementation_digest,
-        "runner_policy_digest": _RUNNER_POLICY_DIGEST,
+        "runner_implementation_digest": (
+            prepared.implementation.implementation_digest
+        ),
+        "runner_policy_digest": RUNNER_POLICY_DIGEST,
         "sandbox_provider": None,
         "sandbox_policy_digest": None,
         "runtime_digest": None,
         "gate_eligibility_version": 0,
         "trigger": RUNNER_TRIGGER,
-        "route": prepared.route,
-        "reason": prepared.reason,
+        "route": "runner",
+        "reason": None,
+    }
+    storage_values = {
+        key: value
+        for key, value in digest_values.items()
+        if key not in {"sandbox_provider", "sandbox_policy_digest"}
     }
     return VerificationRunnerResolution(
-        verification_runner_resolution_id=resolution_id,
-        **values,
-        idempotency_digest=resolution_idempotency_digest(values),
+        verification_runner_resolution_id=_new_runner_id("resolution"),
+        **storage_values,
+        idempotency_digest=resolution_idempotency_digest(digest_values),
         created_at=created_at,
     )
 
 
-def _no_launch_observation(
+def _attempt_row(
     resolution: VerificationRunnerResolution,
     *,
-    observation_id: str,
-    observed_at: str,
-) -> VerificationRunnerObservation:
-    outcome = "not_run" if resolution.route == "m21_fallback" else "blocked_prelaunch"
-    total_step_count = 0 if resolution.route == "m21_fallback" else resolution.step_count
+    created_at: str,
+) -> VerificationRunnerAttempt:
     digest_values = {
-        "attempt_id": None,
-        "completed_step_count": 0,
-        "complete_plan": 0,
-        "cpu_time_ms": None,
-        "duration_ms": 0,
-        "failed_step_ordinal": None,
-        "finished_at": observed_at,
-        "gate_eligibility_version": resolution.gate_eligibility_version,
-        "launch_state": "no_launch",
-        "outcome": outcome,
-        "peak_job_memory_bytes": None,
         "project_id": resolution.project_id,
-        "reason": resolution.reason,
-        "resolution_id": resolution.verification_runner_resolution_id,
-        "runner_implementation_digest": resolution.runner_implementation_digest,
-        "started_at": observed_at,
-        "target_generation": resolution.target_generation,
         "task_id": resolution.task_id,
-        "route": resolution.route,
-        "total_process_count": None,
-        "total_step_count": total_step_count,
+        "target_generation": resolution.target_generation,
+        "gate_eligibility_version": resolution.gate_eligibility_version,
+        "resolution_id": resolution.verification_runner_resolution_id,
+        "target_material_digest": resolution.target_material_digest,
+        "runner_implementation_digest": resolution.runner_implementation_digest,
+        "sandbox_instance_digest": None,
     }
-    return VerificationRunnerObservation(
-        verification_runner_observation_id=observation_id,
+    return VerificationRunnerAttempt(
+        verification_runner_attempt_id=_new_runner_id("attempt"),
         project_id=resolution.project_id,
         task_id=resolution.task_id,
         target_generation=resolution.target_generation,
@@ -534,66 +394,86 @@ def _no_launch_observation(
         verification_runner_resolution_id=(
             resolution.verification_runner_resolution_id
         ),
-        verification_runner_attempt_id=None,
+        target_material_digest=str(resolution.target_material_digest),
         runner_implementation_digest=resolution.runner_implementation_digest,
-        route=resolution.route,
-        launch_state="no_launch",
-        outcome=outcome,
-        reason=resolution.reason,
-        complete_plan=0,
-        total_step_count=total_step_count,
-        completed_step_count=0,
-        failed_step_ordinal=None,
-        started_at=observed_at,
-        finished_at=observed_at,
-        duration_ms=0,
-        cpu_time_ms=None,
-        peak_job_memory_bytes=None,
-        total_process_count=None,
-        sanitized_result_digest=verification_runner_observation_digest(
-            digest_values
-        ),
-        created_at=observed_at,
+        attempt_digest=verification_runner_attempt_digest(digest_values),
+        intent_recorded_at=created_at,
     )
 
 
-def _sandbox_event(
+def _persist_launch_intent(
+    target: DatabaseTarget,
+    prepared: _PreparedRunner,
+) -> _LaunchIntent:
+    created_at = utc_now()
+    with closing(connect_initialized(target)) as connection:
+        with connection:
+            review = persist_prepared_review_target_capture(
+                connection,
+                target.project,
+                prepared.authority.task,
+                observation=prepared.target.artifact,
+                database_target=target,
+                now=created_at,
+            )
+            current = read_current_verification_runner_target_basis(
+                connection,
+                project_id=target.project.project_id,
+                task_id=str(prepared.authority.task["task_id"]),
+            )
+            resolution = _resolution_row(current, prepared, created_at=created_at)
+            attempt = _attempt_row(resolution, created_at=created_at)
+            insert_verification_runner_resolution_locked(
+                connection,
+                resolution=resolution,
+                attempt=attempt,
+            )
+    return _LaunchIntent(
+        review=review,
+        resolution=resolution,
+        attempt=attempt,
+        acceptance_criterion_id=prepared.authority.acceptance_criterion_id,
+    )
+
+
+def _cleanup_event(
     attempt: VerificationRunnerAttempt,
     *,
-    event_kind: str,
     created_at: str,
-    terminal_observation_id: str | None = None,
+    terminal_observation_id: str | None,
 ) -> VerificationRunnerSandboxEvent:
     values = {
         "attempt_id": attempt.verification_runner_attempt_id,
-        "event_kind": event_kind,
+        "event_kind": "attempt_cleanup_succeeded",
         "project_id": attempt.project_id,
         "target_generation": attempt.target_generation,
         "task_id": attempt.task_id,
         "terminal_observation_id": terminal_observation_id,
     }
     return VerificationRunnerSandboxEvent(
-        verification_runner_sandbox_event_id=generate_runner_id("sandbox_event"),
+        verification_runner_sandbox_event_id=_new_runner_id("sandbox_event"),
         project_id=attempt.project_id,
         task_id=attempt.task_id,
         target_generation=attempt.target_generation,
-        verification_runner_attempt_id=attempt.verification_runner_attempt_id,
-        event_kind=event_kind,
+        verification_runner_attempt_id=(
+            attempt.verification_runner_attempt_id
+        ),
+        event_kind="attempt_cleanup_succeeded",
         event_digest=verification_runner_sandbox_event_digest(values),
         terminal_observation_id=terminal_observation_id,
         created_at=created_at,
     )
 
 
-def _attempt_terminal_observation(
+def _observation_row(
     resolution: VerificationRunnerResolution,
     attempt: VerificationRunnerAttempt,
     *,
+    route: str,
     launch_state: str,
     outcome: str,
     reason: str | None,
-    route: str,
-    total_step_count: int,
+    complete_plan: int,
     completed_step_count: int,
     failed_step_ordinal: int | None,
     started_at: str,
@@ -602,16 +482,7 @@ def _attempt_terminal_observation(
     cpu_time_ms: int | None,
     peak_job_memory_bytes: int | None,
     total_process_count: int | None,
-    observation_id: str | None = None,
 ) -> VerificationRunnerObservation:
-    complete_plan = int(
-        outcome == "pass"
-        and reason is None
-        and failed_step_ordinal is None
-        and total_step_count == resolution.step_count
-        and completed_step_count == total_step_count
-        and total_step_count > 0
-    )
     values = {
         "attempt_id": attempt.verification_runner_attempt_id,
         "completed_step_count": completed_step_count,
@@ -633,12 +504,10 @@ def _attempt_terminal_observation(
         "task_id": resolution.task_id,
         "route": route,
         "total_process_count": total_process_count,
-        "total_step_count": total_step_count,
+        "total_step_count": resolution.step_count,
     }
     return VerificationRunnerObservation(
-        verification_runner_observation_id=(
-            observation_id or generate_runner_id("observation")
-        ),
+        verification_runner_observation_id=_new_runner_id("observation"),
         project_id=resolution.project_id,
         task_id=resolution.task_id,
         target_generation=resolution.target_generation,
@@ -646,14 +515,14 @@ def _attempt_terminal_observation(
         verification_runner_resolution_id=(
             resolution.verification_runner_resolution_id
         ),
-        verification_runner_attempt_id=attempt.verification_runner_attempt_id,
+        verification_runner_attempt_id=(attempt.verification_runner_attempt_id),
         runner_implementation_digest=resolution.runner_implementation_digest,
         route=route,
         launch_state=launch_state,
         outcome=outcome,
         reason=reason,
         complete_plan=complete_plan,
-        total_step_count=total_step_count,
+        total_step_count=resolution.step_count,
         completed_step_count=completed_step_count,
         failed_step_ordinal=failed_step_ordinal,
         started_at=started_at,
@@ -667,192 +536,11 @@ def _attempt_terminal_observation(
     )
 
 
-def _prelaunch_attempt_observation(
-    resolution: VerificationRunnerResolution,
-    attempt: VerificationRunnerAttempt,
-    *,
-    reason: str,
-    observed_at: str,
-    fallback: bool = False,
-) -> VerificationRunnerObservation:
-    return _attempt_terminal_observation(
-        resolution,
-        attempt,
-        launch_state="no_launch",
-        outcome="not_run" if fallback else "blocked_prelaunch",
-        reason=reason,
-        route="m21_fallback" if fallback else "blocked",
-        total_step_count=0 if fallback else resolution.step_count,
-        completed_step_count=0,
-        failed_step_ordinal=None,
-        started_at=observed_at,
-        finished_at=observed_at,
-        duration_ms=0,
-        cpu_time_ms=None,
-        peak_job_memory_bytes=None,
-        total_process_count=None,
-    )
-
-
-def _cleanup_failure_observation(
-    resolution: VerificationRunnerResolution,
-    attempt: VerificationRunnerAttempt,
-    provisional: VerificationRunnerObservation,
-    *,
-    finished_at: str,
-) -> VerificationRunnerObservation:
-    launch_time_proved = provisional.launch_state == "launched"
-    return _attempt_terminal_observation(
-        resolution,
-        attempt,
-        launch_state=provisional.launch_state,
-        outcome="sandbox_cleanup_failed",
-        reason="sandbox_cleanup_failed",
-        route="blocked",
-        total_step_count=provisional.total_step_count,
-        completed_step_count=provisional.completed_step_count,
-        failed_step_ordinal=None,
-        started_at=provisional.started_at if launch_time_proved else finished_at,
-        finished_at=finished_at,
-        duration_ms=provisional.duration_ms if launch_time_proved else 0,
-        cpu_time_ms=None,
-        peak_job_memory_bytes=None,
-        total_process_count=None,
-    )
-
-
-
-
-def _stored_basis_matches(
-    connection: sqlite3.Connection,
-    target: DatabaseTarget,
-    resolution: VerificationRunnerResolution,
-) -> bool:
-    try:
-        authority = read_review_target_authority_basis(
-            connection,
-            target.project,
-            resolution.task_id,
-        )
-        current = read_current_verification_runner_target_basis(
-            connection,
-            project_id=resolution.project_id,
-            task_id=resolution.task_id,
-        )
-    except (ReviewEvidenceError, StorageError, TaskRepositoryError, TaskValidationError):
-        return False
-    return bool(
-        int(authority.task["current_contract_revision"])
-        == resolution.contract_revision
-        and authority.authority_snapshot_id == resolution.authority_snapshot_id
-        and authority.verification_criterion_id
-        == resolution.verification_criterion_id
-        and authority.verification_criterion_digest
-        == resolution.verification_criterion_digest
-        and authority.verification_expectation_digest
-        == resolution.verification_expectation_digest
-        and current["contract_revision"] == resolution.contract_revision
-        and current["authority_snapshot_id"] == resolution.authority_snapshot_id
-        and current["verification_criterion_id"]
-        == resolution.verification_criterion_id
-        and current["verification_expectation_digest"]
-        == resolution.verification_expectation_digest
-        and current["verification_criterion_digest"]
-        == resolution.verification_criterion_digest
-        and current["target_kind"] == resolution.target_kind
-        and current["target_value"] == resolution.target_value
-        and current["target_base_revision"] == resolution.target_base_revision
-        and current["target_generation"] == resolution.target_generation
-        and current["target_capture_version"]
-        == resolution.target_capture_version
-        and current["artifact_manifest_id"] == resolution.artifact_manifest_id
-        and current["gate_eligibility_version"]
-        == resolution.gate_eligibility_version
-    )
-
-
-def _installed_basis_matches(
-    target: DatabaseTarget,
-    resolution: VerificationRunnerResolution,
-) -> bool:
-    try:
-        implementation = capture_runner_implementation(Path(target.skill_root))
-    except (TypeError, VerificationRunnerRuntimeError, OSError):
-        return False
-    return bool(
-        implementation.implementation_version
-        == resolution.runner_implementation_version
-        and implementation.implementation_digest
-        == resolution.runner_implementation_digest
-        and _RUNNER_POLICY_DIGEST == resolution.runner_policy_digest
-    )
-
-
-def _process_terminal_observation(
-    resolution: VerificationRunnerResolution,
-    attempt: VerificationRunnerAttempt,
-    result: ProcessRunResult,
-    *,
-    started_at: str,
-    finished_at: str,
-    basis_drifted: bool,
-) -> VerificationRunnerObservation:
-    launched = result.launch_state == "launched"
-    launch_state = "launched" if launched else "no_launch"
-    if not launched:
-        started_at = finished_at
-    outcome = result.outcome
-    reason = result.reason
-    route = "runner" if launched else "blocked"
-    failed_ordinal = result.failed_step_ordinal if launched else None
-    completed = len(result.steps) if launched else 0
-    cpu = result.cpu_time_ms if launched else None
-    memory = result.peak_job_memory_bytes if launched else None
-    processes = result.total_process_count if launched else None
-    if basis_drifted:
-        outcome = "post_launch_drift" if launched else "blocked_prelaunch"
-        reason = "post_launch_drift" if launched else "prelaunch_drift"
-        failed_ordinal = None
-    if result.outcome == "controller_interrupted" and launched:
-        launch_state = "launch_uncertain"
-        outcome = "controller_interrupted"
-        reason = "controller_interrupted"
-        route = "blocked"
-        failed_ordinal = None
-        completed = sum(step.outcome == "pass" for step in result.steps)
-        started_at = finished_at
-        cpu = memory = processes = None
-    if outcome == "sandbox_cleanup_failed":
-        route = "blocked"
-        failed_ordinal = None
-        cpu = memory = processes = None
-    return _attempt_terminal_observation(
-        resolution,
-        attempt,
-        launch_state=launch_state,
-        outcome=outcome,
-        reason=reason,
-        route=route,
-        total_step_count=resolution.step_count,
-        completed_step_count=completed,
-        failed_step_ordinal=failed_ordinal,
-        started_at=started_at,
-        finished_at=finished_at,
-        duration_ms=(
-            result.duration_ms if launch_state == "launched" else 0
-        ),
-        cpu_time_ms=cpu,
-        peak_job_memory_bytes=memory,
-        total_process_count=processes,
-    )
-
-
 def _terminal_evidence(
-    *,
     resolution: VerificationRunnerResolution,
     observation: VerificationRunnerObservation,
+    *,
     acceptance_criterion_id: str | None,
-    created_at: str,
 ) -> tuple[dict[str, Any], PreparedCriterionEvidenceLink]:
     source = EvidenceSource(
         source_kind="runner_observation",
@@ -900,7 +588,7 @@ def _terminal_evidence(
         "target_generation": resolution.target_generation,
         "completion_cycle_id": None,
         "digest": spec.digest,
-        "created_at": created_at,
+        "created_at": observation.created_at,
     }
     link = PreparedCriterionEvidenceLink(
         criterion_evidence_link_id=generate_review_id(
@@ -914,503 +602,513 @@ def _terminal_evidence(
         assurance_class=spec.attribution.assurance_class,
         producer_class=spec.attribution.producer_class,
         producer_version=spec.attribution.producer_version,
-        created_at=created_at,
+        created_at=observation.created_at,
     )
     return reference, link
 
 
-def _basis_drift_observation(
-    resolution: VerificationRunnerResolution,
-    attempt: VerificationRunnerAttempt,
-    observation: VerificationRunnerObservation,
-) -> VerificationRunnerObservation:
-    if (
-        observation.outcome == "sandbox_cleanup_failed"
-        or observation.launch_state == "launch_uncertain"
-    ):
-        return observation
-    launched = observation.launch_state == "launched"
-    return _attempt_terminal_observation(
-        resolution,
-        attempt,
-        launch_state=observation.launch_state,
-        outcome="post_launch_drift" if launched else "blocked_prelaunch",
-        reason="post_launch_drift" if launched else "prelaunch_drift",
-        route="runner" if launched else "blocked",
-        total_step_count=resolution.step_count,
-        completed_step_count=(
-            observation.completed_step_count if launched else 0
-        ),
-        failed_step_ordinal=None,
-        started_at=observation.started_at,
-        finished_at=observation.finished_at,
-        duration_ms=observation.duration_ms,
-        cpu_time_ms=observation.cpu_time_ms if launched else None,
-        peak_job_memory_bytes=(
-            observation.peak_job_memory_bytes if launched else None
-        ),
-        total_process_count=(
-            observation.total_process_count if launched else None
-        ),
-    )
-
-
-def _publish_attempt_terminal(
+def _persist_terminal(
     target: DatabaseTarget,
-    authority: ReviewTargetAuthorityBasis,
-    resolution: VerificationRunnerResolution,
-    attempt: VerificationRunnerAttempt,
+    intent: _LaunchIntent,
     observation: VerificationRunnerObservation,
-    *,
-    cleanup_proved: bool,
-) -> dict[str, Any]:
-    current_observation = observation
-    if not _installed_basis_matches(target, resolution):
-        current_observation = _basis_drift_observation(
-            resolution,
-            attempt,
-            current_observation,
-        )
-    with closing(connect_initialized(target)) as connection:
-        with connection:
-            begin_initialized_write(connection, target)
-            if not _stored_basis_matches(connection, target, resolution):
-                current_observation = _basis_drift_observation(
-                    resolution,
-                    attempt,
-                    current_observation,
-                )
-            cleanup_event = (
-                _sandbox_event(
-                    attempt,
-                    event_kind="attempt_cleanup_succeeded",
-                    created_at=current_observation.created_at,
-                    terminal_observation_id=(
-                        current_observation.verification_runner_observation_id
-                    ),
-                )
-                if cleanup_proved
-                else None
-            )
-            reference, link = _terminal_evidence(
-                resolution=resolution,
-                observation=current_observation,
-                acceptance_criterion_id=authority.acceptance_criterion_id,
-                created_at=current_observation.created_at,
-            )
-            persist_verification_runner_terminal_locked(
-                connection,
-                observation=current_observation,
-                evidence_reference=reference,
-                criterion_link=link,
-                cleanup_event=cleanup_event,
-            )
-            return read_verification_runner_public_projection(
-                connection,
-                project_id=resolution.project_id,
-                task_id=resolution.task_id,
-            )
-
-
-def _cleanup_attempt_and_publish(
-    target: DatabaseTarget,
-    authority: ReviewTargetAuthorityBasis,
-    intent: _RunnerLaunchIntent,
-    observation: VerificationRunnerObservation,
-) -> RunnerReviewTargetResult:
-    paths = _runner_paths(target)
-    # A process-layer cleanup failure means Job/handle shutdown was not proved.
-    # Do not delete the private tree or publish cleanup success on the strength
-    # of later filesystem operations alone.
-    cleanup_proved = (
-        observation.outcome != "sandbox_cleanup_failed"
-        and observation.launch_state != "launch_uncertain"
-    )
-    if cleanup_proved:
-        try:
-            remove_attempt_tree(
-                paths,
-                intent.attempt.verification_runner_attempt_id,
-            )
-        except VerificationRunnerLifecycleError:
-            cleanup_proved = False
-    if not cleanup_proved:
-        try:
-            exact = attempt_paths(
-                paths,
-                intent.attempt.verification_runner_attempt_id,
-            )
-            if exact.root.exists() and not exact.quarantine.exists():
-                quarantine_attempt_tree(
-                    paths,
-                    intent.attempt.verification_runner_attempt_id,
-                )
-        except (OSError, VerificationRunnerLifecycleError):
-            pass
-        observation = _cleanup_failure_observation(
-            intent.resolution,
-            intent.attempt,
-            observation,
-            finished_at=utc_now(),
-        )
-    projection = _publish_attempt_terminal(
-        target,
-        authority,
-        intent.resolution,
+) -> None:
+    event = _cleanup_event(
         intent.attempt,
+        created_at=observation.created_at,
+        terminal_observation_id=observation.verification_runner_observation_id,
+    )
+    reference, link = _terminal_evidence(
+        intent.resolution,
         observation,
-        cleanup_proved=cleanup_proved,
+        acceptance_criterion_id=intent.acceptance_criterion_id,
     )
-    return RunnerReviewTargetResult(
-        review=intent.review,
-        verification_runner=projection,
-    )
-
-
-def _prelaunch_reason(error: BaseException) -> tuple[str, bool]:
-    code = str(getattr(error, "code", "sandbox_setup_failed"))
-    allowed = {
-        "target_drift",
-        "object_drift",
-        "policy_mismatch",
-        "materialization_failed",
-        "sandbox_setup_failed",
-        "controller_interrupted",
-        "state_inconsistent",
-    }
-    return (code if code in allowed else "sandbox_setup_failed", False)
-
-
-def _unexpected_attempt_observation(
-    resolution: VerificationRunnerResolution,
-    attempt: VerificationRunnerAttempt,
-    *,
-    stage: str,
-    error: BaseException,
-    observed_at: str,
-) -> VerificationRunnerObservation:
-    if stage == "process":
-        # The process boundary was entered but did not return its closed launch
-        # classification.  A child may exist, so no-launch is unprovable.
-        return _attempt_terminal_observation(
-            resolution,
-            attempt,
-            launch_state="launch_uncertain",
-            outcome="controller_interrupted",
-            reason="controller_interrupted",
-            route="blocked",
-            total_step_count=resolution.step_count,
-            completed_step_count=0,
-            failed_step_ordinal=None,
-            started_at=observed_at,
-            finished_at=observed_at,
-            duration_ms=0,
-            cpu_time_ms=None,
-            peak_job_memory_bytes=None,
-            total_process_count=None,
-        )
-    reason, fallback = _prelaunch_reason(error)
-    return _prelaunch_attempt_observation(
-        resolution,
-        attempt,
-        reason=reason,
-        observed_at=observed_at,
-        fallback=fallback,
-    )
-
-
-def _post_process_observation(
-    resolution: VerificationRunnerResolution,
-    attempt: VerificationRunnerAttempt,
-    provisional: VerificationRunnerObservation,
-    *,
-    outcome: str,
-    reason: str,
-    finished_at: str,
-) -> VerificationRunnerObservation:
-    if provisional.outcome == "sandbox_cleanup_failed":
-        return provisional
-    if provisional.launch_state == "launch_uncertain":
-        # Once the process boundary reports uncertainty, later controller
-        # checks cannot prove that no child was launched.  Keep the original
-        # conservative terminal; cleanup/recovery must retain the attempt
-        # until ownership and process absence are proved durably.
-        return provisional
-    if provisional.launch_state != "launched":
-        return _prelaunch_attempt_observation(
-            resolution,
-            attempt,
-            reason=reason,
-            observed_at=finished_at,
-        )
-    if outcome == "controller_interrupted":
-        return _attempt_terminal_observation(
-            resolution,
-            attempt,
-            launch_state="launch_uncertain",
-            outcome="controller_interrupted",
-            reason="controller_interrupted",
-            route="blocked",
-            total_step_count=resolution.step_count,
-            completed_step_count=provisional.completed_step_count,
-            failed_step_ordinal=None,
-            started_at=finished_at,
-            finished_at=finished_at,
-            duration_ms=0,
-            cpu_time_ms=None,
-            peak_job_memory_bytes=None,
-            total_process_count=None,
-        )
-    return _attempt_terminal_observation(
-        resolution,
-        attempt,
-        launch_state="launched",
-        outcome=outcome,
-        reason=reason,
-        route="runner",
-        total_step_count=resolution.step_count,
-        completed_step_count=provisional.completed_step_count,
-        failed_step_ordinal=None,
-        started_at=provisional.started_at,
-        finished_at=finished_at,
-        duration_ms=provisional.duration_ms,
-        cpu_time_ms=provisional.cpu_time_ms,
-        peak_job_memory_bytes=provisional.peak_job_memory_bytes,
-        total_process_count=provisional.total_process_count,
-    )
-
-
-def _read_cancel_requested(callback: Callable[[], bool]) -> bool | None:
     try:
-        value = callback()
-    except BaseException:
-        return None
-    return value if type(value) is bool else None
-
-
-
-
-
-
-def _recovery_acceptance_criterion_id(
-    connection: sqlite3.Connection,
-    resolution: VerificationRunnerResolution,
-) -> str | None:
-    rows = connection.execute(
-        """
-        SELECT criterion_id
-          FROM authority_snapshot_criteria
-         WHERE project_id = ? AND task_id = ?
-           AND authority_snapshot_id = ?
-           AND criterion_kind = 'acceptance'
-         ORDER BY criterion_id
-        """,
-        (
-            resolution.project_id,
-            resolution.task_id,
-            resolution.authority_snapshot_id,
-        ),
-    ).fetchall()
-    if len(rows) > 1:
-        raise _service_error(
-            "state_inconsistent",
-            "verification Runner recovery authority is inconsistent",
-        )
-    return str(rows[0]["criterion_id"]) if rows else None
-
-
-def _publish_recovery_terminal(
-    target: DatabaseTarget,
-    resolution: VerificationRunnerResolution,
-    attempt: VerificationRunnerAttempt,
-    observation: VerificationRunnerObservation,
-    *,
-    cleanup_proved: bool,
-) -> None:
-    with closing(connect_initialized(target)) as connection:
-        with connection:
-            begin_initialized_write(connection, target)
-            # Cleanup belongs to the immutable resolution/attempt, not to the
-            # Task's later current target or Contract.  Drift makes the old
-            # evidence stale for gates but must never prevent terminal cleanup
-            # publication for its durable owner.
-            cleanup_event = (
-                _sandbox_event(
-                    attempt,
-                    event_kind="attempt_cleanup_succeeded",
-                    created_at=observation.created_at,
-                    terminal_observation_id=(
-                        observation.verification_runner_observation_id
-                    ),
-                )
-                if cleanup_proved
-                else None
-            )
-            reference, link = _terminal_evidence(
-                resolution=resolution,
-                observation=observation,
-                acceptance_criterion_id=_recovery_acceptance_criterion_id(
-                    connection,
-                    resolution,
-                ),
-                created_at=observation.created_at,
-            )
-            persist_verification_runner_recovery_terminal_locked(
-                connection,
-                observation=observation,
-                evidence_reference=reference,
-                criterion_link=link,
-                cleanup_event=cleanup_event,
-            )
-
-
-
-
-def reconcile_pending_verification_runner_cleanup_under_lock(
-    target: DatabaseTarget,
-    inventory: RunnerLayoutInventory,
-) -> None:
-    """Retain pre-R4A attempt uncertainty without retired profile recovery."""
-
-    paths = _runner_paths(target)
-    with closing(connect_initialized_readonly(target)) as connection:
-        pending = read_pending_verification_runner_cleanup(
-            connection,
-            project_id=target.project.project_id,
-        )
-        require_known_attempt_inventory(
-            inventory,
-            known_attempt_ids=tuple(
-                item["attempt"].verification_runner_attempt_id
-                for item in pending
-            ),
-        )
-        if not pending:
-            return
-        item = pending[0]
-        attempt = item["attempt"]
-        terminal = item["terminal_observation"]
-        resolution = read_verification_runner_resolution_locked(
-            connection,
-            project_id=attempt.project_id,
-            task_id=attempt.task_id,
-            target_generation=attempt.target_generation,
-        )
-
-    try:
-        exact = attempt_paths(paths, attempt.verification_runner_attempt_id)
-        if exact.root.exists() and not exact.quarantine.exists():
-            quarantine_attempt_tree(paths, attempt.verification_runner_attempt_id)
-    except (OSError, VerificationRunnerLifecycleError):
-        pass
-
-    if terminal is None:
-        observed_at = utc_now()
-        uncertain = _attempt_terminal_observation(
-            resolution,
-            attempt,
-            launch_state="launch_uncertain",
-            outcome="controller_interrupted",
-            reason="controller_interrupted",
-            route="blocked",
-            total_step_count=resolution.step_count,
-            completed_step_count=0,
-            failed_step_ordinal=None,
-            started_at=observed_at,
-            finished_at=observed_at,
-            duration_ms=0,
-            cpu_time_ms=None,
-            peak_job_memory_bytes=None,
-            total_process_count=None,
-        )
-        _publish_recovery_terminal(
-            target,
-            resolution,
-            attempt,
-            _cleanup_failure_observation(
-                resolution,
-                attempt,
-                uncertain,
-                finished_at=observed_at,
-            ),
-            cleanup_proved=False,
-        )
-    raise _service_error(
-        "runner_cleanup_required",
-        "verification Runner cleanup could not be proved",
-    )
-
-
-
-
-def _persist_without_attempt(
-    target: DatabaseTarget,
-    authority: ReviewTargetAuthorityBasis,
-    captured: _CapturedTarget,
-    prepared: _PreparedResolution | None,
-) -> RunnerReviewTargetResult:
-    observed_at = utc_now()
-    with closing(connect_initialized(target)) as connection:
-        with connection:
-            review = persist_prepared_review_target_capture(
-                connection,
-                target.project,
-                authority.task,
-                observation=captured.observation,
-                database_target=target,
-                now=observed_at,
-            )
-            if prepared is not None:
-                current = read_current_verification_runner_target_basis(
-                    connection,
-                    project_id=target.project.project_id,
-                    task_id=str(authority.task["task_id"]),
-                )
-                current.update(
-                    {
-                        "project_id": target.project.project_id,
-                        "task_id": str(authority.task["task_id"]),
-                    }
-                )
-                resolution = _resolution_row(
-                    current=current,
-                    prepared=prepared,
-                    captured=captured,
-                    resolution_id=generate_runner_id("resolution"),
-                    created_at=observed_at,
-                )
-                if resolution.route == "runner":
-                    raise StorageError(
-                        "internal_error",
-                        "verification Runner launch intent was not persisted",
-                    )
-                insert_verification_runner_resolution_locked(
-                    connection,
-                    resolution=resolution,
-                )
-                observation = _no_launch_observation(
-                    resolution,
-                    observation_id=generate_runner_id("observation"),
-                    observed_at=observed_at,
-                )
-                reference, link = _terminal_evidence(
-                    resolution=resolution,
-                    observation=observation,
-                    acceptance_criterion_id=authority.acceptance_criterion_id,
-                    created_at=observed_at,
-                )
+        with closing(connect_initialized(target)) as connection:
+            with connection:
+                begin_initialized_write(connection, target)
                 persist_verification_runner_terminal_locked(
                     connection,
                     observation=observation,
                     evidence_reference=reference,
                     criterion_link=link,
+                    cleanup_event=event,
                 )
-            projection = read_verification_runner_public_projection(
+    except StorageError as exc:
+        if exc.code != "runner_state_invalid":
+            raise
+        # T2 rejected a definite current-basis drift after the private tree was
+        # already proved absent. Record cleanup-only in a new transaction; any
+        # uncertainty while doing so deliberately leaves the attempt pending.
+        _persist_cleanup_only(target, intent.attempt)
+        raise _state_invalid() from exc
+
+
+def _persist_cleanup_only(
+    target: DatabaseTarget,
+    attempt: VerificationRunnerAttempt,
+) -> None:
+    event = _cleanup_event(
+        attempt,
+        created_at=utc_now(),
+        terminal_observation_id=None,
+    )
+    with closing(connect_initialized(target)) as connection:
+        with connection:
+            begin_initialized_write(connection, target)
+            persist_verification_runner_restart_cleanup_locked(
+                connection,
+                cleanup_event=event,
+            )
+
+
+def _cleanup_or_fail(
+    target: DatabaseTarget,
+    paths: VerificationRunnerStatePaths,
+    attempt: VerificationRunnerAttempt,
+    *,
+    persist_only: bool,
+) -> None:
+    cleanup = cleanup_attempt_tree(
+        paths,
+        attempt.verification_runner_attempt_id,
+    )
+    if cleanup.state != "absent":
+        raise _state_invalid()
+    if persist_only:
+        _persist_cleanup_only(target, attempt)
+
+
+def _complete_prelaunch(
+    target: DatabaseTarget,
+    paths: VerificationRunnerStatePaths,
+    prepared: _PreparedRunner,
+    intent: _LaunchIntent,
+    *,
+    reason: str,
+) -> ReviewTargetResult:
+    _cleanup_or_fail(target, paths, intent.attempt, persist_only=False)
+    if not _physical_basis_matches(target, prepared):
+        _persist_cleanup_only(target, intent.attempt)
+        raise _state_invalid()
+    observed_at = utc_now()
+    observation = _observation_row(
+        intent.resolution,
+        intent.attempt,
+        route="m21_fallback",
+        launch_state="no_launch",
+        outcome="blocked_prelaunch",
+        reason=reason,
+        complete_plan=0,
+        completed_step_count=0,
+        failed_step_ordinal=None,
+        started_at=observed_at,
+        finished_at=observed_at,
+        duration_ms=0,
+        cpu_time_ms=None,
+        peak_job_memory_bytes=None,
+        total_process_count=None,
+    )
+    _persist_terminal(target, intent, observation)
+    return intent.review
+
+
+def _current_basis_matches(
+    target: DatabaseTarget,
+    prepared: _PreparedRunner,
+    resolution: VerificationRunnerResolution,
+) -> bool:
+    with closing(connect_initialized_readonly(target)) as connection:
+        current = read_current_verification_runner_target_basis(
+            connection,
+            project_id=resolution.project_id,
+            task_id=resolution.task_id,
+        )
+    expected = {
+        "contract_revision": resolution.contract_revision,
+        "authority_snapshot_id": resolution.authority_snapshot_id,
+        "acceptance_criterion_id": prepared.authority.acceptance_criterion_id,
+        "verification_criterion_id": resolution.verification_criterion_id,
+        "verification_expectation_digest": (
+            resolution.verification_expectation_digest
+        ),
+        "verification_criterion_digest": resolution.verification_criterion_digest,
+        "target_kind": resolution.target_kind,
+        "target_value": resolution.target_value,
+        "target_base_revision": resolution.target_base_revision or "",
+        "target_generation": resolution.target_generation,
+        "target_capture_version": resolution.target_capture_version,
+        "artifact_manifest_id": resolution.artifact_manifest_id,
+        "gate_eligibility_version": 0,
+    }
+    return current == expected
+
+
+def _physical_basis_matches(
+    target: DatabaseTarget,
+    prepared: _PreparedRunner,
+) -> bool:
+    if target.skill_root is None:
+        return False
+    repo = Path(target.project.canonical_repo)
+    package_root = Path(target.skill_root)
+    try:
+        source = capture_verification_runner_plan(repo, package_root)
+        plan = resolve_verification_runner_plan(
+            source,
+            task_id=str(prepared.authority.task["task_id"]),
+            contract_revision=int(
+                prepared.authority.task["current_contract_revision"]
+            ),
+            verification_expectation_digest=(
+                prepared.authority.verification_expectation_digest
+            ),
+            verification_criterion_digest=str(
+                prepared.authority.verification_criterion_digest
+            ),
+        )
+        implementation = capture_runner_implementation(package_root)
+        observed = (
+            observe_staged_runner_target(repo)
+            if prepared.target.artifact.target_kind == "git_snapshot"
+            else observe_commit_runner_target(
+                repo,
+                prepared.target.artifact.target_value,
+            )
+        )
+        material = preflight_runner_material(repo, observed)
+    except (
+        VerificationRunnerGitError,
+        VerificationRunnerPlanError,
+        VerificationRunnerRuntimeError,
+    ):
+        return False
+    return bool(
+        plan == prepared.plan
+        and implementation.implementation_digest
+        == prepared.implementation.implementation_digest
+        and observed == prepared.target
+        and material == prepared.material
+    )
+
+
+def _basis_is_current(
+    target: DatabaseTarget,
+    prepared: _PreparedRunner,
+    resolution: VerificationRunnerResolution,
+) -> bool:
+    return _current_basis_matches(target, prepared, resolution) and (
+        _physical_basis_matches(target, prepared)
+    )
+
+
+def _process_steps(
+    plan: VerificationRunnerPlanResolution,
+) -> tuple[RunnerProcessStepV1, ...]:
+    return tuple(
+        RunnerProcessStepV1(
+            ordinal=step.ordinal,
+            step_id=step.step_id,
+            mode=step.mode,
+            entrypoint=step.entrypoint,
+            argv=step.argv,
+            cwd=step.cwd,
+            shell=False,
+            path_lookup=False,
+            timeout_seconds=step.timeout_seconds,
+            cpu_seconds=step.cpu_seconds,
+            memory_mib=step.memory_mib,
+            process_limit=step.process_limit,
+            output_byte_limit=step.output_byte_limit,
+        )
+        for step in plan.steps
+    )
+
+
+def _terminal_from_process(
+    resolution: VerificationRunnerResolution,
+    attempt: VerificationRunnerAttempt,
+    result: RunnerProcessResultV1,
+    *,
+    started_at: str,
+    finished_at: str,
+) -> VerificationRunnerObservation:
+    completed = len(result.steps)
+    complete_plan = int(
+        result.outcome == "pass"
+        and result.reason is None
+        and result.launch_state == "launched"
+        and completed == resolution.step_count
+        and tuple(step.ordinal for step in result.steps)
+        == tuple(range(1, resolution.step_count + 1))
+        and all(
+            step.outcome == "pass"
+            and step.reason is None
+            and step.launch_state == "launched"
+            for step in result.steps
+        )
+        and result.failed_step_ordinal is None
+    )
+    return _observation_row(
+        resolution,
+        attempt,
+        route=("runner" if result.launch_state == "launched" else "m21_fallback"),
+        launch_state=result.launch_state,
+        outcome=result.outcome,
+        reason=result.reason,
+        complete_plan=complete_plan,
+        completed_step_count=completed,
+        failed_step_ordinal=result.failed_step_ordinal,
+        started_at=started_at,
+        finished_at=finished_at,
+        duration_ms=result.duration_ms,
+        cpu_time_ms=result.cpu_time_ms,
+        peak_job_memory_bytes=result.peak_job_memory_bytes,
+        total_process_count=result.total_process_count,
+    )
+
+
+def _process_result_matches_request(
+    request: RunnerProcessRequestV1,
+    result: object,
+) -> bool:
+    """Recheck the adapter ownership and ordinal prefix at the service seam."""
+
+    if type(result) is not RunnerProcessResultV1:
+        return False
+    expected_prefix = request.steps[: len(result.steps)]
+    return bool(
+        result.version == request.version
+        and result.attempt_id == request.attempt_id
+        and tuple(step.ordinal for step in result.steps)
+        == tuple(step.ordinal for step in expected_prefix)
+        and (
+            result.failed_step_ordinal is None
+            or result.failed_step_ordinal
+            in {step.ordinal for step in request.steps}
+        )
+    )
+
+
+def _deny_unresolved_attempt(
+    target: DatabaseTarget,
+    paths: VerificationRunnerStatePaths,
+    inventory: Any,
+) -> None:
+    try:
+        with closing(connect_initialized_readonly(target)) as connection:
+            pending = read_pending_verification_runner_cleanup(
                 connection,
                 project_id=target.project.project_id,
-                task_id=str(authority.task["task_id"]),
             )
-    return RunnerReviewTargetResult(review=review, verification_runner=projection)
+        known_ids = tuple(
+            item["attempt"].verification_runner_attempt_id for item in pending
+        )
+        require_known_attempt_inventory(inventory, known_attempt_ids=known_ids)
+        if not pending:
+            return
+        if len(pending) != 1:
+            raise _state_invalid()
+        item = pending[0]
+        if item["state"] == "pending":
+            _cleanup_or_fail(
+                target,
+                paths,
+                item["attempt"],
+                persist_only=True,
+            )
+        raise _state_invalid()
+    except _POST_INTENT_TYPED_ERRORS:
+        raise
+    except BaseException as exc:
+        # A pending row belongs to an earlier committed T1. Restart cleanup is
+        # therefore the same sanitized post-intent failure boundary.
+        raise _state_invalid() from exc
+
+
+def _run_intent_under_lock(
+    target: DatabaseTarget,
+    paths: VerificationRunnerStatePaths,
+    prepared: _PreparedRunner,
+    intent: _LaunchIntent,
+    *,
+    cancel_requested: Callable[[], bool],
+) -> ReviewTargetResult:
+    try:
+        attempt_paths = create_attempt_directories(
+            paths,
+            intent.attempt.verification_runner_attempt_id,
+        )
+        create_scratch_directories(
+            paths,
+            intent.attempt.verification_runner_attempt_id,
+        )
+    except VerificationRunnerLifecycleError:
+        return _complete_prelaunch(
+            target,
+            paths,
+            prepared,
+            intent,
+            reason="process_setup_failed",
+        )
+    except BaseException as exc:
+        raise _state_invalid() from exc
+
+    try:
+        materialize_runner_target(
+            Path(target.project.canonical_repo),
+            prepared.material,
+            attempt_paths.target,
+        )
+    except VerificationRunnerGitError as exc:
+        if exc.code in {"target_stale", "object_drift"}:
+            _cleanup_or_fail(target, paths, intent.attempt, persist_only=True)
+            raise _state_invalid() from exc
+        return _complete_prelaunch(
+            target,
+            paths,
+            prepared,
+            intent,
+            reason="process_setup_failed",
+        )
+    except BaseException as exc:
+        raise _state_invalid() from exc
+
+    try:
+        basis_current = _basis_is_current(target, prepared, intent.resolution)
+    except StorageError:
+        raise
+    except BaseException as exc:
+        raise _state_invalid() from exc
+    if not basis_current:
+        _cleanup_or_fail(target, paths, intent.attempt, persist_only=True)
+        raise _state_invalid()
+
+    try:
+        requested = cancel_requested()
+    except BaseException as exc:
+        # The callback is not a process-boundary owner. Even a look-alike
+        # RunnerProcessError from it is an unknown pre-adapter failure.
+        raise _state_invalid() from exc
+    try:
+        if type(requested) is not bool:
+            raise RunnerProcessError("process_setup_failed")
+        cancel_signal = RunnerCancelSignal(requested)
+        system_root_value = os.environ.get("SystemRoot")
+        if not system_root_value:
+            raise RunnerProcessError("process_setup_failed")
+        steps = _process_steps(prepared.plan)
+    except RunnerProcessError:
+        return _complete_prelaunch(
+            target,
+            paths,
+            prepared,
+            intent,
+            reason="process_setup_failed",
+        )
+    except BaseException as exc:
+        raise _state_invalid() from exc
+
+    runtime_bound = False
+    process_entered = False
+    try:
+        lease = RunnerFixedExecutableLease(
+            attempt_paths.target,
+            attempt_paths.scratch,
+        )
+    except BaseException as exc:
+        # Construction is resource-free. An interruption here therefore has
+        # nothing to clean up, but it is still an unknown post-intent failure.
+        raise _state_invalid() from exc
+    prelaunch_reason: str | None = None
+    pending_failure: BaseException | None = None
+    request: RunnerProcessRequestV1 | None = None
+    result: RunnerProcessResultV1 | None = None
+    started_at = utc_now()
+    try:
+        with lease as executable:
+            runtime_bound = True
+            clean_environment = build_clean_environment(
+                Path(system_root_value),
+                attempt_paths.scratch,
+            )
+            request = RunnerProcessRequestV1(
+                version=RUNNER_CONTRACT_VERSION,
+                attempt_id=intent.attempt.verification_runner_attempt_id,
+                executable=executable,
+                materialized_root=attempt_paths.target,
+                scratch_root=attempt_paths.scratch,
+                clean_environment=clean_environment,
+                steps=steps,
+                cancel_signal=cancel_signal,
+            )
+            process_entered = True
+            result = run_process_request(request)
+    except VerificationRunnerRuntimeError as exc:
+        if not runtime_bound and exc.handle_cleanup_state != "uncertain":
+            prelaunch_reason = "runtime_unavailable"
+        else:
+            pending_failure = exc
+    except RunnerProcessError as exc:
+        if not process_entered:
+            prelaunch_reason = "process_setup_failed"
+        else:
+            pending_failure = exc
+    except BaseException as exc:
+        # Unknown errors and interruptions are never promoted to a definite
+        # no-launch observation, even when they happened before adapter entry.
+        pending_failure = exc
+    finally:
+        try:
+            cleanup_state = lease.finalize_owner()
+        except BaseException as exc:
+            raise _state_invalid() from exc
+        if cleanup_state != "closed":
+            raise _state_invalid()
+
+    if pending_failure is not None:
+        raise _state_invalid() from pending_failure
+    if prelaunch_reason is not None:
+        return _complete_prelaunch(
+            target,
+            paths,
+            prepared,
+            intent,
+            reason=prelaunch_reason,
+        )
+    if request is None or result is None:
+        raise _state_invalid()
+    if not _process_result_matches_request(request, result):
+        raise _state_invalid()
+    if not (
+        result.process_zero
+        and result.handles_closed
+        and result.raw_output_discarded
+    ):
+        raise _state_invalid()
+    try:
+        basis_current = _basis_is_current(target, prepared, intent.resolution)
+    except StorageError:
+        raise
+    except BaseException as exc:
+        raise _state_invalid() from exc
+    cleanup = cleanup_attempt_tree(
+        paths,
+        intent.attempt.verification_runner_attempt_id,
+    )
+    if cleanup.state != "absent":
+        raise _state_invalid()
+    if not basis_current or not _physical_basis_matches(target, prepared):
+        _persist_cleanup_only(target, intent.attempt)
+        raise _state_invalid()
+    observation = _terminal_from_process(
+        intent.resolution,
+        intent.attempt,
+        result,
+        started_at=started_at,
+        finished_at=utc_now(),
+    )
+    _persist_terminal(target, intent, observation)
+    return intent.review
 
 
 def set_review_target_with_shadow_runner(
@@ -1420,18 +1118,12 @@ def set_review_target_with_shadow_runner(
     kind: Any,
     revision: Any = None,
     _cancel_requested: Callable[[], bool] = lambda: False,
-) -> RunnerReviewTargetResult:
-    """Run the sole schema-v20 synchronous target-set trigger."""
+) -> ReviewTargetResult:
+    """Set one exact review target and optionally consume the local Runner plan."""
 
     normalized_task_id = validate_task_id(task_id)
     if not callable(_cancel_requested):
-        raise _service_error(
-            "state_inconsistent",
-            "verification Runner cancellation boundary is unavailable",
-        )
-    # Reject an unknown/done Task before creating or locking Runner state.  The
-    # later short target transaction rereads this exact observed basis and
-    # rejects any concurrent Task/Contract change.
+        raise _state_invalid()
     with closing(connect_initialized_readonly(target)) as connection:
         authority = read_review_target_authority_basis(
             connection,
@@ -1451,69 +1143,76 @@ def set_review_target_with_shadow_runner(
                 "git_snapshot captures the current staged index and does not accept --revision",
                 "review_target_value",
             )
+        normalized_revision = None
     else:
-        # Privacy/shape failures must precede Runner state creation and lock
-        # acquisition.  Git resolution/capture remains under the Runner lock.
         validate_revision_review_target_input(target_kind, revision)
+        _normalized_kind, normalized_revision = normalize_revision_review_target(
+            target.project,
+            target_kind,
+            revision,
+        )
+
+    prepared = _prepare_runner(
+        target,
+        authority,
+        kind=target_kind,
+        revision=normalized_revision,
+    )
+    if prepared is None:
+        return _persist_ordinary_target(
+            target,
+            authority,
+            _capture_ordinary_target(
+                target,
+                kind=target_kind,
+                revision=normalized_revision,
+            ),
+        )
+
     paths = _runner_paths(target)
     try:
         with zero_wait_runner_lock(paths) as inventory:
-            with closing(connect_initialized_readonly(target)) as connection:
-                pending = read_pending_verification_runner_cleanup(
-                    connection,
-                    project_id=target.project.project_id,
-                )
-                require_known_attempt_inventory(
-                    inventory,
-                    known_attempt_ids=tuple(
-                        item["attempt"].verification_runner_attempt_id
-                        for item in pending
-                    ),
-                )
-            if pending:
-                reconcile_pending_verification_runner_cleanup_under_lock(
+            _deny_unresolved_attempt(target, paths, inventory)
+            current_prepared = _revalidate_prepared_runner(
+                target,
+                prepared,
+                kind=target_kind,
+                revision=normalized_revision,
+            )
+            if current_prepared is None:
+                return _persist_ordinary_target(
                     target,
-                    inventory,
-                )
-                inventory = inspect_runner_layout(paths)
-                require_known_attempt_inventory(
-                    inventory,
-                    known_attempt_ids=(),
-                )
-            with closing(connect_initialized_readonly(target)) as connection:
-                if has_pending_verification_runner_cleanup(
-                    connection,
-                    project_id=target.project.project_id,
-                ):
-                    raise _service_error(
-                        "runner_cleanup_required",
-                        "verification Runner cleanup must complete before setting a target",
-                    )
-            captured = (
-                _CapturedTarget(
-                    observation=_capture_ordinary_target(
+                    authority,
+                    _capture_ordinary_target(
                         target,
                         kind=target_kind,
-                        revision=revision,
+                        revision=normalized_revision,
                     ),
-                    material=None,
-                    addressable=False,
-                    closed_reason=None,
                 )
-                if authority.verification_criterion_id is None
-                else (
-                    _capture_runner_target_for_install(
-                        target,
-                        kind=target_kind,
-                        revision=revision,
-                    )
+            intent = _persist_launch_intent(target, current_prepared)
+            try:
+                return _run_intent_under_lock(
+                    target,
+                    paths,
+                    current_prepared,
+                    intent,
+                    cancel_requested=_cancel_requested,
                 )
-            )
-            prepared = (
-                None
-                if authority.verification_criterion_id is None
-                else _prepare_resolution(target, authority, captured)
-            )
-            return _persist_without_attempt(target, authority, captured, prepared)
+            except _POST_INTENT_TYPED_ERRORS:
+                # Preserve the established typed error translations below and
+                # every existing storage/service code.
+                raise
+            except BaseException as exc:
+                # T1 is already committed. No unexpected cleanup, basis, or T2
+                # fault may escape with raw exception or private-path detail.
+                raise _state_invalid() from exc
     except VerificationRunnerLifecycleError as exc:
         raise _service_error(exc.code, exc.message) from exc
+    except EvidenceLedgerError as exc:
+        raise StorageError(exc.code, exc.message) from exc
+
+
+__all__ = [
+    "VerificationRunnerServiceError",
+    "set_review_target_with_shadow_runner",
+]

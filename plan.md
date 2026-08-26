@@ -203,8 +203,11 @@ reference preserved Bundle-v1 bytes without rewriting them. Pre-v19 cycles
 remain index-only as `legacy_unknown`; SQLite remains canonical. Setup repairs the projection,
 doctor observes it read-only, and post-commit maintenance runs Evidence,
 Viewer, then backup. Viewer snapshot v4 accepts v5-v20 but adds no Evidence UI.
-No Runner writer, process, projection, completion gate, public leaf, normal-loop
-call, network/live-model action, or target mutation is activated. Accepted TG-M22.4 completed integrated acceptance and
+TG-M24.2C activates only the standalone schema-v20 audit writer under the
+existing exact target-set dispatch. No Runner Bundle/Evidence JSON/Viewer UI
+projection, completion gate, public leaf, new normal-loop call,
+network/live-model action, or target mutation is activated. Accepted TG-M22.4
+completed integrated acceptance and
 accepted TG-M23.1 froze the derived-evidence design; accepted TG-M23.2 supplies
 only its bounded offline/mock implementation predecessor.
 
@@ -295,6 +298,16 @@ no product byte; accepted R2A, R2B, R2C, R4A, and R4V changed no supported produ
 behavior. Current 2C and its successors advance in exact order, use fresh
 current evidence, and never reuse superseded Candidate-C, LPAC, or diagnostic
 recovery evidence.
+The approved 2C decision is the narrow audit-only route: preflight fallback
+retains the ordinary target-only path, while an eligible call takes one
+zero-wait Runner lock before T1 and holds it across pending reconciliation,
+the atomic target/resolution/intent T1, process/lifecycle work, and terminal T2.
+Restart never relaunches; cleanup-only closes that old generation and permits
+a later clean new generation, while its cleanup-performing call and any post-T1
+uncertainty return an error without maintenance. `runtime_digest` remains null,
+and schema 20, public surfaces, Viewer UI, Bundle, Skill, and M21 gates do not
+change. The first boundary failure remains an inspection checkpoint before any
+materially different repair.
 The sequence grants no arbitrary command, automatic execution of untrusted or
 external targets, raw-output retention, network action, target-project write,
 publication, push, tag, or Release authority.

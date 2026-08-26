@@ -26,6 +26,9 @@ from task_governance_tool.self_status import (  # noqa: E402
 )
 
 
+IDENTITY = runtime._RuntimeFileIdentity(1, 2, 3, 0, 4, 5, 6)
+
+
 def _write_minimal_manifest(root: Path) -> None:
     core = root / "core.py"
     core.write_bytes(b"value = 1\n")
@@ -51,6 +54,17 @@ def _attempt_roots(root: Path) -> tuple[Path, Path]:
     target.mkdir(parents=True)
     scratch.mkdir()
     return target, scratch
+
+
+def _owner(handle: int | None = None) -> runtime.RunnerFixedExecutableLease:
+    owner = runtime.RunnerFixedExecutableLease(
+        r"C:\private-attempt\target",
+        r"C:\private-attempt\scratch",
+    )
+    if handle is not None:
+        owner._primary.handle = handle
+        owner._primary.phase = "open"
+    return owner
 
 
 class RunnerRuntimeManifestTests(unittest.TestCase):
@@ -101,459 +115,105 @@ class RunnerRuntimeManifestTests(unittest.TestCase):
             )
 
 
-class RunnerFixedExecutableLeaseStateTests(unittest.TestCase):
-    @staticmethod
-    def _lease(handle: int = 701) -> runtime.RunnerFixedExecutableLease:
-        return runtime.RunnerFixedExecutableLease(
-            Path(r"C:\Python\python.exe"),
-            handle,
-            runtime._RuntimeFileIdentity(1, 2, 3, 0, 4, 5, 6),
-        )
-
-    @staticmethod
-    def _run_concurrent_closes(
-        lease: runtime.RunnerFixedExecutableLease,
-    ) -> tuple[list[BaseException], tuple[threading.Thread, threading.Thread]]:
-        start = threading.Barrier(3)
-        failures: list[BaseException] = []
-        failures_lock = threading.Lock()
-
-        def close_lease() -> None:
-            start.wait()
-            try:
-                lease.close()
-            except BaseException as exc:
-                with failures_lock:
-                    failures.append(exc)
-
-        threads = (
-            threading.Thread(target=close_lease),
-            threading.Thread(target=close_lease),
-        )
-        for thread in threads:
-            thread.start()
-        start.wait()
-        return failures, threads
-
-    def test_concurrent_close_success_calls_native_once(self):
-        lease = self._lease()
-        native_entered = threading.Event()
-        release_native = threading.Event()
-        kernel = mock.Mock()
-
-        def close_handle(_handle: object) -> int:
-            native_entered.set()
-            if not release_native.wait(2.0):
-                raise RuntimeError("test release was not signalled")
-            return 1
-
-        kernel.CloseHandle.side_effect = close_handle
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
-            failures, threads = self._run_concurrent_closes(lease)
-            self.assertTrue(native_entered.wait(1.0))
-            release_native.set()
-            for thread in threads:
-                thread.join(2.0)
-
-        self.assertTrue(all(not thread.is_alive() for thread in threads))
-        self.assertEqual(failures, [])
-        self.assertTrue(lease.closed)
-        kernel.CloseHandle.assert_called_once()
-
-    def test_concurrent_close_serializes_definitive_failure_and_retry(self):
-        lease = self._lease(702)
-        first_entered = threading.Event()
-        release_first = threading.Event()
-        call_lock = threading.Lock()
-        active_native_calls = 0
-        maximum_native_calls = 0
-        call_count = 0
-        kernel = mock.Mock()
-
-        def close_handle(_handle: object) -> int:
-            nonlocal active_native_calls, maximum_native_calls, call_count
-            with call_lock:
-                active_native_calls += 1
-                maximum_native_calls = max(maximum_native_calls, active_native_calls)
-                call_count += 1
-                current_call = call_count
-            try:
-                if current_call == 1:
-                    first_entered.set()
-                    if not release_first.wait(2.0):
-                        raise RuntimeError("test release was not signalled")
-                    return 0
-                return 1
-            finally:
-                with call_lock:
-                    active_native_calls -= 1
-
-        kernel.CloseHandle.side_effect = close_handle
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
-            failures, threads = self._run_concurrent_closes(lease)
-            self.assertTrue(first_entered.wait(1.0))
-            release_first.set()
-            for thread in threads:
-                thread.join(2.0)
-
-        self.assertTrue(all(not thread.is_alive() for thread in threads))
-        self.assertEqual(len(failures), 1)
-        self.assertIsInstance(failures[0], runtime.VerificationRunnerRuntimeError)
-        self.assertEqual(maximum_native_calls, 1)
-        self.assertEqual(kernel.CloseHandle.call_count, 2)
-        self.assertTrue(lease.closed)
-
-    def test_concurrent_close_after_interruption_never_retries(self):
-        lease = self._lease(703)
-        kernel = mock.Mock()
-        kernel.CloseHandle.side_effect = KeyboardInterrupt()
-
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
-            failures, threads = self._run_concurrent_closes(lease)
-            for thread in threads:
-                thread.join(2.0)
-
-        self.assertTrue(all(not thread.is_alive() for thread in threads))
-        self.assertEqual(len(failures), 2)
-        self.assertTrue(
-            all(
-                isinstance(exc, runtime.VerificationRunnerRuntimeError)
-                for exc in failures
-            )
-        )
-        self.assertFalse(lease.closed)
-        self.assertEqual(lease._handle, 0)
-        kernel.CloseHandle.assert_called_once()
-
-    def test_executable_access_waits_for_close_and_then_fails(self):
-        lease = self._lease(704)
-        native_entered = threading.Event()
-        release_native = threading.Event()
-        access_started = threading.Event()
-        access_finished = threading.Event()
-        failures: list[BaseException] = []
-        kernel = mock.Mock()
-
-        def close_handle(_handle: object) -> int:
-            native_entered.set()
-            if not release_native.wait(2.0):
-                raise RuntimeError("test release was not signalled")
-            return 1
-
-        def access_executable() -> None:
-            access_started.set()
-            try:
-                _ = lease.executable
-            except BaseException as exc:
-                failures.append(exc)
-            finally:
-                access_finished.set()
-
-        kernel.CloseHandle.side_effect = close_handle
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
-            closer = threading.Thread(target=lease.close)
-            closer.start()
-            self.assertTrue(native_entered.wait(1.0))
-            accessor = threading.Thread(target=access_executable)
-            accessor.start()
-            self.assertTrue(access_started.wait(1.0))
-            self.assertFalse(access_finished.wait(0.05))
-            release_native.set()
-            closer.join(2.0)
-            accessor.join(2.0)
-
-        self.assertFalse(closer.is_alive())
-        self.assertFalse(accessor.is_alive())
-        self.assertEqual(len(failures), 1)
-        self.assertIsInstance(failures[0], runtime.VerificationRunnerRuntimeError)
-        self.assertTrue(lease.closed)
-        kernel.CloseHandle.assert_called_once()
-
-    def test_nested_entry_and_direct_close_while_active_fail_closed(self):
-        lease = self._lease(705)
-        kernel = mock.Mock()
-        kernel.CloseHandle.return_value = 1
-
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
-            with lease as active:
-                self.assertIs(active, lease)
-                with self.assertRaises(runtime.VerificationRunnerRuntimeError):
-                    lease.__enter__()
-                with self.assertRaises(runtime.VerificationRunnerRuntimeError):
-                    lease.close()
-                self.assertEqual(active.executable.name.casefold(), "python.exe")
-                kernel.CloseHandle.assert_not_called()
-
-        self.assertTrue(lease.closed)
-        kernel.CloseHandle.assert_called_once()
-
-
-@unittest.skipUnless(os.name == "nt", "fixed package runtime is Windows-only")
-class RunnerFixedExecutableWindowsTests(unittest.TestCase):
-    def test_parent_runtime_is_fixed_ignores_path_and_closes(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            target, scratch = _attempt_roots(Path(temporary))
-            with mock.patch.dict(
-                os.environ,
-                {"PATH": str(Path(temporary) / "untrusted")},
-                clear=False,
-            ):
-                lease = runtime.open_fixed_package_runtime(target, scratch)
-            self.assertFalse(lease.closed)
-            self.assertEqual(lease.executable.name.casefold(), "python.exe")
-            self.assertTrue(
-                runtime._same_locked_path(Path(sys.executable), lease._identity)
-            )
-            flags = ctypes.c_uint32()
-            self.assertTrue(
-                runtime._kernel32().GetHandleInformation(
-                    ctypes.c_void_p(lease._handle),
-                    ctypes.byref(flags),
-                )
-            )
-            self.assertFalse(flags.value & runtime._HANDLE_FLAG_INHERIT)
-            self.assertNotIn(str(lease.executable), repr(lease))
-            lease.close()
-            self.assertTrue(lease.closed)
-            with self.assertRaises(runtime.VerificationRunnerRuntimeError):
-                _ = lease.executable
-            lease.close()
-
-    def test_parent_runtime_rejects_sys_executable_mismatch(self):
-        with mock.patch.object(runtime.sys, "executable", r"C:\not-parent\python.exe"):
-            with self.assertRaises(runtime.VerificationRunnerRuntimeError) as caught:
-                runtime._parent_process_executable()
-        self.assertEqual(caught.exception.code, "runtime_unavailable")
-
-    def test_parent_runtime_accepts_different_spelling_for_same_identity(self):
-        observed = Path(r"C:\Program Files\Python\python.exe")
-        declared = Path(r"C:\PROGRA~1\Python\python.exe")
-        identity = runtime._RuntimeFileIdentity(1, 2, 3, 0, 4, 5, 6)
-        kernel = mock.Mock()
-
-        def get_module_filename(_module, buffer, _capacity):
-            buffer.value = str(observed)
-            return len(str(observed))
-
-        kernel.GetModuleFileNameW.side_effect = get_module_filename
-        kernel.CloseHandle.return_value = 1
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel), mock.patch.object(
-            runtime.sys,
-            "executable",
-            str(declared),
-        ), mock.patch.object(runtime, "_observe_physical_path") as observed_path, mock.patch.object(
+class RunnerFixedExecutableOwnerTests(unittest.TestCase):
+    def test_constructor_is_resource_free_and_sanitized(self):
+        with mock.patch.object(runtime, "_kernel32") as kernel, mock.patch.object(
             runtime,
-            "_open_runtime_handle",
-            side_effect=((101, identity), (102, identity)),
-        ):
-            path, handle, returned_identity = runtime._parent_process_executable()
-            kernel.CloseHandle(ctypes.c_void_p(handle))
+            "_observe_physical_path",
+        ) as observe:
+            owner = _owner()
+            representation = repr(owner)
 
-        self.assertEqual(path, observed)
-        self.assertEqual(handle, 101)
-        self.assertEqual(returned_identity, identity)
-        self.assertEqual(
-            [call.args[0].value for call in kernel.CloseHandle.call_args_list],
-            [102, 101],
-        )
-        self.assertEqual(
-            observed_path.call_args_list,
-            [
-                mock.call(observed, directory=False),
-                mock.call(declared, directory=False),
-                mock.call(observed, directory=False),
-                mock.call(declared, directory=False),
-            ],
-        )
+        kernel.assert_not_called()
+        observe.assert_not_called()
+        self.assertEqual(owner._state, "new")
+        self.assertEqual(owner._primary, runtime._OwnedRuntimeHandle())
+        self.assertEqual(owner._probe, runtime._OwnedRuntimeHandle())
+        self.assertFalse(owner.closed)
+        self.assertNotIn("private-attempt", representation)
 
-    def test_parent_runtime_rejects_different_physical_identity(self):
-        observed = Path(r"C:\Python\python.exe")
-        declared = Path(r"D:\Python\python.exe")
-        observed_identity = runtime._RuntimeFileIdentity(1, 2, 3, 0, 4, 5, 6)
-        declared_identity = runtime._RuntimeFileIdentity(7, 8, 9, 0, 4, 5, 6)
+    def test_acquisition_registers_owner_before_identity_and_returns_no_raw_handle(self):
+        owner = _owner()
+        executable = Path(r"C:\Python\python.exe")
         kernel = mock.Mock()
+        kernel.CreateFileW.return_value = 701
+        kernel.GetHandleInformation.return_value = 1
 
-        def get_module_filename(_module, buffer, _capacity):
-            buffer.value = str(observed)
-            return len(str(observed))
+        def query_identity(handle: int) -> runtime._RuntimeFileIdentity:
+            self.assertEqual(handle, 701)
+            self.assertEqual(owner._primary.handle, 701)
+            self.assertEqual(owner._primary.phase, "open")
+            return IDENTITY
 
-        kernel.GetModuleFileNameW.side_effect = get_module_filename
-        kernel.CloseHandle.return_value = 1
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel), mock.patch.object(
-            runtime.sys,
-            "executable",
-            str(declared),
-        ), mock.patch.object(runtime, "_observe_physical_path"), mock.patch.object(
-            runtime,
-            "_open_runtime_handle",
-            side_effect=((101, observed_identity), (102, declared_identity)),
-        ), self.assertRaises(runtime.VerificationRunnerRuntimeError) as caught:
-            runtime._parent_process_executable()
-
-        self.assertEqual(caught.exception.code, "runtime_unavailable")
-        self.assertEqual(
-            [call.args[0].value for call in kernel.CloseHandle.call_args_list],
-            [102, 101],
-        )
-
-    def test_locked_path_corroboration_requires_second_handle_close(self):
-        identity = runtime._RuntimeFileIdentity(1, 2, 3, 0, 4, 5, 6)
-        kernel = mock.Mock()
-        kernel.CloseHandle.return_value = 0
         with mock.patch.object(
             runtime,
-            "_open_runtime_handle",
-            return_value=(123, identity),
-        ), mock.patch.object(runtime, "_kernel32", return_value=kernel):
-            self.assertFalse(runtime._same_locked_path(Path(r"C:\Python\python.exe"), identity))
-        self.assertEqual(kernel.CloseHandle.call_count, 2)
-
-    def test_runtime_handle_interruption_is_closed_or_reports_uncertainty(self):
-        executable = Path(r"C:\Python\python.exe")
-        for close_result, expected in (
-            (1, KeyboardInterrupt),
-            (0, runtime.VerificationRunnerRuntimeError),
+            "_kernel32",
+            return_value=kernel,
+        ), mock.patch.object(
+            runtime,
+            "_query_identity",
+            side_effect=query_identity,
         ):
-            with self.subTest(close_result=close_result):
-                kernel = mock.Mock()
-                kernel.CreateFileW.return_value = 701
-                kernel.GetHandleInformation.return_value = 1
-                kernel.CloseHandle.return_value = close_result
-                with mock.patch.object(
-                    runtime,
-                    "_kernel32",
-                    return_value=kernel,
-                ), mock.patch.object(
-                    runtime,
-                    "_query_identity",
-                    side_effect=KeyboardInterrupt(),
-                ):
-                    with self.assertRaises(expected) as raised:
-                        runtime._open_runtime_handle(executable)
+            with owner._lock:
+                acquired = owner._acquire_identity_locked("primary", executable)
 
-                if isinstance(
-                    raised.exception,
-                    runtime.VerificationRunnerRuntimeError,
-                ):
-                    self.assertEqual(raised.exception.code, "runtime_unavailable")
-                self.assertEqual(
-                    [
-                        call.args[0].value
-                        for call in kernel.CloseHandle.call_args_list
-                    ],
-                    [701],
-                )
-
-    def test_runtime_return_handle_without_raw_value_is_uncertain(self):
-        kernel = mock.Mock()
-        acquired: list[int] = []
-
-        def acquire_then_interrupt(*_args: object) -> int:
-            acquired.append(802)
-            raise KeyboardInterrupt()
-
-        kernel.CreateFileW.side_effect = acquire_then_interrupt
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
-            with self.assertRaises(
-                runtime.VerificationRunnerRuntimeError
-            ) as raised:
-                runtime._open_runtime_handle(Path(r"C:\Python\python.exe"))
-
-        self.assertEqual(acquired, [802])
-        self.assertEqual(raised.exception.code, "runtime_unavailable")
+        self.assertIs(acquired, IDENTITY)
+        self.assertNotIsInstance(acquired, int)
+        self.assertEqual(owner._primary.handle, 701)
+        self.assertEqual(owner._primary.phase, "open")
         kernel.CloseHandle.assert_not_called()
 
-    def test_held_handle_denies_write_and_replacement_until_close(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            executable = root / "python.exe"
-            replacement = root / "replacement.exe"
-            executable.write_bytes(b"original")
-            replacement.write_bytes(b"replacement")
-            handle, identity = runtime._open_runtime_handle(executable)
-            lease = runtime.RunnerFixedExecutableLease(executable, handle, identity)
-            try:
-                self.assertTrue(runtime._same_locked_path(executable, identity))
-                with self.assertRaises(OSError):
-                    executable.write_bytes(b"changed")
-                with self.assertRaises(OSError):
-                    os.replace(replacement, executable)
-            finally:
-                lease.close()
-            executable.write_bytes(b"changed")
-            self.assertEqual(executable.read_bytes(), b"changed")
-
-    def test_held_leaf_denies_parent_and_grandparent_path_swap(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            grandparent = root / "grandparent"
-            parent = grandparent / "parent"
-            parent.mkdir(parents=True)
-            executable = parent / "python.exe"
-            executable.write_bytes(b"fixed")
-            moved_parent = grandparent / "moved-parent"
-            moved_grandparent = root / "moved-grandparent"
-            handle, identity = runtime._open_runtime_handle(executable)
-            lease = runtime.RunnerFixedExecutableLease(executable, handle, identity)
-            try:
-                with self.assertRaises(OSError):
-                    os.replace(parent, moved_parent)
-                with self.assertRaises(OSError):
-                    os.replace(grandparent, moved_grandparent)
-                self.assertEqual(executable.read_bytes(), b"fixed")
-            finally:
-                lease.close()
-
-            os.replace(parent, moved_parent)
-            self.assertEqual((moved_parent / "python.exe").read_bytes(), b"fixed")
-
-    def test_close_failure_retains_handle_ownership_for_later_close(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            executable = Path(temporary) / "python.exe"
-            executable.write_bytes(b"fixture")
-            handle, identity = runtime._open_runtime_handle(executable)
-            lease = runtime.RunnerFixedExecutableLease(executable, handle, identity)
-
-            failing = mock.Mock()
-            failing.CloseHandle.return_value = 0
-            with mock.patch.object(runtime, "_kernel32", return_value=failing):
-                with self.assertRaises(runtime.VerificationRunnerRuntimeError):
-                    lease.close()
-            self.assertFalse(lease.closed)
-            self.assertEqual(lease._handle, handle)
-
-            lease.close()
-            self.assertTrue(lease.closed)
-
-    def test_interrupted_lease_close_is_uncertain_and_is_not_retried(self):
-        identity = runtime._RuntimeFileIdentity(1, 2, 3, 0, 4, 5, 6)
-        lease = runtime.RunnerFixedExecutableLease(
-            Path(r"C:\Python\python.exe"),
-            702,
-            identity,
-        )
+    def test_failure_after_registration_is_finalized_by_reachable_owner(self):
+        owner = _owner()
         kernel = mock.Mock()
-        kernel.CloseHandle.side_effect = KeyboardInterrupt()
+        kernel.CreateFileW.return_value = 702
+        kernel.GetHandleInformation.return_value = 1
+        kernel.CloseHandle.return_value = 1
 
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
-            with self.assertRaises(runtime.VerificationRunnerRuntimeError):
-                lease.close()
-            self.assertFalse(lease.closed)
-            self.assertEqual(lease._handle, 0)
-            with self.assertRaises(runtime.VerificationRunnerRuntimeError):
-                _ = lease.executable
-            with self.assertRaises(runtime.VerificationRunnerRuntimeError):
-                lease.__enter__()
-            with self.assertRaises(runtime.VerificationRunnerRuntimeError):
-                lease.close()
+        with mock.patch.object(
+            runtime,
+            "_kernel32",
+            return_value=kernel,
+        ), mock.patch.object(
+            runtime,
+            "_query_identity",
+            side_effect=KeyboardInterrupt(),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                with owner._lock:
+                    owner._acquire_identity_locked(
+                        "primary",
+                        Path(r"C:\Python\python.exe"),
+                    )
+            self.assertEqual(owner._primary.handle, 702)
+            self.assertEqual(owner._primary.phase, "open")
+            self.assertEqual(owner.finalize_owner(), "closed")
 
+        self.assertTrue(owner.closed)
         kernel.CloseHandle.assert_called_once()
 
-    def test_parent_runtime_cleanup_attempts_both_handles_after_close_failure(self):
+    def test_interrupted_native_acquisition_without_returned_value_is_uncertain(self):
+        owner = _owner()
+        kernel = mock.Mock()
+        kernel.CreateFileW.side_effect = KeyboardInterrupt()
+
+        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
+            with self.assertRaises(KeyboardInterrupt):
+                with owner._lock:
+                    owner._acquire_identity_locked(
+                        "primary",
+                        Path(r"C:\Python\python.exe"),
+                    )
+            self.assertEqual(owner._primary.phase, "uncertain")
+            self.assertEqual(owner.finalize_owner(), "uncertain")
+            self.assertEqual(owner.finalize_owner(), "uncertain")
+
+        kernel.CloseHandle.assert_not_called()
+
+    def test_parent_binding_returns_only_path_and_identity(self):
+        owner = _owner()
         observed = Path(r"C:\Python\python.exe")
         declared = Path(r"D:\Python\python.exe")
-        first = runtime._RuntimeFileIdentity(1, 2, 3, 0, 4, 5, 6)
-        second = runtime._RuntimeFileIdentity(7, 8, 9, 0, 4, 5, 6)
         kernel = mock.Mock()
 
         def get_module_filename(_module, buffer, _capacity):
@@ -561,7 +221,6 @@ class RunnerFixedExecutableWindowsTests(unittest.TestCase):
             return len(str(observed))
 
         kernel.GetModuleFileNameW.side_effect = get_module_filename
-        kernel.CloseHandle.side_effect = (0, 1)
         with mock.patch.object(
             runtime,
             "_kernel32",
@@ -574,26 +233,315 @@ class RunnerFixedExecutableWindowsTests(unittest.TestCase):
             runtime,
             "_observe_physical_path",
         ), mock.patch.object(
-            runtime,
-            "_open_runtime_handle",
-            side_effect=((703, first), (704, second)),
-        ), self.assertRaises(runtime.VerificationRunnerRuntimeError):
-            runtime._parent_process_executable()
+            runtime.RunnerFixedExecutableLease,
+            "_acquire_identity_locked",
+            autospec=True,
+            side_effect=(IDENTITY, IDENTITY),
+        ) as acquire, mock.patch.object(
+            runtime.RunnerFixedExecutableLease,
+            "_release_probe_locked",
+            autospec=True,
+            return_value="closed",
+        ):
+            bound = runtime._bind_parent_process_executable(owner)
 
+        self.assertEqual(bound, (observed, IDENTITY))
         self.assertEqual(
-            [call.args[0].value for call in kernel.CloseHandle.call_args_list],
-            [704, 703],
+            [call.args[1] for call in acquire.call_args_list],
+            ["primary", "probe"],
         )
+        self.assertTrue(all(len(call.args) == 3 for call in acquire.call_args_list))
 
-    def test_geometry_and_reparse_parent_are_rejected(self):
+    def test_definite_close_retries_only_on_later_finalization(self):
+        owner = _owner(703)
+        kernel = mock.Mock()
+        kernel.CloseHandle.side_effect = (0, 1)
+        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
+            self.assertEqual(owner.finalize_owner(), "open")
+            self.assertEqual(owner._primary.close_attempts, 1)
+            self.assertEqual(owner.finalize_owner(), "closed")
+            self.assertEqual(owner.finalize_owner(), "closed")
+
+        self.assertEqual(owner._primary.close_attempts, 2)
+        self.assertEqual(kernel.CloseHandle.call_count, 2)
+        self.assertTrue(owner.closed)
+
+    def test_definite_close_never_exceeds_two_native_attempts(self):
+        owner = _owner(704)
+        kernel = mock.Mock()
+        kernel.CloseHandle.side_effect = (0, 0, 1)
+        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
+            self.assertEqual(owner.finalize_owner(), "open")
+            self.assertEqual(owner.finalize_owner(), "open")
+            self.assertEqual(owner.finalize_owner(), "open")
+
+        self.assertEqual(owner._primary.close_attempts, 2)
+        self.assertEqual(kernel.CloseHandle.call_count, 2)
+        self.assertFalse(owner.closed)
+
+    def test_pre_native_close_interruption_remains_definitely_open_for_retry(self):
+        owner = _owner(705)
+        kernel = mock.Mock()
+        kernel.CloseHandle.return_value = 1
+        with mock.patch.object(
+            runtime,
+            "_kernel32",
+            side_effect=(KeyboardInterrupt(), kernel),
+        ) as resolve_kernel:
+            self.assertEqual(owner.finalize_owner(), "open")
+            self.assertEqual(owner.finalize_owner(), "closed")
+
+        self.assertEqual(resolve_kernel.call_count, 2)
+        kernel.CloseHandle.assert_called_once()
+        self.assertTrue(owner.closed)
+
+    def test_native_close_interruption_is_uncertain_and_never_retried(self):
+        owner = _owner(706)
+        kernel = mock.Mock()
+        kernel.CloseHandle.side_effect = KeyboardInterrupt()
+
+        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
+            self.assertEqual(owner.finalize_owner(), "uncertain")
+            self.assertEqual(owner.finalize_owner(), "uncertain")
+
+        self.assertEqual(owner._primary.phase, "uncertain")
+        self.assertEqual(owner._primary.handle, 0)
+        self.assertEqual(owner._primary.close_attempts, 1)
+        kernel.CloseHandle.assert_called_once()
+
+    def test_cleanup_aggregate_preserves_uncertain_over_open_over_closed(self):
+        cases = (
+            (("closed", 0), ("closed", 0), "closed"),
+            (("open", 801), ("closed", 0), "open"),
+            (("open", 801), ("uncertain", 0), "uncertain"),
+            (("closed", 0), ("closing", 802), "uncertain"),
+        )
+        for primary, probe, expected in cases:
+            with self.subTest(expected=expected, primary=primary, probe=probe):
+                owner = _owner()
+                owner._primary.phase, owner._primary.handle = primary
+                owner._probe.phase, owner._probe.handle = probe
+                with owner._lock:
+                    observed = owner._aggregate_cleanup_state_locked()
+                self.assertEqual(observed, expected)
+
+    def test_active_close_reports_aggregate_uncertainty_without_releasing(self):
+        owner = _owner(711)
+        owner._probe.phase = "uncertain"
+        owner._state = "active"
+
+        with mock.patch.object(runtime, "_kernel32") as kernel:
+            with self.assertRaises(runtime.VerificationRunnerRuntimeError) as caught:
+                owner.close()
+
+        self.assertEqual(caught.exception.handle_cleanup_state, "uncertain")
+        self.assertEqual(owner._primary.handle, 711)
+        self.assertEqual(owner._primary.phase, "open")
+        kernel.assert_not_called()
+
+    def test_concurrent_finalization_is_serialized_and_idempotent(self):
+        owner = _owner(707)
+        native_entered = threading.Event()
+        release_native = threading.Event()
+        start = threading.Barrier(3)
+        results: list[str] = []
+        failures: list[BaseException] = []
+        result_lock = threading.Lock()
+        kernel = mock.Mock()
+
+        def close_handle(_handle: object) -> int:
+            native_entered.set()
+            if not release_native.wait(2.0):
+                raise RuntimeError("test release was not signalled")
+            return 1
+
+        def finalize() -> None:
+            start.wait()
+            try:
+                result = owner.finalize_owner()
+                with result_lock:
+                    results.append(result)
+            except BaseException as exc:
+                with result_lock:
+                    failures.append(exc)
+
+        threads = (threading.Thread(target=finalize), threading.Thread(target=finalize))
+        kernel.CloseHandle.side_effect = close_handle
+        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
+            for thread in threads:
+                thread.start()
+            start.wait()
+            self.assertTrue(native_entered.wait(1.0))
+            release_native.set()
+            for thread in threads:
+                thread.join(2.0)
+            self.assertEqual(owner.finalize_owner(), "closed")
+
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(failures, [])
+        self.assertEqual(results, ["closed", "closed"])
+        kernel.CloseHandle.assert_called_once()
+        self.assertTrue(owner.closed)
+
+    def test_nested_entry_and_direct_close_while_active_fail_closed(self):
+        owner = _owner()
+        executable = Path(r"C:\Python\python.exe")
+        kernel = mock.Mock()
+        kernel.CloseHandle.return_value = 1
+
+        def bind(bound_owner: runtime.RunnerFixedExecutableLease) -> Path:
+            self.assertIs(bound_owner, owner)
+            bound_owner._primary.handle = 708
+            bound_owner._primary.phase = "open"
+            return executable
+
+        with mock.patch.object(
+            runtime,
+            "_bind_fixed_package_runtime",
+            side_effect=bind,
+        ), mock.patch.object(runtime, "_kernel32", return_value=kernel):
+            with owner as active_executable:
+                self.assertEqual(active_executable, executable)
+                self.assertEqual(owner.executable, executable)
+                with self.assertRaises(runtime.VerificationRunnerRuntimeError):
+                    owner.__enter__()
+                self.assertEqual(owner._state, "active")
+                self.assertEqual(owner._primary.handle, 708)
+                with self.assertRaises(runtime.VerificationRunnerRuntimeError) as close:
+                    owner.close()
+                self.assertEqual(close.exception.handle_cleanup_state, "open")
+                kernel.CloseHandle.assert_not_called()
+
+        self.assertTrue(owner.closed)
+        kernel.CloseHandle.assert_called_once()
+
+    def test_unmatched_exit_and_reentry_after_release_fail_closed(self):
+        owner = _owner()
+        with self.assertRaises(runtime.VerificationRunnerRuntimeError) as unmatched:
+            owner.__exit__(None, None, None)
+        self.assertEqual(unmatched.exception.handle_cleanup_state, "uncertain")
+        self.assertEqual(owner._state, "new")
+
+        self.assertEqual(owner.finalize_owner(), "closed")
+        with self.assertRaises(runtime.VerificationRunnerRuntimeError):
+            owner.__enter__()
+        with self.assertRaises(runtime.VerificationRunnerRuntimeError):
+            owner.__exit__(None, None, None)
+        self.assertTrue(owner.closed)
+
+    def test_entry_failure_after_owner_registration_closes_handle(self):
+        owner = _owner()
+        kernel = mock.Mock()
+        kernel.CloseHandle.return_value = 1
+
+        def bind(bound_owner: runtime.RunnerFixedExecutableLease) -> Path:
+            bound_owner._primary.handle = 709
+            bound_owner._primary.phase = "open"
+            raise KeyboardInterrupt()
+
+        with mock.patch.object(
+            runtime,
+            "_bind_fixed_package_runtime",
+            side_effect=bind,
+        ), mock.patch.object(runtime, "_kernel32", return_value=kernel):
+            with self.assertRaises(KeyboardInterrupt):
+                owner.__enter__()
+
+        self.assertTrue(owner.closed)
+        kernel.CloseHandle.assert_called_once()
+
+    def test_exit_native_interruption_is_uncertain_and_not_retried(self):
+        owner = _owner()
+        kernel = mock.Mock()
+        kernel.CloseHandle.side_effect = KeyboardInterrupt()
+
+        def bind(bound_owner: runtime.RunnerFixedExecutableLease) -> Path:
+            bound_owner._primary.handle = 710
+            bound_owner._primary.phase = "open"
+            return Path(r"C:\Python\python.exe")
+
+        with mock.patch.object(
+            runtime,
+            "_bind_fixed_package_runtime",
+            side_effect=bind,
+        ), mock.patch.object(runtime, "_kernel32", return_value=kernel):
+            with self.assertRaises(runtime.VerificationRunnerRuntimeError) as caught:
+                with owner:
+                    pass
+            self.assertEqual(caught.exception.handle_cleanup_state, "uncertain")
+            self.assertEqual(owner.finalize_owner(), "uncertain")
+
+        kernel.CloseHandle.assert_called_once()
+
+    def test_invalid_geometry_fails_before_native_acquisition(self):
+        owner = runtime.RunnerFixedExecutableLease(
+            r"C:\private-attempt\target",
+            r"C:\different-attempt\scratch",
+        )
+        with mock.patch.object(runtime, "_kernel32") as kernel:
+            with self.assertRaises(runtime.VerificationRunnerRuntimeError):
+                with owner:
+                    pass
+
+        kernel.assert_not_called()
+        self.assertTrue(owner.closed)
+
+
+@unittest.skipUnless(os.name == "nt", "fixed package runtime is Windows-only")
+class RunnerFixedExecutableWindowsTests(unittest.TestCase):
+    def test_fixed_parent_runtime_ignores_path_and_holds_noninheritable_lease(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target, scratch = _attempt_roots(Path(temporary))
+            owner = runtime.RunnerFixedExecutableLease(target, scratch)
+            with mock.patch.dict(
+                os.environ,
+                {"PATH": str(Path(temporary) / "untrusted")},
+                clear=False,
+            ):
+                with owner as executable:
+                    self.assertEqual(executable.name.casefold(), "python.exe")
+                    self.assertEqual(owner.executable, executable)
+                    self.assertNotIn(str(executable), repr(owner))
+                    flags = ctypes.c_uint32()
+                    self.assertTrue(
+                        runtime._kernel32().GetHandleInformation(
+                            ctypes.c_void_p(owner._primary.handle),
+                            ctypes.byref(flags),
+                        )
+                    )
+                    self.assertFalse(flags.value & runtime._HANDLE_FLAG_INHERIT)
+
+            self.assertTrue(owner.closed)
+            self.assertEqual(owner.finalize_owner(), "closed")
+            with self.assertRaises(runtime.VerificationRunnerRuntimeError):
+                _ = owner.executable
+
+    def test_owned_handle_denies_write_and_replacement_until_finalized(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            target, scratch = _attempt_roots(root / "good")
-            wrong = root / "wrong"
-            wrong.mkdir()
-            with self.assertRaises(runtime.VerificationRunnerRuntimeError):
-                runtime.open_fixed_package_runtime(target, wrong)
+            executable = root / "python.exe"
+            replacement = root / "replacement.exe"
+            executable.write_bytes(b"original")
+            replacement.write_bytes(b"replacement")
+            owner = _owner()
+            with owner._lock:
+                identity = owner._acquire_identity_locked("primary", executable)
+            self.assertIsInstance(identity, runtime._RuntimeFileIdentity)
 
+            try:
+                with self.assertRaises(OSError):
+                    executable.write_bytes(b"changed")
+                with self.assertRaises(OSError):
+                    os.replace(replacement, executable)
+            finally:
+                self.assertEqual(owner.finalize_owner(), "closed")
+
+            executable.write_bytes(b"changed")
+            self.assertEqual(executable.read_bytes(), b"changed")
+
+    def test_reparse_parent_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
             physical = root / "physical"
             physical.mkdir()
             (physical / "python.exe").write_bytes(b"fixture")

@@ -666,13 +666,13 @@ class RunnerWin32NativeTests(unittest.TestCase):
                 root,
                 "raise SystemExit(0)\n",
             )
-            lease = runtime.open_fixed_package_runtime(target, scratch)
-            held_handle = lease._handle
-            try:
+            lease = runtime.RunnerFixedExecutableLease(target, scratch)
+            with lease as executable:
                 self.assertFalse(lease.closed)
+                self.assertEqual(lease.executable, executable)
                 result = process.run_process_request(
                     self._request(
-                        executable=lease.executable,
+                        executable=executable,
                         target=target,
                         scratch=scratch,
                     )
@@ -680,9 +680,6 @@ class RunnerWin32NativeTests(unittest.TestCase):
                 self.assertEqual((result.outcome, result.reason), ("pass", None))
                 self.assert_process_zero(result)
                 self.assertFalse(lease.closed)
-                self.assertEqual(lease._handle, held_handle)
-            finally:
-                lease.close()
 
             self.assertTrue(lease.closed)
             runtime_root = root / "runtime-fixture"
@@ -690,19 +687,35 @@ class RunnerWin32NativeTests(unittest.TestCase):
             fixture_executable = runtime_root / "python.exe"
             renamed_executable = runtime_root / "python-renamed.exe"
             fixture_executable.write_bytes(b"fixture")
-            fixture_handle, fixture_identity = runtime._open_runtime_handle(
-                fixture_executable
-            )
-            fixture_lease = runtime.RunnerFixedExecutableLease(
-                fixture_executable,
-                fixture_handle,
-                fixture_identity,
-            )
-            try:
-                with self.assertRaises(OSError):
-                    os.replace(fixture_executable, renamed_executable)
-            finally:
-                fixture_lease.close()
+
+            real_kernel = runtime._kernel32()
+
+            class FixtureKernel:
+                def GetModuleFileNameW(self, _module, buffer, capacity):
+                    observed = str(fixture_executable)
+                    if len(observed) >= int(capacity):
+                        return int(capacity)
+                    buffer.value = observed
+                    return len(observed)
+
+                def __getattr__(self, name):
+                    return getattr(real_kernel, name)
+
+            fixture_lease = runtime.RunnerFixedExecutableLease(target, scratch)
+            with patch.object(
+                runtime,
+                "_kernel32",
+                return_value=FixtureKernel(),
+            ), patch.object(runtime.sys, "executable", str(fixture_executable)):
+                with fixture_lease as executable:
+                    self.assertEqual(executable, fixture_executable)
+                    self.assertFalse(fixture_lease.closed)
+                    with self.assertRaises(OSError):
+                        os.replace(fixture_executable, renamed_executable)
+
+            self.assertTrue(fixture_lease.closed)
+            self.assertTrue(fixture_executable.is_file())
+            self.assertFalse(renamed_executable.exists())
             os.replace(fixture_executable, renamed_executable)
             self.assertTrue(renamed_executable.is_file())
 

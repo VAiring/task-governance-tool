@@ -127,6 +127,8 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m242_runner_lifecycle",
         "test_m242_runner_process",
         "test_m242_runner_runtime",
+        "test_m242_runner_service",
+        "test_m242_runner_storage",
         "test_m242_runner_win32",
         "test_post_commit_maintenance",
         "test_project_identity_bindings",

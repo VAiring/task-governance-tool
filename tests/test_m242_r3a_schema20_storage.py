@@ -861,6 +861,37 @@ class R3ASchema20StorageTests(unittest.TestCase):
         )
         self.assertEqual(actual, V19_TABLES)
 
+    def test_selected_reference_validation_rejects_runner_before_v20_without_query(
+        self,
+    ) -> None:
+        db = self._fresh_v19("selected-runner-source")
+        with closing(storage.connect(db)) as connection:
+            traced: list[str] = []
+            connection.set_trace_callback(traced.append)
+            try:
+                with self.assertRaises(storage.StorageError) as caught:
+                    storage._validate_selected_reference_source_chunk(
+                        connection,
+                        expected_project_id="project-v19",
+                        selected_task_ids={"task-v19"},
+                        source_owners={
+                            (
+                                "runner_observation",
+                                "tg_verification_runner_observation_" + "1" * 16,
+                            ): "task-v19"
+                        },
+                    )
+            finally:
+                connection.set_trace_callback(None)
+            self.assertEqual(caught.exception.code, "evidence_ledger_inconsistent")
+            self.assertFalse(
+                any(
+                    "verification_runner_observations" in statement.lower()
+                    for statement in traced
+                ),
+                traced,
+            )
+
     @staticmethod
     def _value_token(value: object) -> tuple[str, str]:
         if value is None:

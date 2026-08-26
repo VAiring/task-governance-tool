@@ -310,6 +310,10 @@ Evidence index   <fixed-root>/evidence/index.json
 Evidence bundles <fixed-root>/evidence/bundles
 Evidence lock    <fixed-root>/evidence/taskgov-evidence.lock
 Viewer           <fixed-root>/viewer/task-viewer.html
+Runner root       <fixed-root>/verification-runner
+Runner lock       <fixed-root>/verification-runner/taskgov-verification-runner.lock
+Runner attempts   <fixed-root>/verification-runner/attempts
+Runner quarantine <fixed-root>/verification-runner/quarantine
 ```
 
 The resolver returns canonical paths, the in-memory governed root/hash/display
@@ -318,6 +322,14 @@ state (`missing`, `fixed_current_v1`, or `legacy_projects_v1`), binding state
 (`unbound`, `matching`, or `relocation_required`), and an optional deep
 setup-only recovery/legacy observation. None of its raw paths or path hashes
 crosses a formatter.
+
+For TG-M24.2C, `CanonicalStatePaths` derives the four fixed Runner paths above
+and `DatabaseTarget` carries them to the parent service. Internal test targets
+derive the same names beneath their injected database parent. No service,
+repository, lifecycle, or process module reconstructs the fixed root, and the
+layout is created only after an exact Runner route has passed pre-T1
+preflight. The lifecycle owner continues to require the existing physical
+fixed root as `Runner root.parent`.
 
 Fixed-primary normal consumers validate only the authoritative primary and
 derive canonical artifact targets. Setup, recovery, transition, and legacy
@@ -829,12 +841,17 @@ objects remain unchanged. No migration-21 object is recognized or created.
 Owned-marker recognition uses SQLite `NOCASE` identifier equality across
 catalog object types and scopes ordinary or generated columns to their
 designated parent table.
-The same public boundaries apply a lightweight complete-v20 row-admission check:
-all Runner tables and Runner Reference/link sets remain empty, Task Runner basis
-is zero, and cycle/Bundle Runner observation pointers remain null, while native
-Bundle-v2 `caller_attestation` or `not_required` basis is admitted. The check is
-repeated in each independent read, writer, backup, and recovery snapshot rather
-than cached across them.
+R3B's public boundaries initially applied a lightweight complete-v20
+row-admission check requiring every Runner table and Runner Reference/link set
+to be empty. TG-M24.2C replaces only that empty-row rule with one shared full
+audit-graph validator. It admits the empty predecessor state, a single pending
+intent, a cleanup-only restart terminal, or the exact complete terminal graph
+defined by the specification; it rejects every malformed, duplicate,
+foreign-owned, partially linked, or gate-eligible variant. Task Runner basis
+remains zero and cycle/Bundle Runner observation pointers remain null, while
+native Bundle-v2 `caller_attestation` or `not_required` basis is admitted. The
+validator is repeated in each independent operational read, writer, Viewer,
+backup, and recovery snapshot rather than cached across them.
 
 At schema v20 the native completion transaction derives
 `verification_basis_kind` as `caller_attestation` when a qualifying
@@ -1521,7 +1538,15 @@ changes advance the snapshot. Migration creates one exact current-basis
 reused only by same-Task kind/digest and never parsed or rewritten.
 
 Every schema-v18-or-later native manifest, Receipt, Finding, and completion source is inserted with one Evidence Reference in the source transaction. One closed dispatch derives assurance/producer/version and exact source projection; the caller supplies none. Completion References use deferred same-cycle ownership; validators recompute ownership, binding, null matrices, dispatch, and digest.
-Schema v19 adds immutable criterion links, Bundle membership/Finding snapshots, completion Bundles, cycle evidence-basis linkage, and Evidence projection state. Schema v20 retains those owners and makes `evidence_projection.py` assemble the Bundle-v2 null-Runner payload for each new native completion while preserving version-1 Bundle bytes and digests. The storage repository inserts links, snapshots, Bundle, and cycle atomically; migrated cycles stay version 0/null and receive only `legacy_unknown` index entries. Canonical Analyzer and Runner writers remain inactive.
+Schema v19 adds immutable criterion links, Bundle membership/Finding snapshots,
+completion Bundles, cycle evidence-basis linkage, and Evidence projection state.
+Schema v20 retains those owners and makes `evidence_projection.py` assemble the
+Bundle-v2 null-Runner payload for each new native completion while preserving
+version-1 Bundle bytes and digests. The storage repository inserts links,
+snapshots, Bundle, and cycle atomically; migrated cycles stay version 0/null and
+receive only `legacy_unknown` index entries. The canonical Analyzer writer
+remains inactive. TG-M24.2C activates only the standalone schema-v20 Runner
+audit writer described below; it never writes a Bundle member or gate basis.
 `evidence_projection.py` captures one query-only generation, closes SQLite, writes/validates Bundle files, replaces the index last, conditionally records publication, and follows up at most once. It imports nothing; SQLite remains canonical and failure preserves the committed mutation and last-good index.
 
 ### Review Packet
@@ -2338,7 +2363,14 @@ Business services retain internal `MutationOutcome(changed, viewer_relevant)`. A
 2. Viewer refresh when relevant; then
 3. one backup attempt when due.
 
-They are independent same-process bounded work, never a thread, daemon, timer, queue, scheduler, service, sleep, or retry loop. Each uses its own zero-wait one-byte OS lock; lock-file existence is not ownership. Read, error, replay, no-op, configuration-only setup, doctor, Effort, and maintenance metadata writes do not invoke it.
+They are independent same-process bounded work, never a thread, daemon, timer,
+queue, scheduler, service, sleep, or retry loop. Each uses its own zero-wait
+one-byte OS lock; lock-file existence is not ownership. Read, error, replay,
+no-op, configuration-only setup, doctor, Effort, and maintenance metadata
+writes do not invoke it. TG-M24.2C success and fallback retain the one original
+target-set coordinator pass; a post-T1 Runner error does not invoke maintenance
+and leaves the already-advanced due state for a later normal opportunity or
+setup repair. Runner-internal writes never invoke a second pass.
 
 Backup is due when no success exists, the last outcome is deferred/failed, or
 the configured interval elapsed. Failed attempts do not advance success.
@@ -2401,8 +2433,9 @@ Source schemas v5-v14 synthesize empty/incomplete completion history;
 v15-v20 use stored cycles, reading completion histories in batches of at most
 500 Task IDs. Sources v17-v20 validate version-1 cycle Receipt links; v19-v20
 also validate and discard Bundle linkage, and v20 validates the closed
-verification basis and null Runner pointer. Every snapshot reports its
-actual source schema and selects all
+verification basis, null Bundle/cycle Runner pointer, and standalone
+TG-M24.2C audit graph before discarding every Runner field. Every snapshot
+reports its actual source schema and selects all
 project Tasks; 500 Tasks is the accepted performance fixture rather than a
 selection cap. The rendered artifact is capped at 64 MiB.
 
@@ -3241,6 +3274,138 @@ only their already-routed later storage, Evidence, target/plan, adapter/
 lifecycle, and parent-integration work. R2C repairs or activates none of them
 and changes no R2A inventory or R2B action selector.
 
+## TG-M24.2C Parent Service And Audit Graph
+
+`cli.py` keeps the existing `review target set` parser and formatters and calls
+only `verification_runner_service.py` for that dispatch. The service consumes
+one internal prepared-capture seam from `reviews.py`; the ordinary review
+service delegates to the same seam, so target normalization, Git observation,
+manifest construction, authority capture, event bytes, output, and maintenance
+classification have one owner.
+
+The service performs target/plan/package/runtime and every deterministic
+Runner-only preflight before a writer. A fallback or definite closed
+pre-attempt Runner-only failure invokes one target-only T1 transaction. An
+eligible Runner next validates the fixed lifecycle inventory and acquires the
+zero-wait Runner lock before any T1 writer. Lock contention returns
+`runner_busy`; lifecycle or inventory uncertainty returns
+`runner_state_invalid`; both leave the target and Runner tables unchanged.
+Under that retained lock, the service reconciles any pending intent before it
+may invoke one short T1 transaction that revalidates the prepared Task,
+Contract, criteria, target generation, manifest, plan, implementation, and
+policy identities and atomically inserts:
+
+```text
+ordinary exact review target + artifact manifest/Reference + event
+one verification_runner_resolution
+one verification_runner_attempt intent
+```
+
+There is no eligible target-without-intent commit window. Conversely, no
+Runner row is inserted for the fallback T1. A T1 failure rolls back every
+member. The service retains the same Runner lock from pending reconciliation
+through T1, materialization, process/lifecycle work, and terminal T2, but
+closes each SQLite transaction before creating attempt directories,
+materializing Git objects, leasing the executable, or calling the process
+adapter. No SQLite writer spans filesystem or process work.
+
+`storage.py` owns repository operations for exact same-generation graph reads,
+the atomic T1 insert, cleanup-only append, and atomic terminal append. The
+repository enforces at most one resolution, attempt, cleanup event, and
+observation per project/Task/target generation despite the deliberately more
+permissive R3A physical indexes. Exact idempotency-digest replay returns the
+existing row set; a different digest, extra row, ownership mismatch, or second
+pending owner fails closed. `BEGIN IMMEDIATE` makes each same-generation
+repository transaction atomic, while the retained Runner OS lock serializes
+the complete reconciliation/T1/process/T2 route. A caller that cannot take
+that lock performs no T1 and cannot launch a process.
+
+The parent supplies one fresh 16-lowercase-hex token to each pure
+`generate_runner_id` call. A resolution uses the accepted 2A seal and the
+manifest-bound `RunnerImplementationIdentity`. Its
+`runner_policy_digest` is the fixed
+`verification Runner orchestration policy v1` label
+`sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8`.
+The label is not recomputed from the manifest, target, plan, or runtime and
+adds no sandbox or security claim; `runner_implementation_digest` separately
+binds the strict current release-manifest identity. The accepted 2B layer has
+no durable canonical runtime digest, so `runtime_digest` is always null in the
+resolution and Runner source projection; the implementation digest and fixed
+policy label are the only durable execution identities in 2C.
+
+For an admitted attempt, the service alone owns this sequence under the one
+zero-wait Runner lock already acquired before T1:
+
+```text
+reconcile pending DB state and the fixed filesystem inventory
+commit atomic T1 and close its SQLite writer
+create the exact attempt target/scratch tree
+materialize the admitted target and build the closed process request
+hold the fixed-executable lease across the process call
+consume one accepted RunnerProcessResultV1
+prove process_zero + handles_closed + raw_output_discarded
+prove exact attempt/quarantine absence through lifecycle cleanup
+append one terminal graph, or fail closed without an observation
+```
+
+The terminal mapper copies `outcome`, `reason`, `launch_state`, ordered step
+summary, duration, and optional accounting from the accepted 2B result without
+adding a code. `launch_state=launched` maps to `route=runner`; `no_launch` maps
+to `route=m21_fallback`. `complete_plan` is one only for a launched pass with
+null reason, the complete planned ordinal set, every step passing, and no
+failed ordinal. A definite post-intent runtime admission failure maps to
+`blocked_prelaunch/runtime_unavailable/no_launch`; a definite tree,
+materialization, or request-setup failure maps to
+`blocked_prelaunch/process_setup_failed/no_launch` only after tree absence is
+proved. `cleanup_failed` and any incomplete process/privacy/lifecycle proof
+are not persistable observations.
+
+One terminal repository transaction inserts exactly the observation, its
+`attempt_cleanup_succeeded` event pointing to that observation, one
+`runner_observation` Evidence Reference, and one verification-criterion link.
+`evidence_ledger.py` admits this source only from the internal Runner dispatch,
+derives `machine_observed/verification_runner/1`, recomputes the existing
+sanitized source projection and digest, and rejects a caller-selected
+assurance, producer, source, or criterion. No Runner Reference is a Bundle
+member, completion-cycle basis, Verification Receipt, or Evidence JSON source.
+
+Restart reads immutable DB state before filesystem mutation. An attempt intent
+without an observation is never relaunched. The service asks lifecycle to
+remove only its exact known tree and, when absence is proved but the prior
+process result is unknowable, appends only one cleanup event with null
+`terminal_observation_id`. The cleanup-performing call then returns
+`runner_state_invalid`, performs no new T1 or maintenance, and does not launch.
+Storage classifies that old generation as complete `restart_cleaned`, not
+pending. A later independent target-set call may create a new generation only
+after the validator admits that exact cleanup-only predecessor, the pending
+query returns zero attempts with neither observation nor cleanup event, and
+the fixed inventory is empty. Target, authority, or installed-implementation
+drift after intent takes the same cleanup-only route and then errors. A foreign
+tree, simultaneous attempt/quarantine entries, more than one actual pending
+attempt, unknown DB owner, root identity drift, or uncertain cleanup leaves
+the attempt pending and fails closed.
+
+Post-intent pending, basis drift, incomplete process proof, and cleanup or
+terminal-state uncertainty use the existing sanitized `runner_state_invalid`
+service failure; zero-wait lock contention uses `runner_busy`; a storage error
+retains its existing code. No new public error code or envelope member is
+added. The committed T1 target and intent survive a later service error.
+Success and fallback perform exactly the existing one target-set post-commit
+maintenance opportunity; a post-T1 error performs none and relies on the
+already-advanced due state. Internal Runner writes add no maintenance call and
+advance neither Evidence nor Viewer generation.
+
+The shared schema-v20 validator admits only the four states in the
+specification cardinality table. Every observation has exactly one matching
+Reference/link and cleanup event; a cleanup-only event has a null terminal
+observation; every pending intent has neither; all other combinations fail.
+Bundle/cycle Runner pointers remain null and Task Runner basis remains zero.
+Viewer validates and discards the graph. Managed backup copies the SQLite rows
+but not the private Runner tree; recovery therefore treats a restored pending
+intent as an unknown-result cleanup-only case after proving physical absence.
+No schema object, migration, public projection, Bundle format, Skill text, or
+M21 gate changes in 2C.
+
 ## Validation And Test Design
 
 The suite is standard-library-first, offline, and isolated. It must not mutate
@@ -3272,7 +3437,8 @@ a real consuming project or Git state. Tests cover:
 - backup publication/reconciliation/retention/recovery and every crash
   boundary;
 - Viewer v4 sources 5-20, completion-history bounds, version-1 Receipt-link,
-  v19-v20 Bundle-discriminator validation, and v20 null-Runner validation, 500-ID history batching,
+  v19-v20 Bundle-discriminator validation, and v20 null-Runner plus standalone
+  audit-graph validation, 500-ID history batching,
   the accepted 500-Task performance fixture, 64-MiB artifact cap,
   generation/last-good behavior, strict config, timer/visibility, one-shot
   History state, CSP, text-only DOM, and absence of storage/network APIs;

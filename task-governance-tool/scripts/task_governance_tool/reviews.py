@@ -26,6 +26,7 @@ from task_governance_tool.evidence_ledger import (
     EvidenceSource,
     TargetCaptureBinding,
     build_evidence_reference,
+    verification_expectation_digest,
 )
 from task_governance_tool.git_snapshot import GitSnapshotError
 from task_governance_tool.review_provenance import (
@@ -109,6 +110,18 @@ class ReviewTargetResult:
     task: dict[str, Any]
     changed_fields: list[str]
     event: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ReviewTargetAuthorityBasis:
+    """Validated pre-I/O authority used by the target-set parent service."""
+
+    task: dict[str, Any]
+    authority_snapshot_id: str
+    acceptance_criterion_id: str | None
+    verification_criterion_id: str | None
+    verification_expectation_digest: str
+    verification_criterion_digest: str | None
 
 
 @dataclass(frozen=True)
@@ -219,25 +232,168 @@ def normalize_review_target(
         REVISION_REVIEW_TARGET_KINDS,
         "invalid_review_evidence",
     )
-    target_value = validate_text(
-        "review_target_value",
-        revision,
-        required=target_kind != "git_commit",
-        limit=500,
-    )
+    target_value = validate_revision_review_target_input(target_kind, revision)
     if target_kind == "git_commit":
         ensure_git_preflight_outside_transaction(connection)
         try:
             target_value = resolve_git_commit(project.canonical_repo, target_value)
         except CompletionEvidenceError as exc:
             raise review_error(exc.code, exc.message, "review_target_value") from exc
-    elif target_kind == "diff_fingerprint" and not DIFF_FINGERPRINT.fullmatch(target_value):
+    return target_kind, target_value
+
+
+def validate_revision_review_target_input(kind: Any, revision: Any) -> str:
+    """Validate a non-snapshot request before any Runner state is touched."""
+
+    target_kind = validate_choice(
+        "review_target_kind",
+        kind,
+        REVISION_REVIEW_TARGET_KINDS,
+        "invalid_review_evidence",
+    )
+    if revision is None:
+        raise review_error(
+            "invalid_review_evidence",
+            "--revision is required unless review target kind is git_snapshot",
+            "review_target_value",
+        )
+    target_value = validate_text(
+        "review_target_value",
+        revision,
+        required=target_kind != "git_commit",
+        limit=500,
+    )
+    if target_kind == "diff_fingerprint" and not DIFF_FINGERPRINT.fullmatch(
+        target_value
+    ):
         raise review_error(
             "invalid_review_evidence",
             "diff_fingerprint must use sha256 followed by 64 lowercase hexadecimal characters",
             "review_target_value",
         )
+    return target_value
+
+
+def normalize_revision_review_target(
+    project: ProjectIdentity,
+    kind: Any,
+    revision: Any,
+) -> tuple[str, str]:
+    """Resolve one non-snapshot target outside a SQLite transaction."""
+
+    target_kind = validate_choice(
+        "review_target_kind",
+        kind,
+        REVISION_REVIEW_TARGET_KINDS,
+        "invalid_review_evidence",
+    )
+    target_value = validate_revision_review_target_input(target_kind, revision)
+    if target_kind == "git_commit":
+        try:
+            target_value = resolve_git_commit(project.canonical_repo, target_value)
+        except CompletionEvidenceError as exc:
+            raise review_error(exc.code, exc.message, "review_target_value") from exc
     return target_kind, target_value
+
+
+def read_review_target_authority_basis(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    task_id: Any,
+) -> ReviewTargetAuthorityBasis:
+    """Read the exact current Task/Contract/criterion basis without mutation."""
+
+    normalized_task_id = validate_task_id(task_id)
+    task = read_internal_task(connection, project.project_id, normalized_task_id)
+    if task is None:
+        raise TaskRepositoryError("not_found", "task was not found")
+    reject_done_task_write(task)
+    snapshot_id = task.get("current_authority_snapshot_id")
+    if not isinstance(snapshot_id, str) or not snapshot_id:
+        raise StorageError(
+            "evidence_ledger_inconsistent",
+            "stored evidence ledger is inconsistent",
+        )
+    rows = connection.execute(
+        """
+        SELECT link.criterion_kind, link.criterion_id, criterion.digest
+          FROM authority_snapshot_criteria AS link
+          JOIN contract_criteria AS criterion
+            ON criterion.project_id = link.project_id
+           AND criterion.task_id = link.task_id
+           AND criterion.criterion_id = link.criterion_id
+         WHERE link.project_id = ?
+           AND link.task_id = ?
+           AND link.authority_snapshot_id = ?
+         ORDER BY link.criterion_kind
+        """,
+        (project.project_id, normalized_task_id, snapshot_id),
+    ).fetchall()
+    criteria: dict[str, tuple[str, str]] = {}
+    for row in rows:
+        criterion_kind = row["criterion_kind"]
+        criterion_id = row["criterion_id"]
+        digest = row["digest"]
+        if (
+            criterion_kind not in {"acceptance", "verification"}
+            or criterion_kind in criteria
+            or not isinstance(criterion_id, str)
+            or not isinstance(digest, str)
+        ):
+            raise StorageError(
+                "evidence_ledger_inconsistent",
+                "stored evidence ledger is inconsistent",
+            )
+        criteria[str(criterion_kind)] = (criterion_id, digest)
+    acceptance = criteria.get("acceptance")
+    verification = criteria.get("verification")
+    exact_verification = str(task["verification"])
+    if bool(exact_verification.strip()) != (verification is not None):
+        raise StorageError(
+            "evidence_ledger_inconsistent",
+            "stored evidence ledger is inconsistent",
+        )
+    return ReviewTargetAuthorityBasis(
+        task=task,
+        authority_snapshot_id=snapshot_id,
+        acceptance_criterion_id=None if acceptance is None else acceptance[0],
+        verification_criterion_id=None if verification is None else verification[0],
+        verification_expectation_digest=verification_expectation_digest(
+            exact_verification
+        ),
+        verification_criterion_digest=(
+            None if verification is None else verification[1]
+        ),
+    )
+
+
+def persist_prepared_review_target_capture(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    observed_task: dict[str, Any],
+    *,
+    observation: ArtifactObservation,
+    database_target: DatabaseTarget | None = None,
+    now: str | None = None,
+) -> ReviewTargetResult:
+    """Persist a caller-observed target after one locked freshness reread."""
+
+    task_id = validate_task_id(observed_task.get("task_id"))
+    task = lock_and_reread_target_owner(
+        connection,
+        project,
+        task_id,
+        database_target=database_target,
+    )
+    reject_concurrent_review_basis_change(observed_task, task)
+    return _persist_review_target_capture(
+        connection,
+        project,
+        task,
+        observation=observation,
+        generation=next_review_target_generation(task),
+        now=now or utc_now(),
+    )
 
 
 def _persist_review_target_capture(
@@ -587,12 +743,6 @@ def set_requested_review_target(
             project,
             normalized_task_id,
             database_target=database_target,
-        )
-    if revision is None:
-        raise review_error(
-            "invalid_review_evidence",
-            "--revision is required unless review target kind is git_snapshot",
-            "review_target_value",
         )
     return set_review_target(
         connection,

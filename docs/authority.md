@@ -49,7 +49,8 @@ the sole current unit, and TG-M24.2D through TG-M24.CP4 remain inactive in the
 exact sequential order owned by the routed contract. The
 separate TG-M24.R2 bootstrap checkpoint supported accepted R1 but activates no
 product behavior.
-No TG-M23 execution unit is current, and no TG-M24 Runner runtime is active;
+No TG-M23 execution unit is current, and no TG-M24 Runner completion-gate
+authority is active;
 network/live Analyzer acceptance remains outside the accepted scope. The
 derived-evidence contract is the sole unit owner/router; its process-safety
 route delegates one non-overlapping physical-safety seam and owns no unit state

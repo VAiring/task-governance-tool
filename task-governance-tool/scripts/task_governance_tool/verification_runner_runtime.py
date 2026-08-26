@@ -10,7 +10,7 @@ import threading
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from task_governance_tool import __version__
 from task_governance_tool.evidence_ledger import domain_digest
@@ -65,26 +65,65 @@ class _RuntimeFileIdentity:
     last_write_low: int
 
 
+RuntimeHandleCleanupState = Literal["closed", "open", "uncertain"]
+_RuntimeHandleSlotName = Literal["primary", "probe"]
+_RuntimeHandlePhase = Literal[
+    "empty",
+    "acquiring",
+    "open",
+    "closing",
+    "closed",
+    "uncertain",
+]
+_RuntimeLeasePhase = Literal["new", "entering", "active", "exiting", "released"]
+
+
+@dataclass
+class _OwnedRuntimeHandle:
+    handle: int = 0
+    close_attempts: int = 0
+    phase: _RuntimeHandlePhase = "empty"
+
+
+def _merge_handle_cleanup_state(
+    left: RuntimeHandleCleanupState,
+    right: RuntimeHandleCleanupState,
+) -> RuntimeHandleCleanupState:
+    if "uncertain" in {left, right}:
+        return "uncertain"
+    return "open" if "open" in {left, right} else "closed"
+
+
 @dataclass(frozen=True)
 class VerificationRunnerRuntimeError(Exception):
     code: str
     message: str
+    handle_cleanup_state: RuntimeHandleCleanupState = "uncertain"
 
     def __str__(self) -> str:
         return self.message
+
+    @property
+    def handles_closed(self) -> bool:
+        return self.handle_cleanup_state == "closed"
 
 
 def _policy_mismatch() -> VerificationRunnerRuntimeError:
     return VerificationRunnerRuntimeError(
         "policy_mismatch",
         "the installed Runner implementation does not match its release manifest",
+        "closed",
     )
 
 
-def _runtime_unavailable() -> VerificationRunnerRuntimeError:
+def _runtime_unavailable(
+    *,
+    handle_cleanup_state: RuntimeHandleCleanupState = "closed",
+) -> VerificationRunnerRuntimeError:
     return VerificationRunnerRuntimeError(
         "runtime_unavailable",
         "the fixed package runtime could not be verified",
+        handle_cleanup_state,
     )
 
 
@@ -107,90 +146,212 @@ class RunnerImplementationIdentity:
 
 
 class RunnerFixedExecutableLease:
-    """A non-inheritable executable handle held across bounded process use."""
+    """A resource-free owner bound by the service before native acquisition."""
 
     __slots__ = (
+        "_materialized_root",
+        "_scratch_root",
         "_executable",
-        "_handle",
-        "_identity",
+        "_primary",
+        "_probe",
         "_state",
         "_lock",
-        "_context_active",
     )
 
     def __init__(
         self,
-        executable: Path,
-        handle: int,
-        identity: _RuntimeFileIdentity,
+        materialized_root: str | os.PathLike[str],
+        scratch_root: str | os.PathLike[str],
     ) -> None:
-        self._executable = Path(executable)
-        self._handle = int(handle)
-        self._identity = identity
-        self._state = "open"
+        self._materialized_root = materialized_root
+        self._scratch_root = scratch_root
+        self._executable: Path | None = None
+        self._primary = _OwnedRuntimeHandle()
+        self._probe = _OwnedRuntimeHandle()
+        self._state: _RuntimeLeasePhase = "new"
         self._lock = threading.Lock()
-        self._context_active = False
 
     def __repr__(self) -> str:
         return "RunnerFixedExecutableLease(closed=%r)" % self.closed
 
+    def _slot_locked(self, name: _RuntimeHandleSlotName) -> _OwnedRuntimeHandle:
+        if name == "primary":
+            return self._primary
+        if name == "probe":
+            return self._probe
+        raise _runtime_unavailable(handle_cleanup_state="uncertain")
+
+    def _acquire_identity_locked(
+        self,
+        name: _RuntimeHandleSlotName,
+        path: Path,
+    ) -> _RuntimeFileIdentity:
+        slot = self._slot_locked(name)
+        allowed = {"empty"} if name == "primary" else {"empty", "closed"}
+        if slot.phase not in allowed or slot.handle:
+            raise _runtime_unavailable(handle_cleanup_state="uncertain")
+        create_file = _kernel32().CreateFileW
+        native_path = str(path)
+        raw: object = 0
+        try:
+            slot.handle, slot.close_attempts, slot.phase = 0, 0, "acquiring"
+            raw = create_file(
+                native_path,
+                _GENERIC_READ,
+                _FILE_SHARE_READ,
+                None,
+                _OPEN_EXISTING,
+                _FILE_ATTRIBUTE_NORMAL | _FILE_FLAG_OPEN_REPARSE_POINT,
+                None,
+            )
+            handle = _runtime_handle_value(raw)
+            if not handle:
+                slot.handle, slot.close_attempts, slot.phase = 0, 0, "closed"
+                raise _runtime_unavailable()
+            slot.handle, slot.close_attempts, slot.phase = handle, 0, "open"
+            flags = ctypes.c_uint32()
+            if not _kernel32().GetHandleInformation(
+                ctypes.c_void_p(handle),
+                ctypes.byref(flags),
+            ) or flags.value & _HANDLE_FLAG_INHERIT:
+                raise _runtime_unavailable()
+            return _query_identity(handle)
+        except BaseException:
+            if slot.phase == "acquiring":
+                try:
+                    cleanup_handle = _runtime_handle_value(raw)
+                except BaseException:
+                    slot.handle, slot.close_attempts, slot.phase = 0, 0, "uncertain"
+                    raise
+                if cleanup_handle:
+                    slot.handle, slot.close_attempts, slot.phase = (
+                        cleanup_handle,
+                        0,
+                        "open",
+                    )
+                else:
+                    slot.handle, slot.close_attempts, slot.phase = 0, 0, "uncertain"
+            raise
+
+    def _release_slot_locked(
+        self,
+        slot: _OwnedRuntimeHandle,
+    ) -> RuntimeHandleCleanupState:
+        if slot.phase in {"empty", "closed"} and not slot.handle:
+            return "closed"
+        if slot.phase == "acquiring" and slot.handle:
+            slot.phase = "open"
+        if slot.phase in {"acquiring", "closing", "uncertain"}:
+            slot.handle, slot.phase = 0, "uncertain"
+            return "uncertain"
+        if slot.phase != "open" or not slot.handle:
+            slot.handle, slot.phase = 0, "uncertain"
+            return "uncertain"
+        if slot.close_attempts >= 2:
+            return "open"
+        slot.close_attempts += 1
+        slot.phase = "closing"
+        cleanup_state = _close_runtime_handle_once(slot.handle)
+        if cleanup_state == "closed":
+            slot.handle, slot.phase = 0, "closed"
+            return "closed"
+        if cleanup_state == "uncertain":
+            slot.handle, slot.phase = 0, "uncertain"
+            return "uncertain"
+        slot.phase = "open"
+        return "open"
+
+    def _release_probe_locked(self) -> RuntimeHandleCleanupState:
+        return self._release_slot_locked(self._probe)
+
+    def _aggregate_cleanup_state_locked(self) -> RuntimeHandleCleanupState:
+        aggregate: RuntimeHandleCleanupState = "closed"
+        for slot in (self._primary, self._probe):
+            if slot.phase in {"acquiring", "closing", "uncertain"}:
+                aggregate = _merge_handle_cleanup_state(aggregate, "uncertain")
+            elif slot.phase == "open" and slot.handle:
+                aggregate = _merge_handle_cleanup_state(aggregate, "open")
+            elif slot.phase not in {"empty", "closed"} or slot.handle:
+                aggregate = _merge_handle_cleanup_state(aggregate, "uncertain")
+        return aggregate
+
     @property
     def executable(self) -> Path:
         with self._lock:
-            if self._state != "open" or self._handle == 0:
-                raise _runtime_unavailable()
+            if (
+                self._state != "active"
+                or self._primary.phase != "open"
+                or not self._primary.handle
+                or self._executable is None
+            ):
+                raise _runtime_unavailable(handle_cleanup_state="uncertain")
             return self._executable
 
     @property
     def closed(self) -> bool:
         with self._lock:
-            return self._state == "closed"
-
-    def _close_locked(self) -> None:
-        if self._state == "closed":
-            return
-        if self._state != "open" or self._handle == 0:
-            raise _runtime_unavailable()
-        handle = self._handle
-        try:
-            if not _kernel32().CloseHandle(ctypes.c_void_p(handle)):
-                raise _runtime_unavailable()
-            self._handle = 0
-            self._state = "closed"
-        except VerificationRunnerRuntimeError:
-            raise
-        except BaseException as exc:
-            # The native call may already have closed and recycled the value.
-            # Mark it uncertain and never retry it.
-            self._handle = 0
-            self._state = "uncertain"
-            raise _runtime_unavailable() from exc
+            return bool(
+                self._state == "released"
+                and self._aggregate_cleanup_state_locked() == "closed"
+            )
 
     def close(self) -> None:
         with self._lock:
-            if self._state == "closed":
-                return
-            if self._context_active:
-                raise _runtime_unavailable()
-            self._close_locked()
-
-    def __enter__(self) -> "RunnerFixedExecutableLease":
-        with self._lock:
             if (
-                self._state != "open"
-                or self._handle == 0
-                or self._context_active
+                self._state == "released"
+                and self._aggregate_cleanup_state_locked() == "closed"
             ):
-                raise _runtime_unavailable()
-            self._context_active = True
-            return self
+                return
+            if self._state in {"active", "exiting"}:
+                raise _runtime_unavailable(
+                    handle_cleanup_state=self._aggregate_cleanup_state_locked()
+                )
+        cleanup_state = self.finalize_owner()
+        if cleanup_state != "closed":
+            raise _runtime_unavailable(handle_cleanup_state=cleanup_state)
+
+    def finalize_owner(self) -> RuntimeHandleCleanupState:
+        """Idempotently settle both fixed slots within their native retry budgets."""
+
+        with self._lock:
+            self._state = "released"
+            self._release_slot_locked(self._probe)
+            self._release_slot_locked(self._primary)
+            return self._aggregate_cleanup_state_locked()
+
+    def __enter__(self) -> Path:
+        acquisition_started = False
+        try:
+            with self._lock:
+                if self._state != "new":
+                    raise _runtime_unavailable(handle_cleanup_state="uncertain")
+                acquisition_started = True
+                self._state = "entering"
+                executable = _bind_fixed_package_runtime(self)
+                if self._primary.phase != "open" or not self._primary.handle:
+                    raise _runtime_unavailable(handle_cleanup_state="uncertain")
+                self._executable = executable
+                self._state = "active"
+            return executable
+        except BaseException as exc:
+            if not acquisition_started:
+                raise
+            cleanup_state = self.finalize_owner()
+            if cleanup_state != "closed":
+                raise _runtime_unavailable(
+                    handle_cleanup_state=cleanup_state
+                ) from exc
+            raise
 
     def __exit__(self, *_args: object) -> None:
         with self._lock:
-            if not self._context_active:
-                raise _runtime_unavailable()
-            self._context_active = False
-            self._close_locked()
+            if self._state != "active":
+                raise _runtime_unavailable(handle_cleanup_state="uncertain")
+            self._state = "exiting"
+        cleanup_state = self.finalize_owner()
+        body_failed = bool(_args and _args[0] is not None)
+        if cleanup_state != "closed" and not body_failed:
+            raise _runtime_unavailable(handle_cleanup_state=cleanup_state)
 
 
 def _kernel32() -> Any:
@@ -310,9 +471,9 @@ def _is_beneath(path: Path, root: Path) -> bool:
         raise _runtime_unavailable() from exc
 
 
-def _parent_process_executable() -> tuple[Path, int, _RuntimeFileIdentity]:
-    observed_handle = 0
-    declared_handle = 0
+def _bind_parent_process_executable(
+    owner: RunnerFixedExecutableLease,
+) -> tuple[Path, _RuntimeFileIdentity]:
     try:
         buffer = ctypes.create_unicode_buffer(_MAX_WINDOWS_PATH)
         count = int(
@@ -328,35 +489,20 @@ def _parent_process_executable() -> tuple[Path, int, _RuntimeFileIdentity]:
         declared = _bounded_absolute_path(sys.executable)
         _observe_physical_path(observed, directory=False)
         _observe_physical_path(declared, directory=False)
-        observed_handle, observed_identity = _open_runtime_handle(observed)
-        declared_handle, declared_identity = _open_runtime_handle(declared)
+        observed_identity = owner._acquire_identity_locked("primary", observed)
+        declared_identity = owner._acquire_identity_locked("probe", declared)
         _observe_physical_path(observed, directory=False)
         _observe_physical_path(declared, directory=False)
         if observed_identity != declared_identity:
             raise _runtime_unavailable()
-        declared_close = _close_runtime_handle_once(declared_handle)
-        if declared_close == "uncertain":
-            declared_handle = 0
+        declared_close = owner._release_probe_locked()
         if declared_close != "closed":
-            raise _runtime_unavailable()
-        declared_handle = 0
-        leased_handle = observed_handle
-        observed_handle = 0
-        return observed, leased_handle, observed_identity
+            raise _runtime_unavailable(handle_cleanup_state=declared_close)
+        return observed, observed_identity
     except VerificationRunnerRuntimeError:
         raise
     except (AttributeError, OSError, RuntimeError, UnicodeError) as exc:
         raise _runtime_unavailable() from exc
-    finally:
-        cleanup_failed = False
-        if declared_handle:
-            if _close_runtime_handle_once(declared_handle) != "closed":
-                cleanup_failed = True
-        if observed_handle:
-            if _close_runtime_handle_once(observed_handle) != "closed":
-                cleanup_failed = True
-        if cleanup_failed:
-            raise _runtime_unavailable()
 
 
 def _query_identity(handle: int) -> _RuntimeFileIdentity:
@@ -385,90 +531,45 @@ def _runtime_handle_value(value: object) -> int:
     return 0 if handle in {0, _INVALID_HANDLE_VALUE} else handle
 
 
-def _close_runtime_handle_once(handle: int) -> str:
+def _close_runtime_handle_once(handle: int) -> RuntimeHandleCleanupState:
     if not handle:
         return "closed"
     try:
-        return (
-            "closed"
-            if _kernel32().CloseHandle(ctypes.c_void_p(handle))
-            else "open"
-        )
+        close_handle = _kernel32().CloseHandle
+        native_handle = ctypes.c_void_p(handle)
+    except BaseException:
+        return "open"
+    try:
+        return "closed" if close_handle(native_handle) else "open"
     except BaseException:
         return "uncertain"
 
 
-def _open_runtime_handle(path: Path) -> tuple[int, _RuntimeFileIdentity]:
-    raw: object = 0
-    handle = 0
-    acquisition_uncertain = False
+def _corroborate_locked_path(
+    owner: RunnerFixedExecutableLease,
+    path: Path,
+    expected: _RuntimeFileIdentity,
+) -> bool:
     try:
-        try:
-            raw = _kernel32().CreateFileW(
-                str(path),
-                _GENERIC_READ,
-                _FILE_SHARE_READ,
-                None,
-                _OPEN_EXISTING,
-                _FILE_ATTRIBUTE_NORMAL | _FILE_FLAG_OPEN_REPARSE_POINT,
-                None,
-            )
-        except BaseException:
-            acquisition_uncertain = True
-            raise
-        handle = _runtime_handle_value(raw)
-        if not handle:
-            raise _runtime_unavailable()
-        flags = ctypes.c_uint32()
-        if not _kernel32().GetHandleInformation(
-            ctypes.c_void_p(handle),
-            ctypes.byref(flags),
-        ) or flags.value & _HANDLE_FLAG_INHERIT:
-            raise _runtime_unavailable()
-        identity = _query_identity(handle)
-        return handle, identity
-    except BaseException:
-        cleanup_handle = handle
-        if not cleanup_handle:
-            try:
-                cleanup_handle = _runtime_handle_value(raw)
-            except BaseException:
-                raise _runtime_unavailable()
-            if acquisition_uncertain and not cleanup_handle:
-                raise _runtime_unavailable()
-        if _close_runtime_handle_once(cleanup_handle) != "closed":
-            raise _runtime_unavailable()
+        observed = owner._acquire_identity_locked("probe", path)
+        close_state = owner._release_probe_locked()
+        if close_state != "closed":
+            raise _runtime_unavailable(handle_cleanup_state=close_state)
+        return observed == expected
+    except VerificationRunnerRuntimeError:
         raise
-
-
-def _same_locked_path(path: Path, expected: _RuntimeFileIdentity) -> bool:
-    second = 0
-    try:
-        second, observed = _open_runtime_handle(path)
-        close_state = _close_runtime_handle_once(second)
-        if close_state == "closed":
-            second = 0
-            return observed == expected
-        if close_state == "uncertain":
-            second = 0
+    except (AttributeError, OSError, RuntimeError):
         return False
-    except (VerificationRunnerRuntimeError, AttributeError, OSError, RuntimeError):
-        return False
-    finally:
-        if second:
-            _close_runtime_handle_once(second)
 
 
-def open_fixed_package_runtime(
-    materialized_root: str | os.PathLike[str],
-    scratch_root: str | os.PathLike[str],
-) -> RunnerFixedExecutableLease:
-    """Open and hold the one fixed parent runtime without PATH resolution."""
+def _bind_fixed_package_runtime(
+    owner: RunnerFixedExecutableLease,
+) -> Path:
+    """Bind the fixed runtime into a service-prebound owner."""
 
-    handle = 0
     try:
-        target = _bounded_absolute_path(os.fspath(materialized_root))
-        scratch = _bounded_absolute_path(os.fspath(scratch_root))
+        target = _bounded_absolute_path(os.fspath(owner._materialized_root))
+        scratch = _bounded_absolute_path(os.fspath(owner._scratch_root))
         if (
             target.name != "target"
             or scratch.name != "scratch"
@@ -478,25 +579,19 @@ def open_fixed_package_runtime(
             raise _runtime_unavailable()
         _observe_physical_path(target, directory=True)
         _observe_physical_path(scratch, directory=True)
-        executable, handle, identity = _parent_process_executable()
+        executable, identity = _bind_parent_process_executable(owner)
         if executable.name.casefold() != "python.exe":
             raise _runtime_unavailable()
         _observe_physical_path(executable, directory=False)
         if _is_beneath(executable, target) or _is_beneath(executable, scratch):
             raise _runtime_unavailable()
-        if not _same_locked_path(executable, identity):
+        if not _corroborate_locked_path(owner, executable, identity):
             raise _runtime_unavailable()
-        lease = RunnerFixedExecutableLease(executable, handle, identity)
-        handle = 0
-        return lease
+        return executable
     except VerificationRunnerRuntimeError:
         raise
     except (OSError, RuntimeError, TypeError, UnicodeError) as exc:
         raise _runtime_unavailable() from exc
-    finally:
-        if handle:
-            if _close_runtime_handle_once(handle) != "closed":
-                raise _runtime_unavailable()
 
 
 def capture_runner_implementation(
@@ -535,5 +630,4 @@ __all__ = [
     "RunnerFixedExecutableLease",
     "VerificationRunnerRuntimeError",
     "capture_runner_implementation",
-    "open_fixed_package_runtime",
 ]

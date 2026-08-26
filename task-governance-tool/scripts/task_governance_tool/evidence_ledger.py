@@ -88,6 +88,9 @@ _SOURCE_ID_PATTERNS = {
     "review_receipt": re.compile(r"tg_review_receipt_[0-9a-f]{16}\Z"),
     "review_finding": re.compile(r"tg_review_finding_[0-9a-f]{16}\Z"),
     "completion_evidence": re.compile(r"tg_completion_cycle_[0-9a-f]{16}\Z"),
+    "runner_observation": re.compile(
+        r"tg_verification_runner_observation_[0-9a-f]{16}\Z"
+    ),
 }
 
 EVIDENCE_LEDGER_ERROR_CODE = "evidence_ledger_inconsistent"
@@ -626,6 +629,36 @@ _COMPLETION_PROJECTION = frozenset(
         "completion_commit_hash",
     }
 )
+_RUNNER_OBSERVATION_PROJECTION = frozenset(
+    {
+        "observation_id",
+        "gate_eligibility_version",
+        "route",
+        "reason",
+        "outcome",
+        "launch_state",
+        "complete_plan",
+        "total_step_count",
+        "completed_step_count",
+        "failed_step_ordinal",
+        "started_at",
+        "finished_at",
+        "duration_ms",
+        "cpu_time_ms",
+        "peak_job_memory_bytes",
+        "total_process_count",
+        "plan_blob_object_id",
+        "plan_raw_digest",
+        "plan_id",
+        "plan_version",
+        "plan_semantic_digest",
+        "runner_implementation_version",
+        "runner_implementation_digest",
+        "runner_policy_digest",
+        "runtime_digest",
+        "sanitized_result_digest",
+    }
+)
 _COMPLETE_MANIFEST_PROJECTION = frozenset(
     {
         "artifact_manifest_id",
@@ -718,8 +751,13 @@ class EvidenceSource:
             and self.source_state in COMPLETION_EVIDENCE_KINDS
         ):
             expected = _COMPLETION_PROJECTION
+        elif (
+            self.source_kind == "runner_observation"
+            and self.source_state == "recorded"
+        ):
+            expected = _RUNNER_OBSERVATION_PROJECTION
         else:
-            # Reserved derived_analysis/runner_observation writers stay disabled.
+            # The derived-analysis writer remains reserved.
             raise _inconsistent()
         _identifier(self.source_id, _SOURCE_ID_PATTERNS[self.source_kind])
         if frozenset(projection) != expected:
@@ -785,6 +823,38 @@ class EvidenceSource:
                 or projection["completion_evidence_kind"] != self.source_state
             ):
                 raise _inconsistent()
+        elif self.source_kind == "runner_observation":
+            digest_fields = (
+                "plan_raw_digest",
+                "plan_semantic_digest",
+                "runner_implementation_digest",
+                "runner_policy_digest",
+                "sanitized_result_digest",
+            )
+            if (
+                projection["observation_id"] != self.source_id
+                or projection["gate_eligibility_version"] != 0
+                or projection["route"] not in {"runner", "m21_fallback"}
+                or projection["launch_state"] not in {"no_launch", "launched"}
+                or type(projection["complete_plan"]) is not int
+                or projection["complete_plan"] not in {0, 1}
+                or type(projection["total_step_count"]) is not int
+                or not 1 <= projection["total_step_count"] <= 16
+                or type(projection["completed_step_count"]) is not int
+                or not 0
+                <= projection["completed_step_count"]
+                <= projection["total_step_count"]
+                or projection["plan_blob_object_id"] is not None
+                or projection["runner_implementation_version"]
+                != "taskgov-verification-runner/1"
+                or projection["runtime_digest"] is not None
+                or any(
+                    type(projection[field]) is not str
+                    or _DIGEST.fullmatch(projection[field]) is None
+                    for field in digest_fields
+                )
+            ):
+                raise _inconsistent()
         object.__setattr__(self, "source_projection", projection)
 
 
@@ -820,6 +890,8 @@ def evidence_source_attribution(
             return ProducerAttribution("external_reference", "external_system")
         if source.source_state == "commit_not_required":
             return ProducerAttribution("bound_attestation", "trusted_caller")
+    elif source.source_kind == "runner_observation":
+        return ProducerAttribution("machine_observed", "verification_runner")
     raise _inconsistent()
 
 

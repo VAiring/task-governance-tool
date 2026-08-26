@@ -22,6 +22,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import cli as cli_service  # noqa: E402
+from task_governance_tool import verification_runner_service as runner_service  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
     DATABASE_BUSY_MESSAGE,
     connect_initialized,
@@ -355,6 +356,7 @@ class WriteContentionTests(unittest.TestCase):
                         command,
                         expected_command=expected_command,
                         empty_data=empty_data,
+                        connection_owner=runner_service,
                     )
 
             set_review_target(db, repo, task_id)
@@ -448,6 +450,7 @@ class WriteContentionTests(unittest.TestCase):
         *,
         expected_command,
         empty_data,
+        connection_owner=cli_service,
     ):
         before = database_rows(db)
         wrappers = []
@@ -458,7 +461,7 @@ class WriteContentionTests(unittest.TestCase):
             return wrapper
 
         with mock.patch.object(
-            cli_service,
+            connection_owner,
             "connect_initialized",
             side_effect=busy_connection,
         ) as connect_mock:

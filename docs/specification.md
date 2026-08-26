@@ -124,6 +124,7 @@ content. The fixed generated targets are:
 <physical-skill>/state/current/evidence/bundles/<completion-evidence-bundle-id>.json
 <physical-skill>/state/current/evidence/taskgov-evidence.lock
 <physical-skill>/state/current/viewer/task-viewer.html
+<physical-skill>/state/current/verification-runner/
 ```
 
 The package `state/` directory is the generated-state and Git-ignore boundary.
@@ -1277,7 +1278,9 @@ completion cycle, and closed assurance/producer/version. Git observation is
 `external_reference/external_system/1`. Callers cannot select or upgrade those
 classes. Migration synthesizes no historical Reference. Schema-v19 and
 schema-v20 criterion links, native Bundles, and Evidence JSON are active;
-canonical Analyzer and Runner writers remain inactive.
+the canonical Analyzer writer remains inactive. The schema-v20 Runner writer
+is active only for the TG-M24.2C audit graph defined below and remains
+ineligible for every verification and completion gate.
 
 ### Receipt Meaning And Record
 
@@ -1861,7 +1864,7 @@ Marker-only, partial-owned-object, same-version owned-object drift, a known
 later marker, busy/contention, integrity, or foreign-key failure is fail-closed
 and leaves no partial migration.
 
-TG-M24.R3B adds no schema object or migration. It owns the current public
+TG-M24.R3B added no schema object or migration. It owns the accepted public
 schema-v20 activation: the public schema constant and setup target, the
 Bundle-v2 null-Runner payload/serialization/digest writer, and schema-v20
 compatibility for the existing M22 Evidence/JSON contract, Viewer, and managed
@@ -1881,11 +1884,13 @@ Recognition follows SQLite's case-insensitive identifier equality: any catalog
 object occupying a v20-owned table, explicit-index, or trigger name is a
 collision, while a column marker is scoped to its designated parent table.
 Generated columns are column markers under the same rule.
-Complete-v20 admission
-also requires the four Runner tables and Runner Reference/link sets to be empty,
-every Task Runner-basis marker to be zero, and every cycle/Bundle Runner
-observation pointer to be null; native Bundle-v2 `caller_attestation` and
-`not_required` verification basis remains valid.
+R3B admission initially required the four Runner tables and Runner
+Reference/link sets to be empty. Current complete-v20 admission instead accepts
+either that empty predecessor state or the exact TG-M24.2C audit graph below.
+It rejects a malformed, duplicate, foreign-owned, partially linked, or
+gate-eligible Runner graph. Every Task Runner-basis marker remains zero and
+every cycle/Bundle Runner-observation pointer remains null; native Bundle-v2
+`caller_attestation` and `not_required` verification basis remains valid.
 This check occurs before any database or sidecar write, migration backup,
 recovery copy/publication, Viewer publication, or managed-backup write. A complete v19 source alone may invoke migration
 20; a complete v20 source receives validation-only reentry. Unrelated extra
@@ -1929,8 +1934,11 @@ Residual `SQLITE_BUSY`/`SQLITE_LOCKED` after the normal driver wait is exit 2
 `database_busy` with
 `task database is busy; run the command again later` for reads and writes. The
 tool adds no retryable flag, longer timeout, sleep, backoff, or generic retry;
-handoff record's one complete retry is the sole exception. Failed writes leave
-no row/event/receipt/Git/target change.
+handoff record's one complete retry is the sole exception. A failed write
+transaction leaves no row/event/receipt/Git/target change. A TG-M24.2C command
+may nevertheless return an error after its atomic T1 or proved cleanup-only
+append has already committed; those completed transactions are not rolled
+back. Every Runner transaction that itself fails still leaves no partial graph.
 
 ## Stable Project Identity And Relocation
 
@@ -2253,6 +2261,12 @@ generation. Viewer refresh runs second only for Viewer-relevant mutations, and
 due backup runs third. A changed handoff advances neither projection but may
 retry already-due Evidence before backup. Read-only, failed, replayed, no-op,
 setup configuration, and maintenance-internal operations trigger nothing.
+TG-M24.2C retains exactly the one existing target-set maintenance opportunity
+only for a successful or fallback command. A post-T1 Runner error invokes no
+maintenance; T1 has already advanced the ordinary due state, so the next
+normal maintenance opportunity or explicit setup repair catches up. Internal
+Runner intent, cleanup, observation, Reference, and link writes do not add
+another coordinator call or advance Evidence or Viewer generation.
 
 Taskgov starts no detached process, child process, thread, timer, watcher,
 service, queue, daemon, scheduler, or network operation. Each artifact uses a
@@ -2333,7 +2347,8 @@ v17-v20, the batch reader validates version-1 completion-cycle Verification
 Receipt links; v18+ additionally validates subject, provenance, manifest, and
 Reference relations, while v19-v20 validate and discard the Bundle
 discriminator. Source v20 additionally validates the Bundle-v2 verification
-basis and null Runner observation without exposing either field.
+basis, its null Runner observation, and any standalone TG-M24.2C audit graph,
+then discards every Runner field without exposing it.
 It discards every joined ledger field. The Viewer
 selects all project Tasks; 500 Tasks is the accepted performance fixture, not a
 selection cap. The HTML artifact is at most 64 MiB.
@@ -2733,15 +2748,143 @@ verification or review evidence. Only the existing closed outcome and bounded
 structural evidence may be retained. Cleanup or privacy uncertainty is a
 blocking failure.
 
+### TG-M24.2C Audit-Only Parent Orchestration
+
+TG-M24.2C consumes the existing `review target set` dispatch without adding a
+public command, argument, success-data field, text line, Skill trigger, or
+normal-loop call. The existing exact review-target transaction is called T1 in
+this boundary. A fallback T1 contains only that ordinary capture. An admitted
+Runner T1 atomically contains the same capture plus its resolution and attempt
+intent. Process work is a later parent-service phase. After preflight and
+before an admitted Runner T1, the parent acquires the zero-wait Runner lock and
+retains it through pending-intent reconciliation,
+T1, process/lifecycle work, and the terminal T2. Each SQLite transaction is
+short and closes before filesystem or process work; no SQLite writer is held
+while a target is materialized or a process runs.
+
+Before T1, the parent resolves every definite Runner-only condition that can be
+preflighted. An absent verification criterion, an
+unsupported or non-addressable target, `absent`, `disabled`, or `no_match`
+plan state, or another definite closed Runner-only failure before an attempt is
+admitted produces no Runner resolution, attempt, event, observation,
+Reference, or criterion link.
+The ordinary exact target is still captured and returned normally. This fallback
+does not weaken TG-M24.2A: malformed, ambiguous, stale, inconsistent, or
+over-bound plan/target material still blocks with no T1 write.
+
+Only an exact `runner` plan and target may add Runner state to T1. After
+preflight, the parent validates the fixed lifecycle inventory and acquires its
+one zero-wait Runner lock before any such writer. Lock contention fails with
+`runner_busy`; lifecycle or inventory uncertainty fails with
+`runner_state_invalid`; both return with no T1 write. Under the retained lock,
+pending reconciliation precedes the same short writer that revalidates the
+complete prepared basis and atomically records the ordinary target, one
+resolution, and one attempt intent. There is no concurrent or crash window
+containing a committed eligible target without its intent. Per Task target
+generation the admitted cardinality is:
+
+| Durable state | Resolution | Attempt | Cleanup event | Observation | Observation Reference/link |
+|---|---:|---:|---:|---:|---:|
+| no admitted attempt | 0 | 0 | 0 | 0 | 0 |
+| pending intent | 1 | 1 | 0 | 0 | 0 |
+| restart cleanup only | 1 | 1 | 1 | 0 | 0 |
+| accepted terminal audit graph | 1 | 1 | 1 | 1 | exactly 1/1 |
+
+Every column has a maximum of the shown value. An exact replay reuses the
+matching immutable graph without another row; a conflicting digest, second
+owner, duplicate, or cardinality overflow fails closed. Runner identifiers are
+allocated by the parent from one caller token per record and do not encode a
+path or result.
+
+After intent, a terminal observation is allowed only after all three accepted
+process proofs (`process_zero`, `handles_closed`, and
+`raw_output_discarded`) are true and lifecycle independently proves the exact
+attempt and quarantine entries absent. A returned TG-M24.2B result maps its
+`outcome`, nullable `reason`, `launch_state`, step summary, duration, and
+bounded accounting one-to-one. A launched result uses observation
+`route=runner`; a closed no-launch result uses `route=m21_fallback`.
+`complete_plan=1` only for a launched `pass` with null reason, every planned
+step completed in order, and no failed ordinal; every other admitted result is
+zero. No new outcome or reason code is introduced.
+
+A definite post-intent runtime admission failure is the closed
+`blocked_prelaunch/runtime_unavailable/no_launch` result. A definite private-
+tree, materialization, or request-construction failure is
+`blocked_prelaunch/process_setup_failed/no_launch`, but only after exact tree
+absence is proved. Both use `route=m21_fallback`. `cleanup_failed`, any false
+process/privacy proof, or lifecycle uncertainty is not terminal evidence and
+creates no observation.
+
+The terminal transaction inserts the observation, its one Evidence Reference,
+its one `runner_observation` link to the bound verification criterion, and the
+one cleanup event atomically. The Reference uses only the existing sanitized
+Runner observation source projection with
+`machine_observed/verification_runner/1`; it stores no raw process material.
+It is standalone audit history. It is never a Verification Receipt, completion
+cycle or Bundle member/basis, does not advance Evidence-projection generation,
+and is not published to Evidence JSON.
+
+Restart never relaunches a persisted attempt. Under the one Runner lock the
+service may clean only the exact database-named known tree. When absence is
+proved but the process result is unknown, it inserts only the cleanup event
+with a null terminal-observation link. That cleanup-performing call creates no
+new T1 and returns `runner_state_invalid` without maintenance because it cannot
+claim the old result. The cleanup-only event closes only its original target
+generation; it is not a permanent Runner block. A later independent target-set
+call may admit a new generation after the complete cleanup-only predecessor,
+zero actual pending attempts, and empty fixed inventory are proved. Here
+`pending` means an attempt with neither an observation nor a cleanup event. A
+foreign tree, more than one actual pending attempt, owner drift, or cleanup
+uncertainty fails closed and leaves the intent pending for inspection. Target,
+authority, or installed-implementation drift after intent similarly permits
+only proved cleanup and a cleanup-only event; it creates no observation and
+returns a tool-service error.
+
+The fixed private root is
+`<physical-package>/state/current/verification-runner`, with only the fixed
+one-byte lock, `attempts`, and `quarantine` children. It is resolved by the
+shared canonical state resolver and is created only for an admitted Runner
+route; feature code never reconstructs it. The schema-v20
+`runner_policy_digest` is the fixed
+`verification Runner orchestration policy v1` identity
+`sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8`.
+It is a structural policy label, not a security claim, and is not rederived
+from the separately manifest-bound Runner implementation digest. Because the
+accepted TG-M24.2B layer exposes no durable canonical runtime digest,
+`runtime_digest` is always null in the resolution and sanitized Runner source
+projection. The manifest-bound implementation digest and fixed policy label
+are the only durable execution-identity fields in this slice.
+
+If storage, lifecycle, or terminal atomicity becomes uncertain after T1, the
+already committed target and intent remain current and the command returns a
+sanitized tool-service error without claiming Runner success. A separately
+completed cleanup-only event also remains when exact absence was proved before
+the error. This is the sole narrow Runner exception to the ordinary no-write-
+on-command-failure rule: T1 is a completed existing target-set mutation with
+its atomic Runner intent, cleanup-only is completed lifecycle closure, and the
+failed phase is later. No automatic relaunch, fallback success, Receipt,
+review, or completion claim is synthesized.
+Successful and fallback target-set output remains byte-compatible with the
+existing public contract.
+
+Backup and recovery preserve the SQLite audit graph and validate its exact
+cardinality, ownership, digests, links, and gate-ineligible version. The
+private attempt tree is generated scratch state and is not copied into a
+managed database backup. Viewer snapshot v4 validates any graph and discards
+it; Viewer UI, public Task JSON, Bundle v2, completion history, M21 Receipt and
+completion semantics, schema/DDL, and Task Runner-basis markers remain
+unchanged.
+
 This boundary governs trusted code; it does not claim hostile-code containment,
 network isolation, LPAC/AppContainer confinement, or zero capability. Candidate
 C, Candidate B-to-C comparison, Package-SID ACL qualification, ETW diagnosis,
 claim-bound transfer/recovery, supervisor or trust-root layers, and diagnostic
 fault matrices are not M24 prerequisites or completion gates. Their repository
 and OS-temporary residues are owned by the dedicated inventory and physical-
-retirement units. No Runner command, schema, Skill trigger, completion gate, or
-automatic execution becomes supported until its own sequential TG-M24 unit is
-accepted and synchronized.
+retirement units. TG-M24.2C adds no Runner command, schema, Skill trigger, or
+completion gate. Its only dispatch is the exact trusted-local opt-in branch of
+the existing target-set operation; qualifying gate authority remains inactive
+until its later sequential unit is accepted and synchronized.
 
 The current product deliberately excludes pagination/search in CLI history,
 parent/child Tasks, acceptance checklists, verification-command execution,

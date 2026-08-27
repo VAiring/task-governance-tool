@@ -18,11 +18,12 @@ Accepted TG-M24.2B supplied the bounded local process adapter and deterministic
 cleanup without activating a public Runner or completion gate. Accepted
 TG-M24.2C supplied parent-service orchestration and audit-only schema-v20
 observation and Evidence capture; it cannot satisfy verification or completion.
-TG-M24.2D is the sole current unit and accepts only the already-implemented
-shadow slice from one fresh exact target; it activates no additional product
-behavior or Runner completion gate. TG-M24.3A schema-v21 contract freeze,
-TG-M24.3B persistence implementation, TG-M24.3C gate integration, and every
-later M24 acceptance unit remain inactive.
+Accepted TG-M24.2D covered only that already-implemented shadow slice from one
+fresh exact target and activated no additional product behavior or Runner
+completion gate. TG-M24.3A is the sole current unit and freezes the approved but
+inactive schema-v21 gate-basis contract below. TG-M24.3B persistence
+implementation, TG-M24.3C gate integration, and every later M24 acceptance unit
+remain inactive.
 Completed execution narrative is history, and the Task
 database owns live state and evidence.
 
@@ -1828,6 +1829,7 @@ Schema sequence is:
 | v18 | authority/criterion capture, Review provenance, target manifests, Evidence References, and Verification subjects |
 | v19 | native completion Bundles, criterion links/Finding snapshots, and Evidence JSON projection state |
 | v20 | verification Runner shadow storage and Bundle-v2 null-Runner tagged union |
+| v21 (approved, inactive) | verification Runner gate-basis tags using the existing schema-v20 structures |
 
 Each migration is transactional, idempotent, rollback-tested, validates
 contiguous history and required objects/rows, preserves project/business IDs
@@ -1905,14 +1907,207 @@ recovery copy/publication, Viewer publication, or managed-backup write. A comple
 20; a complete v20 source receives validation-only reentry. Unrelated extra
 objects retain the existing policy, including R3A's deliberate removal of
 unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
-preservation of unrelated standalone objects. No migration-21 object exists.
+preservation of unrelated standalone objects. No migration-21 object exists in
+the current product.
 
 Schema v20 is the intermediate M24.2 shadow foundation and never becomes a
-qualifying Runner gate basis. Inactive TG-M24.3A owns the separate Tier 2
-schema-v21 contract, TG-M24.3B owns its persistence implementation while the
-M21 Receipt remains the sole verification and completion gate, and
+qualifying Runner gate basis. Current TG-M24.3A owns the separate Tier 2
+schema-v21 contract below, TG-M24.3B owns its persistence implementation while
+the M21 Receipt remains the sole verification and completion gate, and
 TG-M24.3C alone owns qualifying Runner-basis activation with explicit M21
-fallback. This section chooses no schema-v21 migration marker, tag, or DDL.
+fallback.
+
+<a id="approved-but-inactive-schema-v21-gate-basis-contract"></a>
+
+### Approved-But-Inactive Schema-v21 Gate-Basis Contract
+
+This subsection is an approved implementation contract, not current product
+behavior. TG-M24.3A changes no product code, public schema constant, setup
+target, canonical database, package, public CLI or JSON shape, Viewer UI, Skill,
+Runner runtime, or completion gate. TG-M24.3B may implement the persistence and
+compatibility boundary exactly as frozen here; TG-M24.3C alone may activate its
+qualifying Runner branch.
+
+Migration 21 is exactly `verification_runner_gate_basis`. It adds no table,
+column, or index. It reuses `tasks.review_target_runner_basis_version`, the four
+schema-v20 Runner tables and their `gate_eligibility_version` columns, the
+existing completion-cycle and Bundle verification-basis columns, and the
+existing Runner Evidence Reference and criterion-link relation. The Task marker
+uses `0` for an ordinary/manual or shadow target and `2` for a target selected
+for the schema-v21 Runner branch. A schema-v21 Runner resolution, attempt, and
+observation graph uses one matching gate-eligibility version throughout: `0`
+remains audit-only and `1` is the sole potentially qualifying version. The
+physical discriminator widening, existing-table rebuilds, owned triggers, and
+complete owned-object inventory are specified by the design; the migration
+introduces no second storage model or parallel gate table.
+
+A complete-v20 source is exactly the currently admitted schema-v20 state: its
+owned schema and history are complete, every Task Runner marker is `0`, every
+Runner row is gate-eligibility version `0`, every cycle and Bundle Runner
+pointer is null, and any Runner rows form only an exact admitted TG-M24.2C
+audit graph. Native v20 Bundles use only `caller_attestation` or `not_required`.
+Any v21 marker, gate-eligibility version `1`, `runner_observation` completion
+basis, partial owned object, malformed or foreign graph, duplicate, or unknown
+later marker makes a declared v20 database a hybrid and blocks before any
+database, backup, recovery, Viewer, or sidecar write.
+
+The current schema-v20 extra-object policy remains the admission boundary.
+Therefore an unowned index or trigger attached to
+`completion_evidence_bundles` makes the v20 source incomplete and is rejected
+before migration 21; version 21 does not provide a second deletion path for
+that Bundle residue. An unowned index or trigger attached to one of the three
+schema-v20 Runner tables is admitted as an unrelated extra object, retires with
+that rebuilt table on successful migration, and returns on rollback without
+arbitrary DDL replay. Unowned objects attached to the unreconstructed sandbox-
+event table and unrelated standalone objects are preserved. Exact v21 reentry
+rejects an unowned attachment to any of its four rebuilt tables.
+
+The v20-to-v21 migration preserves every business row and stable ID and keeps
+every existing Runner and Bundle relation unchanged. It does not set a Task
+marker to `2`, change any gate-eligibility version from `0`, attach an existing
+observation to a cycle or Bundle, synthesize a Reference or link, or rewrite an
+existing Bundle payload, byte count, or digest. Schema-v20 Runner rows are
+permanently audit-only; neither migration, reentry, recovery, nor a later target
+may promote, copy, or reinterpret them as qualifying evidence. A fresh v21
+database uses the same owned schema with empty Runner state. Same-version
+reentry performs exact history, owned-schema, tagged-graph, integrity, and
+foreign-key validation only, with no reconciliation or backfill.
+
+Migration is one `BEGIN IMMEDIATE` transaction. Any rebuild, copy, history,
+owned-object, graph, integrity, foreign-key, contention, or validation failure
+rolls back to the complete logical v20 schema and rows with no migration-21
+marker or partial v21 state; SQLite file-byte identity is not promised. After a
+successful migration there is no in-place downgrade. Product rollback restores
+one matched v20 package, database backup, and managed artifacts before v20 code
+runs. Managed backup and recovery preserve and validate the complete source
+schema and tagged graph, never include the private Runner attempt tree, never
+upgrade an audit-only row, and apply migration only through explicit setup.
+Schema v21 reuses the complete schema-v20 stored-Task, Contract-pointer,
+privacy, and relationship rules, including the exact 1,000-code-point Task
+`verification` capacity. Recovery applies the same candidate-local rule to
+source schemas 18 through 21: only that field's privacy or capacity failure
+rejects the candidate locally. Wrong storage class, another Task field, a
+relationship fault, or a Runner/Bundle graph fault remains whole-set fatal.
+
+Every native schema-v21 completion writes
+`task_completion_cycles.verification_basis_version=1` and
+`task_completion_cycles.evidence_basis_version=1`, plus one Bundle with
+`source_schema_version=21` and `bundle_version=2`. The cycle and Bundle carry
+the same basis kind and nullable Receipt/Runner-observation IDs, and the Bundle
+JSON mirrors them with `verification_basis.basis_version=1`. Schema v21 admits
+exactly these completion-basis branches:
+
+| Branch | Current target and qualifying basis | Completion cycle and Bundle v2 |
+|---|---|---|
+| manual verification | Marker `0`, or marker `2` only after its exact-current gate-eligibility-version-`1` Runner result is a closed no-launch `m21_fallback`; the existing exact-current M21 Receipt is `pass/full` | `kind=caller_attestation`, the qualifying Receipt ID, and null Runner-observation ID |
+| verification not required | Trimmed-empty verification on a marker-`0` target | `kind=not_required`, and null Receipt and Runner-observation IDs |
+| Runner verification | Marker `2` and one exact-current gate-eligibility-version-`1` observation for the complete selected plan, launched with `route=runner`, `outcome=pass`, null reason, every step completed in order, and all cleanup/privacy proofs satisfied | `kind=runner_observation`, null Receipt ID, and the qualifying Runner-observation ID |
+
+The closed no-launch case is only the existing TG-M24.2C terminal shape:
+`route=m21_fallback`, `launch_state=no_launch`, `outcome=blocked_prelaunch`,
+reason `runtime_unavailable` or `process_setup_failed`, `complete_plan=0`, and
+proved process, handle, output-discard, lifecycle, and private-tree cleanup.
+Either marker-`2` terminal branch requires exactly one resolution, attempt,
+cleanup event, observation, Runner Evidence Reference, and
+`runner_observation` verification-criterion link at the exact current target,
+with their complete ownership, Contract, criterion, target, plan, material,
+implementation, policy, digest, and parent bindings equal.
+Marker `2` is only a closed branch discriminator; it never proves success by
+itself. A pending or inconsistent graph blocks. Once the selected exact-current
+Runner branch launched, every timeout, cancellation, nonzero, incomplete-plan,
+cleanup/privacy failure, or other non-pass blocks that target and cannot be
+overridden by an M21 Receipt. Only an admitted closed no-launch result whose
+route is `m21_fallback` may take the manual branch. Every other structurally
+valid terminal, whether launched or no-launch, blocks and cannot be overridden
+by a Receipt. Unsupported, untrusted, external, manual, or visual work never
+receives marker `2` and stays on the existing M21 route.
+
+TG-M24.3B recognizes the complete schema-v21 tagged union but writes no marker
+`2`, no gate-eligibility-version-`1` graph, and no Runner completion basis. The
+M21 Receipt remains its sole gate for every new completion. If a same-schema
+database contains a structurally valid active marker-`2` target, 3B fails that
+target closed and requires an explicitly fresh target generation before using
+its M21 behavior; it never silently downgrades, consumes, or rewrites the
+Runner basis. TG-M24.3C consumes a valid 3B schema-v21 database without another
+migration and may select marker `2` only while capturing a fresh exact target.
+It never retrofits an existing marker-`0` target or schema-v20 observation.
+
+Contract revision, verification criterion, review-target tuple or generation,
+artifact manifest, plan/selected-entry basis, target material, implementation
+identity, or qualifying observation drift makes the Runner basis non-current.
+The existing invalidation and reopen paths clear the current target's Runner
+marker with the target and require a fresh target generation; they do not
+delete or mutate an immutable Runner graph, completion cycle, Bundle, Reference,
+or link. Historical and recovered observations remain history and never
+reactivate by value equality.
+
+Schema-v21 completion retains Bundle format version 2 and digest domain
+`taskgov-completion-evidence-bundle-v2\0`. The two manual branches keep their
+current v2 payloads. The Runner branch uses the already reserved four-field
+`verification_basis` object with `basis_version=1`,
+`kind=runner_observation`, null `verification_receipt_id`, and the exact
+`runner_observation_id`; its existing `runner_observation` field contains only
+the already defined sanitized Runner observation source projection. Bundle v1
+and existing Bundle v2 bytes and digests remain immutable. Evidence Index
+format/domain v2 and `bundle_format_version=2` remain unchanged. Viewer snapshot
+v4 extends source validation through schema v21, validates the complete tagged
+relations, and discards Runner-only data without adding a field, panel, or UI
+behavior.
+
+The Runner Bundle allow-list is exactly the existing sanitized observation
+source projection used by its Evidence Reference. Raw output, argv, environment,
+credentials, exception or stack text, private paths, plan bytes, target bytes,
+and arbitrary provider data remain prohibited. No caller-supplied subject,
+result import, Analyzer output, older observation, or public override can
+satisfy this branch. Schema-v21 support adds no public command leaf, argument,
+success field, Evidence JSON member, Viewer UI, Skill trigger, or normal-loop
+call.
+
+The existing `task show.verification_evidence` object keeps its exact keys and
+types. `current_verification_subject`, all four counts, and `recent_receipts`
+remain Receipt-only projections; no Runner ID or count is exposed. For a
+nonempty schema-v21 verification expectation on a live, non-done Task, the
+existing gate fields and completion failures use this closed matrix after the
+existing missing-target and capture-version checks and before review-receipt
+sufficiency:
+
+| Current basis | Existing `gate` values | Receipt-add and completion behavior |
+|---|---|---|
+| marker `0` | unchanged M21 Receipt matrix | unchanged |
+| any live marker `2` read by 3B | `required=true`, `satisfied=false`, `blocking_code=evidence_basis_stale`, `qualifying_receipt_id=null` | Receipt-add and completion return existing `evidence_basis_stale` / `current evidence basis must be captured again` |
+| marker `2` read by 3C whose structurally valid graph is non-current because any named Contract, target, plan, implementation, policy, or related basis drifted | `required=true`, `satisfied=false`, `blocking_code=evidence_basis_stale`, `qualifying_receipt_id=null` | Receipt-add and completion return the same existing stale code/message before uniqueness or review sufficiency |
+| marker `2` with an exact-current 3C pending or cleanup-only graph | `required=true`, `satisfied=false`, `blocking_code=evidence_basis_stale`, `qualifying_receipt_id=null` | Receipt-add and completion return the same existing stale code/message |
+| marker `2` with any exact-current structurally valid terminal other than the exact closed no-launch fallback or exact qualifying Runner pass | `required=true`, `satisfied=false`, `blocking_code=verification_receipt_blocking`, `qualifying_receipt_id=null` | Receipt-add returns `evidence_basis_stale`; completion returns existing `verification_receipt_blocking` / `current verification evidence does not satisfy the required result and coverage` |
+| marker `2` with the exact-current closed no-launch fallback | the unchanged M21 no-Receipt, blocking-Receipt, or qualifying-Receipt values | Receipt-add is allowed and completion uses the unchanged M21 errors or qualifying Receipt ID |
+| marker `2` with the exact-current qualifying Runner pass | `required=true`, `satisfied=true`, `blocking_code=null`, `qualifying_receipt_id=null` | Receipt-add returns `evidence_basis_stale`; completion proceeds to the existing review gate |
+
+Because Runner branches cannot record a Receipt except after the exact closed
+no-launch fallback, a qualifying Runner pass legitimately has zero Receipt
+counts while `gate.satisfied=true`. Any exact-current Receipt on another
+marker-`2` branch is inconsistent stored state rather than alternate evidence.
+A valid done version-one cycle is resolved before the live matrix and replays
+its validated stored branch, including when a 3B-compatible reader inspects
+later 3C-created history. Caller attestation keeps the qualifying M21 Receipt
+projection, not-required keeps the existing empty-expectation projection, and
+`runner_observation` revalidates its exact stored graph/Bundle identity and
+projects `required=true`, `satisfied=true`, and both nullable gate fields null.
+Historical replay never compares that captured implementation identity with the
+currently installed package and authorizes no new 3B Runner completion. A
+cycle/Bundle mismatch fails before gate projection.
+
+This selector does not reorder existing argument, Task lookup/status,
+expectation, target-existence, expected-generation, or retained-capture checks.
+For Receipt-add it runs after those checks and before Receipt uniqueness; for
+completion it runs at the existing verification-gate position before review
+sufficiency. Active 3C evaluation checks basis freshness before outcome. Failure
+to establish the current installed implementation identity retains the existing
+`package_core_modified` or `package_status_unknown` package-inspection result;
+after a successful inspection, identity mismatch maps to
+`evidence_basis_stale` before outcome mapping.
+A malformed Runner/Task graph fails first through existing
+`project_state_unreadable`; an invalid cycle/Bundle history relation remains
+`completion_history_inconsistent`; and a malformed Receipt remains
+`invalid_verification_evidence`. No new public code or message is introduced.
 
 ### Operational Read/Write Boundary
 
@@ -2641,10 +2836,11 @@ This boundary is staged. Accepted 2A covers only physical plan capture, strict
 plan selection, exact target observation, and private materialization. Accepted
 2B covers only the bounded runtime/process adapter and deterministic cleanup.
 Accepted 2C owns parent-service orchestration plus audit-only schema-v20
-observation and Evidence capture. Current 2D owns only integrated acceptance of
-that shadow slice. Schema-v21 contract freeze (3A), persistence implementation
-with unchanged M21 gates (3B), Runner gate integration (3C), and release
-acceptance remain inactive behind their owning sequential units.
+observation and Evidence capture, and accepted 2D owns only integrated
+acceptance of that shadow slice. Current 3A freezes the approved-but-inactive
+schema-v21 contract. Persistence implementation with unchanged M21 gates (3B),
+Runner gate integration (3C), and release acceptance remain inactive behind
+their owning sequential units.
 
 The approved execution direction is an explicit-opt-in Runner for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified

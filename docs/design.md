@@ -25,9 +25,11 @@ plan authority, exact target binding, and safe bounded private materialization.
 Accepted TG-M24.2B supplied only the bounded local runtime, lifecycle, process,
 native-adapter, and deterministic-cleanup slice. Accepted TG-M24.2C supplied
 parent-service orchestration, durable audit-only observation/Evidence mapping,
-and sanitized projection. TG-M24.2D is the sole current TG-M24 authority and
-owns only integrated acceptance of that already-implemented shadow slice; CLI,
-Skill, and completion-gate activation remain later.
+and sanitized projection. Accepted TG-M24.2D owns the integrated acceptance of
+that already-implemented shadow slice. TG-M24.3A is the sole current TG-M24
+authority and freezes only the product-inactive schema-v21 persistence design
+below; product code, the public schema/setup target, canonical state, Skill,
+Runner runtime, and completion-gate behavior remain unchanged.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -880,6 +882,376 @@ The schema-v20 index uses `taskgov-evidence-index-v2\0`, envelope
 `bundle_format_version`. The new field is null for legacy entries, 1 for a
 preserved v1 Bundle, and 2 for a native v2 Bundle. The index remains ordered
 and index-last; its other limits and publication behavior are unchanged.
+
+<a id="tg-m24-3a-schema21-design"></a>
+
+## TG-M24.3A Schema-v21 Gate-Basis Design (Product-Inactive)
+
+This section is the complete implementation design consumed by TG-M24.3B and
+TG-M24.3C. TG-M24.3A changes documentation only. Until TG-M24.3B is separately
+implemented, verified, reviewed, and accepted, schema v20 remains current and
+no schema-v21 marker, object, row, setup result, backup, Evidence artifact, or
+Viewer source is created. TG-M24.3B may activate only persistence and
+compatibility; the M21 Receipt remains the sole verification/completion gate
+through that unit. TG-M24.3C alone may activate the qualifying Runner branch.
+
+### Migration Identity And Exact Owned Delta
+
+Migration 21 is exactly version `21`, name
+`verification_runner_gate_basis`. It adds no table, column, explicit index, or
+trigger. The final required inventory therefore remains 35 tables including
+`schema_migrations`, 42 explicit indexes, and 59 triggers. It rebuilds exactly
+these four tables and no other table:
+
+1. `completion_evidence_bundles`;
+2. `verification_runner_resolutions`;
+3. `verification_runner_attempts`; and
+4. `verification_runner_observations`.
+
+Every column retains its schema-v20 name, order, nullability, default, foreign
+key, and non-gate check. The only Runner-table DDL change is that
+`gate_eligibility_version` on resolutions, attempts, and observations changes
+from `CHECK (gate_eligibility_version = 0)` to
+`CHECK (gate_eligibility_version IN (0, 1))`. The sandbox-event table has no
+gate-eligibility column and is not rebuilt. The Task column remains exactly
+`review_target_runner_basis_version INTEGER NOT NULL DEFAULT 0 CHECK
+(review_target_runner_basis_version IN (0, 2))`; neither completion-cycle
+column is rebuilt or gains a column check or foreign key.
+
+The rebuilt Bundle table retains Bundle version 2 and all schema-v20 columns,
+keys, and foreign keys. Its nullable `verification_basis_kind` column check is
+widened only to
+`caller_attestation|not_required|runner_observation`. Its table-level tagged
+union is exactly:
+
+```text
+source 19 / Bundle 1 / kind null / Runner pointer null
+source 20 / Bundle 2 / caller_attestation / Receipt nonnull / Runner pointer null
+source 20 / Bundle 2 / not_required       / Receipt null    / Runner pointer null
+source 21 / Bundle 2 / caller_attestation / Receipt nonnull / Runner pointer null
+source 21 / Bundle 2 / not_required       / Receipt null    / Runner pointer null
+source 21 / Bundle 2 / runner_observation / Receipt null    / Runner pointer nonnull
+```
+
+No other source-schema/Bundle-version/basis/pointer combination is valid.
+Preserved source-19 and source-20 rows are not rewritten to source 21. A native
+schema-v21 completion writes source schema 21 and Bundle version 2; no Bundle
+version 3, Evidence Index version 3, new envelope member, or compatibility
+conversion is introduced.
+
+Migration 21 recreates under their existing names the one Bundle index, the
+nine indexes attached to the three rebuilt Runner tables, and their existing
+immutable and parent triggers. Their order, uniqueness, predicates, error
+codes, and names remain unchanged except for the eligibility relations below.
+It also replaces, without changing the trigger count, exactly these two
+cycle-insert guards:
+
+- `trg_task_completion_cycles_verification_basis_insert`; and
+- `trg_task_completion_cycles_evidence_basis_insert`.
+
+All other owned tables, columns, indexes, triggers, and their normalized SQL
+remain the schema-v20 definitions. In particular,
+`trg_verification_runner_sandbox_events_parent_insert` and
+`trg_criterion_evidence_links_matrix_insert` already supply the required event
+and `runner_observation` Reference/link relations and are unchanged.
+
+### Closed Gate Tags And Parent Guards
+
+`gate_eligibility_version=0` continues to mean audit-only. Version `1` means
+only that the exact target generation was selected under the schema-v21 Runner
+basis protocol; it does not itself mean pass. Within one Runner graph,
+resolution, attempt, and observation eligibility values must be identical.
+The current target's Task marker is `0` for an audit-only or ordinary M21
+target and `2` for a target selected under the version-1 Runner protocol.
+Historical graphs retain their stored tags after a later target generation;
+only the graph at the Task's exact current target can be a completion basis.
+
+The recreated parent guards make these literal changes and no others:
+
+- `trg_verification_runner_resolutions_parent_insert` keeps its complete
+  schema-v20 Task/Contract/authority/criterion/manifest/target predicate, but
+  replaces `Task marker = 0` with the exact pair
+  `(NEW eligibility = 0 AND Task marker = 0) OR
+  (NEW eligibility = 1 AND Task marker = 2)`.
+- `trg_verification_runner_attempts_parent_insert` additionally requires the
+  attempt eligibility to equal its resolution eligibility.
+- `trg_verification_runner_observations_parent_insert` additionally requires
+  the observation eligibility to equal its resolution eligibility and, when an
+  attempt is present, that attempt eligibility to equal it too.
+- The sandbox-event guard remains unchanged: its exact attempt and optional
+  terminal-observation joins inherit eligibility equality from those parent
+  rows.
+
+The full stored-state validator retains the existing four cardinality shapes
+(`no admitted attempt`, `pending intent`, `restart cleanup only`, and `complete
+terminal graph`) for audit-only graphs and admits the same applicable pending,
+cleanup-only, and terminal shapes for a marker-2 eligibility-one current target.
+It validates and exposes a structurally sound pending, cleanup-only, or launched
+non-pass state to read, Viewer, backup, and recovery consumers; it does not
+misclassify such a state as corrupt merely because it cannot complete. A
+marker-2 target without its atomic resolution/attempt T1, a current marker/tag
+mismatch, or a malformed graph remains invalid. Separately, the completion
+basis selector, rather than a caller or a DDL tag alone, recognizes these three
+closed cases:
+
+- marker `0`: no gate-eligible current graph; M21
+  `caller_attestation|not_required` completion remains available;
+- marker `2` plus one complete version-1 terminal graph whose observation has
+  `route=m21_fallback`, `launch_state=no_launch`,
+  `outcome=blocked_prelaunch`, reason `runtime_unavailable` or
+  `process_setup_failed`, `complete_plan=0`, and the existing proved process,
+  handle, output-discard, lifecycle, and private-tree cleanup: the selected
+  Runner did not launch, so a fresh exact-current M21 Receipt may be used; and
+- marker `2` plus one complete version-1 terminal graph whose observation has
+  `route=runner`, `launch_state=launched`, `outcome=pass`, null reason,
+  `complete_plan=1`, equal positive planned/total/completed step counts, and
+  null failed ordinal: that observation is the sole qualifying Runner basis.
+
+For either marker-2 terminal case, the graph must have exactly one resolution,
+attempt, cleanup event, observation, Runner Evidence Reference, and
+`runner_observation` verification-criterion link for the exact current
+generation. Ownership; current Contract and authority/criterion digests;
+target, capture, manifest, target-material, plan, implementation, and policy
+identities; parent IDs; idempotency/source digests; event-to-observation link;
+and the existing closed process-result matrix must all validate. For a live,
+non-done Task, the qualifying pass additionally requires the exact currently
+installed manifest-bound Runner implementation identity. That current-package
+comparison belongs to service preflight, not a SQLite trigger or historical
+replay. A pending intent, cleanup-only predecessor, missing
+or duplicate member, eligibility mixture, stale generation, target or Contract
+drift, malformed graph, or any structurally valid terminal other than the exact
+closed no-launch fallback or qualifying pass is not an M21 fallback and blocks
+completion for that selected marker-2 basis.
+
+The replacement verification-basis cycle guard retains the version-zero
+legacy arm. Its native version-one arm admits exactly one of:
+
+- the existing M21 specified/full-pass Receipt or trimmed-empty
+  `not_required` basis while the Task marker is `0`;
+- the existing specified/full-pass M21 Receipt basis while marker `2` has the
+  exact closed no-launch terminal graph above; or
+- a specified verification expectation, null Receipt, kind
+  `runner_observation`, and nonnull observation pointer equal to the exact
+  stored qualifying-pass graph above.
+
+The replacement evidence-basis cycle guard retains the legacy source-19
+Bundle relation and requires every native cycle to reference its unique
+same-owner/same-ordinal Bundle. It additionally requires cycle and Bundle
+`verification_basis_kind` and Runner pointer to be identical. A source-21
+caller/not-required Bundle must match one of the two M21 cycle arms; a
+source-21 Runner Bundle must match the qualifying-pass arm. Its Runner
+observation pointer must select that exact current-generation observation.
+These guards preserve the existing deferred Bundle-to-cycle relation and add no
+cycle-table rebuild.
+
+The two cycle guards validate only SQLite-stored tags, parents, pointers,
+captured identities, and graph relations. They never inspect the filesystem or
+current package manifest. Before inserting a new Runner-backed completion, the
+service selector owns current package inspection and equality with the captured
+Runner implementation identity. A valid done cycle, including one restored by
+recovery, instead revalidates identity equality wholly inside its stored graph
+and Bundle and is not rebound to the currently installed implementation.
+
+TG-M24.3B's writer continues to create only eligibility `0`, Task marker `0`,
+and source-21 Bundle-v2 `caller_attestation|not_required` rows. Its shared
+schema-v21 readers, Viewer, backup, and recovery validators must nevertheless
+understand all structurally valid version-1 graphs so a later TG-M24.3C-created
+database remains readable under the same schema. Its completion writer must
+fail closed with no cycle, Bundle, event, Evidence, Viewer, or backup mutation
+when the exact current Task marker is `2`; it must not reinterpret that state as
+ordinary M21 fallback. An explicit fresh target generation is required before
+3B may resume marker-0 M21 behavior. TG-M24.3C later replaces only this
+service-level nonactivation boundary and does not own migration or DDL.
+
+The schema-v21 public gate adapter consumes only a fully validated Task and the
+internal basis selector. It retains the exact Receipt-era
+`verification_evidence` JSON shape and keeps subject, counts, and recent rows
+Receipt-only. For a live, non-done Task, marker zero delegates unchanged to M21
+and any marker two read by 3B maps to `evidence_basis_stale`. Under 3C, basis
+freshness precedes outcome: any structurally valid but non-current graph,
+pending graph, or cleanup-only graph maps to `evidence_basis_stale`. Every
+exact-current structurally valid terminal other than the exact closed no-launch
+fallback or qualifying pass maps to `verification_receipt_blocking`; the exact
+closed no-launch delegates to M21, and the exact qualifying pass maps to
+satisfied with both public nullable gate fields null. Receipt-add
+accepts marker two only for that exact-current no-launch fallback; every other
+marker-two branch returns `evidence_basis_stale` before uniqueness. Completion
+applies the same branch result before review sufficiency.
+
+A valid done version-one cycle takes precedence over the live matrix, including
+when a 3B-compatible reader inspects later 3C-created history. The adapter
+revalidates the stored cycle/Bundle arm and replays its M21 or Runner gate
+projection; a Runner arm is satisfied with both nullable gate fields null only
+when its captured stored graph/Bundle identity matches. It never compares a
+done arm with the currently installed implementation, and this historical read
+does not authorize a 3B writer or live Runner completion. Existing argument,
+Task/status, expectation, target, generation, and capture checks retain their
+order before the applicable selector. Active 3C service preflight returns the
+existing `package_core_modified` or `package_status_unknown` result when it
+cannot establish the current installed identity; after successful package
+inspection, an identity mismatch is stale before outcome mapping.
+Malformed Runner/Task storage remains `project_state_unreadable`, malformed
+cycle/Bundle history remains `completion_history_inconsistent`, and malformed
+Receipt storage remains `invalid_verification_evidence`; no new public error or
+field is introduced.
+
+Contract revision, verification expectation or criterion, authority snapshot,
+review-target tuple or generation, artifact manifest, plan/selected-entry,
+target material, implementation/policy identity, reopen, or retarget drift
+prevents an earlier Runner graph from being current. Existing invalidation and
+reopen paths clear marker `2` together with the current target and require a
+fresh generation; they never update or delete an immutable Runner row, cycle,
+Bundle, Reference, link, or historical completion basis.
+
+### Migration, Reentry, And Preservation Algorithm
+
+A v20-to-v21 migration is admitted only from a complete schema-v20 database
+that passes the exact current schema-v20 object, Task/Contract, Evidence,
+Bundle, Runner audit-graph, `quick_check`, and foreign-key validators. This
+includes only the current empty, pending-intent, restart-cleaned, and complete
+terminal audit shapes. Thus all predecessor Runner eligibility values and Task
+markers are zero and all cycle/Bundle Runner pointers are null. A v20 marker
+with any v21 widened table or replacement-trigger definition, a v21 marker with
+any v20 definition, a temporary-name collision, partial owned state, known
+later marker, integrity or foreign-key failure, or an already gate-eligible row
+is rejected before any database, sidecar, backup, Evidence, or Viewer write.
+
+The migrator requires `foreign_keys=ON` and `legacy_alter_table=OFF` on entry,
+then sets foreign keys off and legacy alter on before `BEGIN IMMEDIATE`. The
+legacy setting prevents SQLite table renames from retargeting the unchanged
+foreign keys held by completion cycles, Bundle members, sandbox events, or the
+other rebuilt tables. It uses only these exact temporary table names:
+
+```text
+completion_evidence_bundles_v20
+verification_runner_resolutions_v20
+verification_runner_attempts_v20
+verification_runner_observations_v20
+```
+
+Inside the one transaction it snapshots all existing business tables on their
+ordered schema-v20 columns and the normalized owned/unrelated object inventory;
+drops the two cycle guards; renames the four old tables; creates the exact v21
+resolution, attempt, observation, and Bundle tables; copies every row by the
+complete unchanged ordered column list; drops the four old tables; and
+recreates the exact owned indexes, immutable triggers, parent guards, and cycle
+guards. Parent-before-child creation and copy order is resolution, attempt,
+observation, Bundle. The temporary tables are dropped child-before-parent:
+Bundle, observation, attempt, resolution.
+
+Source admission, migration, and reentry use this closed extra-object matrix:
+
+| Extra object | Complete-v20 admission | Successful migration 21 | Rollback | Exact-v21 reentry |
+|---|---|---|---|---|
+| unowned index/trigger attached to `completion_evidence_bundles` | reject before any write under the existing v20 Bundle rule | not reached | not applicable | reject |
+| unowned index/trigger attached to `verification_runner_resolutions`, `verification_runner_attempts`, or `verification_runner_observations` | admit under the existing v20 unrelated-extra rule | retire with the old rebuilt table; never replay its DDL | restore with the old table | reject |
+| unowned object attached to `verification_runner_sandbox_events` or another table that migration 21 does not rebuild | admit when the existing v20 unrelated-extra rule admits it | preserve its row/SQL unchanged | preserve | preserve when otherwise valid |
+| unrelated standalone table/view/index/trigger | admit when the existing v20 unrelated-extra rule admits it | preserve its row/SQL unchanged | preserve | preserve when otherwise valid |
+
+This matrix does not broaden complete-v20 admission. In particular, migration
+21 never consumes the Bundle-attached residue that only a complete-v19 source
+could have retired during migration 20. For the three rebuilt Runner tables,
+transaction rollback restores every admitted attached object even though a
+successful migration intentionally retires it.
+
+Before inserting the marker, the migrator proves exact projection equality for
+every pre-v21 table on its original ordered columns, exact IDs and row counts,
+unchanged source-19/source-20 Bundle payload bytes and digests, expected
+owned-object SQL/counts, absence of temporary tables and retired attached
+residue, preservation of unrelated standalone objects, `quick_check`, and an
+empty foreign-key check. The version-21 marker is the last mutation. Full
+schema-v21 and stored-state validation follows before commit. Any injected or
+organic failure rolls back every rename, row, trigger, object, and marker. The
+`finally` path restores `legacy_alter_table=OFF` and `foreign_keys=ON` and
+verifies both; rollback promises logical schema/data identity, not byte-identical
+SQLite files.
+
+Fresh schema v21 produces the same final owned SQL and contiguous markers
+1 through 21, with empty Runner tables and no invented basis. Exact v21 reentry
+is validation-only: it creates, deletes, rewrites, upgrades, or repairs nothing.
+Migration never changes eligibility `0` to `1`, Task marker `0` to `2`, adds a
+cycle/Bundle Runner pointer, creates a Runner Reference/member/link, or
+synthesizes qualification from a schema-v20 audit observation.
+
+### Bundle, Evidence, Viewer, Backup, And Recovery Compatibility
+
+Bundle-v2 serialization remains domain
+`taskgov-completion-evidence-bundle-v2\0` and the existing sorted compact key
+set. The `verification_basis` object remains its exact four-key object. For a
+Runner arm, `runner_observation` is the existing sanitized Runner source
+projection with exactly these keys and no others:
+
+```text
+observation_id, gate_eligibility_version, route, reason, outcome, launch_state,
+complete_plan, total_step_count, completed_step_count, failed_step_ordinal,
+started_at, finished_at, duration_ms, cpu_time_ms, peak_job_memory_bytes,
+total_process_count, plan_blob_object_id, plan_raw_digest, plan_id, plan_version,
+plan_semantic_digest, runner_implementation_version,
+runner_implementation_digest, runner_policy_digest, runtime_digest,
+sanitized_result_digest
+```
+
+The projection is recomputed from the exact observation/resolution graph and
+must equal its existing Reference source projection and digest. It never adds
+stdout/stderr, command/argv, environment, exit code, exception, credential,
+absolute/private path, raw plan, raw target, or debug text. The existing Runner
+Reference and verification-criterion link become the Runner Bundle's bound
+evidence members; they are reused, not duplicated or caller-authored. M21 arms
+keep `runner_observation=null` and their existing members. Preserved Bundles are
+never resealed.
+
+Evidence Index remains v2 with domain `taskgov-evidence-index-v2\0`; a native
+schema-v21 Bundle still has `bundle_format_version=2`. Publication remains
+query-only capture, Bundle-first/index-last, atomic replacement, and SQLite as
+the sole authority. Viewer snapshot remains v4 and expands source compatibility
+only from v5-v20 to v5-v21. The v21 reader validates the complete tagged graph,
+Bundle members and sanitized projection, then discards all Runner-only fields;
+the public Viewer field/UI allow-list, CSP, text-only DOM rule, artifact cap,
+and generation behavior do not change.
+
+After TG-M24.3B activation, setup creates v21, migrates complete v1-v20 sources,
+and treats v21 as validation-only current state. Managed backup names widen
+only from `r<1-20>` to `r<1-21>`; retention count and all other filename,
+identity, locking, staging, validation, and publication rules are unchanged. A
+v20 primary or backup receives its normal pre-migration managed backup before
+migration 21. Recovery validates each candidate at its declared schema, may
+stage-and-migrate a complete v20 candidate to v21, and validates a v21 candidate
+without migration. The private Runner tree remains outside SQLite backup;
+restored pending intents keep the existing no-relaunch, cleanup-only recovery
+rule. A completed historical Runner basis is self-contained in its validated
+SQLite graph and Bundle and never depends on a mutable plan file or private
+attempt tree.
+
+Schema-v21 stored Tasks use the complete schema-v20 Task, Contract-pointer,
+privacy, and relationship validator unchanged, including the exact 1,000-code-
+point `verification` capacity. Managed recovery applies the same candidate-
+local rule to source schemas 18 through 21: only that field's privacy or
+capacity failure rejects one candidate locally. Wrong storage class, cross-
+field or relationship failure, another Task fault, or any Runner/Bundle graph
+fault remains whole-set fatal.
+
+No reverse migration exists. Rollback to an older package requires restoring a
+matching package, database, managed-backup set, Evidence index/Bundles, and
+Viewer artifact from the same accepted pre-migration generation; an older
+binary must reject schema v21. Invalid, partial, foreign, stale, over-bound, or
+privacy-unsafe candidates fail closed before publication and preserve the
+last-good canonical database, backup ledger, Evidence index, and Viewer. Each
+failure uses its existing sanitized schema, project-state, Evidence, Runner, or
+service owner; schema-v21 representation adds no public error code or raw
+diagnostic field.
+
+TG-M24.3B verification must cover normalized DDL and the unchanged 35/42/59
+inventory; fresh v21; exact v20-to-v21 row/object/projection preservation;
+marker-last rollback at every rebuild stage; same-version no-write reentry;
+hybrid rejection; Bundle-attached pre-write rejection; rebuilt-Runner-table
+attachment retirement and rollback restoration; sandbox-table and standalone-
+object preservation; version-0 audit and version-1 structural graphs; M21-only
+marker-2 completion rejection; Bundle-v2/Evidence-v2/Viewer-v4 sources v5-v21;
+managed backup `r1-21`; recovery and rollback matching; privacy deny-list;
+schema-v21 Task `verification` 1,000/1,001 boundaries; source-v21 candidate-
+local privacy/capacity rejection with later-candidate selection; set-fatal
+handling for every other Task/relationship/Runner/Bundle fault; and public
+schema/setup activation without a new CLI leaf or Skill/Runner/gate behavior.
 
 ## Stable Project Identity, Binding, And Relocation
 

@@ -586,7 +586,7 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.2D Current Shadow Runner Integrated Acceptance",
+                "## TG-M24.2D Accepted Shadow Runner Integrated Acceptance",
                 "## TG-M24.2D Inactive Shadow Runner Integrated Acceptance",
             )
             self.assertIn(
@@ -594,8 +594,19 @@ class DocumentContractTests(unittest.TestCase):
                 self.codes(contract.check_document_contract(root)),
             )
 
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.M24,
+                "## TG-M24.3A Current Schema-v21 Gate-Basis Contract",
+                "## TG-M24.3A Inactive Schema-v21 Gate-Basis Contract",
+            )
+            self.assertIn(
+                "m24_current_binding",
+                self.codes(contract.check_document_contract(root)),
+            )
+
         for unit, heading in (
-            ("TG-M24.3A", "Schema-v21 Gate-Basis Contract"),
             ("TG-M24.3B", "Schema-v21 Persistence Foundation"),
             ("TG-M24.3C", "Runner Gate Integration And M21 Fallback"),
         ):
@@ -616,7 +627,7 @@ class DocumentContractTests(unittest.TestCase):
                 root,
                 contract.M24,
                 "<a id=\"tg-m24-r4a\"></a>",
-                "## TG-M24.2D Current Duplicate Owner\n\n"
+                "## TG-M24.3A Current Duplicate Owner\n\n"
                 "<a id=\"tg-m24-r4a\"></a>",
             )
             self.assertIn(
@@ -628,8 +639,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.2D Current Shadow Runner Integrated Acceptance",
-                "## TG-M24.2D Shadow Runner Integrated Acceptance Current",
+                "## TG-M24.3A Current Schema-v21 Gate-Basis Contract",
+                "## TG-M24.3A Schema-v21 Gate-Basis Contract Current",
             )
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -907,6 +918,26 @@ class DocumentContractTests(unittest.TestCase):
                 "anchor_duplicate",
                 self.codes(contract.check_document_contract(root)),
             )
+
+    def test_m24_3a_owner_routes_require_explicit_anchors(self):
+        with self.fixture() as root:
+            expected = "approved-but-inactive-schema-v21-gate-basis-contract"
+            alternate = f"{expected}-alternate"
+            self.replace(
+                root,
+                "docs/specification.md",
+                f'<a id="{expected}"></a>',
+                f'<a id="{alternate}"></a>',
+            )
+            self.replace(
+                root,
+                contract.M24,
+                f"../specification.md#{expected}",
+                f"../specification.md#{alternate}",
+            )
+            codes = self.codes(contract.check_document_contract(root))
+            self.assertIn("authority_route", codes)
+            self.assertNotIn("link_anchor", codes)
 
     def test_link_resolution_is_exact_case_local_and_regular_file_only(self):
         self.assertEqual(
@@ -1254,11 +1285,10 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.2D"])
+            self.assertEqual(m24["current_units"], ["TG-M24.3A"])
             self.assertEqual(
                 m24["inactive_units"],
                 [
-                    "TG-M24.3A",
                     "TG-M24.3B",
                     "TG-M24.3C",
                     "TG-M24.4A",
@@ -1287,7 +1317,9 @@ class DocumentContractTests(unittest.TestCase):
             self.assertNotIn("TG-M24.2B", m24["current_units"])
             self.assertNotIn("TG-M24.2B", m24["inactive_units"])
             self.assertNotIn("TG-M24.2C", m24["inactive_units"])
+            self.assertNotIn("TG-M24.2D", m24["current_units"])
             self.assertNotIn("TG-M24.2D", m24["inactive_units"])
+            self.assertNotIn("TG-M24.3A", m24["inactive_units"])
             self.write_registry(root, dict(reversed(tuple(registry.items()))))
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -1574,67 +1606,6 @@ class DocumentContractTests(unittest.TestCase):
                 self.codes(contract.check_document_contract(root)),
             )
 
-        stale_m24_owner_mutations = (
-            (
-                contract.AUTHORITY,
-                "TG-M24.2D is the sole current unit",
-                "TG-M24.2C is the sole current unit",
-            ),
-            (
-                "docs/specification.md",
-                "TG-M24.2D is the sole current unit",
-                "TG-M24.2C is the sole current unit",
-            ),
-            (
-                contract.DESIGN,
-                "TG-M24.2D is the sole current TG-M24 authority",
-                "TG-M24.2C is the sole current TG-M24 authority",
-            ),
-            (
-                contract.EXECUTION_INDEX,
-                "TG-M24.2D owns current authority-only",
-                "TG-M24.2C owns current authority-only",
-            ),
-            (
-                "plan.md",
-                "Current formal authority belongs only to\nTG-M24.2D integrated acceptance",
-                "Current formal authority belongs only to\nTG-M24.2C parent orchestration",
-            ),
-        )
-        for relative, current, stale in stale_m24_owner_mutations:
-            with self.subTest(stale_m24_owner=relative), self.fixture() as root:
-                self.replace(root, relative, current, stale)
-                self.assertIn(
-                    "document_role",
-                    self.codes(contract.check_document_contract(root)),
-                )
-
-        with self.fixture() as root:
-            self.replace(
-                root,
-                contract.AUTHORITY,
-                "TG-M24.3A, TG-M24.3B, TG-M24.3C,\nTG-M24.4A",
-                "TG-M24.2D is inactive. TG-M24.3A, TG-M24.3B, TG-M24.3C,\n"
-                "TG-M24.4A",
-            )
-            self.assertIn(
-                "document_role",
-                self.codes(contract.check_document_contract(root)),
-            )
-
-        with self.fixture() as root:
-            self.replace(
-                root,
-                contract.EXECUTION_INDEX,
-                "inactive TG-M24.3A/TG-M24.3B/TG-M24.3C-through-TG-M24.CP4",
-                "inactive TG-M24.2D/TG-M24.3A/TG-M24.3B/"
-                "TG-M24.3C-through-TG-M24.CP4",
-            )
-            self.assertIn(
-                "document_role",
-                self.codes(contract.check_document_contract(root)),
-            )
-
         with self.fixture() as root:
             self.replace(
                 root,
@@ -1709,7 +1680,6 @@ class DocumentContractTests(unittest.TestCase):
             "TG-M24.2B owns current formal authority.",
             "TG-M24.2C owns current formal authority.",
             "TG-M24.2C remains inactive.",
-            "TG-M24.2D remains inactive.",
         ):
             with self.subTest(stale_status_claim=stale_status_claim), self.fixture() as root:
                 self.append(root, "plan.md", f"\n{stale_status_claim}\n")
@@ -1717,18 +1687,6 @@ class DocumentContractTests(unittest.TestCase):
                     "document_role",
                     self.codes(contract.check_document_contract(root)),
                 )
-
-        valid_m24_status_contrasts = (
-            "Current formal authority belongs only to 2D, not 2C.",
-            "Current formal authority belongs only to 2D, while 2C is accepted.",
-            "The current 2C-compatible projection label is documentation only.",
-            "The inactive 3-compatible example label is documentation only.",
-        )
-        for sentence in valid_m24_status_contrasts:
-            with self.subTest(valid_m24_status_contrast=sentence), self.fixture() as root:
-                self.append(root, "plan.md", f"\n{sentence}\n")
-                result = contract.check_document_contract(root)
-                self.assertTrue(result.ok, result.issues)
 
         with self.fixture() as root:
             self.replace(
@@ -1789,85 +1747,6 @@ class DocumentContractTests(unittest.TestCase):
                 root,
                 contract.M24,
                 "\n> # TG-M24 Verification Runner Current Execution Contract\n",
-            )
-            self.assertIn(
-                "document_role",
-                self.codes(contract.check_document_contract(root)),
-            )
-
-        with self.fixture() as root:
-            self.replace(
-                root,
-                contract.M24,
-                "CURRENT FORMAL AUTHORITY.",
-                "NOT CURRENT FORMAL AUTHORITY.",
-            )
-            self.replace(
-                root,
-                contract.M24,
-                "TG-M24.2D owns current formal authority",
-                "TG-M24.2D is a superseded compatibility route",
-            )
-            self.assertIn(
-                "document_role",
-                self.codes(contract.check_document_contract(root)),
-            )
-
-        with self.fixture() as root:
-            self.replace(
-                root,
-                contract.M24,
-                "TG-M24.2D owns current formal authority",
-                "TG-M24.2D is not current formal authority",
-            )
-            self.assertIn(
-                "document_role",
-                self.codes(contract.check_document_contract(root)),
-            )
-
-        with self.fixture() as root:
-            self.replace(
-                root,
-                contract.M24,
-                "TG-M24.1 and TG-M24.1A are accepted predecessors,",
-                "TG-M24.1 and TG-M24.1A are former units,",
-            )
-            self.replace(
-                root,
-                contract.M24,
-                "TG-M24.R1, TG-M24.R2A, and TG-M24.R2B are accepted\n"
-                "> predecessors.",
-                "TG-M24.R1, TG-M24.R2A, and TG-M24.R2B are former units.",
-            )
-            self.replace(
-                root,
-                contract.M24,
-                "TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are accepted predecessors",
-                "TG-M24.R2C, TG-M24.R4A, and TG-M24.R4V are former units",
-            )
-            self.replace(
-                root,
-                contract.M24,
-                "TG-M24.R3A and\n"
-                "> TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and\n"
-                "> public-activation baseline;",
-                "TG-M24.R3A and TG-M24.R3B are former schema-v20 units;",
-            )
-            self.replace(
-                root,
-                contract.M24,
-                "TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and\n"
-                "> TG-M24.2C are accepted predecessors. TG-M24.2D owns current formal "
-                "authority,\n> ",
-                "TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and "
-                "TG-M24.2C are former units;\n> ",
-            )
-            self.replace(
-                root,
-                contract.M24,
-                "and every later unit in this document remains inactive until its immediate\n"
-                "> predecessor is accepted.",
-                "every later unit in this document proceeds only when later decisions reopen it.",
             )
             self.assertIn(
                 "document_role",
@@ -2035,6 +1914,30 @@ class DocumentContractTests(unittest.TestCase):
                 contract.M24,
                 '<a id="tg-m24-r2a"></a>',
                 '<a id="tg-m24-r2b"></a>',
+            )
+            self.assertIn(
+                "sequence_contract",
+                self.codes(contract.check_document_contract(root)),
+            )
+
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.M24,
+                '<a id="tg-m24-r4v"></a>',
+                '<a id="tg-m24-r4v-swap"></a>',
+            )
+            self.replace(
+                root,
+                contract.M24,
+                '<a id="tg-m24-r3a"></a>',
+                '<a id="tg-m24-r4v"></a>',
+            )
+            self.replace(
+                root,
+                contract.M24,
+                '<a id="tg-m24-r4v-swap"></a>',
+                '<a id="tg-m24-r3a"></a>',
             )
             self.assertIn(
                 "sequence_contract",

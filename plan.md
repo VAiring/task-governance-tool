@@ -254,13 +254,14 @@ exact target binding, and safe private materialization. Accepted TG-M24.2B
 supplied only bounded local process execution and deterministic cleanup without
 public Runner or completion-gate activation. Accepted TG-M24.2C owns only parent
 orchestration and the first durable audit-only Runner mapping/write/projection.
-Current TG-M24.2D owns only integrated acceptance of that already-implemented
+Accepted TG-M24.2D owns only integrated acceptance of that already-implemented
 shadow slice from one fresh exact target and activates no additional behavior.
 R3B activates only schema/storage, Bundle, Evidence, Viewer,
 and recovery compatibility; it creates no Runner rows, links, members, or
 projection and grants no process or completion-gate authority. Runner service
-integration remains owned by the ordered M24.2 implementation. Inactive
-TG-M24.3A owns the separate schema-v21 contract, TG-M24.3B owns persistence
+integration remains owned by the ordered M24.2 implementation. Current
+TG-M24.3A owns only the separate documentation-only schema-v21 contract;
+inactive TG-M24.3B owns persistence
 implementation while M21 remains the sole verification/completion gate, and
 TG-M24.3C owns qualifying gate activation with explicit M21 fallback before
 M24.4 acceptance. Schema-v20 shadow evidence cannot satisfy that gate. The
@@ -280,10 +281,10 @@ mandatory; live status and evidence remain solely in the Task database.
 TG-M24 is approved sequential Tier 2 work in lane
 `TG-M24-TRUSTED-RUNNER`. TG-M24.1, TG-M24.1A, TG-M24.R1, TG-M24.R2A,
 TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, TG-M24.R4V, TG-M24.R3A, TG-M24.R3B,
-TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and TG-M24.2C are accepted
-predecessors; TG-M24.1B is superseded. Current formal authority belongs only to
-TG-M24.2D integrated acceptance of the already-implemented shadow Runner slice,
-while TG-M24.3A, TG-M24.3B, TG-M24.3C, and every later unit remain inactive
+TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, TG-M24.2C, and TG-M24.2D are
+accepted predecessors; TG-M24.1B is superseded. Current formal authority
+belongs only to TG-M24.3A's documentation-only schema-v21 contract freeze,
+while TG-M24.3B, TG-M24.3C, and every later unit remain inactive
 behind their accepted immediate predecessor.
 Exact unit identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
@@ -298,7 +299,7 @@ public setup action at a separate approval checkpoint.
 
 Accepted TG-M24.R1 consumed only the reviewed R2 bootstrap boundary and changed
 no product byte; accepted R2A, R2B, R2C, R4A, and R4V changed no supported product
-behavior. Current 2D and its successors advance in exact order, use fresh
+behavior. Current 3A and its successors advance in exact order, use fresh
 current evidence, and never reuse superseded Candidate-C, LPAC, or diagnostic
 recovery evidence.
 The approved 2C decision is the narrow audit-only route: preflight fallback
@@ -314,6 +315,18 @@ materially different repair.
 The sequence grants no arbitrary command, automatic execution of untrusted or
 external targets, raw-output retention, network action, target-project write,
 publication, push, tag, or Release authority.
+
+The current TG-M24.3A decision is the smallest schema-v21 representation that
+can support the later gate without adding a parallel storage model. Version 21
+uses migration name `verification_runner_gate_basis`, reuses the schema-v20
+Task marker, Runner eligibility tags, cycle/Bundle observation pointers,
+Bundle format v2, Evidence index v2, and Viewer snapshot v4, and adds no table,
+column, index, public command, JSON/UI field, or Skill trigger. Existing
+schema-v20 Runner rows remain eligibility-zero audit history and migration may
+neither promote nor backfill them. Exact physical, migration, recovery,
+compatibility, privacy, and inactive 3B/3C rules remain delegated to the
+[TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
+the specification, and the design rather than being duplicated here.
 
 <a id="tg-doc-sequence"></a>
 

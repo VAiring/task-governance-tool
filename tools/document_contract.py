@@ -402,8 +402,9 @@ TASK_STATUS_VALUES = {
     "paused",
     "done",
 }
-CURRENT_UNITS = ("TG-M24.2D",)
-M24_3_STRUCTURAL_STATUS_UNITS = (
+# This split's status is enforced only by registry, sequence, anchor, and heading checks.
+M24_SPLIT_STRUCTURAL_STATUS_UNITS = (
+    "TG-M24.2D",
     "TG-M24.3A",
     "TG-M24.3B",
     "TG-M24.3C",
@@ -412,8 +413,7 @@ NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
     for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
     for row in rows
-    if row[0].split(" /", 1)[0] not in CURRENT_UNITS
-    and row[0].split(" /", 1)[0] not in M24_3_STRUCTURAL_STATUS_UNITS
+    if row[0].split(" /", 1)[0] not in M24_SPLIT_STRUCTURAL_STATUS_UNITS
 ) + ("TG-M24.1", "TG-M24.1A", "TG-M24.1B")
 NONCURRENT_SUBJECTS = tuple(
     sorted(
@@ -432,7 +432,6 @@ M24_R5_ALIAS = r"(?:TG-M24\.)?R5"
 M24_2A_ALIAS = r"(?:TG-M24\.)?2A"
 M24_2B_ALIAS = r"(?:TG-M24\.)?2B"
 M24_2C_ALIAS = r"(?:TG-M24\.)?2C"
-M24_2D_ALIAS = r"(?:TG-M24\.)?2D"
 M24_1B_ALIAS = r"(?:TG-M24\.)?1B"
 M24_LATER_UNIT_ALIAS = r"(?:TG-M24\.)?(?:R[0-9]+[A-Z]?|[0-9]+[A-Z]?|CP[0-9]+)"
 M24_R3B_TOKEN = rf"{M24_R3B_ALIAS}(?![A-Za-z0-9_-])"
@@ -441,7 +440,6 @@ M24_R5_TOKEN = rf"{M24_R5_ALIAS}(?![A-Za-z0-9_-])"
 M24_2A_TOKEN = rf"{M24_2A_ALIAS}(?![A-Za-z0-9_-])"
 M24_2B_TOKEN = rf"{M24_2B_ALIAS}(?![A-Za-z0-9_-])"
 M24_2C_TOKEN = rf"{M24_2C_ALIAS}(?![A-Za-z0-9_-])"
-M24_2D_TOKEN = rf"{M24_2D_ALIAS}(?![A-Za-z0-9_-])"
 M24_1B_TOKEN = rf"{M24_1B_ALIAS}(?![A-Za-z0-9_-])"
 M24_1B_CURRENT_CLAIM = re.compile(
     rf"(?:\bcurrent\s+{M24_1B_TOKEN}"
@@ -554,17 +552,6 @@ M24_2C_INACTIVE_CLAIM = re.compile(
     rf"|\b{M24_2C_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
     r"(?:is|are|remains?)\s+(?:(?:an?|the)\s+)?inactive\b"
     rf"|\b{M24_2C_TOKEN}(?:\s+through\s+{M24_LATER_UNIT_ALIAS}"
-    r"|\s+and\s+(?:every\s+)?later\s+units?)\s+"
-    r"(?:are|remain)\s+inactive\b)",
-    re.IGNORECASE,
-)
-M24_2D_INACTIVE_CLAIM = re.compile(
-    rf"(?:\binactive\s+{M24_2D_TOKEN}"
-    rf"|\binactive\s+{M24_2D_ALIAS}-through-{M24_LATER_UNIT_ALIAS}"
-    r"(?![A-Za-z0-9_-])"
-    rf"|\b{M24_2D_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:is|are|remains?)\s+(?:(?:an?|the)\s+)?inactive\b"
-    rf"|\b{M24_2D_TOKEN}(?:\s+through\s+{M24_LATER_UNIT_ALIAS}"
     r"|\s+and\s+(?:every\s+)?later\s+units?)\s+"
     r"(?:are|remain)\s+inactive\b)",
     re.IGNORECASE,
@@ -1686,9 +1673,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.2D"],
+                "current_units": ["TG-M24.3A"],
                 "inactive_units": [
-                    "TG-M24.3A",
                     "TG-M24.3B",
                     "TG-M24.3C",
                     "TG-M24.4A",
@@ -1899,6 +1885,48 @@ def _links_and_routes(
             )
 
 
+def _m24_3a_owner_routes(
+    root: Path, scans: dict[str, Scan], issues: list[Issue]
+) -> None:
+    expected = (
+        (
+            "../specification.md#approved-but-inactive-schema-v21-gate-basis-contract",
+            "docs/specification.md",
+            "approved-but-inactive-schema-v21-gate-basis-contract",
+        ),
+        (
+            "../design.md#tg-m24-3a-schema21-design",
+            DESIGN,
+            "tg-m24-3a-schema21-design",
+        ),
+    )
+    bounds = _anchor_section(scans[M24], "tg-m24-3a")
+    observed = (
+        ()
+        if bounds is None
+        else tuple(
+            link.target
+            for link in scans[M24].links
+            if bounds[0] < link.line < bounds[1] and link.route_eligible
+        )
+    )
+    valid = Counter(observed) == Counter(target for target, _path, _anchor in expected)
+    if valid:
+        valid = all(
+            _resolve(root, M24, target) == (path, anchor)
+            and anchor in scans[path].anchors
+            for target, path, anchor in expected
+        )
+    if not valid:
+        issues.append(
+            Issue(
+                "authority_route",
+                M24,
+                "TG-M24.3A owner routes or explicit anchors are unavailable",
+            )
+        )
+
+
 def _cells(line: str) -> tuple[str, ...]:
     return tuple(cell.strip() for cell in line.strip()[1:-1].split("|"))
 
@@ -1989,6 +2017,7 @@ def _sequences(scans: dict[str, Scan], issues: list[Issue]) -> None:
         "tg-m24-r2b",
         "tg-m24-r2c",
         "tg-m24-r4a",
+        "tg-m24-r4v",
         "tg-m24-r3a",
         "tg-m24-r3b",
         "tg-m24-r4b",
@@ -2258,8 +2287,8 @@ def _m24_trusted_local_authority_sync(
         ("tg-m24-2a", "tg-m24.2a", "accepted"),
         ("tg-m24-2b", "tg-m24.2b", "accepted"),
         ("tg-m24-2c", "tg-m24.2c", "accepted"),
-        ("tg-m24-2", "tg-m24.2d", "current"),
-        ("tg-m24-3a", "tg-m24.3a", "inactive"),
+        ("tg-m24-2", "tg-m24.2d", "accepted"),
+        ("tg-m24-3a", "tg-m24.3a", "current"),
         ("tg-m24-3b", "tg-m24.3b", "inactive"),
         ("tg-m24-3c", "tg-m24.3c", "inactive"),
         ("tg-m24-4a", "tg-m24.4a", "inactive"),
@@ -2303,7 +2332,7 @@ def _m24_trusted_local_authority_sync(
             Issue(
                 "m24_current_binding",
                 M24,
-                "M24 accepted predecessors, sole current 2D unit, or inactive successors drifted",
+                "M24 accepted, current, or inactive structural status headings drifted",
             )
         )
 
@@ -2851,7 +2880,6 @@ def _has_current_status_contradiction(text: str) -> bool:
             M24_2A_INACTIVE_CLAIM,
             M24_2B_INACTIVE_CLAIM,
             M24_2C_INACTIVE_CLAIM,
-            M24_2D_INACTIVE_CLAIM,
             M24_STALE_SHADOW_FUTURE_CLAIM,
             M24_STALE_NO_RUNTIME_CLAIM,
             M24_STALE_UNQUALIFIED_RUNNER_ABSENCE_CLAIM,
@@ -3509,6 +3537,7 @@ def check_document_contract(repo_root: str | os.PathLike[str]) -> Result:
     if all(relative in scans for relative in CANONICAL_DOCS):
         registry = _registry(scans[AUTHORITY], issues)
         _links_and_routes(root, scans, issues)
+        _m24_3a_owner_routes(root, scans, issues)
         _sequences(scans, issues)
         _bounded_reading_controls(scans, issues)
         _m24_trusted_local_authority_sync(scans, issues)

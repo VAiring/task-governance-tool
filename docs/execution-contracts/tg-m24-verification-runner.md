@@ -15,9 +15,9 @@
 > exact-candidate manifest closure, with no product activation. TG-M24.R3A and
 > TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and
 > public-activation baseline; TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and
-> TG-M24.2C are accepted predecessors. TG-M24.2D owns current formal authority,
-> and every later unit in this document remains inactive until its immediate
-> predecessor is accepted.
+> TG-M24.2C and TG-M24.2D are accepted predecessors. TG-M24.3A owns current
+> formal authority, and every later unit in this document remains inactive
+> until its immediate predecessor is accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
 > The separate TG-M24.R2 bootstrap Task supplies only a reviewed phase-one
@@ -430,9 +430,10 @@ to observe and stream exact objects. No target code or verification command is
 launched. Accepted 2B supplied only runtime identity, lifecycle, process/native
 adapters, and deterministic cleanup mechanics. Accepted 2C owns service
 dispatch/persistence behavior, durable audit-only Runner rows/Evidence/
-projection, and parent-service cleanup acceptance. Current 2D owns only
+projection, and parent-service cleanup acceptance. Accepted 2D supplied only
 integrated acceptance. CLI/JSON, Skill guidance, schema, and DDL/migration
-remain unchanged; 3 onward remains inactive.
+remained unchanged through 2D; later authority is owned by the sequence table
+and unit headings above.
 
 The 2A integration gate uses actual plan and target outputs with the existing
 pure `resolution_idempotency_digest` to prove the closed current-basis,
@@ -535,7 +536,7 @@ High or Medium finding.
 
 <a id="tg-m24-2"></a>
 
-## TG-M24.2D Current Shadow Runner Integrated Acceptance
+## TG-M24.2D Accepted Shadow Runner Integrated Acceptance
 
 Task `tg_task_fafad7bc62df7576` accepts the complete 2A-2C shadow slice from a
 fresh exact target. It proves trusted-local eligibility, exact materialization,
@@ -552,18 +553,40 @@ unit of its replacement sequence. It owns no status or gate by itself.
 
 <a id="tg-m24-3a"></a>
 
-## TG-M24.3A Inactive Schema-v21 Gate-Basis Contract
+## TG-M24.3A Current Schema-v21 Gate-Basis Contract
 
 Task `tg_task_2b7efe1c4545cca8` freezes the complete schema-v21 contract
-required before persistence or gate implementation. It must choose the exact
-migration marker and name, DDL and owned-object inventory, tagged qualifying-
-basis model, complete-v20 admission, v20-to-v21 migration, fresh-v21 and
-same-version reentry, rollback, backup/recovery, Bundle/Evidence/Viewer and
-legacy compatibility, invalidation, privacy, and fail-closed validation rules.
-It changes no product code, public schema constant, setup target, package,
-Skill, Runner runtime, completion gate, or canonical database. Completion
-requires internally consistent specification/design/execution/plan authority,
-document and lane checks, exact diff, and two independent Tier 2 PASS reviews.
+required before persistence or gate implementation. This unit is documentation
+only: the supported candidate remains schema v20, M21 remains the sole current
+verification/completion gate, and no schema-v21 row or artifact is created.
+
+The exact future product behavior is owned by the
+[schema-v21 specification](../specification.md#approved-but-inactive-schema-v21-gate-basis-contract),
+and its physical migration, validation, Bundle, Viewer, backup, and recovery
+design is owned by the
+[schema-v21 design](../design.md#tg-m24-3a-schema21-design). The fixed boundary
+uses migration 21 `verification_runner_gate_basis`, adds no table, column, or
+index, reuses Task marker `2` and Runner eligibility `1`, and keeps Bundle v2,
+Evidence Index v2, and Viewer snapshot v4. Schema-v20 evidence remains
+eligibility-zero audit history and is never promoted or backfilled.
+
+Inactive TG-M24.3B may implement only that persistence and compatibility
+contract while continuing to write marker/eligibility zero and using M21 as the
+sole completion gate. Its schema-v21 readers must validate and historically
+replay structurally valid later eligibility-one completed history, but a live
+marker-two target fails new completion closed until an explicit fresh target.
+TG-M24.3C alone may select, write, and qualify a live eligibility-one basis: an
+exact-current complete-plan launched pass may qualify, a launched non-pass
+blocks, and only the specified closed no-launch route may use a fresh exact-
+current M21 Receipt. Existing invalidation rules make every stale live basis
+historical without deleting immutable evidence.
+
+This unit changes no product code, public schema constant, setup target,
+package, Skill, Runner runtime, completion gate, canonical database, or history
+document. Completion requires internally consistent specification, design,
+execution, plan, and authority routing; closed structural document checks,
+lane-policy validation, exact diff, and two fresh independent Tier 2 PASS
+reviews. A full offline suite is not a 3A completion requirement.
 
 <a id="tg-m24-3b"></a>
 
@@ -617,8 +640,8 @@ fresh schema v21, reentry,
 backup/recovery, Task/Contract/target/Receipt/review/completion history, M1-M23
 behavior, Evidence Bundle/JSON, Viewer, Analyzer coexistence, and exact clean-
 target reproducibility. The schema-v21 contract remains the separate
-TG-M24.3A Tier 2 decision; this inactive decomposition chooses no migration
-tag or DDL. No unexpected or
+TG-M24.3A Tier 2 decision; this inactive acceptance unit chooses no alternate
+migration tag or DDL. No unexpected or
 newly skipped test is accepted. Corrections return to their owner. Completion
 requires full offline lanes, exact diff, and two independent Tier 2 PASS
 reviews.

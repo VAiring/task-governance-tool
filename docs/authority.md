@@ -44,8 +44,8 @@ whose retired adversarial qualification details supply no current gate.
 Accepted R4A left its inventory-approved retired repository material and
 dedicated tests physically absent, without an archive or dormant copy.
 TG-M24.1B is superseded and non-gating. TG-M24.R3A, TG-M24.R3B, TG-M24.R4B,
-TG-M24.R5, TG-M24.2A, TG-M24.2B, and TG-M24.2C are accepted predecessors;
-TG-M24.2D is the sole current unit. TG-M24.3A, TG-M24.3B, TG-M24.3C,
+TG-M24.R5, TG-M24.2A, TG-M24.2B, TG-M24.2C, and TG-M24.2D are accepted
+predecessors; TG-M24.3A is the sole current unit. TG-M24.3B, TG-M24.3C,
 TG-M24.4A, TG-M24.4B, TG-M24.4C, TG-M24.4D, and TG-M24.CP4 remain inactive
 in the exact sequential order owned by the routed contract. The
 separate TG-M24.R2 bootstrap checkpoint supported accepted R1 but activates no
@@ -64,8 +64,8 @@ or core semantics.
 TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
 preserves the inactive post-M24 normalization scope after TG-M24.CP4. Neither
 route changes product behavior. M24.1 design, M24.1A, R1, R2A, R2B, R2C,
-R4A, R4V, R3A, R3B, R4B, R5, 2A, 2B, and 2C are accepted predecessors,
-M24.1B is superseded, 2D is current, every later implementation and acceptance
+R4A, R4V, R3A, R3B, R4B, R5, 2A, 2B, 2C, and 2D are accepted predecessors,
+M24.1B is superseded, 3A is current, every later implementation and acceptance
 unit is inactive, and indexing or reading them activates no product behavior.
 
 ## Non-Authoritative History
@@ -142,9 +142,8 @@ owner, route, unit, and membership are the enforced meaning.
     {
       "path": "docs/execution-contracts/tg-m24-verification-runner.md",
       "route_anchor": "tg-m24-verification-runner",
-      "current_units": ["TG-M24.2D"],
+      "current_units": ["TG-M24.3A"],
       "inactive_units": [
-        "TG-M24.3A",
         "TG-M24.3B",
         "TG-M24.3C",
         "TG-M24.4A",

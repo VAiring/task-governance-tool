@@ -20,7 +20,9 @@ TG-M24.2C supplied parent-service orchestration and audit-only schema-v20
 observation and Evidence capture; it cannot satisfy verification or completion.
 TG-M24.2D is the sole current unit and accepts only the already-implemented
 shadow slice from one fresh exact target; it activates no additional product
-behavior or Runner completion gate.
+behavior or Runner completion gate. TG-M24.3A schema-v21 contract freeze,
+TG-M24.3B persistence implementation, TG-M24.3C gate integration, and every
+later M24 acceptance unit remain inactive.
 Completed execution narrative is history, and the Task
 database owns live state and evidence.
 
@@ -1906,9 +1908,11 @@ unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
 preservation of unrelated standalone objects. No migration-21 object exists.
 
 Schema v20 is the intermediate M24.2 shadow foundation and never becomes a
-qualifying Runner gate basis. Before M24.3 can activate that basis, a separate
-Tier 2 contract must define schema v21; this section chooses no schema-v21
-migration marker, tag, or DDL.
+qualifying Runner gate basis. Inactive TG-M24.3A owns the separate Tier 2
+schema-v21 contract, TG-M24.3B owns its persistence implementation while the
+M21 Receipt remains the sole verification and completion gate, and
+TG-M24.3C alone owns qualifying Runner-basis activation with explicit M21
+fallback. This section chooses no schema-v21 migration marker, tag, or DDL.
 
 ### Operational Read/Write Boundary
 
@@ -2638,8 +2642,9 @@ plan selection, exact target observation, and private materialization. Accepted
 2B covers only the bounded runtime/process adapter and deterministic cleanup.
 Accepted 2C owns parent-service orchestration plus audit-only schema-v20
 observation and Evidence capture. Current 2D owns only integrated acceptance of
-that shadow slice; completion-gate and release portions remain inactive behind
-their owning sequential units.
+that shadow slice. Schema-v21 contract freeze (3A), persistence implementation
+with unchanged M21 gates (3B), Runner gate integration (3C), and release
+acceptance remain inactive behind their owning sequential units.
 
 The approved execution direction is an explicit-opt-in Runner for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified

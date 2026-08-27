@@ -29,6 +29,19 @@ M23_AUTHORITY_SPLIT_RELATIVE = (
     "v0.12.0/tg-m23-pre-process-safety-split.md"
 )
 M23_AUTHORITY_SPLIT_CAPTURE = HISTORY_ROOT / M23_AUTHORITY_SPLIT_RELATIVE
+M243_DECOMPOSITION_SOURCE_COMMIT = "41bf97710d84f8a4f99274ad94efd559b74a7f22"
+M243_DECOMPOSITION_ARCHIVE_SHA256 = (
+    "31463eff15f38934498fc36a4fbf57be13a3a9e5bc211f45969ab82a8fa24c4d"
+)
+M243_DECOMPOSITION_BODY_SHA256 = (
+    "4e35dc2cf24623b06912dd33f7fb4795bbeca3073d1789f5049bfd0be97b5bad"
+)
+M243_DECOMPOSITION_BODY_SIZE = 38_323
+M243_DECOMPOSITION_SOURCE = (
+    "docs/execution-contracts/tg-m24-verification-runner.md"
+)
+M243_DECOMPOSITION_RELATIVE = "v0.12.0/tg-m24-pre-m243-decomposition.md"
+M243_DECOMPOSITION_CAPTURE = HISTORY_ROOT / M243_DECOMPOSITION_RELATIVE
 M20S3_TASK = "tg_task_286129dbca4d25ab"
 ROADMAP_SOURCE_COMMIT = "af5e19545e4f5b59817c70fbc5e2763c0dbf2e1e"
 RETIRED_ROADMAP = ROOT / "docs" / "implementation-roadmap.md"
@@ -468,6 +481,67 @@ class DocumentHistoryTests(unittest.TestCase):
         for target in (
             "../execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence",
             "../execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety",
+        ):
+            self.assertEqual(section.count(f"]({target})"), 1)
+
+    def test_m243_decomposition_capture_preserves_exact_source_provenance(self):
+        data = M243_DECOMPOSITION_CAPTURE.read_bytes()
+        self.assertEqual(
+            hashlib.sha256(data).hexdigest(),
+            M243_DECOMPOSITION_ARCHIVE_SHA256,
+        )
+
+        source = subprocess.run(
+            [
+                "git",
+                "show",
+                f"{M243_DECOMPOSITION_SOURCE_COMMIT}:"
+                f"{M243_DECOMPOSITION_SOURCE}",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(source.returncode, 0)
+        self.assertEqual(len(source.stdout), M243_DECOMPOSITION_BODY_SIZE)
+        self.assertEqual(
+            hashlib.sha256(source.stdout).hexdigest(),
+            M243_DECOMPOSITION_BODY_SHA256,
+        )
+        self.assertTrue(data.endswith(source.stdout))
+        body = data[-M243_DECOMPOSITION_BODY_SIZE:]
+        self.assertEqual(body, source.stdout)
+        prefix = data[:-M243_DECOMPOSITION_BODY_SIZE].decode("utf-8")
+        for marker in (
+            "NON-AUTHORITATIVE HISTORY",
+            M243_DECOMPOSITION_SOURCE,
+            M243_DECOMPOSITION_SOURCE_COMMIT,
+            "Captured body begins below.",
+            "../../execution-contracts/tg-m24-verification-runner.md#tg-m24-3a",
+            "../../execution-contracts/tg-m24-verification-runner.md#tg-m24-3b",
+            "../../execution-contracts/tg-m24-verification-runner.md#tg-m24-3c",
+        ):
+            self.assertIn(marker, prefix)
+
+        index = (HISTORY_ROOT / "README.md").read_text(encoding="utf-8")
+        heading = (
+            "Pre-M24.3-decomposition capture of "
+            "`docs/execution-contracts/tg-m24-verification-runner.md`"
+        )
+        sections = re.findall(
+            rf"^### {re.escape(heading)}\n(.*?)(?=^### |^## |\Z)",
+            index,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertEqual(len(sections), 1)
+        section = sections[0]
+        self.assertEqual(index.count(f"]({M243_DECOMPOSITION_RELATIVE})"), 1)
+        self.assertEqual(section.count(M243_DECOMPOSITION_SOURCE_COMMIT), 1)
+        self.assertIn("Capture unit: `TG-M24.3`", section)
+        for target in (
+            "../execution-contracts/tg-m24-verification-runner.md#tg-m24-3a",
+            "../execution-contracts/tg-m24-verification-runner.md#tg-m24-3b",
+            "../execution-contracts/tg-m24-verification-runner.md#tg-m24-3c",
         ):
             self.assertEqual(section.count(f"]({target})"), 1)
 

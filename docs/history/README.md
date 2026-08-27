@@ -323,3 +323,22 @@ evidence remain available only through the public CLI.
   [TG-M24 mixed owner](../execution-contracts/tg-m24-verification-runner.md#tg-m24-verification-runner).
   Use the public CLI for live Task state and evidence. This capture is lineage
   only and cannot fill a current authority gap or satisfy a gate.
+
+## v0.12.0 TG-M24.3 Decomposition Lineage
+
+### Pre-M24.3-decomposition capture of `docs/execution-contracts/tg-m24-verification-runner.md`
+
+- Immutable history:
+  [v0.12.0/tg-m24-pre-m243-decomposition.md](v0.12.0/tg-m24-pre-m243-decomposition.md)
+- Source commit: `41bf97710d84f8a4f99274ad94efd559b74a7f22`
+- Capture unit: `TG-M24.3`
+- Capture purpose: preserve the exact mixed TG-M24 authority body before the
+  inactive combined TG-M24.3 contract was decomposed into three sequential
+  units.
+- Current replacements:
+  [TG-M24.3A schema-v21 contract](../execution-contracts/tg-m24-verification-runner.md#tg-m24-3a),
+  [TG-M24.3B persistence foundation](../execution-contracts/tg-m24-verification-runner.md#tg-m24-3b),
+  and
+  [TG-M24.3C Runner gate integration](../execution-contracts/tg-m24-verification-runner.md#tg-m24-3c).
+  Use the public CLI for live Task state and evidence. This capture is lineage
+  only and cannot fill a current authority gap or satisfy a gate.

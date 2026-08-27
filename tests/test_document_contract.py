@@ -594,6 +594,23 @@ class DocumentContractTests(unittest.TestCase):
                 self.codes(contract.check_document_contract(root)),
             )
 
+        for unit, heading in (
+            ("TG-M24.3A", "Schema-v21 Gate-Basis Contract"),
+            ("TG-M24.3B", "Schema-v21 Persistence Foundation"),
+            ("TG-M24.3C", "Runner Gate Integration And M21 Fallback"),
+        ):
+            with self.subTest(inactive_unit=unit), self.fixture() as root:
+                self.replace(
+                    root,
+                    contract.M24,
+                    f"## {unit} Inactive {heading}",
+                    f"## {unit} Current {heading}",
+                )
+                self.assertIn(
+                    "m24_current_binding",
+                    self.codes(contract.check_document_contract(root)),
+                )
+
         with self.fixture() as root:
             self.replace(
                 root,
@@ -1240,7 +1257,16 @@ class DocumentContractTests(unittest.TestCase):
             self.assertEqual(m24["current_units"], ["TG-M24.2D"])
             self.assertEqual(
                 m24["inactive_units"],
-                [row[0].split(" /", 1)[0] for row in contract.ROWS_M24[14:]],
+                [
+                    "TG-M24.3A",
+                    "TG-M24.3B",
+                    "TG-M24.3C",
+                    "TG-M24.4A",
+                    "TG-M24.4B",
+                    "TG-M24.4C",
+                    "TG-M24.4D",
+                    "TG-M24.CP4",
+                ],
             )
             self.assertEqual(m24["superseded_units"], ["TG-M24.1B"])
             self.assertNotIn("TG-M24.1", m24["current_units"])
@@ -1499,7 +1525,6 @@ class DocumentContractTests(unittest.TestCase):
             "TG-M24.R4B",
             "TG-M24.R5",
             "TG-M24.2A",
-            "TG-M24.3",
             "TG-M24.4D",
             "TG-M24.CP4",
             "TG-DOC.2",
@@ -1552,10 +1577,8 @@ class DocumentContractTests(unittest.TestCase):
         stale_m24_owner_mutations = (
             (
                 contract.AUTHORITY,
-                "TG-M24.2D is the sole current unit, and TG-M24.3 through "
-                "TG-M24.CP4 remain\ninactive",
-                "TG-M24.2C is the sole current unit, and TG-M24.2D through "
-                "TG-M24.CP4 remain\ninactive",
+                "TG-M24.2D is the sole current unit",
+                "TG-M24.2C is the sole current unit",
             ),
             (
                 "docs/specification.md",
@@ -1590,10 +1613,9 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.AUTHORITY,
-                "TG-M24.2D is the sole current unit, and TG-M24.3 through "
-                "TG-M24.CP4 remain\ninactive",
-                "TG-M24.2D is the sole current unit, and TG-M24.2D through "
-                "TG-M24.CP4 remain\ninactive",
+                "TG-M24.3A, TG-M24.3B, TG-M24.3C,\nTG-M24.4A",
+                "TG-M24.2D is inactive. TG-M24.3A, TG-M24.3B, TG-M24.3C,\n"
+                "TG-M24.4A",
             )
             self.assertIn(
                 "document_role",
@@ -1604,8 +1626,9 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.EXECUTION_INDEX,
-                "inactive TG-M24.3-through-TG-M24.CP4",
-                "inactive TG-M24.2D-through-TG-M24.CP4",
+                "inactive TG-M24.3A/TG-M24.3B/TG-M24.3C-through-TG-M24.CP4",
+                "inactive TG-M24.2D/TG-M24.3A/TG-M24.3B/"
+                "TG-M24.3C-through-TG-M24.CP4",
             )
             self.assertIn(
                 "document_role",
@@ -1911,6 +1934,31 @@ class DocumentContractTests(unittest.TestCase):
                 contract.M24,
                 "| TG-M24.R4V / 45 | `tg_task_006bee9937e25af9` | accepted TG-M24.R4A |",
                 "| TG-M24.R4V / 45 | `tg_task_0000000000000000` | accepted TG-M24.R4A |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.3A / 130 | `tg_task_2b7efe1c4545cca8` | accepted TG-M24.2D |",
+                "| TG-M24.3A / 130 | `tg_task_0000000000000000` | accepted TG-M24.2D |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.3A / 130 | `tg_task_2b7efe1c4545cca8` | accepted TG-M24.2D |",
+                "| TG-M24.3A / 131 | `tg_task_2b7efe1c4545cca8` | accepted TG-M24.2D |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.3B / 135 | `tg_task_1c3f41dc4bc88a68` | accepted TG-M24.3A |",
+                "| TG-M24.3B / 135 | `tg_task_1c3f41dc4bc88a68` | accepted TG-M24.2D |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.3C / 138 | `tg_task_dc015144091f8e60` | accepted TG-M24.3B |",
+                "| TG-M24.3C / 138 | `tg_task_dc015144091f8e60` | accepted TG-M24.3A |",
+            ),
+            (
+                contract.M24,
+                "| TG-M24.4A / 140 | `tg_task_0da786589eb5144a` | accepted TG-M24.3C |",
+                "| TG-M24.4A / 140 | `tg_task_0da786589eb5144a` | accepted TG-M24.3B |",
             ),
             (
                 contract.M24,

@@ -229,8 +229,10 @@ ROWS_M24 = (
     ("TG-M24.2B / 100", "tg_task_f8880aeb93c3ad52", "accepted TG-M24.2A"),
     ("TG-M24.2C / 110", "tg_task_8cc06027db5be49f", "accepted TG-M24.2B"),
     ("TG-M24.2D / 120", "tg_task_fafad7bc62df7576", "accepted TG-M24.2C"),
-    ("TG-M24.3 / 130", "tg_task_dc015144091f8e60", "accepted TG-M24.2D"),
-    ("TG-M24.4A / 140", "tg_task_0da786589eb5144a", "accepted TG-M24.3"),
+    ("TG-M24.3A / 130", "tg_task_2b7efe1c4545cca8", "accepted TG-M24.2D"),
+    ("TG-M24.3B / 135", "tg_task_1c3f41dc4bc88a68", "accepted TG-M24.3A"),
+    ("TG-M24.3C / 138", "tg_task_dc015144091f8e60", "accepted TG-M24.3B"),
+    ("TG-M24.4A / 140", "tg_task_0da786589eb5144a", "accepted TG-M24.3C"),
     ("TG-M24.4B / 150", "tg_task_220ff054e445f40e", "accepted TG-M24.4A"),
     ("TG-M24.4C / 160", "tg_task_b0a3bf776bea1e93", "accepted TG-M24.4B"),
     ("TG-M24.4D / 170", "tg_task_f81f2d126f033a59", "accepted TG-M24.4C"),
@@ -401,11 +403,17 @@ TASK_STATUS_VALUES = {
     "done",
 }
 CURRENT_UNITS = ("TG-M24.2D",)
+M24_3_STRUCTURAL_STATUS_UNITS = (
+    "TG-M24.3A",
+    "TG-M24.3B",
+    "TG-M24.3C",
+)
 NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
     for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
     for row in rows
     if row[0].split(" /", 1)[0] not in CURRENT_UNITS
+    and row[0].split(" /", 1)[0] not in M24_3_STRUCTURAL_STATUS_UNITS
 ) + ("TG-M24.1", "TG-M24.1A", "TG-M24.1B")
 NONCURRENT_SUBJECTS = tuple(
     sorted(
@@ -1680,7 +1688,9 @@ def _expected_registry() -> dict[str, object]:
                 "route_anchor": "tg-m24-verification-runner",
                 "current_units": ["TG-M24.2D"],
                 "inactive_units": [
-                    "TG-M24.3",
+                    "TG-M24.3A",
+                    "TG-M24.3B",
+                    "TG-M24.3C",
                     "TG-M24.4A",
                     "TG-M24.4B",
                     "TG-M24.4C",
@@ -1988,6 +1998,9 @@ def _sequences(scans: dict[str, Scan], issues: list[Issue]) -> None:
         "tg-m24-2c",
         "tg-m24-2",
         "tg-m24-3",
+        "tg-m24-3a",
+        "tg-m24-3b",
+        "tg-m24-3c",
         "tg-m24-4a",
         "tg-m24-4b",
         "tg-m24-4c",
@@ -2246,7 +2259,9 @@ def _m24_trusted_local_authority_sync(
         ("tg-m24-2b", "tg-m24.2b", "accepted"),
         ("tg-m24-2c", "tg-m24.2c", "accepted"),
         ("tg-m24-2", "tg-m24.2d", "current"),
-        ("tg-m24-3", "tg-m24.3", "inactive"),
+        ("tg-m24-3a", "tg-m24.3a", "inactive"),
+        ("tg-m24-3b", "tg-m24.3b", "inactive"),
+        ("tg-m24-3c", "tg-m24.3c", "inactive"),
         ("tg-m24-4a", "tg-m24.4a", "inactive"),
         ("tg-m24-4b", "tg-m24.4b", "inactive"),
         ("tg-m24-4c", "tg-m24.4c", "inactive"),

@@ -259,11 +259,12 @@ shadow slice from one fresh exact target and activates no additional behavior.
 R3B activates only schema/storage, Bundle, Evidence, Viewer,
 and recovery compatibility; it creates no Runner rows, links, members, or
 projection and grants no process or completion-gate authority. Runner service
-integration remains owned by the ordered M24.2 implementation, and qualifying
-completion-gate activation remains owned by M24.3/M24.4 acceptance. Schema-v20
-shadow evidence
-cannot satisfy that gate; M24.3 requires a separately approved schema-v21
-contract without expanding the M24.2 route here. The downstream final v0.13
+integration remains owned by the ordered M24.2 implementation. Inactive
+TG-M24.3A owns the separate schema-v21 contract, TG-M24.3B owns persistence
+implementation while M21 remains the sole verification/completion gate, and
+TG-M24.3C owns qualifying gate activation with explicit M21 fallback before
+M24.4 acceptance. Schema-v20 shadow evidence cannot satisfy that gate. The
+downstream final v0.13
 release-candidate identity is schema v21 under that future exact contract;
 schema v20 remains the M24.2 intermediate shadow foundation.
 The final checkpoint requires no unclassified or new measurable debt, no
@@ -282,8 +283,8 @@ TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, TG-M24.R4V, TG-M24.R3A, TG-M24.R3B,
 TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and TG-M24.2C are accepted
 predecessors; TG-M24.1B is superseded. Current formal authority belongs only to
 TG-M24.2D integrated acceptance of the already-implemented shadow Runner slice,
-while TG-M24.3 and every later unit remain inactive behind their accepted
-immediate predecessor.
+while TG-M24.3A, TG-M24.3B, TG-M24.3C, and every later unit remain inactive
+behind their accepted immediate predecessor.
 Exact unit identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 not duplicated in this gateway.

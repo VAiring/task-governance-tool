@@ -1,3 +1,22 @@
+# TG-M24 Pre-M24.3-Decomposition Authority Capture
+
+> [!CAUTION]
+> NON-AUTHORITATIVE HISTORY. This file preserves the exact body of
+> `docs/execution-contracts/tg-m24-verification-runner.md` from source commit
+> `41bf97710d84f8a4f99274ad94efd559b74a7f22` before the inactive combined
+> TG-M24.3 authority route was decomposed into three sequential units. Words
+> such as accepted, inactive, current, or owner inside the captured body
+> describe only that source revision and are not current authority. Current
+> replacements are the
+> [TG-M24.3A schema-v21 contract](../../execution-contracts/tg-m24-verification-runner.md#tg-m24-3a),
+> [TG-M24.3B persistence foundation](../../execution-contracts/tg-m24-verification-runner.md#tg-m24-3b),
+> and
+> [TG-M24.3C Runner gate integration](../../execution-contracts/tg-m24-verification-runner.md#tg-m24-3c).
+> This capture activates no behavior and cannot fill an authority gap or
+> satisfy a current verification, review, or completion gate.
+>
+> Captured body begins below.
+
 # TG-M24 Verification Runner Current Execution Contract
 
 <a id="tg-m24-verification-runner"></a>
@@ -116,10 +135,8 @@ or evidence.
 | TG-M24.2B / 100 | `tg_task_f8880aeb93c3ad52` | accepted TG-M24.2A | Implement the bounded trusted-local process adapter and deterministic cleanup. |
 | TG-M24.2C / 110 | `tg_task_8cc06027db5be49f` | accepted TG-M24.2B | Integrate audit-only shadow observations while preserving M21 completion semantics. |
 | TG-M24.2D / 120 | `tg_task_fafad7bc62df7576` | accepted TG-M24.2C | Accept the complete shadow Runner and evidence slice; activate no completion-gate authority. |
-| TG-M24.3A / 130 | `tg_task_2b7efe1c4545cca8` | accepted TG-M24.2D | Freeze the exact schema-v21 migration, admission, recovery, and compatibility contract without product activation. |
-| TG-M24.3B / 135 | `tg_task_1c3f41dc4bc88a68` | accepted TG-M24.3A | Implement only the accepted schema-v21 persistence boundary while M21 remains the verification and completion gate. |
-| TG-M24.3C / 138 | `tg_task_dc015144091f8e60` | accepted TG-M24.3B | Integrate one qualifying exact-current schema-v21 Runner basis while preserving explicit M21 fallback. |
-| TG-M24.4A / 140 | `tg_task_0da786589eb5144a` | accepted TG-M24.3C | Accept supported, fallback, failure, cleanup, and privacy flows. |
+| TG-M24.3 / 130 | `tg_task_dc015144091f8e60` | accepted TG-M24.2D | Integrate a qualifying exact-current Runner basis while preserving explicit M21 fallback. |
+| TG-M24.4A / 140 | `tg_task_0da786589eb5144a` | accepted TG-M24.3 | Accept supported, fallback, failure, cleanup, and privacy flows. |
 | TG-M24.4B / 150 | `tg_task_220ff054e445f40e` | accepted TG-M24.4A | Accept legacy, core, v19-to-v20 and v20-to-v21 migration, recovery, and fresh-schema-v21 compatibility. |
 | TG-M24.4C / 160 | `tg_task_b0a3bf776bea1e93` | accepted TG-M24.4B | Accept the final v0.13/schema-v21 package and release-candidate boundary. |
 | TG-M24.4D / 170 | `tg_task_f81f2d126f033a59` | accepted TG-M24.4C | Perform final integrated Runner acceptance without adding corrective infrastructure. |
@@ -547,54 +564,19 @@ offline checks, exact diff, and two independent Tier 2 PASS reviews.
 
 <a id="tg-m24-3"></a>
 
-This stable compatibility alias routes former `TG-M24.3` links to the first
-unit of its replacement sequence. It owns no status or gate by itself.
-
-<a id="tg-m24-3a"></a>
-
-## TG-M24.3A Inactive Schema-v21 Gate-Basis Contract
-
-Task `tg_task_2b7efe1c4545cca8` freezes the complete schema-v21 contract
-required before persistence or gate implementation. It must choose the exact
-migration marker and name, DDL and owned-object inventory, tagged qualifying-
-basis model, complete-v20 admission, v20-to-v21 migration, fresh-v21 and
-same-version reentry, rollback, backup/recovery, Bundle/Evidence/Viewer and
-legacy compatibility, invalidation, privacy, and fail-closed validation rules.
-It changes no product code, public schema constant, setup target, package,
-Skill, Runner runtime, completion gate, or canonical database. Completion
-requires internally consistent specification/design/execution/plan authority,
-document and lane checks, exact diff, and two independent Tier 2 PASS reviews.
-
-<a id="tg-m24-3b"></a>
-
-## TG-M24.3B Inactive Schema-v21 Persistence Foundation
-
-Task `tg_task_1c3f41dc4bc88a68` implements only the exact contract accepted in
-TG-M24.3A across migration, storage, repository, validators, setup, Bundle/
-Evidence/Viewer compatibility, and managed backup/recovery. The M21 caller-
-attested Receipt remains the sole verification and completion gate; this unit
-activates no qualifying Runner-basis authority, new public CLI leaf, Skill
-trigger, process behavior, or corrective infrastructure. Completion requires
-focused fresh-v21, v20-to-v21, reentry, rollback, recovery, compatibility,
-privacy, M21-gate nonactivation, full offline, exact-diff, and two independent
-Tier 2 PASS reviews.
-
-<a id="tg-m24-3c"></a>
-
-## TG-M24.3C Inactive Runner Gate Integration And M21 Fallback
+## TG-M24.3 Inactive Runner Gate Integration And M21 Fallback
 
 Task `tg_task_dc015144091f8e60` may let one qualifying exact-current complete-
-plan schema-v21 trusted-local Runner pass satisfy verification. Every launched
-non-pass blocks that selected basis; only a closed no-launch fallback may use
-the M21 caller-attested Receipt. Unsupported, manual, visual, external, and
-untrusted work always stays manual. Analyzer output, arbitrary commands, old
-evidence, and caller override gain no authority. Schema-v20 shadow records
-remain gate-ineligible. This unit consumes the accepted TG-M24.3A/TG-M24.3B
-foundation and owns no schema-v21 migration, DDL, or recovery implementation.
-Completion requires exact-current basis selection and invalidation, completion
-and fallback behavior, legacy history and projection compatibility, Skill/
-package synchronization, full offline, exact-diff, and two independent Tier 2
-PASS reviews.
+plan trusted-local Runner result satisfy verification. Every launched non-pass
+blocks that selected basis; only a closed no-launch fallback may use the M21
+caller-attested Receipt. Unsupported, manual, visual, external, and untrusted
+work always stays manual. Analyzer output, arbitrary commands, old evidence,
+and caller override gain no authority. Schema-v20 shadow records cannot be
+promoted to this gate; before M24.3 implementation, a separate schema-v21
+contract is required. This contract does not choose a schema-v21 migration,
+tag, or DDL. Completion requires basis/version, invalidation/recovery, legacy
+history, projection, Skill/package, full offline, exact-diff, and two
+independent Tier 2 PASS reviews.
 
 <a id="tg-m24-4a"></a>
 
@@ -612,13 +594,11 @@ independent Tier 2 PASS reviews.
 ## TG-M24.4B Inactive Legacy, Core, And Fresh-State Acceptance
 
 Task `tg_task_220ff054e445f40e` preserves v19-to-v20 compatibility and validates
-the TG-M24.3A contract and TG-M24.3B implementation for v20-to-v21 migration,
-fresh schema v21, reentry,
+the separately approved v20-to-v21 migration, fresh schema v21, reentry,
 backup/recovery, Task/Contract/target/Receipt/review/completion history, M1-M23
 behavior, Evidence Bundle/JSON, Viewer, Analyzer coexistence, and exact clean-
-target reproducibility. The schema-v21 contract remains the separate
-TG-M24.3A Tier 2 decision; this inactive decomposition chooses no migration
-tag or DDL. No unexpected or
+target reproducibility. The schema-v21 contract is a separate Tier 2 decision
+before M24.3; this document chooses no migration tag or DDL. No unexpected or
 newly skipped test is accepted. Corrections return to their owner. Completion
 requires full offline lanes, exact diff, and two independent Tier 2 PASS
 reviews.
@@ -628,9 +608,7 @@ reviews.
 ## TG-M24.4C Inactive v0.13 Package And Release-Candidate Acceptance
 
 Task `tg_task_b0a3bf776bea1e93` reconciles the final v0.13/schema-v21 package,
-using the exact schema-v21 contract accepted in TG-M24.3A, persistence
-foundation accepted in TG-M24.3B, and gate integration accepted in
-TG-M24.3C, with its
+using the exact schema-v21 contract separately accepted for M24.3, with its
 manifest, active documents, release note, archive inventory, fresh package
 install, upgrade/rollback evidence, and retired-asset absence. It performs no
 publication, push, tag, network action, or product correction. Completion

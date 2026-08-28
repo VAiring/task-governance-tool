@@ -10,6 +10,7 @@ from unittest import mock
 from tests.m14_test_support import SOURCE_SKILL_ROOT
 
 from task_governance_tool import backup as backup_service
+from task_governance_tool import storage as storage_service
 from task_governance_tool import tasks as tasks_service
 from task_governance_tool.backup import (
     discover_managed_backup_metadata,
@@ -273,7 +274,9 @@ class RoutineBackupTests(unittest.TestCase):
                 "description",
                 "artifact-local-value",
             )
-            real_validator = backup_service.validate_evidence_ledger_storage
+            real_validator = (
+                storage_service.validate_evidence_ledger_storage_for_recovery
+            )
             observed_before = []
             local_caches = []
 
@@ -286,8 +289,8 @@ class RoutineBackupTests(unittest.TestCase):
                 return result
 
             with mock.patch.object(
-                backup_service,
-                "validate_evidence_ledger_storage",
+                storage_service,
+                "validate_evidence_ledger_storage_for_recovery",
                 side_effect=observe_artifact_cache,
             ):
                 artifacts = backup_service._discover(

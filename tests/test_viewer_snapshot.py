@@ -68,6 +68,10 @@ from task_governance_tool.verification_receipts import (  # noqa: E402
 )
 from task_governance_tool import viewer as viewer_module  # noqa: E402
 from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
+from tests.test_m242_r3b_schema20_activation import (  # noqa: E402
+    _start_schema20_runtime_oracle,
+    _stop_schema20_runtime_oracle,
+)
 
 
 SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"
@@ -395,67 +399,71 @@ class ViewerSnapshotTests(unittest.TestCase):
 
     def test_schema_v17_native_receipt_history_uses_legacy_subject_projection(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
-            with closing(connect(target.db_path)) as connection:
-                with connection:
-                    task = add_task(
+            _start_schema20_runtime_oracle()
+            try:
+                target = initialized_target(tmp)
+                with closing(connect(target.db_path)) as connection:
+                    with connection:
+                        task = add_task(
+                            connection,
+                            target.project,
+                            title="Schema 17 Viewer receipt history",
+                            status="in_progress",
+                            review_tier=0,
+                            verification="Focused offline verification",
+                        ).task
+
+                with closing(connect(target.db_path)) as connection:
+                    set_review_target(
                         connection,
                         target.project,
-                        title="Schema 17 Viewer receipt history",
-                        status="in_progress",
-                        review_tier=0,
-                        verification="Focused offline verification",
-                    ).task
+                        task["task_id"],
+                        kind="diff_fingerprint",
+                        revision="sha256:" + ("d" * 64),
+                    )
+                    add_review_receipt(
+                        connection,
+                        target.project,
+                        task["task_id"],
+                        reviewer="mechanical-review",
+                        kind="not_required",
+                        verdict="not_required",
+                        summary="Mechanical Viewer compatibility fixture",
+                    )
+                    connection.commit()
 
-            with closing(connect(target.db_path)) as connection:
-                set_review_target(
-                    connection,
-                    target.project,
+                with closing(connect(target.db_path)) as connection:
+                    add_verification_receipt(
+                        connection,
+                        target.project,
+                        task["task_id"],
+                        result="pass",
+                        duration_ms=1,
+                        scope_coverage="full",
+                        expected_target_generation=1,
+                    )
+                    connection.commit()
+
+                completed = run_taskgov_internal(
+                    "task",
+                    "complete",
                     task["task_id"],
-                    kind="diff_fingerprint",
-                    revision="sha256:" + ("d" * 64),
+                    "--repo",
+                    str(target.project.canonical_repo),
+                    "--db",
+                    str(target.db_path),
+                    "--verification-complete",
+                    "--review-complete",
+                    "--commit-not-required",
+                    "--json",
                 )
-                add_review_receipt(
-                    connection,
-                    target.project,
-                    task["task_id"],
-                    reviewer="mechanical-review",
-                    kind="not_required",
-                    verdict="not_required",
-                    summary="Mechanical Viewer compatibility fixture",
-                )
-                connection.commit()
+                self.assertEqual(completed.returncode, 0, completed.stdout)
 
-            with closing(connect(target.db_path)) as connection:
-                add_verification_receipt(
-                    connection,
-                    target.project,
-                    task["task_id"],
-                    result="pass",
-                    duration_ms=1,
-                    scope_coverage="full",
-                    expected_target_generation=1,
-                )
-                connection.commit()
-
-            completed = run_taskgov_internal(
-                "task",
-                "complete",
-                task["task_id"],
-                "--repo",
-                str(target.project.canonical_repo),
-                "--db",
-                str(target.db_path),
-                "--verification-complete",
-                "--review-complete",
-                "--commit-not-required",
-                "--json",
-            )
-            self.assertEqual(completed.returncode, 0, completed.stdout)
-
-            with closing(connect(target.db_path)) as connection:
-                remove_v18_evidence_ledger_for_test(connection)
-                connection.commit()
+                with closing(connect(target.db_path)) as connection:
+                    remove_v18_evidence_ledger_for_test(connection)
+                    connection.commit()
+            finally:
+                _stop_schema20_runtime_oracle()
 
             validated_batch_sizes = []
             real_validator = tasks_module.validate_stored_task_rows
@@ -995,7 +1003,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 },
             )
             self.assertEqual(snapshot["snapshot_version"], 4)
-            self.assertEqual(snapshot["source_schema_version"], 20)
+            self.assertEqual(snapshot["source_schema_version"], 21)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {

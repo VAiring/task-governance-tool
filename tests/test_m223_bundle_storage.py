@@ -179,7 +179,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             db_path = self._initialized_database(Path(directory))
             with closing(connect(db_path)) as connection:
-                self.assertEqual(SCHEMA_VERSION, 20)
+                self.assertEqual(SCHEMA_VERSION, 21)
                 remove_v20_runner_shadow_for_test(connection)
                 self.assertEqual(current_schema_version(connection), 19)
                 marker = connection.execute(

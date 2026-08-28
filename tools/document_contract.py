@@ -1673,9 +1673,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.3A"],
+                "current_units": ["TG-M24.3B"],
                 "inactive_units": [
-                    "TG-M24.3B",
                     "TG-M24.3C",
                     "TG-M24.4A",
                     "TG-M24.4B",
@@ -1890,9 +1889,9 @@ def _m24_3a_owner_routes(
 ) -> None:
     expected = (
         (
-            "../specification.md#approved-but-inactive-schema-v21-gate-basis-contract",
+            "../specification.md#current-schema-v21-persistence-contract",
             "docs/specification.md",
-            "approved-but-inactive-schema-v21-gate-basis-contract",
+            "current-schema-v21-persistence-contract",
         ),
         (
             "../design.md#tg-m24-3a-schema21-design",
@@ -2288,8 +2287,8 @@ def _m24_trusted_local_authority_sync(
         ("tg-m24-2b", "tg-m24.2b", "accepted"),
         ("tg-m24-2c", "tg-m24.2c", "accepted"),
         ("tg-m24-2", "tg-m24.2d", "accepted"),
-        ("tg-m24-3a", "tg-m24.3a", "current"),
-        ("tg-m24-3b", "tg-m24.3b", "inactive"),
+        ("tg-m24-3a", "tg-m24.3a", "accepted"),
+        ("tg-m24-3b", "tg-m24.3b", "current"),
         ("tg-m24-3c", "tg-m24.3c", "inactive"),
         ("tg-m24-4a", "tg-m24.4a", "inactive"),
         ("tg-m24-4b", "tg-m24.4b", "inactive"),

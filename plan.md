@@ -2,8 +2,8 @@
 
 Decision baseline: v0.10.0 is the immutable published release; its exact
 identity lives in `docs/release-install.md`. The current unpublished local
-candidate is v0.12.0/schema v20/Viewer snapshot v4 with source compatibility
-v5-v20 and 21 public command leaves. This plan retains current decisions,
+candidate is v0.12.0/schema v21/Viewer snapshot v4 with source compatibility
+v5-v21 and 21 public command leaves. This plan retains current decisions,
 unfinished static contracts, and open issues only. Completed execution
 narrative is indexed as non-authoritative history, while the Task database,
 queried through the public CLI, solely owns live execution status and evidence.
@@ -184,7 +184,7 @@ outside until separately supported. The exact Task DB record owns live state.
 ### Current Verification Receipt Decision
 
 The schema-v18-origin Verification Receipt behavior retained by current schema
-v20 is defined by the active [specification](docs/specification.md) and
+v21 is defined by the active [specification](docs/specification.md) and
 [design](docs/design.md). Completed
 M21 design, activation, acceptance, and correction narrative is preserved only
 in [indexed non-authoritative history](docs/history/v0.11.0/pre-m22-completed-execution.md).
@@ -192,17 +192,17 @@ That history supplies no current gate or implementation authority.
 
 <a id="tg-m22-1a"></a>
 
-### Current Schema-v20 Evidence Bundle And JSON Decision
+### Current Schema-v21 Evidence Bundle And JSON Decision
 
 The v0.12.0 candidate retains the accepted TG-M22.2 capture foundation,
 TG-M21.5 admission boundary, and TG-M22.3 schema-v19 immutable native
 completion Bundles, criterion links and Finding snapshots, plus the
-fixed one-way Evidence JSON projection. Current schema-v20 native completions
+fixed one-way Evidence JSON projection. Current schema-v21 native completions
 write Bundle v2 with a null Runner observation, while the format-v2 index can
 reference preserved Bundle-v1 bytes without rewriting them. Pre-v19 cycles
 remain index-only as `legacy_unknown`; SQLite remains canonical. Setup repairs the projection,
 doctor observes it read-only, and post-commit maintenance runs Evidence,
-Viewer, then backup. Viewer snapshot v4 accepts v5-v20 but adds no Evidence UI.
+Viewer, then backup. Viewer snapshot v4 accepts v5-v21 but adds no Evidence UI.
 TG-M24.2C activates only the standalone schema-v20 audit writer under the
 existing exact target-set dispatch. No Runner Bundle/Evidence JSON/Viewer UI
 projection, completion gate, public leaf, new normal-loop call,
@@ -259,15 +259,13 @@ shadow slice from one fresh exact target and activates no additional behavior.
 R3B activates only schema/storage, Bundle, Evidence, Viewer,
 and recovery compatibility; it creates no Runner rows, links, members, or
 projection and grants no process or completion-gate authority. Runner service
-integration remains owned by the ordered M24.2 implementation. Current
-TG-M24.3A owns only the separate documentation-only schema-v21 contract;
-inactive TG-M24.3B owns persistence
-implementation while M21 remains the sole verification/completion gate, and
-TG-M24.3C owns qualifying gate activation with explicit M21 fallback before
-M24.4 acceptance. Schema-v20 shadow evidence cannot satisfy that gate. The
-downstream final v0.13
-release-candidate identity is schema v21 under that future exact contract;
-schema v20 remains the M24.2 intermediate shadow foundation.
+integration remains owned by the ordered M24.2 implementation. Accepted
+TG-M24.3A owns the frozen schema-v21 contract; current TG-M24.3B owns its
+persistence implementation while M21 remains the sole verification/completion
+gate, and inactive TG-M24.3C owns qualifying gate activation with explicit M21
+fallback before M24.4 acceptance. Schema-v20 shadow evidence cannot satisfy
+that gate. The current v0.12.0 candidate identity is schema v21; schema v20
+remains the M24.2 intermediate shadow foundation and migration source.
 The final checkpoint requires no unclassified or new measurable debt, no
 retired/archive/dormant residue, no meaningless/disabled/new-SKIP test, a clean
 package and release candidate, and an explicit M25 handoff. Sequential ordering,
@@ -282,9 +280,9 @@ TG-M24 is approved sequential Tier 2 work in lane
 `TG-M24-TRUSTED-RUNNER`. TG-M24.1, TG-M24.1A, TG-M24.R1, TG-M24.R2A,
 TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, TG-M24.R4V, TG-M24.R3A, TG-M24.R3B,
 TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, TG-M24.2C, and TG-M24.2D are
-accepted predecessors; TG-M24.1B is superseded. Current formal authority
-belongs only to TG-M24.3A's documentation-only schema-v21 contract freeze,
-while TG-M24.3B, TG-M24.3C, and every later unit remain inactive
+accepted predecessors; TG-M24.1B is superseded. TG-M24.3A's documentation-only
+schema-v21 contract freeze is accepted, current formal authority belongs only
+to TG-M24.3B's persistence foundation, and TG-M24.3C and every later unit remain inactive
 behind their accepted immediate predecessor.
 Exact unit identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
@@ -299,7 +297,7 @@ public setup action at a separate approval checkpoint.
 
 Accepted TG-M24.R1 consumed only the reviewed R2 bootstrap boundary and changed
 no product byte; accepted R2A, R2B, R2C, R4A, and R4V changed no supported product
-behavior. Current 3A and its successors advance in exact order, use fresh
+behavior. Current 3B and its successors advance in exact order, use fresh
 current evidence, and never reuse superseded Candidate-C, LPAC, or diagnostic
 recovery evidence.
 The approved 2C decision is the narrow audit-only route: preflight fallback
@@ -316,7 +314,7 @@ The sequence grants no arbitrary command, automatic execution of untrusted or
 external targets, raw-output retention, network action, target-project write,
 publication, push, tag, or Release authority.
 
-The current TG-M24.3A decision is the smallest schema-v21 representation that
+The accepted TG-M24.3A decision is the smallest schema-v21 representation that
 can support the later gate without adding a parallel storage model. Version 21
 uses migration name `verification_runner_gate_basis`, reuses the schema-v20
 Task marker, Runner eligibility tags, cycle/Bundle observation pointers,
@@ -324,7 +322,7 @@ Bundle format v2, Evidence index v2, and Viewer snapshot v4, and adds no table,
 column, index, public command, JSON/UI field, or Skill trigger. Existing
 schema-v20 Runner rows remain eligibility-zero audit history and migration may
 neither promote nor backfill them. Exact physical, migration, recovery,
-compatibility, privacy, and inactive 3B/3C rules remain delegated to the
+compatibility, privacy, and current-3B/inactive-3C rules remain delegated to the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 the specification, and the design rather than being duplicated here.
 

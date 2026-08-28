@@ -20,6 +20,7 @@ from tests.m214b_test_support import (
     restore_temporaries as _restore_temporaries,
 )
 from tests.m214c_test_support import PRIVATE_SENTINEL
+from tests.m223_test_support import remove_v19_bundle_storage_for_test
 from tests.test_m17_recovery_hardening import (
     _relocate_install,
     _run_setup,
@@ -42,6 +43,18 @@ from task_governance_tool.storage import (
 def _downgrade_candidate_to_v17(path: Path) -> None:
     with closing(sqlite3.connect(path)) as connection:
         remove_v18_evidence_ledger_for_test(connection)
+
+
+def _downgrade_candidates_to_v18(artifacts) -> None:
+    for artifact in artifacts:
+        with closing(sqlite3.connect(artifact.path)) as connection:
+            remove_v19_bundle_storage_for_test(connection)
+            if int(
+                connection.execute(
+                    "SELECT MAX(version) FROM schema_migrations"
+                ).fetchone()[0]
+            ) != 18:
+                raise AssertionError("recovery fixture is not schema 18")
 
 
 class M214BRecoveryBoundaryTests(unittest.TestCase):
@@ -241,6 +254,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 "2098-03-02T00:00:00Z",
                 "2099-03-02T00:00:00Z",
             )
+            _downgrade_candidates_to_v18(artifacts)
             _replace_verification(artifacts[-1].path, title, "x" * 1001)
             target.db_path.unlink()
 
@@ -279,6 +293,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 "2098-03-02T01:00:00Z",
                 "2099-03-02T01:00:00Z",
             )
+            _downgrade_candidates_to_v18(artifacts)
             _replace_verification(
                 artifacts[-1].path,
                 title,
@@ -321,6 +336,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 "2098-03-03T00:00:00Z",
                 "2099-03-03T00:00:00Z",
             )
+            _downgrade_candidates_to_v18(artifacts)
             newest = artifacts[-1].path
             _replace_verification(
                 newest,
@@ -384,6 +400,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 "2098-03-03T01:00:00Z",
                 "2099-03-03T01:00:00Z",
             )
+            _downgrade_candidates_to_v18(artifacts)
             newest = artifacts[-1].path
             _replace_verification(
                 newest,
@@ -432,6 +449,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 "2098-03-04T00:00:00Z",
                 "2099-03-04T00:00:00Z",
             )
+            _downgrade_candidates_to_v18(artifacts)
             newest = artifacts[-1].path
             with closing(sqlite3.connect(newest)) as connection:
                 trigger_sql = connection.execute(

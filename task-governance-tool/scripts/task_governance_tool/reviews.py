@@ -571,6 +571,7 @@ def _persist_review_target_capture(
                review_target_acceptance_criterion_id = ?,
                review_target_verification_criterion_id = ?,
                review_target_artifact_manifest_id = ?,
+               review_target_runner_basis_version = 0,
                updated_at = ?
          WHERE project_id = ? AND task_id = ?
         """,

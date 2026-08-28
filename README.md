@@ -5,8 +5,8 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.12.0` uses SQLite schema v20 and Viewer snapshot v4 with source
-schemas 5 through 20 as the current unpublished local candidate contract. It
+Release `0.12.0` uses SQLite schema v21 and Viewer snapshot v4 with source
+schemas 5 through 21 as the current unpublished local candidate contract. It
 has not been pushed, tagged, or published. The immutable published release
 remains v0.10.0 at its recorded commit, tag, and GitHub prerelease.
 
@@ -141,9 +141,9 @@ single bounded effective-ignore preflight may inspect Git. Doctor is optional
 and is not a prerequisite for setup or normal task work.
 
 Candidate validation rehearses the isolated transition from the exact legacy
-v0.1.0/schema-v2 baseline to v0.12.0/schema v20. Paired rollback restores the
+v0.1.0/schema-v2 baseline to v0.12.0/schema v21. Paired rollback restores the
 matched pre-migration package, database, and managed artifacts together; it
-never runs legacy code against schema v20 or treats a Git checkout alone as
+never runs legacy code against schema v21 or treats a Git checkout alone as
 state rollback. The published v0.10.0/schema-v16 and unpublished
 v0.11.0/schema-v17 rehearsal records remain immutable lineage and do not
 satisfy the current candidate gate. See
@@ -311,13 +311,13 @@ Taskgov starts no daemon, timer, background process, queue, service, browser,
 or maintenance command. Generated Evidence JSON, Viewer, and managed backups
 remain runtime artifacts under the ignored Skill `state/` directory. Evidence
 projection failure keeps the mutation successful and the last-good index,
-leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 20 and includes the same
+leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 21 and includes the same
 bounded newest-first completion history as `task show`. Sources 5-14 are shown
 honestly as empty legacy-incomplete history. The Viewer contains only sanitized
 task/review/audit projections and has no write controls or network dependency.
 It validates schema-v18+ subject/provenance/capture bindings, the schema-v19
-and schema-v20 Bundle discriminators, and the schema-v20 Bundle-v2 basis/null
-Runner observation, but adds no provenance/Bundle field, panel, filter, or
+through schema-v21 Bundle discriminators, and the source-appropriate Bundle-v2
+and Runner tagged graph, but adds no provenance/Bundle field, panel, filter, or
 other snapshot-v4 UI surface.
 
 Viewer auto-refresh is a separate opt-in browser presentation policy. Taskgov
@@ -522,8 +522,8 @@ coverage.
   trusted-local sequence repairs the existing WIP, removes retired security
   assets, freezes the M25 subsystem boundary, and then implements and accepts
   an explicit-opt-in Runner in ordered Tier 2 slices. TG-M24.1B's fixed-
-  Candidate-C route is superseded. The candidate is now v0.12.0/schema v20;
-  its R3B compatibility path activates no Runner runtime, process launch, new
+  Candidate-C route is superseded. The candidate is now v0.12.0/schema v21;
+  its current 3B persistence path activates no Runner runtime, process launch, new
   CLI or Skill trigger, or completion-gate authority.
   Network/live
   Analyzer acceptance still requires separate authority. SQLite, `storage.py`,

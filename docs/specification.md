@@ -1,8 +1,8 @@
 # task-governance-tool Current Product Specification
 
 Status: The immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
-The current unpublished candidate is v0.12.0 with SQLite schema v20, Viewer
-snapshot v4 accepting source schemas v5-v20, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with strict recovery and stored-Task/Contract-pointer validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
+The current unpublished candidate is v0.12.0 with SQLite schema v21, Viewer
+snapshot v4 accepting source schemas v5-v21, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with strict recovery and stored-Task/Contract-pointer validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
 TG-M20S.3 remains inactive and no TG-M23 unit is current. TG-M24.1 and
 TG-M24.1A are accepted predecessors; the fixed-Candidate-C and adversarial
 LPAC route formerly owned by TG-M24.1B is superseded. Current TG-M24 authority
@@ -20,10 +20,10 @@ TG-M24.2C supplied parent-service orchestration and audit-only schema-v20
 observation and Evidence capture; it cannot satisfy verification or completion.
 Accepted TG-M24.2D covered only that already-implemented shadow slice from one
 fresh exact target and activated no additional product behavior or Runner
-completion gate. TG-M24.3A is the sole current unit and freezes the approved but
-inactive schema-v21 gate-basis contract below. TG-M24.3B persistence
-implementation, TG-M24.3C gate integration, and every later M24 acceptance unit
-remain inactive.
+completion gate. TG-M24.3A accepted the schema-v21 gate-basis contract below.
+TG-M24.3B is the sole current unit and activates only its persistence and
+compatibility boundary. TG-M24.3C gate integration and every later M24
+acceptance unit remain inactive.
 Completed execution narrative is history, and the Task
 database owns live state and evidence.
 
@@ -527,7 +527,7 @@ Typed completion storage is exactly `completion_evidence_kind`,
 `review_target_kind`, `review_target_value`,
 `review_target_base_revision`, and generation. Values and their legacy
 projection must satisfy one cross-field matrix before storage or output.
-For a supported schema-v18-through-v20 source, every complete loaded Task row is validated
+For a supported schema-v18-through-v21 source, every complete loaded Task row is validated
 for exact SQLite/Python storage class, bounded text/privacy, closed enums, and
 all Task cross-field matrices before any field can be omitted or exposed.
 Stored values are never coerced, trimmed, repaired, or rewritten by a read.
@@ -796,13 +796,13 @@ requirement, qualifying current-generation counts, fallback state, bounded
 recent receipts/findings, and blocking counts including
 `changes_requested_current_generation`. It never emits raw review content.
 
-### Current Schema-v20 Review Provenance And Bundle Boundary
+### Current Schema-v21 Review Provenance And Bundle Boundary
 
 New `independent` and `self_review_fallback` Receipts use the existing `review receipt add` leaf with the closed human, LLM, deterministic-tool, hybrid, and explicit-unknown matrix; conditional model and Skill identifiers; and fixed ordered profile, lens, context, and method codes. No free-form capability or caller assurance exists.
 The normalized immutable v1 record and structural digest bind the exact Receipt and target. Every public Review Receipt has one `review_provenance` union: native independent/fallback rows expose v1 with `bound_attestation/trusted_caller/1`; pre-v18 rows expose version-zero absence with `legacy_unknown/legacy_migration/1`; and Tier-0 `not_required` has null provenance and no provenance row.
 These states are distinct. The original Receipt remains caller-attested, and neither it nor provenance proves identity, execution, competence, independence, quality, diversity, or truth. Migration adds only zero/null discriminators and never parses reviewer keys/summaries, backfills provenance, creates an Evidence Reference for an old row, or strengthens legacy evidence.
 Native v1/null rows are included in their schema-v18 Evidence Reference and in
-their schema-v19 Bundle-v1 or schema-v20 Bundle-v2; migrated v0 rows have none.
+their schema-v19 Bundle-v1 or schema-v20/v21 Bundle-v2; migrated v0 rows have none.
 Viewer snapshot v4 validates and discards provenance with no field, panel,
 filter, or UI. Evidence JSON is an automatic generated projection, not a
 command.
@@ -1249,7 +1249,7 @@ test-driven cross-module failure, and unrequested work remain governed by the
 current keep/block/Handoff rules and cannot invoke this future decomposition
 policy.
 
-## Current Schema-v20 Verification, Ledger, And Bundle Contract
+## Current Schema-v21 Verification, Ledger, And Bundle Contract
 
 This section defines current post-publication product behavior. It does not
 rewrite the immutable v0.10.0 publication record or claim a later published
@@ -1552,7 +1552,7 @@ contract. Failure data also contains
 and does not summarize Receipt state; agents use JSON for the new gate.
 
 There is no Receipt list/show/import/export command and no Viewer Receipt
-panel or snapshot field. The Viewer accepts source schemas through v20 while
+panel or snapshot field. The Viewer accepts source schemas through v21 while
 retaining snapshot v4 content. Its existing
 bounded batch completion-history read internally joins only the Receipt fields needed
 to validate version-1 cycle and subject links plus provenance, manifests, and
@@ -1586,12 +1586,12 @@ binding, manifest, Reference, provenance row, subject, Receipt, Finding, or
 cycle. Reentry validates exact ownership, digests, matrices, triggers, quick
 check, and foreign keys without reconciliation or backfill.
 
-### Schema-v19 Bundle Foundation, Schema-v20 Native Writer, And Evidence JSON
+### Schema-v19 Bundle Foundation, Schema-v20/v21 Native Writer, And Evidence JSON
 
 Migration 19 `completion_evidence_bundles` adds immutable criterion links, Bundle membership and Finding snapshots, completion Bundles, cycle `evidence_basis_version`/bundle linkage, and Evidence projection state. Every existing cycle becomes version 0 with null bundle ID; migration creates no historical Bundle or link and projects that absence only as `legacy_unknown`.
 Every native schema-v19 completion atomically inserts one version-1 Bundle with
 its cycle, Task update, event, links, selected gate evidence, Finding snapshots,
-and projection-generation advance. On current schema v20, the same transaction
+and projection-generation advance. On current schema v21, the same transaction
 instead inserts one version-2 Bundle. Its verification basis is
 `caller_attestation` with the qualifying Receipt for nonempty verification or
 `not_required` with no Receipt for trimmed-empty verification, and its Runner
@@ -1609,7 +1609,7 @@ matching nullable `verification_receipt_id`, and
 `taskgov-completion-evidence-bundle-v2\0`. The preserved v1 envelope, payload,
 domain, bytes, and digest are unchanged.
 
-Evidence JSON is a deterministic one-way SQLite projection. Canonical sorted-key compact UTF-8 JSON uses integer-only JSON values where numeric, preserves valid Unicode without normalization, and ends each file with one LF. A schema-v20 index uses envelope `format_version=2`, digest domain `taskgov-evidence-index-v2\0`, and adds exactly nullable `bundle_format_version` to each entry: null for `legacy_unknown`, 1 for a preserved v1 Bundle, and 2 for a native v2 Bundle. Native entries reference `bundles/<completion-evidence-bundle-id>.json`; a schema-v20 projection may therefore reference both preserved version-1 Bundles and new version-2 Bundles without rewriting existing payload bytes or digests. Pre-v19 entries are `legacy_unknown` with null Bundle/file fields.
+Evidence JSON is a deterministic one-way SQLite projection. Canonical sorted-key compact UTF-8 JSON uses integer-only JSON values where numeric, preserves valid Unicode without normalization, and ends each file with one LF. A schema-v20 or schema-v21 index uses envelope `format_version=2`, digest domain `taskgov-evidence-index-v2\0`, and adds exactly nullable `bundle_format_version` to each entry: null for `legacy_unknown`, 1 for a preserved v1 Bundle, and 2 for a native v2 Bundle. Native entries reference `bundles/<completion-evidence-bundle-id>.json`; the projection may therefore reference both preserved version-1 Bundles and new version-2 Bundles without rewriting existing payload bytes or digests. Pre-v19 entries are `legacy_unknown` with null Bundle/file fields.
 The index includes every cycle, is ordered by Task ID, ordinal, and cycle ID, and is capped at 100,000 entries and 64 MiB without truncation. Publication flushes immutable Bundle files and atomically replaces `index.json` last; SQLite remains canonical, unreferenced files are ignored, and JSON is never imported or used to repair the database.
 Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, or network action; it invokes or projects neither Analyzer nor Runner and adds no normal-loop call.
 
@@ -1702,7 +1702,7 @@ write. Retry recomputes from the canonical state and the restore temporary is
 cleaned in either case; no later failure authorizes reselection or another
 canonical publication.
 
-The current classifier admits 500 for schema v17 and 1,000 for schema v18, v19, or v20,
+The current classifier admits 500 for schema v17 and 1,000 for schema v18-v21,
 rejecting the next character in each source schema. It does not generalize
 local rejection to another field
 or to structural, identity, lineage, metadata, or TOCTOU failure.
@@ -1710,7 +1710,7 @@ or to structural, identity, lineage, metadata, or TOCTOU failure.
 ## Current TG-M21.4C Stored Task Read And Privacy Contract
 
 TG-M21.4C, Task `tg_task_efa90606fed8fba0`, owns the accepted schema-v18
-stored Task read hardening retained through schema v20. Its authority reference is
+stored Task read hardening retained through schema v21. Its authority reference is
 `conversation_decision:2026-08-03:pre-m22-qa-baseline-hardening`.
 Every Task-loading operation reads the source-schema capability once and
 validates each complete loaded Task row through one shared row/batch validator
@@ -1718,7 +1718,7 @@ before public allow-listing, compact-field omission, filtering, derived-state
 use, or use as a write basis. The validator does not normalize, coerce,
 truncate, repair, or rewrite stored values.
 
-For supported schemas through v20, exact text and nullable-text storage classes, exact SQLite
+For supported schemas through v21, exact text and nullable-text storage classes, exact SQLite
 integers, stable IDs/project ownership, canonical lane/order, closed
 kind/priority/status/review-tier enums, canonical timestamps, bounded
 free-form privacy, and the blocker, pause, completion, current-review-target,
@@ -1762,7 +1762,7 @@ select an older candidate.
 ## Current TG-M21.4D Stored Contract Pointer Integrity Contract
 
 TG-M21.4D, Task `tg_task_7051724dca3f1501`, owns the accepted schema-v18
-Contract-pointer relationship correction retained through schema v20. Its authority reference is
+Contract-pointer relationship correction retained through schema v21. Its authority reference is
 `conversation_decision:2026-08-03:m21-4d-effort-observation`. After the
 TG-M21.4C scalar row checks pass, the same shared validation boundary performs
 exactly one bounded bulk relationship read for the loaded Task IDs when the
@@ -1806,8 +1806,8 @@ Missing state is `db_not_initialized`; supported older state is
 `migration_required`; a newer schema is `schema_too_new`. Old binaries reject
 newer state and never downgrade/write it.
 
-Fresh setup creates schema v20. Structurally complete contiguous source schemas
-v1-v19 are setup-only migration inputs; v20 is idempotent current state.
+Fresh setup creates schema v21. Structurally complete contiguous source schemas
+v1-v20 are setup-only migration inputs; v21 is idempotent current state.
 Schema sequence is:
 
 | Version | Durable addition |
@@ -1829,7 +1829,7 @@ Schema sequence is:
 | v18 | authority/criterion capture, Review provenance, target manifests, Evidence References, and Verification subjects |
 | v19 | native completion Bundles, criterion links/Finding snapshots, and Evidence JSON projection state |
 | v20 | verification Runner shadow storage and Bundle-v2 null-Runner tagged union |
-| v21 (approved, inactive) | verification Runner gate-basis tags using the existing schema-v20 structures |
+| v21 | verification Runner gate-basis tags using the existing schema-v20 structures |
 
 Each migration is transactional, idempotent, rollback-tested, validates
 contiguous history and required objects/rows, preserves project/business IDs
@@ -1896,7 +1896,7 @@ object occupying a v20-owned table, explicit-index, or trigger name is a
 collision, while a column marker is scoped to its designated parent table.
 Generated columns are column markers under the same rule.
 R3B admission initially required the four Runner tables and Runner
-Reference/link sets to be empty. Current complete-v20 admission instead accepts
+Reference/link sets to be empty. Complete-v20 migration admission instead accepts
 either that empty predecessor state or the exact TG-M24.2C audit graph below.
 It rejects a malformed, duplicate, foreign-owned, partially linked, or
 gate-eligible Runner graph. Every Task Runner-basis marker remains zero and
@@ -1904,29 +1904,29 @@ every cycle/Bundle Runner-observation pointer remains null; native Bundle-v2
 `caller_attestation` and `not_required` verification basis remains valid.
 This check occurs before any database or sidecar write, migration backup,
 recovery copy/publication, Viewer publication, or managed-backup write. A complete v19 source alone may invoke migration
-20; a complete v20 source receives validation-only reentry. Unrelated extra
+20; a complete v20 source may invoke migration 21, and a complete v21 source
+receives validation-only reentry. Unrelated extra
 objects retain the existing policy, including R3A's deliberate removal of
 unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
-preservation of unrelated standalone objects. No migration-21 object exists in
-the current product.
+preservation of unrelated standalone objects.
 
 Schema v20 is the intermediate M24.2 shadow foundation and never becomes a
-qualifying Runner gate basis. Current TG-M24.3A owns the separate Tier 2
-schema-v21 contract below, TG-M24.3B owns its persistence implementation while
+qualifying Runner gate basis. Accepted TG-M24.3A owns the separate Tier 2
+schema-v21 contract below, current TG-M24.3B owns its persistence implementation while
 the M21 Receipt remains the sole verification and completion gate, and
 TG-M24.3C alone owns qualifying Runner-basis activation with explicit M21
 fallback.
 
-<a id="approved-but-inactive-schema-v21-gate-basis-contract"></a>
+<a id="current-schema-v21-persistence-contract"></a>
 
-### Approved-But-Inactive Schema-v21 Gate-Basis Contract
+### Current Schema-v21 Persistence Contract
 
-This subsection is an approved implementation contract, not current product
-behavior. TG-M24.3A changes no product code, public schema constant, setup
-target, canonical database, package, public CLI or JSON shape, Viewer UI, Skill,
-Runner runtime, or completion gate. TG-M24.3B may implement the persistence and
-compatibility boundary exactly as frozen here; TG-M24.3C alone may activate its
-qualifying Runner branch.
+TG-M24.3A accepted this contract without changing product code. Current
+TG-M24.3B implements its persistence and compatibility boundary, including the
+public schema constant, setup target, package identity, backup/recovery, and
+Viewer source range. It changes no public CLI or JSON shape, Viewer UI, Skill,
+Runner runtime, or completion gate. TG-M24.3C alone may activate the qualifying
+Runner branch.
 
 Migration 21 is exactly `verification_runner_gate_basis`. It adds no table,
 column, or index. It reuses `tasks.review_target_runner_basis_version`, the four
@@ -2293,7 +2293,7 @@ Setup always includes `data.relocation` with exactly `required`,
 successful relocation preview. Fresh preview has null top-level ID and null
 identity/generation/token/expiry.
 
-Relocation failure has status null, required schema 20, empty warnings, one
+Relocation failure has status null, required schema 21, empty warnings, one
 error, null token/expiry, and no rejected value. A no-token mismatch preserves
 the read-only future `planned_writes`; invalid/expired/stale/used/not-required
 token rows have empty write arrays and mechanically observed bounded context.
@@ -2410,7 +2410,7 @@ retention applies only after the next successful backup publication.
 Setup output data is exactly `status`, `planned_writes`, `completed_writes`,
 `schema_from`, `schema_to`, `maintenance_enabled`,
 `backup_interval_minutes`, `backup_generations`, `evidence_status`,
-`viewer_status`, and `relocation`. `schema_to` is always 20. `schema_from` is safely observed source
+`viewer_status`, and `relocation`. `schema_to` is always 21. `schema_from` is safely observed source
 schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.
@@ -2537,7 +2537,7 @@ atomically replaces; failure preserves last good.
 
 ### Snapshot v4
 
-Snapshot v4 accepts source schemas v5-v20. One query-only transaction validates
+Snapshot v4 accepts source schemas v5-v21. One query-only transaction validates
 schema/project/binding, reads generation, validates the complete source-aware
 Task batch through the TG-M21.4C row and TG-M21.4D relationship boundary, and
 assembles rows; rendering and
@@ -2547,14 +2547,15 @@ replacement and therefore preserves the last-good Viewer.
 It contains version/UTC `generated_at`, project ID/display, source schema,
 seven status counts, explicit Task allow-list, newest at most 10 sanitized
 events/review receipts/findings, and the exact completion-history projection. Sources
-v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v20
+v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v21
 read stored history in query batches of at most 500 Task IDs. For sources
-v17-v20, the batch reader validates version-1 completion-cycle Verification
+v17-v21, the batch reader validates version-1 completion-cycle Verification
 Receipt links; v18+ additionally validates subject, provenance, manifest, and
-Reference relations, while v19-v20 validate and discard the Bundle
-discriminator. Source v20 additionally validates the Bundle-v2 verification
-basis, its null Runner observation, and any standalone TG-M24.2C audit graph,
-then discards every Runner field without exposing it.
+Reference relations, while v19-v21 validate and discard the Bundle
+discriminator. Sources v20-v21 additionally validate the Bundle-v2
+verification basis and Runner graph appropriate to the source schema; v21
+validates the complete tagged union. Both discard every Runner field without
+exposing it.
 It discards every joined ledger field. The Viewer
 selects all project Tasks; 500 Tasks is the accepted performance fixture, not a
 selection cap. The HTML artifact is at most 64 MiB.
@@ -2671,7 +2672,7 @@ retains its sanitized caller label as explicit legacy data. Neither form stores 
 arguments, exit code, result body, stream, log, environment, exception,
 arbitrary coverage prose, or debug-retention variant.
 
-Current schema-v20 free-form limits not narrowed above are: title 200
+Current schema-v21 free-form limits not narrowed above are: title 200
 characters; description 4,000; stored/read/internal verification and its
 derivatives 1,000; explicit public Task add/edit verification 1,000;
 tags/reviewer/target/external revision/authority ref
@@ -2837,9 +2838,9 @@ plan selection, exact target observation, and private materialization. Accepted
 2B covers only the bounded runtime/process adapter and deterministic cleanup.
 Accepted 2C owns parent-service orchestration plus audit-only schema-v20
 observation and Evidence capture, and accepted 2D owns only integrated
-acceptance of that shadow slice. Current 3A freezes the approved-but-inactive
-schema-v21 contract. Persistence implementation with unchanged M21 gates (3B),
-Runner gate integration (3C), and release acceptance remain inactive behind
+acceptance of that shadow slice. Accepted 3A froze the schema-v21 contract.
+Current 3B implements its persistence boundary with unchanged M21 gates;
+Runner gate integration (3C) and release acceptance remain inactive behind
 their owning sequential units.
 
 The approved execution direction is an explicit-opt-in Runner for repositories

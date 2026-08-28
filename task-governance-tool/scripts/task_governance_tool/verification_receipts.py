@@ -562,6 +562,7 @@ def _gate_from_exact(
     source_revision: dict[str, Any] | None,
     current_subject: dict[str, Any] | None,
     exact_rows: tuple[dict[str, Any], ...],
+    runner_basis_version: int = 0,
     allow_legacy_subject: bool = False,
 ) -> VerificationGate:
     if not expectation.strip():
@@ -570,6 +571,13 @@ def _gate_from_exact(
         return VerificationGate(True, False, "review_target_required", None)
     if current_subject is None and not allow_legacy_subject:
         return VerificationGate(True, False, "evidence_basis_stale", None)
+    if runner_basis_version == 2:
+        # TG-M24.3B understands schema-v21 Runner history but does not activate
+        # the live Runner gate.  A selected live Runner basis therefore cannot
+        # silently fall back to a caller-attested Receipt.
+        return VerificationGate(True, False, "evidence_basis_stale", None)
+    if runner_basis_version != 0:
+        raise _invalid_stored()
     if not exact_rows:
         return VerificationGate(True, False, "verification_receipt_required", None)
     if len(exact_rows) != 1:
@@ -583,6 +591,18 @@ def _gate_from_exact(
             str(row["verification_receipt_id"]),
         )
     return VerificationGate(True, False, "verification_receipt_blocking", None)
+
+
+def _task_runner_basis_version(task: Mapping[str, Any]) -> int:
+    """Read the closed schema-v21 Task discriminator without activating it."""
+
+    try:
+        value = task["review_target_runner_basis_version"]
+    except (IndexError, KeyError):
+        value = 0
+    if type(value) is not int or value not in {0, 2}:
+        raise _invalid_stored()
+    return value
 
 
 def _validate_done_cycle(
@@ -626,6 +646,19 @@ def _validate_done_cycle(
         or cycle.review_target_generation != int(task["review_target_generation"])
     ):
         raise completion_history_inconsistent()
+    if cycle.verification_basis_kind == "runner_observation":
+        if (
+            not expectation.strip()
+            or cycle.evidence_basis_version != 1
+            or cycle.verification_receipt_id is not None
+            or not isinstance(cycle.verification_runner_observation_id, str)
+            or not cycle.verification_runner_observation_id
+        ):
+            raise completion_history_inconsistent()
+        # Storage has already revalidated the exact immutable Runner graph and
+        # Bundle identity.  Historical replay exposes only the unchanged gate
+        # shape and grants no authority for a new TG-M24.3B completion.
+        return VerificationGate(True, True, None, None)
     if expectation.strip():
         if (
             not gate.satisfied
@@ -681,6 +714,11 @@ def read_verification_evidence(
         source_revision=source_revision,
         current_subject=current_subject,
         exact_rows=exact_rows,
+        runner_basis_version=(
+            0
+            if str(task["status"]) == "done"
+            else _task_runner_basis_version(task)
+        ),
         allow_legacy_subject=str(task["status"]) == "done",
     )
     if str(task["status"]) == "done":
@@ -754,6 +792,7 @@ def current_verification_gate(
         source_revision=source_revision,
         current_subject=current_subject,
         exact_rows=exact_rows,
+        runner_basis_version=_task_runner_basis_version(task),
     )
 
 
@@ -854,6 +893,11 @@ def _validate_add_basis(
         source_revision=source_revision,
     )
     if current_subject is None:
+        raise _error(
+            "evidence_basis_stale",
+            "current evidence basis must be captured again",
+        )
+    if _task_runner_basis_version(task) == 2:
         raise _error(
             "evidence_basis_stale",
             "current evidence basis must be captured again",

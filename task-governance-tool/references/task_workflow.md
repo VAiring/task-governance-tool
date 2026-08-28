@@ -193,14 +193,14 @@ Before starting each execution unit, state its intended outcome, write scope,
 verification gate, and review tier. Update the task only after those values
 come from current authority.
 
-From schema v18 through current schema v20, explicit public `task add` and
+From schema v18 through current schema v21, explicit public `task add` and
 `task edit --verification` input is capped at 1,000 characters. Stored/read
 and internal-derived paths accept and preserve valid existing verification
 text through 1,000 characters. A metadata or lifecycle edit continues to
 validate untouched verification as stored state rather than replaying it as
 caller input; values over the source-schema limit fail closed.
 
-Schema v19 sealed version-1 Completion Evidence Bundles. At current schema v20,
+Schema v19 sealed version-1 Completion Evidence Bundles. At current schema v21,
 each successful native completion atomically seals exactly one version-2
 Bundle with a derived `caller_attestation` or `not_required` basis and null
 Runner observation. Bounded same-process maintenance projects Evidence index
@@ -509,7 +509,7 @@ root and merge commits are unsupported.
 taskgov validates and records evidence only. It does not stage files, create
 commits or branches, push, open PRs, or write Issue comments.
 
-The schema-v20 Bundle-v2 seal is part of completion, and the due Evidence
+The schema-v21 Bundle-v2 seal is part of completion, and the due Evidence
 index-v2 refresh is bounded post-commit maintenance; neither is another
 workflow step or command. A projection warning leaves the already-committed
 task result unchanged and may be retried by a later changed mutation or

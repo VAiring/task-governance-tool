@@ -60,10 +60,14 @@ _LINK_ID = re.compile(r"^tg_criterion_evidence_link_[0-9a-f]{16}$")
 _REFERENCE_ID = re.compile(r"^tg_evidence_reference_[0-9a-f]{16}$")
 _MANIFEST_ID = re.compile(r"^tg_artifact_manifest_[0-9a-f]{16}$")
 _VERIFICATION_ID = re.compile(r"^tg_verification_receipt_[0-9a-f]{16}$")
+_RUNNER_OBSERVATION_ID = re.compile(
+    r"^tg_verification_runner_observation_[0-9a-f]{16}$"
+)
 _REVIEW_ID = re.compile(r"^tg_review_receipt_[0-9a-f]{16}$")
 _FINDING_ID = re.compile(r"^tg_review_finding_[0-9a-f]{16}$")
 _PROVENANCE_ID = re.compile(r"^tg_review_provenance_[0-9a-f]{16}$")
 _DECLARED_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+\-]{0,127}$")
+_RUNNER_PLAN_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _DECLARED_SKILL_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+\-]{0,63}$")
 _UTC_SECOND = re.compile(
     r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$"
@@ -223,6 +227,7 @@ _RELATION_ORDER = {
     "review_assessment": 1,
     "review_finding": 2,
     "completion_basis": 3,
+    "runner_observation": 5,
 }
 _SOURCE_KIND_ORDER = {
     "artifact_manifest": 0,
@@ -230,6 +235,7 @@ _SOURCE_KIND_ORDER = {
     "review_receipt": 2,
     "review_finding": 3,
     "completion_evidence": 4,
+    "runner_observation": 6,
 }
 _OMISSION_ORDER = (
     "acceptance_criterion_absent",
@@ -343,6 +349,34 @@ _VERIFICATION_BASIS_KEYS = (
     "kind",
     "runner_observation_id",
     "verification_receipt_id",
+)
+_RUNNER_OBSERVATION_KEYS = (
+    "observation_id",
+    "gate_eligibility_version",
+    "route",
+    "reason",
+    "outcome",
+    "launch_state",
+    "complete_plan",
+    "total_step_count",
+    "completed_step_count",
+    "failed_step_ordinal",
+    "started_at",
+    "finished_at",
+    "duration_ms",
+    "cpu_time_ms",
+    "peak_job_memory_bytes",
+    "total_process_count",
+    "plan_blob_object_id",
+    "plan_raw_digest",
+    "plan_id",
+    "plan_version",
+    "plan_semantic_digest",
+    "runner_implementation_version",
+    "runner_implementation_digest",
+    "runner_policy_digest",
+    "runtime_digest",
+    "sanitized_result_digest",
 )
 _ARTIFACT_KEYS = (
     "artifact_manifest_id",
@@ -1152,7 +1186,7 @@ def _validate_index_envelope(value: object) -> dict[str, Any]:
         _integer(payload["source_schema_version"]),
         _integer(envelope["format_version"]),
     )
-    if version_pair not in {(19, 1), (20, 2)}:
+    if version_pair not in {(19, 1), (20, 2), (21, 2)}:
         _invalid()
     index_format_version = version_pair[1]
     _integer(payload["projection_generation"])
@@ -1400,6 +1434,11 @@ def _reference_source_projection(
     findings_by_id: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
     source_kind = reference["source_kind"]
+    if source_kind == "runner_observation":
+        runner = payload.get("runner_observation")
+        if not isinstance(runner, Mapping):
+            _invalid()
+        return dict(runner)
     if source_kind == "artifact_manifest":
         if artifact["state"] == "complete_git":
             return {
@@ -1457,6 +1496,56 @@ def _reference_source_projection(
         "completion_commit_required": completion["completion_commit_required"],
         "completion_commit_hash": completion["completion_commit_hash"],
     }
+
+
+def _validate_runner_observation(value: object) -> dict[str, Any]:
+    runner = _mapping(value, _RUNNER_OBSERVATION_KEYS)
+    total_steps = _integer(runner["total_step_count"], minimum=1)
+    completed_steps = _integer(runner["completed_step_count"])
+    started_at = _utc_second(runner["started_at"])
+    finished_at = _utc_second(runner["finished_at"])
+    optional_nonnegative = (
+        "cpu_time_ms",
+        "peak_job_memory_bytes",
+        "total_process_count",
+    )
+    for field in optional_nonnegative:
+        if runner[field] is not None:
+            _integer(runner[field])
+    for field in (
+        "plan_raw_digest",
+        "plan_semantic_digest",
+        "runner_implementation_digest",
+        "runner_policy_digest",
+        "sanitized_result_digest",
+    ):
+        _digest(runner[field])
+    if (
+        _identifier(runner["observation_id"], _RUNNER_OBSERVATION_ID)
+        != runner["observation_id"]
+        or _integer(runner["gate_eligibility_version"]) != 1
+        or runner["route"] != "runner"
+        or runner["reason"] is not None
+        or runner["outcome"] != "pass"
+        or runner["launch_state"] != "launched"
+        or _integer(runner["complete_plan"]) != 1
+        or not 1 <= total_steps <= 16
+        or completed_steps != total_steps
+        or runner["failed_step_ordinal"] is not None
+        or finished_at < started_at
+        or _integer(runner["duration_ms"]) < 0
+        or any(runner[field] is None for field in optional_nonnegative)
+        or runner["plan_blob_object_id"] is not None
+        or _identifier(runner["plan_id"], _RUNNER_PLAN_IDENTIFIER)
+        != runner["plan_id"]
+        or _integer(runner["plan_version"]) != 1
+        or runner["runner_implementation_version"]
+        != "taskgov-verification-runner/1"
+        or runner["runtime_digest"] is not None
+    ):
+        _invalid()
+    canonical_json_bytes(runner)
+    return runner
 
 
 def _validate_relations(
@@ -1565,6 +1654,16 @@ def _validate_relations(
                 ("bound_attestation", "trusted_caller"),
                 None,
             )
+        elif source_kind == "runner_observation":
+            runner = payload.get("runner_observation")
+            if not isinstance(runner, Mapping):
+                _invalid()
+            expected = (
+                "recorded",
+                runner["observation_id"],
+                ("machine_observed", "verification_runner"),
+                None,
+            )
         else:
             expected_attribution = {
                 "git_commit": ("machine_observed", "taskgov_git"),
@@ -1644,6 +1743,11 @@ def _validate_relations(
             if item["evidence_reference_id"] is not None
         },
         "completion_evidence": {payload["completion_cycle_id"]},
+        "runner_observation": (
+            {payload["runner_observation"]["observation_id"]}
+            if isinstance(payload.get("runner_observation"), Mapping)
+            else set()
+        ),
     }
     observed_source_ids = {
         source_kind: {
@@ -1691,6 +1795,10 @@ def _validate_relations(
             and finding_by_id[reference["source_id"]]["target_generation"]
             == target["generation"]
         ) or (
+            relation == "runner_observation"
+            and criterion["kind"] == "verification"
+            and reference["source_kind"] == "runner_observation"
+        ) or (
             relation == "completion_basis"
             and criterion["kind"] == "acceptance"
             and reference["source_kind"]
@@ -1731,6 +1839,9 @@ def _validate_relations(
             )
             expected_relation = "review_finding" if current else None
             expected_criterion = acceptance_id if current else None
+        elif source_kind == "runner_observation":
+            expected_relation = "runner_observation"
+            expected_criterion = verification_id
         else:
             expected_relation = "completion_basis"
             expected_criterion = acceptance_id
@@ -1772,8 +1883,14 @@ def _validate_bundle_payload(
     entry: Mapping[str, Any],
     project_id: str,
     bundle_format_version: int,
+    maximum_source_schema_version: int | None = None,
 ) -> dict[str, Any]:
     if bundle_format_version not in {1, 2}:
+        _invalid()
+    if (
+        maximum_source_schema_version is not None
+        and maximum_source_schema_version not in {19, 20, 21}
+    ):
         _invalid()
     payload = _mapping(
         value,
@@ -1782,15 +1899,23 @@ def _validate_bundle_payload(
         else _BUNDLE_PAYLOAD_V2_KEYS,
     )
     sealed_at = _utc_second(payload["sealed_at"])
-    expected_version_pair = (
-        (19, 1) if bundle_format_version == 1 else (20, 2)
+    observed_version_pair = (
+        _integer(payload["source_schema_version"]),
+        _integer(payload["bundle_version"]),
     )
     if (
         (
-            _integer(payload["source_schema_version"]),
-            _integer(payload["bundle_version"]),
+            bundle_format_version == 1
+            and observed_version_pair != (19, 1)
         )
-        != expected_version_pair
+        or (
+            bundle_format_version == 2
+            and observed_version_pair not in {(20, 2), (21, 2)}
+        )
+        or (
+            maximum_source_schema_version is not None
+            and observed_version_pair[0] > maximum_source_schema_version
+        )
         or (
             "bundle_format_version" in entry
             and entry["bundle_format_version"] != bundle_format_version
@@ -1910,8 +2035,19 @@ def _validate_bundle_payload(
         target=target,
     )
 
+    verification_basis: dict[str, Any] | None = None
+    basis_kind: str | None = None
+    if bundle_format_version == 2:
+        verification_basis = _mapping(
+            payload["verification_basis"],
+            _VERIFICATION_BASIS_KEYS,
+        )
+        _integer(verification_basis["basis_version"], minimum=1)
+        basis_kind = verification_basis["kind"]
+
     verification = payload["verification_receipt"]
-    if verification_expected:
+    runner_branch = basis_kind == "runner_observation"
+    if verification_expected and not runner_branch:
         if verification is None:
             _invalid()
         receipt = _mapping(verification, _VERIFICATION_KEYS)
@@ -1933,13 +2069,12 @@ def _validate_bundle_payload(
         verification = receipt
     elif verification is not None:
         _invalid()
+    elif runner_branch and not verification_expected:
+        _invalid()
 
     if bundle_format_version == 2:
-        verification_basis = _mapping(
-            payload["verification_basis"],
-            _VERIFICATION_BASIS_KEYS,
-        )
-        _integer(verification_basis["basis_version"], minimum=1)
+        if verification_basis is None:
+            _invalid()
         verification_receipt_id = (
             verification["verification_receipt_id"]
             if verification is not None
@@ -1950,23 +2085,38 @@ def _validate_bundle_payload(
                 verification_basis["verification_receipt_id"],
                 _VERIFICATION_ID,
             )
-        if (
-            verification_basis["basis_version"] != 1
-            or verification_basis["runner_observation_id"] is not None
-            or payload["runner_observation"] is not None
-            or verification_basis["verification_receipt_id"]
-            != verification_receipt_id
-            or (
-                verification_basis["kind"] == "caller_attestation"
-                and verification is None
+        if verification_basis["basis_version"] != 1:
+            _invalid()
+        if basis_kind in {"caller_attestation", "not_required"}:
+            if (
+                verification_basis["runner_observation_id"] is not None
+                or payload["runner_observation"] is not None
+                or verification_basis["verification_receipt_id"]
+                != verification_receipt_id
+                or (
+                    basis_kind == "caller_attestation"
+                    and verification is None
+                )
+                or (
+                    basis_kind == "not_required"
+                    and verification is not None
+                )
+            ):
+                _invalid()
+        elif basis_kind == "runner_observation":
+            runner = _validate_runner_observation(
+                payload["runner_observation"]
             )
-            or (
-                verification_basis["kind"] == "not_required"
-                and verification is not None
-            )
-            or verification_basis["kind"]
-            not in {"caller_attestation", "not_required"}
-        ):
+            runner_id = verification_basis["runner_observation_id"]
+            if (
+                observed_version_pair != (21, 2)
+                or verification_basis["verification_receipt_id"] is not None
+                or type(runner_id) is not str
+                or runner_id != runner["observation_id"]
+            ):
+                _invalid()
+            payload["runner_observation"] = runner
+        else:
             _invalid()
         payload["verification_basis"] = verification_basis
 
@@ -2303,6 +2453,7 @@ def _load_evidence_source(
         entry=selected,
         project_id=index.project_id,
         bundle_format_version=bundle_format_version,
+        maximum_source_schema_version=index.source_schema_version,
     )
     domain = (
         BUNDLE_DOMAIN if bundle_format_version == 1 else BUNDLE_V2_DOMAIN

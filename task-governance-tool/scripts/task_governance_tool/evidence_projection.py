@@ -22,6 +22,10 @@ from task_governance_tool.artifact_lock import (
     ArtifactLockError,
     zero_wait_artifact_lock,
 )
+from task_governance_tool.evidence_ledger import (
+    EvidenceLedgerError,
+    EvidenceSource,
+)
 from task_governance_tool.state_paths import (
     FileIdentity,
     StatePathError,
@@ -36,11 +40,13 @@ from task_governance_tool.state_paths import (
     unlink_validated_file,
 )
 from task_governance_tool.storage import (
+    SCHEMA_VERSION,
     DatabaseTarget,
     EvidenceProjectionBasis,
     EvidenceProjectionState,
     ProjectMaintenanceState,
     ProjectionBundleRecord,
+    StorageError,
     capture_evidence_projection_basis,
     connect_initialized_readonly,
     read_evidence_projection_state,
@@ -91,6 +97,9 @@ SOURCE_KIND_ORDER = {
 _SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _BUNDLE_ID = re.compile(
     r"tg_completion_evidence_bundle_[0-9a-f]{16}\Z"
+)
+_DECLARED_IDENTIFIER = re.compile(
+    r"[a-z0-9][a-z0-9._-]{0,63}\Z"
 )
 
 _PAYLOAD_KEYS = frozenset(
@@ -261,6 +270,36 @@ _VERIFICATION_BASIS_KEYS = frozenset(
         "kind",
         "runner_observation_id",
         "verification_receipt_id",
+    }
+)
+_RUNNER_OBSERVATION_KEYS = frozenset(
+    {
+        "observation_id",
+        "gate_eligibility_version",
+        "route",
+        "reason",
+        "outcome",
+        "launch_state",
+        "complete_plan",
+        "total_step_count",
+        "completed_step_count",
+        "failed_step_ordinal",
+        "started_at",
+        "finished_at",
+        "duration_ms",
+        "cpu_time_ms",
+        "peak_job_memory_bytes",
+        "total_process_count",
+        "plan_blob_object_id",
+        "plan_raw_digest",
+        "plan_id",
+        "plan_version",
+        "plan_semantic_digest",
+        "runner_implementation_version",
+        "runner_implementation_digest",
+        "runner_policy_digest",
+        "runtime_digest",
+        "sanitized_result_digest",
     }
 )
 _INDEX_PAYLOAD_KEYS = frozenset(
@@ -495,6 +534,65 @@ def _mapping(
     return copied
 
 
+def _runner_observation(value: object) -> dict[str, Any]:
+    observation = _mapping(value, _RUNNER_OBSERVATION_KEYS)
+    eligibility = observation.get("gate_eligibility_version")
+    if type(eligibility) is not int or eligibility != 1:
+        raise _inconsistent()
+    try:
+        source = EvidenceSource(
+            source_kind="runner_observation",
+            source_state="recorded",
+            source_id=observation["observation_id"],
+            source_projection=observation,
+            _validated_runner_eligibility_version=1,
+        )
+        started_at = validate_utc_timestamp(
+            observation["started_at"],
+            field="verification Runner observation start time",
+        )
+        finished_at = validate_utc_timestamp(
+            observation["finished_at"],
+            field="verification Runner observation finish time",
+        )
+    except (EvidenceLedgerError, StorageError) as exc:
+        raise _inconsistent() from exc
+    if set(source.source_projection) != set(observation):
+        raise _inconsistent()
+    accounting = (
+        observation["cpu_time_ms"],
+        observation["peak_job_memory_bytes"],
+        observation["total_process_count"],
+    )
+    total_steps = observation["total_step_count"]
+    if (
+        observation["route"] != "runner"
+        or observation["reason"] is not None
+        or observation["outcome"] != "pass"
+        or observation["launch_state"] != "launched"
+        or type(observation["complete_plan"]) is not int
+        or observation["complete_plan"] != 1
+        or type(total_steps) is not int
+        or not 1 <= total_steps <= 16
+        or observation["completed_step_count"] != total_steps
+        or observation["failed_step_ordinal"] is not None
+        or finished_at < started_at
+        or type(observation["duration_ms"]) is not int
+        or observation["duration_ms"] < 0
+        or any(type(item) is not int or item < 0 for item in accounting)
+        or observation["plan_blob_object_id"] is not None
+        or type(observation["plan_id"]) is not str
+        or _DECLARED_IDENTIFIER.fullmatch(observation["plan_id"]) is None
+        or type(observation["plan_version"]) is not int
+        or observation["plan_version"] != 1
+        or observation["runner_implementation_version"]
+        != "taskgov-verification-runner/1"
+        or observation["runtime_digest"] is not None
+    ):
+        raise _inconsistent()
+    return observation
+
+
 def _array(value: object) -> list[Any]:
     if (
         isinstance(value, (str, bytes, bytearray))
@@ -522,9 +620,9 @@ def _validate_bundle_payload(
     source_schema_version = _integer(payload["source_schema_version"])
     bundle_version = _integer(payload["bundle_version"])
     version_pair = (source_schema_version, bundle_version)
-    if version_pair not in {(19, 1), (20, 2)}:
+    if version_pair not in {(19, 1), (20, 2), (21, 2)}:
         raise _inconsistent()
-    is_v2 = version_pair == (20, 2)
+    is_v2 = bundle_version == 2
     _utf8(payload["project_id"])
     _utf8(payload["completion_cycle_id"])
     _utf8(payload["sealed_at"])
@@ -651,12 +749,6 @@ def _validate_bundle_payload(
         )
     )
     payload["evidence_references"] = references
-    if is_v2 and (
-        any(item["relation"] == "runner_observation" for item in links)
-        or any(item["source_kind"] == "runner_observation" for item in references)
-    ):
-        raise _inconsistent()
-
     findings = [
         _mapping(item, _FINDING_KEYS)
         for item in _array(payload["finding_snapshots"])
@@ -749,20 +841,61 @@ def _validate_bundle_payload(
             if verification is not None
             else None
         )
-        if (
-            verification_basis["runner_observation_id"] is not None
-            or payload["runner_observation"] is not None
-            or verification_basis["verification_receipt_id"] != receipt_id
-            or (
-                kind == "caller_attestation"
-                and verification is None
-            )
-            or (
-                kind == "not_required"
-                and verification is not None
-            )
-            or kind not in {"caller_attestation", "not_required"}
-        ):
+        runner_references = [
+            item for item in references
+            if item["source_kind"] == "runner_observation"
+        ]
+        runner_links = [
+            item for item in links
+            if item["relation"] == "runner_observation"
+        ]
+        if kind in {"caller_attestation", "not_required"}:
+            if (
+                verification_basis["runner_observation_id"] is not None
+                or payload["runner_observation"] is not None
+                or verification_basis["verification_receipt_id"] != receipt_id
+                or runner_references
+                or runner_links
+                or (
+                    kind == "caller_attestation"
+                    and verification is None
+                )
+                or (
+                    kind == "not_required"
+                    and verification is not None
+                )
+            ):
+                raise _inconsistent()
+        elif kind == "runner_observation":
+            runner = _runner_observation(payload["runner_observation"])
+            runner_id = verification_basis["runner_observation_id"]
+            if (
+                source_schema_version != 21
+                or verification is not None
+                or verification_basis["verification_receipt_id"] is not None
+                or type(runner_id) is not str
+                or runner_id != runner["observation_id"]
+                or runner["gate_eligibility_version"] != 1
+                or len(runner_references) != 1
+                or len(runner_links) != 1
+            ):
+                raise _inconsistent()
+            reference = runner_references[0]
+            link = runner_links[0]
+            if (
+                reference["source_state"] != "recorded"
+                or reference["source_id"] != runner_id
+                or reference["assurance_class"] != "machine_observed"
+                or reference["producer_class"] != "verification_runner"
+                or reference["completion_cycle_id"] is not None
+                or link["evidence_reference_id"]
+                != reference["evidence_reference_id"]
+                or criterion_kinds.get(link["criterion_id"])
+                != "verification"
+            ):
+                raise _inconsistent()
+            payload["runner_observation"] = runner
+        else:
             raise _inconsistent()
         payload["verification_basis"] = verification_basis
     canonical_json_bytes(payload)
@@ -778,7 +911,11 @@ def assemble_bundle_payload(
         basis.get("source_schema_version"),
         basis.get("bundle_version"),
     )
-    keys = _PAYLOAD_V2_KEYS if version_pair == (20, 2) else _PAYLOAD_KEYS
+    keys = (
+        _PAYLOAD_V2_KEYS
+        if version_pair in {(20, 2), (21, 2)}
+        else _PAYLOAD_KEYS
+    )
     payload = _mapping(basis, keys)
     return _validate_bundle_payload(payload)
 
@@ -792,7 +929,7 @@ def _bundle_domain_and_format(payload: Mapping[str, Any]) -> tuple[bytes, int]:
     if (
         payload["source_schema_version"],
         payload["bundle_version"],
-    ) == (20, 2):
+    ) in {(20, 2), (21, 2)}:
         return BUNDLE_V2_DOMAIN, 2
     raise _inconsistent()
 
@@ -1162,7 +1299,7 @@ def build_native_bundle_plan(
         "omissions": omissions,
         "project_id": cycle.project_id,
         "review_receipts": review_receipts,
-        "source_schema_version": 20,
+        "source_schema_version": SCHEMA_VERSION,
         "target": {
             "kind": cycle.review_target_kind,
             "value": cycle.review_target_value,
@@ -1269,7 +1406,7 @@ def assemble_index_payload(
 ) -> dict[str, Any]:
     payload = _mapping(basis, _INDEX_PAYLOAD_KEYS)
     source_schema_version = _integer(payload["source_schema_version"])
-    if source_schema_version not in {19, 20}:
+    if source_schema_version not in {19, 20, 21}:
         raise _inconsistent()
     index_format_version = 1 if source_schema_version == 19 else 2
     _utf8(payload["project_id"])
@@ -1554,7 +1691,7 @@ def _build_projection_bundle_artifact(
         ),
     }
     version_pair = (bundle.source_schema_version, bundle.bundle_version)
-    if version_pair == (20, 2):
+    if version_pair in {(20, 2), (21, 2)}:
         payload["verification_basis"] = {
             "basis_version": 1,
             "kind": bundle.verification_basis_kind,
@@ -1563,7 +1700,7 @@ def _build_projection_bundle_artifact(
             ),
             "verification_receipt_id": bundle.verification_receipt_id,
         }
-        payload["runner_observation"] = None
+        payload["runner_observation"] = record.runner_observation
     elif version_pair != (19, 1):
         raise _inconsistent()
     artifact = build_bundle_artifact(payload)
@@ -1585,7 +1722,7 @@ def _render_projection(
         or basis.source_generation < 0
     ):
         raise _inconsistent()
-    _exact_integer(basis.source_schema_version, 20)
+    _exact_integer(basis.source_schema_version, SCHEMA_VERSION)
 
     bundle_rows = {
         bundle.completion_evidence_bundle_id: bundle

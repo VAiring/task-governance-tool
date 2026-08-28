@@ -36,6 +36,7 @@ from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
 from tests.m14_test_support import (  # noqa: E402
     PhysicalInstall,
     make_physical_install,
+    refresh_test_manifest,
     tree_snapshot,
 )
 from tests.m223_test_support import (  # noqa: E402
@@ -51,6 +52,45 @@ INDEX_V2_DOMAIN = b"taskgov-evidence-index-v2\0"
 FINGERPRINT_A = "sha256:" + "a" * 64
 FINGERPRINT_B = "sha256:" + "b" * 64
 FIXED_TIME = "2026-08-23T00:00:00Z"
+
+
+_SCHEMA20_RUNTIME_PATCH_TARGETS = (
+    "task_governance_tool.backup.SCHEMA_VERSION",
+    "task_governance_tool.doctor.SCHEMA_VERSION",
+    "task_governance_tool.evidence_projection.SCHEMA_VERSION",
+    "task_governance_tool.reviews.SCHEMA_VERSION",
+    "task_governance_tool.setup.SCHEMA_VERSION",
+    "task_governance_tool.state_resolver.SCHEMA_VERSION",
+    "task_governance_tool.storage.SCHEMA_VERSION",
+    "task_governance_tool.tasks.SCHEMA_VERSION",
+    "task_governance_tool.verification_receipts.SCHEMA_VERSION",
+    "task_governance_tool.viewer.SCHEMA_VERSION",
+)
+_SCHEMA20_RUNTIME_PATCHERS: list[object] = []
+
+
+def _start_schema20_runtime_oracle() -> None:
+    """Freeze this historical module at its accepted schema-v20 boundary."""
+
+    if _SCHEMA20_RUNTIME_PATCHERS:
+        raise AssertionError("schema-v20 runtime oracle is already active")
+    for target in _SCHEMA20_RUNTIME_PATCH_TARGETS:
+        patcher = mock.patch(target, 20)
+        patcher.start()
+        _SCHEMA20_RUNTIME_PATCHERS.append(patcher)
+
+
+def _stop_schema20_runtime_oracle() -> None:
+    while _SCHEMA20_RUNTIME_PATCHERS:
+        _SCHEMA20_RUNTIME_PATCHERS.pop().stop()
+
+
+def setUpModule() -> None:
+    _start_schema20_runtime_oracle()
+
+
+def tearDownModule() -> None:
+    _stop_schema20_runtime_oracle()
 
 
 def _run_cli(
@@ -86,12 +126,35 @@ def _json_success(
     return payload
 
 
+def _physical_current20_install(root: Path) -> PhysicalInstall:
+    """Create a copied physical install pinned to the historical v20 runtime."""
+
+    install = make_physical_install(root, git_managed=True)
+    installed_storage = (
+        install.skill_root
+        / "scripts"
+        / "task_governance_tool"
+        / "storage.py"
+    )
+    source = installed_storage.read_text(encoding="utf-8")
+    current_declaration = "SCHEMA_VERSION = 21"
+    if source.count(current_declaration) != 1:
+        raise AssertionError("schema-v20 oracle could not pin installed runtime")
+    installed_storage.write_text(
+        source.replace(current_declaration, "SCHEMA_VERSION = 20", 1),
+        encoding="utf-8",
+        newline="\n",
+    )
+    refresh_test_manifest(install.skill_root)
+    return install
+
+
 def _fixed_current20(
     root: Path,
     *,
     identity_seed: str,
 ) -> tuple[PhysicalInstall, storage.DatabaseTarget]:
-    install = make_physical_install(root, git_managed=True)
+    install = _physical_current20_install(root)
     unbound = storage.resolve_database_target(
         repo=install.project_root,
         db=install.db_path,
@@ -547,7 +610,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
         self,
     ) -> None:
         with tempfile.TemporaryDirectory(prefix=".tmp-m242-r3b-v20-", dir=ROOT) as tmp:
-            install = make_physical_install(Path(tmp), git_managed=True)
+            install = _physical_current20_install(Path(tmp))
             setup = install.run("setup", "--json")
             setup_payload = _json_success(self, setup)
             self.assertIsNone(setup_payload["data"]["schema_from"])

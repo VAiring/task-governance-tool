@@ -269,7 +269,7 @@ class StorageInitializationTests(unittest.TestCase):
                 ]
             self.assertEqual(
                 versions,
-                [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+                [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
             )
 
     def test_initialize_migrates_schema_v1_database_through_current_schema(self):
@@ -315,9 +315,9 @@ class StorageInitializationTests(unittest.TestCase):
             self.assertFalse(result.created)
             self.assertEqual(
                 result.migrations_applied,
-                [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+                [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
             )
-            self.assertEqual(result.schema_version, 20)
+            self.assertEqual(result.schema_version, 21)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute(
@@ -336,7 +336,7 @@ class StorageInitializationTests(unittest.TestCase):
                 ]
                 self.assertEqual(
                     versions,
-                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
                 )
             self.assertEqual(task["completion_commit_required"], 1)
             self.assertEqual(task["completion_commit_hash"], "")
@@ -356,9 +356,9 @@ class StorageInitializationTests(unittest.TestCase):
             result = initialize_database(target)
             self.assertEqual(
                 result.migrations_applied,
-                [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+                [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
             )
-            self.assertEqual(result.schema_version, 20)
+            self.assertEqual(result.schema_version, 21)
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
                 task = connection.execute("SELECT * FROM tasks WHERE task_id = ?", ("tg_task_test",)).fetchone()
@@ -375,7 +375,7 @@ class StorageInitializationTests(unittest.TestCase):
                 foreign_key_rows = connection.execute("PRAGMA foreign_key_check").fetchall()
                 self.assertEqual(
                     versions,
-                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
                 )
             self.assertEqual(task["pause_reason"], "")
             self.assertEqual(event["task_id"], "tg_task_test")
@@ -593,7 +593,7 @@ class StorageInitializationTests(unittest.TestCase):
             result = initialize_database(target)
             self.assertEqual(
                 result.migrations_applied,
-                [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+                [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
             )
             self.assertEqual(
                 result.warnings[0]["code"],
@@ -918,9 +918,9 @@ class StorageInitializationTests(unittest.TestCase):
             migrated = initialize_database(target)
             self.assertEqual(
                 migrated.migrations_applied,
-                [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+                [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
             )
-            self.assertEqual(migrated.schema_version, 20)
+            self.assertEqual(migrated.schema_version, 21)
 
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row
@@ -1158,7 +1158,7 @@ class ProjectMaintenanceMigrationTests(unittest.TestCase):
                         connection.execute("PRAGMA foreign_key_check").fetchall(),
                         [],
                     )
-        self.assertEqual(SCHEMA_VERSION, 20)
+        self.assertEqual(SCHEMA_VERSION, 21)
 
 
 class ManagedBackupGenerationMigrationTests(unittest.TestCase):

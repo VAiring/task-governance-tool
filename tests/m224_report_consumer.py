@@ -801,6 +801,7 @@ def _validate_bundle_payload(
     entry: Mapping[str, Any],
     project_id: str,
     bundle_format_version: int,
+    maximum_source_schema_version: int,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if bundle_format_version not in {1, 2}:
         raise _invalid()
@@ -812,9 +813,12 @@ def _validate_bundle_payload(
             else _BUNDLE_PAYLOAD_V2_KEYS
         ),
     )
-    expected_schema = 19 if bundle_format_version == 1 else 20
+    source_schema_version = payload["source_schema_version"]
     if (
-        payload["source_schema_version"] != expected_schema
+        not _is_int(source_schema_version)
+        or (source_schema_version, bundle_format_version)
+        not in {(19, 1), (20, 2), (21, 2)}
+        or source_schema_version > maximum_source_schema_version
         or not _is_int(payload["bundle_version"])
         or payload["bundle_version"] != bundle_format_version
         or payload["project_id"] != project_id
@@ -1007,6 +1011,7 @@ def _read_native_bundle(
     *,
     entry: Mapping[str, Any],
     project_id: str,
+    maximum_source_schema_version: int,
 ) -> list[dict[str, Any]]:
     bundle_id = entry["bundle_id"]
     bundle_file = entry["bundle_file"]
@@ -1045,6 +1050,7 @@ def _read_native_bundle(
         entry=entry,
         project_id=project_id,
         bundle_format_version=expected_format,
+        maximum_source_schema_version=maximum_source_schema_version,
     )
     expected_digest = "sha256:" + hashlib.sha256(
         (BUNDLE_DOMAIN if expected_format == 1 else BUNDLE_V2_DOMAIN)
@@ -1122,7 +1128,7 @@ def read_evidence_report(
     if (
         not _is_int(format_version)
         or (format_version, payload["source_schema_version"])
-        not in {(1, 19), (2, 20)}
+        not in {(1, 19), (2, 20), (2, 21)}
     ):
         raise _invalid()
     project_id = _string(payload["project_id"])
@@ -1214,6 +1220,7 @@ def read_evidence_report(
                 bundles_root,
                 entry=entry,
                 project_id=project_id,
+                maximum_source_schema_version=payload["source_schema_version"],
             )
             report_entry["bundle_id"] = bundle_id
             report_entry["review_receipts"] = receipts

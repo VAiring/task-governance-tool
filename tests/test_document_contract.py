@@ -598,7 +598,7 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.3A Current Schema-v21 Gate-Basis Contract",
+                "## TG-M24.3A Accepted Schema-v21 Gate-Basis Contract",
                 "## TG-M24.3A Inactive Schema-v21 Gate-Basis Contract",
             )
             self.assertIn(
@@ -606,8 +606,19 @@ class DocumentContractTests(unittest.TestCase):
                 self.codes(contract.check_document_contract(root)),
             )
 
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.M24,
+                "## TG-M24.3B Current Schema-v21 Persistence Foundation",
+                "## TG-M24.3B Inactive Schema-v21 Persistence Foundation",
+            )
+            self.assertIn(
+                "m24_current_binding",
+                self.codes(contract.check_document_contract(root)),
+            )
+
         for unit, heading in (
-            ("TG-M24.3B", "Schema-v21 Persistence Foundation"),
             ("TG-M24.3C", "Runner Gate Integration And M21 Fallback"),
         ):
             with self.subTest(inactive_unit=unit), self.fixture() as root:
@@ -627,7 +638,7 @@ class DocumentContractTests(unittest.TestCase):
                 root,
                 contract.M24,
                 "<a id=\"tg-m24-r4a\"></a>",
-                "## TG-M24.3A Current Duplicate Owner\n\n"
+                "## TG-M24.3B Current Duplicate Owner\n\n"
                 "<a id=\"tg-m24-r4a\"></a>",
             )
             self.assertIn(
@@ -639,8 +650,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.3A Current Schema-v21 Gate-Basis Contract",
-                "## TG-M24.3A Schema-v21 Gate-Basis Contract Current",
+                "## TG-M24.3B Current Schema-v21 Persistence Foundation",
+                "## TG-M24.3B Schema-v21 Persistence Foundation Current",
             )
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -921,7 +932,7 @@ class DocumentContractTests(unittest.TestCase):
 
     def test_m24_3a_owner_routes_require_explicit_anchors(self):
         with self.fixture() as root:
-            expected = "approved-but-inactive-schema-v21-gate-basis-contract"
+            expected = "current-schema-v21-persistence-contract"
             alternate = f"{expected}-alternate"
             self.replace(
                 root,
@@ -1285,11 +1296,10 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.3A"])
+            self.assertEqual(m24["current_units"], ["TG-M24.3B"])
             self.assertEqual(
                 m24["inactive_units"],
                 [
-                    "TG-M24.3B",
                     "TG-M24.3C",
                     "TG-M24.4A",
                     "TG-M24.4B",
@@ -1320,6 +1330,7 @@ class DocumentContractTests(unittest.TestCase):
             self.assertNotIn("TG-M24.2D", m24["current_units"])
             self.assertNotIn("TG-M24.2D", m24["inactive_units"])
             self.assertNotIn("TG-M24.3A", m24["inactive_units"])
+            self.assertNotIn("TG-M24.3A", m24["current_units"])
             self.write_registry(root, dict(reversed(tuple(registry.items()))))
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)

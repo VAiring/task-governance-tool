@@ -51,9 +51,12 @@ from task_governance_tool.storage import (
     schema_objects_inconsistent_with_version,
     utc_now,
     validate_current_database,
-    validate_current_schema20_admitted_rows,
-    validate_evidence_ledger_storage,
-    validate_evidence_ledger_storage_for_recovery,
+    validate_schema18_19_storage,
+    validate_schema18_19_storage_for_recovery,
+    validate_schema21_storage,
+    validate_schema21_storage_for_recovery,
+    validate_schema20_storage,
+    validate_schema20_storage_for_recovery,
     validate_migration_backup_metadata,
     validate_stored_task_verification,
     validate_utc_timestamp,
@@ -376,7 +379,15 @@ def _validate_publication_source(
     version = _validate_database(connection, target, expected_version)
     if version == SCHEMA_VERSION:
         validate_current_database(connection, target)
-        validate_evidence_ledger_storage(
+    if version == 21:
+        validate_schema21_storage(
+            connection,
+            _privacy_success_cache=privacy_success_cache,
+        )
+    elif version == 20:
+        validate_schema20_storage(connection, allow_native_bundle_v2=True)
+    elif version in {18, 19}:
+        validate_schema18_19_storage(
             connection,
             _privacy_success_cache=privacy_success_cache,
         )
@@ -387,11 +398,25 @@ def _recovery_content_valid(
     connection: sqlite3.Connection,
     version: int,
     target: DatabaseTarget,
+    *,
+    privacy_success_cache: set[tuple[str, str, str]] | None = None,
 ) -> bool:
     try:
-        if version == SCHEMA_VERSION:
-            validate_current_schema20_admitted_rows(connection)
-            validate_evidence_ledger_storage_for_recovery(connection)
+        if version == 21:
+            validate_schema21_storage_for_recovery(
+                connection,
+                _privacy_success_cache=privacy_success_cache,
+            )
+        elif version == 20:
+            validate_schema20_storage_for_recovery(
+                connection,
+                _privacy_success_cache=privacy_success_cache,
+            )
+        elif version in {18, 19}:
+            validate_schema18_19_storage_for_recovery(
+                connection,
+                _privacy_success_cache=privacy_success_cache,
+            )
         else:
             validate_stored_task_verification(
                 connection,
@@ -439,12 +464,12 @@ def _artifact_schema_version(
     try:
         with closing(connect_readonly(path)) as connection:
             version = _validate_database(connection, target)
-            if version == SCHEMA_VERSION:
-                validate_current_schema20_admitted_rows(connection)
-                validate_evidence_ledger_storage(
-                    connection,
-                    _privacy_success_cache=privacy_success_cache,
-                )
+            _recovery_content_valid(
+                connection,
+                version,
+                target,
+                privacy_success_cache=privacy_success_cache,
+            )
         return version if _file_identity(path) == identity else None
     except (OSError, sqlite3.Error, StorageError):
         return None
@@ -979,15 +1004,12 @@ def copy_database_snapshot(
                 raise _failure()
         with closing(connect_readonly(source_path)) as source:
             source_version = _validate_database(source, source_target)
-            if require_recovery_content_valid:
-                try:
-                    validate_stored_task_verification(
-                        source,
-                        source_version,
-                        source_target.project.project_id,
-                    )
-                except StoredTaskVerificationError as exc:
-                    raise _failure() from exc
+            if require_recovery_content_valid and not _recovery_content_valid(
+                source,
+                source_version,
+                source_target,
+            ):
+                raise _failure()
             with closing(
                 configure_connection(sqlite3.connect(destination))
             ) as copied:
@@ -997,15 +1019,12 @@ def copy_database_snapshot(
                     destination_target,
                     source_version,
                 )
-                if require_recovery_content_valid:
-                    try:
-                        validate_stored_task_verification(
-                            copied,
-                            source_version,
-                            source_target.project.project_id,
-                        )
-                    except StoredTaskVerificationError as exc:
-                        raise _failure() from exc
+                if require_recovery_content_valid and not _recovery_content_valid(
+                    copied,
+                    source_version,
+                    destination_target,
+                ):
+                    raise _failure()
         if (
             expected_recovery_observation is not None
             and recovery_database_matches_observation is not None

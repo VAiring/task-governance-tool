@@ -144,6 +144,157 @@ def logical_database_digest(connection: sqlite3.Connection) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
+    """Reduce an admissible schema-v21 fixture to the exact schema-v20 surface.
+
+    This is deliberately test-only fixture construction, not a supported product
+    reverse migration.  Rows that use schema-v21-only arms fail closed while the
+    surrounding transaction restores the original v21 fixture.
+    """
+
+    from task_governance_tool import storage
+
+    marker = connection.execute(
+        "SELECT 1 FROM schema_migrations WHERE version = 21"
+    ).fetchone()
+    if marker is None:
+        return
+    row_factory_before = connection.row_factory
+    connection.row_factory = sqlite3.Row
+    if connection.in_transaction:
+        connection.commit()
+    try:
+        storage.validate_schema21_storage(connection)
+    except Exception:
+        connection.row_factory = row_factory_before
+        raise
+    foreign_keys_before = int(
+        connection.execute("PRAGMA foreign_keys").fetchone()[0]
+    )
+    legacy_alter_before = int(
+        connection.execute("PRAGMA legacy_alter_table").fetchone()[0]
+    )
+    connection.execute("PRAGMA foreign_keys = OFF")
+    connection.execute("PRAGMA legacy_alter_table = ON")
+    rebuilt_tables = (
+        "completion_evidence_bundles",
+        "verification_runner_resolutions",
+        "verification_runner_attempts",
+        "verification_runner_observations",
+    )
+    temporary_names = tuple(f"{name}_v21_test" for name in rebuilt_tables)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        storage.validate_schema21_storage(connection)
+        if any(storage.table_exists(connection, name) for name in temporary_names):
+            raise AssertionError("schema-v21 reducer temporary table already exists")
+        for trigger_name in (
+            "trg_task_completion_cycles_verification_basis_insert",
+            "trg_task_completion_cycles_evidence_basis_insert",
+        ):
+            connection.execute(f'DROP TRIGGER "{trigger_name}"')
+        for table_name, temporary_name in zip(
+            rebuilt_tables,
+            temporary_names,
+            strict=True,
+        ):
+            connection.execute(
+                f'ALTER TABLE "{table_name}" RENAME TO "{temporary_name}"'
+            )
+
+        runner_tables = storage._verification_runner_table_statements(
+            schema_version=storage.PRIVATE_SCHEMA20_VERSION,
+        )
+        for statement in runner_tables[:3]:
+            connection.execute(statement)
+        connection.execute(
+            storage._completion_evidence_bundle_v20_table_sql(
+                schema_version=storage.PRIVATE_SCHEMA20_VERSION,
+            )
+        )
+        copy_order = (
+            "verification_runner_resolutions",
+            "verification_runner_attempts",
+            "verification_runner_observations",
+            "completion_evidence_bundles",
+        )
+        for table_name in copy_order:
+            temporary_name = f"{table_name}_v21_test"
+            columns = tuple(
+                str(row["name"])
+                for row in connection.execute(
+                    f'PRAGMA table_info("{temporary_name}")'
+                ).fetchall()
+            )
+            projection = ", ".join(f'"{name}"' for name in columns)
+            connection.execute(
+                f'INSERT INTO "{table_name}" ({projection}) '
+                f'SELECT {projection} FROM "{temporary_name}"'
+            )
+        for temporary_name in (
+            "completion_evidence_bundles_v21_test",
+            "verification_runner_observations_v21_test",
+            "verification_runner_attempts_v21_test",
+            "verification_runner_resolutions_v21_test",
+        ):
+            connection.execute(f'DROP TABLE "{temporary_name}"')
+
+        for statement in storage._verification_runner_index_statements():
+            _kind, _name, table_name = storage._schema20_statement_identity(statement)
+            if table_name in rebuilt_tables:
+                connection.execute(statement)
+        for statement in storage._verification_runner_trigger_statements(
+            schema_version=storage.PRIVATE_SCHEMA20_VERSION,
+        ):
+            _kind, _name, table_name = storage._schema20_statement_identity(statement)
+            if table_name in rebuilt_tables:
+                connection.execute(statement)
+        for statement in storage._bundle_v20_recreated_object_statements():
+            connection.execute(statement)
+        v20_cycle_guards = (
+            next(
+                statement
+                for statement in storage.verification_receipt_schema_statements()
+                if "trg_task_completion_cycles_verification_basis_insert"
+                in statement
+            ),
+            next(
+                statement
+                for statement in storage.completion_evidence_bundle_schema_statements()
+                if "trg_task_completion_cycles_evidence_basis_insert" in statement
+            ),
+        )
+        for statement in v20_cycle_guards:
+            connection.execute(statement)
+
+        connection.execute("DELETE FROM schema_migrations WHERE version = 21")
+        storage.validate_schema20_storage(
+            connection,
+            allow_native_bundle_v2=True,
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute(
+            f"PRAGMA legacy_alter_table = {legacy_alter_before}"
+        )
+        connection.execute(f"PRAGMA foreign_keys = {foreign_keys_before}")
+        try:
+            if (
+                int(connection.execute("PRAGMA foreign_keys").fetchone()[0])
+                != foreign_keys_before
+                or int(
+                    connection.execute("PRAGMA legacy_alter_table").fetchone()[0]
+                )
+                != legacy_alter_before
+            ):
+                raise AssertionError("schema-v21 reducer could not restore pragmas")
+        finally:
+            connection.row_factory = row_factory_before
+
+
 def remove_v20_runner_shadow_for_test(
     connection: sqlite3.Connection,
     *,
@@ -151,6 +302,7 @@ def remove_v20_runner_shadow_for_test(
 ) -> None:
     """Return a current test database to the exact complete schema-v19 surface."""
 
+    remove_v21_gate_basis_for_test(connection)
     marker = connection.execute(
         "SELECT 1 FROM schema_migrations WHERE version = 20"
     ).fetchone()

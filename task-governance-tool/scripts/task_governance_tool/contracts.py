@@ -768,6 +768,7 @@ def _later_revision(
         "review_target_acceptance_criterion_id": None,
         "review_target_verification_criterion_id": None,
         "review_target_artifact_manifest_id": None,
+        "review_target_runner_basis_version": 0,
         "status": next_status,
     }
     changed_fields = [
@@ -781,6 +782,7 @@ def _later_revision(
             "review_target_acceptance_criterion_id",
             "review_target_verification_criterion_id",
             "review_target_artifact_manifest_id",
+            "review_target_runner_basis_version",
         }
         and existing[field] != value
     ]
@@ -825,6 +827,7 @@ def _later_revision(
                    review_target_acceptance_criterion_id = :review_target_acceptance_criterion_id,
                    review_target_verification_criterion_id = :review_target_verification_criterion_id,
                    review_target_artifact_manifest_id = :review_target_artifact_manifest_id,
+                   review_target_runner_basis_version = :review_target_runner_basis_version,
                    status = :status,
                    updated_at = :updated_at
              WHERE project_id = :project_id

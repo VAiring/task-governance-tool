@@ -44,10 +44,20 @@ from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
 from tests.test_m242_r3b_schema20_activation import (  # noqa: E402
     _add_task,
     _fixed_current20,
+    _start_schema20_runtime_oracle,
+    _stop_schema20_runtime_oracle,
 )
 
 
 FIXED_TIME = "2026-08-25T00:00:00Z"
+
+
+def setUpModule() -> None:
+    _start_schema20_runtime_oracle()
+
+
+def tearDownModule() -> None:
+    _stop_schema20_runtime_oracle()
 
 
 def _digest(character: str) -> str:

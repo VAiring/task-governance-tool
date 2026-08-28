@@ -3231,6 +3231,7 @@ def reopen_done_task(
             "review_target_acceptance_criterion_id": None,
             "review_target_verification_criterion_id": None,
             "review_target_artifact_manifest_id": None,
+            "review_target_runner_basis_version": 0,
         }
     )
     reset_fields = (
@@ -3263,6 +3264,7 @@ def reopen_done_task(
             "review_target_acceptance_criterion_id": None,
             "review_target_verification_criterion_id": None,
             "review_target_artifact_manifest_id": None,
+            "review_target_runner_basis_version": 0,
         }
     )
     update_values["updated_at"] = now
@@ -3569,6 +3571,7 @@ def edit_task(
                 "review_target_acceptance_criterion_id": None,
                 "review_target_verification_criterion_id": None,
                 "review_target_artifact_manifest_id": None,
+                "review_target_runner_basis_version": 0,
             }
         )
         if not status_was_provided and existing["status"] == "review_pending":
@@ -3831,6 +3834,7 @@ def edit_task(
                 "review_target_acceptance_criterion_id": None,
                 "review_target_verification_criterion_id": None,
                 "review_target_artifact_manifest_id": None,
+                "review_target_runner_basis_version": 0,
             }
         )
     update_values["updated_at"] = now

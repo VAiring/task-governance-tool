@@ -392,7 +392,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             connection.execute(
                 "SELECT MAX(version) FROM schema_migrations"
             ).fetchone()[0],
-            20,
+            21,
         )
         generations = connection.execute(
             """
@@ -473,7 +473,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(migrated)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 2)
-            self.assertEqual(payload["data"]["schema_to"], 20)
+            self.assertEqual(payload["data"]["schema_to"], 21)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 MIGRATION_SETUP_WRITES,
@@ -673,7 +673,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
                 payload = json_payload(migrated)
                 self.assertEqual(payload["data"]["schema_from"], source_version)
-                self.assertEqual(payload["data"]["schema_to"], 20)
+                self.assertEqual(payload["data"]["schema_to"], 21)
                 self.assertEqual(
                     payload["data"]["completed_writes"],
                     MIGRATION_SETUP_WRITES,
@@ -885,7 +885,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             payload = json_payload(recovered)
             self.assertEqual(payload["project_id"], project.project_id)
             self.assertEqual(payload["data"]["schema_from"], 12)
-            self.assertEqual(payload["data"]["schema_to"], 20)
+            self.assertEqual(payload["data"]["schema_to"], 21)
             self.assertEqual(
                 payload["data"]["completed_writes"],
                 RECOVERY_MIGRATION_SETUP_WRITES,

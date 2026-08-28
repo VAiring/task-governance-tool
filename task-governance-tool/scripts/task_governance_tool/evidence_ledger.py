@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass, field
 from typing import Any, Mapping
 
 
@@ -726,8 +726,22 @@ class EvidenceSource:
     source_state: str
     source_id: str
     source_projection: Mapping[str, Any]
+    _validated_runner_eligibility_version: InitVar[int] = field(
+        default=0,
+        kw_only=True,
+        repr=False,
+    )
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _validated_runner_eligibility_version: int) -> None:
+        if (
+            type(_validated_runner_eligibility_version) is not int
+            or _validated_runner_eligibility_version not in {0, 1}
+            or (
+                _validated_runner_eligibility_version != 0
+                and self.source_kind != "runner_observation"
+            )
+        ):
+            raise _inconsistent()
         if not isinstance(self.source_projection, Mapping):
             raise _inconsistent()
         projection = dict(self.source_projection)
@@ -833,7 +847,9 @@ class EvidenceSource:
             )
             if (
                 projection["observation_id"] != self.source_id
-                or projection["gate_eligibility_version"] != 0
+                or type(projection["gate_eligibility_version"]) is not int
+                or projection["gate_eligibility_version"]
+                != _validated_runner_eligibility_version
                 or projection["route"] not in {"runner", "m21_fallback"}
                 or projection["launch_state"] not in {"no_launch", "launched"}
                 or type(projection["complete_plan"]) is not int
@@ -845,6 +861,8 @@ class EvidenceSource:
                 <= projection["completed_step_count"]
                 <= projection["total_step_count"]
                 or projection["plan_blob_object_id"] is not None
+                or type(projection["plan_version"]) is not int
+                or projection["plan_version"] != 1
                 or projection["runner_implementation_version"]
                 != "taskgov-verification-runner/1"
                 or projection["runtime_digest"] is not None

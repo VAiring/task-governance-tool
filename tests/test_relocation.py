@@ -214,7 +214,7 @@ class RelocationTokenCodecTests(unittest.TestCase):
         self.assert_invalid(
             legacy_context,
             source_layout="fixed_current_v1",
-            source_schema_version=21,
+            source_schema_version=22,
         )
 
     def test_encode_rejects_invalid_context_time_and_oversized_transport(self):

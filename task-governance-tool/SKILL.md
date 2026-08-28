@@ -147,11 +147,11 @@ mandatory question, judgment, or user-return stop.
   authority. Leave revision zero otherwise without asking. Revise a Contract
   only from later explicit authority and record the reason.
 - Explicit public `task add` and `task edit --verification` input is limited to
-  1,000 characters. Schema-v18-through-v20 stored/read paths preserve an
+  1,000 characters. Schema-v18-through-v21 stored/read paths preserve an
   existing valid value through 1,000 characters; metadata and lifecycle edits
   continue to treat untouched verification bytes as stored state rather than
   caller input.
-- Schema v19 sealed Bundle v1; current schema v20 automatically seals Bundle v2
+- Schema v19 sealed Bundle v1; current schema v21 automatically seals Bundle v2
   with a derived `caller_attestation` or `not_required` basis and null Runner
   observation. Evidence index v2 can reference preserved v1 Bundles without
   rewriting their bytes or digests. Pre-v19 cycles remain `legacy_unknown`;

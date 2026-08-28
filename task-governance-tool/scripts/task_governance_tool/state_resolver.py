@@ -53,10 +53,12 @@ from task_governance_tool.storage import (
     validate_identity_project_id,
     validate_current_database_binding,
     validate_current_database_structure,
-    validate_evidence_ledger_storage_for_recovery,
     validate_lower_hex_64,
     validate_migration_backup_metadata,
     validate_operational_journal_state,
+    validate_schema18_19_storage_for_recovery,
+    validate_schema20_storage_for_recovery,
+    validate_schema21_storage_for_recovery,
     validate_sqlite_integer_storage_class,
     validate_stored_task_verification,
 )
@@ -1039,8 +1041,12 @@ def _inspect_database(
         )
         if classify_recovery_content:
             try:
-                if version == SCHEMA_VERSION:
-                    validate_evidence_ledger_storage_for_recovery(connection)
+                if version == 21:
+                    validate_schema21_storage_for_recovery(connection)
+                elif version == 20:
+                    validate_schema20_storage_for_recovery(connection)
+                elif version in {18, 19}:
+                    validate_schema18_19_storage_for_recovery(connection)
                 else:
                     validate_stored_task_verification(
                         connection,

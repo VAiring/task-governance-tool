@@ -345,7 +345,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                 "--read-only", "--json",
             )
             self.assertEqual(preview["data"]["schema_from"], 2)
-            self.assertEqual(preview["data"]["schema_to"], 20)
+            self.assertEqual(preview["data"]["schema_to"], 21)
             self.assertEqual(preview["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(preview["data"]["completed_writes"], [])
             self.assertEqual(preview["data"]["evidence_status"], "not_present")
@@ -383,7 +383,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                 "--repo", str(project), "--json",
             )
             self.assertEqual(upgraded["data"]["schema_from"], 2)
-            self.assertEqual(upgraded["data"]["schema_to"], 20)
+            self.assertEqual(upgraded["data"]["schema_to"], 21)
             self.assertEqual(upgraded["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(upgraded["data"]["completed_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(upgraded["data"]["evidence_status"], "published")
@@ -395,7 +395,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertTrue(current_db.is_file())
             self.assertTrue(viewer.is_file())
             self.assertFalse(legacy_db.exists())
-            self.assertEqual(sqlite_version(current_db), 20)
+            self.assertEqual(sqlite_version(current_db), 21)
             self.assertEqual(legacy_projection(current_db), pre_upgrade_projection)
 
             with closing(sqlite3.connect(current_db)) as connection:
@@ -475,7 +475,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             )
             self.assertEqual(
                 doctor["data"]["components"]["project_state"]["schema_version"],
-                20,
+                21,
             )
             self.assertEqual(
                 doctor["data"]["components"]["maintenance"]["viewer"]["code"],

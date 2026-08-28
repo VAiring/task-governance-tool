@@ -15,9 +15,9 @@
 > exact-candidate manifest closure, with no product activation. TG-M24.R3A and
 > TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and
 > public-activation baseline; TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and
-> TG-M24.2C and TG-M24.2D are accepted predecessors. TG-M24.3A owns current
-> formal authority, and every later unit in this document remains inactive
-> until its immediate predecessor is accepted.
+> TG-M24.2C and TG-M24.2D are accepted predecessors. TG-M24.3A is an accepted
+> predecessor and TG-M24.3B owns current formal authority. Every later unit in
+> this document remains inactive until its immediate predecessor is accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
 > The separate TG-M24.R2 bootstrap Task supplies only a reviewed phase-one
@@ -553,15 +553,16 @@ unit of its replacement sequence. It owns no status or gate by itself.
 
 <a id="tg-m24-3a"></a>
 
-## TG-M24.3A Current Schema-v21 Gate-Basis Contract
+## TG-M24.3A Accepted Schema-v21 Gate-Basis Contract
 
-Task `tg_task_2b7efe1c4545cca8` freezes the complete schema-v21 contract
-required before persistence or gate implementation. This unit is documentation
-only: the supported candidate remains schema v20, M21 remains the sole current
-verification/completion gate, and no schema-v21 row or artifact is created.
+Task `tg_task_2b7efe1c4545cca8` froze the complete schema-v21 contract required
+before persistence or gate implementation. That accepted unit was
+documentation-only and created no schema-v21 row or artifact. Current
+TG-M24.3B activates only the frozen persistence boundary; M21 remains the sole
+verification/completion gate.
 
 The exact future product behavior is owned by the
-[schema-v21 specification](../specification.md#approved-but-inactive-schema-v21-gate-basis-contract),
+[schema-v21 specification](../specification.md#current-schema-v21-persistence-contract),
 and its physical migration, validation, Bundle, Viewer, backup, and recovery
 design is owned by the
 [schema-v21 design](../design.md#tg-m24-3a-schema21-design). The fixed boundary
@@ -570,7 +571,7 @@ index, reuses Task marker `2` and Runner eligibility `1`, and keeps Bundle v2,
 Evidence Index v2, and Viewer snapshot v4. Schema-v20 evidence remains
 eligibility-zero audit history and is never promoted or backfilled.
 
-Inactive TG-M24.3B may implement only that persistence and compatibility
+Current TG-M24.3B may implement only that persistence and compatibility
 contract while continuing to write marker/eligibility zero and using M21 as the
 sole completion gate. Its schema-v21 readers must validate and historically
 replay structurally valid later eligibility-one completed history, but a live
@@ -590,7 +591,7 @@ reviews. A full offline suite is not a 3A completion requirement.
 
 <a id="tg-m24-3b"></a>
 
-## TG-M24.3B Inactive Schema-v21 Persistence Foundation
+## TG-M24.3B Current Schema-v21 Persistence Foundation
 
 Task `tg_task_1c3f41dc4bc88a68` implements only the exact contract accepted in
 TG-M24.3A across migration, storage, repository, validators, setup, Bundle/
@@ -601,6 +602,27 @@ trigger, process behavior, or corrective infrastructure. Completion requires
 focused fresh-v21, v20-to-v21, reentry, rollback, recovery, compatibility,
 privacy, M21-gate nonactivation, full offline, exact-diff, and two independent
 Tier 2 PASS reviews.
+
+The approved implementation plan is one bounded, ordered Task:
+
+1. add the exact schema-v21 DDL and validators without exposing a partial
+   current-schema cutover;
+2. implement complete-v20 admission, v20-to-v21 migration, fresh creation,
+   validation-only reentry, marker-last rollback, and the fixed attached-object
+   matrix;
+3. add schema-v21 tagged-graph and historical-read compatibility while every
+   3B writer remains marker/eligibility zero and every live marker-two target
+   fails closed under the unchanged M21 gate;
+4. connect Bundle v2, Evidence Index v2, Viewer snapshot v4, setup, managed
+   backup, and recovery compatibility; and
+5. switch the public schema/current identity and governing routes atomically,
+   synchronize the package manifest, then run focused and full-offline checks,
+   exact-diff inspection, and two independent Tier 2 reviews.
+
+Schema-v20 tests remain migration-source oracles and are not mechanically
+rewritten as schema-v21 tests. The current cutover adds no v0.13 release work,
+CI-policy change, canonical-database setup, reverse migration, generic
+validator framework, or natural-language document checker.
 
 <a id="tg-m24-3c"></a>
 

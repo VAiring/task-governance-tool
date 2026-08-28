@@ -334,7 +334,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             release = fixture / "docs" / "release-install.md"
             release.write_text(
                 release.read_text(encoding="utf-8").replace(
-                    "| SQLite schema | v20 |",
+                    "| SQLite schema | v21 |",
                     "| SQLite schema | v99 |",
                     1,
                 ),

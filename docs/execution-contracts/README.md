@@ -11,11 +11,11 @@
 > predecessors; accepted R4A left its inventory-approved retired material and
 > dedicated tests physically absent without an archive or dormant copy.
 > TG-M24.R3A, TG-M24.R3B, TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B,
-> TG-M24.2C, TG-M24.2D, and TG-M24.3A are accepted predecessors. TG-M24.3B
-> owns current persistence-only scope. TG-M24.3C and TG-M24.4A through
+> TG-M24.2C, TG-M24.2D, TG-M24.3A, and TG-M24.3B are accepted predecessors.
+> TG-M24.3C owns current Runner-gate integration scope. TG-M24.4A through
 > TG-M24.CP4 remain inactive in their routed exact sequence.
-> TG-M23 authority is accepted-predecessor only, and no TG-M24 Runner
-> completion-gate authority is active. Load files only when the current
+> TG-M23 authority is accepted-predecessor only, and TG-M24 Runner
+> completion-gate authority belongs only to current TG-M24.3C. Load files only when the current
 > Task Contract or the
 > [repository authority index](../authority.md) selects their exact path and
 > ASCII anchor. Their presence, indexing, or reading activates no behavior.
@@ -52,9 +52,10 @@ targets, reviews, receipts, or completion history.
   owns accepted TG-M24.1/TG-M24.1A/TG-M24.R1/TG-M24.R2A/TG-M24.R2B/
   TG-M24.R2C/TG-M24.R4A/TG-M24.R4V/TG-M24.R3A/TG-M24.R3B/TG-M24.R4B/
   TG-M24.R5/TG-M24.2A/TG-M24.2B/TG-M24.2C/TG-M24.2D routes, the superseded
-  non-gating TG-M24.1B route, accepted TG-M24.3A schema-v21 contract, current
-  TG-M24.3B persistence foundation, and inactive TG-M24.3C-through-TG-M24.CP4
-  implementation, gate, acceptance, and no-debt checkpoint detail. Its
+  non-gating TG-M24.1B route, accepted TG-M24.3A schema-v21 contract and
+  TG-M24.3B persistence foundation, current TG-M24.3C gate integration, and
+  inactive TG-M24.4A-through-TG-M24.CP4 acceptance and no-debt checkpoint
+  detail. Its
   trusted-local explicit-opt-in boundary leaves
   untrusted and external work on the M21 manual fallback, and loading it
   activates no product or later-unit behavior.

@@ -610,7 +610,7 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.3B Current Schema-v21 Persistence Foundation",
+                "## TG-M24.3B Accepted Schema-v21 Persistence Foundation",
                 "## TG-M24.3B Inactive Schema-v21 Persistence Foundation",
             )
             self.assertIn(
@@ -618,27 +618,24 @@ class DocumentContractTests(unittest.TestCase):
                 self.codes(contract.check_document_contract(root)),
             )
 
-        for unit, heading in (
-            ("TG-M24.3C", "Runner Gate Integration And M21 Fallback"),
-        ):
-            with self.subTest(inactive_unit=unit), self.fixture() as root:
-                self.replace(
-                    root,
-                    contract.M24,
-                    f"## {unit} Inactive {heading}",
-                    f"## {unit} Current {heading}",
-                )
-                self.assertIn(
-                    "m24_current_binding",
-                    self.codes(contract.check_document_contract(root)),
-                )
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.M24,
+                "## TG-M24.3C Current Runner Gate Integration And M21 Fallback",
+                "## TG-M24.3C Inactive Runner Gate Integration And M21 Fallback",
+            )
+            self.assertIn(
+                "m24_current_binding",
+                self.codes(contract.check_document_contract(root)),
+            )
 
         with self.fixture() as root:
             self.replace(
                 root,
                 contract.M24,
                 "<a id=\"tg-m24-r4a\"></a>",
-                "## TG-M24.3B Current Duplicate Owner\n\n"
+                "## TG-M24.3C Current Duplicate Owner\n\n"
                 "<a id=\"tg-m24-r4a\"></a>",
             )
             self.assertIn(
@@ -650,8 +647,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.3B Current Schema-v21 Persistence Foundation",
-                "## TG-M24.3B Schema-v21 Persistence Foundation Current",
+                "## TG-M24.3C Current Runner Gate Integration And M21 Fallback",
+                "## TG-M24.3C Runner Gate Integration And M21 Fallback Current",
             )
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -1296,11 +1293,10 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.3B"])
+            self.assertEqual(m24["current_units"], ["TG-M24.3C"])
             self.assertEqual(
                 m24["inactive_units"],
                 [
-                    "TG-M24.3C",
                     "TG-M24.4A",
                     "TG-M24.4B",
                     "TG-M24.4C",
@@ -1621,24 +1617,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.EXECUTION_INDEX,
-                "no TG-M24 Runner\n> completion-gate authority is active",
-                "no TG-M24 Runner runtime\n> is active",
-            )
-            self.assertIn(
-                "document_role",
-                self.codes(contract.check_document_contract(root)),
-            )
-
-        with self.fixture() as root:
-            self.replace(
-                root,
-                "docs/specification.md",
-                "Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, "
-                "browser launch, server, watcher, or network action; it invokes or projects "
-                "neither Analyzer nor Runner and adds no normal-loop call.",
-                "There is no Evidence command, custom path, Viewer field/UI, browser launch, "
-                "server, watcher, network action, Analyzer, Runner, or additional normal-loop "
-                "call.",
+                "# Current And Conditional Execution Contract Index",
+                "# Current And Conditional Reference Index",
             )
             self.assertIn(
                 "document_role",

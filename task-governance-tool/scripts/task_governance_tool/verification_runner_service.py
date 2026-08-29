@@ -1,4 +1,4 @@
-"""Parent orchestration for the schema-v20 audit-only verification Runner.
+"""Parent orchestration and exact-current selection for the verification Runner.
 
 The existing review-target command is the sole trigger. Ineligible and
 definite pre-intent fallback paths persist only the ordinary target. A Runner
@@ -11,10 +11,14 @@ from __future__ import annotations
 
 import os
 import secrets
+import sqlite3
+from collections.abc import Mapping
 from contextlib import closing
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
+
+from task_governance_tool import __version__
 
 from task_governance_tool.artifact_manifest import (
     ArtifactManifestError,
@@ -30,6 +34,7 @@ from task_governance_tool.evidence_ledger import (
     build_evidence_reference,
 )
 from task_governance_tool.git_snapshot import GitSnapshotError
+from task_governance_tool.project_scope import PREFLIGHT_MESSAGES
 from task_governance_tool.reviews import (
     REVIEW_TARGET_KINDS,
     ReviewTargetAuthorityBasis,
@@ -52,19 +57,26 @@ from task_governance_tool.storage import (
     begin_initialized_write,
     connect_initialized,
     connect_initialized_readonly,
+    connect_initialized_task_readonly,
     insert_verification_runner_resolution_locked,
     persist_verification_runner_restart_cleanup_locked,
     persist_verification_runner_terminal_locked,
+    read_current_verification_runner_gate_snapshot,
     read_current_verification_runner_target_basis,
     read_pending_verification_runner_cleanup,
     utc_now,
 )
-from task_governance_tool.tasks import validate_choice, validate_task_id
+from task_governance_tool.tasks import (
+    read_internal_task,
+    validate_choice,
+    validate_task_id,
+)
 from task_governance_tool.verification_runner import (
     RUNNER_CONTRACT_VERSION,
     RUNNER_IMPLEMENTATION_VERSION,
     RUNNER_POLICY_DIGEST,
     RUNNER_TRIGGER,
+    VerificationRunnerGateSelection,
     generate_runner_id,
     resolution_idempotency_digest,
     runner_observation_source_projection,
@@ -72,6 +84,7 @@ from task_governance_tool.verification_runner import (
     verification_runner_observation_digest,
     verification_runner_sandbox_event_digest,
 )
+from task_governance_tool.self_status import inspect_local_package
 from task_governance_tool.verification_runner_git import (
     TARGET_STALE_MESSAGE,
     RunnerMaterialization,
@@ -81,6 +94,7 @@ from task_governance_tool.verification_runner_git import (
     observe_commit_runner_target,
     observe_staged_runner_target,
     preflight_runner_material,
+    preflight_runner_snapshot_successor_material_digest,
 )
 from task_governance_tool.verification_runner_lifecycle import (
     RUNNER_FAILURE_MESSAGE,
@@ -125,6 +139,12 @@ class VerificationRunnerServiceError(Exception):
         return self.message
 
 
+@dataclass(frozen=True)
+class _ReviewTargetRouteResult(ReviewTargetResult):
+    verification_route: str
+    blocking_code: str | None
+
+
 _POST_INTENT_TYPED_ERRORS = (
     EvidenceLedgerError,
     StorageError,
@@ -156,6 +176,21 @@ def _service_error(code: str, message: str) -> VerificationRunnerServiceError:
 
 def _state_invalid() -> VerificationRunnerServiceError:
     return _service_error("runner_state_invalid", RUNNER_FAILURE_MESSAGE)
+
+
+def _routed_review_target(
+    review: ReviewTargetResult,
+    *,
+    verification_route: str,
+    blocking_code: str | None = None,
+) -> _ReviewTargetRouteResult:
+    return _ReviewTargetRouteResult(
+        task=review.task,
+        changed_fields=review.changed_fields,
+        event=review.event,
+        verification_route=verification_route,
+        blocking_code=blocking_code,
+    )
 
 
 def _runner_paths(target: DatabaseTarget) -> VerificationRunnerStatePaths:
@@ -198,16 +233,26 @@ def _persist_ordinary_target(
     target: DatabaseTarget,
     authority: ReviewTargetAuthorityBasis,
     observation: ArtifactObservation,
-) -> ReviewTargetResult:
+) -> _ReviewTargetRouteResult:
+    verification = authority.task.get("verification")
+    if not isinstance(verification, str):
+        raise _state_invalid()
+    verification_route = (
+        "receipt_required" if verification.strip() else "not_required"
+    )
     with closing(connect_initialized(target)) as connection:
         with connection:
-            return persist_prepared_review_target_capture(
+            review = persist_prepared_review_target_capture(
                 connection,
                 target.project,
                 authority.task,
                 observation=observation,
                 database_target=target,
             )
+    return _routed_review_target(
+        review,
+        verification_route=verification_route,
+    )
 
 
 def _prepare_runner(
@@ -352,7 +397,7 @@ def _resolution_row(
         "sandbox_provider": None,
         "sandbox_policy_digest": None,
         "runtime_digest": None,
-        "gate_eligibility_version": 0,
+        "gate_eligibility_version": 1,
         "trigger": RUNNER_TRIGGER,
         "route": "runner",
         "reason": None,
@@ -415,6 +460,7 @@ def _persist_launch_intent(
                 observation=prepared.target.artifact,
                 database_target=target,
                 now=created_at,
+                runner_basis_version=2,
             )
             current = read_current_verification_runner_target_basis(
                 connection,
@@ -549,6 +595,9 @@ def _terminal_evidence(
         source_projection=runner_observation_source_projection(
             observation=asdict(observation),
             resolution=asdict(resolution),
+        ),
+        _validated_runner_eligibility_version=(
+            observation.gate_eligibility_version
         ),
     )
     binding = TargetCaptureBinding(
@@ -685,7 +734,7 @@ def _complete_prelaunch(
     intent: _LaunchIntent,
     *,
     reason: str,
-) -> ReviewTargetResult:
+) -> _ReviewTargetRouteResult:
     _cleanup_or_fail(target, paths, intent.attempt, persist_only=False)
     if not _physical_basis_matches(target, prepared):
         _persist_cleanup_only(target, intent.attempt)
@@ -709,7 +758,7 @@ def _complete_prelaunch(
         total_process_count=None,
     )
     _persist_terminal(target, intent, observation)
-    return intent.review
+    return _routed_runner_target(intent.review, intent.resolution, observation)
 
 
 def _current_basis_matches(
@@ -738,7 +787,7 @@ def _current_basis_matches(
         "target_generation": resolution.target_generation,
         "target_capture_version": resolution.target_capture_version,
         "artifact_manifest_id": resolution.artifact_manifest_id,
-        "gate_eligibility_version": 0,
+        "gate_eligibility_version": resolution.gate_eligibility_version,
     }
     return current == expected
 
@@ -798,6 +847,292 @@ def _basis_is_current(
 ) -> bool:
     return _current_basis_matches(target, prepared, resolution) and (
         _physical_basis_matches(target, prepared)
+    )
+
+
+def _selection_from_snapshot(
+    snapshot: dict[str, Any],
+    *,
+    project_id: str,
+    task_id: str,
+    mode: str,
+) -> VerificationRunnerGateSelection:
+    observation = snapshot["observation"]
+    return VerificationRunnerGateSelection(
+        project_id=project_id,
+        task_id=task_id,
+        target_generation=int(snapshot["target_generation"]),
+        mode=mode,
+        verification_runner_observation_id=(
+            observation.verification_runner_observation_id
+            if observation is not None and mode != "stale"
+            else None
+        ),
+        storage_token=tuple(snapshot["storage_token"]),
+    )
+
+
+def _stored_runner_physical_basis_matches(
+    target: DatabaseTarget,
+    snapshot: dict[str, Any],
+    *,
+    completion_revision: str | None = None,
+) -> bool:
+    if target.skill_root is None:
+        raise StorageError(
+            "package_status_unknown",
+            PREFLIGHT_MESSAGES["package_status_unknown"],
+        )
+    package_status = inspect_local_package(
+        target.skill_root,
+        installed_version=__version__,
+    )
+    if package_status.status == "modified":
+        raise StorageError(
+            "package_core_modified",
+            PREFLIGHT_MESSAGES["package_core_modified"],
+        )
+    if package_status.status != "clean":
+        raise StorageError(
+            "package_status_unknown",
+            PREFLIGHT_MESSAGES["package_status_unknown"],
+        )
+
+    resolution = snapshot["resolution"]
+    repo = Path(target.project.canonical_repo)
+    package_root = Path(target.skill_root)
+    try:
+        source = capture_verification_runner_plan(repo, package_root)
+        plan = resolve_verification_runner_plan(
+            source,
+            task_id=resolution.task_id,
+            contract_revision=resolution.contract_revision,
+            verification_expectation_digest=(
+                resolution.verification_expectation_digest
+            ),
+            verification_criterion_digest=(
+                resolution.verification_criterion_digest
+            ),
+        )
+        implementation = capture_runner_implementation(package_root)
+        if resolution.target_kind == "git_snapshot":
+            if completion_revision is None:
+                observed = observe_staged_runner_target(repo)
+                material = preflight_runner_material(repo, observed)
+                target_matches = bool(
+                    observed.artifact.target_kind == resolution.target_kind
+                    and observed.artifact.target_value == resolution.target_value
+                    and observed.artifact.target_base_revision
+                    == (resolution.target_base_revision or "")
+                    and material.target_material_digest
+                    == resolution.target_material_digest
+                )
+            elif (
+                type(resolution.target_base_revision) is not str
+                or not resolution.target_base_revision
+            ):
+                target_matches = False
+            else:
+                successor_digest = (
+                    preflight_runner_snapshot_successor_material_digest(
+                        repo,
+                        completion_revision,
+                        expected_base_revision=resolution.target_base_revision,
+                        expected_fingerprint=resolution.target_value,
+                    )
+                )
+                target_matches = (
+                    successor_digest == resolution.target_material_digest
+                )
+        else:
+            observed = observe_commit_runner_target(repo, resolution.target_value)
+            material = preflight_runner_material(repo, observed)
+            target_matches = bool(
+                (completion_revision is None or completion_revision == resolution.target_value)
+                and observed.artifact.target_kind == resolution.target_kind
+                and observed.artifact.target_value == resolution.target_value
+                and observed.artifact.target_base_revision
+                == (resolution.target_base_revision or "")
+                and material.target_material_digest
+                == resolution.target_material_digest
+            )
+    except VerificationRunnerRuntimeError as exc:
+        raise StorageError(
+            "package_status_unknown",
+            PREFLIGHT_MESSAGES["package_status_unknown"],
+        ) from exc
+    except (VerificationRunnerPlanError, VerificationRunnerGitError):
+        return False
+    return bool(
+        plan.plan_state == resolution.plan_state
+        and plan.route == resolution.route
+        and plan.reason == resolution.reason
+        and plan.plan_blob_object_id == resolution.plan_blob_object_id
+        and plan.plan_raw_digest == resolution.plan_raw_digest
+        and plan.plan_id == resolution.plan_id
+        and plan.plan_version == resolution.plan_version
+        and plan.plan_semantic_digest == resolution.plan_semantic_digest
+        and plan.selected_entry_digest == resolution.selected_entry_digest
+        and plan.coverage == resolution.coverage
+        and plan.step_count == resolution.step_count
+        and implementation.implementation_version
+        == resolution.runner_implementation_version
+        and implementation.implementation_digest
+        == resolution.runner_implementation_digest
+        and target_matches
+    )
+
+
+def _terminal_runner_mode(
+    resolution: VerificationRunnerResolution,
+    observation: VerificationRunnerObservation,
+) -> str:
+    if (
+        observation.route == "m21_fallback"
+        and observation.launch_state == "no_launch"
+        and observation.outcome == "blocked_prelaunch"
+        and observation.reason in {"runtime_unavailable", "process_setup_failed"}
+        and observation.complete_plan == 0
+    ):
+        return "m21_fallback"
+    if (
+        observation.route == "runner"
+        and observation.launch_state == "launched"
+        and observation.outcome == "pass"
+        and observation.reason is None
+        and observation.complete_plan == 1
+        and observation.total_step_count
+        == observation.completed_step_count
+        == resolution.step_count
+        and observation.failed_step_ordinal is None
+    ):
+        return "runner_observation"
+    return "blocking"
+
+
+def _routed_runner_target(
+    review: ReviewTargetResult,
+    resolution: VerificationRunnerResolution,
+    observation: VerificationRunnerObservation,
+) -> _ReviewTargetRouteResult:
+    mode = _terminal_runner_mode(resolution, observation)
+    if mode == "m21_fallback":
+        return _routed_review_target(
+            review,
+            verification_route="receipt_required",
+        )
+    if mode == "runner_observation":
+        return _routed_review_target(
+            review,
+            verification_route="runner_pass",
+        )
+    return _routed_review_target(
+        review,
+        verification_route="blocked",
+        blocking_code="verification_receipt_blocking",
+    )
+
+
+def select_current_verification_runner_basis(
+    target: DatabaseTarget,
+    *,
+    task: Mapping[str, Any],
+    completion_revision: str | None = None,
+) -> VerificationRunnerGateSelection | None:
+    """Select one live Runner gate without holding SQLite during physical checks."""
+
+    if str(task.get("status", "")) == "done":
+        return None
+    try:
+        marker = task["review_target_runner_basis_version"]
+        project_id = str(task["project_id"])
+        task_id = str(task["task_id"])
+        target_generation = int(task["review_target_generation"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise StorageError(
+            "runner_state_invalid",
+            RUNNER_FAILURE_MESSAGE,
+        ) from exc
+    if marker == 0:
+        return None
+    if marker != 2 or project_id != target.project.project_id:
+        raise StorageError("runner_state_invalid", RUNNER_FAILURE_MESSAGE)
+
+    caller_task = dict(task)
+    with closing(connect_initialized_task_readonly(target)) as connection:
+        current_task = read_internal_task(connection, project_id, task_id)
+        if current_task is None or current_task != caller_task:
+            return None
+        snapshot = read_current_verification_runner_gate_snapshot(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+        )
+    if snapshot["target_generation"] != target_generation:
+        raise StorageError("runner_state_invalid", RUNNER_FAILURE_MESSAGE)
+    if not snapshot["basis_matches"]:
+        return _selection_from_snapshot(
+            snapshot,
+            project_id=project_id,
+            task_id=task_id,
+            mode="stale",
+        )
+
+    physical_error: StorageError | None = None
+    try:
+        physical_matches = (
+            _stored_runner_physical_basis_matches(target, snapshot)
+            if completion_revision is None
+            else _stored_runner_physical_basis_matches(
+                target,
+                snapshot,
+                completion_revision=completion_revision,
+            )
+        )
+    except StorageError as exc:
+        physical_error = exc
+        physical_matches = False
+
+    with closing(connect_initialized_task_readonly(target)) as connection:
+        current_task = read_internal_task(connection, project_id, task_id)
+        if current_task is None or current_task != caller_task:
+            return None
+        current = read_current_verification_runner_gate_snapshot(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+        )
+    if (
+        not current["basis_matches"]
+        or current["storage_token"] != snapshot["storage_token"]
+    ):
+        return _selection_from_snapshot(
+            current,
+            project_id=project_id,
+            task_id=task_id,
+            mode="stale",
+        )
+    if physical_error is not None:
+        raise physical_error
+    if not physical_matches:
+        return _selection_from_snapshot(
+            current,
+            project_id=project_id,
+            task_id=task_id,
+            mode="stale",
+        )
+    if current["state"] != "terminal":
+        mode = "stale"
+    else:
+        mode = _terminal_runner_mode(
+            current["resolution"],
+            current["observation"],
+        )
+    return _selection_from_snapshot(
+        current,
+        project_id=project_id,
+        task_id=task_id,
+        mode=mode,
     )
 
 
@@ -932,7 +1267,7 @@ def _run_intent_under_lock(
     intent: _LaunchIntent,
     *,
     cancel_requested: Callable[[], bool],
-) -> ReviewTargetResult:
+) -> _ReviewTargetRouteResult:
     try:
         attempt_paths = create_attempt_directories(
             paths,
@@ -1108,7 +1443,7 @@ def _run_intent_under_lock(
         finished_at=utc_now(),
     )
     _persist_terminal(target, intent, observation)
-    return intent.review
+    return _routed_runner_target(intent.review, intent.resolution, observation)
 
 
 def set_review_target_with_shadow_runner(
@@ -1118,7 +1453,7 @@ def set_review_target_with_shadow_runner(
     kind: Any,
     revision: Any = None,
     _cancel_requested: Callable[[], bool] = lambda: False,
-) -> ReviewTargetResult:
+) -> _ReviewTargetRouteResult:
     """Set one exact review target and optionally consume the local Runner plan."""
 
     normalized_task_id = validate_task_id(task_id)
@@ -1214,5 +1549,6 @@ def set_review_target_with_shadow_runner(
 
 __all__ = [
     "VerificationRunnerServiceError",
+    "select_current_verification_runner_basis",
     "set_review_target_with_shadow_runner",
 ]

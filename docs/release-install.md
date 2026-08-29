@@ -12,11 +12,15 @@ Current TG-M24 authority replaces the former fixed-Candidate-C and adversarial
 LPAC route with an ordered trusted-local Runner repair and implementation
 sequence. Accepted R3A/R3B supplied the schema-v20 storage and activation
 baseline, and accepted TG-M24.3A froze the schema-v21 contract. The current
-candidate adopts TG-M24.3B's schema-v21 persistence, M21-only Bundle-v2 writer,
-Evidence index v2, and Viewer/managed compatibility. This
-does not select, sign, publish, or claim a Runner runtime and activates no
-process launch, new CLI or Skill trigger, or gate. Untrusted or external
-targets remain on the M21 manual verification path.
+candidate adopts accepted TG-M24.3B schema-v21 persistence and the current
+TG-M24.3C gate integration. An explicitly opted-in trusted-local target may use
+the existing target-set Runner: an exact-current complete-plan pass supplies
+the Runner-observation completion basis without a Verification Receipt, while
+the exact closed no-launch fallback alone returns to the M21 Receipt path.
+Pending, stale, cleanup-only, and other terminal Runner branches remain
+blocking. This adds no Runner command or Skill trigger and adds only the two
+closed target-set JSON success fields.
+Untrusted or external targets remain on the M21 manual verification path.
 
 ## Current Candidate Identity
 
@@ -253,11 +257,15 @@ verification-basis discriminator, writes Bundle v2 with a null Runner
 observation for new native completions, and publishes Evidence index v2. It
 creates no Runner row, Reference, link, member, projection, process launch, or
 gate authority. Schema v21 widens only the frozen gate-basis discriminators,
-preserves schema-v20 audit history as ineligible, and keeps M21 as the sole
-completion gate. Migration from v1-v20 to v21 and schema-v21 reentry are
-ordered and repeatable. A migrated capture-version-0 target remains
-read-only lineage and must be replaced with a fresh capture-version-1 target
-before a new Receipt, Finding, or completion source can be recorded.
+preserves schema-v20 audit history as ineligible, and admits only a fresh
+eligibility-version-1 exact-current Runner graph to the completion selector.
+A qualifying complete-plan pass supplies the Runner-observation branch; the
+exact closed no-launch fallback alone delegates to the existing M21 Receipt
+branch, and every other selected Runner state blocks. Migration from v1-v20 to
+v21 and schema-v21 reentry are ordered and repeatable and never promote old
+audit rows. A migrated capture-version-0 target remains read-only lineage and
+must be replaced with a fresh capture-version-1 target before a new Receipt,
+Finding, or completion source can be recorded.
 
 Installation alone and ordinary task commands never migrate. After replacing
 packaged core files while preserving local state, run `setup`; it performs any
@@ -405,7 +413,10 @@ The current 0.12.0 candidate exposes exactly these 21 command leaves:
 
 The schema-v18+ Receipt writes remain those existing leaves. Verification has
 no caller label or replacement subject input; Taskgov derives the subject from
-the locked capture-version-1 target:
+the locked capture-version-1 target. The following Verification Receipt call is
+used only when target set returns `verification_route=receipt_required`, which
+can occur on the marker-0 manual path or the exact closed no-launch fallback.
+The `not_required` and `runner_pass` routes record no Verification Receipt:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
@@ -427,10 +438,12 @@ the parser boundary before package, project, Git, or SQLite resolution.
 There is no history command or option; the mandatory `task show` read and
 automatically maintained Viewer supply the bounded audit projection.
 
-The normal no-finding Tier 2 Task flow uses at most ten governance subprocess
-calls with the default-off Effort Advisory, or eleven when an enabled valid
-profile mechanically adds `task effort`. Doctor, checkpoint, and completion
-check are optional and absent from the standard success path.
+The normal no-finding Tier 2 manual/fallback Task flow uses at most ten governance subprocess
+calls with the default-off Effort Advisory, or eleven when
+an enabled valid profile mechanically adds `task effort`. Doctor, checkpoint,
+and completion check are optional and absent from the standard success path. A
+qualifying Runner pass omits the Verification Receipt call and is one call lower
+than either maximum.
 
 An enabled `task effort` result returns `suggested_action=continue` or the
 single `suggested_action=reconcile_scope` route. The latter loads
@@ -445,13 +458,18 @@ comparison is session-local, creates no SQLite counter or new command, and
 resets in a fresh session; durable Task, handoff, finding, and receipt state
 remains available through normal rediscovery.
 
-For review before the completion commit, stage exactly the intended files,
-set the target with `review target set <task-id> --kind git_snapshot`, run the
-project's exact verification outside Taskgov, record one bounded
-`verification receipt add` attestation for that target generation, and use the
-single packet from `review prepare`. Unstaged and untracked files remain
-outside that target. Taskgov never executes or stores the verification command
-or its arguments. The packet adds one deterministic target-kind instruction so
+For review before the completion commit, stage exactly the intended files and
+set the target with `review target set <task-id> --kind git_snapshot`. Apply the
+returned `verification_route` and `blocking_code` directly. Only
+`receipt_required`, on the manual marker-0 path or the exact closed no-launch
+fallback, runs the project's exact verification outside Taskgov and records one
+bounded `verification receipt add` attestation for that target generation.
+`not_required` and `runner_pass` proceed without that run or Receipt; `blocked`
+and every unexpected route/code pair stop instead of being overridden by a
+Receipt. Then use the single packet
+from `review prepare`. Unstaged and untracked files remain
+outside that target. Taskgov never stores the verification command or its
+arguments. The packet adds one deterministic target-kind instruction so
 reviewers inspect the exact stored index, commit, fingerprint-bound material,
 or external revision rather than ambient content. The independent reviewer
 returns the result; the trusted parent/orchestrator records its sanitized
@@ -484,7 +502,8 @@ bounded declared identifiers, binding metadata, assurance/producer values, and
 digest. It does not upgrade the parent Receipt's assurance. The Viewer and
 diagnostic envelopes expose bounded allow-listed
 projections only. Completion cycles copy only already accepted bounded fields
-and receipt IDs and never satisfy a current gate.
+and the selected Receipt ID or Runner-observation pointer and never satisfy a
+current gate by historical projection alone.
 
 Normal and new input rejects both `dispatch_authorization=<value>` and the JSON
 key `"dispatch_authorization":<value>`. The only compatibility is a read-only,
@@ -553,13 +572,17 @@ preserves those Bundle bytes and digests, writes Bundle v2 with a null Runner
 observation for new native completions, and publishes Evidence index v2.
 Pre-v19 cycles remain `legacy_unknown`; setup repairs, doctor observes, and
 post-commit order is Evidence, Viewer, then backup. Schema v21 preserves audit
-history as gate-ineligible and keeps new completions on the M21-only branches.
-Viewer snapshot v4 accepts source schemas v5-v21 while exposing no Evidence UI.
-No Runner, Analyzer,
-network/model invocation, command leaf, or normal-loop call is activated. The
-public inventory is exactly 21 leaves, and the normal no-finding
-Tier 2 flow remains bounded to ten calls, or eleven with the enabled Effort
-Advisory. Nothing in this candidate records a publishable commit, creates a tag
+history as gate-ineligible. A fresh exact-current eligibility-version-1 Runner
+pass supplies the Runner-observation completion branch; only the exact closed
+no-launch result falls back to M21, while all other selected Runner states
+block. Viewer snapshot v4 accepts source schemas v5-v21 while exposing no
+Evidence UI. No Analyzer, network/model invocation, new command leaf, new
+Skill trigger, or public output beyond the two closed target-set JSON success
+fields is activated. With no post-target `task show`, the manual/fallback
+no-finding Tier 2 flow is bounded to ten calls, or eleven with the enabled
+Effort Advisory; the Receiptless Runner-pass path is one call lower. The public
+inventory remains exactly 21
+leaves. Nothing in this candidate records a publishable commit, creates a tag
 or archive, dispatches CI, pushes, or publishes a Release.
 
 ## Immutable Published v0.10.0 Summary

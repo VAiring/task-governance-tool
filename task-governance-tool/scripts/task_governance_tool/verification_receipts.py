@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import secrets
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -20,14 +21,19 @@ from task_governance_tool.storage import (
     CompletionCycle,
     DatabaseTarget,
     ProjectIdentity,
+    StorageError,
     begin_initialized_write,
     completion_history_inconsistent,
     insert_verification_receipt_locked,
     persist_evidence_reference_locked,
     read_verification_receipt_snapshot,
+    require_current_verification_runner_selection,
     stored_task_verification_limit,
     verification_command_label_is_summary,
     verification_expectation_digest,
+)
+from task_governance_tool.verification_runner import (
+    VerificationRunnerGateSelection,
 )
 from task_governance_tool.tasks import (
     SQLITE_INT64_MAX,
@@ -66,6 +72,10 @@ AUTHORITY_SNAPSHOT_ID_PATTERN = re.compile(
 CONTRACT_CRITERION_ID_PATTERN = re.compile(
     r"^tg_contract_criterion_[0-9a-f]{16}$"
 )
+RunnerSelectionProvider = Callable[
+    [Mapping[str, Any]],
+    VerificationRunnerGateSelection | None,
+]
 
 
 @dataclass(frozen=True)
@@ -97,6 +107,8 @@ class VerificationGate:
     satisfied: bool
     blocking_code: str | None
     qualifying_receipt_id: str | None
+    verification_basis_kind: str | None = None
+    verification_runner_observation_id: str | None = None
 
     def to_public(self) -> dict[str, Any]:
         return {
@@ -563,19 +575,48 @@ def _gate_from_exact(
     current_subject: dict[str, Any] | None,
     exact_rows: tuple[dict[str, Any], ...],
     runner_basis_version: int = 0,
+    runner_mode: str | None = None,
+    runner_observation_id: str | None = None,
     allow_legacy_subject: bool = False,
 ) -> VerificationGate:
     if not expectation.strip():
-        return VerificationGate(False, True, None, None)
+        return VerificationGate(
+            False,
+            True,
+            None,
+            None,
+            verification_basis_kind="not_required",
+        )
     if source_revision is None:
         return VerificationGate(True, False, "review_target_required", None)
     if current_subject is None and not allow_legacy_subject:
         return VerificationGate(True, False, "evidence_basis_stale", None)
     if runner_basis_version == 2:
-        # TG-M24.3B understands schema-v21 Runner history but does not activate
-        # the live Runner gate.  A selected live Runner basis therefore cannot
-        # silently fall back to a caller-attested Receipt.
-        return VerificationGate(True, False, "evidence_basis_stale", None)
+        if runner_mode in {None, "stale"}:
+            return VerificationGate(True, False, "evidence_basis_stale", None)
+        if runner_mode == "runner_observation":
+            if exact_rows or not runner_observation_id:
+                raise _invalid_stored()
+            return VerificationGate(
+                True,
+                True,
+                None,
+                None,
+                verification_basis_kind="runner_observation",
+                verification_runner_observation_id=runner_observation_id,
+            )
+        if runner_mode == "blocking":
+            if exact_rows:
+                raise _invalid_stored()
+            return VerificationGate(
+                True,
+                False,
+                "verification_receipt_blocking",
+                None,
+            )
+        if runner_mode != "m21_fallback":
+            raise _invalid_stored()
+        runner_basis_version = 0
     if runner_basis_version != 0:
         raise _invalid_stored()
     if not exact_rows:
@@ -589,6 +630,7 @@ def _gate_from_exact(
             True,
             None,
             str(row["verification_receipt_id"]),
+            verification_basis_kind="caller_attestation",
         )
     return VerificationGate(True, False, "verification_receipt_blocking", None)
 
@@ -603,6 +645,45 @@ def _task_runner_basis_version(task: Mapping[str, Any]) -> int:
     if type(value) is not int or value not in {0, 2}:
         raise _invalid_stored()
     return value
+
+
+def _validated_runner_mode(
+    connection: sqlite3.Connection,
+    *,
+    task: Mapping[str, Any],
+    runner_selection: VerificationRunnerGateSelection | None,
+) -> str | None:
+    marker = _task_runner_basis_version(task)
+    if marker == 0:
+        if runner_selection is not None:
+            raise _invalid_stored()
+        return None
+    if runner_selection is None:
+        return "stale"
+    try:
+        project_id = str(task["project_id"])
+        task_id = str(task["task_id"])
+        target_generation = int(task["review_target_generation"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise _invalid_stored() from exc
+    if (
+        runner_selection.project_id != project_id
+        or runner_selection.task_id != task_id
+        or runner_selection.target_generation != target_generation
+    ):
+        return "stale"
+    if runner_selection.mode == "stale":
+        return "stale"
+    try:
+        require_current_verification_runner_selection(
+            connection,
+            selection=runner_selection,
+        )
+    except StorageError as exc:
+        if exc.code == "runner_state_invalid":
+            return "stale"
+        raise
+    return runner_selection.mode
 
 
 def _validate_done_cycle(
@@ -655,9 +736,9 @@ def _validate_done_cycle(
             or not cycle.verification_runner_observation_id
         ):
             raise completion_history_inconsistent()
-        # Storage has already revalidated the exact immutable Runner graph and
-        # Bundle identity.  Historical replay exposes only the unchanged gate
-        # shape and grants no authority for a new TG-M24.3B completion.
+        # Storage has already revalidated the immutable graph and Bundle.
+        # Historical replay never binds it to the currently installed package
+        # or supplies private basis data for a new completion write.
         return VerificationGate(True, True, None, None)
     if expectation.strip():
         if (
@@ -676,6 +757,7 @@ def read_verification_evidence(
     *,
     task: Mapping[str, Any],
     completion_cycle: CompletionCycle | None = None,
+    runner_selection: VerificationRunnerGateSelection | None = None,
 ) -> dict[str, Any]:
     """Return the bounded JSON-only Task-show projection."""
 
@@ -709,17 +791,30 @@ def read_verification_evidence(
     )
     if total < len(exact_rows) or total < len(recent_rows):
         raise _invalid_stored()
+    done = str(task["status"]) == "done"
+    runner_basis_version = 0 if done else _task_runner_basis_version(task)
+    runner_mode = (
+        None
+        if done
+        else _validated_runner_mode(
+            connection,
+            task=task,
+            runner_selection=runner_selection,
+        )
+    )
     gate = _gate_from_exact(
         expectation=expectation,
         source_revision=source_revision,
         current_subject=current_subject,
         exact_rows=exact_rows,
-        runner_basis_version=(
-            0
-            if str(task["status"]) == "done"
-            else _task_runner_basis_version(task)
+        runner_basis_version=runner_basis_version,
+        runner_mode=runner_mode,
+        runner_observation_id=(
+            runner_selection.verification_runner_observation_id
+            if runner_selection is not None
+            else None
         ),
-        allow_legacy_subject=str(task["status"]) == "done",
+        allow_legacy_subject=done,
     )
     if str(task["status"]) == "done":
         gate = _validate_done_cycle(
@@ -756,6 +851,7 @@ def current_verification_gate(
     connection: sqlite3.Connection,
     *,
     task: Mapping[str, Any],
+    runner_selection: VerificationRunnerGateSelection | None = None,
 ) -> VerificationGate:
     """Evaluate only the active completion gate from one coherent DB snapshot."""
 
@@ -793,6 +889,16 @@ def current_verification_gate(
         current_subject=current_subject,
         exact_rows=exact_rows,
         runner_basis_version=_task_runner_basis_version(task),
+        runner_mode=_validated_runner_mode(
+            connection,
+            task=task,
+            runner_selection=runner_selection,
+        ),
+        runner_observation_id=(
+            runner_selection.verification_runner_observation_id
+            if runner_selection is not None
+            else None
+        ),
     )
 
 
@@ -800,8 +906,13 @@ def enforce_verification_gate(
     connection: sqlite3.Connection,
     *,
     task: Mapping[str, Any],
+    runner_selection: VerificationRunnerGateSelection | None = None,
 ) -> VerificationGate:
-    gate = current_verification_gate(connection, task=task)
+    gate = current_verification_gate(
+        connection,
+        task=task,
+        runner_selection=runner_selection,
+    )
     if gate.blocking_code == "review_target_required":
         raise _error(
             "review_target_required",
@@ -828,14 +939,17 @@ def enforce_verification_gate(
     return gate
 
 
-def _validate_add_basis(
-    connection: sqlite3.Connection,
+def _validate_add_prerequisites(
     *,
     task: Mapping[str, Any],
-    project_id: str,
-    task_id: str,
     values: VerificationReceiptInput,
-) -> tuple[str, int, str, dict[str, Any], dict[str, Any]]:
+) -> tuple[
+    str,
+    int,
+    str,
+    dict[str, Any],
+    dict[str, Any],
+]:
     status = str(task.get("status", ""))
     if status == "done":
         raise TaskRepositoryError(
@@ -897,7 +1011,46 @@ def _validate_add_basis(
             "evidence_basis_stale",
             "current evidence basis must be captured again",
         )
-    if _task_runner_basis_version(task) == 2:
+    return (
+        expectation,
+        contract_revision,
+        digest,
+        source_revision,
+        current_subject,
+    )
+
+
+def _validate_add_basis(
+    connection: sqlite3.Connection,
+    *,
+    task: Mapping[str, Any],
+    project_id: str,
+    task_id: str,
+    values: VerificationReceiptInput,
+    runner_selection: VerificationRunnerGateSelection | None = None,
+) -> tuple[
+    str,
+    int,
+    str,
+    dict[str, Any],
+    dict[str, Any],
+    VerificationRunnerGateSelection | None,
+]:
+    (
+        expectation,
+        contract_revision,
+        digest,
+        source_revision,
+        current_subject,
+    ) = _validate_add_prerequisites(task=task, values=values)
+    if (
+        _validated_runner_mode(
+            connection,
+            task=task,
+            runner_selection=runner_selection,
+        )
+        not in {None, "m21_fallback"}
+    ):
         raise _error(
             "evidence_basis_stale",
             "current evidence basis must be captured again",
@@ -942,6 +1095,7 @@ def _validate_add_basis(
         digest,
         source_revision,
         current_subject,
+        runner_selection,
     )
 
 
@@ -955,6 +1109,7 @@ def add_verification_receipt(
     scope_coverage: Any,
     expected_target_generation: Any,
     database_target: DatabaseTarget | None = None,
+    runner_selector: RunnerSelectionProvider | None = None,
 ) -> VerificationReceiptResult:
     """Append one immutable aggregate Receipt without changing Task state."""
 
@@ -970,16 +1125,59 @@ def add_verification_receipt(
             "internal_error",
             "verification receipt recording requires an idle database connection",
         )
-    observed = read_internal_task(connection, project.project_id, normalized_task_id)
-    if observed is None:
-        raise TaskRepositoryError("not_found", "task was not found")
-    _validate_add_basis(
-        connection,
-        task=observed,
-        project_id=project.project_id,
-        task_id=normalized_task_id,
-        values=values,
-    )
+    try:
+        connection.execute("BEGIN DEFERRED")
+        observed = read_internal_task(
+            connection,
+            project.project_id,
+            normalized_task_id,
+        )
+        if observed is None:
+            raise TaskRepositoryError("not_found", "task was not found")
+        runner_selection_required = _task_runner_basis_version(observed) == 2
+        if runner_selection_required:
+            _validate_add_prerequisites(task=observed, values=values)
+        else:
+            _validate_add_basis(
+                connection,
+                task=observed,
+                project_id=project.project_id,
+                task_id=normalized_task_id,
+                values=values,
+            )
+        connection.commit()
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+
+    runner_selection = None
+    if runner_selection_required:
+        runner_selection = (
+            runner_selector(observed) if runner_selector is not None else None
+        )
+        try:
+            connection.execute("BEGIN DEFERRED")
+            current = read_internal_task(
+                connection,
+                project.project_id,
+                normalized_task_id,
+            )
+            if current is None:
+                raise TaskRepositoryError("not_found", "task was not found")
+            *_, runner_selection = _validate_add_basis(
+                connection,
+                task=current,
+                project_id=project.project_id,
+                task_id=normalized_task_id,
+                values=values,
+                runner_selection=runner_selection,
+            )
+            connection.commit()
+        except Exception:
+            if connection.in_transaction:
+                connection.rollback()
+            raise
 
     if database_target is not None:
         begin_initialized_write(connection, database_target)
@@ -994,12 +1192,14 @@ def add_verification_receipt(
         digest,
         source_revision,
         current_subject,
+        _locked_runner_selection,
     ) = _validate_add_basis(
         connection,
         task=locked,
         project_id=project.project_id,
         task_id=normalized_task_id,
         values=values,
+        runner_selection=runner_selection,
     )
     try:
         stored = insert_verification_receipt_locked(

@@ -400,6 +400,7 @@ class CompletionHistoryProjectionTests(unittest.TestCase):
                 self.assertNotIn(private_value, str(raised.exception))
 
     def test_task_show_reports_sanitized_history_error_with_exit_two(self):
+        retained_connection = mock.Mock()
         project = ProjectIdentity(
             project_id="tg_project_projection",
             canonical_repo=ROOT,
@@ -418,13 +419,27 @@ class CompletionHistoryProjectionTests(unittest.TestCase):
                 db_path=ROOT / "ignored.sqlite",
                 explicit_db=False,
             ),
-            read_connection_override=object(),
+            read_connection_override=retained_connection,
         )
 
+        observed_task = {
+            "project_id": project.project_id,
+            "task_id": "tg_task_projection",
+            "status": "in_progress",
+            "review_target_generation": 0,
+            "review_target_runner_basis_version": 0,
+        }
         with mock.patch(
+            "task_governance_tool.cli.read_internal_task",
+            return_value=observed_task,
+        ), mock.patch(
+            "task_governance_tool.cli.connect_initialized_task_readonly",
+        ) as task_local_connection, mock.patch(
+            "task_governance_tool.cli.select_current_verification_runner_basis",
+        ) as selector, mock.patch(
             "task_governance_tool.cli.show_task",
             side_effect=completion_history_inconsistent(),
-        ):
+        ) as projection:
             result = handle_task_show(context)
 
         self.assertEqual(result.exit_code, 2)
@@ -438,6 +453,10 @@ class CompletionHistoryProjectionTests(unittest.TestCase):
             ],
         )
         self.assertIsNone(result.data["completion_history"])
+        projection.assert_called_once()
+        selector.assert_not_called()
+        task_local_connection.assert_not_called()
+        retained_connection.close.assert_called_once_with()
 
     def test_task_show_text_exposes_only_latest_non_content_history_fields(self):
         raw_history = CompletionHistory(

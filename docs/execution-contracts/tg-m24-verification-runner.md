@@ -15,8 +15,8 @@
 > exact-candidate manifest closure, with no product activation. TG-M24.R3A and
 > TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and
 > public-activation baseline; TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and
-> TG-M24.2C and TG-M24.2D are accepted predecessors. TG-M24.3A is an accepted
-> predecessor and TG-M24.3B owns current formal authority. Every later unit in
+> TG-M24.2C and TG-M24.2D are accepted predecessors. TG-M24.3A and TG-M24.3B
+> are accepted predecessors, and TG-M24.3C owns current formal authority. Every later unit in
 > this document remains inactive until its immediate predecessor is accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
@@ -557,9 +557,9 @@ unit of its replacement sequence. It owns no status or gate by itself.
 
 Task `tg_task_2b7efe1c4545cca8` froze the complete schema-v21 contract required
 before persistence or gate implementation. That accepted unit was
-documentation-only and created no schema-v21 row or artifact. Current
-TG-M24.3B activates only the frozen persistence boundary; M21 remains the sole
-verification/completion gate.
+documentation-only and created no schema-v21 row or artifact. Accepted
+TG-M24.3B activated only the frozen persistence boundary; current TG-M24.3C
+owns the qualifying gate integration.
 
 The exact future product behavior is owned by the
 [schema-v21 specification](../specification.md#current-schema-v21-persistence-contract),
@@ -571,12 +571,12 @@ index, reuses Task marker `2` and Runner eligibility `1`, and keeps Bundle v2,
 Evidence Index v2, and Viewer snapshot v4. Schema-v20 evidence remains
 eligibility-zero audit history and is never promoted or backfilled.
 
-Current TG-M24.3B may implement only that persistence and compatibility
+Accepted TG-M24.3B implemented only that persistence and compatibility
 contract while continuing to write marker/eligibility zero and using M21 as the
-sole completion gate. Its schema-v21 readers must validate and historically
+sole completion gate. Its schema-v21 readers validate and historically
 replay structurally valid later eligibility-one completed history, but a live
 marker-two target fails new completion closed until an explicit fresh target.
-TG-M24.3C alone may select, write, and qualify a live eligibility-one basis: an
+Current TG-M24.3C alone may select, write, and qualify a live eligibility-one basis: an
 exact-current complete-plan launched pass may qualify, a launched non-pass
 blocks, and only the specified closed no-launch route may use a fresh exact-
 current M21 Receipt. Existing invalidation rules make every stale live basis
@@ -591,7 +591,7 @@ reviews. A full offline suite is not a 3A completion requirement.
 
 <a id="tg-m24-3b"></a>
 
-## TG-M24.3B Current Schema-v21 Persistence Foundation
+## TG-M24.3B Accepted Schema-v21 Persistence Foundation
 
 Task `tg_task_1c3f41dc4bc88a68` implements only the exact contract accepted in
 TG-M24.3A across migration, storage, repository, validators, setup, Bundle/
@@ -626,7 +626,7 @@ validator framework, or natural-language document checker.
 
 <a id="tg-m24-3c"></a>
 
-## TG-M24.3C Inactive Runner Gate Integration And M21 Fallback
+## TG-M24.3C Current Runner Gate Integration And M21 Fallback
 
 Task `tg_task_dc015144091f8e60` may let one qualifying exact-current complete-
 plan schema-v21 trusted-local Runner pass satisfy verification. Every launched
@@ -636,10 +636,13 @@ untrusted work always stays manual. Analyzer output, arbitrary commands, old
 evidence, and caller override gain no authority. Schema-v20 shadow records
 remain gate-ineligible. This unit consumes the accepted TG-M24.3A/TG-M24.3B
 foundation and owns no schema-v21 migration, DDL, or recovery implementation.
-Completion requires exact-current basis selection and invalidation, completion
-and fallback behavior, legacy history and projection compatibility, Skill/
-package synchronization, full offline, exact-diff, and two independent Tier 2
-PASS reviews.
+The existing target-set JSON success adds exactly `verification_route` and
+nullable `blocking_code` so the Skill selects the stored branch without a new
+normal-loop action; text and failure output remain unchanged. Completion
+requires exact-current basis selection and invalidation, completion and fallback
+behavior, legacy history and projection compatibility, Skill/package
+synchronization, full offline, exact-diff, and two independent Tier 2 PASS
+reviews.
 
 <a id="tg-m24-4a"></a>
 

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest import mock
 
 from tests.verification_receipt_test_support import (
     DEFAULT_VERIFICATION,
@@ -21,6 +22,8 @@ from tests.verification_receipt_test_support import (
     table_count,
 )
 
+from task_governance_tool import cli as cli_module
+from task_governance_tool import verification_receipts as receipt_service
 from task_governance_tool.storage import verification_expectation_digest
 from task_governance_tool.verification_receipts import (
     VerificationReceiptError,
@@ -304,6 +307,29 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
                 payload(required)["data"]["blocking_codes"],
                 ["verification_receipt_required"],
             )
+            mismatched_evidence = run_taskgov(
+                "task",
+                "complete",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db),
+                task_id,
+                "--verification-complete",
+                "--review-complete",
+                "--completion-evidence-kind",
+                "external_revision",
+                "--completion-revision",
+                "release-1",
+                "--completion-evidence-reason",
+                "Approved external material",
+                "--external-revision-approved",
+                "--json",
+            )
+            self.assertEqual(
+                payload(mismatched_evidence)["errors"][0]["code"],
+                "verification_receipt_required",
+            )
             rejected_write = completion(db, repo, task_id)
             self.assertEqual(rejected_write.returncode, 1, rejected_write.stdout)
             self.assertEqual(
@@ -311,15 +337,25 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
                 "verification_receipt_required",
             )
 
-            blocked_receipt = add_receipt(
-                db,
-                repo,
-                task_id,
-                first_generation,
-                result="fail",
-                scope_coverage="full",
-            )
+            with mock.patch.object(
+                cli_module,
+                "select_current_verification_runner_basis",
+            ) as selector, mock.patch.object(
+                receipt_service,
+                "read_internal_task",
+                wraps=receipt_service.read_internal_task,
+            ) as task_reads:
+                blocked_receipt = add_receipt(
+                    db,
+                    repo,
+                    task_id,
+                    first_generation,
+                    result="fail",
+                    scope_coverage="full",
+                )
             self.assertEqual(blocked_receipt.returncode, 0, blocked_receipt.stdout)
+            selector.assert_not_called()
+            self.assertEqual(task_reads.call_count, 2)
             blocking = completion(db, repo, task_id, check=True)
             self.assertEqual(
                 payload(blocking)["data"]["blocking_codes"],

@@ -9,6 +9,7 @@ import hashlib
 import json
 import secrets
 import sqlite3
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,9 @@ from task_governance_tool.storage import (
     validate_utc_timestamp,
     validate_selected_task_authority_storage,
 )
+from task_governance_tool.verification_runner import (
+    VerificationRunnerGateSelection,
+)
 
 
 KINDS = ("sequential", "optional")
@@ -87,6 +91,10 @@ STATUSES = ("ready", "in_progress", "paused", "blocked", "review_pending", "done
 REVIEW_TIERS = (0, 1, 2)
 SQLITE_INT64_MIN = -(1 << 63)
 SQLITE_INT64_MAX = (1 << 63) - 1
+RunnerSelectionProvider = Callable[
+    [Mapping[str, Any], str],
+    VerificationRunnerGateSelection | None,
+]
 
 PUBLIC_TASK_FIELDS = (
     "task_id",
@@ -442,6 +450,7 @@ class CompletionBasis:
     task: dict[str, Any] = field(repr=False)
     review_evidence: dict[str, Any] | None = field(repr=False)
     verification_gate: Any = field(repr=False)
+    runner_selection: VerificationRunnerGateSelection | None = field(repr=False)
     review_error: tuple[str, str, str | None] | None
     predecessor_incomplete: bool
     lane_order_conflict: bool
@@ -2304,6 +2313,7 @@ def show_task(
     task_id: Any,
     *,
     event_limit: int = 10,
+    runner_selection: VerificationRunnerGateSelection | None = None,
 ) -> TaskShowResult:
     normalized_task_id = validate_task_id(task_id)
     source_schema_version = current_schema_version(connection)
@@ -2315,6 +2325,7 @@ def show_task(
     if task_row is None:
         raise TaskRepositoryError("not_found", "task was not found")
     task = row_to_show_task(task_row)
+    internal_task = row_to_internal_task(task_row)
     event_rows = connection.execute(
         """
         SELECT *
@@ -2365,12 +2376,13 @@ def show_task(
 
     verification_evidence = read_verification_evidence(
         connection,
-        task=task_row,
+        task=internal_task,
         completion_cycle=(
             raw_completion_history.cycles[0]
             if raw_completion_history.cycles
             else None
         ),
+        runner_selection=runner_selection,
     )
     return TaskShowResult(
         task=task,
@@ -2665,6 +2677,8 @@ def capture_completion_basis(
     connection: sqlite3.Connection,
     project: ProjectIdentity,
     task_id: Any,
+    *,
+    runner_selection: VerificationRunnerGateSelection | None = None,
 ) -> CompletionBasis:
     """Capture only task-local facts that can change completion readiness."""
     normalized_task_id = validate_task_id(task_id)
@@ -2740,6 +2754,7 @@ def capture_completion_basis(
     verification_gate = current_verification_gate(
         connection,
         task=task,
+        runner_selection=runner_selection,
     )
 
     semantic_token = _completion_semantic_token(
@@ -2751,12 +2766,18 @@ def capture_completion_basis(
             "review_evidence": review_evidence,
             "review_error": review_error,
             "verification_gate": verification_gate.to_public(),
+            "runner_selection": (
+                runner_selection.semantic_value()
+                if runner_selection is not None
+                else None
+            ),
         }
     )
     return CompletionBasis(
         task=task,
         review_evidence=review_evidence,
         verification_gate=verification_gate,
+        runner_selection=runner_selection,
         review_error=review_error,
         predecessor_incomplete=predecessor_incomplete,
         lane_order_conflict=lane_order_conflict,
@@ -2785,23 +2806,48 @@ def validate_completion_state_basis(basis: CompletionBasis) -> None:
         )
 
 
-def validate_completion_database_basis(
+def validate_completion_basic_prerequisites(
     basis: CompletionBasis,
-    proposed_task: dict[str, Any],
+    request: CompletionRequest,
     *,
-    verification_complete: bool,
-    review_complete: bool,
+    input_error: TaskValidationError | TaskRepositoryError | None = None,
 ) -> None:
-    """Run the shared fail-fast database-only completion preflight."""
-    validate_completion_state_basis(basis)
-    validate_done_transition_inputs(
-        proposed_task,
-        status_was_provided=True,
-        verification_complete=verification_complete,
-        review_complete=review_complete,
-    )
-    from task_governance_tool.reviews import first_review_gate_error
+    """Preserve Task-state and parsed-input precedence before resolution."""
 
+    if request.task_id != str(basis.task["task_id"]):
+        raise TaskRepositoryError("not_found", "task was not found")
+    validate_completion_state_basis(basis)
+    if input_error is not None:
+        raise input_error
+
+
+def validate_completion_selector_prerequisites(
+    basis: CompletionBasis,
+    request: CompletionRequest,
+    *,
+    input_error: TaskValidationError | TaskRepositoryError | None = None,
+) -> None:
+    """Preserve established completion checks before package inspection."""
+
+    validate_completion_basic_prerequisites(
+        basis,
+        request,
+        input_error=input_error,
+    )
+    if basis.task.get("review_target_runner_basis_version", 0) != 2:
+        return
+    if not request.verification_complete:
+        raise validation_error(
+            "verification_required",
+            "task edit --status done requires --verification-complete",
+            "verification_complete",
+        )
+    if not request.review_complete:
+        raise validation_error(
+            "review_required",
+            "task edit --status done requires --review-complete",
+            "review_complete",
+        )
     if (
         int(basis.task["review_target_generation"]) <= 0
         or not str(basis.task["review_target_kind"])
@@ -2813,6 +2859,61 @@ def validate_completion_database_basis(
             "review_target_kind",
         )
     if int(basis.task.get("review_target_capture_version", 0)) == 0:
+        raise validation_error(
+            "evidence_basis_stale",
+            "current evidence basis must be captured again",
+        )
+
+
+def validate_completion_preselector_database_basis(
+    basis: CompletionBasis,
+    proposed_task: dict[str, Any],
+    *,
+    verification_complete: bool,
+    review_complete: bool,
+) -> None:
+    """Run existing completion checks that must precede Runner selection."""
+    validate_completion_state_basis(basis)
+    validate_done_transition_inputs(
+        proposed_task,
+        status_was_provided=True,
+        verification_complete=verification_complete,
+        review_complete=review_complete,
+    )
+    if (
+        int(basis.task["review_target_generation"]) <= 0
+        or not str(basis.task["review_target_kind"])
+        or not str(basis.task["review_target_value"])
+    ):
+        raise validation_error(
+            "review_target_required",
+            "task completion requires a current structured review target",
+            "review_target_kind",
+        )
+    if int(basis.task.get("review_target_capture_version", 0)) == 0:
+        raise validation_error(
+            "evidence_basis_stale",
+            "current evidence basis must be captured again",
+        )
+
+
+def validate_completion_database_basis(
+    basis: CompletionBasis,
+    proposed_task: dict[str, Any],
+    *,
+    verification_complete: bool,
+    review_complete: bool,
+) -> None:
+    """Run the shared fail-fast database-only completion preflight."""
+    validate_completion_preselector_database_basis(
+        basis,
+        proposed_task,
+        verification_complete=verification_complete,
+        review_complete=review_complete,
+    )
+    from task_governance_tool.reviews import first_review_gate_error
+
+    if basis.verification_gate.blocking_code == "evidence_basis_stale":
         raise validation_error(
             "evidence_basis_stale",
             "current evidence basis must be captured again",
@@ -2871,6 +2972,8 @@ def prepare_completion_plan(
     basis: CompletionBasis,
     project: ProjectIdentity,
     request: CompletionRequest,
+    *,
+    defer_gate_validation: bool = False,
 ) -> CompletionPlan:
     """Resolve and validate one completion request with no open DB transaction."""
     if request.task_id != str(basis.task["task_id"]):
@@ -2888,12 +2991,20 @@ def prepare_completion_plan(
     except CompletionEvidenceError as exc:
         raise validation_error(exc.code, exc.message, exc.field) from exc
     proposed = proposed_completion_task(basis.task, resolution)
-    validate_completion_database_basis(
-        basis,
-        proposed,
-        verification_complete=request.verification_complete,
-        review_complete=request.review_complete,
-    )
+    if defer_gate_validation:
+        validate_completion_preselector_database_basis(
+            basis,
+            proposed,
+            verification_complete=request.verification_complete,
+            review_complete=request.review_complete,
+        )
+    else:
+        validate_completion_database_basis(
+            basis,
+            proposed,
+            verification_complete=request.verification_complete,
+            review_complete=request.review_complete,
+        )
     revalidate_done_git_evidence(
         proposed,
         repo=project.canonical_repo,
@@ -3008,6 +3119,60 @@ def reject_concurrent_edit_base_change(
         raise TaskRepositoryError(
             "invalid_argument",
             "task changed concurrently; retry the edit against current state",
+        )
+
+
+def validate_proposed_done_ordering(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+    proposed_done: Mapping[str, Any],
+    lane_metadata_changed: bool,
+    advanced_transition: bool,
+) -> None:
+    """Preserve the established sequential checks before gate selection."""
+
+    if (
+        proposed_done["kind"] == "sequential"
+        and (lane_metadata_changed or advanced_transition)
+        and canonical_lane_order_conflict(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+            lane=str(proposed_done["lane"]),
+            lane_order=int(proposed_done["lane_order"]),
+        )
+    ):
+        raise TaskRepositoryError(
+            "invalid_argument",
+            "task conflicts with an existing canonical sequential lane order",
+        )
+    if proposed_done["kind"] != "sequential":
+        return
+    predecessor = connection.execute(
+        f"""
+        SELECT 1
+          FROM tasks AS earlier
+         WHERE earlier.project_id = ?
+           AND earlier.task_id != ?
+           AND earlier.kind = 'sequential'
+           AND {canonical_lane_sql("earlier.lane")} = ?
+           AND earlier.lane_order < ?
+           AND earlier.status NOT IN ('done', 'cancelled')
+         LIMIT 1
+        """,
+        (
+            project_id,
+            task_id,
+            canonical_lane(proposed_done["lane"]),
+            int(proposed_done["lane_order"]),
+        ),
+    ).fetchone()
+    if predecessor is not None:
+        raise TaskRepositoryError(
+            "sequential_predecessor_incomplete",
+            "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
         )
 
 
@@ -3376,6 +3541,7 @@ def edit_task(
     effort_profile: Any | None = None,
     database_target: DatabaseTarget | None = None,
     completion_plan: CompletionPlan | None = None,
+    runner_selector: RunnerSelectionProvider | None = None,
     **edit_input: Any,
 ) -> EditTaskResult:
     from task_governance_tool.effort import (
@@ -3732,6 +3898,61 @@ def edit_task(
             repo=project.canonical_repo,
             status_was_provided=status_was_provided,
         )
+    completing = status_was_provided and updated["status"] == "done"
+    lane_metadata_changed = any(
+        updated[field] != existing[field]
+        for field in ("kind", "lane", "lane_order")
+    )
+    advanced_transition = (
+        status_was_provided
+        and updated["status"] in ADVANCED_STATUSES
+        and updated["status"] != existing["status"]
+    )
+    compatibility_runner_selection = None
+    if (
+        completing
+        and completion_plan is None
+        and runner_selector is not None
+        and existing.get("review_target_runner_basis_version", 0) == 2
+    ):
+        preselector_basis = capture_completion_basis(
+            connection,
+            project,
+            normalized_task_id,
+        )
+        reject_concurrent_edit_base_change(
+            existing,
+            preselector_basis.task,
+            completing=True,
+        )
+        preselector_proposed_done = dict(updated)
+        if implicit_lane_order:
+            preselector_proposed_done["lane_order"] = next_lane_order(
+                connection,
+                project.project_id,
+                str(preselector_proposed_done["lane"]),
+            )
+        validate_proposed_done_ordering(
+            connection,
+            project_id=project.project_id,
+            task_id=normalized_task_id,
+            proposed_done=preselector_proposed_done,
+            lane_metadata_changed=lane_metadata_changed,
+            advanced_transition=advanced_transition,
+        )
+        compatibility_request = CompletionRequest(
+            task_id=normalized_task_id,
+            verification_complete=verification_complete,
+            review_complete=review_complete,
+        )
+        validate_completion_selector_prerequisites(
+            preselector_basis,
+            compatibility_request,
+        )
+        compatibility_runner_selection = runner_selector(
+            preselector_basis.task,
+            str(updated["completion_evidence_revision"]),
+        )
     effort_preflight = prepare_task_transition(
         connection,
         project,
@@ -3746,21 +3967,22 @@ def edit_task(
         normalized_task_id,
         database_target=database_target,
     )
-    if completion_plan is not None:
-        locked_basis = capture_completion_basis(
-            connection,
-            project,
-            normalized_task_id,
-        )
-        validate_completion_plan_basis(
-            completion_plan,
-            locked_basis,
-        )
     reject_concurrent_edit_base_change(
         existing,
         locked_existing,
         completing=(status_was_provided and updated["status"] == "done"),
     )
+    if completion_plan is not None:
+        locked_basis = capture_completion_basis(
+            connection,
+            project,
+            normalized_task_id,
+            runner_selection=completion_plan.basis.runner_selection,
+        )
+        validate_completion_plan_basis(
+            completion_plan,
+            locked_basis,
+        )
     if implicit_lane_order:
         updated["lane_order"] = next_lane_order(
             connection,
@@ -3812,7 +4034,6 @@ def edit_task(
     if not changed_fields and add_note is None and not recorded_markers:
         raise validation_error("invalid_argument", "task edit did not change any fields")
 
-    completing = status_was_provided and updated["status"] == "done"
     pause_changed = updated["pause_reason"] != existing["pause_reason"]
     event_type, summary = task_edit_event_details(
         existing=existing,
@@ -3847,16 +4068,6 @@ def edit_task(
         affected_lanes.add(str(existing["lane"]))
     if ordering_changed and updated["kind"] == "sequential":
         affected_lanes.add(str(updated["lane"]))
-    lane_metadata_changed = any(
-        updated[field] != existing[field]
-        for field in ("kind", "lane", "lane_order")
-    )
-    advanced_transition = (
-        status_was_provided
-        and updated["status"] in ADVANCED_STATUSES
-        and updated["status"] != existing["status"]
-    )
-
     event: dict[str, Any] | None = None
     task: dict[str, Any] | None = None
     savepoint = f"taskgov_ordering_{secrets.token_hex(4)}"
@@ -3866,46 +4077,14 @@ def edit_task(
         if completing:
             proposed_done = dict(updated)
             proposed_done["updated_at"] = now
-            if (
-                proposed_done["kind"] == "sequential"
-                and (lane_metadata_changed or advanced_transition)
-                and canonical_lane_order_conflict(
-                    connection,
-                    project_id=project.project_id,
-                    task_id=normalized_task_id,
-                    lane=str(proposed_done["lane"]),
-                    lane_order=int(proposed_done["lane_order"]),
-                )
-            ):
-                raise TaskRepositoryError(
-                    "invalid_argument",
-                    "task conflicts with an existing canonical sequential lane order",
-                )
-            if proposed_done["kind"] == "sequential":
-                predecessor = connection.execute(
-                    f"""
-                    SELECT 1
-                      FROM tasks AS earlier
-                     WHERE earlier.project_id = ?
-                       AND earlier.task_id != ?
-                       AND earlier.kind = 'sequential'
-                       AND {canonical_lane_sql("earlier.lane")} = ?
-                       AND earlier.lane_order < ?
-                       AND earlier.status NOT IN ('done', 'cancelled')
-                     LIMIT 1
-                    """,
-                    (
-                        project.project_id,
-                        normalized_task_id,
-                        canonical_lane(proposed_done["lane"]),
-                        int(proposed_done["lane_order"]),
-                    ),
-                ).fetchone()
-                if predecessor is not None:
-                    raise TaskRepositoryError(
-                        "sequential_predecessor_incomplete",
-                        "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
-                    )
+            validate_proposed_done_ordering(
+                connection,
+                project_id=project.project_id,
+                task_id=normalized_task_id,
+                proposed_done=proposed_done,
+                lane_metadata_changed=lane_metadata_changed,
+                advanced_transition=advanced_transition,
+            )
             if (
                 int(proposed_done["review_target_generation"]) > 0
                 and str(proposed_done["review_target_kind"])
@@ -3924,6 +4103,11 @@ def edit_task(
             verification_gate = enforce_verification_gate(
                 connection,
                 task=proposed_done,
+                runner_selection=(
+                    completion_plan.basis.runner_selection
+                    if completion_plan is not None
+                    else compatibility_runner_selection
+                ),
             )
             enforce_done_review_gate(
                 connection,
@@ -3965,6 +4149,12 @@ def edit_task(
                 subject_authority_snapshot_id=subject_authority_snapshot_id,
                 subject_verification_criterion_id=(
                     subject_verification_criterion_id
+                ),
+                verification_basis_kind=(
+                    verification_gate.verification_basis_kind
+                ),
+                verification_runner_observation_id=(
+                    verification_gate.verification_runner_observation_id
                 ),
                 completion_identity=completion_identity,
             )
@@ -4199,7 +4389,9 @@ def edit_task(
                     qualifying_verification_receipt_id
                 ),
                 verification_basis_kind=cycle.verification_basis_kind,
-                verification_runner_observation_id=None,
+                verification_runner_observation_id=(
+                    cycle.verification_runner_observation_id
+                ),
                 omission_mask=bundle_plan.omission_mask,
                 sealed_at=now,
                 bundle_digest=bundle_plan.artifact.bundle_digest,
@@ -4224,6 +4416,10 @@ def edit_task(
                 ),
                 subject_verification_criterion_id=(
                     subject_verification_criterion_id
+                ),
+                verification_basis_kind=cycle.verification_basis_kind,
+                verification_runner_observation_id=(
+                    cycle.verification_runner_observation_id
                 ),
                 completion_identity=completion_identity,
                 prepared_cycle=cycle,

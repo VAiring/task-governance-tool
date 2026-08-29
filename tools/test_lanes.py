@@ -133,6 +133,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m243b_schema21_compatibility",
         "test_m243b_schema21_recovery",
         "test_m243b_schema21_storage",
+        "test_m243c_runner_gate",
         "test_post_commit_maintenance",
         "test_project_identity_bindings",
         "test_routine_backup",

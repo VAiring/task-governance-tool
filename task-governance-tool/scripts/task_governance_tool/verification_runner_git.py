@@ -37,6 +37,7 @@ from task_governance_tool.git_snapshot import (
     run_git_stream,
     stream_index_fingerprint,
     stream_tree_entries,
+    verify_git_snapshot_commit,
 )
 from task_governance_tool.state_paths import (
     StatePathError,
@@ -230,22 +231,39 @@ def _validate_entry_set(
     )
 
 
-def _target_material_digest(
-    artifact: ArtifactObservation,
+def _target_material_digest_from_identity(
+    *,
+    target_kind: str,
+    target_value: str,
+    target_base_revision: str,
     object_format: str,
     entries: tuple[RunnerTargetEntry, ...],
 ) -> str:
     value = {
         "entries": [entry.canonical_value() for entry in entries],
         "object_format": object_format,
-        "target_base_revision": artifact.target_base_revision,
-        "target_kind": artifact.target_kind,
-        "target_value": artifact.target_value,
+        "target_base_revision": target_base_revision,
+        "target_kind": target_kind,
+        "target_value": target_value,
     }
     try:
         return domain_digest(TARGET_MATERIAL_DOMAIN, value)
     except (EvidenceLedgerError, TypeError, ValueError, UnicodeError) as exc:
         raise _target_error() from exc
+
+
+def _target_material_digest(
+    artifact: ArtifactObservation,
+    object_format: str,
+    entries: tuple[RunnerTargetEntry, ...],
+) -> str:
+    return _target_material_digest_from_identity(
+        target_kind=artifact.target_kind,
+        target_value=artifact.target_value,
+        target_base_revision=artifact.target_base_revision,
+        object_format=object_format,
+        entries=entries,
+    )
 
 
 @dataclass(frozen=True)
@@ -665,6 +683,46 @@ def preflight_runner_material(
         raise
     except Exception as exc:
         raise _translate_observation_error(exc) from exc
+
+
+def preflight_runner_snapshot_successor_material_digest(
+    repo: Path,
+    completion_revision: str,
+    *,
+    expected_base_revision: str,
+    expected_fingerprint: str,
+) -> str:
+    """Bind one exact reviewed snapshot to its immutable successor commit."""
+
+    try:
+        repo = Path(repo)
+        committed = observe_commit_runner_target(repo, completion_revision)
+        if committed.artifact.target_value != completion_revision:
+            raise _stale()
+        material = preflight_runner_material(repo, committed)
+        verified = verify_git_snapshot_commit(
+            repo,
+            completion_revision,
+            expected_base_revision=expected_base_revision,
+            expected_fingerprint=expected_fingerprint,
+        )
+        if (
+            committed.artifact.comparison_base != expected_base_revision
+            or verified.entry_count != len(committed.entries)
+        ):
+            raise _stale()
+        return _target_material_digest_from_identity(
+            target_kind="git_snapshot",
+            target_value=expected_fingerprint,
+            target_base_revision=expected_base_revision,
+            object_format=material.target.object_format,
+            entries=material.target.entries,
+        )
+    except Exception as exc:
+        translated = _translate_observation_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
 
 
 def _is_reparse(details: os.stat_result) -> bool:

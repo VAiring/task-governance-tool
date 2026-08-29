@@ -375,6 +375,7 @@ def persist_prepared_review_target_capture(
     observation: ArtifactObservation,
     database_target: DatabaseTarget | None = None,
     now: str | None = None,
+    runner_basis_version: int = 0,
 ) -> ReviewTargetResult:
     """Persist a caller-observed target after one locked freshness reread."""
 
@@ -393,6 +394,7 @@ def persist_prepared_review_target_capture(
         observation=observation,
         generation=next_review_target_generation(task),
         now=now or utc_now(),
+        runner_basis_version=runner_basis_version,
     )
 
 
@@ -404,10 +406,16 @@ def _persist_review_target_capture(
     observation: ArtifactObservation,
     generation: int,
     now: str,
+    runner_basis_version: int = 0,
 ) -> ReviewTargetResult:
     """Persist one complete schema-v18 target capture in the active writer."""
 
     task_id = str(task["task_id"])
+    if type(runner_basis_version) is not int or runner_basis_version not in {0, 2}:
+        raise StorageError(
+            "evidence_ledger_inconsistent",
+            "stored evidence ledger is inconsistent",
+        )
     try:
         binding = TargetCaptureBinding(
             target_kind=observation.target_kind,
@@ -571,7 +579,7 @@ def _persist_review_target_capture(
                review_target_acceptance_criterion_id = ?,
                review_target_verification_criterion_id = ?,
                review_target_artifact_manifest_id = ?,
-               review_target_runner_basis_version = 0,
+               review_target_runner_basis_version = ?,
                updated_at = ?
          WHERE project_id = ? AND task_id = ?
         """,
@@ -584,6 +592,7 @@ def _persist_review_target_capture(
             binding.acceptance_criterion_id,
             binding.verification_criterion_id,
             manifest_id,
+            runner_basis_version,
             now,
             project.project_id,
             task_id,

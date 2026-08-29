@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -23,6 +24,9 @@ SANDBOX_EVENT_DIGEST_DOMAIN = b"taskgov-verification-runner-sandbox-event-v1\0"
 OBSERVATION_DIGEST_DOMAIN = b"taskgov-verification-runner-observation-v1\0"
 
 _LOWER_HEX = frozenset("0123456789abcdef")
+_GATE_SELECTION_MODES = frozenset(
+    {"stale", "m21_fallback", "runner_observation", "blocking"}
+)
 
 _RESOLUTION_DIGEST_KEYS = frozenset(
     {
@@ -144,6 +148,70 @@ class VerificationRunnerModelError(ValueError):
 
     def __init__(self) -> None:
         super().__init__("verification runner state is inconsistent")
+
+
+@dataclass(frozen=True)
+class VerificationRunnerGateSelection:
+    """Private exact-current service decision; never part of public JSON."""
+
+    project_id: str
+    task_id: str
+    target_generation: int
+    mode: str
+    verification_runner_observation_id: str | None
+    storage_token: tuple[object, ...]
+
+    def __post_init__(self) -> None:
+        terminal = self.mode in {
+            "m21_fallback",
+            "runner_observation",
+            "blocking",
+        }
+        observation_id = self.verification_runner_observation_id
+        if (
+            type(self.project_id) is not str
+            or not self.project_id
+            or type(self.task_id) is not str
+            or not self.task_id
+            or type(self.target_generation) is not int
+            or self.target_generation < 1
+            or self.mode not in _GATE_SELECTION_MODES
+            or type(self.storage_token) is not tuple
+            or len(self.storage_token) != 15
+            or any(
+                value is not None
+                and type(value) not in {bool, int, str}
+                for value in self.storage_token
+            )
+            or (
+                terminal
+                and (
+                    type(observation_id) is not str
+                    or not observation_id.startswith(
+                        "tg_verification_runner_observation_"
+                    )
+                    or len(observation_id.rsplit("_", 1)[-1]) != 16
+                    or any(
+                        character not in _LOWER_HEX
+                        for character in observation_id.rsplit("_", 1)[-1]
+                    )
+                )
+            )
+            or (not terminal and observation_id is not None)
+        ):
+            raise VerificationRunnerModelError()
+
+    def semantic_value(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode,
+            "project_id": self.project_id,
+            "storage_token": list(self.storage_token),
+            "target_generation": self.target_generation,
+            "task_id": self.task_id,
+            "verification_runner_observation_id": (
+                self.verification_runner_observation_id
+            ),
+        }
 
 
 def _validate_json_value(value: Any) -> None:

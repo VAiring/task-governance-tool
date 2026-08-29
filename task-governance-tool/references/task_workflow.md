@@ -144,30 +144,43 @@ Use this deterministic graph for a normal no-finding Tier 2 task:
 6. If and only if the mandatory `task show` result has
    `data.effort_advisory_enabled=true`, make one `task effort` observation at
    the verification/review boundary.
-7. Set the exact review target and retain its returned generation.
-8. Run the Task's verification outside taskgov against that exact material.
-   When the Task verification text is nonempty, record the aggregate result:
+7. Set the exact review target and retain its returned generation,
+   `verification_route`, and `blocking_code`. The existing target-set operation
+   may take the explicitly opted-in trusted-local Runner route without another
+   public command.
+8. Route only on those two fields from the same success response:
+
+   - `not_required` with null `blocking_code`: proceed;
+   - `runner_pass` with null `blocking_code`: proceed without a Receipt;
+   - `receipt_required` with null `blocking_code`: run the Task's verification
+     outside taskgov against that exact material and record the aggregate result;
+   - `blocked` with a non-null existing gate code: stop closed;
+   - every other pair: stop closed.
+
+9. Only the Receipt-required branch records the aggregate result:
 
    ```powershell
    python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
    ```
 
-   Taskgov derives the verification subject from the locked capture-version-1
-   target; there is no label or replacement subject input. It executes no
-   command and stores no command body or output. A `fail`, `timeout`, or
-   `partial` Receipt is
-   immutable; set a fresh target generation before a new run can become
-   current.
-9. Prepare one bounded review packet, record the required review
+   Taskgov derives the Verification Receipt subject from the locked
+   capture-version-1 target; there is no label or replacement subject input.
+   It executes no command for the M21 branch and stores no command body or
+   output. A `fail`, `timeout`, or `partial` Receipt is immutable; set a fresh
+   target generation before a new run can become current. A pending, stale, or
+   cleanup-only Runner basis remains stale; every other exact-current terminal
+   Runner result blocks and cannot be overridden by a Receipt.
+10. Prepare one bounded review packet, record the required review
    receipts/findings, and complete the task.
 
-When step 2 is needed, this is at most ten governance subprocess calls with
-the Effort Advisory disabled and eleven when an existing valid profile enables
-it. The conditional branch is a boolean route from `task show`, not an LLM
+When step 2 is needed, the manual/fallback path is at most ten governance
+subprocess calls with the Effort Advisory disabled and eleven when an existing valid profile enables
+it. The Effort branch is a boolean route from `task show`, not an LLM
 choice. For a Task with specified verification, the count includes one
-verification Receipt and two actual Tier 2 review-receipt writes; it excludes the
-two independent review model decisions, the external verification process,
-and real progress notes.
+Verification Receipt on an M21 branch and two actual Tier 2 review-receipt
+writes; the qualifying Runner-pass branch omits that Verification Receipt call
+and remains bounded to nine or ten calls respectively. The count excludes the two independent review
+model decisions, the external verification process, and real progress notes.
 
 `doctor`, `task complete --check`, and `task checkpoint` are optional and
 absent from the default success path. Do not add them mechanically to every
@@ -202,14 +215,15 @@ caller input; values over the source-schema limit fail closed.
 
 Schema v19 sealed version-1 Completion Evidence Bundles. At current schema v21,
 each successful native completion atomically seals exactly one version-2
-Bundle with a derived `caller_attestation` or `not_required` basis and null
-Runner observation. Bounded same-process maintenance projects Evidence index
-v2 and the fixed Bundle files under `state/current/evidence/`, preserving
-existing v1 bytes and digests. Pre-v19 cycles project as `legacy_unknown`; they
-are not backfilled with invented Bundles or links. The database remains
-authoritative and there is no Evidence import, export command, custom path,
-Runner, Analyzer, Viewer Evidence surface, network call, model call, public
-leaf, or normal-loop call.
+Bundle with the closed verification-basis union: `caller_attestation` or
+`not_required` with null `runner_observation`, or `runner_observation` with the
+qualifying exact observation. Bounded same-process maintenance projects
+Evidence index v2 and the fixed Bundle files under `state/current/evidence/`,
+preserving existing v1 bytes and digests. Pre-v19 cycles project as
+`legacy_unknown`; they are not backfilled with invented Bundles or links. The
+database remains authoritative and there is no Evidence import, export
+command, custom path, Runner command, Analyzer, Viewer Evidence surface,
+network call, model call, public leaf, or normal-loop call.
 
 ## Task Contract
 
@@ -385,19 +399,21 @@ Unstaged and untracked files are outside that target. For already committed or
 non-Git material, use `git_commit`, `diff_fingerprint`, or
 `external_revision` with `--revision`.
 
-After target capture, run the governed verification outside taskgov against
-that exact target. If the Task verification expectation is nonempty after
-trimming, record one caller-attested aggregate Receipt using the returned
-target generation:
+Apply the returned `verification_route` and `blocking_code` directly as defined
+in the normal loop above. Only for `receipt_required`, run the governed verification
+outside taskgov against that exact target and record one caller-attested
+aggregate Receipt using the returned target generation:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
 ```
 
-Only an exact-current `pass/full` Receipt satisfies a verification expectation
-that is nonempty after trimming. A missing Receipt or a current `fail`,
-`timeout`, or `partial`
-Receipt blocks completion; explicitly set a fresh target before retrying.
+Only an exact-current `pass/full` Receipt on marker `0` or the exact closed
+no-launch fallback satisfies that M21 branch. A missing Receipt or a current
+`fail`, `timeout`, or `partial` Receipt blocks it; explicitly set a fresh target
+before retrying. A pending, stale, or cleanup-only Runner basis remains stale;
+every other exact-current terminal Runner result blocks and cannot be
+overridden by a Receipt.
 Taskgov derives a version-1 subject from the locked target's authority snapshot
 and verification criterion. It accepts no caller label or replacement subject,
 does not infer coverage, and retains no command body, exit code, output,
@@ -509,11 +525,13 @@ root and merge commits are unsupported.
 taskgov validates and records evidence only. It does not stage files, create
 commits or branches, push, open PRs, or write Issue comments.
 
-The schema-v21 Bundle-v2 seal is part of completion, and the due Evidence
-index-v2 refresh is bounded post-commit maintenance; neither is another
-workflow step or command. A projection warning leaves the already-committed
-task result unchanged and may be retried by a later changed mutation or
-explicit setup.
+The schema-v21 Bundle-v2 seal is part of completion. Its closed verification
+basis is `caller_attestation` or `not_required` with null
+`runner_observation`, or `runner_observation` with the qualifying exact
+observation. The due Evidence index-v2 refresh is bounded post-commit
+maintenance; neither is another workflow step or command. A projection warning
+leaves the already-committed task result unchanged and may be retried by a later
+changed mutation or explicit setup.
 
 Treat `done` as write-locked. Reopen only as an isolated operation:
 
@@ -523,7 +541,8 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <
 
 Do not combine reopen with another edit. Reopening preserves historical events
 and saved completion cycles, but those records remain audit-only and the Task
-requires fresh verification, target, receipts, and completion evidence.
+requires a fresh current verification basis, target, review receipts, and
+completion evidence.
 
 ## Register Tasks
 

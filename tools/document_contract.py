@@ -1673,9 +1673,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.3B"],
+                "current_units": ["TG-M24.3C"],
                 "inactive_units": [
-                    "TG-M24.3C",
                     "TG-M24.4A",
                     "TG-M24.4B",
                     "TG-M24.4C",
@@ -2288,8 +2287,8 @@ def _m24_trusted_local_authority_sync(
         ("tg-m24-2c", "tg-m24.2c", "accepted"),
         ("tg-m24-2", "tg-m24.2d", "accepted"),
         ("tg-m24-3a", "tg-m24.3a", "accepted"),
-        ("tg-m24-3b", "tg-m24.3b", "current"),
-        ("tg-m24-3c", "tg-m24.3c", "inactive"),
+        ("tg-m24-3b", "tg-m24.3b", "accepted"),
+        ("tg-m24-3c", "tg-m24.3c", "current"),
         ("tg-m24-4a", "tg-m24.4a", "inactive"),
         ("tg-m24-4b", "tg-m24.4b", "inactive"),
         ("tg-m24-4c", "tg-m24.4c", "inactive"),

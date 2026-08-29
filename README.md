@@ -189,11 +189,13 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id
 `task show` is the mandatory detailed read before work. The same JSON call
 supplies bounded completion-cycle audit history, current Verification Receipt
 readiness, and whether the optional Effort Advisory is enabled. Historical
-cycles never satisfy a current gate. The default-off flow needs no extra LLM
-choice or command. The normal no-finding Tier 2 graph remains bounded to ten
-governance subprocess calls, or eleven when the existing boolean enables
-`task effort`. `task current` rediscovers paused, blocked, review-pending, and
-in-progress work.
+cycles never satisfy a current gate. `review target set` returns the closed
+`verification_route` and nullable `blocking_code` for the target it just stored,
+so no second `task show` or LLM guess selects the manual or Runner branch. The
+normal no-finding Tier 2 manual/fallback graph is bounded to ten governance
+subprocess calls, or eleven when the existing boolean enables `task effort`;
+the Receiptless Runner-pass branch is one call lower. `task current`
+rediscovers paused, blocked, review-pending, and in-progress work.
 
 When that deterministic flag is enabled, run `task effort` once at the existing
 verification/review boundary. `suggested_action=continue` proceeds normally;
@@ -231,14 +233,17 @@ prioritize, synchronize, or create external Issues.
 ## Review And Completion
 
 For a review-before-commit Git workflow, stage exactly the intended project
-changes through the project's own Git process, capture the staged target, run
-the exact project verification outside Taskgov, record its bounded attestation,
-and prepare one bounded review packet:
+changes through the project's own Git process, capture the staged target, use
+the route returned by that same call, and prepare one bounded review packet.
+Run the exact project verification outside Taskgov and record its bounded
+attestation only for `verification_route=receipt_required`:
 
 ```powershell
 git add <intended-project-paths>
 python .agents/skills/task-governance-tool/scripts/taskgov.py review target set <task-id> --kind git_snapshot --json
-# Run the exact approved project verification here; taskgov never executes it.
+# Inspect verification_route and blocking_code in this response.
+# Only for verification_route=receipt_required, run the exact approved verification here.
+# Taskgov never executes it.
 python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
 python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare <task-id> --json
 python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class llm --model-state declared --declared-model-id <model-id> --skill-state not_used --context-relation fresh_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
@@ -246,6 +251,10 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add
 git commit -m "<project-approved message>"
 python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --completion-evidence-kind git_commit --completion-revision <hash> --verification-complete --review-complete --json
 ```
+
+The `not_required` and `runner_pass` routes skip the verification and
+Verification Receipt lines above. The `blocked` route stops closed and reports
+its existing gate code in `blocking_code`.
 
 The staged snapshot excludes unstaged and untracked content. Taskgov records
 only the caller's bounded verification facts; it never executes the command or
@@ -523,8 +532,12 @@ coverage.
   assets, freezes the M25 subsystem boundary, and then implements and accepts
   an explicit-opt-in Runner in ordered Tier 2 slices. TG-M24.1B's fixed-
   Candidate-C route is superseded. The candidate is now v0.12.0/schema v21;
-  its current 3B persistence path activates no Runner runtime, process launch, new
-  CLI or Skill trigger, or completion-gate authority.
+  accepted 3B supplies persistence and current 3C integrates the existing
+  explicit-opt-in trusted-local target-set Runner with the completion gate.
+  Exact-current complete-plan pass uses its Runner observation, exact closed
+  no-launch alone falls back to M21 Receipts, and other selected Runner states
+  block. No new CLI leaf, public JSON field beyond the two approved target-set
+  success fields, or Skill trigger is added.
   Network/live
   Analyzer acceptance still requires separate authority. SQLite, `storage.py`,
   public CLI or Skill calls, network/live-model actions, gate mutation, and

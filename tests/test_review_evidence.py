@@ -42,6 +42,7 @@ try:
         validate_current_database,
         validate_evidence_ledger_storage,
     )
+    from task_governance_tool import cli as cli_module
     from task_governance_tool import tasks as task_service
     from task_governance_tool import reviews as review_service
     from task_governance_tool import storage as storage_service
@@ -3395,14 +3396,24 @@ class ReviewEvidenceTests(unittest.TestCase):
                 text=True,
                 stdout=subprocess.PIPE,
             ).stdout.strip()
-            completed = run_taskgov(
-                "task", "edit", "--repo", str(repo), "--db", str(db),
-                task_id, "--status", "done", "--verification-complete",
-                "--review-complete", "--completion-evidence-kind",
-                "git_commit", "--completion-revision", completion_commit,
-                "--json",
-            )
+            with mock.patch.object(
+                cli_module,
+                "select_current_verification_runner_basis",
+            ) as selector, mock.patch.object(
+                task_service,
+                "capture_completion_basis",
+                wraps=task_service.capture_completion_basis,
+            ) as completion_basis:
+                completed = run_taskgov(
+                    "task", "edit", "--repo", str(repo), "--db", str(db),
+                    task_id, "--status", "done", "--verification-complete",
+                    "--review-complete", "--completion-evidence-kind",
+                    "git_commit", "--completion-revision", completion_commit,
+                    "--json",
+                )
             self.assertEqual(completed.returncode, 0, completed.stdout)
+            selector.assert_not_called()
+            completion_basis.assert_not_called()
 
             reopened = run_taskgov(
                 "task", "edit", "--repo", str(repo), "--db", str(db), task_id,

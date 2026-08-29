@@ -20,10 +20,10 @@ TG-M24.2C supplied parent-service orchestration and audit-only schema-v20
 observation and Evidence capture; it cannot satisfy verification or completion.
 Accepted TG-M24.2D covered only that already-implemented shadow slice from one
 fresh exact target and activated no additional product behavior or Runner
-completion gate. TG-M24.3A accepted the schema-v21 gate-basis contract below.
-TG-M24.3B is the sole current unit and activates only its persistence and
-compatibility boundary. TG-M24.3C gate integration and every later M24
-acceptance unit remain inactive.
+completion gate. TG-M24.3A accepted the schema-v21 gate-basis contract below,
+and TG-M24.3B accepted its persistence and compatibility boundary. TG-M24.3C
+is the sole current unit and owns gate integration; every later M24 acceptance
+unit remains inactive.
 Completed execution narrative is history, and the Task
 database owns live state and evidence.
 
@@ -247,7 +247,7 @@ Current success-data projections are:
 | `handoff.list` | `handoffs`, `count`, `total_matching`, `limit`, `states` |
 | `handoff.show` | `handoff` |
 | `handoff.withdraw` | `handoff`, `changed_fields` |
-| `review.target.set` | `task`, `changed_fields`, `event` |
+| `review.target.set` | `task`, `changed_fields`, `event`, `verification_route`, `blocking_code` |
 | `review.receipt.add` | `receipt`, `event` |
 | `review.finding.add` | `finding`, `event` |
 | `review.finding.resolve` | `finding`, `event` |
@@ -255,6 +255,8 @@ Current success-data projections are:
 
 `task.show` failure keeps both `completion_history=null` and
 `verification_evidence=null` in its bounded empty data.
+`review.target.set` adds its two routing keys only on success. Its failure data
+remains exactly `task=null`, `changed_fields=[]`, and `event=null`.
 Revision-zero Contract output is exactly revision 0; empty scope, acceptance,
 constraints, `authority_ref`, and `change_reason`; and null `created_at`.
 `local_record` contains exactly `durable`, `created`, `replayed`, and
@@ -360,17 +362,23 @@ The deterministic Skill call graph is:
 - one task edit to start the selected task;
 - only for a deterministically enabled Effort Advisory profile, one existing
   `task effort` observation at the verification/review boundary;
-- one review target set call after the exact material is ready;
-- one `verification receipt add` call after the caller runs the complete
-  governed verification against that exact target;
+- one review target set call after the exact material is ready; its returned
+  `verification_route` and `blocking_code` deterministically select the
+  not-required, Receipt-required, qualifying Runner-pass, or blocking branch;
+- only for `verification_route=receipt_required` on the marker-`0` manual branch
+  or exact closed no-launch fallback, one `verification receipt add` call after
+  the caller runs the complete governed verification against that exact target;
+  the not-required and qualifying Runner-pass branches need no Receipt call;
 - one `review prepare` call instead of separate task, Contract, target, and Git
   context reads;
 - one receipt write per actual receipt; and
 - one thin complete call.
 
-A default-off no-finding Tier 2 path therefore has at most ten governance
-subprocess calls; a profile-enabled path has at most eleven. Both exclude real
-progress updates and the two independent review model decisions.
+A default-off no-finding Tier 2 manual/fallback path therefore has at most
+ten governance subprocess calls; a profile-enabled path has at most eleven.
+The qualifying Runner-pass path omits Receipt add and remains bounded to nine or
+ten calls respectively. All counts exclude real progress updates and the two
+independent review model decisions.
 `task complete --check`, `doctor`, and `task checkpoint` are absent from the
 default success path.
 
@@ -826,6 +834,15 @@ object IDs, fixed bytewise ordering, 10,000 entries, and 16 MiB canonical JSON
 are hard limits. Diff-fingerprint and external targets instead receive one
 zero-entry `opaque_target` manifest with `artifact_content_not_observed`. No
 blob, patch, raw diff, untracked content, or caller file list is retained.
+On success, the same target-set service returns exactly one closed route for the
+target it just stored. `verification_route` is exactly `not_required` for an
+empty verification expectation, `receipt_required` for the existing marker-`0`
+manual path or exact closed no-launch fallback, `runner_pass` for the exact
+qualifying complete-plan Runner pass, or `blocked` for every other stored Runner
+terminal. `blocking_code` is null for the first three routes and is exactly the
+existing `verification_receipt_blocking` code for `blocked`. These fields expose
+no Runner ID, observation, gate tuple, Receipt ID, command body, or raw result.
+The text success output is unchanged.
 Pre-v18 targets keep their tuple as capture version 0 with null snapshot,
 criterion, and manifest bindings. They are audit-only: Verification Receipt,
 Review Receipt, Review Finding, and completion source creation fails
@@ -910,9 +927,11 @@ no managed material changed.
 
 Both thin `task complete` and compatibility `task edit --status done` require
 verification and review confirmations, typed completion evidence, sequential
-eligibility, a matching current target, a qualifying current Verification
-Receipt when verification is nonempty, sufficient current-generation review,
-and no blocking finding/receipt. They use the same transition service.
+eligibility, a matching current target, the qualifying current basis selected
+by the sole schema-v21 selector, sufficient current-generation review, and no
+blocking finding/receipt. The manual arm uses the current Verification Receipt;
+the Runner-pass arm uses its qualifying observation with a null Receipt link.
+They use the same transition service.
 
 Thin completion emits `command="task.complete"` and data exactly `task`,
 `changed_fields`, and `event`; text starts
@@ -1042,9 +1061,10 @@ schema-v16-or-later Task with no cycle is complete-history and false.
 Both done paths insert one complete verification-basis-v1 cycle, update Task,
 create the existing linked completion event, record effort/Viewer state, and
 commit atomically under one short writer after all external observation. A
-nonempty verification expectation links the exact qualifying pass/full
-Verification Receipt; an expectation whose trimmed text is empty stores the
-digest of its exact existing bytes and a null link. The exact empty string uses
+nonempty manual arm links the exact qualifying pass/full Verification Receipt;
+a nonempty Runner arm stores a null Receipt link and the exact qualifying
+Runner-observation pointer. An expectation whose trimmed text is empty stores
+the digest of its exact existing bytes and null links. The exact empty string uses
 the fixed empty-text digest, while legacy whitespace-only bytes are not
 rewritten. Reopen requires the current done projection to equal the latest
 un-reopened cycle; it links the new reopen event and resets current state
@@ -1328,12 +1348,15 @@ SHA-256 of `b"taskgov-verification-expectation-v1\0"` followed by the exact
 UTF-8 verification bytes. The digest is internal binding data and is not in
 the public Receipt. ID and canonical UTC `created_at` are also tool-owned.
 
-The normal order is: finish exact material, set the existing review target and
-retain its returned generation, run the governed
-verification against that material, record the Receipt with that generation
-as the expected basis, then prepare and record review. This is one additional
-green-path governance call: the default Tier-2 no-finding bound becomes 10, or
-11 only when Effort Advisory is mechanically enabled.
+For a branch that requires a Receipt, the normal order is: finish exact material,
+set the existing review target, and retain its returned generation and closed
+route. Only `verification_route=receipt_required` runs the governed verification
+against that material and records the Receipt with that generation as the
+expected basis. `not_required` and `runner_pass` proceed without that run or
+Receipt; `blocked` and unexpected route/code pairs stop closed. The default
+Tier-2 no-finding manual/fallback bound is ten governance calls, or eleven when
+Effort Advisory is mechanically enabled; a Receiptless Runner pass is one call
+lower.
 
 Receipt recording is allowed only for an in-progress or review-pending Task
 with verification text that is nonempty after trimming and a nonempty current
@@ -1351,14 +1374,15 @@ assess test quality, infer coverage, or prove the result or that the run
 actually exercised the copied target. Invoking Receipt add is the caller's
 attestation of those facts. It stores no command body or argument, exit code,
 stdout/stderr, log, environment, exception, stack trace, prompt/chat, diff,
-credential, or free-form coverage prose. The accepted audit-only TG-M24.2C
-Runner is separate: it may launch an eligible trusted-local plan after explicit
-opt-in, but it neither creates nor qualifies a Receipt and cannot satisfy the
-M21 verification or completion gate. Approved exceptions, result-file import,
+credential, or free-form coverage prose. A gate-ineligible version-0 graph
+created by the accepted audit-only TG-M24.2C Runner remains separate: it neither
+creates nor qualifies a Receipt and cannot satisfy the M21 verification or
+completion gate. Current gate-eligible version-1 Runner selection is governed
+only by the schema-v21 three-branch matrix below. Approved exceptions, result-file import,
 configured runners that create, import, or qualify Receipts, signatures, and
 debug retention are outside this initial Receipt contract.
 
-### Current Eligibility And Completion Gate
+### Verification Receipt Eligibility And The M21 Completion Arm
 
 A Receipt is exact-current only when all of its project, Task, Contract
 revision, verification-expectation digest, and complete source-revision tuple
@@ -1366,13 +1390,17 @@ equal the locked current values. All other Receipts remain append-only audit
 history and never reactivate.
 
 The current explicit `--verification-complete` assertion remains required for
-every done transition. When Task `verification` is empty, no Receipt is
-required and the current attestation behavior is preserved. When it is
-nonempty, completion additionally requires the unique exact-current Receipt to
-have `result=pass` and `scope_coverage=full`. A missing Receipt is
-`verification_receipt_required`; any other result/coverage combination is
-`verification_receipt_blocking`. Recovery requires explicitly setting a fresh
-target generation and recording fresh verification; setting an identical
+every done transition. This section defines the M21 Receipt arm consumed by the
+schema-v21 three-branch selector under Current Schema-v21 Persistence Contract.
+When Task `verification` is empty on marker `0`, no Receipt is required and the
+current attestation behavior is preserved. When the selector chooses the manual
+arm for nonempty verification, completion additionally requires the unique
+exact-current Receipt to have `result=pass` and `scope_coverage=full`. A missing
+Receipt is `verification_receipt_required`; any other result/coverage
+combination is `verification_receipt_blocking`. A qualifying Runner-pass arm is
+Receiptless and is governed only by that later matrix. Recovery of the manual
+arm requires explicitly setting a fresh target generation and recording fresh
+verification; setting an identical
 target already advances generation under the current target contract. Partial
 coverage never aggregates mechanically because taskgov owns no project test
 strategy.
@@ -1392,14 +1420,15 @@ does not itself pause, block, revise, hand off, or otherwise mutate the Task.
 The immutable completion cycle already stores the exact Task target tuple.
 Schema v17 added internal `verification_basis_version`, nullable
 `verification_expectation_digest`, and nullable `verification_receipt_id`
-fields to each completion cycle. Existing cycles migrate as version 0 with
-both nullable fields null. Every post-activation native cycle is version 1 and
-stores the same domain-separated digest computed from its exact Task
-verification text, including the empty string and any preserved whitespace. A
-verification expectation whose trimmed text is nonempty additionally requires
-a foreign-key link to the unique qualifying exact-current Receipt, while one
-whose trimmed text is empty requires a null link without changing its exact-byte
-digest.
+ fields to each completion cycle. Existing cycles migrate as version 0 with
+ both nullable fields null. Every post-activation native cycle is version 1 and
+ stores the same domain-separated digest computed from its exact Task
+ verification text, including the empty string and any preserved whitespace.
+ Through schema v20, and for the schema-v21 `caller_attestation` arm, a
+ verification expectation whose trimmed text is nonempty additionally requires
+ a foreign-key link to the unique qualifying exact-current Receipt. The
+ schema-v21 `not_required` and `runner_observation` arms require a null Receipt
+ link and are instead constrained by the current tagged union below.
 Every normal post-activation native completion must insert version 1. The sole
 existing reopen compatibility bridge may still insert version 0/null/null only
 for its exact unknown-coverage done/no-cycle case; it remains
@@ -1426,9 +1455,10 @@ keep their existing public meaning. Initial activation adds no new public
 completion-history or Viewer Receipt projection.
 
 Completion-check fail-fast ordering retains the existing missing-attestation
-and target checks, then applies the missing/blocking Verification Receipt gate
-before review-receipt sufficiency. The Receipt readiness codes and fixed
-messages are:
+and target checks, then applies the schema-v21 three-branch selector before
+review-receipt sufficiency. When that selector chooses an M21 manual arm, the
+missing/blocking Verification Receipt gate retains these readiness codes and
+fixed messages:
 
 | Code | Message |
 |---|---|
@@ -1466,7 +1496,7 @@ validation is fail-fast in this exact order: `--read-only`; Task ID, result,
 duration, coverage, and expected generation; Task existence; done-state
 rejection; other Task status; nonempty verification expectation; structurally
 valid current target; expected-generation equality; capture-version-1 basis;
-and same-generation uniqueness. The fixed
+the current schema-v21 Runner selector; and same-generation uniqueness. The fixed
 service failures are:
 
 | Condition | Code | Message |
@@ -1531,14 +1561,15 @@ The projection types and null rules are fixed:
   Every row has exactly the public Receipt fields above, including its nested
   `source_revision`; no digest or internal cycle link is exposed.
 
-For an expectation empty after trimming, the gate is `required=false`,
-`satisfied=true`, with
-both nullable fields null regardless of target state. For a nonempty
-expectation on a non-done Task, no target yields `review_target_required`; a
-capture-version-0 target yields `evidence_basis_stale`; a fresh target with no
-Receipt yields `verification_receipt_required`; a current
-non-`pass/full` row yields `verification_receipt_blocking`; and a current
-`pass/full` row yields satisfied with its ID. A legacy done Task whose matching
+For an expectation empty after trimming on marker `0`, the gate is
+`required=false`, `satisfied=true`, with both nullable fields null. For a
+nonempty expectation on a non-done Task, no target yields
+`review_target_required` and a capture-version-0 target yields
+`evidence_basis_stale`. The M21 manual arm then yields Receipt-required,
+Receipt-blocking, or satisfied with the qualifying Receipt ID. Marker-`2`
+targets instead use the current schema-v21 matrix below: only the exact closed
+no-launch fallback delegates to those M21 values, while an exact qualifying
+Runner pass is satisfied with a null Receipt ID. A legacy done Task whose matching
 completion cycle has basis version 0, whether migrated or created by the sole
 compatibility bridge, is an explicit legacy exemption:
 `required=false`, `satisfied=true`, both nullable fields null, and
@@ -1591,14 +1622,16 @@ check, and foreign keys without reconciliation or backfill.
 Migration 19 `completion_evidence_bundles` adds immutable criterion links, Bundle membership and Finding snapshots, completion Bundles, cycle `evidence_basis_version`/bundle linkage, and Evidence projection state. Every existing cycle becomes version 0 with null bundle ID; migration creates no historical Bundle or link and projects that absence only as `legacy_unknown`.
 Every native schema-v19 completion atomically inserts one version-1 Bundle with
 its cycle, Task update, event, links, selected gate evidence, Finding snapshots,
-and projection-generation advance. On current schema v21, the same transaction
-instead inserts one version-2 Bundle. Its verification basis is
+and projection-generation advance. Schema v20 and the accepted TG-M24.3B
+marker-zero schema-v21 baseline instead insert one version-2 Bundle whose basis is
 `caller_attestation` with the qualifying Receipt for nonempty verification or
 `not_required` with no Receipt for trimmed-empty verification, and its Runner
-observation is always null. It creates no Runner-derived Reference, criterion
-link, Bundle member, or projection. The sole partial legacy reopen bridge stays
-version 0/null and advances only that generation. A Bundle is complete or the
-completion fails before write; its canonical payload is capped at 16 MiB.
+observation is null. Current TG-M24.3C retains both branches and additionally
+admits the exact qualifying schema-v21 `runner_observation` branch, reusing its
+existing Runner Reference and criterion link as Bundle members. The sole partial
+legacy reopen bridge stays version 0/null and advances only that generation. A
+Bundle is complete or the completion fails before write; its canonical payload
+is capped at 16 MiB.
 
 Bundle v2 adds exactly the root `verification_basis` object and
 `runner_observation` field to the v1 payload. For R3B,
@@ -1611,7 +1644,7 @@ domain, bytes, and digest are unchanged.
 
 Evidence JSON is a deterministic one-way SQLite projection. Canonical sorted-key compact UTF-8 JSON uses integer-only JSON values where numeric, preserves valid Unicode without normalization, and ends each file with one LF. A schema-v20 or schema-v21 index uses envelope `format_version=2`, digest domain `taskgov-evidence-index-v2\0`, and adds exactly nullable `bundle_format_version` to each entry: null for `legacy_unknown`, 1 for a preserved v1 Bundle, and 2 for a native v2 Bundle. Native entries reference `bundles/<completion-evidence-bundle-id>.json`; the projection may therefore reference both preserved version-1 Bundles and new version-2 Bundles without rewriting existing payload bytes or digests. Pre-v19 entries are `legacy_unknown` with null Bundle/file fields.
 The index includes every cycle, is ordered by Task ID, ordinal, and cycle ID, and is capped at 100,000 entries and 64 MiB without truncation. Publication flushes immutable Bundle files and atomically replaces `index.json` last; SQLite remains canonical, unreferenced files are ignored, and JSON is never imported or used to repair the database.
-Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, or network action; it invokes or projects neither Analyzer nor Runner and adds no normal-loop call.
+Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, or network action and invokes neither Analyzer nor Runner. A current schema-v21 Runner-backed Bundle projects only the already-sanitized stored observation fixed below; publication adds no normal-loop call.
 
 ## Current TG-M21.4B Recovery Candidate Validity Contract
 
@@ -1912,21 +1945,20 @@ preservation of unrelated standalone objects.
 
 Schema v20 is the intermediate M24.2 shadow foundation and never becomes a
 qualifying Runner gate basis. Accepted TG-M24.3A owns the separate Tier 2
-schema-v21 contract below, current TG-M24.3B owns its persistence implementation while
-the M21 Receipt remains the sole verification and completion gate, and
-TG-M24.3C alone owns qualifying Runner-basis activation with explicit M21
-fallback.
+schema-v21 contract below, accepted TG-M24.3B owns its persistence
+implementation, and current TG-M24.3C alone owns qualifying Runner-basis
+activation with explicit M21 fallback.
 
 <a id="current-schema-v21-persistence-contract"></a>
 
 ### Current Schema-v21 Persistence Contract
 
-TG-M24.3A accepted this contract without changing product code. Current
-TG-M24.3B implements its persistence and compatibility boundary, including the
+TG-M24.3A accepted this contract without changing product code. Accepted
+TG-M24.3B implemented its persistence and compatibility boundary, including the
 public schema constant, setup target, package identity, backup/recovery, and
 Viewer source range. It changes no public CLI or JSON shape, Viewer UI, Skill,
-Runner runtime, or completion gate. TG-M24.3C alone may activate the qualifying
-Runner branch.
+Runner runtime, or completion gate. Current TG-M24.3C alone activates the
+qualifying Runner branch.
 
 Migration 21 is exactly `verification_runner_gate_basis`. It adds no table,
 column, or index. It reuses `tasks.review_target_runner_basis_version`, the four
@@ -2060,8 +2092,9 @@ credentials, exception or stack text, private paths, plan bytes, target bytes,
 and arbitrary provider data remain prohibited. No caller-supplied subject,
 result import, Analyzer output, older observation, or public override can
 satisfy this branch. Schema-v21 support adds no public command leaf, argument,
-success field, Evidence JSON member, Viewer UI, Skill trigger, or normal-loop
-call.
+Evidence JSON member, Viewer UI, or Skill trigger. Gate integration adds only
+the two closed target-set JSON success fields above; Bundle/Evidence serialization
+and projection add no normal-loop call, and no post-target `task show` is added.
 
 The existing `task show.verification_evidence` object keeps its exact keys and
 types. `current_verification_subject`, all four counts, and `recent_receipts`
@@ -2838,10 +2871,10 @@ plan selection, exact target observation, and private materialization. Accepted
 2B covers only the bounded runtime/process adapter and deterministic cleanup.
 Accepted 2C owns parent-service orchestration plus audit-only schema-v20
 observation and Evidence capture, and accepted 2D owns only integrated
-acceptance of that shadow slice. Accepted 3A froze the schema-v21 contract.
-Current 3B implements its persistence boundary with unchanged M21 gates;
-Runner gate integration (3C) and release acceptance remain inactive behind
-their owning sequential units.
+acceptance of that shadow slice. Accepted 3A froze the schema-v21 contract, and
+accepted 3B implemented its persistence boundary with unchanged M21 gates.
+Current 3C owns Runner gate integration; release acceptance remains inactive
+behind its owning sequential units.
 
 The approved execution direction is an explicit-opt-in Runner for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified
@@ -3074,8 +3107,8 @@ on-command-failure rule: T1 is a completed existing target-set mutation with
 its atomic Runner intent, cleanup-only is completed lifecycle closure, and the
 failed phase is later. No automatic relaunch, fallback success, Receipt,
 review, or completion claim is synthesized.
-Successful and fallback target-set output remains byte-compatible with the
-existing public contract.
+Target-set text and failure output remain byte-compatible. Current TG-M24.3C
+adds only the two closed JSON success keys defined above.
 
 Backup and recovery preserve the SQLite audit graph and validate its exact
 cardinality, ownership, digests, links, and gate-ineligible version. The

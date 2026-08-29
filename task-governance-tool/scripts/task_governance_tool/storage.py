@@ -857,6 +857,9 @@ class NativeCompletionBundleBasis:
     artifact_reference: dict[str, Any]
     verification_receipt: dict[str, Any] | None
     verification_reference: dict[str, Any] | None
+    runner_observation: dict[str, Any] | None
+    runner_reference: dict[str, Any] | None
+    runner_criterion_link: dict[str, Any] | None
     review_receipts: tuple[dict[str, Any], ...]
     review_references: tuple[dict[str, Any], ...]
     findings: tuple[dict[str, Any], ...]
@@ -7123,11 +7126,15 @@ def _validate_runner_timestamp(value: object, *, field_name: str) -> str:
 
 def _validated_verification_runner_graph(
     connection: sqlite3.Connection,
+    *,
+    selected_generation: tuple[str, str, int] | None = None,
+    selected_task: sqlite3.Row | None = None,
+    selected_history_cycle: CompletionCycle | None = None,
 ) -> tuple[
     tuple[_ExpectedEvidenceReference, ...],
     dict[tuple[str, str, int], dict[str, Any]],
 ]:
-    """Validate the closed schema-v20/v21 Runner generation shapes."""
+    """Validate all Runner rows or one exact selected generation."""
 
     from task_governance_tool.evidence_ledger import (
         EvidenceLedgerError,
@@ -7158,53 +7165,166 @@ def _validated_verification_runner_graph(
         if physical_schema_version == PRIVATE_SCHEMA21_VERSION
         else {0}
     )
+    if selected_generation is not None:
+        project_id, task_id, target_generation = selected_generation
+        if (
+            physical_schema_version != PRIVATE_SCHEMA21_VERSION
+            or type(project_id) is not str
+            or not project_id
+            or type(task_id) is not str
+            or not task_id
+            or type(target_generation) is not int
+            or target_generation < 1
+            or (selected_task is None) == (selected_history_cycle is None)
+        ):
+            raise evidence_ledger_inconsistent()
+        if selected_task is not None:
+            if (
+                selected_task["project_id"] != project_id
+                or selected_task["task_id"] != task_id
+                or selected_task["review_target_generation"] != target_generation
+            ):
+                raise evidence_ledger_inconsistent()
+        else:
+            assert selected_history_cycle is not None
+            if (
+                selected_history_cycle.project_id != project_id
+                or selected_history_cycle.task_id != task_id
+                or selected_history_cycle.review_target_generation
+                != target_generation
+                or selected_history_cycle.origin != "native_done"
+                or selected_history_cycle.evidence_basis_version != 1
+                or selected_history_cycle.verification_basis_kind
+                not in {"caller_attestation", "runner_observation"}
+            ):
+                raise evidence_ledger_inconsistent()
+        generation_predicate = (
+            " WHERE project_id = ? AND task_id = ? AND target_generation = ? "
+        )
+        generation_parameters: tuple[object, ...] = selected_generation
+        generation_limit = " LIMIT 2"
+    else:
+        if selected_task is not None or selected_history_cycle is not None:
+            raise evidence_ledger_inconsistent()
+        generation_predicate = " "
+        generation_parameters = ()
+        generation_limit = ""
     try:
         resolution_rows = connection.execute(
             "SELECT * FROM verification_runner_resolutions "
-            "ORDER BY project_id, task_id, target_generation, "
+            + generation_predicate
+            + "ORDER BY project_id, task_id, target_generation, "
             "verification_runner_resolution_id"
+            + generation_limit,
+            generation_parameters,
         ).fetchall()
         attempt_rows = connection.execute(
             "SELECT * FROM verification_runner_attempts "
-            "ORDER BY project_id, task_id, target_generation, "
+            + generation_predicate
+            + "ORDER BY project_id, task_id, target_generation, "
             "verification_runner_attempt_id"
+            + generation_limit,
+            generation_parameters,
         ).fetchall()
         observation_rows = connection.execute(
             "SELECT * FROM verification_runner_observations "
-            "ORDER BY project_id, task_id, target_generation, "
+            + generation_predicate
+            + "ORDER BY project_id, task_id, target_generation, "
             "verification_runner_observation_id"
+            + generation_limit,
+            generation_parameters,
         ).fetchall()
         event_rows = connection.execute(
             "SELECT * FROM verification_runner_sandbox_events "
-            "ORDER BY project_id, task_id, target_generation, "
+            + generation_predicate
+            + "ORDER BY project_id, task_id, target_generation, "
             "verification_runner_sandbox_event_id"
+            + generation_limit,
+            generation_parameters,
         ).fetchall()
-        snapshots = {
-            str(row["authority_snapshot_id"]): row
-            for row in connection.execute(
-                "SELECT * FROM authority_snapshots ORDER BY authority_snapshot_id"
-            ).fetchall()
-        }
-        criteria = {
-            str(row["criterion_id"]): row
-            for row in connection.execute(
-                "SELECT * FROM contract_criteria ORDER BY criterion_id"
-            ).fetchall()
-        }
-        manifests = {
-            str(row["artifact_manifest_id"]): row
-            for row in connection.execute(
-                "SELECT * FROM artifact_manifests ORDER BY artifact_manifest_id"
-            ).fetchall()
-        }
-        tasks = {
-            (str(row["project_id"]), str(row["task_id"])): row
-            for row in connection.execute(
-                "SELECT project_id, task_id, review_target_generation, "
-                "review_target_runner_basis_version FROM tasks "
-                "ORDER BY project_id, task_id"
-            ).fetchall()
-        }
+        if selected_generation is None:
+            snapshots = {
+                str(row["authority_snapshot_id"]): row
+                for row in connection.execute(
+                    "SELECT * FROM authority_snapshots "
+                    "ORDER BY authority_snapshot_id"
+                ).fetchall()
+            }
+            criteria = {
+                str(row["criterion_id"]): row
+                for row in connection.execute(
+                    "SELECT * FROM contract_criteria ORDER BY criterion_id"
+                ).fetchall()
+            }
+            manifests = {
+                str(row["artifact_manifest_id"]): row
+                for row in connection.execute(
+                    "SELECT * FROM artifact_manifests "
+                    "ORDER BY artifact_manifest_id"
+                ).fetchall()
+            }
+            tasks = {
+                (str(row["project_id"]), str(row["task_id"])): row
+                for row in connection.execute(
+                    "SELECT project_id, task_id, review_target_generation, "
+                    "review_target_runner_basis_version FROM tasks "
+                    "ORDER BY project_id, task_id"
+                ).fetchall()
+            }
+        else:
+            snapshot_ids: set[str] = set()
+            manifest_ids: set[str] = set()
+            for row in resolution_rows:
+                snapshot_id = row["authority_snapshot_id"]
+                manifest_id = row["artifact_manifest_id"]
+                if (
+                    type(snapshot_id) is not str
+                    or not snapshot_id
+                    or type(manifest_id) is not str
+                    or not manifest_id
+                ):
+                    raise evidence_ledger_inconsistent()
+                snapshot_ids.add(snapshot_id)
+                manifest_ids.add(manifest_id)
+            authority = _validated_authority_context(
+                connection,
+                snapshot_ids=snapshot_ids,
+            )
+            manifest_records, manifests_by_target = (
+                _validate_artifact_manifest_storage(
+                    connection,
+                    snapshots=authority.snapshots,
+                    links=authority.links,
+                    manifest_ids=manifest_ids,
+                )
+            )
+            _validate_evidence_reference_storage(
+                connection,
+                manifests=manifest_records,
+                manifests_by_target=manifests_by_target,
+                snapshots=authority.snapshots,
+                verification_receipt_ids=set(),
+                review_receipt_ids=set(),
+                review_finding_ids=set(),
+                completion_cycle_ids=set(),
+                selected_project_id=selected_generation[0],
+            )
+            snapshots = authority.snapshots
+            criteria = authority.criteria
+            manifests = {
+                manifest_id: record.row
+                for manifest_id, record in manifest_records.items()
+            }
+            if selected_task is not None:
+                selected_task_basis = selected_task
+                tasks = {
+                    (selected_generation[0], selected_generation[1]): (
+                        selected_task_basis
+                    )
+                }
+            else:
+                assert selected_history_cycle is not None
+                tasks = {}
 
         resolutions: dict[
             tuple[str, str, int], tuple[VerificationRunnerResolution, sqlite3.Row]
@@ -7610,11 +7730,21 @@ def _validated_verification_runner_graph(
                     ):
                         raise evidence_ledger_inconsistent()
 
-        runner_references = connection.execute(
-            "SELECT * FROM evidence_references "
-            "WHERE source_kind = 'runner_observation' "
-            "ORDER BY source_id, evidence_reference_id"
-        ).fetchall()
+        if selected_generation is None:
+            runner_references = connection.execute(
+                "SELECT * FROM evidence_references "
+                "WHERE source_kind = 'runner_observation' "
+                "ORDER BY source_id, evidence_reference_id"
+            ).fetchall()
+        else:
+            runner_references = connection.execute(
+                "SELECT * FROM evidence_references "
+                "WHERE project_id = ? AND task_id = ? "
+                "AND target_generation = ? "
+                "AND source_kind = 'runner_observation' "
+                "ORDER BY source_id, evidence_reference_id LIMIT 2",
+                selected_generation,
+            ).fetchall()
         references_by_source: dict[str, sqlite3.Row] = {}
         runner_reference_keys: list[list[str]] = []
         for row in runner_references:
@@ -11670,28 +11800,6 @@ def _require_completion_cycle_writer(connection: sqlite3.Connection) -> None:
         )
 
 
-def _require_m21_completion_writer_marker_locked(
-    connection: sqlite3.Connection,
-    *,
-    project_id: str,
-    task_id: str,
-) -> None:
-    """Keep the 3B completion writer on the marker-zero M21 branch."""
-
-    version = current_schema_version(connection)
-    if version < PRIVATE_SCHEMA20_VERSION:
-        return
-    if version not in {PRIVATE_SCHEMA20_VERSION, PRIVATE_SCHEMA21_VERSION}:
-        raise completion_history_inconsistent()
-    row = connection.execute(
-        "SELECT review_target_runner_basis_version FROM tasks "
-        "WHERE project_id = ? AND task_id = ?",
-        (project_id, task_id),
-    ).fetchone()
-    if row is None or row["review_target_runner_basis_version"] != 0:
-        raise completion_history_inconsistent()
-
-
 def _next_completion_cycle_ordinal_locked(
     connection: sqlite3.Connection,
     *,
@@ -11810,14 +11918,6 @@ def _persist_completion_cycle_locked(
     cycle: CompletionCycle,
 ) -> CompletionCycle:
     _require_completion_cycle_writer(connection)
-    if cycle.verification_basis_kind == "runner_observation":
-        raise completion_history_inconsistent()
-    if cycle.origin == "native_done":
-        _require_m21_completion_writer_marker_locked(
-            connection,
-            project_id=cycle.project_id,
-            task_id=cycle.task_id,
-        )
     _validate_completion_cycle(cycle)
     _validate_cycle_receipts(connection, cycle)
     basis = cycle.gate_basis
@@ -12120,6 +12220,8 @@ def prepare_native_completion_cycle_locked(
     verification_subject_basis_version: int = 0,
     subject_authority_snapshot_id: str | None = None,
     subject_verification_criterion_id: str | None = None,
+    verification_basis_kind: str | None = None,
+    verification_runner_observation_id: str | None = None,
     completion_identity: NativeCompletionIdentity | None = None,
 ) -> CompletionCycle:
     """Prepare but do not persist one exact native completion cycle."""
@@ -12174,9 +12276,6 @@ def prepare_native_completion_cycle_locked(
     if any(
         proposed.get(field_name) != locked_task.get(field_name)
         for field_name in protected_fields
-    ) or (
-        current_schema_version(connection) >= PRIVATE_SCHEMA20_VERSION
-        and locked_task.get("review_target_runner_basis_version") != 0
     ):
         raise completion_history_inconsistent()
 
@@ -12190,6 +12289,32 @@ def prepare_native_completion_cycle_locked(
     if completed_at is None:
         raise completion_history_inconsistent()
     exact_verification = proposed.get("verification")
+    marker = locked_task.get("review_target_runner_basis_version", 0)
+    has_runner_basis = column_exists(
+        connection,
+        "task_completion_cycles",
+        "verification_basis_kind",
+    )
+    selected_basis_kind = (
+        verification_basis_kind
+        if verification_basis_kind is not None
+        else (
+            "caller_attestation"
+            if str(exact_verification or "").strip()
+            else "not_required"
+        )
+        if has_runner_basis
+        else None
+    )
+    expected_marker_zero_kind = (
+        (
+            "caller_attestation"
+            if exact_verification.strip()
+            else "not_required"
+        )
+        if has_runner_basis
+        else None
+    )
     exact_subject = (
         1,
         (
@@ -12212,8 +12337,26 @@ def prepare_native_completion_cycle_locked(
         is None
         or verification_expectation_digest
         != _verification_expectation_digest(exact_verification)
+        or marker not in {0, 2}
         or (
-            bool(exact_verification.strip())
+            marker == 0
+            and (
+                selected_basis_kind != expected_marker_zero_kind
+                or verification_runner_observation_id is not None
+            )
+        )
+        or (
+            marker == 2
+            and (
+                not has_runner_basis
+                or not exact_verification.strip()
+                or selected_basis_kind
+                not in {"caller_attestation", "runner_observation"}
+            )
+        )
+        or (
+            not has_runner_basis
+            and exact_verification.strip()
             and (
                 verification_receipt_id is None
                 or VERIFICATION_RECEIPT_ID_PATTERN.fullmatch(
@@ -12223,8 +12366,38 @@ def prepare_native_completion_cycle_locked(
             )
         )
         or (
-            not exact_verification.strip()
+            not has_runner_basis
+            and not exact_verification.strip()
             and verification_receipt_id is not None
+        )
+        or (
+            selected_basis_kind == "caller_attestation"
+            and (
+                verification_receipt_id is None
+                or VERIFICATION_RECEIPT_ID_PATTERN.fullmatch(
+                    verification_receipt_id
+                )
+                is None
+                or verification_runner_observation_id is not None
+            )
+        )
+        or (
+            selected_basis_kind == "not_required"
+            and (
+                verification_receipt_id is not None
+                or verification_runner_observation_id is not None
+            )
+        )
+        or (
+            selected_basis_kind == "runner_observation"
+            and (
+                verification_receipt_id is not None
+                or type(verification_runner_observation_id) is not str
+                or VERIFICATION_RUNNER_OBSERVATION_ID_PATTERN.fullmatch(
+                    verification_runner_observation_id
+                )
+                is None
+            )
         )
         or locked_task.get("review_target_capture_version") != 1
         or locked_task.get("review_target_authority_snapshot_id") is None
@@ -12282,27 +12455,10 @@ def prepare_native_completion_cycle_locked(
         completion_evidence_bundle_id=(
             completion_identity.completion_evidence_bundle_id
         ),
-        verification_basis_kind=(
-            "caller_attestation"
-            if (
-                column_exists(
-                    connection,
-                    "task_completion_cycles",
-                    "verification_basis_kind",
-                )
-                and exact_verification.strip()
-            )
-            else (
-                "not_required"
-                if column_exists(
-                    connection,
-                    "task_completion_cycles",
-                    "verification_basis_kind",
-                )
-                else None
-            )
+        verification_basis_kind=selected_basis_kind,
+        verification_runner_observation_id=(
+            verification_runner_observation_id
         ),
-        verification_runner_observation_id=None,
         completion_evidence_kind=str(
             proposed.get("completion_evidence_kind", "")
         ),
@@ -12356,6 +12512,8 @@ def insert_native_completion_cycle_locked(
     verification_subject_basis_version: int = 0,
     subject_authority_snapshot_id: str | None = None,
     subject_verification_criterion_id: str | None = None,
+    verification_basis_kind: str | None = None,
+    verification_runner_observation_id: str | None = None,
     completion_identity: NativeCompletionIdentity | None = None,
     completion_bundle: PreparedCompletionEvidenceBundle | None = None,
     prepared_cycle: CompletionCycle | None = None,
@@ -12379,6 +12537,10 @@ def insert_native_completion_cycle_locked(
             subject_authority_snapshot_id=subject_authority_snapshot_id,
             subject_verification_criterion_id=(
                 subject_verification_criterion_id
+            ),
+            verification_basis_kind=verification_basis_kind,
+            verification_runner_observation_id=(
+                verification_runner_observation_id
             ),
             completion_identity=completion_identity,
         )
@@ -12427,6 +12589,9 @@ def insert_native_completion_cycle_locked(
             != subject_authority_snapshot_id
             or cycle.subject_verification_criterion_id
             != subject_verification_criterion_id
+            or cycle.verification_basis_kind != verification_basis_kind
+            or cycle.verification_runner_observation_id
+            != verification_runner_observation_id
             or cycle.evidence_basis_version != 1
             or cycle.completion_evidence_kind
             != str(task_projection.get("completion_evidence_kind", ""))
@@ -12760,6 +12925,323 @@ def read_completion_history(
     )
 
 
+def _selected_history_runner_generations(
+    connection: sqlite3.Connection,
+    *,
+    cycles: tuple[CompletionCycle, ...],
+) -> dict[tuple[str, str, int], dict[str, Any]]:
+    """Validate only historical Runner generations that a returned cycle uses."""
+
+    generations: dict[tuple[str, str, int], dict[str, Any]] = {}
+    for cycle in cycles:
+        if cycle.evidence_basis_version != 1:
+            continue
+        key = (
+            cycle.project_id,
+            cycle.task_id,
+            cycle.review_target_generation,
+        )
+        resolution_rows = connection.execute(
+            "SELECT gate_eligibility_version "
+            "FROM verification_runner_resolutions "
+            "WHERE project_id = ? AND task_id = ? AND target_generation = ? "
+            "ORDER BY verification_runner_resolution_id LIMIT 2",
+            key,
+        ).fetchall()
+        if len(resolution_rows) > 1:
+            raise evidence_ledger_inconsistent()
+        eligibility = None
+        if resolution_rows:
+            eligibility = resolution_rows[0]["gate_eligibility_version"]
+            if type(eligibility) is not int or eligibility not in {0, 1}:
+                raise evidence_ledger_inconsistent()
+        basis_kind = cycle.verification_basis_kind
+        runner_backed = basis_kind == "runner_observation" or (
+            basis_kind == "caller_attestation" and eligibility == 1
+        )
+        if basis_kind == "not_required":
+            if eligibility == 1:
+                raise evidence_ledger_inconsistent()
+            continue
+        if basis_kind not in {"caller_attestation", "runner_observation"}:
+            raise evidence_ledger_inconsistent()
+        if not runner_backed:
+            continue
+        _, selected = _validated_verification_runner_graph(
+            connection,
+            selected_generation=key,
+            selected_history_cycle=cycle,
+        )
+        if set(selected) != {key}:
+            raise evidence_ledger_inconsistent()
+        existing = generations.get(key)
+        if existing is not None and existing != selected[key]:
+            raise evidence_ledger_inconsistent()
+        generations[key] = selected[key]
+    return generations
+
+
+def _validate_selected_completion_bundle_history(
+    connection: sqlite3.Connection,
+    *,
+    cycles: tuple[CompletionCycle, ...],
+    runner_generations: dict[tuple[str, str, int], dict[str, Any]],
+) -> None:
+    """Validate and replay only Bundles owned by the returned history cycles."""
+
+    native_cycles = tuple(
+        cycle for cycle in cycles if cycle.evidence_basis_version == 1
+    )
+    if not native_cycles:
+        return
+    if (
+        len(cycles) > 10
+        or len({cycle.project_id for cycle in native_cycles}) != 1
+        or len({cycle.task_id for cycle in native_cycles}) != 1
+        or any(
+            cycle.origin != "native_done"
+            or type(cycle.completion_evidence_bundle_id) is not str
+            or COMPLETION_EVIDENCE_BUNDLE_ID_PATTERN.fullmatch(
+                cycle.completion_evidence_bundle_id
+            )
+            is None
+            for cycle in native_cycles
+        )
+    ):
+        raise evidence_ledger_inconsistent()
+    cycle_ids = {cycle.completion_cycle_id for cycle in native_cycles}
+    bundle_ids = {
+        cycle.completion_evidence_bundle_id for cycle in native_cycles
+    }
+    if len(cycle_ids) != len(native_cycles) or len(bundle_ids) != len(native_cycles):
+        raise evidence_ledger_inconsistent()
+
+    bundle_rows = _selected_storage_rows_by_ids(
+        connection,
+        table_name="completion_evidence_bundles",
+        id_field="completion_evidence_bundle_id",
+        selected_ids=bundle_ids,
+    )
+    bundles_by_id = {
+        str(row["completion_evidence_bundle_id"]): row for row in bundle_rows
+    }
+    if len(bundles_by_id) != len(bundle_rows):
+        raise evidence_ledger_inconsistent()
+    cycles_by_bundle = {
+        str(cycle.completion_evidence_bundle_id): cycle for cycle in native_cycles
+    }
+    prepared_by_id: dict[str, PreparedCompletionEvidenceBundle] = {}
+    member_groups_by_bundle: dict[
+        str,
+        dict[str, list[sqlite3.Row | dict[str, Any]]],
+    ] = {}
+    findings_by_bundle: dict[
+        str,
+        list[sqlite3.Row | dict[str, Any]],
+    ] = {}
+    link_rows_by_id: dict[str, sqlite3.Row | dict[str, Any]] = {}
+    reference_ids: set[str] = set()
+    review_receipt_ids: set[str] = set()
+    review_finding_ids: set[str] = set()
+    verification_receipt_ids: set[str] = set()
+    snapshot_ids: set[str] = set()
+    manifest_ids: set[str] = set()
+    for bundle_id, cycle in cycles_by_bundle.items():
+        row = bundles_by_id.get(bundle_id)
+        if row is None or row["completion_cycle_id"] != cycle.completion_cycle_id:
+            raise evidence_ledger_inconsistent()
+        bundle = read_completion_evidence_bundle(
+            connection,
+            completion_evidence_bundle_id=bundle_id,
+        )
+        _validate_prepared_completion_bundle(bundle, expected_cycle=cycle)
+        prepared_by_id[bundle_id] = bundle
+        grouped: dict[str, list[sqlite3.Row | dict[str, Any]]] = {}
+        for member in bundle.members:
+            member_row = dict(vars(member))
+            grouped.setdefault(member.member_kind, []).append(member_row)
+            if member.evidence_reference_id is not None:
+                reference_ids.add(member.evidence_reference_id)
+        member_groups_by_bundle[bundle_id] = grouped
+        findings_by_bundle[bundle_id] = [
+            dict(vars(finding)) for finding in bundle.finding_snapshots
+        ]
+        for link in bundle.criterion_links:
+            link_row = dict(vars(link))
+            existing = link_rows_by_id.get(link.criterion_evidence_link_id)
+            if existing is not None and dict(existing) != link_row:
+                raise evidence_ledger_inconsistent()
+            link_rows_by_id[link.criterion_evidence_link_id] = link_row
+        review_receipt_ids.update(cycle.gate_basis.qualifying_receipt_ids)
+        review_finding_ids.update(
+            finding.review_finding_id for finding in bundle.finding_snapshots
+        )
+        if bundle.verification_receipt_id is not None:
+            verification_receipt_ids.add(bundle.verification_receipt_id)
+        snapshot_ids.add(bundle.authority_snapshot_id)
+        manifest_ids.add(bundle.artifact_manifest_id)
+
+    project_id = native_cycles[0].project_id
+    task_id = native_cycles[0].task_id
+    validate_selected_task_receipt_evidence(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+        review_receipt_ids=review_receipt_ids,
+        review_finding_ids=review_finding_ids,
+        verification_receipt_ids=verification_receipt_ids,
+    )
+    authority = _validated_authority_context(
+        connection,
+        snapshot_ids=snapshot_ids,
+    )
+    manifests, _ = _validate_artifact_manifest_storage(
+        connection,
+        snapshots=authority.snapshots,
+        links=authority.links,
+        manifest_ids=manifest_ids,
+    )
+    manifest_rows = {
+        manifest_id: record.row for manifest_id, record in manifests.items()
+    }
+    reference_rows = _selected_storage_rows_by_ids(
+        connection,
+        table_name="evidence_references",
+        id_field="evidence_reference_id",
+        selected_ids=reference_ids,
+    )
+    references = {
+        str(row["evidence_reference_id"]): row for row in reference_rows
+    }
+    if len(references) != len(reference_rows):
+        raise evidence_ledger_inconsistent()
+
+    for link_id, link in link_rows_by_id.items():
+        criterion_id = link["criterion_id"]
+        reference_id = link["evidence_reference_id"]
+        criterion = authority.criteria.get(str(criterion_id))
+        reference = references.get(str(reference_id))
+        if (
+            CRITERION_EVIDENCE_LINK_ID_PATTERN.fullmatch(link_id) is None
+            or type(criterion_id) is not str
+            or type(reference_id) is not str
+            or type(link["relation"]) is not str
+            or link["relation"] not in CRITERION_EVIDENCE_RELATIONS
+            or link["relation"] == "derived_analysis"
+            or type(link["producer_version"]) is not int
+            or link["producer_version"] <= 0
+            or type(link["created_at"]) is not str
+            or criterion is None
+            or reference is None
+            or criterion["project_id"] != link["project_id"]
+            or criterion["task_id"] != link["task_id"]
+            or reference["project_id"] != link["project_id"]
+            or reference["task_id"] != link["task_id"]
+            or reference["assurance_class"] != link["assurance_class"]
+            or reference["producer_class"] != link["producer_class"]
+            or reference["producer_version"] != link["producer_version"]
+            or not _criterion_link_relation_valid(
+                criterion_kind=criterion["criterion_kind"],
+                source_kind=reference["source_kind"],
+                relation=link["relation"],
+            )
+        ):
+            raise evidence_ledger_inconsistent()
+        try:
+            validate_utc_timestamp(
+                link["created_at"],
+                field="criterion Evidence Link creation time",
+            )
+        except StorageError as exc:
+            raise evidence_ledger_inconsistent() from exc
+
+    verification_rows = _selected_storage_rows_by_ids(
+        connection,
+        table_name="verification_receipts",
+        id_field="verification_receipt_id",
+        selected_ids=verification_receipt_ids,
+    )
+    verification_receipts = {
+        str(row["verification_receipt_id"]): row for row in verification_rows
+    }
+    review_receipts_by_id: dict[str, dict[str, Any]] = {}
+    if review_receipt_ids:
+        for receipt, provenance in _iter_validated_review_receipts_with_provenance(
+            connection,
+            review_receipt_ids,
+        ):
+            review_receipts_by_id[str(receipt["review_receipt_id"])] = {
+                "receipt": dict(receipt),
+                "provenance": provenance,
+            }
+
+    for bundle_id, bundle in prepared_by_id.items():
+        row = bundles_by_id[bundle_id]
+        cycle = cycles_by_bundle[bundle_id]
+        snapshot = authority.snapshots.get(bundle.authority_snapshot_id)
+        manifest = manifest_rows.get(bundle.artifact_manifest_id)
+        if snapshot is None or manifest is None:
+            raise evidence_ledger_inconsistent()
+        _validate_one_completion_evidence_bundle_row(
+            bundle_id=bundle_id,
+            row=row,
+            cycle=cycle,
+            snapshot=snapshot,
+            owner_links=authority.links.get(bundle.authority_snapshot_id, {}),
+            manifest=manifest,
+            verification_receipts=verification_receipts,
+            member_groups=member_groups_by_bundle[bundle_id],
+            links=link_rows_by_id,
+            references=references,
+            finding_rows=findings_by_bundle[bundle_id],
+            runner_generations=runner_generations,
+        )
+        criteria = tuple(
+            dict(authority.criteria[criterion_id])
+            for criterion_id in (
+                authority.links.get(bundle.authority_snapshot_id, {}).get(
+                    "acceptance"
+                ),
+                authority.links.get(bundle.authority_snapshot_id, {}).get(
+                    "verification"
+                ),
+            )
+            if criterion_id is not None
+        )
+        entry_rows = connection.execute(
+            "SELECT * FROM artifact_manifest_entries "
+            "WHERE artifact_manifest_id = ? ORDER BY ordinal",
+            (bundle.artifact_manifest_id,),
+        ).fetchall()
+        ordered_references = tuple(
+            dict(references[member.evidence_reference_id])
+            for member in bundle.members
+            if member.member_kind == "evidence_reference"
+            and member.evidence_reference_id is not None
+        )
+        record = _projection_bundle_record_from_validated_rows(
+            bundle=bundle,
+            cycle=cycle,
+            snapshot=snapshot,
+            criteria=criteria,
+            manifest=manifest,
+            entries=tuple(dict(entry) for entry in entry_rows),
+            references=ordered_references,
+            verification_receipt=(
+                _validate_verification_receipt_row(
+                    dict(verification_receipts[bundle.verification_receipt_id])
+                )
+                if bundle.verification_receipt_id is not None
+                else None
+            ),
+            review_receipts_by_id=review_receipts_by_id,
+            runner_generation=runner_generations.get(
+                (bundle.project_id, bundle.task_id, bundle.target_generation)
+            ),
+        )
+        _validate_projection_bundle_record(record)
+
+
 def _validate_selected_schema21_completion_bundle_history(
     connection: sqlite3.Connection,
     *,
@@ -12772,16 +13254,30 @@ def _validate_selected_schema21_completion_bundle_history(
     ):
         return
     try:
-        _, runner_generations = _validated_verification_runner_graph(connection)
+        runner_generations = _selected_history_runner_generations(
+            connection,
+            cycles=cycles,
+        )
+    except sqlite3.Error as exc:
+        error = evidence_ledger_sqlite_error(exc)
+        if error.code == "database_busy":
+            raise error from exc
+        raise _unreadable_project_state() from exc
     except StorageError as exc:
         if exc.code == "database_busy":
             raise
         raise _unreadable_project_state() from exc
     try:
-        _validated_completion_evidence_projection_bases(
+        _validate_selected_completion_bundle_history(
             connection,
-            _validated_runner_generations=runner_generations,
+            cycles=cycles,
+            runner_generations=runner_generations,
         )
+    except sqlite3.Error as exc:
+        error = evidence_ledger_sqlite_error(exc)
+        if error.code == "database_busy":
+            raise error from exc
+        raise completion_history_inconsistent() from exc
     except StorageError as exc:
         if exc.code == "database_busy":
             raise
@@ -18278,6 +18774,331 @@ def _completion_bundle_version_basis_valid(
     )
 
 
+def _validate_one_completion_evidence_bundle_row(
+    *,
+    bundle_id: str,
+    row: sqlite3.Row | dict[str, Any],
+    cycle: CompletionCycle | None,
+    snapshot: sqlite3.Row | dict[str, Any] | None,
+    owner_links: dict[str, str],
+    manifest: sqlite3.Row | dict[str, Any] | None,
+    verification_receipts: dict[str, sqlite3.Row | dict[str, Any]],
+    member_groups: dict[str, list[sqlite3.Row | dict[str, Any]]],
+    links: dict[str, sqlite3.Row | dict[str, Any]],
+    references: dict[str, sqlite3.Row | dict[str, Any]],
+    finding_rows: list[sqlite3.Row | dict[str, Any]],
+    runner_generations: dict[tuple[str, str, int], dict[str, Any]] | None,
+) -> None:
+    """Validate the semantic closure of one already selected Bundle row."""
+
+    verification_receipt_id = row["verification_receipt_id"]
+    row_fields = set(row.keys())
+    verification_basis_kind = (
+        row["verification_basis_kind"]
+        if "verification_basis_kind" in row_fields
+        else None
+    )
+    verification_runner_observation_id = (
+        row["verification_runner_observation_id"]
+        if "verification_runner_observation_id" in row_fields
+        else None
+    )
+    omission_mask = row["omission_mask"]
+    payload_size = row["payload_size_bytes"]
+    if (
+        COMPLETION_EVIDENCE_BUNDLE_ID_PATTERN.fullmatch(bundle_id) is None
+        or cycle is None
+        or cycle.evidence_basis_version != 1
+        or cycle.completion_evidence_bundle_id != bundle_id
+        or cycle.project_id != row["project_id"]
+        or cycle.task_id != row["task_id"]
+        or cycle.saved_cycle_ordinal != row["cycle_ordinal"]
+        or cycle.contract_revision != row["contract_revision"]
+        or not _completion_bundle_version_basis_valid(
+            source_schema_version=row["source_schema_version"],
+            bundle_version=row["bundle_version"],
+            verification_basis_kind=verification_basis_kind,
+            verification_runner_observation_id=(
+                verification_runner_observation_id
+            ),
+            verification_receipt_id=verification_receipt_id,
+            cycle=cycle,
+        )
+        or snapshot is None
+        or snapshot["project_id"] != row["project_id"]
+        or snapshot["task_id"] != row["task_id"]
+        or snapshot["contract_revision"] != row["contract_revision"]
+        or owner_links.get("acceptance") != row["acceptance_criterion_id"]
+        or owner_links.get("verification") != row["verification_criterion_id"]
+        or manifest is None
+        or manifest["project_id"] != row["project_id"]
+        or manifest["task_id"] != row["task_id"]
+        or manifest["authority_snapshot_id"] != row["authority_snapshot_id"]
+        or manifest["acceptance_criterion_id"]
+        != row["acceptance_criterion_id"]
+        or manifest["verification_criterion_id"]
+        != row["verification_criterion_id"]
+        or (
+            manifest["target_kind"], manifest["target_value"],
+            manifest["target_base_revision"], manifest["target_generation"],
+        )
+        != (
+            row["target_kind"], row["target_value"],
+            row["target_base_revision"], row["target_generation"],
+        )
+        or (
+            cycle.review_target_kind, cycle.review_target_value,
+            cycle.review_target_base_revision,
+            cycle.review_target_generation,
+        )
+        != (
+            row["target_kind"], row["target_value"],
+            row["target_base_revision"], row["target_generation"],
+        )
+        or row["target_capture_version"] != 1
+        or type(row["target_capture_version"]) is not int
+        or type(omission_mask) is not int
+        or not 0 <= omission_mask <= 15
+        or type(row["sealed_at"]) is not str
+        or type(row["bundle_digest"]) is not str
+        or SHA256_DIGEST_PATTERN.fullmatch(row["bundle_digest"]) is None
+        or type(payload_size) is not int
+        or not 1 <= payload_size <= COMPLETION_EVIDENCE_BUNDLE_MAX_BYTES
+    ):
+        raise evidence_ledger_inconsistent()
+    try:
+        validate_utc_timestamp(
+            row["sealed_at"],
+            field="completion Evidence Bundle seal time",
+        )
+    except StorageError as exc:
+        raise evidence_ledger_inconsistent() from exc
+    runner_generation = (
+        runner_generations.get(
+            (
+                str(row["project_id"]),
+                str(row["task_id"]),
+                int(row["target_generation"]),
+            )
+        )
+        if runner_generations is not None
+        else None
+    )
+    resolution = (
+        runner_generation["resolution"] if runner_generation is not None else None
+    )
+    attempt = runner_generation["attempt"] if runner_generation is not None else None
+    observation = (
+        runner_generation["observation"] if runner_generation is not None else None
+    )
+    cleanup = (
+        runner_generation["cleanup_event"] if runner_generation is not None else None
+    )
+    runner_eligibility_one = (
+        resolution is not None and resolution.gate_eligibility_version == 1
+    )
+    if (
+        runner_eligibility_one
+        and row["source_schema_version"] != PRIVATE_SCHEMA21_VERSION
+    ):
+        raise evidence_ledger_inconsistent()
+    runner_identity_matches = (
+        runner_eligibility_one
+        and runner_generation is not None
+        and runner_generation["state"] == "terminal"
+        and attempt is not None
+        and attempt.gate_eligibility_version == 1
+        and observation is not None
+        and observation.gate_eligibility_version == 1
+        and cleanup is not None
+        and cleanup.terminal_observation_id
+        == observation.verification_runner_observation_id
+        and resolution.contract_revision == row["contract_revision"]
+        and resolution.verification_expectation_digest
+        == cycle.verification_expectation_digest
+        and resolution.authority_snapshot_id == row["authority_snapshot_id"]
+        and resolution.verification_criterion_id
+        == row["verification_criterion_id"]
+        and resolution.target_kind == row["target_kind"]
+        and resolution.target_value == row["target_value"]
+        and (resolution.target_base_revision or "") == row["target_base_revision"]
+        and resolution.target_generation == row["target_generation"]
+        and resolution.artifact_manifest_id == row["artifact_manifest_id"]
+    )
+    if verification_basis_kind == "runner_observation":
+        if (
+            verification_receipt_id is not None
+            or type(verification_runner_observation_id) is not str
+            or row["verification_criterion_id"] is None
+        ):
+            raise evidence_ledger_inconsistent()
+        if (
+            not runner_identity_matches
+            or observation.verification_runner_observation_id
+            != verification_runner_observation_id
+            or observation.route != "runner"
+            or observation.launch_state != "launched"
+            or observation.outcome != "pass"
+            or observation.reason is not None
+            or observation.complete_plan != 1
+            or observation.total_step_count != resolution.step_count
+            or observation.completed_step_count != resolution.step_count
+            or observation.failed_step_ordinal is not None
+        ):
+            raise evidence_ledger_inconsistent()
+    elif row["verification_criterion_id"] is None:
+        if runner_eligibility_one or verification_receipt_id is not None:
+            raise evidence_ledger_inconsistent()
+    else:
+        if runner_eligibility_one and (
+            not runner_identity_matches
+            or observation.route != "m21_fallback"
+            or observation.launch_state != "no_launch"
+            or observation.outcome != "blocked_prelaunch"
+            or observation.reason not in {"runtime_unavailable", "process_setup_failed"}
+            or observation.complete_plan != 0
+        ):
+            raise evidence_ledger_inconsistent()
+        receipt = verification_receipts.get(str(verification_receipt_id))
+        if (
+            receipt is None
+            or verification_receipt_id != cycle.verification_receipt_id
+            or receipt["project_id"] != row["project_id"]
+            or receipt["task_id"] != row["task_id"]
+            or receipt["verification_subject_basis_version"] != 1
+            or receipt["subject_authority_snapshot_id"]
+            != row["authority_snapshot_id"]
+            or receipt["subject_verification_criterion_id"]
+            != row["verification_criterion_id"]
+        ):
+            raise evidence_ledger_inconsistent()
+
+    reference_members = member_groups.get("evidence_reference", [])
+    link_members = member_groups.get("criterion_link", [])
+    member_reference_ids = {
+        str(member["evidence_reference_id"]) for member in reference_members
+    }
+    member_link_ids = {
+        str(member["criterion_evidence_link_id"]) for member in link_members
+    }
+    if any(
+        str(links[link_id]["evidence_reference_id"]) not in member_reference_ids
+        for link_id in member_link_ids
+    ):
+        raise evidence_ledger_inconsistent()
+    source_keys = {
+        (
+            str(references[reference_id]["source_kind"]),
+            str(references[reference_id]["source_id"]),
+        ): reference_id
+        for reference_id in member_reference_ids
+    }
+    required_source_keys = {
+        ("artifact_manifest", str(row["artifact_manifest_id"])),
+        ("completion_evidence", cycle.completion_cycle_id),
+        *(
+            ("review_receipt", receipt_id)
+            for receipt_id in cycle.gate_basis.qualifying_receipt_ids
+        ),
+    }
+    if verification_receipt_id is not None:
+        required_source_keys.add(
+            ("verification_receipt", str(verification_receipt_id))
+        )
+    if verification_runner_observation_id is not None:
+        required_source_keys.add(
+            ("runner_observation", str(verification_runner_observation_id))
+        )
+    for finding in finding_rows:
+        if finding["evidence_reference_id"] is not None:
+            required_source_keys.add(
+                ("review_finding", str(finding["review_finding_id"]))
+            )
+    if set(source_keys) != required_source_keys:
+        raise evidence_ledger_inconsistent()
+
+    expected_links: set[tuple[str, str, str]] = set()
+    acceptance_id = row["acceptance_criterion_id"]
+    verification_id = row["verification_criterion_id"]
+    current_finding_source_ids = {
+        str(finding["review_finding_id"])
+        for finding in finding_rows
+        if (
+            finding["evidence_reference_id"] is not None
+            and finding["target_generation"] == cycle.review_target_generation
+        )
+    }
+    if acceptance_id is not None:
+        for source_kind, source_id in required_source_keys:
+            if (
+                source_kind == "review_finding"
+                and source_id not in current_finding_source_ids
+            ):
+                continue
+            relation = {
+                "artifact_manifest": "completion_basis",
+                "completion_evidence": "completion_basis",
+                "review_receipt": "review_assessment",
+                "review_finding": "review_finding",
+            }.get(source_kind)
+            if relation is not None:
+                expected_links.add(
+                    (
+                        str(acceptance_id),
+                        source_keys[(source_kind, source_id)],
+                        relation,
+                    )
+                )
+    if verification_id is not None and verification_receipt_id is not None:
+        expected_links.add(
+            (
+                str(verification_id),
+                source_keys[("verification_receipt", str(verification_receipt_id))],
+                "verification_attestation",
+            )
+        )
+    if verification_id is not None and verification_runner_observation_id is not None:
+        expected_links.add(
+            (
+                str(verification_id),
+                source_keys[
+                    ("runner_observation", str(verification_runner_observation_id))
+                ],
+                "runner_observation",
+            )
+        )
+    actual_links = {
+        (
+            str(links[link_id]["criterion_id"]),
+            str(links[link_id]["evidence_reference_id"]),
+            str(links[link_id]["relation"]),
+        )
+        for link_id in member_link_ids
+    }
+    if actual_links != expected_links:
+        raise evidence_ledger_inconsistent()
+
+    expected_omission_mask = 0
+    if acceptance_id is None:
+        expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
+            "acceptance_criterion_absent"
+        ]
+    if verification_id is None:
+        expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
+            "verification_criterion_absent"
+        ]
+    if manifest["omission_code"] == "artifact_content_not_observed":
+        expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
+            "artifact_content_not_observed"
+        ]
+    if any(finding["evidence_reference_id"] is None for finding in finding_rows):
+        expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
+            "historical_finding_reference_absent"
+        ]
+    if omission_mask != expected_omission_mask:
+        raise evidence_ledger_inconsistent()
+
+
 def _validate_completion_evidence_bundle_rows(
     connection: sqlite3.Connection,
     *,
@@ -18520,335 +19341,23 @@ def _validate_completion_evidence_bundle_rows(
         raise evidence_ledger_inconsistent()
 
     for bundle_id, row in bundles.items():
-        cycle = cycles.get(str(row["completion_cycle_id"]))
-        snapshot = snapshots.get(str(row["authority_snapshot_id"]))
-        manifest = manifests.get(str(row["artifact_manifest_id"]))
-        owner_links = snapshot_links.get(str(row["authority_snapshot_id"]), {})
-        verification_receipt_id = row["verification_receipt_id"]
-        row_fields = set(row.keys())
-        verification_basis_kind = (
-            row["verification_basis_kind"]
-            if "verification_basis_kind" in row_fields
-            else None
-        )
-        verification_runner_observation_id = (
-            row["verification_runner_observation_id"]
-            if "verification_runner_observation_id" in row_fields
-            else None
-        )
-        omission_mask = row["omission_mask"]
-        payload_size = row["payload_size_bytes"]
-        if (
-            COMPLETION_EVIDENCE_BUNDLE_ID_PATTERN.fullmatch(bundle_id) is None
-            or cycle is None
-            or cycle.evidence_basis_version != 1
-            or cycle.completion_evidence_bundle_id != bundle_id
-            or cycle.project_id != row["project_id"]
-            or cycle.task_id != row["task_id"]
-            or cycle.saved_cycle_ordinal != row["cycle_ordinal"]
-            or cycle.contract_revision != row["contract_revision"]
-            or not _completion_bundle_version_basis_valid(
-                source_schema_version=row["source_schema_version"],
-                bundle_version=row["bundle_version"],
-                verification_basis_kind=verification_basis_kind,
-                verification_runner_observation_id=(
-                    verification_runner_observation_id
-                ),
-                verification_receipt_id=verification_receipt_id,
-                cycle=cycle,
-            )
-            or snapshot is None
-            or snapshot["project_id"] != row["project_id"]
-            or snapshot["task_id"] != row["task_id"]
-            or snapshot["contract_revision"] != row["contract_revision"]
-            or owner_links.get("acceptance") != row["acceptance_criterion_id"]
-            or owner_links.get("verification") != row["verification_criterion_id"]
-            or manifest is None
-            or manifest["project_id"] != row["project_id"]
-            or manifest["task_id"] != row["task_id"]
-            or manifest["authority_snapshot_id"] != row["authority_snapshot_id"]
-            or manifest["acceptance_criterion_id"]
-            != row["acceptance_criterion_id"]
-            or manifest["verification_criterion_id"]
-            != row["verification_criterion_id"]
-            or (
-                manifest["target_kind"], manifest["target_value"],
-                manifest["target_base_revision"], manifest["target_generation"],
-            )
-            != (
-                row["target_kind"], row["target_value"],
-                row["target_base_revision"], row["target_generation"],
-            )
-            or (
-                cycle.review_target_kind, cycle.review_target_value,
-                cycle.review_target_base_revision,
-                cycle.review_target_generation,
-            )
-            != (
-                row["target_kind"], row["target_value"],
-                row["target_base_revision"], row["target_generation"],
-            )
-            or row["target_capture_version"] != 1
-            or type(row["target_capture_version"]) is not int
-            or type(omission_mask) is not int
-            or not 0 <= omission_mask <= 15
-            or type(row["sealed_at"]) is not str
-            or type(row["bundle_digest"]) is not str
-            or SHA256_DIGEST_PATTERN.fullmatch(row["bundle_digest"]) is None
-            or type(payload_size) is not int
-            or not 1 <= payload_size <= COMPLETION_EVIDENCE_BUNDLE_MAX_BYTES
-        ):
-            raise evidence_ledger_inconsistent()
-        try:
-            validate_utc_timestamp(
-                row["sealed_at"],
-                field="completion Evidence Bundle seal time",
-            )
-        except StorageError as exc:
-            raise evidence_ledger_inconsistent() from exc
-        runner_generation = (
-            _validated_runner_generations.get(
-                (
-                    str(row["project_id"]),
-                    str(row["task_id"]),
-                    int(row["target_generation"]),
-                )
-            )
-            if _validated_runner_generations is not None
-            else None
-        )
-        resolution = (
-            runner_generation["resolution"]
-            if runner_generation is not None
-            else None
-        )
-        attempt = (
-            runner_generation["attempt"] if runner_generation is not None else None
-        )
-        observation = (
-            runner_generation["observation"]
-            if runner_generation is not None
-            else None
-        )
-        cleanup = (
-            runner_generation["cleanup_event"]
-            if runner_generation is not None
-            else None
-        )
-        runner_eligibility_one = (
-            resolution is not None and resolution.gate_eligibility_version == 1
-        )
-        if (
-            runner_eligibility_one
-            and row["source_schema_version"] != PRIVATE_SCHEMA21_VERSION
-        ):
-            raise evidence_ledger_inconsistent()
-        runner_identity_matches = (
-            runner_eligibility_one
-            and runner_generation is not None
-            and runner_generation["state"] == "terminal"
-            and attempt is not None
-            and attempt.gate_eligibility_version == 1
-            and observation is not None
-            and observation.gate_eligibility_version == 1
-            and cleanup is not None
-            and cleanup.terminal_observation_id
-            == observation.verification_runner_observation_id
-            and resolution.contract_revision == row["contract_revision"]
-            and resolution.verification_expectation_digest
-            == cycle.verification_expectation_digest
-            and resolution.authority_snapshot_id == row["authority_snapshot_id"]
-            and resolution.verification_criterion_id
-            == row["verification_criterion_id"]
-            and resolution.target_kind == row["target_kind"]
-            and resolution.target_value == row["target_value"]
-            and (resolution.target_base_revision or "")
-            == row["target_base_revision"]
-            and resolution.target_generation == row["target_generation"]
-            and resolution.artifact_manifest_id == row["artifact_manifest_id"]
-        )
-        if verification_basis_kind == "runner_observation":
-            if (
-                verification_receipt_id is not None
-                or type(verification_runner_observation_id) is not str
-                or row["verification_criterion_id"] is None
-            ):
-                raise evidence_ledger_inconsistent()
-            if (
-                not runner_identity_matches
-                or observation.verification_runner_observation_id
-                != verification_runner_observation_id
-                or observation.route != "runner"
-                or observation.launch_state != "launched"
-                or observation.outcome != "pass"
-                or observation.reason is not None
-                or observation.complete_plan != 1
-                or observation.total_step_count != resolution.step_count
-                or observation.completed_step_count != resolution.step_count
-                or observation.failed_step_ordinal is not None
-            ):
-                raise evidence_ledger_inconsistent()
-        elif row["verification_criterion_id"] is None:
-            if runner_eligibility_one or verification_receipt_id is not None:
-                raise evidence_ledger_inconsistent()
-        else:
-            if runner_eligibility_one and (
-                not runner_identity_matches
-                or observation.route != "m21_fallback"
-                or observation.launch_state != "no_launch"
-                or observation.outcome != "blocked_prelaunch"
-                or observation.reason
-                not in {"runtime_unavailable", "process_setup_failed"}
-                or observation.complete_plan != 0
-            ):
-                raise evidence_ledger_inconsistent()
-            receipt = verification_receipts.get(str(verification_receipt_id))
-            if (
-                receipt is None
-                or verification_receipt_id != cycle.verification_receipt_id
-                or receipt["project_id"] != row["project_id"]
-                or receipt["task_id"] != row["task_id"]
-                or receipt["verification_subject_basis_version"] != 1
-                or receipt["subject_authority_snapshot_id"]
-                != row["authority_snapshot_id"]
-                or receipt["subject_verification_criterion_id"]
-                != row["verification_criterion_id"]
-            ):
-                raise evidence_ledger_inconsistent()
-
-        member_groups = members_by_bundle.get(bundle_id, {})
-        reference_members = member_groups.get("evidence_reference", [])
-        link_members = member_groups.get("criterion_link", [])
-        member_reference_ids = {
-            str(member["evidence_reference_id"])
-            for member in reference_members
-        }
-        member_link_ids = {
-            str(member["criterion_evidence_link_id"])
-            for member in link_members
-        }
-        if any(
-            str(links[link_id]["evidence_reference_id"])
-            not in member_reference_ids
-            for link_id in member_link_ids
-        ):
-            raise evidence_ledger_inconsistent()
-        source_keys = {
-            (str(references[reference_id]["source_kind"]),
-             str(references[reference_id]["source_id"])): reference_id
-            for reference_id in member_reference_ids
-        }
-        required_source_keys = {
-            ("artifact_manifest", str(row["artifact_manifest_id"])),
-            ("completion_evidence", cycle.completion_cycle_id),
-            *(
-                ("review_receipt", receipt_id)
-                for receipt_id in cycle.gate_basis.qualifying_receipt_ids
+        _validate_one_completion_evidence_bundle_row(
+            bundle_id=bundle_id,
+            row=row,
+            cycle=cycles.get(str(row["completion_cycle_id"])),
+            snapshot=snapshots.get(str(row["authority_snapshot_id"])),
+            owner_links=snapshot_links.get(
+                str(row["authority_snapshot_id"]),
+                {},
             ),
-        }
-        if verification_receipt_id is not None:
-            required_source_keys.add(
-                ("verification_receipt", str(verification_receipt_id))
-            )
-        if verification_runner_observation_id is not None:
-            required_source_keys.add(
-                (
-                    "runner_observation",
-                    str(verification_runner_observation_id),
-                )
-            )
-        finding_rows = snapshots_by_bundle.get(bundle_id, [])
-        for finding in finding_rows:
-            if finding["evidence_reference_id"] is not None:
-                required_source_keys.add(
-                    ("review_finding", str(finding["review_finding_id"]))
-                )
-        if set(source_keys) != required_source_keys:
-            raise evidence_ledger_inconsistent()
-
-        expected_links: set[tuple[str, str, str]] = set()
-        acceptance_id = row["acceptance_criterion_id"]
-        verification_id = row["verification_criterion_id"]
-        current_finding_source_ids = {
-            str(finding["review_finding_id"])
-            for finding in finding_rows
-            if (
-                finding["evidence_reference_id"] is not None
-                and finding["target_generation"]
-                == cycle.review_target_generation
-            )
-        }
-        if acceptance_id is not None:
-            for source_kind, source_id in required_source_keys:
-                if (
-                    source_kind == "review_finding"
-                    and source_id not in current_finding_source_ids
-                ):
-                    continue
-                relation = {
-                    "artifact_manifest": "completion_basis",
-                    "completion_evidence": "completion_basis",
-                    "review_receipt": "review_assessment",
-                    "review_finding": "review_finding",
-                }.get(source_kind)
-                if relation is not None:
-                    expected_links.add(
-                        (str(acceptance_id), source_keys[(source_kind, source_id)], relation)
-                    )
-        if verification_id is not None and verification_receipt_id is not None:
-            expected_links.add(
-                (
-                    str(verification_id),
-                    source_keys[("verification_receipt", str(verification_receipt_id))],
-                    "verification_attestation",
-                )
-            )
-        if verification_id is not None and verification_runner_observation_id is not None:
-            expected_links.add(
-                (
-                    str(verification_id),
-                    source_keys[
-                        (
-                            "runner_observation",
-                            str(verification_runner_observation_id),
-                        )
-                    ],
-                    "runner_observation",
-                )
-            )
-        actual_links = {
-            (
-                str(links[link_id]["criterion_id"]),
-                str(links[link_id]["evidence_reference_id"]),
-                str(links[link_id]["relation"]),
-            )
-            for link_id in member_link_ids
-        }
-        if actual_links != expected_links:
-            raise evidence_ledger_inconsistent()
-
-        expected_omission_mask = 0
-        if acceptance_id is None:
-            expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
-                "acceptance_criterion_absent"
-            ]
-        if verification_id is None:
-            expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
-                "verification_criterion_absent"
-            ]
-        if manifest["omission_code"] == "artifact_content_not_observed":
-            expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
-                "artifact_content_not_observed"
-            ]
-        if any(
-            finding["evidence_reference_id"] is None
-            for finding in finding_rows
-        ):
-            expected_omission_mask |= COMPLETION_BUNDLE_OMISSION_BITS[
-                "historical_finding_reference_absent"
-            ]
-        if omission_mask != expected_omission_mask:
-            raise evidence_ledger_inconsistent()
+            manifest=manifests.get(str(row["artifact_manifest_id"])),
+            verification_receipts=verification_receipts,
+            member_groups=members_by_bundle.get(bundle_id, {}),
+            links=links,
+            references=references,
+            finding_rows=snapshots_by_bundle.get(bundle_id, []),
+            runner_generations=_validated_runner_generations,
+        )
 
     for cycle in cycles.values():
         if cycle.evidence_basis_version == 1:
@@ -19996,7 +20505,12 @@ def read_current_verification_runner_target_basis(
         or type(target_generation) is not int
         or target_generation < 1
         or target_capture_version != 1
-        or task["review_target_runner_basis_version"] != 0
+        or type(task["review_target_runner_basis_version"]) is not int
+        or task["review_target_runner_basis_version"] not in {0, 2}
+        or (
+            task["review_target_runner_basis_version"] == 2
+            and current_schema_version(connection) != PRIVATE_SCHEMA21_VERSION
+        )
         or manifest["target_kind"] != target_kind
         or manifest["target_value"] != target_value
         or manifest["target_base_revision"] != target_base_revision
@@ -20016,7 +20530,9 @@ def read_current_verification_runner_target_basis(
         "target_generation": target_generation,
         "target_capture_version": target_capture_version,
         "artifact_manifest_id": manifest_id,
-        "gate_eligibility_version": 0,
+        "gate_eligibility_version": (
+            1 if task["review_target_runner_basis_version"] == 2 else 0
+        ),
     }
 
 
@@ -20104,6 +20620,210 @@ def read_verification_runner_generation_locked(
     )
 
 
+def _verification_runner_gate_storage_token(
+    *,
+    marker: int,
+    basis_matches: bool,
+    generation: dict[str, Any],
+    reference: dict[str, Any] | None,
+    criterion_link: dict[str, Any] | None,
+) -> tuple[object, ...]:
+    resolution = generation["resolution"]
+    attempt = generation["attempt"]
+    observation = generation["observation"]
+    cleanup = generation["cleanup_event"]
+    return (
+        marker,
+        generation["state"],
+        basis_matches,
+        resolution.verification_runner_resolution_id,
+        resolution.idempotency_digest,
+        attempt.verification_runner_attempt_id,
+        attempt.attempt_digest,
+        (
+            observation.verification_runner_observation_id
+            if observation is not None
+            else None
+        ),
+        observation.sanitized_result_digest if observation is not None else None,
+        (
+            cleanup.verification_runner_sandbox_event_id
+            if cleanup is not None
+            else None
+        ),
+        cleanup.event_digest if cleanup is not None else None,
+        reference["evidence_reference_id"] if reference is not None else None,
+        reference["digest"] if reference is not None else None,
+        (
+            criterion_link["criterion_evidence_link_id"]
+            if criterion_link is not None
+            else None
+        ),
+        criterion_link["relation"] if criterion_link is not None else None,
+    )
+
+
+def _read_current_verification_runner_gate_snapshot(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+) -> dict[str, Any]:
+    """Return validated current Runner graph facts without selecting an outcome."""
+
+    if (
+        current_schema_version(connection) != PRIVATE_SCHEMA21_VERSION
+        or type(project_id) is not str
+        or not project_id
+        or type(task_id) is not str
+        or not task_id
+    ):
+        raise evidence_ledger_inconsistent()
+    task = _read_validated_current_task_row(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+    )
+    if task is None:
+        raise evidence_ledger_inconsistent()
+    marker = task["review_target_runner_basis_version"]
+    target_generation = task["review_target_generation"]
+    if marker != 2 or type(target_generation) is not int or target_generation < 1:
+        raise evidence_ledger_inconsistent()
+    generation_key = (project_id, task_id, target_generation)
+    _references, generations = _validated_verification_runner_graph(
+        connection,
+        selected_generation=generation_key,
+        selected_task=task,
+    )
+    generation = generations.get(generation_key)
+    if generation is None:
+        raise evidence_ledger_inconsistent()
+    resolution = generation["resolution"]
+    manifest = connection.execute(
+        "SELECT acceptance_criterion_id FROM artifact_manifests "
+        "WHERE project_id = ? AND task_id = ? AND artifact_manifest_id = ?",
+        (project_id, task_id, resolution.artifact_manifest_id),
+    ).fetchone()
+    if manifest is None:
+        raise evidence_ledger_inconsistent()
+    current_basis = read_current_verification_runner_target_basis(
+        connection,
+        project_id=project_id,
+        task_id=task_id,
+    )
+    expected_basis = _verification_runner_current_basis_for_resolution(
+        resolution,
+        acceptance_criterion_id=manifest["acceptance_criterion_id"],
+    )
+    basis_matches = current_basis == expected_basis
+
+    observation = generation["observation"]
+    reference: dict[str, Any] | None = None
+    criterion_link: dict[str, Any] | None = None
+    if observation is not None:
+        reference_rows = connection.execute(
+            "SELECT * FROM evidence_references "
+            "WHERE project_id = ? AND task_id = ? "
+            "AND source_kind = 'runner_observation' AND source_id = ? "
+            "ORDER BY evidence_reference_id LIMIT 2",
+            (
+                project_id,
+                task_id,
+                observation.verification_runner_observation_id,
+            ),
+        ).fetchall()
+        if len(reference_rows) != 1:
+            raise evidence_ledger_inconsistent()
+        reference = dict(reference_rows[0])
+        link_rows = connection.execute(
+            "SELECT * FROM criterion_evidence_links "
+            "WHERE project_id = ? AND task_id = ? "
+            "AND relation = 'runner_observation' "
+            "AND evidence_reference_id = ? "
+            "ORDER BY criterion_evidence_link_id LIMIT 2",
+            (project_id, task_id, reference["evidence_reference_id"]),
+        ).fetchall()
+        if len(link_rows) != 1:
+            raise evidence_ledger_inconsistent()
+        criterion_link = dict(link_rows[0])
+
+    storage_token = _verification_runner_gate_storage_token(
+        marker=marker,
+        basis_matches=basis_matches,
+        generation=generation,
+        reference=reference,
+        criterion_link=criterion_link,
+    )
+    return {
+        "marker": marker,
+        "target_generation": target_generation,
+        "basis_matches": basis_matches,
+        "state": generation["state"],
+        "resolution": resolution,
+        "attempt": generation["attempt"],
+        "observation": observation,
+        "cleanup_event": generation["cleanup_event"],
+        "reference": reference,
+        "criterion_link": criterion_link,
+        "storage_token": storage_token,
+    }
+
+
+def read_current_verification_runner_gate_snapshot(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    task_id: str,
+) -> dict[str, Any]:
+    """Return one exact graph or the established unreadable-state failure."""
+
+    try:
+        return _read_current_verification_runner_gate_snapshot(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+        )
+    except StorageError as exc:
+        if exc.code in {"database_busy", "project_state_unreadable"}:
+            raise
+        raise _unreadable_project_state() from exc
+
+
+def require_current_verification_runner_selection(
+    connection: sqlite3.Connection,
+    *,
+    selection: Any,
+) -> dict[str, Any]:
+    """Revalidate the DB half of one service-owned selection."""
+
+    from task_governance_tool.verification_runner import (
+        VerificationRunnerGateSelection,
+    )
+
+    if not isinstance(selection, VerificationRunnerGateSelection):
+        raise evidence_ledger_inconsistent()
+    snapshot = read_current_verification_runner_gate_snapshot(
+        connection,
+        project_id=selection.project_id,
+        task_id=selection.task_id,
+    )
+    observation = snapshot["observation"]
+    observation_id = (
+        observation.verification_runner_observation_id
+        if observation is not None
+        else None
+    )
+    if (
+        not snapshot["basis_matches"]
+        or snapshot["target_generation"] != selection.target_generation
+        or snapshot["storage_token"] != selection.storage_token
+        or observation_id != selection.verification_runner_observation_id
+    ):
+        raise verification_runner_state_invalid()
+    return snapshot
+
+
 def read_pending_verification_runner_cleanup(
     connection: sqlite3.Connection,
     *,
@@ -20126,7 +20846,7 @@ def read_pending_verification_runner_cleanup(
         "AND cleanup.task_id = resolution.task_id "
         "AND cleanup.target_generation = resolution.target_generation "
         "WHERE resolution.project_id = ? "
-        "AND resolution.gate_eligibility_version = 0 "
+        "AND resolution.gate_eligibility_version IN (0, 1) "
         "AND observation.verification_runner_observation_id IS NULL "
         "AND cleanup.verification_runner_sandbox_event_id IS NULL "
         "ORDER BY resolution.task_id, resolution.target_generation",
@@ -20252,11 +20972,11 @@ def insert_verification_runner_resolution_locked(
         or resolution.target_generation != attempt.target_generation
         or resolution.verification_runner_resolution_id
         != attempt.verification_runner_resolution_id
-        or resolution.gate_eligibility_version != 0
-        or attempt.gate_eligibility_version != 0
+        or resolution.gate_eligibility_version not in {0, 1}
+        or attempt.gate_eligibility_version
+        != resolution.gate_eligibility_version
     ):
         raise evidence_ledger_inconsistent()
-    _validated_verification_runner_references(connection)
     existing = _read_verification_runner_generation_unvalidated(
         connection,
         project_id=resolution.project_id,
@@ -20276,11 +20996,24 @@ def insert_verification_runner_resolution_locked(
             != attempt_values
         ):
             raise evidence_ledger_inconsistent()
+        _validated_verification_runner_references(connection)
         return False
-    if read_pending_verification_runner_cleanup(
-        connection,
-        project_id=resolution.project_id,
-    ):
+    pending = connection.execute(
+        "SELECT 1 FROM verification_runner_resolutions AS existing "
+        "LEFT JOIN verification_runner_observations AS observation "
+        "ON observation.project_id = existing.project_id "
+        "AND observation.task_id = existing.task_id "
+        "AND observation.target_generation = existing.target_generation "
+        "LEFT JOIN verification_runner_sandbox_events AS cleanup "
+        "ON cleanup.project_id = existing.project_id "
+        "AND cleanup.task_id = existing.task_id "
+        "AND cleanup.target_generation = existing.target_generation "
+        "WHERE existing.project_id = ? "
+        "AND observation.verification_runner_observation_id IS NULL "
+        "AND cleanup.verification_runner_sandbox_event_id IS NULL LIMIT 1",
+        (resolution.project_id,),
+    ).fetchone()
+    if pending is not None:
         raise evidence_ledger_inconsistent()
     current = read_current_verification_runner_target_basis(
         connection,
@@ -20420,7 +21153,8 @@ def persist_verification_runner_terminal_locked(
         != observation.verification_runner_observation_id
         or attempt.verification_runner_attempt_id
         != observation.verification_runner_attempt_id
-        or observation.gate_eligibility_version != 0
+        or observation.gate_eligibility_version
+        != resolution.gate_eligibility_version
     ):
         raise evidence_ledger_inconsistent()
     if not _verification_runner_current_basis_matches(
@@ -20489,9 +21223,10 @@ def persist_verification_runner_restart_cleanup_locked(
     if generation is None:
         raise evidence_ledger_inconsistent()
     if (
-        generation["resolution"].gate_eligibility_version != 0
+        generation["resolution"].gate_eligibility_version not in {0, 1}
         or generation["attempt"] is None
-        or generation["attempt"].gate_eligibility_version != 0
+        or generation["attempt"].gate_eligibility_version
+        != generation["resolution"].gate_eligibility_version
     ):
         raise evidence_ledger_inconsistent()
     if generation["state"] == "restart_cleaned":
@@ -20539,7 +21274,6 @@ def _validate_prepared_completion_bundle(
         is None
         or bundle.completion_evidence_bundle_id
         != expected_cycle.completion_evidence_bundle_id
-        or bundle.verification_basis_kind == "runner_observation"
         or bundle.project_id != expected_cycle.project_id
         or bundle.task_id != expected_cycle.task_id
         or bundle.completion_cycle_id != expected_cycle.completion_cycle_id
@@ -20611,7 +21345,6 @@ def _validate_prepared_completion_bundle(
             not isinstance(link, PreparedCriterionEvidenceLink)
             or link.project_id != bundle.project_id
             or link.task_id != bundle.task_id
-            or link.relation == "runner_observation"
             or link.criterion_evidence_link_id in link_ids
         ):
             raise evidence_ledger_inconsistent()
@@ -20671,8 +21404,10 @@ def _validate_prepared_completion_bundle(
             != bundle.completion_evidence_bundle_id
             or type(finding.ordinal) is not int
             or finding.ordinal != ordinal
+            or type(finding.review_finding_id) is not str
             or REVIEW_FINDING_ID_PATTERN.fullmatch(finding.review_finding_id)
             is None
+            or type(finding.review_receipt_id) is not str
             or REVIEW_RECEIPT_ID_PATTERN.fullmatch(finding.review_receipt_id)
             is None
             or finding.review_finding_id in finding_ids
@@ -20701,6 +21436,7 @@ def _validate_prepared_completion_bundle(
             )
             or type(finding.producer_version) is not int
             or finding.producer_version != 1
+            or type(finding.digest) is not str
             or SHA256_DIGEST_PATTERN.fullmatch(finding.digest) is None
             or (
                 finding.evidence_reference_id is None
@@ -20712,7 +21448,8 @@ def _validate_prepared_completion_bundle(
             or (
                 finding.evidence_reference_id is not None
                 and (
-                    EVIDENCE_REFERENCE_ID_PATTERN.fullmatch(
+                    type(finding.evidence_reference_id) is not str
+                    or EVIDENCE_REFERENCE_ID_PATTERN.fullmatch(
                         finding.evidence_reference_id
                     )
                     is None
@@ -20781,6 +21518,11 @@ def _prepared_projection_bundle_record_locked(
             if basis.verification_reference is not None
             else ()
         ),
+        *(
+            (dict(basis.runner_reference),)
+            if basis.runner_reference is not None
+            else ()
+        ),
         *(dict(value) for value in basis.review_references),
         *(
             dict(value)
@@ -20805,7 +21547,11 @@ def _prepared_projection_bundle_record_locked(
             if basis.verification_receipt is not None
             else None
         ),
-        runner_observation=None,
+        runner_observation=(
+            dict(basis.runner_observation)
+            if basis.runner_observation is not None
+            else None
+        ),
         review_receipts=tuple(
             {
                 "receipt": dict(value["receipt"]),
@@ -20828,11 +21574,6 @@ def persist_completion_evidence_bundle_locked(
     _require_evidence_writer(connection)
     if bundle.source_schema_version != current_schema_version(connection):
         raise evidence_ledger_inconsistent()
-    _require_m21_completion_writer_marker_locked(
-        connection,
-        project_id=bundle.project_id,
-        task_id=bundle.task_id,
-    )
     _validate_prepared_completion_bundle(bundle, expected_cycle=expected_cycle)
     try:
         for link in bundle.criterion_links:
@@ -21323,7 +22064,109 @@ def read_native_completion_bundle_basis_locked(
 
     verification_receipt: dict[str, Any] | None = None
     verification_reference: dict[str, Any] | None = None
-    if cycle.verification_receipt_id is not None:
+    runner_observation: dict[str, Any] | None = None
+    runner_reference: dict[str, Any] | None = None
+    runner_criterion_link: dict[str, Any] | None = None
+    if cycle.verification_basis_kind == "runner_observation":
+        from task_governance_tool.verification_runner import (
+            runner_observation_source_projection,
+        )
+
+        observation_id = cycle.verification_runner_observation_id
+        runner_generation_key = (
+            project_id,
+            task_id,
+            cycle.review_target_generation,
+        )
+        _runner_references, runner_generations = (
+            _validated_verification_runner_graph(
+                connection,
+                selected_generation=runner_generation_key,
+                selected_task=locked,
+            )
+        )
+        runner_generation = runner_generations.get(runner_generation_key)
+        resolution = (
+            runner_generation["resolution"]
+            if runner_generation is not None
+            else None
+        )
+        observation = (
+            runner_generation["observation"]
+            if runner_generation is not None
+            else None
+        )
+        if (
+            type(observation_id) is not str
+            or runner_generation is None
+            or runner_generation["state"] != "terminal"
+            or resolution is None
+            or observation is None
+            or resolution.gate_eligibility_version != 1
+            or observation.gate_eligibility_version != 1
+            or observation.verification_runner_observation_id
+            != observation_id
+            or resolution.contract_revision != cycle.contract_revision
+            or resolution.authority_snapshot_id != snapshot_id
+            or resolution.verification_criterion_id
+            != criterion_bindings.get("verification")
+            or resolution.artifact_manifest_id != manifest_id
+            or (
+                resolution.target_kind,
+                resolution.target_value,
+                resolution.target_base_revision or "",
+                resolution.target_generation,
+            )
+            != (
+                cycle.review_target_kind,
+                cycle.review_target_value,
+                cycle.review_target_base_revision,
+                cycle.review_target_generation,
+            )
+        ):
+            raise evidence_ledger_inconsistent()
+        resolution_row = connection.execute(
+            "SELECT * FROM verification_runner_resolutions "
+            "WHERE verification_runner_resolution_id = ?",
+            (resolution.verification_runner_resolution_id,),
+        ).fetchone()
+        observation_row = connection.execute(
+            "SELECT * FROM verification_runner_observations "
+            "WHERE verification_runner_observation_id = ?",
+            (observation_id,),
+        ).fetchone()
+        if resolution_row is None or observation_row is None:
+            raise evidence_ledger_inconsistent()
+        runner_observation = runner_observation_source_projection(
+            observation=dict(observation_row),
+            resolution=dict(resolution_row),
+        )
+        runner_reference = _completion_basis_reference(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+            source_kind="runner_observation",
+            source_id=observation_id,
+        )
+        if runner_reference is None:
+            raise evidence_ledger_inconsistent()
+        link_rows = connection.execute(
+            "SELECT * FROM criterion_evidence_links "
+            "WHERE project_id = ? AND task_id = ? "
+            "AND criterion_id = ? AND evidence_reference_id = ? "
+            "AND relation = 'runner_observation' "
+            "ORDER BY criterion_evidence_link_id LIMIT 2",
+            (
+                project_id,
+                task_id,
+                resolution.verification_criterion_id,
+                runner_reference["evidence_reference_id"],
+            ),
+        ).fetchall()
+        if len(link_rows) != 1:
+            raise evidence_ledger_inconsistent()
+        runner_criterion_link = dict(link_rows[0])
+    elif cycle.verification_receipt_id is not None:
         stored_verification = connection.execute(
             "SELECT * FROM verification_receipts "
             "WHERE verification_receipt_id = ?",
@@ -21537,6 +22380,9 @@ def read_native_completion_bundle_basis_locked(
         artifact_reference=artifact_reference,
         verification_receipt=verification_receipt,
         verification_reference=verification_reference,
+        runner_observation=runner_observation,
+        runner_reference=runner_reference,
+        runner_criterion_link=runner_criterion_link,
         review_receipts=tuple(review_receipts),
         review_references=tuple(review_references),
         findings=tuple(findings),
@@ -21559,6 +22405,94 @@ def _fetch_bounded_projection_rows(
         if maximum is not None and len(rows) > maximum:
             raise evidence_ledger_inconsistent()
     return rows
+
+
+def _projection_bundle_record_from_validated_rows(
+    *,
+    bundle: PreparedCompletionEvidenceBundle,
+    cycle: CompletionCycle,
+    snapshot: sqlite3.Row | dict[str, Any],
+    criteria: tuple[dict[str, Any], ...],
+    manifest: sqlite3.Row | dict[str, Any],
+    entries: tuple[dict[str, Any], ...],
+    references: tuple[dict[str, Any], ...],
+    verification_receipt: dict[str, Any] | None,
+    review_receipts_by_id: dict[str, dict[str, Any]],
+    runner_generation: dict[str, Any] | None,
+) -> ProjectionBundleRecord:
+    """Assemble one projection record from an already validated Bundle graph."""
+
+    verification_projection: dict[str, Any] | None = None
+    if bundle.verification_receipt_id is not None:
+        if verification_receipt is None:
+            raise evidence_ledger_inconsistent()
+        verification_projection = {
+            "verification_receipt_id": bundle.verification_receipt_id,
+            "verification_subject": {
+                "basis_version": 1,
+                "kind": "task_verification_criterion",
+                "authority_snapshot_id": bundle.authority_snapshot_id,
+                "verification_criterion_id": bundle.verification_criterion_id,
+            },
+            "result": verification_receipt["result"],
+            "duration_ms": verification_receipt["duration_ms"],
+            "scope_coverage": verification_receipt["scope_coverage"],
+            "created_at": verification_receipt["created_at"],
+        }
+    elif verification_receipt is not None:
+        raise evidence_ledger_inconsistent()
+
+    ordered_reviews = tuple(
+        review_receipts_by_id[receipt_id]
+        for receipt_id in cycle.gate_basis.qualifying_receipt_ids
+    )
+    runner_observation: dict[str, Any] | None = None
+    if bundle.verification_runner_observation_id is not None:
+        from task_governance_tool.verification_runner import (
+            runner_observation_source_projection,
+        )
+
+        if (
+            runner_generation is None
+            or runner_generation["state"] != "terminal"
+            or runner_generation["observation"] is None
+            or runner_generation[
+                "observation"
+            ].verification_runner_observation_id
+            != bundle.verification_runner_observation_id
+        ):
+            raise evidence_ledger_inconsistent()
+        runner_observation = runner_observation_source_projection(
+            observation=_verification_runner_value_dict(
+                runner_generation["observation"],
+                VerificationRunnerObservation,
+            ),
+            resolution=_verification_runner_value_dict(
+                runner_generation["resolution"],
+                VerificationRunnerResolution,
+            ),
+        )
+
+    return ProjectionBundleRecord(
+        bundle=bundle,
+        cycle=cycle,
+        task={
+            "task_id": bundle.task_id,
+            "title": snapshot["task_title"],
+            "description": snapshot["task_description"],
+            "review_tier": snapshot["review_tier"],
+            "verification": snapshot["verification"],
+        },
+        authority_snapshot=dict(snapshot),
+        criteria=criteria,
+        artifact_manifest=dict(manifest),
+        artifact_entries=entries,
+        evidence_references=references,
+        verification_receipt=verification_projection,
+        runner_observation=runner_observation,
+        review_receipts=ordered_reviews,
+        finding_snapshots=bundle.finding_snapshots,
+    )
 
 
 def _capture_evidence_projection_basis_rows(
@@ -21909,83 +22843,28 @@ def _capture_evidence_projection_basis_rows(
         references = tuple(references_by_bundle.get(bundle_id, []))
         if bundle is None or cycle is None or snapshot is None or manifest is None:
             raise evidence_ledger_inconsistent()
-        verification_receipt: dict[str, Any] | None = None
-        if bundle.verification_receipt_id is not None:
-            receipt = verification_by_bundle.get(bundle_id)
-            if receipt is None:
-                raise evidence_ledger_inconsistent()
-            verification_receipt = {
-                "verification_receipt_id": bundle.verification_receipt_id,
-                "verification_subject": {
-                    "basis_version": 1,
-                    "kind": "task_verification_criterion",
-                    "authority_snapshot_id": bundle.authority_snapshot_id,
-                    "verification_criterion_id": bundle.verification_criterion_id,
-                },
-                "result": receipt["result"],
-                "duration_ms": receipt["duration_ms"],
-                "scope_coverage": receipt["scope_coverage"],
-                "created_at": receipt["created_at"],
-            }
-        ordered_reviews = tuple(
-            review_receipts_by_id[receipt_id]
-            for receipt_id in cycle.gate_basis.qualifying_receipt_ids
-        )
-        runner_observation: dict[str, Any] | None = None
-        if bundle.verification_runner_observation_id is not None:
-            from task_governance_tool.verification_runner import (
-                runner_observation_source_projection,
-            )
-
-            if _validated_runner_generations is None:
-                _, _validated_runner_generations = (
-                    _validated_verification_runner_graph(connection)
-                )
-            generation = _validated_runner_generations.get(
-                (
-                    bundle.project_id,
-                    bundle.task_id,
-                    bundle.target_generation,
-                )
-            )
-            if (
-                generation is None
-                or generation["state"] != "terminal"
-                or generation["observation"] is None
-                or generation["observation"].verification_runner_observation_id
-                != bundle.verification_runner_observation_id
-            ):
-                raise evidence_ledger_inconsistent()
-            runner_observation = runner_observation_source_projection(
-                observation=_verification_runner_value_dict(
-                    generation["observation"],
-                    VerificationRunnerObservation,
-                ),
-                resolution=_verification_runner_value_dict(
-                    generation["resolution"],
-                    VerificationRunnerResolution,
-                ),
-            )
         native_records.append(
-            ProjectionBundleRecord(
+            _projection_bundle_record_from_validated_rows(
                 bundle=bundle,
                 cycle=cycle,
-                task={
-                    "task_id": bundle.task_id,
-                    "title": snapshot["task_title"],
-                    "description": snapshot["task_description"],
-                    "review_tier": snapshot["review_tier"],
-                    "verification": snapshot["verification"],
-                },
-                authority_snapshot=snapshot,
+                snapshot=snapshot,
                 criteria=tuple(criteria_by_bundle.get(bundle_id, [])),
-                artifact_manifest=manifest,
-                artifact_entries=tuple(entries_by_bundle.get(bundle_id, [])),
-                evidence_references=references,
-                verification_receipt=verification_receipt,
-                runner_observation=runner_observation,
-                review_receipts=ordered_reviews,
-                finding_snapshots=bundle.finding_snapshots,
+                manifest=manifest,
+                entries=tuple(entries_by_bundle.get(bundle_id, [])),
+                references=references,
+                verification_receipt=verification_by_bundle.get(bundle_id),
+                review_receipts_by_id=review_receipts_by_id,
+                runner_generation=(
+                    _validated_runner_generations.get(
+                        (
+                            bundle.project_id,
+                            bundle.task_id,
+                            bundle.target_generation,
+                        )
+                    )
+                    if _validated_runner_generations is not None
+                    else None
+                ),
             )
         )
     return EvidenceProjectionBasis(
@@ -22047,7 +22926,7 @@ def record_evidence_projection_outcome(
             raise
 
 
-def _validate_current_schema_structure(
+def _validate_current_schema_contract(
     connection: sqlite3.Connection,
 ) -> int:
     version = current_schema_version(connection)
@@ -22087,6 +22966,15 @@ def _validate_current_schema_structure(
         if exc.code == "database_busy":
             raise
         raise _unreadable_project_state() from exc
+    return version
+
+
+def _validate_current_schema_structure(
+    connection: sqlite3.Connection,
+) -> int:
+    """Validate the current schema contract and its global admitted rows."""
+
+    version = _validate_current_schema_contract(connection)
     if version == PRIVATE_SCHEMA20_VERSION:
         validate_current_schema20_admitted_rows(connection)
     elif version == PRIVATE_SCHEMA21_VERSION:
@@ -22144,6 +23032,19 @@ def validate_current_database(
 ) -> int:
     """Require the supported schema and matching project without migrating."""
     version = _validate_current_schema_structure(connection)
+    binding = read_project_binding_state(connection)
+    _validate_target_binding(binding, target)
+    _validate_current_project_rows(connection, binding.project_id)
+    return version
+
+
+def _validate_current_task_read_database(
+    connection: sqlite3.Connection,
+    target: DatabaseTarget,
+) -> int:
+    """Validate schema, binding, and project rows for one Task-local read."""
+
+    version = _validate_current_schema_contract(connection)
     binding = read_project_binding_state(connection)
     _validate_target_binding(binding, target)
     _validate_current_project_rows(connection, binding.project_id)
@@ -22264,12 +23165,13 @@ def begin_initialized_write(
         raise
 
 
-def connect_initialized_readonly(
+def _connect_validated_readonly(
     target: DatabaseTarget,
     *,
-    managed_backup_source: bool = False,
+    validator: Callable[[sqlite3.Connection, DatabaseTarget], object],
 ) -> sqlite3.Connection:
-    """Open one validated current-schema read transaction."""
+    """Open one read-only transaction under the supplied storage boundary."""
+
     try:
         connection = connect_readonly(target.db_path)
     except StorageError:
@@ -22285,11 +23187,7 @@ def connect_initialized_readonly(
             fallback_message="could not open database",
         ) from exc
     try:
-        (
-            validate_managed_backup_source_database
-            if managed_backup_source
-            else validate_current_database
-        )(connection, target)
+        validator(connection, target)
     except sqlite3.Error as exc:
         connection.rollback()
         connection.close()
@@ -22302,6 +23200,34 @@ def connect_initialized_readonly(
         connection.close()
         raise
     return connection
+
+
+def connect_initialized_readonly(
+    target: DatabaseTarget,
+    *,
+    managed_backup_source: bool = False,
+) -> sqlite3.Connection:
+    """Open one globally validated current-schema read transaction."""
+
+    return _connect_validated_readonly(
+        target,
+        validator=(
+            validate_managed_backup_source_database
+            if managed_backup_source
+            else validate_current_database
+        ),
+    )
+
+
+def connect_initialized_task_readonly(
+    target: DatabaseTarget,
+) -> sqlite3.Connection:
+    """Open one schema-valid read transaction for selected-Task validation."""
+
+    return _connect_validated_readonly(
+        target,
+        validator=_validate_current_task_read_database,
+    )
 
 
 def validate_backup_policy(

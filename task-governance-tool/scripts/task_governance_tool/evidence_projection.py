@@ -1000,6 +1000,9 @@ def _criterion_kind_map(
 
 def required_native_bundle_link_count(*, basis: Any, cycle: Any) -> int:
     criterion_kinds = _criterion_kind_map(tuple(basis.criteria))
+    runner_observation = getattr(basis, "runner_observation", None)
+    runner_reference = getattr(basis, "runner_reference", None)
+    runner_criterion_link = getattr(basis, "runner_criterion_link", None)
     count = 0
     if "acceptance" in criterion_kinds.values():
         count = 2 + len(tuple(basis.review_references))
@@ -1014,9 +1017,33 @@ def required_native_bundle_link_count(*, basis: Any, cycle: Any) -> int:
             )
         )
     if "verification" in criterion_kinds.values():
-        if basis.verification_reference is None:
-            raise _inconsistent()
-        count += 1
+        if cycle.verification_basis_kind == "runner_observation":
+            if (
+                basis.verification_reference is not None
+                or runner_observation is None
+                or runner_reference is None
+                or runner_criterion_link is None
+            ):
+                raise _inconsistent()
+        else:
+            if (
+                basis.verification_reference is None
+                or runner_observation is not None
+                or runner_reference is not None
+                or runner_criterion_link is not None
+            ):
+                raise _inconsistent()
+            count += 1
+    elif any(
+        value is not None
+        for value in (
+            basis.verification_reference,
+            runner_observation,
+            runner_reference,
+            runner_criterion_link,
+        )
+    ):
+        raise _inconsistent()
     return count
 
 
@@ -1032,6 +1059,14 @@ def build_native_bundle_plan(
 
     criteria_rows = tuple(basis.criteria)
     criterion_kinds = _criterion_kind_map(criteria_rows)
+    runner_observation = getattr(basis, "runner_observation", None)
+    runner_reference = getattr(basis, "runner_reference", None)
+    runner_criterion_link = getattr(basis, "runner_criterion_link", None)
+    runner_observation_id = getattr(
+        cycle,
+        "verification_runner_observation_id",
+        None,
+    )
     acceptance_id = next(
         (
             criterion_id
@@ -1054,6 +1089,11 @@ def build_native_bundle_plan(
         *(
             [dict(basis.verification_reference)]
             if basis.verification_reference is not None
+            else []
+        ),
+        *(
+            [dict(runner_reference)]
+            if runner_reference is not None
             else []
         ),
         *(dict(value) for value in basis.review_references),
@@ -1113,15 +1153,36 @@ def build_native_bundle_plan(
             )
         )
     if verification_id is not None:
-        if basis.verification_reference is None:
-            raise _inconsistent()
-        relation_specs.append(
-            (
-                verification_id,
-                basis.verification_reference["evidence_reference_id"],
-                "verification_attestation",
+        if cycle.verification_basis_kind == "runner_observation":
+            runner_link = runner_criterion_link
+            if (
+                basis.verification_reference is not None
+                or runner_observation is None
+                or not isinstance(runner_reference, Mapping)
+                or not isinstance(runner_link, Mapping)
+                or runner_link.get("project_id") != cycle.project_id
+                or runner_link.get("task_id") != cycle.task_id
+                or runner_link.get("criterion_id") != verification_id
+                or runner_link.get("evidence_reference_id")
+                != runner_reference.get("evidence_reference_id")
+                or runner_link.get("relation") != "runner_observation"
+            ):
+                raise _inconsistent()
+        else:
+            if (
+                basis.verification_reference is None
+                or runner_observation is not None
+                or runner_reference is not None
+                or runner_criterion_link is not None
+            ):
+                raise _inconsistent()
+            relation_specs.append(
+                (
+                    verification_id,
+                    basis.verification_reference["evidence_reference_id"],
+                    "verification_attestation",
+                )
             )
-        )
     relation_specs.sort(
         key=lambda item: (
             CRITERION_KIND_ORDER[criterion_kinds[item[0]]],
@@ -1139,6 +1200,22 @@ def build_native_bundle_plan(
         raise _inconsistent()
     storage_links: list[dict[str, Any]] = []
     payload_links: list[dict[str, Any]] = []
+    if cycle.verification_basis_kind == "runner_observation":
+        stored_runner_link = dict(runner_criterion_link)
+        payload_runner_link = {
+            key: stored_runner_link[key]
+            for key in (
+                "criterion_evidence_link_id",
+                "criterion_id",
+                "evidence_reference_id",
+                "relation",
+                "assurance_class",
+                "producer_class",
+                "producer_version",
+            )
+        }
+        storage_links.append(stored_runner_link)
+        payload_links.append(payload_runner_link)
     for link_id, (criterion_id, reference_id, relation) in zip(
         link_ids,
         relation_specs,
@@ -1163,6 +1240,14 @@ def build_native_bundle_plan(
                 "created_at": sealed_at,
             }
         )
+    link_sort_key = lambda item: (
+        CRITERION_KIND_ORDER[criterion_kinds[item["criterion_id"]]],
+        _utf8(item["criterion_id"]),
+        RELATION_ORDER[item["relation"]],
+        _utf8(item["evidence_reference_id"]),
+    )
+    payload_links.sort(key=link_sort_key)
+    storage_links.sort(key=link_sort_key)
 
     snapshots: list[dict[str, Any]] = []
     historical_reference_absent = False
@@ -1318,10 +1403,14 @@ def build_native_bundle_plan(
         "verification_basis": {
             "basis_version": 1,
             "kind": cycle.verification_basis_kind,
-            "runner_observation_id": None,
+            "runner_observation_id": runner_observation_id,
             "verification_receipt_id": cycle.verification_receipt_id,
         },
-        "runner_observation": None,
+        "runner_observation": (
+            dict(runner_observation)
+            if runner_observation is not None
+            else None
+        ),
     }
     artifact = build_bundle_artifact(payload)
     reference_ids = tuple(

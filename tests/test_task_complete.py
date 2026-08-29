@@ -24,6 +24,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import completion_workflow  # noqa: E402
+from task_governance_tool import cli as cli_module  # noqa: E402
 from task_governance_tool import reviews as review_service  # noqa: E402
 from task_governance_tool import tasks as task_service  # noqa: E402
 from task_governance_tool.completion import (  # noqa: E402
@@ -510,11 +511,21 @@ class TaskCompleteCliTests(unittest.TestCase):
             )
             seed_review_evidence(db, task["task_id"])
 
-            result = run_taskgov(
-                *complete_args(db, repo, task["task_id"], "--json")
-            )
+            with mock.patch.object(
+                completion_workflow,
+                "connect_initialized_readonly",
+                wraps=completion_workflow.connect_initialized_readonly,
+            ) as readonly_connection, mock.patch.object(
+                cli_module,
+                "select_current_verification_runner_basis",
+            ) as selector:
+                result = run_taskgov(
+                    *complete_args(db, repo, task["task_id"], "--json")
+                )
 
             self.assertEqual(result.returncode, 0, result.stderr)
+            selector.assert_not_called()
+            self.assertEqual(readonly_connection.call_count, 1)
             payload = json.loads(result.stdout)
             self.assertEqual(payload["command"], "task.complete")
             self.assertEqual(
@@ -916,13 +927,17 @@ class TaskCompleteCliTests(unittest.TestCase):
                 task_service,
                 "revalidate_done_git_evidence",
                 side_effect=assert_closed_then_revalidate,
-            ):
+            ), mock.patch.object(
+                cli_module,
+                "select_current_verification_runner_basis",
+            ) as selector:
                 command = run_taskgov_internal(*argv)
 
             self.assertEqual(command.returncode, 0)
             self.assertTrue(json.loads(command.stdout)["data"]["ready"])
             self.assertEqual(len(opened), 2)
             self.assertTrue(all(item.closed for item in opened))
+            selector.assert_not_called()
 
     def test_locked_completion_basis_materializes_bounded_history(self):
         class RecordingCursor:

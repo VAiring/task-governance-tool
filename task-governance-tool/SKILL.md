@@ -105,15 +105,20 @@ Use this normal flow:
 6. Only when `task show.data.effort_advisory_enabled` is `true`, run one
    `task effort <task-id> --read-only --json` at the verification/review
    boundary. This is a mechanical route, not an LLM choice.
-7. Set the exact review target and retain its returned generation. Run the
-   Task's verification outside taskgov against that target. When the Task has
-   nonempty verification text, attest the aggregate result once with
-   `verification receipt add <task-id> --result <pass|fail|timeout>
-   --duration-ms <milliseconds> --scope-coverage
-   <full|partial> --expected-target-generation <generation> --json`.
-8. Run `review prepare` once, obtain the required reviews, and record their
+7. Set the exact review target and retain its returned generation,
+   `verification_route`, and `blocking_code`; this existing operation may take
+   the explicitly opted-in trusted-local Runner route.
+8. Route only on that same response. `not_required` and `runner_pass` proceed
+   without a Receipt. Only `receipt_required` runs the Task's verification
+   outside taskgov and attests the aggregate result with
+   `verification receipt add
+   <task-id> --result <pass|fail|timeout> --duration-ms <milliseconds>
+   --scope-coverage <full|partial> --expected-target-generation <generation>
+   --json`. `blocked` requires a non-null returned code and stops closed; any
+   missing, mismatched, or unknown route/code pair also stops.
+9. Run `review prepare` once, obtain the required reviews, and record their
    receipts and findings.
-9. Complete through `task complete` after verification and review gates pass.
+10. Complete through `task complete` after verification and review gates pass.
 
 Read [references/reconciliation.md](references/reconciliation.md) only when
 the Effort result returns `data.suggested_action=reconcile_scope`, or when a
@@ -121,11 +126,13 @@ test or review failure recurs after an attempted repair. Treat one Effort
 result as one non-blocking episode, not one episode per exceeded metric.
 Neither trigger adds a green-path command, question, or stop.
 
-For a no-finding Tier 2 task that must select new work, this graph uses at most
-ten governance subprocess calls with the advisory disabled and eleven when an
-existing valid profile enables it. `doctor`, completion `--check`, and
+For a no-finding Tier 2 task that must select new work, the manual/fallback graph
+uses at most ten governance subprocess calls with the advisory disabled and
+eleven when an existing valid profile enables it. `doctor`, completion `--check`, and
 `task checkpoint` are absent from the default success path. This flow adds no
-mandatory question, judgment, or user-return stop.
+mandatory question, judgment, or user-return stop. The qualifying Runner-pass
+branch omits the Verification Receipt call and therefore remains bounded to nine
+or ten calls respectively.
 
 ## Operating Rules
 
@@ -152,11 +159,12 @@ mandatory question, judgment, or user-return stop.
   continue to treat untouched verification bytes as stored state rather than
   caller input.
 - Schema v19 sealed Bundle v1; current schema v21 automatically seals Bundle v2
-  with a derived `caller_attestation` or `not_required` basis and null Runner
-  observation. Evidence index v2 can reference preserved v1 Bundles without
-  rewriting their bytes or digests. Pre-v19 cycles remain `legacy_unknown`;
-  this adds no command, normal-loop call, Runner, Analyzer, Viewer Evidence
-  surface, or network/model call.
+  with the closed verification-basis union: `caller_attestation` or
+  `not_required` with null `runner_observation`, or `runner_observation` with
+  the qualifying exact observation. Evidence index v2 can reference preserved
+  v1 Bundles without rewriting their bytes or digests. Pre-v19 cycles remain
+  `legacy_unknown`; this adds no public command or JSON field, Skill trigger,
+  normal-loop call, Analyzer or Viewer Evidence surface, or network/model call.
 - Pause only active/review-pending work with `--pause-reason`; block with
   `--blocked-reason`; resume explicitly to `in_progress`.
 - Classify a new finding once. Keep it in the current Task only when it is
@@ -175,21 +183,25 @@ mandatory question, judgment, or user-return stop.
   the same record is durable or the user explicitly accepts forgetting risk.
 - Treat `done` as write-locked. Reopen only with an isolated transition to
   `in_progress` and `--reopen-reason`; saved completion cycles remain
-  audit-only, while fresh verification, target, and review evidence are
-  required.
+  audit-only, while a fresh current verification basis, target, and review
+  evidence are required.
 
 ## Review And Completion
 
-Set a review target only after the exact material is ready. Retain its returned
-generation, run the governed verification outside taskgov against that exact
-target, and, for nonempty Task verification, record one aggregate attestation
-with `verification receipt add` before preparing review. Taskgov does not run
-the command or retain its body or output. It derives the version-1
-verification subject from the locked target's authority snapshot and
-verification criterion; there is no caller label or replacement subject input.
-A `fail`, `timeout`, or `partial` Receipt requires a fresh target generation
-before another run can become current. A migrated capture-version-0 target is
-read-only lineage: set a fresh
+Set a review target only after the exact material is ready, retain its returned
+generation and closed route, and apply that response directly. Only
+`verification_route=receipt_required`—which can occur for a nonempty marker-`0`
+expectation or the exact-current closed no-launch `m21_fallback`—runs the governed verification
+outside taskgov and records one aggregate attestation with `verification receipt
+add` before preparing review. `not_required` and `runner_pass` proceed without
+verification or a Receipt. `blocked` reports the existing gate code and cannot
+be overridden by a Receipt. For the M21 branch,
+taskgov does not run the external command or retain its body or output. It
+derives the version-1 verification subject from the locked target's authority
+snapshot and verification criterion; there is no caller label or replacement
+subject input. A `fail`, `timeout`, or `partial` Receipt requires a fresh target
+generation before another run can become current. A migrated capture-version-0
+target is read-only lineage: set a fresh
 target before adding a Verification Receipt, Review Receipt, Review Finding, or
 completion evidence. `review prepare` and resolving an existing Finding remain
 allowed; the old target is never upgraded in place. For review before a Git

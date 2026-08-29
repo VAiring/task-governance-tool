@@ -38,6 +38,7 @@ try:
         observe_commit_runner_target,
         observe_staged_runner_target,
         preflight_runner_material,
+        preflight_runner_snapshot_successor_material_digest,
     )
     from task_governance_tool.verification_runner_plan import (
         VerificationRunnerPlanSource,
@@ -192,6 +193,43 @@ class RunnerGitTests(unittest.TestCase):
             self.assertEqual((repo / ".git" / "index").read_bytes(), index_before)
             self.assertEqual(git(repo, "status", "--porcelain=v1", "-z").stdout, status_before)
             self.assertEqual(result.target_material_digest, observed.target_material_digest)
+
+    def test_reviewed_snapshot_digest_survives_only_its_exact_successor_commit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = self.make_repo(temporary)
+            self.seed_commit(repo, {"tracked.txt": b"base\n"})
+            (repo / "tracked.txt").write_bytes(b"reviewed\n")
+            git(repo, "add", "tracked.txt")
+            reviewed = observe_staged_runner_target(repo)
+            reviewed_material = preflight_runner_material(repo, reviewed)
+
+            commit(repo, "reviewed target")
+            completion_revision = (
+                git(repo, "rev-parse", "HEAD").stdout.decode("ascii").strip()
+            )
+            self.assertEqual(git(repo, "diff", "--cached", "--quiet").returncode, 0)
+            successor_digest = preflight_runner_snapshot_successor_material_digest(
+                repo,
+                completion_revision,
+                expected_base_revision=reviewed.artifact.target_base_revision,
+                expected_fingerprint=reviewed.artifact.target_value,
+            )
+            self.assertEqual(successor_digest, reviewed_material.target_material_digest)
+
+            (repo / "later.txt").write_bytes(b"later\n")
+            git(repo, "add", "later.txt")
+            commit(repo, "later descendant")
+            descendant = git(repo, "rev-parse", "HEAD").stdout.decode("ascii").strip()
+            self.assert_git_error(
+                lambda: preflight_runner_snapshot_successor_material_digest(
+                    repo,
+                    descendant,
+                    expected_base_revision=reviewed.artifact.target_base_revision,
+                    expected_fingerprint=reviewed.artifact.target_value,
+                ),
+                "target_stale",
+                TARGET_STALE_MESSAGE,
+            )
 
     def test_existing_pure_seal_binds_actual_target_and_plan_outputs(self):
         task_id = "tg_task_0123456789abcdef"

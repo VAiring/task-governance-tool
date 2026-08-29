@@ -13,6 +13,15 @@ Runner observation, and maintains fixed Evidence index v2 automatically. It
 adds no export/projection command, Runner, Analyzer, Viewer Evidence surface,
 network/model invocation, public leaf, or normal-loop call.
 
+Schema v21 keeps those public surfaces unchanged and uses the existing Bundle
+v2 tagged union. When `verification_basis.kind` is `caller_attestation` or
+`not_required`, the root `runner_observation` is null; when the kind is
+`runner_observation`, that root field contains the qualifying exact Runner
+observation. It adds no public command, argument, Skill trigger, or Viewer
+surface. Gate integration adds only `verification_route` and `blocking_code` to
+the existing target-set JSON success data. Bundle/Evidence serialization adds no
+normal-loop call, and no post-target `task show` is added.
+
 ## Contents
 
 - [Invocation And Public Inventory](#invocation-and-public-inventory)
@@ -134,9 +143,11 @@ never emitted. Git observation occurs outside SQLite transactions. Write
 commands revalidate their task/Contract/review basis under a short write
 transaction before one atomic business update.
 
-The normal no-finding Tier 2 Skill graph is bounded to ten governance
-subprocess calls when the Effort Advisory is off and eleven when the mandatory
-`task show` boolean enables it. No command asks an LLM to choose that branch.
+The normal no-finding Tier 2 manual/fallback Skill graph is bounded to ten
+governance subprocess calls when the Effort Advisory is off and eleven when the
+mandatory pre-work `task show` boolean enables it. The Receiptless Runner-pass
+branch is one call lower. The target-set response itself supplies the closed
+route; no second read or LLM choice is required.
 
 ## `setup`
 
@@ -586,6 +597,15 @@ target, its blocking code is `evidence_basis_stale` before receipt-required or
 receipt-blocking evaluation. Trimmed-empty verification remains
 `required=false,satisfied=true,blocking_code=null` with a null subject.
 
+For a schema-v21 live target, the existing gate shape has a closed basis matrix.
+Marker `0` keeps the M21 Receipt behavior. Marker `2` with a non-current,
+pending, or cleanup-only graph is stale and uses `evidence_basis_stale`; any
+other exact-current terminal Runner result except the two admitted results uses
+`verification_receipt_blocking`. The exact-current closed no-launch
+`m21_fallback` delegates to M21. An exact-current qualifying complete-plan
+Runner pass is satisfied with no Receipt, so `qualifying_receipt_id` is null
+and the Receipt-only counts may all be zero.
+
 `completion_history` has exactly:
 
 ```text
@@ -772,14 +792,18 @@ observation returns `completion_check_stale`. A successful check stores no
 token and never authorizes the later write.
 
 Write success emits `command=task.complete` and data keys `task`,
-`changed_fields`, and `event`. Both check and write require verification,
-current matching review target, an exact-current `pass/full` Verification
-Receipt when the Task verification expectation is nonempty after trimming,
-qualifying review
-receipts, no current
-changes-requested receipt, no unresolved high/medium finding, valid typed
-completion evidence, sequential readiness, and exact Git/snapshot binding when
-applicable.
+`changed_fields`, and `event`. Both check and write require a satisfying current
+verification basis: trimmed-empty verification on marker `0`, an exact-current
+`pass/full` Verification Receipt for nonempty verification on marker `0` or the
+exact closed no-launch `m21_fallback`, or an exact-current qualifying
+complete-plan Runner pass with no Verification Receipt. A pending, stale, or
+cleanup-only Runner basis fails `evidence_basis_stale`; every other
+exact-current structurally valid terminal Runner result fails
+`verification_receipt_blocking`.
+They also require a current matching review target, qualifying review receipts,
+no current changes-requested receipt, no unresolved high/medium finding, valid
+typed completion evidence, sequential readiness, and exact Git/snapshot binding
+when applicable.
 
 Git evidence resolves to a canonical full commit ID. External evidence requires
 an explicit reason and approval. `commit_not_required` requires a matching
@@ -787,9 +811,10 @@ an explicit reason and approval. `commit_not_required` requires a matching
 
 ## Verification Receipt
 
-After setting the exact review target and running the governed verification
-outside taskgov, record one caller-attested aggregate result for a Task with a
-verification expectation that is nonempty after trimming:
+After setting the exact review target, record one caller-attested aggregate
+result for a Task with a verification expectation that is nonempty after
+trimming only after running the governed verification outside taskgov on marker
+`0` or the exact-current closed no-launch `m21_fallback`:
 
 ```powershell
 python scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
@@ -805,13 +830,16 @@ criterion, and copies the locked Contract, expectation digest, and complete
 target tuple. It owns ID and timestamp.
 
 Receipt recording is allowed only for `in_progress` or `review_pending`,
-requires verification that is nonempty after trimming and a current target,
-writes no Task event or
-timestamp, and permits one immutable row per target generation. A retry after
-`fail`, `timeout`, or `partial` requires an explicitly fresh target. Taskgov
-does not execute a command, infer coverage, authenticate the runner, or retain
-a command body, arguments, exit code, stdout/stderr, log, exception,
-environment, or result file.
+requires verification that is nonempty after trimming and a current marker-`0`
+target or exact-current closed no-launch `m21_fallback`, writes no Task event or
+timestamp, and permits one immutable row per target generation. A marker-`2`
+qualifying Runner pass, pending basis, stale basis, cleanup-only basis, or any
+other structurally valid terminal result rejects Receipt add with
+`evidence_basis_stale`. A retry after `fail`, `timeout`, or `partial` requires
+an explicitly fresh target.
+Taskgov does not execute a command for this M21 branch, infer coverage,
+authenticate the external runner, or retain a command body, arguments, exit
+code, stdout/stderr, log, exception, environment, or result file.
 
 A migrated capture-version-0 target is read-only lineage. Receipt add fails
 `evidence_basis_stale` with `current evidence basis must be captured again`;
@@ -859,7 +887,8 @@ The write is backup-eligible but does not advance the Evidence or Viewer
 source generation. Because every changed mutation may retry already-due
 maintenance, a due Evidence projection may still publish before the due
 backup. `--read-only` and every failed call perform no business or maintenance
-write. There is no Receipt list, show, import, export, runner, or Viewer panel.
+write. There is no Receipt list, show, import, export, Runner command, or Viewer
+panel.
 
 ## Local Handoff Commands
 
@@ -990,6 +1019,17 @@ python scripts/taskgov.py review target set --repo <target-project> <task-id> --
 `--revision`; `git_snapshot` rejects it. Every set advances the target
 generation. Git commits are resolved read-only and stored canonically. A diff
 fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
+
+At schema v21, this same target-set operation may use the explicitly opted-in
+trusted-local Runner route. It adds no argument or public Runner command. JSON
+success data is exactly the prior `task`, `changed_fields`, and `event` plus
+`verification_route` and `blocking_code`; text output is unchanged, and failure
+data remains exactly the prior three-key empty shape. `verification_route` is
+exactly `not_required`, `receipt_required`, `runner_pass`, or `blocked`.
+`blocking_code` is null for the first three and is
+`verification_receipt_blocking` for a stored nonqualifying Runner terminal.
+The route describes the target and Runner result committed by this invocation;
+the CLI performs no post-commit gate reread or Runner reselection.
 
 A target retained by schema-v18 migration with `capture_version=0` is read-only
 lineage. Verification Receipt add, Review Receipt add, Review Finding add, and
@@ -1126,9 +1166,11 @@ Evidence JSON paths are fixed at `state/current/evidence/index.json` and
 A schema-v20/v21 index uses `format_version=2` and adds
 `bundle_format_version`: null for `legacy_unknown`, 1 for a preserved Bundle
 v1, and 2 for a native Bundle v2. New v21 Bundles use `format_version=2`, a
-derived `caller_attestation` or `not_required` basis, and null Runner
-observation; preserved v1 bytes and digests are unchanged. The index is
-published last, SQLite remains canonical, and JSON is never imported or
+closed verification-basis union of `caller_attestation`, `not_required`, or
+`runner_observation`, and a matching nullable `runner_observation` field. The
+two M21 arms keep that field null; the Runner arm contains only the qualifying
+sanitized observation. Preserved v1 bytes and digests are unchanged. The index
+is published last, SQLite remains canonical, and JSON is never imported or
 displayed by the Viewer.
 
 The optional physical `config/viewer.json` is browser-presentation policy, not

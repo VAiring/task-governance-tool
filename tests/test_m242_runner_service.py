@@ -318,7 +318,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             resolve_commit.assert_not_called()
             self.assertEqual(sum(row_counts(fixture.db).values()), 0)
 
-    def test_public_fallback_keeps_exact_shape_and_runner_tables_empty(self):
+    def test_public_fallback_returns_receipt_route_and_runner_tables_empty(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary))
             result = run_taskgov_internal(
@@ -339,7 +339,18 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout)
             payload = json.loads(result.stdout)
-            self.assertEqual(set(payload["data"]), {"task", "changed_fields", "event"})
+            self.assertEqual(
+                set(payload["data"]),
+                {
+                    "task",
+                    "changed_fields",
+                    "event",
+                    "verification_route",
+                    "blocking_code",
+                },
+            )
+            self.assertEqual(payload["data"]["verification_route"], "receipt_required")
+            self.assertIsNone(payload["data"]["blocking_code"])
             self.assertEqual(
                 row_counts(fixture.db),
                 {
@@ -349,6 +360,49 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     "verification_runner_sandbox_events": 0,
                 },
             )
+
+    def test_public_target_without_verification_returns_not_required(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            added = run_taskgov_internal(
+                "task",
+                "add",
+                "--repo",
+                str(fixture.repo),
+                "--db",
+                str(fixture.db),
+                "--title",
+                "No verification target",
+                "--contract-scope",
+                "Capture one target without a verification criterion.",
+                "--contract-acceptance",
+                "The target-set response selects the not-required branch.",
+                "--json",
+                maintenance_enabled=False,
+            )
+            self.assertEqual(added.returncode, 0, added.stdout)
+            task_id = json.loads(added.stdout)["data"]["task"]["task_id"]
+            result = run_taskgov_internal(
+                "review",
+                "target",
+                "set",
+                "--repo",
+                str(fixture.repo),
+                "--db",
+                str(fixture.db),
+                task_id,
+                "--kind",
+                "diff_fingerprint",
+                "--revision",
+                FINGERPRINT_A,
+                "--json",
+                maintenance_enabled=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout)
+            data = json.loads(result.stdout)["data"]
+            self.assertEqual(data["verification_route"], "not_required")
+            self.assertIsNone(data["blocking_code"])
 
     def test_plan_fallback_matrix_keeps_runner_tables_empty(self):
         fallback_reasons = {
@@ -426,7 +480,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
     def test_cli_target_set_has_no_outer_connection_and_error_skips_maintenance(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary))
-            review = ReviewTargetResult(
+            review = SimpleNamespace(
                 task={
                     "task_id": fixture.task_id,
                     "review_target_kind": "diff_fingerprint",
@@ -435,6 +489,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 },
                 changed_fields=["review_target"],
                 event={"event_type": "review_target_set", "summary": "set"},
+                verification_route="receipt_required",
+                blocking_code=None,
             )
             with mock.patch.object(
                 cli_module,
@@ -452,6 +508,30 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     maintenance_enabled=False,
                 )
             self.assertEqual(success.returncode, 0, success.stdout)
+            success_data = json.loads(success.stdout)["data"]
+            self.assertEqual(
+                set(success_data),
+                {
+                    "task",
+                    "changed_fields",
+                    "event",
+                    "verification_route",
+                    "blocking_code",
+                },
+            )
+            self.assertEqual(success_data["verification_route"], "receipt_required")
+            self.assertIsNone(success_data["blocking_code"])
+            self.assertEqual(
+                cli_module.review_text("review.target.set", success_data),
+                cli_module.review_text(
+                    "review.target.set",
+                    {
+                        "task": review.task,
+                        "changed_fields": review.changed_fields,
+                        "event": review.event,
+                    },
+                ),
+            )
 
             with mock.patch.object(
                 cli_module,
@@ -479,7 +559,13 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             fixture = RunnerServiceFixture(Path(temporary))
             prepared = fixture.prepared()
             events: list[str] = []
-            review = ReviewTargetResult(task={}, changed_fields=[], event={})
+            review = SimpleNamespace(
+                task={},
+                changed_fields=[],
+                event={},
+                verification_route="runner_pass",
+                blocking_code=None,
+            )
             intent = SimpleNamespace(review=review)
             prepare_count = 0
 
@@ -651,11 +737,14 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     service._persist_launch_intent(fixture.target, prepared)
 
             with closing(sqlite3.connect(fixture.db)) as connection:
-                generation = connection.execute(
-                    "SELECT review_target_generation FROM tasks WHERE task_id = ?",
+                generation, marker = connection.execute(
+                    "SELECT review_target_generation, "
+                    "review_target_runner_basis_version FROM tasks "
+                    "WHERE task_id = ?",
                     (fixture.task_id,),
-                ).fetchone()[0]
+                ).fetchone()
             self.assertEqual(generation, 0)
+            self.assertEqual(marker, 0)
             self.assertEqual(sum(row_counts(fixture.db).values()), 0)
 
     def test_prelaunch_terminal_uses_explicit_t2_and_records_evidence(self):
@@ -682,8 +771,13 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                         reason="runtime_unavailable",
                     )
             self.assertEqual(result.task["review_target_generation"], 1)
+            self.assertEqual(result.verification_route, "receipt_required")
+            self.assertIsNone(result.blocking_code)
             generation = fixture.generation(1)
             self.assertEqual(generation["state"], "terminal")
+            self.assertEqual(generation["resolution"].gate_eligibility_version, 1)
+            self.assertEqual(generation["attempt"].gate_eligibility_version, 1)
+            self.assertEqual(generation["observation"].gate_eligibility_version, 1)
             self.assertEqual(generation["observation"].route, "m21_fallback")
             self.assertEqual(generation["observation"].launch_state, "no_launch")
             self.assertEqual(generation["observation"].outcome, "blocked_prelaunch")
@@ -1472,6 +1566,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                         cancel_requested=lambda: False,
                     )
                 self.assertEqual(result.task["review_target_generation"], 1)
+                self.assertEqual(result.verification_route, "runner_pass")
+                self.assertIsNone(result.blocking_code)
                 physical_basis.assert_called_once_with(fixture.target, prepared)
                 self.assertEqual(owner.enter_calls, 1)
                 self.assertEqual(owner.exit_calls, 1)
@@ -1497,7 +1593,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertIsNotNone(generation["cleanup_event"].terminal_observation_id)
 
     @unittest.skipUnless(os.name == "nt", "integrated Windows shadow Runner")
-    def test_real_windows_shadow_runner_integrates_plan_git_process_lifecycle_and_audit_only_evidence(
+    def test_real_windows_shadow_runner_integrates_plan_git_process_lifecycle_and_qualifying_evidence(
         self,
     ):
         raw_output_secret = "TG_M242D_RAW_OUTPUT_MUST_NOT_PERSIST_7f20c1"
@@ -1678,26 +1774,36 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     0,
                 )
 
-            shown_result = run_taskgov_internal(
-                "task",
-                "show",
-                "--repo",
-                str(fixture.repo),
-                "--db",
-                str(fixture.db),
-                fixture.task_id,
-                "--json",
-                maintenance_enabled=False,
-            )
+            with mock.patch.object(
+                cli_module,
+                "select_current_verification_runner_basis",
+                side_effect=lambda _target, *, task: (
+                    service.select_current_verification_runner_basis(
+                        fixture.target,
+                        task=task,
+                    )
+                ),
+            ):
+                shown_result = run_taskgov_internal(
+                    "task",
+                    "show",
+                    "--repo",
+                    str(fixture.repo),
+                    "--db",
+                    str(fixture.db),
+                    fixture.task_id,
+                    "--json",
+                    maintenance_enabled=False,
+                )
             self.assertEqual(shown_result.returncode, 0, shown_result.stdout)
             shown = json.loads(shown_result.stdout)["data"]
             self.assertEqual(
                 shown["verification_evidence"]["gate"],
                 {
-                    "blocking_code": "verification_receipt_required",
+                    "blocking_code": None,
                     "qualifying_receipt_id": None,
                     "required": True,
-                    "satisfied": False,
+                    "satisfied": True,
                 },
             )
             self.assertEqual(

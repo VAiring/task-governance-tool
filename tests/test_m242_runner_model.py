@@ -413,7 +413,14 @@ class RunnerModelTests(unittest.TestCase):
                 imports.add(node.module or "")
         self.assertEqual(
             imports,
-            {"__future__", "hashlib", "json", "collections.abc", "typing"},
+            {
+                "__future__",
+                "hashlib",
+                "json",
+                "collections.abc",
+                "dataclasses",
+                "typing",
+            },
         )
         self.assertFalse(
             any(name.startswith("task_governance_tool") for name in imports)

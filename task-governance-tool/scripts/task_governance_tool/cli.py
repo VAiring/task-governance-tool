@@ -61,6 +61,7 @@ from task_governance_tool.storage import (
     begin_initialized_write,
     connect_initialized,
     connect_initialized_readonly,
+    connect_initialized_task_readonly,
     count_tasks,
     is_sqlite_busy_or_locked,
     operational_sqlite_error,
@@ -101,6 +102,7 @@ from task_governance_tool.tasks import (
     edit_task,
     list_current_tasks,
     list_tasks,
+    read_internal_task,
     show_task,
     validate_current_status_filter,
     validate_task_id,
@@ -111,6 +113,7 @@ from task_governance_tool.verification_receipts import (
 )
 from task_governance_tool.verification_runner_service import (
     VerificationRunnerServiceError,
+    select_current_verification_runner_basis,
     set_review_target_with_shadow_runner,
 )
 EXIT_SUCCESS = 0
@@ -1830,8 +1833,58 @@ def task_show_failure_result(
 def handle_task_show(context: CommandContext) -> CommandResult:
     target = resolve_context_target(context)
     try:
-        with context_read_connection(context, target) as connection:
-            result = show_task(connection, target.project, getattr(context.args, "task_id", ""))
+        task_id = validate_task_id(getattr(context.args, "task_id", ""))
+        runner_selection_required = False
+        try:
+            initial_manager = (
+                nullcontext(context.read_connection_override)
+                if context.read_connection_override is not None
+                else closing(connect_initialized_task_readonly(target))
+            )
+            with initial_manager as connection:
+                observed_task = read_internal_task(
+                    connection,
+                    target.project.project_id,
+                    task_id,
+                )
+                if observed_task is None:
+                    raise TaskRepositoryError("not_found", "task was not found")
+                runner_selection_required = (
+                    str(observed_task.get("status", "")) != "done"
+                    and observed_task.get(
+                        "review_target_runner_basis_version", 0
+                    )
+                    == 2
+                )
+                if not runner_selection_required:
+                    result = show_task(
+                        connection,
+                        target.project,
+                        task_id,
+                    )
+        finally:
+            if context.read_connection_override is not None:
+                context.read_connection_override.close()
+
+        if runner_selection_required:
+            runner_selection = select_current_verification_runner_basis(
+                target,
+                task=observed_task,
+            )
+            with closing(connect_initialized_task_readonly(target)) as connection:
+                current_task = read_internal_task(
+                    connection,
+                    target.project.project_id,
+                    task_id,
+                )
+                result = show_task(
+                    connection,
+                    target.project,
+                    task_id,
+                    runner_selection=(
+                        runner_selection if current_task == observed_task else None
+                    ),
+                )
     except TaskValidationError as exc:
         return task_show_failure_result(
             context,
@@ -2167,6 +2220,15 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
                     getattr(context.args, "task_id", ""),
                     effort_profile=effort_profile,
                     database_target=target,
+                    runner_selector=(
+                        lambda task, completion_revision: (
+                            select_current_verification_runner_basis(
+                                target,
+                                task=task,
+                                completion_revision=completion_revision,
+                            )
+                        )
+                    ),
                     **edit_input,
                 )
     except TaskValidationError as exc:
@@ -2433,6 +2495,13 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
                 request,
                 input_error=input_preflight_error,
                 initial_connection=context.read_connection_override,
+                runner_selector=lambda task, completion_revision: (
+                    select_current_verification_runner_basis(
+                        target,
+                        task=task,
+                        completion_revision=completion_revision,
+                    )
+                ),
             )
             data = task_completion_check_data(
                 request=request,
@@ -2458,6 +2527,13 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
             request,
             effort_profile=effort_profile,
             input_error=input_preflight_error,
+            runner_selector=lambda task, completion_revision: (
+                select_current_verification_runner_basis(
+                    target,
+                    task=task,
+                    completion_revision=completion_revision,
+                )
+            ),
         )
     except (TaskValidationError, TaskRepositoryError) as exc:
         return completion_domain_error_result(
@@ -3009,6 +3085,8 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                 "task": result.task,
                 "changed_fields": result.changed_fields,
                 "event": result.event,
+                "verification_route": result.verification_route,
+                "blocking_code": result.blocking_code,
             }
         else:
             with closing(connect_initialized(target)) as connection:
@@ -3213,6 +3291,12 @@ def handle_verification_receipt_add(context: CommandContext) -> CommandResult:
                         "",
                     ),
                     database_target=target,
+                    runner_selector=lambda task: (
+                        select_current_verification_runner_basis(
+                            target,
+                            task=task,
+                        )
+                    ),
                 )
     except (TaskValidationError, VerificationReceiptError) as exc:
         invalid_stored_receipt = (

@@ -45,13 +45,14 @@ Accepted R4A left its inventory-approved retired repository material and
 dedicated tests physically absent, without an archive or dormant copy.
 TG-M24.1B is superseded and non-gating. TG-M24.R3A, TG-M24.R3B, TG-M24.R4B,
 TG-M24.R5, TG-M24.2A, TG-M24.2B, TG-M24.2C, and TG-M24.2D are accepted
-predecessors; TG-M24.3A is an accepted predecessor and TG-M24.3B is the sole
-current unit. TG-M24.3C, TG-M24.4A, TG-M24.4B, TG-M24.4C, TG-M24.4D, and TG-M24.CP4 remain inactive
+predecessors; TG-M24.3A and TG-M24.3B are accepted predecessors, and
+TG-M24.3C is the sole current unit. TG-M24.4A, TG-M24.4B, TG-M24.4C,
+TG-M24.4D, and TG-M24.CP4 remain inactive
 in the exact sequential order owned by the routed contract. The
 separate TG-M24.R2 bootstrap checkpoint supported accepted R1 but activates no
 product behavior.
-No TG-M23 execution unit is current, and no TG-M24 Runner completion-gate
-authority is active;
+No TG-M23 execution unit is current. TG-M24 Runner completion-gate authority
+belongs only to current TG-M24.3C;
 network/live Analyzer acceptance remains outside the accepted scope. The
 derived-evidence contract is the sole unit owner/router; its process-safety
 route delegates one non-overlapping physical-safety seam and owns no unit state
@@ -65,9 +66,9 @@ TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
 preserves the inactive post-M24 normalization scope after TG-M24.CP4. Neither
 route changes product behavior. M24.1 design, M24.1A, R1, R2A, R2B, R2C,
 R4A, R4V, R3A, R3B, R4B, R5, 2A, 2B, 2C, and 2D are accepted predecessors,
-M24.1B is superseded, 3A is accepted, 3B is current, every later implementation
-and acceptance unit is inactive, and indexing or reading them activates no
-product behavior.
+M24.1B is superseded, 3A and 3B are accepted, 3C is current, every later
+acceptance unit is inactive, and indexing or reading them activates no product
+behavior.
 
 ## Non-Authoritative History
 
@@ -143,9 +144,8 @@ owner, route, unit, and membership are the enforced meaning.
     {
       "path": "docs/execution-contracts/tg-m24-verification-runner.md",
       "route_anchor": "tg-m24-verification-runner",
-      "current_units": ["TG-M24.3B"],
+      "current_units": ["TG-M24.3C"],
       "inactive_units": [
-        "TG-M24.3C",
         "TG-M24.4A",
         "TG-M24.4B",
         "TG-M24.4C",

@@ -27,9 +27,9 @@ native-adapter, and deterministic-cleanup slice. Accepted TG-M24.2C supplied
 parent-service orchestration, durable audit-only observation/Evidence mapping,
 and sanitized projection. Accepted TG-M24.2D owns the integrated acceptance of
 that already-implemented shadow slice. TG-M24.3A accepted the schema-v21
-persistence design below. TG-M24.3B is the sole current TG-M24 authority and
-activates only that persistence and compatibility boundary; the Skill, Runner
-runtime, and completion-gate behavior remain unchanged.
+persistence design below, and TG-M24.3B accepted that persistence and
+compatibility boundary. TG-M24.3C is the sole current TG-M24 authority and owns
+Runner completion-gate integration.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -863,18 +863,21 @@ At schema v20 the native completion transaction derived
 `verification_basis_kind` as `caller_attestation` when a qualifying
 Verification Receipt is linked and as `not_required` for trimmed-empty
 verification, wrote Bundle version 2/source schema 20, and always wrote a null
-Runner-observation pointer. Current schema v21 writes the same M21-only tagged
-branches with source schema 21. Existing Bundle-v1 payload bytes and digests
-remain immutable, and Evidence JSON may project both preserved v1 and native
-v2 Bundles. This path creates no Runner resolution, attempt, sandbox event,
-observation, Runner Reference/link/member/projection, process launch, or gate
-authority. R3B removes only the Evidence provider/policy-shim consumers; R4B
-still owns the shim bodies and fixed legacy policy API.
+Runner-observation pointer. Accepted TG-M24.3B retained those M21-only branches
+with source schema 21. Current TG-M24.3C keeps both and additionally writes the
+exact qualifying `runner_observation` branch, reusing its existing Runner
+Reference and criterion link as Bundle members. Existing Bundle-v1 payload bytes
+and digests remain immutable, and Evidence JSON may project both preserved v1
+and native v2 Bundles. The manual branches create no Runner member or projection;
+the Runner branch uses only its already-sanitized stored observation. R3B removes
+only the Evidence provider/policy-shim consumers; R4B still owns the shim bodies
+and fixed legacy policy API.
 
 `evidence_projection.py` selects the format from the validated source schema,
 never from caller input. For schemas v20-v21 it extends the v1 payload key set only
 with `verification_basis` and `runner_observation`. The former is the exact
-four-key object fixed by the specification and the latter is null in R3B. It
+four-key object fixed by the specification; the latter is null in R3B and in
+current 3C is populated only for the qualifying Runner branch. It
 seals the sorted-key compact payload with
 `taskgov-completion-evidence-bundle-v2\0`, writes envelope
 `format_version=2`, and recomputes the stored digest and byte count from those
@@ -892,9 +895,9 @@ and index-last; its other limits and publication behavior are unchanged.
 ## TG-M24.3A Accepted Schema-v21 Gate-Basis Design
 
 This section is the complete implementation design accepted by TG-M24.3A and
-consumed by current TG-M24.3B and inactive TG-M24.3C. TG-M24.3B activates only
-persistence and compatibility; the M21 Receipt remains the sole verification/
-completion gate through that unit. TG-M24.3C alone may activate the qualifying
+consumed by accepted TG-M24.3B and current TG-M24.3C. TG-M24.3B activated only
+persistence and compatibility; the M21 Receipt remained the sole verification/
+completion gate through that unit. TG-M24.3C alone activates the qualifying
 Runner branch.
 
 ### Migration Identity And Exact Owned Delta
@@ -1062,7 +1065,7 @@ database remains readable under the same schema. Its completion writer must
 fail closed with no cycle, Bundle, event, Evidence, Viewer, or backup mutation
 when the exact current Task marker is `2`; it must not reinterpret that state as
 ordinary M21 fallback. An explicit fresh target generation is required before
-3B may resume marker-0 M21 behavior. TG-M24.3C later replaces only this
+3B may resume marker-0 M21 behavior. Current TG-M24.3C replaces only this
 service-level nonactivation boundary and does not own migration or DDL.
 
 The schema-v21 public gate adapter consumes only a fully validated Task and the
@@ -1762,15 +1765,18 @@ done-time plan and compared with the locked stored values.
 Thin `task complete`, compatibility `task edit --status done`, and
 `task complete --check` share one completion request and ordered validator.
 Both write paths require explicit verification/review confirmations, typed
-evidence, sequential eligibility, exact current target, a qualifying current
-Verification Receipt when verification is nonempty, a satisfied fresh review
-gate, and no blocking receipt/finding. Check is read-only and is not an
+evidence, sequential eligibility, exact current target, the qualifying M21 or
+Runner basis chosen by the sole selector, a satisfied fresh review gate, and no
+blocking receipt/finding. The M21 manual arm uses a qualifying current Receipt;
+the Runner-pass arm uses its qualifying observation with a null Receipt link.
+Check is read-only and is not an
 authorization token: it captures one coherent basis, closes SQLite for Git,
 then performs a second coherent basis read. Drift yields
 `completion_check_stale`; no readiness row or receipt is stored. Its bounded
 projection returns only Task ID, ready/status, the first ordered blocking code,
 Contract revision, target generation, proposed evidence kind, and fixed next
-action.
+action. Marker `0` retains those two check reads and the pre-3C write path;
+only live marker `2` adds the Runner selection and selected-basis recapture.
 
 ### Review Target And Git Snapshot
 
@@ -1829,6 +1835,12 @@ completion evidence. A Git-commit target requires the identical canonical
 Git completion commit, an external target requires the identical approved
 external revision, and commit-not-required requires a canonical
 diff-fingerprint target.
+
+Pre-commit Runner reads continue to recapture the stage-zero index. Completion
+passes its already resolved full commit ID into the same selector; for a stored
+snapshot, the selector verifies the exact parent and tree fingerprint and
+recomputes the stored snapshot material digest from that immutable commit tree,
+without inferring target material from ambient HEAD or the post-commit index.
 
 ### Receipts, Findings, And Gate
 
@@ -1917,8 +1929,9 @@ Every schema-v18-or-later native manifest, Receipt, Finding, and completion sour
 Schema v19 adds immutable criterion links, Bundle membership/Finding snapshots,
 completion Bundles, cycle evidence-basis linkage, and Evidence projection state.
 Schema v20 introduced those owners and made `evidence_projection.py` assemble
-the Bundle-v2 null-Runner payload; schema v21 retains that M21-only writer while preserving
-version-1 Bundle bytes and digests. The storage repository inserts links,
+the Bundle-v2 null-Runner payload. Accepted TG-M24.3B initially retained that
+M21-only writer on schema v21; current TG-M24.3C adds only the reserved qualifying
+Runner arm while preserving version-1 Bundle bytes and digests. The storage repository inserts links,
 snapshots, Bundle, and cycle atomically; migrated cycles stay version 0/null and
 receive only `legacy_unknown` index entries. The canonical Analyzer writer
 remains inactive. TG-M24.2C activates only the standalone schema-v20 Runner
@@ -1974,11 +1987,12 @@ overflow. The row stores:
 Schema v17 additionally stores internal verification basis version,
 expectation digest, and nullable Verification Receipt link. Every pre-existing
 cycle migrates as verification-basis version 0 with null digest/link. Every
-new native cycle uses version 1, stores the domain-separated digest of its
-exact verification expectation, and links the qualifying pass/full Receipt
-when that expectation's trimmed text is nonempty. An expectation whose trimmed
-text is empty requires a null link while its digest still binds the exact stored
-bytes; migration does not rewrite legacy whitespace-only values.
+new native cycle uses version 1 and stores the domain-separated digest of its
+exact verification expectation. Through schema v20, and for the schema-v21
+`caller_attestation` arm, a trimmed-nonempty expectation links the qualifying
+pass/full Receipt. Schema-v21 `not_required` and `runner_observation` cycles
+instead retain a null Receipt link and satisfy the current closed tagged union;
+migration does not rewrite legacy whitespace-only values.
 The sole partial `legacy_current_done` reopen bridge remains the only
 post-v17 version-0/null/null insert.
 
@@ -2030,8 +2044,9 @@ preflight outside SQLite and converge on one locked native capture:
    current verification and review gates, and select their deterministic
    bases;
 3. choose canonical completion time and next ordinal;
-4. insert links, Finding snapshots, one immutable Bundle-v2 null-Runner row, and one complete
-   verification/subject/evidence-basis-v1 `native_done` cycle;
+4. insert links, Finding snapshots, one immutable Bundle-v2 row carrying the
+   selected caller-attestation, not-required, or Runner-observation basis, and
+   one complete verification/subject/evidence-basis-v1 `native_done` cycle;
 5. update the current Task to done with identical evidence;
 6. rerun lane invariants;
 7. insert the existing completion event with the internal cycle link; and
@@ -2099,10 +2114,11 @@ The only new stable error is
 `completion_history_inconsistent: stored completion history is inconsistent`.
 It exposes no IDs, counts, values, hashes, SQL, or paths.
 
-## Current Schema-v21 Verification Receipt And Bundle Design
+## Schema-v21 Verification Receipt Arm And Bundle Integration
 
-This section defines the current schema-v21 implementation while retaining the
-accepted schema-v18 Receipt boundary. It does not rewrite the immutable v0.10.0 artifact or claim a later
+This section defines the M21 Receipt arm retained by the current schema-v21
+implementation and its integration with the sole three-branch selector defined
+under TG-M24.3A Accepted Schema-v21 Gate-Basis Design. It does not rewrite the immutable v0.10.0 artifact or claim a later
 published artifact identity. Schema, parser, completion, Viewer compatibility,
 Skill guidance, package inventory, and tests form one atomic supported
 boundary. Its completed execution narrative is available only through the
@@ -2111,10 +2127,12 @@ history index.
 ### Ownership And Data Model
 
 `verification_receipts.py` owns Receipt input validation,
-exact-current classification, gate evaluation, and the bounded public read
-model. `storage.py` alone owns schema, migration, append/read queries, and
-Receipt uniqueness. `tasks.py` and `completion_workflow.py` consume the gate
-result; neither opens raw SQLite or interprets verification prose.
+exact-current classification, M21-arm evaluation, and the bounded public read
+model. The single service selector combines that arm with the closed Runner
+basis; callers do not choose a branch. `storage.py` alone owns schema, migration,
+append/read queries, and Receipt uniqueness. `tasks.py` and
+`completion_workflow.py` consume the selected gate result; neither opens raw
+SQLite or interprets verification prose.
 `cli.py` owns only parser/dispatch/formatting for the one Receipt write leaf.
 
 Schema v17 added an immutable `verification_receipts` table with:
@@ -2147,9 +2165,9 @@ verification_receipt_id
 Existing rows receive version 0 with null digest and null Receipt link. New
 native cycle insertion is constrained to version 1 and stores the same domain-
 separated digest of its exact Task verification text, including empty text and
-preserved whitespace. Version 1 requires a linked Receipt when the stored
-verification text is nonempty after trimming and requires a null link
-otherwise. The Receipt ID
+preserved whitespace. The `caller_attestation` arm requires a linked Receipt;
+the `not_required` and `runner_observation` arms require a null Receipt link and
+are constrained by the closed schema-v21 verification-basis union. The Receipt ID
 is a nullable foreign key; repository and projection validation additionally
 prove identical ownership, Contract, stored digest, target tuple, and
 `pass/full` qualification. Existing cycle immutability covers all three
@@ -2181,10 +2199,14 @@ allocated under the writer. Structural validation reuses the existing target,
 timestamp, privacy, signed-integer, and ownership validators.
 
 The activated Skill sequence is exact material, existing target set with its
-returned generation retained, external verification, Receipt add with that
-expected generation, review prepare/record, then completion. This moves target
-setting before verification and adds exactly one normal-path call, making the
-target bound 10 or 11 with Effort Advisory.
+returned generation and closed route retained, review prepare/record, then
+completion. Only `verification_route=receipt_required` makes a marker-`0` or
+exact closed no-launch fallback branch additionally run external verification
+and add a Receipt with that expected generation. `not_required` and
+`runner_pass` do not; `blocked` stops with its returned existing blocking code.
+Target setting remains before either verification branch. The manual/fallback
+path is bounded by 10 calls, or 11 with Effort Advisory; the Runner-pass path is
+bounded by 9 or 10 respectively.
 
 ### Receipt Write And Freshness
 
@@ -2214,7 +2236,7 @@ Parser and common state errors retain their existing owners. The Receipt
 service owns one ordered validator matching the specification: normalized
 caller fields, Task existence, done/disallowed status, nonempty expectation,
 stored target structure/presence, expected generation, capture version, then
-uniqueness. It is
+the current schema-v21 Runner selector, then uniqueness. It is
 used before and after the writer lock so a concurrent status, Contract,
 expectation, or target change cannot select a different semantic ordering or
 bind the row to new material. CLI formatting owns the exact three-line success
@@ -2225,9 +2247,12 @@ the legacy command-label predicate only to subject-zero rows and requires only
 the fixed internal value for subject-one rows; public projection emits the
 versioned subject union and never that internal value.
 
-One shared evaluator classifies a row as exact-current only when project,
+One shared Receipt evaluator classifies a row as exact-current only when project,
 Task, Contract revision, expectation digest, and every target field equal the
-coherent current basis. The gate computes, in order:
+coherent current basis. The sole completion selector delegates to this evaluator
+only for marker `0` or the exact closed no-launch fallback; the qualifying Runner
+branch and all other marker-`2` states use the closed selector matrix above. The
+M21 arm computes, in order:
 
 ```text
 specified expectation + no exact-current Receipt
@@ -2263,25 +2288,29 @@ historical. A same-content edit is a no-op under existing edit rules.
 
 ### Completion And Read Integration
 
-The completion basis snapshot adds the current verification gate summary and
-Receipt ID. Outside-Git preflight and locked revalidation both run the same
-evaluator. Ordered validation keeps the explicit `verification_required` flag
-check and target validation first, then reports the missing or blocking
-Receipt, then evaluates current review findings/receipts. `task complete
+The completion basis snapshot adds the current selected verification gate
+summary and its nullable Receipt or Runner-observation basis. Outside-Git
+preflight and locked revalidation both run the same sole selector. Ordered
+validation keeps the explicit `verification_required` flag check and target
+validation first, then applies the selected Runner/M21 gate, then evaluates
+current review findings/receipts. `task complete
 --check` adds the two Receipt codes to its bounded allow-list; check never
 writes or reserves a Receipt.
 
-For specified verification, native completion proves that the unique current
-Receipt is `pass/full`, then inserts a version-1 cycle with its Receipt foreign
-key and identical expectation digest, the Task update, and linked completion
-event in one transaction. A native completion whose verification text is empty
+For specified verification, the manual arm proves that the unique current
+Receipt is `pass/full` and inserts its Receipt foreign key; the qualifying
+Runner arm proves the exact selected observation and inserts its Runner pointer
+with a null Receipt link. Both then insert the version-1 cycle with the identical
+expectation digest, Task update, and linked completion event in one transaction.
+A native completion whose verification text is empty
 after trimming inserts version 1 with its exact-byte digest and a null Receipt
 link; the exact empty string uses the empty-text digest. Any ownership,
 target, digest, link, or gate drift rolls everything back. Existing
 `verification_attestation=true` remains in the cycle, so the Receipt
 strengthens rather than silently replaces the current explicit assertion.
 Version-0/null/null marks only migrated cycles and the sole exact compatibility
-bridge; a version-1 nonempty cycle with no valid linked Receipt is
+bridge. A version-1 nonempty cycle whose stored tagged arm has neither its valid
+linked Receipt nor its valid qualifying Runner observation is
 `completion_history_inconsistent`, never an inferred legacy success.
 
 The one Receipt command is `verification receipt add`. Its success data is
@@ -2291,6 +2320,13 @@ Task and adds the fixed `verification_evidence` object. The formatter exposes
 only the specification's public allow-lists; no separate list/show/import/
 export command or pagination is added.
 
+Canonical state resolution retains its existing global admitted-row validation.
+After that boundary, the `task show` handler reads only the selected Task for
+Runner routing and builds the complete show projection once. Marker `0` and
+done history use that same Task-local connection; only live marker `2` releases
+SQLite for physical selection and opens the final projection connection. No
+branch adds a second global Runner-graph validation.
+
 Recent rows replace the old top-level label with the five-key versioned
 subject union. The parent read model adds `current_verification_subject`, null
 without a capture-v1 verification criterion. Subject-zero done cycles retain
@@ -2298,12 +2334,14 @@ their exact v17 link/label rules; reopen clears current capture and requires a
 fresh target.
 
 The read model emits the exact types and nulls fixed by the specification.
-Empty expectation is not required and is satisfied. A nonempty active Task
-reports target-required, Receipt-required, Receipt-blocking, or satisfied in
-that order. A done Task backed by a matching version-0 cycle reports the
+Empty marker-`0` expectation is not required and is satisfied. A nonempty
+active Task first reports target-required or stale basis; its selected manual
+arm then reports Receipt-required, Receipt-blocking, or satisfied, while its
+qualifying Runner arm reports satisfied with a null Receipt ID. A done Task
+backed by a matching version-0 cycle reports the
 explicit legacy exemption even when its target is absent, including the sole
-bridge-created cycle. A version-1 done cycle is validated against its linked
-Receipt before projection. Task-show failure data includes a null
+bridge-created cycle. A version-1 done cycle is validated against its stored
+manual or Runner branch before projection. Task-show failure data includes a null
 `verification_evidence`; text Task show remains unchanged. The Receipt write
 alone has the fixed three-line text projection.
 
@@ -3662,6 +3700,17 @@ service delegates to the same seam, so target normalization, Git observation,
 manifest construction, authority capture, event bytes, output, and maintenance
 classification have one owner.
 
+The service returns the stored target result with exactly
+`verification_route` and `blocking_code` for JSON success. The text formatter
+ignores those keys and remains byte-compatible; failure data remains the prior
+three-key empty shape. The ordinary path derives `not_required` or
+`receipt_required` from the captured verification expectation before its write.
+The Runner path classifies the terminal observation after successful T2 with
+one helper shared by the exact-current selector: closed no-launch fallback maps
+to `receipt_required`, qualifying pass to `runner_pass`, and every other stored
+terminal to `blocked` plus `verification_receipt_blocking`. No post-commit DB
+reread, Runner reselection, or second public command is introduced.
+
 The service performs target/plan/package/runtime and every deterministic
 Runner-only preflight before a writer. A fallback or definite closed
 pre-attempt Runner-only failure invokes one target-only T1 transaction. An
@@ -3823,8 +3872,9 @@ a real consuming project or Git state. Tests cover:
   History state, CSP, text-only DOM, and absence of storage/network APIs;
 - package self-containment, manifest integrity, project-scoped/self-host
   layouts, ignore rules, Windows Python 3.12/3.14, and junction rejection;
-- M16 fresh-session behavioral fixtures plus the current ten-call default flow
-  and mechanically enabled eleven-call flow; and
+- M16 fresh-session behavioral fixtures plus the current manual/fallback
+  ten-call default flow and mechanically enabled eleven-call flow, with the
+  Receiptless Runner-pass branch one call lower; and
 - release archive reproducibility, license/manifest/archive inclusion,
   legacy upgrade/paired rollback, exact workflow identity, and sanitized
   release evidence.

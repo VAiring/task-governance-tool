@@ -1345,7 +1345,7 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
         )
         self.assertEqual(gate, VerificationGate(True, True, None, None))
 
-    def test_eligibility_one_pending_cleanup_and_invalidations_stay_read_only(
+    def test_eligibility_one_pending_cleanup_and_invalidations_preserve_history(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory(
@@ -1375,49 +1375,47 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
                     target_generation=generation,
                 )
                 self.assertEqual(pending["state"], "pending")
-                self.assertEqual(
+                pending_cleanup = (
                     storage_module.read_pending_verification_runner_cleanup(
                         connection,
                         project_id=target.project.project_id,
-                    ),
-                    (),
+                    )
                 )
+                self.assertEqual(len(pending_cleanup), 1)
+                self.assertEqual(
+                    pending_cleanup[0]["resolution"].task_id, task_id
+                )
+                self.assertEqual(
+                    pending_cleanup[0]["resolution"].target_generation,
+                    generation,
+                )
+                self.assertEqual(pending_cleanup[0]["state"], "pending")
 
                 cleanup = _cleanup_only_event(first, token="a" * 16)
                 before_events = connection.execute(
                     "SELECT COUNT(*) FROM verification_runner_sandbox_events"
                 ).fetchone()[0]
-                with self.assertRaises(storage_module.StorageError) as rejected:
-                    with connection:
-                        connection.execute("BEGIN IMMEDIATE")
-                        persist_cleanup = getattr(
-                            storage_module,
-                            "persist_verification_runner_restart_cleanup_locked",
-                        )
+                with connection:
+                    connection.execute("BEGIN IMMEDIATE")
+                    persist_cleanup = getattr(
+                        storage_module,
+                        "persist_verification_runner_restart_cleanup_locked",
+                    )
+                    self.assertTrue(
                         persist_cleanup(
                             connection,
                             cleanup_event=(
                                 storage_module.VerificationRunnerSandboxEvent(**cleanup)
                             ),
                         )
-                self.assertEqual(
-                    rejected.exception.code,
-                    "evidence_ledger_inconsistent",
-                )
+                    )
                 self.assertEqual(
                     connection.execute(
                         "SELECT COUNT(*) FROM verification_runner_sandbox_events"
                     ).fetchone()[0],
-                    before_events,
+                    before_events + 1,
                 )
-                with connection:
-                    connection.execute("BEGIN IMMEDIATE")
-                    _insert_mapping(
-                        connection,
-                        "verification_runner_sandbox_events",
-                        cleanup,
-                    )
-                    storage_module.validate_schema21_storage(connection)
+                storage_module.validate_schema21_storage(connection)
                 cleaned = storage_module.read_verification_runner_generation_locked(
                     connection,
                     project_id=target.project.project_id,

@@ -29,7 +29,8 @@ and sanitized projection. Accepted TG-M24.2D owns the integrated acceptance of
 that already-implemented shadow slice. TG-M24.3A accepted the schema-v21
 persistence design below, TG-M24.3B accepted that persistence and compatibility
 boundary, and TG-M24.3C accepted Runner completion-gate integration. TG-M24.4A
-is the sole current TG-M24 acceptance authority; every later unit remains
+accepted supported, fallback, failure, cleanup, and privacy flows. TG-M24.4B is
+the sole current TG-M24 acceptance authority; every later unit remains
 inactive.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.

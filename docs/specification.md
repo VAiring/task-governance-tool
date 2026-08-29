@@ -22,8 +22,9 @@ Accepted TG-M24.2D covered only that already-implemented shadow slice from one
 fresh exact target and activated no additional product behavior or Runner
 completion gate. TG-M24.3A accepted the schema-v21 gate-basis contract below,
 TG-M24.3B accepted its persistence and compatibility boundary, and TG-M24.3C
-accepted its gate integration. TG-M24.4A is the sole current acceptance unit;
-every later M24 acceptance unit remains inactive.
+accepted its gate integration. TG-M24.4A accepted its supported, fallback,
+failure, cleanup, and privacy flows. TG-M24.4B is the sole current acceptance
+unit; every later M24 acceptance unit remains inactive.
 Completed execution narrative is history, and the Task
 database owns live state and evidence.
 
@@ -2873,9 +2874,10 @@ Accepted 2C owns parent-service orchestration plus audit-only schema-v20
 observation and Evidence capture, and accepted 2D owns only integrated
 acceptance of that shadow slice. Accepted 3A froze the schema-v21 contract, and
 accepted 3B implemented its persistence boundary with unchanged M21 gates, and
-accepted 3C owns Runner gate integration. Current 4A owns supported, fallback,
-failure, cleanup, and privacy acceptance; release acceptance remains inactive
-behind its owning sequential units.
+accepted 3C owns Runner gate integration, and accepted 4A owns supported,
+fallback, failure, cleanup, and privacy acceptance. Current 4B owns legacy,
+core, migration, recovery, and fresh-state acceptance; release acceptance
+remains inactive behind its owning sequential units.
 
 The approved execution direction is an explicit-opt-in Runner for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified

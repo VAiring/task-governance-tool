@@ -16,8 +16,8 @@
 > TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and
 > public-activation baseline; TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and
 > TG-M24.2C and TG-M24.2D are accepted predecessors. TG-M24.3A, TG-M24.3B,
-> and TG-M24.3C are accepted predecessors, and TG-M24.4A owns current formal
-> authority. Every later unit in
+> TG-M24.3C, and TG-M24.4A are accepted predecessors. TG-M24.4B owns current
+> formal authority. Every later unit in
 > this document remains inactive until its immediate predecessor is accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
@@ -647,7 +647,7 @@ reviews.
 
 <a id="tg-m24-4a"></a>
 
-## TG-M24.4A Current Supported, Fallback, Failure, And Privacy Acceptance
+## TG-M24.4A Accepted Supported, Fallback, Failure, And Privacy Acceptance
 
 Task `tg_task_0da786589eb5144a` validates clean-repository no-Runner/manual
 fallback, shadow pass, nonzero, timeout, cancel, start failure, target/Contract
@@ -658,7 +658,7 @@ independent Tier 2 PASS reviews.
 
 <a id="tg-m24-4b"></a>
 
-## TG-M24.4B Inactive Legacy, Core, And Fresh-State Acceptance
+## TG-M24.4B Current Legacy, Core, And Fresh-State Acceptance
 
 Task `tg_task_220ff054e445f40e` preserves v19-to-v20 compatibility and validates
 the TG-M24.3A contract and TG-M24.3B implementation for v20-to-v21 migration,
@@ -666,7 +666,7 @@ fresh schema v21, reentry,
 backup/recovery, Task/Contract/target/Receipt/review/completion history, M1-M23
 behavior, Evidence Bundle/JSON, Viewer, Analyzer coexistence, and exact clean-
 target reproducibility. The schema-v21 contract remains the separate
-TG-M24.3A Tier 2 decision; this inactive acceptance unit chooses no alternate
+TG-M24.3A Tier 2 decision; this current acceptance unit chooses no alternate
 migration tag or DDL. No unexpected or
 newly skipped test is accepted. Corrections return to their owner. Completion
 requires full offline lanes, exact diff, and two independent Tier 2 PASS

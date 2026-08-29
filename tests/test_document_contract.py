@@ -622,7 +622,7 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.3C Current Runner Gate Integration And M21 Fallback",
+                "## TG-M24.3C Accepted Runner Gate Integration And M21 Fallback",
                 "## TG-M24.3C Inactive Runner Gate Integration And M21 Fallback",
             )
             self.assertIn(
@@ -634,8 +634,20 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
+                "## TG-M24.4A Current Supported, Fallback, Failure, And Privacy Acceptance",
+                "## TG-M24.4A Inactive Supported, Fallback, Failure, And Privacy Acceptance",
+            )
+            self.assertIn(
+                "m24_current_binding",
+                self.codes(contract.check_document_contract(root)),
+            )
+
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.M24,
                 "<a id=\"tg-m24-r4a\"></a>",
-                "## TG-M24.3C Current Duplicate Owner\n\n"
+                "## TG-M24.4A Current Duplicate Owner\n\n"
                 "<a id=\"tg-m24-r4a\"></a>",
             )
             self.assertIn(
@@ -647,8 +659,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.3C Current Runner Gate Integration And M21 Fallback",
-                "## TG-M24.3C Runner Gate Integration And M21 Fallback Current",
+                "## TG-M24.4A Current Supported, Fallback, Failure, And Privacy Acceptance",
+                "## TG-M24.4A Supported, Fallback, Failure, And Privacy Acceptance Current",
             )
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -1293,11 +1305,10 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.3C"])
+            self.assertEqual(m24["current_units"], ["TG-M24.4A"])
             self.assertEqual(
                 m24["inactive_units"],
                 [
-                    "TG-M24.4A",
                     "TG-M24.4B",
                     "TG-M24.4C",
                     "TG-M24.4D",

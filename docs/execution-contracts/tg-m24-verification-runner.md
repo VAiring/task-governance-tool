@@ -15,8 +15,9 @@
 > exact-candidate manifest closure, with no product activation. TG-M24.R3A and
 > TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and
 > public-activation baseline; TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and
-> TG-M24.2C and TG-M24.2D are accepted predecessors. TG-M24.3A and TG-M24.3B
-> are accepted predecessors, and TG-M24.3C owns current formal authority. Every later unit in
+> TG-M24.2C and TG-M24.2D are accepted predecessors. TG-M24.3A, TG-M24.3B,
+> and TG-M24.3C are accepted predecessors, and TG-M24.4A owns current formal
+> authority. Every later unit in
 > this document remains inactive until its immediate predecessor is accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
@@ -558,7 +559,7 @@ unit of its replacement sequence. It owns no status or gate by itself.
 Task `tg_task_2b7efe1c4545cca8` froze the complete schema-v21 contract required
 before persistence or gate implementation. That accepted unit was
 documentation-only and created no schema-v21 row or artifact. Accepted
-TG-M24.3B activated only the frozen persistence boundary; current TG-M24.3C
+TG-M24.3B activated only the frozen persistence boundary; accepted TG-M24.3C
 owns the qualifying gate integration.
 
 The exact future product behavior is owned by the
@@ -576,7 +577,7 @@ contract while continuing to write marker/eligibility zero and using M21 as the
 sole completion gate. Its schema-v21 readers validate and historically
 replay structurally valid later eligibility-one completed history, but a live
 marker-two target fails new completion closed until an explicit fresh target.
-Current TG-M24.3C alone may select, write, and qualify a live eligibility-one basis: an
+Accepted TG-M24.3C alone may select, write, and qualify a live eligibility-one basis: an
 exact-current complete-plan launched pass may qualify, a launched non-pass
 blocks, and only the specified closed no-launch route may use a fresh exact-
 current M21 Receipt. Existing invalidation rules make every stale live basis
@@ -626,7 +627,7 @@ validator framework, or natural-language document checker.
 
 <a id="tg-m24-3c"></a>
 
-## TG-M24.3C Current Runner Gate Integration And M21 Fallback
+## TG-M24.3C Accepted Runner Gate Integration And M21 Fallback
 
 Task `tg_task_dc015144091f8e60` may let one qualifying exact-current complete-
 plan schema-v21 trusted-local Runner pass satisfy verification. Every launched
@@ -646,7 +647,7 @@ reviews.
 
 <a id="tg-m24-4a"></a>
 
-## TG-M24.4A Inactive Supported, Fallback, Failure, And Privacy Acceptance
+## TG-M24.4A Current Supported, Fallback, Failure, And Privacy Acceptance
 
 Task `tg_task_0da786589eb5144a` validates clean-repository no-Runner/manual
 fallback, shadow pass, nonzero, timeout, cancel, start failure, target/Contract

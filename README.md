@@ -532,8 +532,10 @@ coverage.
   assets, freezes the M25 subsystem boundary, and then implements and accepts
   an explicit-opt-in Runner in ordered Tier 2 slices. TG-M24.1B's fixed-
   Candidate-C route is superseded. The candidate is now v0.12.0/schema v21;
-  accepted 3B supplies persistence and current 3C integrates the existing
+  accepted 3B supplies persistence and accepted 3C integrates the existing
   explicit-opt-in trusted-local target-set Runner with the completion gate.
+  Current 4A accepts its supported, fallback, failure, cleanup, and privacy
+  flows without changing that behavior.
   Exact-current complete-plan pass uses its Runner observation, exact closed
   no-launch alone falls back to M21 Receipts, and other selected Runner states
   block. No new CLI leaf, public JSON field beyond the two approved target-set

@@ -21,9 +21,9 @@ observation and Evidence capture; it cannot satisfy verification or completion.
 Accepted TG-M24.2D covered only that already-implemented shadow slice from one
 fresh exact target and activated no additional product behavior or Runner
 completion gate. TG-M24.3A accepted the schema-v21 gate-basis contract below,
-and TG-M24.3B accepted its persistence and compatibility boundary. TG-M24.3C
-is the sole current unit and owns gate integration; every later M24 acceptance
-unit remains inactive.
+TG-M24.3B accepted its persistence and compatibility boundary, and TG-M24.3C
+accepted its gate integration. TG-M24.4A is the sole current acceptance unit;
+every later M24 acceptance unit remains inactive.
 Completed execution narrative is history, and the Task
 database owns live state and evidence.
 
@@ -1626,7 +1626,7 @@ and projection-generation advance. Schema v20 and the accepted TG-M24.3B
 marker-zero schema-v21 baseline instead insert one version-2 Bundle whose basis is
 `caller_attestation` with the qualifying Receipt for nonempty verification or
 `not_required` with no Receipt for trimmed-empty verification, and its Runner
-observation is null. Current TG-M24.3C retains both branches and additionally
+observation is null. Accepted TG-M24.3C retains both branches and additionally
 admits the exact qualifying schema-v21 `runner_observation` branch, reusing its
 existing Runner Reference and criterion link as Bundle members. The sole partial
 legacy reopen bridge stays version 0/null and advances only that generation. A
@@ -1946,7 +1946,7 @@ preservation of unrelated standalone objects.
 Schema v20 is the intermediate M24.2 shadow foundation and never becomes a
 qualifying Runner gate basis. Accepted TG-M24.3A owns the separate Tier 2
 schema-v21 contract below, accepted TG-M24.3B owns its persistence
-implementation, and current TG-M24.3C alone owns qualifying Runner-basis
+implementation, and accepted TG-M24.3C alone owns qualifying Runner-basis
 activation with explicit M21 fallback.
 
 <a id="current-schema-v21-persistence-contract"></a>
@@ -1957,7 +1957,7 @@ TG-M24.3A accepted this contract without changing product code. Accepted
 TG-M24.3B implemented its persistence and compatibility boundary, including the
 public schema constant, setup target, package identity, backup/recovery, and
 Viewer source range. It changes no public CLI or JSON shape, Viewer UI, Skill,
-Runner runtime, or completion gate. Current TG-M24.3C alone activates the
+Runner runtime, or completion gate. Accepted TG-M24.3C alone activates the
 qualifying Runner branch.
 
 Migration 21 is exactly `verification_runner_gate_basis`. It adds no table,
@@ -2872,8 +2872,9 @@ plan selection, exact target observation, and private materialization. Accepted
 Accepted 2C owns parent-service orchestration plus audit-only schema-v20
 observation and Evidence capture, and accepted 2D owns only integrated
 acceptance of that shadow slice. Accepted 3A froze the schema-v21 contract, and
-accepted 3B implemented its persistence boundary with unchanged M21 gates.
-Current 3C owns Runner gate integration; release acceptance remains inactive
+accepted 3B implemented its persistence boundary with unchanged M21 gates, and
+accepted 3C owns Runner gate integration. Current 4A owns supported, fallback,
+failure, cleanup, and privacy acceptance; release acceptance remains inactive
 behind its owning sequential units.
 
 The approved execution direction is an explicit-opt-in Runner for repositories
@@ -3107,7 +3108,7 @@ on-command-failure rule: T1 is a completed existing target-set mutation with
 its atomic Runner intent, cleanup-only is completed lifecycle closure, and the
 failed phase is later. No automatic relaunch, fallback success, Receipt,
 review, or completion claim is synthesized.
-Target-set text and failure output remain byte-compatible. Current TG-M24.3C
+Target-set text and failure output remain byte-compatible. Accepted TG-M24.3C
 adds only the two closed JSON success keys defined above.
 
 Backup and recovery preserve the SQLite audit graph and validate its exact

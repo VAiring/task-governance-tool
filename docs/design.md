@@ -27,9 +27,10 @@ native-adapter, and deterministic-cleanup slice. Accepted TG-M24.2C supplied
 parent-service orchestration, durable audit-only observation/Evidence mapping,
 and sanitized projection. Accepted TG-M24.2D owns the integrated acceptance of
 that already-implemented shadow slice. TG-M24.3A accepted the schema-v21
-persistence design below, and TG-M24.3B accepted that persistence and
-compatibility boundary. TG-M24.3C is the sole current TG-M24 authority and owns
-Runner completion-gate integration.
+persistence design below, TG-M24.3B accepted that persistence and compatibility
+boundary, and TG-M24.3C accepted Runner completion-gate integration. TG-M24.4A
+is the sole current TG-M24 acceptance authority; every later unit remains
+inactive.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 
@@ -864,7 +865,7 @@ At schema v20 the native completion transaction derived
 Verification Receipt is linked and as `not_required` for trimmed-empty
 verification, wrote Bundle version 2/source schema 20, and always wrote a null
 Runner-observation pointer. Accepted TG-M24.3B retained those M21-only branches
-with source schema 21. Current TG-M24.3C keeps both and additionally writes the
+with source schema 21. Accepted TG-M24.3C keeps both and additionally writes the
 exact qualifying `runner_observation` branch, reusing its existing Runner
 Reference and criterion link as Bundle members. Existing Bundle-v1 payload bytes
 and digests remain immutable, and Evidence JSON may project both preserved v1
@@ -876,8 +877,8 @@ and fixed legacy policy API.
 `evidence_projection.py` selects the format from the validated source schema,
 never from caller input. For schemas v20-v21 it extends the v1 payload key set only
 with `verification_basis` and `runner_observation`. The former is the exact
-four-key object fixed by the specification; the latter is null in R3B and in
-current 3C is populated only for the qualifying Runner branch. It
+four-key object fixed by the specification; the latter is null in R3B and under
+accepted 3C is populated only for the qualifying Runner branch. It
 seals the sorted-key compact payload with
 `taskgov-completion-evidence-bundle-v2\0`, writes envelope
 `format_version=2`, and recomputes the stored digest and byte count from those
@@ -895,7 +896,7 @@ and index-last; its other limits and publication behavior are unchanged.
 ## TG-M24.3A Accepted Schema-v21 Gate-Basis Design
 
 This section is the complete implementation design accepted by TG-M24.3A and
-consumed by accepted TG-M24.3B and current TG-M24.3C. TG-M24.3B activated only
+consumed by accepted TG-M24.3B and accepted TG-M24.3C. TG-M24.3B activated only
 persistence and compatibility; the M21 Receipt remained the sole verification/
 completion gate through that unit. TG-M24.3C alone activates the qualifying
 Runner branch.
@@ -1065,7 +1066,7 @@ database remains readable under the same schema. Its completion writer must
 fail closed with no cycle, Bundle, event, Evidence, Viewer, or backup mutation
 when the exact current Task marker is `2`; it must not reinterpret that state as
 ordinary M21 fallback. An explicit fresh target generation is required before
-3B may resume marker-0 M21 behavior. Current TG-M24.3C replaces only this
+3B may resume marker-0 M21 behavior. Accepted TG-M24.3C replaces only this
 service-level nonactivation boundary and does not own migration or DDL.
 
 The schema-v21 public gate adapter consumes only a fully validated Task and the
@@ -1930,7 +1931,7 @@ Schema v19 adds immutable criterion links, Bundle membership/Finding snapshots,
 completion Bundles, cycle evidence-basis linkage, and Evidence projection state.
 Schema v20 introduced those owners and made `evidence_projection.py` assemble
 the Bundle-v2 null-Runner payload. Accepted TG-M24.3B initially retained that
-M21-only writer on schema v21; current TG-M24.3C adds only the reserved qualifying
+M21-only writer on schema v21; accepted TG-M24.3C adds only the reserved qualifying
 Runner arm while preserving version-1 Bundle bytes and digests. The storage repository inserts links,
 snapshots, Bundle, and cycle atomically; migrated cycles stay version 0/null and
 receive only `legacy_unknown` index entries. The canonical Analyzer writer

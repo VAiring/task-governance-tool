@@ -206,7 +206,7 @@ remain index-only as `legacy_unknown`; SQLite remains canonical. Setup repairs t
 doctor observes it read-only, and post-commit maintenance runs Evidence,
 Viewer, then backup. Viewer snapshot v4 accepts v5-v21 but adds no Evidence UI.
 TG-M24.2C activated only the standalone schema-v20 audit writer under the
-existing exact target-set dispatch. Current TG-M24.3C keeps that sole trigger,
+existing exact target-set dispatch. Accepted TG-M24.3C keeps that sole trigger,
 admits only the exact qualifying pass or closed no-launch M21 fallback, and lets
 Evidence JSON project only an already-stored sanitized qualifying observation.
 Projection adds no Runner invocation or normal-loop call, Viewer UI, public
@@ -268,8 +268,10 @@ and recovery compatibility; it creates no Runner rows, links, members, or
 projection and grants no process or completion-gate authority. Runner service
 integration remains owned by the ordered M24.2 implementation. Accepted
 TG-M24.3A owns the frozen schema-v21 contract; accepted TG-M24.3B owns its
-persistence implementation, and current TG-M24.3C owns qualifying gate
-activation with explicit M21 fallback before M24.4 acceptance. Schema-v20 shadow evidence cannot satisfy
+persistence implementation, and accepted TG-M24.3C owns qualifying gate
+activation with explicit M21 fallback. Current TG-M24.4A owns supported,
+fallback, failure, cleanup, and privacy acceptance; later M24.4 acceptance
+remains inactive. Schema-v20 shadow evidence cannot satisfy
 that gate. The current v0.12.0 candidate identity is schema v21; schema v20
 remains the M24.2 intermediate shadow foundation and migration source.
 The final checkpoint requires no unclassified or new measurable debt, no
@@ -287,9 +289,10 @@ TG-M24 is approved sequential Tier 2 work in lane
 TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, TG-M24.R4V, TG-M24.R3A, TG-M24.R3B,
 TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, TG-M24.2C, and TG-M24.2D are
 accepted predecessors; TG-M24.1B is superseded. TG-M24.3A's documentation-only
-schema-v21 contract freeze and TG-M24.3B's persistence foundation are
-accepted, current formal authority belongs only to TG-M24.3C, and every later unit remains inactive
-behind their accepted immediate predecessor.
+schema-v21 contract freeze, TG-M24.3B's persistence foundation, and TG-M24.3C's
+gate integration are accepted. Current formal authority belongs only to
+TG-M24.4A, and TG-M24.4B through TG-M24.CP4 remain inactive behind their
+accepted immediate predecessor.
 Exact unit identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 not duplicated in this gateway.
@@ -303,9 +306,9 @@ public setup action at a separate approval checkpoint.
 
 Accepted TG-M24.R1 consumed only the reviewed R2 bootstrap boundary and changed
 no product byte; accepted R2A, R2B, R2C, R4A, and R4V changed no supported product
-behavior. Current 3C and its successors advance in exact order, use fresh
-current evidence, and never reuse superseded Candidate-C, LPAC, or diagnostic
-recovery evidence.
+behavior. Accepted 3C supplies the predecessor gate; current 4A and its
+successors advance in exact order, use fresh current evidence, and never reuse
+superseded Candidate-C, LPAC, or diagnostic recovery evidence.
 The approved 2C decision is the narrow audit-only route: preflight fallback
 retains the ordinary target-only path, while an eligible call takes one
 zero-wait Runner lock before T1 and holds it across pending reconciliation,
@@ -328,7 +331,7 @@ Bundle format v2, Evidence index v2, and Viewer snapshot v4, and adds no table,
 column, index, public command, JSON/UI field, or Skill trigger. Existing
 schema-v20 Runner rows remain eligibility-zero audit history and migration may
 neither promote nor backfill them. Exact physical, migration, recovery,
-compatibility, privacy, and accepted-3B/current-3C rules remain delegated to the
+compatibility, privacy, and accepted-3B/accepted-3C rules remain delegated to the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 the specification, and the design rather than being duplicated here.
 

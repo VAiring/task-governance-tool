@@ -411,6 +411,7 @@ M24_SPLIT_STRUCTURAL_STATUS_UNITS = (
     "TG-M24.4A",
     "TG-M24.4B",
     "TG-M24.4C",
+    "TG-M24.4D",
 )
 NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
@@ -1676,11 +1677,8 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.4C"],
-                "inactive_units": [
-                    "TG-M24.4D",
-                    "TG-M24.CP4",
-                ],
+                "current_units": ["TG-M24.4D"],
+                "inactive_units": ["TG-M24.CP4"],
                 "superseded_units": ["TG-M24.1B"],
             },
         ],
@@ -2291,8 +2289,8 @@ def _m24_trusted_local_authority_sync(
         ("tg-m24-3c", "tg-m24.3c", "accepted"),
         ("tg-m24-4a", "tg-m24.4a", "accepted"),
         ("tg-m24-4b", "tg-m24.4b", "accepted"),
-        ("tg-m24-4c", "tg-m24.4c", "current"),
-        ("tg-m24-4", "tg-m24.4d", "inactive"),
+        ("tg-m24-4c", "tg-m24.4c", "accepted"),
+        ("tg-m24-4", "tg-m24.4d", "current"),
         ("tg-m24-cp4", "tg-m24.cp4", "inactive"),
     )
     observed_statuses: list[tuple[str, str, str]] = []

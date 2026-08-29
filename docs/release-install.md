@@ -12,10 +12,11 @@ Current TG-M24 authority replaces the former fixed-Candidate-C and adversarial
 LPAC route with an ordered trusted-local Runner repair and implementation
 sequence. Accepted R3A/R3B supplied the schema-v20 storage and activation
 baseline, accepted TG-M24.3A froze the schema-v21 contract, accepted
-TG-M24.3B/3C supplied persistence and gate integration, and accepted
-TG-M24.4A/4B validated the Runner and compatibility boundaries. Current
-TG-M24.4C reconciles only the v0.13 package and release-candidate identity. An
-explicitly opted-in trusted-local target may use
+TG-M24.3B/3C supplied persistence and gate integration, accepted TG-M24.4A/4B
+validated the Runner and compatibility boundaries, and accepted TG-M24.4C
+reconciled only the v0.13 package and release-candidate identity. Current
+TG-M24.4D performs final integrated acceptance without changing that identity.
+An explicitly opted-in trusted-local target may use
 the existing target-set Runner: an exact-current complete-plan pass supplies
 the Runner-observation completion basis without a Verification Receipt, while
 the exact closed no-launch fallback alone returns to the M21 Receipt path.

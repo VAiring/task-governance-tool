@@ -271,9 +271,10 @@ TG-M24.3A owns the frozen schema-v21 contract; accepted TG-M24.3B owns its
 persistence implementation, and accepted TG-M24.3C owns qualifying gate
 activation with explicit M21 fallback. Accepted TG-M24.4A owns supported,
 fallback, failure, cleanup, and privacy acceptance, and accepted TG-M24.4B owns
-legacy, core, migration, recovery, and fresh-state acceptance. Current
-TG-M24.4C owns only package and release-candidate reconciliation; later M24.4
-acceptance remains inactive. Schema-v20 shadow evidence cannot satisfy
+legacy, core, migration, recovery, and fresh-state acceptance. Accepted
+TG-M24.4C owns only package and release-candidate reconciliation. Current
+TG-M24.4D owns final integrated acceptance, and TG-M24.CP4 remains inactive.
+Schema-v20 shadow evidence cannot satisfy
 that gate. The current v0.13.0 candidate identity is schema v21; schema v20
 remains the M24.2 intermediate shadow foundation and migration source.
 The final checkpoint requires no unclassified or new measurable debt, no
@@ -292,10 +293,10 @@ TG-M24.R2B, TG-M24.R2C, TG-M24.R4A, TG-M24.R4V, TG-M24.R3A, TG-M24.R3B,
 TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, TG-M24.2C, and TG-M24.2D are
 accepted predecessors; TG-M24.1B is superseded. TG-M24.3A's documentation-only
 schema-v21 contract freeze, TG-M24.3B's persistence foundation, TG-M24.3C's
-gate integration, TG-M24.4A acceptance, and TG-M24.4B compatibility acceptance
-are accepted. Current formal authority belongs only to TG-M24.4C, and
-TG-M24.4D through TG-M24.CP4 remain inactive behind their accepted immediate
-predecessor.
+gate integration, TG-M24.4A acceptance, TG-M24.4B compatibility acceptance,
+and TG-M24.4C package acceptance are accepted. Current formal authority belongs
+only to TG-M24.4D, and TG-M24.CP4 remains inactive behind its accepted
+immediate predecessor.
 Exact unit identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 not duplicated in this gateway.
@@ -309,10 +310,9 @@ public setup action at a separate approval checkpoint.
 
 Accepted TG-M24.R1 consumed only the reviewed R2 bootstrap boundary and changed
 no product byte; accepted R2A, R2B, R2C, R4A, and R4V changed no supported product
-behavior. Accepted 3C supplies the predecessor gate; accepted 4A and 4B,
-current 4C, and its successors advance in exact order, use fresh current
-evidence, and never reuse superseded Candidate-C, LPAC, or diagnostic recovery
-evidence.
+behavior. Accepted 3C supplies the predecessor gate; accepted 4A, 4B, and 4C,
+current 4D, and its successor advance in exact order, use fresh current evidence,
+and never reuse superseded Candidate-C, LPAC, or diagnostic recovery evidence.
 The approved 2C decision is the narrow audit-only route: preflight fallback
 retains the ordinary target-only path, while an eligible call takes one
 zero-wait Runner lock before T1 and holds it across pending reconciliation,

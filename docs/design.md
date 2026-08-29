@@ -31,8 +31,9 @@ persistence design below, TG-M24.3B accepted that persistence and compatibility
 boundary, and TG-M24.3C accepted Runner completion-gate integration. TG-M24.4A
 accepted supported, fallback, failure, cleanup, and privacy flows, and
 TG-M24.4B accepted legacy, core, migration, recovery, and fresh-state
-compatibility. TG-M24.4C is the sole current TG-M24 acceptance authority;
-every later unit remains inactive.
+compatibility, and TG-M24.4C accepted package and release-candidate
+reconciliation. TG-M24.4D is the sole current TG-M24 integrated acceptance
+authority; TG-M24.CP4 remains inactive.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 

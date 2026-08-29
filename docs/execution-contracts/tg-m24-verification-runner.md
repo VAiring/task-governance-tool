@@ -16,9 +16,9 @@
 > TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and
 > public-activation baseline; TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and
 > TG-M24.2C and TG-M24.2D are accepted predecessors. TG-M24.3A, TG-M24.3B,
-> TG-M24.3C, TG-M24.4A, and TG-M24.4B are accepted predecessors. TG-M24.4C
-> owns current formal authority. Every later unit in
-> this document remains inactive until its immediate predecessor is accepted.
+> TG-M24.3C, TG-M24.4A, TG-M24.4B, and TG-M24.4C are accepted predecessors.
+> TG-M24.4D owns current formal authority. Every later unit in this document
+> remains inactive until its immediate predecessor is accepted.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
 > The separate TG-M24.R2 bootstrap Task supplies only a reviewed phase-one
@@ -674,7 +674,7 @@ reviews.
 
 <a id="tg-m24-4c"></a>
 
-## TG-M24.4C Current v0.13 Package And Release-Candidate Acceptance
+## TG-M24.4C Accepted v0.13 Package And Release-Candidate Acceptance
 
 Task `tg_task_b0a3bf776bea1e93` reconciles the final v0.13/schema-v21 package,
 using the exact schema-v21 contract accepted in TG-M24.3A, persistence
@@ -688,7 +688,7 @@ independent Tier 2 PASS reviews.
 
 <a id="tg-m24-4"></a>
 
-## TG-M24.4D Inactive Verification Runner Integrated Acceptance
+## TG-M24.4D Current Verification Runner Integrated Acceptance
 
 Task `tg_task_f81f2d126f033a59` performs the final integrated acceptance of
 the trusted-local Runner, Runner-observed basis, M21 fallback, process bounds,

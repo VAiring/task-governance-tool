@@ -537,8 +537,9 @@ coverage.
   explicit-opt-in trusted-local target-set Runner with the completion gate, and
   accepted 4A validates its supported, fallback, failure, cleanup, and privacy
   flows. Accepted 4B validates legacy, core, migration, recovery, and
-  fresh-state compatibility. Current 4C reconciles only the package and
-  release-candidate boundary without changing that behavior.
+  fresh-state compatibility. Accepted 4C reconciles only the package and
+  release-candidate boundary. Current 4D performs final integrated acceptance
+  without changing that behavior or package identity; CP4 remains inactive.
   Exact-current complete-plan pass uses its Runner observation, exact closed
   no-launch alone falls back to M21 Receipts, and other selected Runner states
   block. No new CLI leaf, public JSON field beyond the two approved target-set

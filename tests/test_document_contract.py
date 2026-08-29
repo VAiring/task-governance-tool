@@ -36,6 +36,7 @@ FIXTURE_LINK_TARGETS = (
     "docs/releases/v0.10.0.md",
     "docs/releases/v0.11.0.md",
     "docs/releases/v0.12.0.md",
+    "docs/releases/v0.13.0.md",
     "task-governance-tool/LICENSE",
 )
 DOC2_ROW = (
@@ -646,7 +647,7 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.4B Current Legacy, Core, And Fresh-State Acceptance",
+                "## TG-M24.4B Accepted Legacy, Core, And Fresh-State Acceptance",
                 "## TG-M24.4B Inactive Legacy, Core, And Fresh-State Acceptance",
             )
             self.assertIn(
@@ -658,8 +659,20 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
+                "## TG-M24.4C Current v0.13 Package And Release-Candidate Acceptance",
+                "## TG-M24.4C Inactive v0.13 Package And Release-Candidate Acceptance",
+            )
+            self.assertIn(
+                "m24_current_binding",
+                self.codes(contract.check_document_contract(root)),
+            )
+
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.M24,
                 "<a id=\"tg-m24-r4a\"></a>",
-                "## TG-M24.4B Current Duplicate Owner\n\n"
+                "## TG-M24.4C Current Duplicate Owner\n\n"
                 "<a id=\"tg-m24-r4a\"></a>",
             )
             self.assertIn(
@@ -671,8 +684,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.4B Current Legacy, Core, And Fresh-State Acceptance",
-                "## TG-M24.4B Legacy, Core, And Fresh-State Acceptance Current",
+                "## TG-M24.4C Current v0.13 Package And Release-Candidate Acceptance",
+                "## TG-M24.4C v0.13 Package And Release-Candidate Acceptance Current",
             )
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -1317,11 +1330,10 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.4B"])
+            self.assertEqual(m24["current_units"], ["TG-M24.4C"])
             self.assertEqual(
                 m24["inactive_units"],
                 [
-                    "TG-M24.4C",
                     "TG-M24.4D",
                     "TG-M24.CP4",
                 ],
@@ -1351,6 +1363,8 @@ class DocumentContractTests(unittest.TestCase):
             self.assertNotIn("TG-M24.3A", m24["current_units"])
             self.assertNotIn("TG-M24.4A", m24["inactive_units"])
             self.assertNotIn("TG-M24.4A", m24["current_units"])
+            self.assertNotIn("TG-M24.4B", m24["inactive_units"])
+            self.assertNotIn("TG-M24.4B", m24["current_units"])
             self.write_registry(root, dict(reversed(tuple(registry.items()))))
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)

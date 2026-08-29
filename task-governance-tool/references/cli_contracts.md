@@ -3,7 +3,7 @@
 Use this reference when exact public commands, arguments, JSON fields, bounds,
 or error behavior matter.
 
-The current v0.12.0 package uses task schema v21 and offline snapshot v4 with
+The current v0.13.0 package uses task schema v21 and offline snapshot v4 with
 source schemas v5 through v21. The published v0.10.0 release remains the
 immutable schema-v16 predecessor.
 
@@ -318,7 +318,7 @@ A ready result has this structure:
   "components": {
     "package": {
       "package_name": "task-governance-tool",
-      "package_version": "0.12.0",
+      "package_version": "0.13.0",
       "release_origin": "github:VAiring/task-governance-tool",
       "manifest_version": 1,
       "status": "clean",

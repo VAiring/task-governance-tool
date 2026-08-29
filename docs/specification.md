@@ -1,7 +1,7 @@
 # task-governance-tool Current Product Specification
 
 Status: The immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
-The current unpublished candidate is v0.12.0 with SQLite schema v21, Viewer
+The current unpublished candidate is v0.13.0 with SQLite schema v21, Viewer
 snapshot v4 accepting source schemas v5-v21, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with strict recovery and stored-Task/Contract-pointer validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
 TG-M20S.3 remains inactive and no TG-M23 unit is current. TG-M24.1 and
 TG-M24.1A are accepted predecessors; the fixed-Candidate-C and adversarial
@@ -23,8 +23,9 @@ fresh exact target and activated no additional product behavior or Runner
 completion gate. TG-M24.3A accepted the schema-v21 gate-basis contract below,
 TG-M24.3B accepted its persistence and compatibility boundary, and TG-M24.3C
 accepted its gate integration. TG-M24.4A accepted its supported, fallback,
-failure, cleanup, and privacy flows. TG-M24.4B is the sole current acceptance
-unit; every later M24 acceptance unit remains inactive.
+failure, cleanup, and privacy flows, and TG-M24.4B accepted legacy, core,
+migration, recovery, and fresh-state compatibility. TG-M24.4C is the sole
+current acceptance unit; every later M24 acceptance unit remains inactive.
 Completed execution narrative is history, and the Task
 database owns live state and evidence.
 
@@ -2874,10 +2875,11 @@ Accepted 2C owns parent-service orchestration plus audit-only schema-v20
 observation and Evidence capture, and accepted 2D owns only integrated
 acceptance of that shadow slice. Accepted 3A froze the schema-v21 contract, and
 accepted 3B implemented its persistence boundary with unchanged M21 gates, and
-accepted 3C owns Runner gate integration, and accepted 4A owns supported,
-fallback, failure, cleanup, and privacy acceptance. Current 4B owns legacy,
-core, migration, recovery, and fresh-state acceptance; release acceptance
-remains inactive behind its owning sequential units.
+accepted 3C owns Runner gate integration, accepted 4A owns supported, fallback,
+failure, cleanup, and privacy acceptance, and accepted 4B owns legacy, core,
+migration, recovery, and fresh-state acceptance. Current 4C owns only package
+and release-candidate reconciliation; later integrated acceptance remains
+inactive behind its owning sequential units.
 
 The approved execution direction is an explicit-opt-in Runner for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified

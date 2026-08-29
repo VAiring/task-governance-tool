@@ -5,7 +5,7 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.12.0` uses SQLite schema v21 and Viewer snapshot v4 with source
+Release `0.13.0` uses SQLite schema v21 and Viewer snapshot v4 with source
 schemas 5 through 21 as the current unpublished local candidate contract. It
 has not been pushed, tagged, or published. The immutable published release
 remains v0.10.0 at its recorded commit, tag, and GitHub prerelease.
@@ -71,7 +71,7 @@ the old legacy primary. A moved legacy backup-only source is not a relocation
 candidate and fails no-write as `project_state_unreadable`. It does not add a
 recovery command or accept a recovery path.
 
-The 0.12.0 candidate retains one immutable project identity in the fixed
+The 0.13.0 candidate retains one immutable project identity in the fixed
 package-local `state/current/` layout and keeps the governed-directory binding
 separately.
 Fresh setup creates a UUID-backed identity. Explicit setup mechanically moves
@@ -141,12 +141,12 @@ single bounded effective-ignore preflight may inspect Git. Doctor is optional
 and is not a prerequisite for setup or normal task work.
 
 Candidate validation rehearses the isolated transition from the exact legacy
-v0.1.0/schema-v2 baseline to v0.12.0/schema v21. Paired rollback restores the
+v0.1.0/schema-v2 baseline to v0.13.0/schema v21. Paired rollback restores the
 matched pre-migration package, database, and managed artifacts together; it
 never runs legacy code against schema v21 or treats a Git checkout alone as
 state rollback. The published v0.10.0/schema-v16 and unpublished
-v0.11.0/schema-v17 rehearsal records remain immutable lineage and do not
-satisfy the current candidate gate. See
+v0.11.0/schema-v17 and v0.12.0/schema-v21 rehearsal records remain immutable
+lineage and do not satisfy the current candidate gate. See
 [Release And Install Decision](docs/release-install.md) for the complete
 boundary.
 
@@ -365,7 +365,7 @@ plus the existing sanitized Viewer warning.
 
 ## Public Commands
 
-The 0.12.0 local candidate exposes exactly these 21 command leaves:
+The 0.13.0 local candidate exposes exactly these 21 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -439,9 +439,10 @@ visibility. Its title is `task-governance-tool v0.10.0`, archive
 `git-archive-v1` recipe, checksum format, workflow identity, and runtime matrix
 are fixed in [docs/release-install.md](docs/release-install.md).
 
-The current v0.12.0 package is an unpublished local candidate described by
-[docs/releases/v0.12.0.md](docs/releases/v0.12.0.md). The immutable v0.11.0
-candidate-lineage note remains at
+The current v0.13.0 package is an unpublished local candidate described by
+[docs/releases/v0.13.0.md](docs/releases/v0.13.0.md). The immutable v0.12.0
+and v0.11.0 candidate-lineage notes remain at
+[docs/releases/v0.12.0.md](docs/releases/v0.12.0.md) and
 [docs/releases/v0.11.0.md](docs/releases/v0.11.0.md). No commit, tag, archive,
 checksum, GitHub Release, push, or publication is claimed or authorized for it.
 
@@ -531,12 +532,13 @@ coverage.
   trusted-local sequence repairs the existing WIP, removes retired security
   assets, freezes the M25 subsystem boundary, and then implements and accepts
   an explicit-opt-in Runner in ordered Tier 2 slices. TG-M24.1B's fixed-
-  Candidate-C route is superseded. The candidate is now v0.12.0/schema v21;
+  Candidate-C route is superseded. The candidate is now v0.13.0/schema v21;
   accepted 3B supplies persistence, accepted 3C integrates the existing
   explicit-opt-in trusted-local target-set Runner with the completion gate, and
   accepted 4A validates its supported, fallback, failure, cleanup, and privacy
-  flows. Current 4B accepts legacy, core, migration, recovery, and fresh-state
-  compatibility without changing that behavior.
+  flows. Accepted 4B validates legacy, core, migration, recovery, and
+  fresh-state compatibility. Current 4C reconciles only the package and
+  release-candidate boundary without changing that behavior.
   Exact-current complete-plan pass uses its Runner observation, exact closed
   no-launch alone falls back to M21 Receipts, and other selected Runner states
   block. No new CLI leaf, public JSON field beyond the two approved target-set

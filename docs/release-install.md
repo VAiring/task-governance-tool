@@ -1,7 +1,7 @@
 # Release Candidate And Published Install Record
 
 This note owns both the current local package candidate and the immutable
-published artifact identity. Version 0.12.0 is an unpublished local candidate:
+published artifact identity. Version 0.13.0 is an unpublished local candidate:
 no candidate commit, push, tag, archive, checksum, GitHub Release, or
 publication is fixed, claimed, or authorized. The published v0.10.0 artifact
 and its exact commit, tag, Release, archive, checksum, and Release body remain
@@ -11,9 +11,11 @@ Skill in any project.
 Current TG-M24 authority replaces the former fixed-Candidate-C and adversarial
 LPAC route with an ordered trusted-local Runner repair and implementation
 sequence. Accepted R3A/R3B supplied the schema-v20 storage and activation
-baseline, and accepted TG-M24.3A froze the schema-v21 contract. The current
-candidate adopts accepted TG-M24.3B schema-v21 persistence and the current
-TG-M24.3C gate integration. An explicitly opted-in trusted-local target may use
+baseline, accepted TG-M24.3A froze the schema-v21 contract, accepted
+TG-M24.3B/3C supplied persistence and gate integration, and accepted
+TG-M24.4A/4B validated the Runner and compatibility boundaries. Current
+TG-M24.4C reconciles only the v0.13 package and release-candidate identity. An
+explicitly opted-in trusted-local target may use
 the existing target-set Runner: an exact-current complete-plan pass supplies
 the Runner-observation completion basis without a Verification Receipt, while
 the exact closed no-launch fallback alone returns to the M21 Receipt path.
@@ -26,7 +28,7 @@ Untrusted or external targets remain on the M21 manual verification path.
 
 | Item | Value |
 |---|---|
-| Package version | `0.12.0` |
+| Package version | `0.13.0` |
 | SQLite schema | v21 |
 | Viewer snapshot | v4, accepting source schemas v5-v21 (v5 through v21) |
 | Public command leaves | 21 |
@@ -40,7 +42,7 @@ Untrusted or external targets remain on the M21 manual verification path.
 | Checksum | not produced |
 | Archive root | `task-governance-tool/` |
 | Release title | not assigned |
-| Release notes | `docs/releases/v0.12.0.md` candidate note |
+| Release notes | `docs/releases/v0.13.0.md` candidate note |
 | Workflow/name/job | `.github/workflows/ci.yml`, `CI`, `test` |
 | CI Python matrix | 3.12 and 3.14 |
 
@@ -55,8 +57,8 @@ visibility. Its archive is `task-governance-tool-0.10.0.zip`, its checksum is
 `task-governance-tool-0.10.0.zip.sha256`, its title is
 `task-governance-tool v0.10.0`, and its exact canonical body remains
 `docs/releases/v0.10.0.md`. The accepted archive root is
-`task-governance-tool/`. No v0.12.0 candidate work changes or supersedes these
-facts.
+`task-governance-tool/`. Neither the v0.12.0 candidate-lineage work nor the
+current v0.13.0 candidate work changes or supersedes these facts.
 
 ## License Boundary
 
@@ -91,6 +93,12 @@ The archive must exclude:
 - root `references/`, `research.md`, tests, fixtures, development-only
   documents, and local scratch output;
 - caches, logs, temporary files, environment files, secrets, and editor files.
+
+For the current v0.13.0 candidate, archive-inventory acceptance means proving
+that this packaged-core inventory, manifest coverage, and exclusion boundary
+are exact without producing or publishing an archive. The R4A-approved retired
+Candidate/LPAC/native assets remain physically absent from tracked repository
+and package material, with no tracked archive or dormant package copy.
 
 The canonical accepted archive recipe identifier is `git-archive-v1`:
 
@@ -167,7 +175,7 @@ Setup reports `schema_to=21` and `evidence_status` as `not_present`, `current`,
 `evidence_projection_publish` after maintenance/binding and before
 `viewer_publish`; read-only preview plans it without writing.
 
-Version 0.12.0 retains the fixed package-local `state/current/` layout. Fresh
+Version 0.13.0 retains the fixed package-local `state/current/` layout. Fresh
 write-mode setup creates one UUIDv4-backed immutable project identity and
 stores the mutable governed-directory binding separately. Explicit setup
 publishes supported schema-v1-through-v13 legacy state into the fixed layout
@@ -276,14 +284,14 @@ migration.
 
 The immutable v0.10.0 release acceptance rehearsed the transition from the
 exact legacy v0.1.0/schema-v2 baseline to v0.10.0/schema v16. The current
-v0.12.0 candidate must separately rehearse that isolated baseline through
+v0.13.0 candidate must separately rehearse that isolated baseline through
 schema v21, including schema-v17 Receipt/completion preservation, subject and
 provenance migration, capture-v0/fresh retargeting, 500/1,000 capacity,
 preserved Bundle-v1 and native Bundle-v2 projection recovery, backup recovery,
 and no-partial-write behavior before it can become a release.
-The v0.11.0 candidate note remains immutable lineage and its rehearsal cannot
-satisfy this current gate. Neither rehearsal selects or mutates
-user-wide, linked, junction, or custom-`--db` state.
+The v0.11.0 and v0.12.0 candidate notes remain immutable lineage, and their
+rehearsals cannot satisfy this current gate. No candidate rehearsal selects or
+mutates user-wide, linked, junction, or custom-`--db` state.
 
 Rollback restores one matched pre-migration package, database, and managed
 artifact set as a single compatibility point, then proves that the legacy
@@ -387,7 +395,7 @@ unchanged.
 
 ## Public CLI Surface
 
-The current 0.12.0 candidate exposes exactly these 21 command leaves:
+The current 0.13.0 candidate exposes exactly these 21 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -535,7 +543,7 @@ The v0.10.0 acceptance boundary is complete:
   body is the exact bytes of `docs/releases/v0.10.0.md`, SHA-256
   `aaa118a3fbbb261ec6a24f7a80f50f161e606a86857f99e17f957f34ba044a03`.
 
-For the current 0.12.0 candidate, first run the repository-only, offline,
+For the current 0.13.0 candidate, first run the repository-only, offline,
 read-only checker with `python tools/release_contract.py --repo .`. It derives
 the parser leaves and package/schema/Viewer versions from owning Python code,
 uses the release manifest as the exact packaged-core inventory, and checks
@@ -555,6 +563,10 @@ checker and lane runner are repository tooling, not installable `taskgov`
 commands or target-project writes. A prior v0.10.0 result, Task receipt,
 approval object, or historical gate never satisfies a future candidate.
 
+TG-M24.4C validates this CI policy and wiring locally only. It does not invoke
+`workflow_dispatch`, contact GitHub, or satisfy a later externally authorized
+release operation.
+
 Pushing, dispatching external CI, changing `main`, creating or changing a tag,
 or publishing a Release always requires separate exact current authorization.
 The completed v0.10.0 approvals authorize no later operation.
@@ -565,7 +577,7 @@ supplies that authorization.
 
 ## Current Candidate Summary
 
-Version 0.12.0 is an unpublished local candidate. Schema v19 retains the
+Version 0.13.0 is an unpublished local candidate. Schema v19 retains the
 schema-v18 capture ledger, subjects/provenance, retargeting, and 1,000-character
 capacity, then activates Bundle v1 and fixed Evidence JSON v1. Schema v20
 preserves those Bundle bytes and digests, writes Bundle v2 with a null Runner

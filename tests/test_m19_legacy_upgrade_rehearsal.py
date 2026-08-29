@@ -338,7 +338,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertEqual(overlay_state_snapshot, legacy_state_snapshot)
             version = run_cli(legacy_skill, project, "--version")
             self.assertEqual(version.returncode, 0)
-            self.assertEqual(version.stdout.strip(), "taskgov 0.12.0")
+            self.assertEqual(version.stdout.strip(), "taskgov 0.13.0")
 
             preview = self.invoke(
                 legacy_skill, project, "setup", "--repo", str(project),

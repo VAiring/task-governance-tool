@@ -74,6 +74,7 @@ def copy_release_fixture(destination: Path) -> Path:
         "releases/v0.10.0.md",
         "releases/v0.11.0.md",
         "releases/v0.12.0.md",
+        "releases/v0.13.0.md",
     ):
         source = ROOT / "docs" / Path(*relative.split("/"))
         target = fixture / "docs" / Path(*relative.split("/"))

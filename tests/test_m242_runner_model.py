@@ -465,7 +465,7 @@ class RunnerModelTests(unittest.TestCase):
         model_name = "scripts/task_governance_tool/verification_runner.py"
         self.assertEqual(manifest["manifest_version"], 1)
         self.assertEqual(manifest["package_name"], "task-governance-tool")
-        self.assertEqual(manifest["package_version"], "0.12.0")
+        self.assertEqual(manifest["package_version"], "0.13.0")
         self.assertEqual(
             manifest["release_origin"],
             "github:VAiring/task-governance-tool",

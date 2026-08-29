@@ -1,7 +1,7 @@
 # task-governance-tool Current Implementation Design
 
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
-The current unpublished candidate is v0.12.0 with SQLite schema v21, Viewer
+The current unpublished candidate is v0.13.0 with SQLite schema v21, Viewer
 snapshot v4 accepting source schemas v5-v21, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with managed recovery and stored-Task/Contract relationship validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
 TG-M20S.3 remains inactive and no TG-M23 unit is current. TG-M24.1,
 TG-M24.1A, TG-M24.R1, TG-M24.R2A, TG-M24.R2B, TG-M24.R2C, TG-M24.R4A,
@@ -29,9 +29,10 @@ and sanitized projection. Accepted TG-M24.2D owns the integrated acceptance of
 that already-implemented shadow slice. TG-M24.3A accepted the schema-v21
 persistence design below, TG-M24.3B accepted that persistence and compatibility
 boundary, and TG-M24.3C accepted Runner completion-gate integration. TG-M24.4A
-accepted supported, fallback, failure, cleanup, and privacy flows. TG-M24.4B is
-the sole current TG-M24 acceptance authority; every later unit remains
-inactive.
+accepted supported, fallback, failure, cleanup, and privacy flows, and
+TG-M24.4B accepted legacy, core, migration, recovery, and fresh-state
+compatibility. TG-M24.4C is the sole current TG-M24 acceptance authority;
+every later unit remains inactive.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 

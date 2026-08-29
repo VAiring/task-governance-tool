@@ -227,10 +227,13 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("matched pre-migration package", normalized)
             self.assertIn("git checkout alone", normalized)
 
-    def test_v012_candidate_is_local_and_separate_from_published_v010(self):
+    def test_v013_candidate_is_local_and_separate_from_published_v010(self):
         candidate_bytes = (
-            ROOT / "docs" / "releases" / "v0.12.0.md"
+            ROOT / "docs" / "releases" / "v0.13.0.md"
         ).read_bytes()
+        v012_lineage = (
+            ROOT / "docs" / "releases" / "v0.12.0.md"
+        ).read_text(encoding="utf-8")
         v011_lineage = (
             ROOT / "docs" / "releases" / "v0.11.0.md"
         ).read_text(encoding="utf-8")
@@ -245,7 +248,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertTrue(candidate_bytes.endswith(b"\n"))
         self.assertEqual(
             candidate.splitlines()[0],
-            "# task-governance-tool v0.12.0",
+            "# task-governance-tool v0.13.0",
         )
         for text in (candidate, release_guide, readme):
             normalized = " ".join(text.lower().split())
@@ -268,11 +271,19 @@ class SkillSelfContainmentTests(unittest.TestCase):
         ):
             self.assertIn(candidate_identity_row, release_guide)
         self.assertEqual(
+            v012_lineage.splitlines()[0],
+            "# task-governance-tool v0.12.0",
+        )
+        self.assertEqual(
             v011_lineage.splitlines()[0],
             "# task-governance-tool v0.11.0",
         )
-        self.assertIn("v0.11.0 candidate note remains immutable lineage", release_guide)
-        self.assertIn("docs/releases/v0.12.0.md", release_guide)
+        self.assertIn(
+            "v0.11.0 and v0.12.0 candidate notes remain immutable lineage",
+            release_guide,
+        )
+        self.assertIn("docs/releases/v0.13.0.md", release_guide)
+        self.assertIn("docs/releases/v0.13.0.md", readme)
         self.assertIn("docs/releases/v0.12.0.md", readme)
         self.assertIn("docs/releases/v0.11.0.md", readme)
 
@@ -306,7 +317,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         )
         self.assertIn("snapshot v4", contracts.lower())
         self.assertIn("schema v18", release_note.lower())
-        self.assertIn("0.12.0", release_note)
+        self.assertIn("0.13.0", release_note)
         self.assertIn("verification and review gates", skill_md.lower())
         self.assertIn("current governed task", openai_yaml.lower())
 
@@ -376,7 +387,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             f"source schemas v{VIEWER_MIN_SOURCE_SCHEMA_VERSION}-v{SCHEMA_VERSION}",
             release_note.lower(),
         )
-        self.assertEqual(manifest["package_version"], "0.12.0")
+        self.assertEqual(manifest["package_version"], "0.13.0")
         documented_uuid = re.search(
             r'"project_id": "(tg_project_[0-9a-f]{32})"',
             contracts,
@@ -725,7 +736,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertIn("0.12.0", version.stdout)
+        self.assertIn("0.13.0", version.stdout)
 
     def test_tg_m12_local_handoff_guidance_and_isolated_flow_are_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -750,7 +761,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         for text in (workflow, contracts):
             self.assertIn("handoff_not_persisted", text)
         self.assertIn("schema v18", release_note.lower())
-        self.assertIn("0.12.0", release_note)
+        self.assertIn("0.13.0", release_note)
         for text in (workflow, contracts, readme, release_note):
             self.assertIn("Effort Advisory", text)
         self.assertIn("effort_advisory_enabled", skill_md)

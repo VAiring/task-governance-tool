@@ -4,10 +4,10 @@
     "SKILL.md": "sha256:95cbc318f0ad4698ebfbefca7adb4a99569f73c52a99f181270a105f023f3124",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
     "assets/task-viewer.template.html": "sha256:7f0868c39120f51016955df3d72d413ae0ccbd03ef52f67158b140c51ea9b563",
-    "references/cli_contracts.md": "sha256:7a92d0fd0939709e42babec18ed3a65e1786cdc754830cb9ce71e29123a5f32e",
+    "references/cli_contracts.md": "sha256:38fa1596cf7d4fa9c58353cd02f5f862af8a2a2090de2485db686620ef28284a",
     "references/reconciliation.md": "sha256:8ab7b5e734034a8dc186b274de5c1ce65eb17496e7a5690011585292670688aa",
     "references/task_workflow.md": "sha256:24b91462838dbed0a93fdf89ce1aff1b82dd5a711f270e1b760e68554a88f085",
-    "scripts/task_governance_tool/__init__.py": "sha256:44ba80e6d514b0dda7ee4168ef859fd6f443fcc418428a1c4216d98c33da2d88",
+    "scripts/task_governance_tool/__init__.py": "sha256:345bfca5a3d585ad1257214bfe76557a7e05f0bb176cabe0e0c1678ec92763f8",
     "scripts/task_governance_tool/_analysis_win32.py": "sha256:f6b82f5fd9f93bcd8f4acc9494bc3854ff1919f7627675ada20e8ade3087a7b9",
     "scripts/task_governance_tool/_analysis_windows_process.py": "sha256:549701f1e2197f1488e65e9a7608fb96e003ebb756d5360d50d10a49ac4f4df5",
     "scripts/task_governance_tool/_verification_runner_win32.py": "sha256:3971a9ca5264f0e7a892b769c2c1703c335543316f344e32b11a7a5a52426ff3",
@@ -65,6 +65,6 @@
   },
   "manifest_version": 1,
   "package_name": "task-governance-tool",
-  "package_version": "0.12.0",
+  "package_version": "0.13.0",
   "release_origin": "github:VAiring/task-governance-tool"
 }

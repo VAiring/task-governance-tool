@@ -671,7 +671,7 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.4D Current Verification Runner Integrated Acceptance",
+                "## TG-M24.4D Accepted Verification Runner Integrated Acceptance",
                 "## TG-M24.4D Inactive Verification Runner Integrated Acceptance",
             )
             self.assertIn(
@@ -683,8 +683,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.CP4 Inactive Final No-Debt Repair Checkpoint And M25 Handoff",
                 "## TG-M24.CP4 Current Final No-Debt Repair Checkpoint And M25 Handoff",
+                "## TG-M24.CP4 Inactive Final No-Debt Repair Checkpoint And M25 Handoff",
             )
             self.assertIn(
                 "m24_current_binding",
@@ -696,7 +696,7 @@ class DocumentContractTests(unittest.TestCase):
                 root,
                 contract.M24,
                 "<a id=\"tg-m24-r4a\"></a>",
-                "## TG-M24.4D Current Duplicate Owner\n\n"
+                "## TG-M24.CP4 Current Duplicate Owner\n\n"
                 "<a id=\"tg-m24-r4a\"></a>",
             )
             self.assertIn(
@@ -708,8 +708,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.4D Current Verification Runner Integrated Acceptance",
-                "## TG-M24.4D Verification Runner Integrated Acceptance Current",
+                "## TG-M24.CP4 Current Final No-Debt Repair Checkpoint And M25 Handoff",
+                "## TG-M24.CP4 Final No-Debt Repair Checkpoint And M25 Handoff Current",
             )
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -1354,11 +1354,8 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.4D"])
-            self.assertEqual(
-                m24["inactive_units"],
-                ["TG-M24.CP4"],
-            )
+            self.assertEqual(m24["current_units"], ["TG-M24.CP4"])
+            self.assertEqual(m24["inactive_units"], [])
             self.assertEqual(m24["superseded_units"], ["TG-M24.1B"])
             self.assertNotIn("TG-M24.1", m24["current_units"])
             self.assertNotIn("TG-M24.1A", m24["inactive_units"])
@@ -1388,6 +1385,7 @@ class DocumentContractTests(unittest.TestCase):
             self.assertNotIn("TG-M24.4B", m24["current_units"])
             self.assertNotIn("TG-M24.4C", m24["inactive_units"])
             self.assertNotIn("TG-M24.4C", m24["current_units"])
+            self.assertNotIn("TG-M24.4D", m24["current_units"])
             self.assertNotIn("TG-M24.4D", m24["inactive_units"])
             self.write_registry(root, dict(reversed(tuple(registry.items()))))
             result = contract.check_document_contract(root)
@@ -1626,7 +1624,6 @@ class DocumentContractTests(unittest.TestCase):
             "TG-M24.R4B",
             "TG-M24.R5",
             "TG-M24.2A",
-            "TG-M24.CP4",
             "TG-DOC.2",
             "TG-M21.5",
         ):

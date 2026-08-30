@@ -16,9 +16,10 @@
 > TG-M24.R3B are accepted predecessors for the schema-v20 migration/storage and
 > public-activation baseline; TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and
 > TG-M24.2C and TG-M24.2D are accepted predecessors. TG-M24.3A, TG-M24.3B,
-> TG-M24.3C, TG-M24.4A, TG-M24.4B, and TG-M24.4C are accepted predecessors.
-> TG-M24.4D owns current formal authority. Every later unit in this document
-> remains inactive until its immediate predecessor is accepted.
+> TG-M24.3C, TG-M24.4A, TG-M24.4B, TG-M24.4C, and TG-M24.4D are accepted
+> predecessors. TG-M24.CP4 owns current formal authority and remains current
+> until TG-DOC.3 is activated through the separately owned documentation
+> gateway.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
 > The separate TG-M24.R2 bootstrap Task supplies only a reviewed phase-one
@@ -688,7 +689,7 @@ independent Tier 2 PASS reviews.
 
 <a id="tg-m24-4"></a>
 
-## TG-M24.4D Current Verification Runner Integrated Acceptance
+## TG-M24.4D Accepted Verification Runner Integrated Acceptance
 
 Task `tg_task_f81f2d126f033a59` performs the final integrated acceptance of
 the trusted-local Runner, Runner-observed basis, M21 fallback, process bounds,
@@ -701,7 +702,7 @@ with no open High or Medium finding.
 
 <a id="tg-m24-cp4"></a>
 
-## TG-M24.CP4 Inactive Final No-Debt Repair Checkpoint And M25 Handoff
+## TG-M24.CP4 Current Final No-Debt Repair Checkpoint And M25 Handoff
 
 Task `tg_task_a9e1229d594594d4` closes M24 only from one clean reviewed
 candidate. Against baseline `888a77759cfc59376089b8ebdc509e748638f603`,
@@ -711,7 +712,8 @@ unowned/duplicate/disabled/new-SKIP/meaningless tests, package/document/schema/
 DAG drift, or open M24 work blocks closure. CP4 changes no product byte and
 records no correction. Completion requires all current checks, a current
 `pass/full` Receipt, and two independent Tier 2 PASS reviews before the M25
-handoff and TG-DOC.3 normalization may begin.
+handoff and TG-DOC.3 normalization may begin. Its formal-current binding
+retires only through the separately owned TG-DOC.3 activation synchronization.
 
 ## Expansion Boundary
 

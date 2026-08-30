@@ -14,8 +14,11 @@ sequence. Accepted R3A/R3B supplied the schema-v20 storage and activation
 baseline, accepted TG-M24.3A froze the schema-v21 contract, accepted
 TG-M24.3B/3C supplied persistence and gate integration, accepted TG-M24.4A/4B
 validated the Runner and compatibility boundaries, and accepted TG-M24.4C
-reconciled only the v0.13 package and release-candidate identity. Current
-TG-M24.4D performs final integrated acceptance without changing that identity.
+reconciled only the v0.13 package and release-candidate identity. Accepted
+TG-M24.4D performed final integrated acceptance without changing that identity.
+Current TG-M24.CP4 performs only the final no-debt checkpoint and M25 handoff;
+it changes no product byte, records no correction, and does not change the
+candidate identity.
 An explicitly opted-in trusted-local target may use
 the existing target-set Runner: an exact-current complete-plan pass supplies
 the Runner-observation completion basis without a Verification Receipt, while

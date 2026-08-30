@@ -45,15 +45,15 @@ Accepted R4A left its inventory-approved retired repository material and
 dedicated tests physically absent, without an archive or dormant copy.
 TG-M24.1B is superseded and non-gating. TG-M24.R3A, TG-M24.R3B, TG-M24.R4B,
 TG-M24.R5, TG-M24.2A, TG-M24.2B, TG-M24.2C, and TG-M24.2D are accepted
-predecessors; TG-M24.3A, TG-M24.3B, and TG-M24.3C are accepted predecessors,
-TG-M24.4A, TG-M24.4B, and TG-M24.4C are accepted, and TG-M24.4D is the sole
-current unit. TG-M24.CP4 remains inactive
-in the exact sequential order owned by the routed contract. The
+predecessors; TG-M24.3A, TG-M24.3B, TG-M24.3C, TG-M24.4A, TG-M24.4B,
+TG-M24.4C, and TG-M24.4D are accepted predecessors, and TG-M24.CP4 is the sole
+current unit in the exact sequential order owned by the routed contract. The
 separate TG-M24.R2 bootstrap checkpoint supported accepted R1 but activates no
 product behavior.
 No TG-M23 execution unit is current. TG-M24 Runner completion-gate authority
 belongs only to accepted TG-M24.3C; accepted TG-M24.4A/TG-M24.4B/TG-M24.4C
-and current TG-M24.4D own acceptance only;
+and accepted TG-M24.4D own acceptance only. Current TG-M24.CP4 owns only the
+final no-debt checkpoint and M25 handoff and changes no product byte;
 network/live Analyzer acceptance remains outside the accepted scope. The
 derived-evidence contract is the sole unit owner/router; its process-safety
 route delegates one non-overlapping physical-safety seam and owns no unit state
@@ -66,10 +66,11 @@ or core semantics.
 TG-DOC.2 is an accepted post-M23/pre-M24 documentation predecessor. TG-DOC.3
 preserves the inactive post-M24 normalization scope after TG-M24.CP4. Neither
 route changes product behavior. M24.1 design, M24.1A, R1, R2A, R2B, R2C,
-R4A, R4V, R3A, R3B, R4B, R5, 2A, 2B, 2C, and 2D are accepted predecessors,
-M24.1B is superseded, 3A, 3B, 3C, 4A, 4B, and 4C are accepted, 4D is current,
-CP4 is inactive, and indexing or reading them activates
-no product behavior.
+R4A, R4V, R3A, R3B, R4B, R5, 2A, 2B, 2C, 2D, 3A, 3B, 3C, 4A, 4B, 4C, and 4D
+are accepted predecessors, M24.1B is superseded, and CP4 is current. CP4
+remains formally current through its Task acceptance until the separate
+TG-DOC.3 activation synchronization; indexing or reading them activates no
+product behavior.
 
 ## Non-Authoritative History
 
@@ -145,8 +146,8 @@ owner, route, unit, and membership are the enforced meaning.
     {
       "path": "docs/execution-contracts/tg-m24-verification-runner.md",
       "route_anchor": "tg-m24-verification-runner",
-      "current_units": ["TG-M24.4D"],
-      "inactive_units": ["TG-M24.CP4"],
+      "current_units": ["TG-M24.CP4"],
+      "inactive_units": [],
       "superseded_units": ["TG-M24.1B"]
     }
   ],

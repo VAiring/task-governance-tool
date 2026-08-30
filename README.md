@@ -461,9 +461,9 @@ git diff --check
 ```
 
 The document checker is offline and read-only. It validates this repository's
-closed semantic authority registry, route-scoped syntax, owner/anchor/link
-reachability, execution-unit identity/order/dependency, history provenance and
-non-authority, search exclusion, and explicit bounded-read controls. It does
+closed authority registry, route-section structure, owner/anchor/link
+reachability, history provenance and non-authority, search exclusion, and
+required authority headings. It does
 not freeze ordinary prose, impose a repository-wide Markdown dialect, or use
 hidden reduction and checker-size thresholds. Ambiguous syntax in an authority
 route still fails closed instead of being guessed.
@@ -474,21 +474,21 @@ an unassigned, duplicate, or stale test module fails before execution. The
 `all` lane preserves the ordered test IDs and suite from
 `python -m unittest discover -s tests`.
 
-TG-M24 now follows the explicitly adopted trusted-local Runner sequence.
-Only an explicitly selected repository that the user already trusts may be
-eligible; untrusted, external, or unsupported targets use the existing manual
-M21 verification path and are never executed by the Runner. The future Runner
-must use fixed argv with no shell or PATH lookup, exclude credentials from its
-child environment, bound its Job, wall time, process count, resources, and
-output, retire the complete process tree, and remove its private temporary
-tree without retaining raw output. These are process, cleanup, and privacy
+The trusted-local Runner is explicitly opt-in. Only a selected repository that
+the user already trusts may be eligible; untrusted, external, or unsupported
+targets use the existing manual verification path and are never executed by
+the Runner. The Runner uses fixed argv with no shell or PATH lookup, excludes
+credentials from its child environment, bounds its Job, wall time, process
+count, resources, and output, retires the complete process tree, and removes
+its private temporary tree without retaining raw output. These are process,
+cleanup, and privacy
 requirements for trusted code, not a claim of hostile-code containment or
 network isolation.
 
-The retired TG-M24.1A LPAC portability fixture, Candidate C and B-to-C
-comparison, LPAC/AppContainer policy, ETW diagnosis, and recovery
-infrastructure are physically absent after accepted TG-M24.R4A, with no archive
-or dormant copy. They are not current Runner qualification or completion gates.
+The retired LPAC portability fixture, Candidate C comparison, LPAC/AppContainer
+policy, ETW diagnosis, and related recovery infrastructure remain physically
+absent, with no tracked archive or dormant copy. They are not Runner
+qualification or completion gates.
 
 CI consumes the same repository-only policy:
 
@@ -518,42 +518,8 @@ coverage.
 - `docs/authority.md`: concise authority index and selective-read routing.
 - `docs/specification.md`: product contract.
 - `docs/design.md`: implementation design and boundaries.
-- `plan.md`: current decisions, open issues, cross-sequence gateways, and
-  non-delegated static contracts. Its
-  `plan.md#tg-doc-sequence` route owns accepted post-M23 TG-DOC.2 and current
-  post-M24 TG-DOC.3; accepted TG-DOC.2 is the predecessor of M24.1.
-- `docs/execution-contracts/`: indexed mixed current/conditional authority. M22
-  routes through
-  `docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence`;
-  TG-M22.1A, TG-M22.2, TG-M21.5, TG-M22.3, TG-M22.4, TG-M23.1, bounded
-  offline/mock TG-M23.2, and offline/mock TG-M23.3 integrated Analyzer
-  acceptance, TG-DOC.2, documentation-only TG-M24.1, and the bounded
-  TG-M24.1A correction are accepted predecessors. The current TG-M24
-  trusted-local sequence repairs the existing WIP, removes retired security
-  assets, freezes the M25 subsystem boundary, and then implements and accepts
-  an explicit-opt-in Runner in ordered Tier 2 slices. TG-M24.1B's fixed-
-  Candidate-C route is superseded. The candidate is now v0.13.0/schema v21;
-  accepted 3B supplies persistence, accepted 3C integrates the existing
-  explicit-opt-in trusted-local target-set Runner with the completion gate, and
-  accepted 4A validates its supported, fallback, failure, cleanup, and privacy
-  flows. Accepted 4B validates legacy, core, migration, recovery, and
-  fresh-state compatibility. Accepted 4C reconciles only the package and
-  release-candidate boundary, and accepted 4D performs final integrated
-  acceptance without changing that behavior or package identity. Accepted CP4
-  closed only the final no-debt repair checkpoint and M25 handoff without
-  changing a product byte or recording a correction. Current TG-DOC.3 changes
-  documentation authority only.
-  Exact-current complete-plan pass uses its Runner observation, exact closed
-  no-launch alone falls back to M21 Receipts, and other selected Runner states
-  block. No new CLI leaf, public JSON field beyond the two approved target-set
-  success fields, or Skill trigger is added.
-  Network/live
-  Analyzer acceptance still requires separate authority. SQLite, `storage.py`,
-  public CLI or Skill calls, network/live-model actions, gate mutation, and
-  Task mutation remain outside the accepted TG-M23 scope.
-  Its sole unit owner/router delegates only the Windows process/private-temp/
-  publication seam to
-  `docs/execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety`.
+- `plan.md`: current decisions, open issues, and non-delegated unfinished
+  static contracts.
 - `docs/release-install.md`: current candidate, immutable published artifact,
   and installation identity.
 - `docs/history/README.md`: non-authoritative lineage index.

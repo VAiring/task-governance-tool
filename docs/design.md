@@ -1,47 +1,22 @@
 # task-governance-tool Current Implementation Design
 
-Status: the immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
+Status: the immutable published product remains v0.10.0/schema v16/Viewer v4
+sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.13.0 with SQLite schema v21, Viewer
-snapshot v4 accepting source schemas v5-v21, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with managed recovery and stored-Task/Contract relationship validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
-TG-M20S.3 remains inactive and no TG-M23 unit is current. TG-M24.1,
-TG-M24.1A, TG-M24.R1, TG-M24.R2A, TG-M24.R2B, TG-M24.R2C, TG-M24.R4A,
-and TG-M24.R4V
-are accepted predecessors; the fixed-Candidate-C and adversarial LPAC route
-formerly owned by TG-M24.1B is superseded. Accepted R4A left the inventory-
-approved retired repository material and dedicated tests physically absent,
-without an archive or dormant copy. Accepted R4V adds only the dependency-pure,
-legacy-stable Runner value model and exact-candidate package-manifest closure;
-it activates no supported Runner, schema, Evidence, CLI, or gate behavior.
-TG-M24.R3A and TG-M24.R3B are accepted predecessors. R3A owns only the private,
-non-public schema-v20 migration and storage baseline. R3B supplies the
-separately reviewed public-activation half of the matched pair: schema/setup,
-Bundle-v2 null-Runner, Evidence/Viewer, and
-managed backup/recovery compatibility. It activates no Runner execution,
-Runner projection, or completion-gate behavior.
-Accepted TG-M24.R4B repaired only pre-Runner core behavior and frozen dependency
-violations. Accepted TG-M24.R5 retired only the already identified fixed
-OS-temp diagnostic residue. Accepted TG-M24.2A supplied explicit trusted-local
-plan authority, exact target binding, and safe bounded private materialization.
-Accepted TG-M24.2B supplied only the bounded local runtime, lifecycle, process,
-native-adapter, and deterministic-cleanup slice. Accepted TG-M24.2C supplied
-parent-service orchestration, durable audit-only observation/Evidence mapping,
-and sanitized projection. Accepted TG-M24.2D owns the integrated acceptance of
-that already-implemented shadow slice. TG-M24.3A accepted the schema-v21
-persistence design below, TG-M24.3B accepted that persistence and compatibility
-boundary, and TG-M24.3C accepted Runner completion-gate integration. TG-M24.4A
-accepted supported, fallback, failure, cleanup, and privacy flows, and
-TG-M24.4B accepted legacy, core, migration, recovery, and fresh-state
-compatibility, TG-M24.4C accepted package and release-candidate reconciliation,
-and TG-M24.4D accepted final integrated acceptance. TG-M24.CP4 accepted the
-final no-debt checkpoint and M25 handoff without changing a product byte or
-recording a correction. Current TG-DOC.3 changes documentation authority only.
-TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
-database owns live state and evidence.
+snapshot v4 accepting source schemas v5-v21, and 21 public command leaves. Its
+active implementation includes tool-owned Verification Receipt subjects,
+versioned Review provenance, immutable Evidence References and completion
+Bundles, deterministic Evidence JSON, the bounded offline/mock derived-evidence
+Analyzer, and the explicitly opted-in trusted-local verification Runner with a
+closed manual fallback. Schema v20 remains a supported migration source and
+audit-only Runner lineage; schema v21 is the current persistence and gate basis.
+TG-M20S.3 remains an accepted but inactive static design. The Task database owns
+live state and evidence; completed execution narrative belongs only in indexed
+history.
 
 This document is the current implementation design for the behavior specified
-in `docs/specification.md`. The [authority index](authority.md) selects current
-owners and exact current-or-conditional execution detail from the live Task
-Contract. Historical design captures
+in `docs/specification.md`. The [authority index](authority.md) and live Task
+Contract select the applicable current owners and sections. Historical design captures
 under `docs/history/` are non-authoritative and are never needed to implement,
 operate, migrate, or review the supported product.
 
@@ -75,7 +50,6 @@ docs/
   authority.md
   specification.md
   design.md
-  execution-contracts/
   history/
 plan.md
 tools/
@@ -183,12 +157,8 @@ The implementation keeps these narrow ownership boundaries:
   snapshot reads, strict presentation configuration, safe HTML rendering, and
   generation-based publication.
 
-The accepted Runner architecture registry is at
-[TG-M24.R2C Runner Architecture Boundary](#tg-m24-r2c-runner-architecture-boundary).
-Accepted R4V implements only its dependency-pure, legacy-stable `value_model`
-foundation. It changes no supported schema, command, Runner activation, or
-business-gate behavior; every other implementation slice remains with its
-routed owner.
+The closed Runner architecture registry is at
+[Trusted-Local Runner Architecture](#trusted-local-runner-architecture).
 
 The bundled template is a complete offline HTML/CSS/JavaScript application. It
 has no external dependency, server, database connection, or network API.
@@ -331,7 +301,7 @@ state (`missing`, `fixed_current_v1`, or `legacy_projects_v1`), binding state
 setup-only recovery/legacy observation. None of its raw paths or path hashes
 crosses a formatter.
 
-For TG-M24.2C, `CanonicalStatePaths` derives the four fixed Runner paths above
+For the Runner subsystem, `CanonicalStatePaths` derives the four fixed paths above
 and `DatabaseTarget` carries them to the parent service. Internal test targets
 derive the same names beneath their injected database parent. No service,
 repository, lifecycle, or process module reconstructs the fixed root, and the
@@ -440,7 +410,7 @@ enforcement in a `finally` path. Migration validation uses
 preservation, and the sanitized realistic 12-task/191-event fixture with nine
 historical completion hashes and representative review, Contract, handoff,
 checkpoint, maintenance, identity, and completion traces. The sole current
-exception is migration 20's accepted R3A Bundle-rebuild retirement of the
+exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
 The fixed-state setup migrator accepts complete source schemas v1-v20 and
@@ -450,9 +420,9 @@ Viewer compatibility is independent and accepts source schemas v5-v21.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
-### Private Schema-v20 Rehearsal Boundary
+### Schema-v20 Physical Foundation
 
-R3A adds one internal storage/repository seam for an explicitly injected
+One internal storage/repository seam accepts an explicitly injected
 caller-owned disposable v19 database. It migrates that database in place at the
 same path and is the sole non-public exception to the rule that explicit setup
 is the only migrator. It is not routed from the CLI, setup planner,
@@ -490,16 +460,15 @@ The final required inventory is 35 tables including `schema_migrations`, 42
 explicit indexes, and 59 triggers. Relative to v19, migration 20 adds four
 tables, ten explicit indexes, and twelve triggers; appends five columns;
 rebuilds only `completion_evidence_bundles`; and replaces one existing
-criterion-link matrix trigger without changing the trigger count. R3B adds no
-DDL.
+criterion-link matrix trigger without changing the trigger count. Public
+schema-v20 activation adds no further DDL.
 
 This contract owns physical structure, not the future Runner decision model.
 The `plan_state`, `coverage`, `route`, `launch_state`, `outcome`, and `reason`
-values are bounded storage codes only. The accepted-R4V `trigger` and
-`event_kind` constants identify structural record kinds without granting
-business meaning. Closed taxonomies and cross-field matrices, pending-cleanup
-admission, and cleanup acceptance belong to 2A, 2B, and 2C repository/service
-validation.
+values are bounded storage codes only. The `trigger` and `event_kind` constants
+identify structural record kinds without granting business meaning. Closed
+taxonomies and cross-field matrices, pending-cleanup admission, and cleanup
+acceptance belong to the target-plan, process, and parent-service boundaries.
 
 The following predicates are literal DDL abbreviations, not open design slots:
 
@@ -565,7 +534,7 @@ order and independent column checks:
   >= 1)`; `verification_runner_attempt_id TEXT NOT NULL`; `event_kind TEXT NOT
   NULL CHECK (event_kind = 'attempt_cleanup_succeeded')`; `event_digest TEXT NOT
   NULL` with `sha256`; nullable `terminal_observation_id TEXT`; `created_at TEXT
-  NOT NULL`. The fixed accepted-R4V code names the record shape only: no table
+  NOT NULL`. The fixed code names the record shape only: no table
   check requires a terminal observation or treats the row as accepted cleanup.
 - `verification_runner_observations`: `verification_runner_observation_id TEXT
   PRIMARY KEY` with `runner_id` prefix `tg_verification_runner_observation_`;
@@ -639,7 +608,7 @@ every other index is non-unique:
 | `idx_verification_runner_observations_attempt` | `project_id, task_id, target_generation, verification_runner_attempt_id` | lookup with exact predicate `WHERE verification_runner_attempt_id IS NOT NULL` |
 
 These indexes impose no per-generation or per-parent attempt, event, or
-observation cardinality. Such admission rules belong to 2A-2C.
+observation cardinality. Such admission rules belong to the Runner service.
 
 Migration 20 creates exactly twelve Runner triggers. The eight immutable
 triggers have these exact timing/table/body definitions:
@@ -721,7 +690,7 @@ appends, in this order, nullable `TEXT` columns
 `task_completion_cycles.verification_runner_observation_id`; neither cycle
 column has a physical `CHECK` or foreign key in schema v20.
 
-`completion_evidence_bundles` is rebuilt from the accepted v19 definition. All
+`completion_evidence_bundles` is rebuilt from the schema-v19 definition. All
 v19 columns keep their exact order and definitions except that
 `source_schema_version` and `bundle_version` become `INTEGER NOT NULL` with no
 individual single-value `CHECK`; their allowed pair is owned only by the tagged
@@ -763,9 +732,9 @@ cycle-basis matrix triggers from the accepted v19 definitions. It replaces
 one dormant physical arm for relation `runner_observation`: its Evidence
 Reference must use source kind `runner_observation`, its criterion must equal
 the Reference verification criterion, and attribution must be exactly
-`machine_observed`, producer `verification_runner`, version `1`. Migration and
-R3B create no Runner Reference, criterion link, projection, or Bundle member;
-2C owns the first durable mapping and write.
+`machine_observed`, producer `verification_runner`, version `1`. Migration
+creates no Runner Reference, criterion link, projection, or Bundle member; the
+parent service owns the first durable audit mapping and write.
 
 Only those owned Bundle objects are restored. Any persistent unowned index or
 trigger attached to the old Bundle table is deleted with that table on a
@@ -781,59 +750,33 @@ Bundle payload bytes/digests remain equal. The version-20 marker is inserted
 only after those checks; exact schema validation, full storage validation,
 `quick_check`, and foreign-key check precede commit.
 
-R3A does not use the broad `tests/test_m242_runner_storage.py` module as its
-gate. The code Task extracts its schema/migration oracle into the dedicated
-`tests/test_m242_r3a_schema20_storage.py`, whose product imports are limited to
-`storage.py` and the accepted pure `verification_runner.py` value model.
-Candidate-specific cases and deferred R3B, 2C, business-cardinality, cleanup,
-or public-setup cases follow the accepted R2B disposition: they are physically
-deleted when obsolete or moved to their owning Task, never retained as SKIP or
-disabled tests. The dedicated R3A oracle must cover normalized
-`sqlite_master`, `table_xinfo`, foreign-key, ordered index, and trigger
-inventory; permissive multiple attempts and observations; the null-Runner
-Bundle union; a positive resolution parent with null acceptance criterion and
-present verification criterion; marker-only, partial-owned-object, owned drift,
-and unrelated standalone extra-object behavior; successful deletion of
-unowned Bundle-attached indexes/triggers, their rollback restoration, and their
-continued absence on reentry; v19 row/ID/Bundle-byte and owned-object
-preservation; reentry, rollback, contention, and public nonactivation.
+Focused migration tests cover normalized `sqlite_master`, `table_xinfo`,
+foreign-key, ordered-index, and trigger inventory; permissive physical
+cardinality; the null-Runner Bundle union; a positive resolution parent with
+nullable acceptance and present verification criterion; marker-only and
+partial-owned-object drift; unrelated standalone objects; successful retirement
+and rollback restoration of unowned Bundle-attached indexes/triggers; v19 row,
+ID, Bundle-byte, and object preservation; reentry; rollback; and contention.
+Public setup/schema behavior is tested separately from the storage-only
+migration helper so test imports do not expand that helper's authority.
 
-Public nonactivation is a compound gate, not an import expansion of the
-storage-only module. The storage-owned boundaries are exercised by
-`tests.test_m242_r3a_schema20_storage.R3ASchema20StorageTests.test_public_schema_remains_19`
-(public `SCHEMA_VERSION` and `apply_migrations()` stay at 19, and the storage
-Viewer snapshot validator rejects a private schema-v20 database) and
-`tests.test_m242_r3a_schema20_storage.R3ASchema20StorageTests.test_private_migration_inventory_preservation_and_reentry`
-(the native storage writer produces and migration preserves a schema-19,
-Bundle-v1 row). The setup-owned boundary is the existing focused
-`tests.test_setup.SetupCommandTests.test_fresh_preview_success_and_idempotent_replay_follow_exact_rows`,
-which must continue to report `schema_to = 19`. All three boundaries must pass;
-the dedicated module does not import or duplicate setup.
-
-The final storage model deliberately omits the accepted R4V legacy shim fields
+The final storage model deliberately omits the legacy shim fields
 `sandbox_provider`, `sandbox_policy_digest`, and `sandbox_instance_digest`.
-When constructing or verifying an accepted R4V digest/source projection, the
+When constructing or verifying the compatible digest/source projection, the
 storage adapter supplies literal null for `sandbox_provider` and
 `sandbox_policy_digest` on a resolution and for `sandbox_instance_digest` on an
 attempt. These adapter-only keys are never persisted as schema-v20 columns.
-R3A must remove the storage instance-shim consumer while leaving the temporary
-pure shim itself intact. Omitting provider/policy fields from storage does not
-authorize R3A to remove their Evidence consumers. R3B removes the Evidence
-provider/policy-shim consumers; R4B alone removes the remaining shim bodies and
-fixed-policy API.
+No provider/policy/instance shim is an active storage or Evidence consumer.
 
-#### Public Schema-v20 Activation
+#### Schema-v20 Public Contract
 
-R3B consumes this exact schema without adding a migration, table, column,
-index, or trigger. It owns the public schema constant/setup switch, the
-Bundle-v2 null-Runner payload/serialization/digest writer, compatibility for
-the existing M22 Evidence/JSON contract, Viewer and managed backup/recovery,
-and the matched-pair integration review. R3B creates no Runner resolution,
-attempt, sandbox event, observation, Evidence Reference/link, Bundle member, or
-Runner projection; 2C owns their first durable mapping, write, and projection.
-Only PASS for the exact R3A and R3B commits permits a code/main cutover.
-Canonical database migration is a later explicit public setup action at a
-separate approval checkpoint, never an implicit effect of Git materialization.
+The public schema-v20 contract adds no further table, column, index, or trigger.
+It owns the schema constant/setup target, Bundle-v2 null-Runner writer,
+Evidence JSON, Viewer, and managed backup/recovery compatibility. Schema
+activation itself creates no Runner resolution, attempt, sandbox event,
+observation, Evidence Reference/link, Bundle member, or Runner projection; the
+parent service owns those audit writes. Canonical migration occurs only through
+explicit public setup, never as an implicit effect of Git materialization.
 
 The public storage admission layer classifies complete v19, complete v20, and
 hybrid state before invoking migration or another schema-aware consumer. A
@@ -844,18 +787,16 @@ publication, or managed-backup write. The canonical resolver, setup inspection/m
 Viewer source validator, and managed backup/recovery validator all use this
 same owned-inventory check. Complete v19 reaches migration 20 and then
 migration 21; complete v20 reaches migration 21; complete v21 takes validation-
-only reentry. Unrelated extra objects retain the
-R3A policy: an unowned index/trigger attached to the Bundle table is removed
+only reentry. Unrelated extra objects retain the migration-20 policy: an
+unowned index/trigger attached to the Bundle table is removed
 only by a successful complete-v19 migration, while unrelated standalone
 objects remain unchanged. Migration-21 hybrid markers are recognized before
 any write.
 Owned-marker recognition uses SQLite `NOCASE` identifier equality across
 catalog object types and scopes ordinary or generated columns to their
 designated parent table.
-R3B's public boundaries initially applied a lightweight complete-v20
-row-admission check requiring every Runner table and Runner Reference/link set
-to be empty. TG-M24.2C replaces only that empty-row rule with one shared full
-audit-graph validator. It admits the empty predecessor state, a single pending
+Complete-v20 admission uses one shared full audit-graph validator. It admits
+the empty state, a single pending
 intent, a cleanup-only restart terminal, or the exact complete terminal graph
 defined by the specification; it rejects every malformed, duplicate,
 foreign-owned, partially linked, or gate-eligible variant. Task Runner basis
@@ -868,21 +809,19 @@ At schema v20 the native completion transaction derived
 `verification_basis_kind` as `caller_attestation` when a qualifying
 Verification Receipt is linked and as `not_required` for trimmed-empty
 verification, wrote Bundle version 2/source schema 20, and always wrote a null
-Runner-observation pointer. Accepted TG-M24.3B retained those M21-only branches
-with source schema 21. Accepted TG-M24.3C keeps both and additionally writes the
+Runner-observation pointer. Schema v21 retains those manual branches and
+additionally writes the
 exact qualifying `runner_observation` branch, reusing its existing Runner
 Reference and criterion link as Bundle members. Existing Bundle-v1 payload bytes
 and digests remain immutable, and Evidence JSON may project both preserved v1
 and native v2 Bundles. The manual branches create no Runner member or projection;
-the Runner branch uses only its already-sanitized stored observation. R3B removes
-only the Evidence provider/policy-shim consumers; R4B still owns the shim bodies
-and fixed legacy policy API.
+the Runner branch uses only its already-sanitized stored observation.
 
 `evidence_projection.py` selects the format from the validated source schema,
 never from caller input. For schemas v20-v21 it extends the v1 payload key set only
 with `verification_basis` and `runner_observation`. The former is the exact
-four-key object fixed by the specification; the latter is null in R3B and under
-accepted 3C is populated only for the qualifying Runner branch. It
+four-key object fixed by the specification; the latter is null for manual
+branches and populated only for the qualifying Runner branch. It
 seals the sorted-key compact payload with
 `taskgov-completion-evidence-bundle-v2\0`, writes envelope
 `format_version=2`, and recomputes the stored digest and byte count from those
@@ -895,15 +834,13 @@ The schema-v20/v21 index uses `taskgov-evidence-index-v2\0`, envelope
 preserved v1 Bundle, and 2 for a native v2 Bundle. The index remains ordered
 and index-last; its other limits and publication behavior are unchanged.
 
-<a id="tg-m24-3a-schema21-design"></a>
+<a id="schema21-runner-gate-basis-design"></a>
 
-## TG-M24.3A Accepted Schema-v21 Gate-Basis Design
+## Schema-v21 Runner Gate-Basis Design
 
-This section is the complete implementation design accepted by TG-M24.3A and
-consumed by accepted TG-M24.3B and accepted TG-M24.3C. TG-M24.3B activated only
-persistence and compatibility; the M21 Receipt remained the sole verification/
-completion gate through that unit. TG-M24.3C alone activates the qualifying
-Runner branch.
+This section is the complete implementation structure for schema-v21
+persistence, compatibility, and the qualifying Runner branch. The manual
+Verification Receipt remains the explicit fallback.
 
 ### Migration Identity And Exact Owned Delta
 
@@ -971,7 +908,7 @@ and `runner_observation` Reference/link relations and are unchanged.
 only that the exact target generation was selected under the schema-v21 Runner
 basis protocol; it does not itself mean pass. Within one Runner graph,
 resolution, attempt, and observation eligibility values must be identical.
-The current target's Task marker is `0` for an audit-only or ordinary M21
+The current target's Task marker is `0` for an audit-only or ordinary manual-Receipt
 target and `2` for a target selected under the version-1 Runner protocol.
 Historical graphs retain their stored tags after a later target generation;
 only the graph at the Task's exact current target can be a completion basis.
@@ -1004,14 +941,14 @@ mismatch, or a malformed graph remains invalid. Separately, the completion
 basis selector, rather than a caller or a DDL tag alone, recognizes these three
 closed cases:
 
-- marker `0`: no gate-eligible current graph; M21
+- marker `0`: no gate-eligible current graph; manual
   `caller_attestation|not_required` completion remains available;
 - marker `2` plus one complete version-1 terminal graph whose observation has
   `route=m21_fallback`, `launch_state=no_launch`,
   `outcome=blocked_prelaunch`, reason `runtime_unavailable` or
   `process_setup_failed`, `complete_plan=0`, and the existing proved process,
   handle, output-discard, lifecycle, and private-tree cleanup: the selected
-  Runner did not launch, so a fresh exact-current M21 Receipt may be used; and
+  Runner did not launch, so a fresh exact-current manual Receipt may be used; and
 - marker `2` plus one complete version-1 terminal graph whose observation has
   `route=runner`, `launch_state=launched`, `outcome=pass`, null reason,
   `complete_plan=1`, equal positive planned/total/completed step counts, and
@@ -1030,15 +967,15 @@ comparison belongs to service preflight, not a SQLite trigger or historical
 replay. A pending intent, cleanup-only predecessor, missing
 or duplicate member, eligibility mixture, stale generation, target or Contract
 drift, malformed graph, or any structurally valid terminal other than the exact
-closed no-launch fallback or qualifying pass is not an M21 fallback and blocks
+closed no-launch fallback or qualifying pass is not a manual fallback and blocks
 completion for that selected marker-2 basis.
 
 The replacement verification-basis cycle guard retains the version-zero
 legacy arm. Its native version-one arm admits exactly one of:
 
-- the existing M21 specified/full-pass Receipt or trimmed-empty
+- the existing manual specified/full-pass Receipt or trimmed-empty
   `not_required` basis while the Task marker is `0`;
-- the existing specified/full-pass M21 Receipt basis while marker `2` has the
+- the existing specified/full-pass manual Receipt basis while marker `2` has the
   exact closed no-launch terminal graph above; or
 - a specified verification expectation, null Receipt, kind
   `runner_observation`, and nonnull observation pointer equal to the exact
@@ -1048,7 +985,7 @@ The replacement evidence-basis cycle guard retains the legacy source-19
 Bundle relation and requires every native cycle to reference its unique
 same-owner/same-ordinal Bundle. It additionally requires cycle and Bundle
 `verification_basis_kind` and Runner pointer to be identical. A source-21
-caller/not-required Bundle must match one of the two M21 cycle arms; a
+caller/not-required Bundle must match one of the two manual cycle arms; a
 source-21 Runner Bundle must match the qualifying-pass arm. Its Runner
 observation pointer must select that exact current-generation observation.
 These guards preserve the existing deferred Bundle-to-cycle relation and add no
@@ -1062,41 +999,39 @@ Runner implementation identity. A valid done cycle, including one restored by
 recovery, instead revalidates identity equality wholly inside its stored graph
 and Bundle and is not rebound to the currently installed implementation.
 
-TG-M24.3B's writer continues to create only eligibility `0`, Task marker `0`,
-and source-21 Bundle-v2 `caller_attestation|not_required` rows. Its shared
-schema-v21 readers, Viewer, backup, and recovery validators must nevertheless
-understand all structurally valid version-1 graphs so a later TG-M24.3C-created
-database remains readable under the same schema. Its completion writer must
-fail closed with no cycle, Bundle, event, Evidence, Viewer, or backup mutation
-when the exact current Task marker is `2`; it must not reinterpret that state as
-ordinary M21 fallback. An explicit fresh target generation is required before
-3B may resume marker-0 M21 behavior. Accepted TG-M24.3C replaces only this
-service-level nonactivation boundary and does not own migration or DDL.
+The manual writer creates only Task marker `0` and source-21 Bundle-v2
+`caller_attestation|not_required` rows. The Runner target-set service alone may
+create marker `2` with a gate-eligibility-version-`1` graph. Shared schema-v21
+readers, Viewer, backup, and recovery validators understand both shapes. A
+manual completion writer encountering marker `2` fails closed with no cycle,
+Bundle, event, Evidence, Viewer, or backup mutation and never reinterprets that
+state as ordinary fallback. An explicit fresh target generation is required
+before marker-0 manual behavior resumes. This is a service-level selection
+boundary and adds no migration or DDL.
 
 The schema-v21 public gate adapter consumes only a fully validated Task and the
 internal basis selector. It retains the exact Receipt-era
 `verification_evidence` JSON shape and keeps subject, counts, and recent rows
-Receipt-only. For a live, non-done Task, marker zero delegates unchanged to M21
-and any marker two read by 3B maps to `evidence_basis_stale`. Under 3C, basis
-freshness precedes outcome: any structurally valid but non-current graph,
+Receipt-only. For a live, non-done Task, marker zero delegates unchanged to the
+manual Receipt arm. For marker two, basis freshness precedes outcome: any
+structurally valid but non-current graph,
 pending graph, or cleanup-only graph maps to `evidence_basis_stale`. Every
 exact-current structurally valid terminal other than the exact closed no-launch
 fallback or qualifying pass maps to `verification_receipt_blocking`; the exact
-closed no-launch delegates to M21, and the exact qualifying pass maps to
+closed no-launch delegates to the manual arm, and the exact qualifying pass maps to
 satisfied with both public nullable gate fields null. Receipt-add
 accepts marker two only for that exact-current no-launch fallback; every other
 marker-two branch returns `evidence_basis_stale` before uniqueness. Completion
 applies the same branch result before review sufficiency.
 
-A valid done version-one cycle takes precedence over the live matrix, including
-when a 3B-compatible reader inspects later 3C-created history. The adapter
-revalidates the stored cycle/Bundle arm and replays its M21 or Runner gate
+A valid done version-one cycle takes precedence over the live matrix. The
+adapter revalidates the stored cycle/Bundle arm and replays its manual or Runner gate
 projection; a Runner arm is satisfied with both nullable gate fields null only
 when its captured stored graph/Bundle identity matches. It never compares a
 done arm with the currently installed implementation, and this historical read
-does not authorize a 3B writer or live Runner completion. Existing argument,
+does not authorize a new live Runner completion. Existing argument,
 Task/status, expectation, target, generation, and capture checks retain their
-order before the applicable selector. Active 3C service preflight returns the
+order before the applicable selector. Active service preflight returns the
 existing `package_core_modified` or `package_status_unknown` result when it
 cannot establish the current installed identity; after successful package
 inspection, an identity mismatch is stale before outcome mapping.
@@ -1206,7 +1141,7 @@ must equal its existing Reference source projection and digest. It never adds
 stdout/stderr, command/argv, environment, exit code, exception, credential,
 absolute/private path, raw plan, raw target, or debug text. The existing Runner
 Reference and verification-criterion link become the Runner Bundle's bound
-evidence members; they are reused, not duplicated or caller-authored. M21 arms
+evidence members; they are reused, not duplicated or caller-authored. Manual arms
 keep `runner_observation=null` and their existing members. Preserved Bundles are
 never resealed.
 
@@ -1219,7 +1154,7 @@ Bundle members and sanitized projection, then discards all Runner-only fields;
 the public Viewer field/UI allow-list, CSP, text-only DOM rule, artifact cap,
 and generation behavior do not change.
 
-TG-M24.3B setup creates v21, migrates complete v1-v20 sources, and treats v21
+Setup creates v21, migrates complete v1-v20 sources, and treats v21
 as validation-only current state. Managed backup publication-retention suffixes
 remain `r<1-20>`; source-schema 21 admission does not change that independent
 retention field. All other filename, identity, locking, staging, validation,
@@ -1251,12 +1186,12 @@ failure uses its existing sanitized schema, project-state, Evidence, Runner, or
 service owner; schema-v21 representation adds no public error code or raw
 diagnostic field.
 
-TG-M24.3B verification must cover normalized DDL and the unchanged 35/42/59
+Schema-v21 verification covers normalized DDL and the unchanged 35/42/59
 inventory; fresh v21; exact v20-to-v21 row/object/projection preservation;
 marker-last rollback at every rebuild stage; same-version no-write reentry;
 hybrid rejection; Bundle-attached pre-write rejection; rebuilt-Runner-table
 attachment retirement and rollback restoration; sandbox-table and standalone-
-object preservation; version-0 audit and version-1 structural graphs; M21-only
+object preservation; version-0 audit and version-1 structural graphs; manual-only
 marker-2 completion rejection; Bundle-v2/Evidence-v2/Viewer-v4 sources v5-v21;
 managed backup `r1-20`; recovery and rollback matching; privacy deny-list;
 schema-v21 Task `verification` 1,000/1,001 boundaries; source-v21 candidate-
@@ -1424,7 +1359,7 @@ rejection never hides or legalizes a missing or mismatched relation. It does
 not rewrite rejected artifacts, while later ordinary retention keeps its
 existing authority over managed generations.
 
-Focused M21.4B ownership is split by behavior rather than accumulated in one
+Focused recovery-boundary ownership is split by behavior rather than accumulated in one
 module. `test_m214b_recovery_boundaries.py` owns current fixed-layout,
 selection, metadata, and TOCTOU behavior in the integration lane;
 `test_m214b_legacy_recovery_boundaries.py` owns legacy-primary, schema-v10, and
@@ -1587,7 +1522,7 @@ allow-list explicitly. Latest-event ordering is
 `created_at DESC, rowid DESC`. Tool events remain bounded operational records,
 not raw logs.
 
-### Current TG-M21.4C Shared Stored Task Row/Batch Validator
+### Shared Stored Task Row/Batch Validator
 
 `tasks.py` owns one source-schema-aware validator for complete stored Task
 rows. Its capability object is constructed once per top-level read from the
@@ -1637,11 +1572,11 @@ version, removing the per-Task `PRAGMA` path. Routine Viewer failure occurs
 before rendering/replacement and preserves the last-good file; its caller
 applies the existing fixed maintenance warning.
 
-### Current TG-M21.4D Stored Contract Pointer Relationship Boundary
+### Stored Contract Pointer Relationship Boundary
 
 For source schema v8 and later, `validate_stored_task_rows` receives the active
 SQLite connection in addition to the already loaded complete Task batch. Only
-after all TG-M21.4C scalar checks pass, `tasks.py` extracts the exact selected
+after all stored-Task scalar checks pass, `tasks.py` extracts the exact selected
 Task IDs and performs one `task_contract_revisions` query whose predicate is a
 single JSON-encoded ID set consumed by `json_each`. The query intentionally
 does not filter `project_id`, so a foreign owner using a selected Task ID is
@@ -1770,9 +1705,9 @@ done-time plan and compared with the locked stored values.
 Thin `task complete`, compatibility `task edit --status done`, and
 `task complete --check` share one completion request and ordered validator.
 Both write paths require explicit verification/review confirmations, typed
-evidence, sequential eligibility, exact current target, the qualifying M21 or
+evidence, sequential eligibility, exact current target, the qualifying manual or
 Runner basis chosen by the sole selector, a satisfied fresh review gate, and no
-blocking receipt/finding. The M21 manual arm uses a qualifying current Receipt;
+blocking receipt/finding. The manual arm uses a qualifying current Receipt;
 the Runner-pass arm uses its qualifying observation with a null Receipt link.
 Check is read-only and is not an
 authorization token: it captures one coherent basis, closes SQLite for Git,
@@ -1780,7 +1715,7 @@ then performs a second coherent basis read. Drift yields
 `completion_check_stale`; no readiness row or receipt is stored. Its bounded
 projection returns only Task ID, ready/status, the first ordered blocking code,
 Contract revision, target generation, proposed evidence kind, and fixed next
-action. Marker `0` retains those two check reads and the pre-3C write path;
+action. Marker `0` retains those two check reads and the manual write path;
 only live marker `2` adds the Runner selection and selected-basis recapture.
 
 ### Review Target And Git Snapshot
@@ -1885,63 +1820,222 @@ key distinctness proves only different stored strings, not identity,
 independence, provenance, expertise, target inspection, or authentication. The
 trusted caller/orchestrator is responsible for truthful attestation.
 
-### Current Schema-v21 Provenance, Ledger, And Bundle Design
+### Provenance, Evidence Ledger, And Bundle Structure
 
-`review_provenance.py` owns the closed enum/matrix, input normalization,
-public v1/v0/null union, and structural digest; `reviews.py` integrates it into
-the existing Receipt write and Review Packet shape; `storage.py` alone owns
-the additive schema, repositories, migration, and stored validation.
+The subsections below are the current implementation owner for Review
+provenance, schema-v18 capture, schema-v19 Bundle construction and projection,
+and their schema-v20/v21 Runner integration. They preserve legacy rows without
+inventing evidence, keep SQLite ownership in `storage.py`, and leave the
+canonical `derived_analysis` writer inactive.
 
-Migration 18 adds a version discriminator and nullable provenance ID to
-`review_receipts`, plus one immutable normalized provenance table and one
-ordered code table. Existing rows receive only zero/null. New independent and
-self-review writes atomically insert a version-1 row and its canonical
-profile/lens/method codes; new `not_required` writes retain zero/null. Deferred
-same-Receipt ownership, insert guards, and shared readers reject a missing,
-extra, cross-owned, noncanonical, or digest-mismatched relation. Migration and
-reentry never parse reviewer key/summary or synthesize a provenance row.
+#### Capture And Projection Module Ownership
 
-The same migration owns `authority_snapshots`, `contract_criteria`,
-`authority_snapshot_criteria`, `review_receipt_provenance`,
-`review_receipt_provenance_codes`, `artifact_manifests`,
-`artifact_manifest_entries`, and `evidence_references`, plus only their
-current pointers and binding/version columns. Every ledger table is immutable,
-same-project/Task owned, and digest/reentry validated.
+- `review_provenance.py` owns the closed enum/matrix, public v1/v0/null union,
+  option normalization, and provenance digest; it owns no SQLite access.
+- `evidence_ledger.py` owns assurance/producer validation, authority-basis
+  canonicalization, whole-field criteria, Evidence Reference projections and
+  digests, and public allow-lists. Active link, Bundle, omission, and Runner
+  source assembly is delegated to the owning service/projection boundary.
+- `artifact_manifest.py` owns bounded shell-free Git tree/index observation,
+  exact artifact-entry normalization, deterministic rename pairing/order, and
+  manifest digests. It reuses safe process and stable-snapshot primitives from
+  `git_snapshot.py` without routing full manifests through Review Packet.
+- `evidence_projection.py` owns coherent ledger capture, canonical Bundle/index
+  JSON, digest validation, generation comparison, index-last atomic
+  publication, last-good preservation, and repair.
 
-The Receipt assertion and its provenance have separate assurance. Existing
-Review Receipt facts remain caller-attested; explicit v1 provenance is also
-`bound_attestation/trusted_caller/1`; absent legacy provenance alone projects
-`legacy_unknown/legacy_migration/1`; and a not-required disposition has null
-provenance. The existing gate evaluator consumes none of these fields. Viewer
-snapshot readers validate and discard them. Schema-v18-through-v21 recovery treats any
-provenance defect as structural set-fatal state, not as the narrowly allowed
-Task-verification content rejection.
+`storage.py` remains the only SQLite owner. `tasks.py` and `contracts.py`
+capture authority inside existing savepoints; `verification_receipts.py`
+derives subject-v1 bindings; it and `reviews.py` create typed References inside
+their source writes; target capture creates one manifest and subject-capable
+basis atomically; completion passes a fully prepared Bundle basis into its
+native-cycle savepoint. No feature module opens raw SQLite.
 
-Current Review Receipt reads include the exact provenance union; only native
-v1/null Receipts can enter a Review Receipt Evidence Reference/digest or native
-Bundle, while a migrated v0 Receipt gets none. Generated Evidence JSON adds no
-general JSON column, dynamic enum, model call, reviewer launcher, provenance
-score, Viewer UI, public leaf, or normal-loop call.
+`state_paths.py` and `state_resolver.py` alone own the fixed Evidence root,
+index, Bundle directory, and lock. `state_transition.py` recognizes those
+generated files only in bounded setup. `maintenance.py` may retry a due
+projection after a changed mutation, but only a cycle insert advances source
+generation. `setup.py` is the repair owner. `cli.py` owns only existing
+setup/doctor fields and warnings and has no Evidence export/import branch.
 
-`evidence_ledger.py` builds immutable current-basis snapshots and exact
-whole-field acceptance/verification criteria inside Task/Contract savepoints.
-Only title, description, review tier, exact verification, or Contract basis
-changes advance the snapshot. Migration creates one exact current-basis
-`legacy_migration` snapshot per Task, never historical authority. Criteria are
-reused only by same-Task kind/digest and never parsed or rewritten.
+#### Schema-v18 Capture And Subject Foundation
 
-Every schema-v18-or-later native manifest, Receipt, Finding, and completion source is inserted with one Evidence Reference in the source transaction. One closed dispatch derives assurance/producer/version and exact source projection; the caller supplies none. Completion References use deferred same-cycle ownership; validators recompute ownership, binding, null matrices, dispatch, and digest.
-Schema v19 adds immutable criterion links, Bundle membership/Finding snapshots,
-completion Bundles, cycle evidence-basis linkage, and Evidence projection state.
-Schema v20 introduced those owners and made `evidence_projection.py` assemble
-the Bundle-v2 null-Runner payload. Accepted TG-M24.3B initially retained that
-M21-only writer on schema v21; accepted TG-M24.3C adds only the reserved qualifying
-Runner arm while preserving version-1 Bundle bytes and digests. The storage repository inserts links,
-snapshots, Bundle, and cycle atomically; migrated cycles stay version 0/null and
-receive only `legacy_unknown` index entries. The canonical Analyzer writer
-remains inactive. TG-M24.2C activates only the standalone schema-v20 Runner
-audit writer described below; it never writes a Bundle member or gate basis.
-`evidence_projection.py` captures one query-only generation, closes SQLite, writes/validates Bundle files, replaces the index last, conditionally records publication, and follows up at most once. It imports nothing; SQLite remains canonical and failure preserves the committed mutation and last-good index.
+Migration 18 `evidence_ledger_capture` adds:
+
+```text
+authority_snapshots
+contract_criteria
+authority_snapshot_criteria
+review_receipt_provenance
+review_receipt_provenance_codes
+artifact_manifests
+artifact_manifest_entries
+evidence_references
+```
+
+It also adds the minimum current-snapshot pointers, target capture bindings,
+Review-provenance discriminator/ID, and Verification-subject columns. Every
+owned table carries project and Task keys, composite foreign keys,
+deterministic uniqueness, canonical timestamp/digest checks, and update/delete
+denial triggers. No arbitrary JSON or caller-owned assurance is stored.
+
+The subject columns on `verification_receipts` and
+`task_completion_cycles` are independently additive:
+
+```text
+verification_subject_basis_version INTEGER NOT NULL DEFAULT 0
+  CHECK (verification_subject_basis_version IN (0, 1))
+subject_authority_snapshot_id TEXT NULL
+  REFERENCES authority_snapshots(authority_snapshot_id)
+subject_verification_criterion_id TEXT NULL
+  REFERENCES contract_criteria(criterion_id)
+```
+
+Authority/criterion tables are created before these `ALTER TABLE` additions.
+Version-aware indexes, insert guards, and shared readers enforce the exact
+version/null matrix, snapshot-to-verification-criterion membership,
+project/Task ownership, and locked target binding. Cycle guards additionally
+permit subject basis zero only for the exact partial legacy-reopen bridge. No
+old Receipt or cycle table is rebuilt or updated: every old row reads
+0/null/null with its original ID, caller label, target, timestamp, Receipt link,
+cycle relation, and ordering unchanged.
+
+The physical legacy `command_label` column is retained. The native writer puts
+only `taskgov-owned-verification-subject-v1` there; basis-zero validation alone
+uses the legacy caller-label predicate, and basis-one validation accepts only
+that constant. Public formatters and Evidence digest builders never read it.
+`verification_receipts.py` builds the public subject only from locked capture
+version, authority snapshot, verification criterion, Contract revision, and
+complete target tuple. Neither CLI nor repository accepts a label or subject
+argument.
+
+An authority snapshot stores its positive Task-local generation, Task title
+and description, review tier, exact verification text/digest, Contract
+revision and exact scope/acceptance/constraints/authority, explicit specified
+state, canonical basis digest, producer metadata, and time. Its digest uses
+canonical JSON under `taskgov-authority-snapshot-v1\0`, excluding random ID and
+time. Criteria are whole immutable values keyed by same-Task kind and the
+SHA-256 of `taskgov-contract-criterion-v1\0`, kind, NUL, and exact UTF-8 text.
+Task add and authority-bearing edit compute and insert snapshot/criteria within
+the existing Task savepoint; replay produces no duplicate row or event.
+
+Migration creates one `legacy_migration` snapshot of each Task's exact current
+basis and never reconstructs history. Existing targets become capture version
+0 with null snapshot/manifest bindings; Receipts, Findings, cycles, and events
+receive no Reference or subject. New targets are capture version 1. Any
+source-creating write against capture version 0 fails `evidence_basis_stale`
+inside the locked basis check; Review Packet preparation and resolution of an
+existing Finding remain permitted. Source schemas through 17 use the 500-code-
+point stored verification limit and schemas 18+ use 1,000; current public
+Task add/edit admission is 1,000. Stored paths never reuse public-input
+validation or normalize/truncate bytes.
+
+#### Evidence Reference And Manifest Construction
+
+An `evidence_reference` stores one closed source kind/state and source ID or
+closed completion value, assurance/producer/version, exact ownership,
+Contract/snapshot/nullable-criterion/four-field-target binding, nullable cycle
+ID, digest, and time. One constant repository dispatch derives every required
+and null field and source projection; callers provide none. Current source
+kinds are manifest, Verification Receipt, Review Receipt, Review Finding,
+completion evidence, and gate-eligible Runner observation. The
+`derived_analysis` writer remains disabled. Reference creation shares the
+source transaction. Its digest helper uses
+`taskgov-evidence-reference-v1\0` and excludes random ID/time; for Findings it
+also excludes mutable resolution fields. Validators recompute dispatch,
+ownership, null matrices, and digest and reject every class upgrade.
+
+`artifact_manifest.py` reads complete Git leaves, not Review Packet summaries.
+For snapshots it compares exact HEAD with stable stage-0 index; for commits it
+compares the exact commit with its first parent or empty tree. Leaves normalize
+to `relative_posix_path mode full_object_id`. A bytewise path merge produces
+add/delete/modify; a second pass converts only a unique exact mode/object
+delete-add pair to rename. Ambiguous duplicates and content-changing moves stay
+delete+add. One pure sorter applies the specification tuple with null first and
+unsigned UTF-8 comparison, then assigns contiguous zero-based ordinals.
+
+Observation is shell-free and uses bounded timeouts, null stdin, disabled
+optional locks/fsmonitor/lazy fetch/external diff/text conversion, and pre/post
+stability checks. It never invokes a hook, checkout, index write, fetch,
+network, or caller command. Paths must be portable safe relative UTF-8 POSIX
+text no longer than 240 bytes. At most 10,000 entries and 16 MiB canonical
+manifest bytes are accepted. Overflow, unsafe path, object loss, object-format
+change, or drift aborts target setting without a target, manifest, event, or
+maintenance effect. Fingerprint/external targets create a zero-entry opaque
+manifest with the fixed omission and their respective caller/external class.
+The manifest digest covers the exact canonical content under
+`taskgov-artifact-manifest-v1\0`; its random ID/time are excluded.
+
+#### Schema-v19 Bundle And Evidence Publication
+
+Migration 19 `completion_evidence_bundles` adds:
+
+```text
+criterion_evidence_links
+completion_evidence_bundles
+completion_bundle_members
+completion_bundle_finding_snapshots
+evidence_projection_state
+```
+
+It also adds `evidence_basis_version` and nullable
+`completion_evidence_bundle_id` to cycles. Existing cycles become 0/null; only
+the exact partial legacy bridge may later insert that shape. Native cycles use
+version 1 and a same-project/same-Task Bundle. Deferred composite foreign keys
+allow immutable cycle and Bundle rows to be inserted together.
+
+Criterion-link construction is one closed repository matrix. Acceptance links
+the current manifest and completion evidence as `completion_basis`, selected
+Review Receipts as `review_assessment`, and current-generation Findings as
+`review_finding`; verification links either the unique manual Receipt as
+`verification_attestation` or the qualifying Runner Reference as
+`runner_observation`. Missing criteria omit links without omitting valid Bundle
+members. Every other source/relation/cardinality is rejected.
+
+Bundle members freeze the exact Reference/link set. Finding selection includes
+all current-generation Findings plus earlier high/medium Findings, excludes
+earlier lows, and orders by generation/time/ID. Native snapshots preserve their
+Reference and class; selected pre-v18 snapshots use null Reference plus
+`legacy_unknown/legacy_migration/1` and the historical-Finding omission. Their
+digest uses `taskgov-completion-bundle-finding-snapshot-v1\0`. No later query
+joins mutable Finding state to rewrite a sealed snapshot or file.
+
+Before a completion writer, the workflow prepares exact Git completion and a
+canonical JSON-shaped Bundle basis without writing a file. In the short writer
+it rereads Task, Contract, authority snapshot, criteria, target/capture,
+manifest, selected verification basis, Review Receipts/Findings, and completion
+proposal; reevaluates all current gates; and computes the complete payload and
+size. Links, snapshots, Bundle, cycle, Task update, event, and source-generation
+advance commit atomically. Drift, invalid binding/class/digest, or the 16-MiB
+cap rolls back the whole savepoint. Historical rows are immutable; reopen and a
+later completion create a fresh target, cycle, and Bundle.
+
+`CanonicalStatePaths` and `DatabaseTarget` add only `evidence_root`,
+`evidence_index`, `evidence_bundles`, and `evidence_lock` beneath
+`state/current/evidence`. The fixed Bundle filename is its Bundle ID plus
+`.json`; no caller path exists. Resolution rejects links, reparse points,
+nonregular files, containment changes, DB aliases, unknown recognized names,
+and unsafe staged content. Generated Evidence remains outside manifests and
+source commits.
+
+Projection state stores nonnegative source generation, nullable published
+generation no greater than source, nullable index digest, and the closed
+maintenance outcome/time. Every cycle insertion advances source generation
+exactly once, including the legacy bridge; no other write does. The projector
+captures project/schema, generation, all cycles, native Bundles/members, and
+legacy state in one query-only transaction and closes SQLite before rendering.
+One encoder owns the exact canonical JSON and array orders. There is no clock
+input, so same-basis repair is byte-identical.
+
+Under the zero-wait Evidence lock publication validates or atomically writes
+all required Bundle files through flushed same-directory temporaries, flushes
+and atomically replaces the index last, conditionally records the captured
+generation/digest in a short transaction, then rechecks once and permits at
+most one follow-up capture. The index is the commit point. Missing, ahead,
+behind, wrong-project/version/digest, unsafe, or otherwise mismatched projection
+is never consumed. SQLite stays authoritative and setup regenerates only
+one-way; no JSON is imported. Failure or contention keeps the last-good index,
+records the fixed maintenance outcome, and does not undo the business mutation.
 
 ### Review Packet
 
@@ -1962,6 +2056,327 @@ Task, Contract, target, changed paths, five fixed review-focus rows, required
 output, and the existing receipt argv shape are allow-listed. The builder
 does not launch a reviewer, execute/import a receipt, store a packet, or
 include a diff, transcript, prompt, stdout/stderr, secret, or absolute path.
+
+<a id="derived-evidence-analyzer-process-and-publication-boundary"></a>
+
+## Derived-Evidence Analyzer Structure
+
+The Analyzer uses only ignored `<canonical-package-state>/analysis/` state.
+`analysis_contracts.py` owns schema, canonical JSON, digests, identifiers, and
+limits. `evidence_consumer.py` independently validates the Evidence index and
+Bundle and imports neither `storage.py` nor `evidence_projection.py`.
+`analysis_packet.py` owns the memory-only packet. `analysis_outbox.py` owns the
+lease, descriptor, status, replay, and publication state. `analysis_validator.py`
+owns report validation; `analysis_renderer.py` owns the pure JSON-to-UTF-8/LF
+Markdown render. `codex_analysis_adapter.py` is the closed mock facade and owns
+the fixed prompt, output schema, and adapter validation boundary.
+`_analysis_windows_process.py` owns the closed process-safety state-machine
+oracle plus a read-only native capability preflight that always returns
+`policy_blocked`; `_analysis_win32.py` owns the typed Windows handle,
+private-tree, and publication primitives used by that boundary.
+`analysis_worker.py` exposes only internal/test `run_once(...)`; there is no
+caller-visible launch. The current implementation contains no native broker,
+provider, or child-process launch path and performs no live inference.
+`state_paths.py` and `state_resolver.py` supply fixed contained paths only.
+SQLite, `storage.py`, schema, setup, doctor, maintenance, CLI, Skill, and Task
+loop are unchanged by Analyzer execution.
+
+The durable layout contains immutable `outbox` descriptors, atomically replaced
+`status` files, immutable paired `reports`/`rendered` outputs, one lease, and a
+private `tmp` tree. The outbox is selected in identifier order with a
+100,000-regular-file preflight. No Analyzer index or SQLite table exists.
+
+### Controller Interface, Lease, And Private Tree
+
+The core passes one bounded attempt input
+`(analysis_job_id,N,packet_digest,stdin_bytes,argv,E,cancel)` and, when
+publication is requested, exact validated report/Markdown bytes and digests.
+The process boundary returns only a bounded adapter outcome, duration, a sealed
+result or null, `tree_quiescent`, and `publish_ready`. It cannot add or
+reinterpret report content, evidence meaning, status fields, digests, retry
+eligibility, or a caller-visible launch.
+
+The controller/broker/target rules below are the closed offline/mock
+process-safety model and oracle exercised by the current implementation. They
+are not an active native launch path. A future native implementation would have
+to satisfy these same invariants under separate authority; the current native
+preflight stops at `policy_blocked` before an adapter attempt.
+
+Within that model, let C be the controller, B the fixed private one-shot broker,
+T the target, and J the per-attempt Job. S is `output-schema.json`, O is `output.json`, I and Q
+are sealed input/result pagefile mappings, and Vb/Vc are broker/controller
+events. Pagefile-backed IPC creates no taskgov file; it makes no claim about OS
+page, hibernation, or dump storage.
+
+`taskgov-analysis.lock` is no-follow and noninheritable. C holds byte 0 via
+`LockFileEx(...,LOCKFILE_EXCLUSIVE_LOCK|LOCKFILE_FAIL_IMMEDIATELY)` before root
+inspection, counting, input, or status open and through terminal publication or
+quarantine. Busy or uncertain acquisition returns deferred `interrupted` with
+no creation, inventory, or durable read/write. Parallel and read-only Analyzer
+sessions are unsupported. Final release is one `UnlockFileEx` then
+`CloseHandle`.
+
+Under the lease C creates and holds one absent-before-open
+`tmp/.taskgov-analysis-<8-lower-alnum>/` root per worker count or
+publication-eligible no-adapter result. Pre-existence fails before count or
+publication; identity, bytes, token, and old zero never prove freshness.
+Adapter leaf order is S, O, `report.json`, `report.md`: B holds S/O
+delete-on-close and C holds the reports. A core-authorized no-adapter result
+creates only held report files; S/O never exist, held enumeration proves the
+exact two report leaves and S/O absence, and C's ledger proves no broker,
+target, Job, restricted token, mapping, event, pipe, stdio, or worker handle was
+created. Those facts are the no-adapter-tree proof. Adapter success proves S/O
+absent; a failed proof closes them unread and quarantines the root.
+
+No-follow preflight requires one exact contained non-reparse directory identity
+and at most 32 entries. Existing roots are quarantine and are never traversed,
+read, changed, deleted, claimed, or reused. Entry 33, an unexpected name/type/
+identity, escape, overflow, or inspection failure stops. Only the current root
+may become `tree_quiescent`; while live it belongs to B. Each retry uses a fresh
+attempt number, root, Job, broker, mappings, events, schema/output, target,
+pipes, and workers. Run-wide controller DACL/thread freeze may be established
+once before attempt 1 but is revalidated before each broker receives I. No path,
+handle, process, Job, mapping, event, pipe, output, timestamp, or modification
+time is reused across attempts.
+
+### Held Files, Freshness, And Security Descriptors
+
+The exact Win32 handle aliases are:
+
+```text
+RD=FILE_READ_DATA  RA=FILE_READ_ATTRIBUTES  WD=FILE_WRITE_DATA
+DL=FILE_LIST_DIRECTORY  DA=FILE_ADD_FILE|FILE_ADD_SUBDIRECTORY
+CR=READ_CONTROL  SY=SYNCHRONIZE
+SR=FILE_SHARE_READ  SW=FILE_SHARE_WRITE  SD=FILE_SHARE_DELETE
+OI=FILE_OPEN_IF  X=FILE_FLAG_OPEN_REPARSE_POINT
+K=FILE_FLAG_BACKUP_SEMANTICS
+D=FILE_ATTRIBUTE_TEMPORARY|FILE_FLAG_DELETE_ON_CLOSE|X
+OP=(DELETE|RD|RA|SY,SW|SD,CREATE_NEW,D)
+OC=(WD|SY,SR|SD,OPEN_EXISTING,X)
+SP=(DELETE|RD|WD|RA|SY,SR|SD,CREATE_NEW,D)
+SC=(RD|RA|SY,SR|SW|SD,OPEN_EXISTING,X)
+TH=(CR|DELETE|RD|WD|RA|SY,0,CREATE_NEW,X)
+RH=(CR|DELETE|RD|RA|SY,0,OPEN_EXISTING,X)
+S0=(CR|DL|DA|RA|SY,SW,OI,K|X)
+R0=(CR|DELETE|DL|DA|RA|SY,0,OPEN_EXISTING,K|X)
+DP=(DL|DA|RA|SY,SW,OPEN_EXISTING,K|X)
+```
+
+S0 access is exactly `0x00120087`, share `0x2`, and exists only for the lease
+owner's atomic status compare-and-swap. It is acquired after the lease and held
+through that status session; SW authorizes no second session. Directory DELETE/
+share-delete, root/outbox/lease R0, RH, and controller handles otherwise remain
+unchanged. `DF=FileDispositionInfo.DeleteFile`.
+`AR=FILE_RENAME_INFORMATION(TRUE,held-S0,exact-basename)` and
+`NR=FILE_RENAME_INFORMATION(FALSE,held-DP,exact-basename)` each run once on a
+held TH through typed `NtSetInformationFile(...,FileRenameInformation)`. B owns
+O/S through OP/SP and T gets only OC/SC. Opens are no-follow and identity-bound;
+live tuples are never reclaimed.
+
+Let CU be the exact current primary `TokenUser` SID, RC be
+`WinRestrictedCodeSid=S-1-5-12`, OW be `OWNER RIGHTS=S-1-3-4`, FT be
+`FILE_TRAVERSE`, and WC/WO be write-DACL/write-owner. Root and report-temp
+security descriptors are protected, noninheriting, canonical, and contain no
+default, null, generic, or other ACE. Root DACL is exactly
+`DENY OW(WC|WO);ALLOW CU(R0.access);ALLOW RC(FT|RA)`; report-temp DACL is
+`DENY OW(WC|WO);ALLOW CU(TH.access)` with no RC ACE. O uses
+`DENY OW(WC|WO);ALLOW CU(OP.access|OC.access);ALLOW RC(OC.access)`; S and stdio
+retain their exact CU/RC dual allows plus the OW deny. T cannot list, add,
+reopen, rename, delete, or change report security or reach destination parents
+or durable data.
+
+B flushes and revalidates S before C atomically records attempt N and running.
+A crash consumes N, never a timestamp. O is one closed-code immutable mock
+fixture. Its held fresh handle plus `(analysis_job_id,N,packet_digest)` binds the
+only candidate result. Partial, replaced, late, wrong-attempt, wrong-packet, or
+post-read-changed output is `invalid_output`. Rejected bytes, stdout/stderr
+prefixes, prompts, packets, and provider bodies are discarded before terminal
+state and never enter reports, durable state, logs, or quarantine.
+
+### Optional Adapter And Windows Containment
+
+This subsection continues the closed offline/mock oracle. Present-tense process
+steps describe the invariants proved by the mock state machine, not operations
+performed by a native broker. The current code never calls a provider or
+creates B, T, or J.
+
+Within the oracle, the core's exact argv runs with absolute `lpApplicationName`, a digest-bound
+immutable isolated runtime/copy, a fresh empty non-Git cwd, and fresh private
+`CODEX_HOME`. Child environment E is a non-null double-NUL-terminated Unicode
+block containing exactly ordered `CODEX_HOME,PATH,PATHEXT,SystemRoot,TEMP,TMP`,
+with no duplicates, `=drive` entries, or other keys. Saved authentication,
+API-key variables, provider/network config, console, site, plugin, user config,
+rules, ambient cwd, and ambient DLL lookup are never reused. B performs no
+semantic parse and only bounded opaque copy. The stdin writer sends only the
+exact bounded frame; stdout/stderr are concurrently drained into separate
+65,536-byte memory prefixes and discarded. S is strict and private. Live mode
+is policy-blocked without separate containment/broker, immutable runtime/home,
+credential/parent-handle absence, and model/data/cost authority.
+
+Let `SDC=DELETE|READ_CONTROL|WRITE_DAC|WRITE_OWNER`, `PR=PROCESS_ALL_ACCESS`,
+`TR=THREAD_ALL_ACCESS`, `WR=WINSTA_ALL_ACCESS|SDC`,
+`DR=DESKTOP_ALL_ACCESS|SDC`, and
+`BP=SeChangeNotifyPrivilege|SeAssignPrimaryTokenPrivilege|
+SeIncreaseQuotaPrivilege`. A valid PR/TR bit must be documented by the minimum
+supported modern Windows SDK; mismatch is pre-count `policy_blocked`. `P(U)`
+means U gets `ACCESS_DENIED` for every PR/TR bit, their union, and
+`MAXIMUM_ALLOWED` on C and all C threads.
+
+C creates separate sibling primary tokens from its original token.
+`TT=CreateRestrictedToken(flags=0,DeletePrivileges=all-except-
+{SeChangeNotifyPrivilege},SidsToRestrict=[(RC,0)])` must have exactly that one
+privilege, exact restricted SID `[RC]`, restricted state, no `WRITE_RESTRICTED`,
+and inert OW. `BT=CreateRestrictedToken(C-original;flags=0;
+delete=all-except-BP;restrict=[])` must have exact BP, no restricted SIDs, and
+all other privileges permanently deleted and unaddable, including debug,
+ownership, backup, restore, and DACL bypass.
+
+Before B, C holds required self handles and one probe-thread handle. C process
+and every current C-thread DACL deny CU and OW all PR/TR, and `P(duplicate-user)`
+must pass. C closes the probe and creates no later thread. Its BT creation handle
+has exactly `TOKEN_ASSIGN_PRIMARY|TOKEN_DUPLICATE|TOKEN_QUERY`. Broker
+environment contains exactly ordered `SystemRoot,TEMP,TMP`, where TEMP/TMP name
+the fresh root, with no PATH, profile, config, proxy, credential, duplicate,
+drive, or other key.
+
+B is atomically launched suspended with `CreateProcessAsUserW(BT)`: absolute
+digest-bound immutable broker application, fixed arguments, fresh root cwd,
+broker environment, `bInheritHandles=TRUE`, flags
+`EXTENDED_STARTUPINFO_PRESENT|CREATE_SUSPENDED|CREATE_UNICODE_ENVIRONMENT|
+CREATE_NO_WINDOW`, and `STARTUPINFOEXW` with no std-handle flag and exactly
+`JOB_LIST=[J]` plus
+`HANDLE_LIST=[IB,QB,VbB,VcB,TTB]`. Those are fresh inheritable duplicates only
+for launch, with exact rights `SECTION_MAP_READ`, `SECTION_MAP_WRITE`,
+`EVENT_MODIFY_STATE`, `SYNCHRONIZE`, and
+`TOKEN_ASSIGN_PRIMARY|TOKEN_DUPLICATE|TOKEN_QUERY`; every original and unlisted
+handle is noninheritable. Attribute construction, inheritance, Job membership,
+and process/thread-handle noninheritance are proved before exactly one broker
+resume. Any uncertainty enters the abnormal Job path with no ambient fallback.
+B receives no Job, lease, controller process/thread, destination parent,
+durable file, stdio, console, or ambient handle and reproves BT plus `P(B)`
+before reading I.
+
+Before USER/GDI, window, hook, worker, or T, B creates a fresh noninheritable
+explicit-security station and desktop in this order:
+`CreateWindowStationW(NULL,CWF_CREATE_ONLY,...)`, `SetProcessWindowStation`,
+`CreateDesktopW(L"default",...,0,...,explicit-SD)`, `SetThreadDesktop`.
+`GetUserObjectInformationW` provides the returned `station\default` name. The
+private pair dual-allows CU and RC exact WR/DR; no original station/desktop or
+controller/broker process/thread/IPC/Job/lease/destination/durable object allows
+RC. C sets and queries exactly the Job UI limits for handles, clipboard,
+system/display settings, global atoms, desktop, and exit-Windows. B then creates
+its fixed workers and freezes thread/USER state. No later broker thread creates
+or receives a window, hook, clipboard, DDE, COM-STA, message queue, or other
+desktop IPC; the target desktop has no broker receiver. TT must be denied every
+PR/TR form on C, B, and all their threads and WR/DR on C's original station/
+desktop.
+
+T is created only by `CreateProcessAsUserW(TT)` with returned station/desktop,
+E, exact three stdio handles, `STARTF_USESTDHANDLES`, handle list, inheritance,
+and exact suspended Unicode/no-window flags. Non-breakaway Job membership is
+proved before exactly one target resume. T receives no broker, Job, IPC, token,
+lease, or durable handle and cannot open B through CU, OW, RC, a desktop
+receiver, or inherited handle.
+
+### Job, Workers, Termination, And Retry
+
+Each attempt creates one fresh unnamed Job. C is sole owner of its
+noninheritable kill-on-close/no-breakaway handle and opens no named/foreign Job.
+I/Q are unnamed nonexecutable pagefile mappings: I is controller-sealed and
+broker-readable; Q is broker-write/controller-read and contains only
+`version,state,analysis_job_id,N,packet_digest,length,digest,bytes`. Vb is
+broker-modify/controller-sync and Vc the inverse; T receives neither. Events
+provide synchronization, never child-tree proof.
+
+Attempt N is 1..2. Monotonic attempt/all/proof/final budgets are exactly
+120000/240000/5000/1000 ms; wall clock is untrusted. Retry requires proved
+cleanup and one of `unavailable|launch_failed|timeout|invalid_output`, occurs
+only after N=1, and is forbidden after cancel. Uncertainty before recording N
+is `policy_blocked`.
+
+C owns the lease, Job, broker process and primary-thread-until-resume, token
+creation handles/copies, mappings, events, and launch duplicates. B owns its
+station/desktop, target token/process/thread, pipes, worker thread handles, S/O,
+and Q write. T owns only stdio. C has no I/O worker and B has no Job, lease,
+destination-parent, or controller handle. Each owner closes its objects in the
+specified post-proof order.
+
+B owns exactly one bounded stdin writer and one bounded drain worker per stdout
+and stderr. Each holds only its pipe end, bounded buffer, and thread state and
+cannot write Q or access S/O. B owns all worker handles. On normal target signal
+B closes stdin and broker pipe ends in protocol order and joins all three within
+5,000 ms. Timeout, orphaned pipe, incomplete EOF, or unjoined thread is abnormal:
+B writes no terminal Q and C immediately enters the abnormal Job path. No
+worker survives B, a successful Q, or controller return.
+
+Success order is: T signals; B joins workers and closes every T handle; two Job
+queries prove `ActiveProcesses==1` with PID exactly `[B]`; B held-reads/caps O;
+B seals bound length/digest/opaque bytes into Q; B deletes/proves S/O absent;
+B signals terminal and exits. C accepts only terminal-valid Q, broker signal,
+Job zero, and stable zero/Q reread, then validates Q. No single exit, event,
+handle signal, or zero observation suffices.
+
+Timeout, cancellation, broker crash, worker hang, partial Q, or abnormal child
+state first latches the outcome, then calls `TerminateJobObject(J)` before
+waiting; no thread is terminated. C must prove broker signal and stable Job zero
+before reading Q, retrying, removing the root, unlocking, or returning. Without
+that proof all remain forbidden: the current tree is quarantine and C fail-fast
+holds lease and sole Job, with kill-on-close only as termination fallback.
+
+Only a proved abnormal path may leave Q unread, prove S/O absent, remove the
+root, close attempt ownership, and close J. A retry keeps the same lease while
+creating an entirely fresh attempt. Otherwise J closes before the final lease
+release. `tree_quiescent` means every required Job/process/worker/handle/file
+absence proof and ordered finalization succeeded; otherwise result digests are
+null and nothing is reused.
+
+### Atomic Report Publication And Recovery
+
+Before report temporaries or intent, C acquires and holds both noninheritable
+destination parents and proves canonical identity, containment, and same-volume
+placement. Failure changes no destination, status, or report tuple, preserves
+running, and returns deferred `interrupted`. C creates both temps with TH, sets
+delete disposition before writing, never uses delete-on-close, writes/flushes,
+held-rereads, and validates exact canonical bytes, privacy, bindings, digests,
+and caps.
+
+`publish_ready` requires valid held report/Markdown temps, both destination
+parents, a complete all-nonnull report tuple bound to those bytes, no other
+private leaf, and either adapter `tree_quiescent` with S/O closed/absent or the
+no-adapter proof with S/O never created. Intent order is JSON then Markdown.
+Promotion clears delete disposition and performs same-handle atomic NR through
+the held destination parent and exact basename. Replace, copy, pre-delete,
+reopen, or path fallback is forbidden. An absent final is completed; its held
+handle rechecks parent, name, identity, length, bytes, and digest. C removes and
+proves absence of the empty root, atomically records published, closes files,
+then destination parents, then releases the lease.
+
+On failure an unpromoted temp stays delete-disposed through last close and
+original-identity absence proof. A promoted same handle is reset delete-disposed,
+closed, and proved original-identity absent or foreign-replaced. The current
+root is removed only after its absence proof. Only after every matching rollback
+proof may the core atomically publish null report tuple with
+`failed/publication_failed`, close parents, and unlock. Uncertainty preserves
+running intent/root and returns `interrupted`; ambiguous status writes are
+reread under lease and rollback continues only while state remains running.
+
+A crash between clearing disposition and rename may leave only complete,
+intent-bound, privacy/cap-valid canonical report/Markdown; it is quarantine,
+never raw adapter output, provider data, prompt, packet, stdout/stderr, or
+rejected bytes. Recovery holds both destination parents and reads only
+descriptor, source, complete intent, and exact final destinations. It never
+reads, traverses, deletes, or reuses adapter output/quarantine and never changes
+worker or adapter counters.
+
+Missing means absent; present files open with RH. Any acquisition, type,
+identity, length, or cap uncertainty preserves running and changes nothing.
+Recovery memory-reads capped files, discards mismatch details, and rechecks held
+identity/length plus canonical JSON/bindings/digest or exact rerender. Two valid
+files complete publication under held handles and status reread. Otherwise only
+matching handles are delete-disposed, closed, and proved absent or foreign-
+replaced; foreign/mismatched files remain untouched and unexposed. A null-report
+publication failure or collision requires every rollback proof; parse-equivalent,
+reordered, reframed, or digest-only mismatch is `report_invalid` without retry.
 
 ## Completion Cycle History
 
@@ -2119,20 +2534,19 @@ The only new stable error is
 `completion_history_inconsistent: stored completion history is inconsistent`.
 It exposes no IDs, counts, values, hashes, SQL, or paths.
 
-## Schema-v21 Verification Receipt Arm And Bundle Integration
+## Schema-v21 Manual Receipt Arm And Bundle Integration
 
-This section defines the M21 Receipt arm retained by the current schema-v21
-implementation and its integration with the sole three-branch selector defined
-under TG-M24.3A Accepted Schema-v21 Gate-Basis Design. It does not rewrite the immutable v0.10.0 artifact or claim a later
-published artifact identity. Schema, parser, completion, Viewer compatibility,
-Skill guidance, package inventory, and tests form one atomic supported
-boundary. Its completed execution narrative is available only through the
-history index.
+This section defines the manual Verification Receipt arm and its integration
+with the sole three-branch selector under
+[Schema-v21 Runner Gate-Basis Design](#schema21-runner-gate-basis-design). It
+does not rewrite the immutable v0.10.0 artifact or claim a later published
+artifact identity. Schema, parser, completion, Viewer compatibility, Skill
+guidance, package inventory, and tests form one supported boundary.
 
 ### Ownership And Data Model
 
 `verification_receipts.py` owns Receipt input validation,
-exact-current classification, M21-arm evaluation, and the bounded public read
+exact-current classification, manual-Receipt-arm evaluation, and the bounded public read
 model. The single service selector combines that arm with the closed Runner
 basis; callers do not choose a branch. `storage.py` alone owns schema, migration,
 append/read queries, and Receipt uniqueness. `tasks.py` and
@@ -2257,7 +2671,7 @@ Task, Contract revision, expectation digest, and every target field equal the
 coherent current basis. The sole completion selector delegates to this evaluator
 only for marker `0` or the exact closed no-launch fallback; the qualifying Runner
 branch and all other marker-`2` states use the closed selector matrix above. The
-M21 arm computes, in order:
+manual arm computes, in order:
 
 ```text
 specified expectation + no exact-current Receipt
@@ -2297,7 +2711,7 @@ The completion basis snapshot adds the current selected verification gate
 summary and its nullable Receipt or Runner-observation basis. Outside-Git
 preflight and locked revalidation both run the same sole selector. Ordered
 validation keeps the explicit `verification_required` flag check and target
-validation first, then applies the selected Runner/M21 gate, then evaluates
+validation first, then applies the selected Runner/manual gate, then evaluates
 current review findings/receipts. `task complete
 --check` adds the two Receipt codes to its bounded allow-list; check never
 writes or reserves a Receipt.
@@ -2369,7 +2783,7 @@ absence of invented Receipt rows. Migration 18 adds the capture/provenance/
 subject tables and columns described above, preserves exact v17 projections,
 and creates no historical evidence. Migration 19 adds Bundle/link/snapshot and
 projection state plus cycle version/null fields without inventing a historical
-Bundle. Migration 20 adds the accepted shadow-storage objects and Bundle-v2
+Bundle. Migration 20 adds the audit-only Runner-storage objects and Bundle-v2
 tagged union without inventing Runner or historical evidence. Migration 21
 widens only the frozen gate-basis discriminators without promoting audit
 history. Old binaries reject newer schemas normally; setup remains the sole
@@ -2412,7 +2826,7 @@ Schema v8 gives Tasks a current revision pointer and adds append-only
 Each positive row stores normalized scope, acceptance, optional constraints,
 stable authority reference, change reason, and timestamp. Repository reads
 require the pointer to reference the latest same-project/same-task revision;
-the TG-M21.4D shared boundary enforces this before Contract projection or
+the shared Contract-pointer boundary enforces this before Contract projection or
 Task-backed lifecycle use.
 Scope and acceptance are each capped at 4,000 characters, constraints at
 2,000, authority reference at 500, and change reason at 1,000.
@@ -2656,7 +3070,7 @@ sidecar, database, event, backup, Evidence, or Viewer.
 The maintenance projection adds one fixed `evidence` object beside backup and Viewer with `code`, `due`, `source_generation`, `published_generation`, `last_success_at`, and `last_outcome`; doctor reads stored facts only.
 
 The coherent project snapshot loads complete Task rows once and validates the
-whole batch with the TG-M21.4C/TG-M21.4D validator before computing Task
+whole batch with the shared stored-Task/Contract validator before computing Task
 counts. On a
 Task fault, doctor maps project state to `unreadable`, every other
 project-backed component to `unavailable`, and setup eligibility to false;
@@ -2789,7 +3203,7 @@ They are independent same-process bounded work, never a thread, daemon, timer,
 queue, scheduler, service, sleep, or retry loop. Each uses its own zero-wait
 one-byte OS lock; lock-file existence is not ownership. Read, error, replay,
 no-op, configuration-only setup, doctor, Effort, and maintenance metadata
-writes do not invoke it. TG-M24.2C success and fallback retain the one original
+writes do not invoke it. Runner success and fallback retain the one original
 target-set coordinator pass; a post-T1 Runner error does not invoke maintenance
 and leaves the already-advanced due state for a later normal opportunity or
 setup repair. Runner-internal writes never invoke a second pass.
@@ -2836,7 +3250,7 @@ Setup invokes the same canonical renderer directly. There is no public Viewer
 command, output choice, browser launch, server, or browser-to-SQLite path.
 
 The repository selects complete rows for all project Tasks in list order and
-validates them as one source-schema-aware TG-M21.4C/TG-M21.4D batch before any
+validates them as one source-schema-aware stored-Task/Contract batch before any
 Task, review, or history projection. Exact v18-v21 snapshot validation first
 validates the complete Task batch as part of the full Evidence Ledger, then the
 same-transaction list-order query consumes the private proof above instead of
@@ -3291,27 +3705,24 @@ must match the specification branch and actual stored effects; self-reported
 intent alone is insufficient. Current behavior is not forward-tested against
 these expectations because activation has not occurred.
 
-<a id="tg-m24-r2c-runner-architecture-boundary"></a>
+<a id="trusted-local-runner-architecture"></a>
 
-## Accepted TG-M24.R2C Trusted-Local Runner Architecture Boundary
+## Trusted-Local Runner Architecture
 
-This is a documentation-only freeze for the future explicit-opt-in adapter for
-a repository the user already trusts. Eligibility remains deny-by-default and
+This is the current explicit-opt-in adapter architecture for a repository the
+user already trusts. Eligibility remains deny-by-default and
 binds the current Task, Contract, verification criterion, exact target, and a
 project-owned fixed plan. Untrusted, external, unsupported, or visual-only
-targets route to existing M21 manual verification without starting a process.
-A future launch uses an absolute executable, literal argv, `shell=false`, no
+targets route to manual Verification Receipt handling without starting a process.
+A launch uses an absolute executable, literal argv, `shell=false`, no
 PATH lookup, a closed credential-excluding environment, and an exact private
 materialization. The target working tree is never the execution root and
 receives no copy-back.
 
-Accepted R4V realizes only the pure `value_model` row below. It preserves the
-opaque accepted Runner-policy seal and closed legacy record shapes, replaces
-internal entropy with caller-token identifiers, and retains only fail-closed
-temporary import shims. R3A removes the storage instance-shim consumer, R3B
-removes Evidence provider/policy-shim consumers, and R4B deletes the remaining
-temporary shims and fixed-policy API. None of these foundation semantics
-activates a Runner or grants gate authority.
+The `value_model` is dependency-pure and legacy-stable. It preserves the opaque
+Runner-policy seal and closed compatible record shapes and uses caller-token
+identifiers. No legacy storage, Evidence provider/policy, or fixed-policy shim
+remains an active consumer.
 
 ### Closed Runner-Slice Module Registry
 
@@ -3323,17 +3734,17 @@ and may not import back into a higher Runner layer. Because `cli.py` is shared
 by all public leaves, its unrelated pre-existing imports are outside the
 Runner route; its Runner dispatch has only the `cli -> service` edge.
 
-| Layer id | Exact owned modules | Sole Runner responsibility | Allowed Runner-layer imports | Forbidden responsibility or reverse edge | Remaining nonconformance route |
+| Layer id | Exact owned modules | Sole Runner responsibility | Allowed Runner-layer imports | Forbidden responsibility or reverse edge | Current boundary |
 |---|---|---|---|---|---|
-| `cli` | `cli.py` | Parse and format the existing public surface and dispatch the Runner route to the parent service. | `service` | No Runner eligibility, authority, persistence, process, native, or cleanup decision; no Runner dispatch to `process_adapter` or `os_adapter`. | Retired direct process/native branches are physically absent; any retained Runner-specific direct process/native edge is repaired by R4B. |
-| `service` | `verification_runner_service.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | Retired OS/profile/recovery seams are physically absent; any retained direct OS edge or second acceptance owner is repaired by R4B; current audit-only integration is owned by 2C. |
-| `repository` | `storage.py`, `tasks.py`, `contracts.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema and Evidence compatibility remain R3A/R3B; any retained reverse edge or cycle is repaired by R4B. |
-| `target_plan` | `artifact_manifest.py`, `verification_runner_git.py`, `verification_runner_plan.py` | Parent-invoked exact target observation/materialization and fixed-plan decode/validation. | `repository`, `value_model` | No CLI policy, canonical database ownership, completion decision, trusted-code or verification-command launch, terminal publication, or cleanup acceptance. | Dependency repair remains R4B; retained target/plan implementation remains 2A. |
-| `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | Accepted R4V repairs the dependency-pure legacy-stable foundation and reverse edge; R3A removes the storage instance-shim consumer, R3B removes Evidence provider/policy-shim consumers, and R4B deletes the temporary shims and fixed legacy policy API. |
-| `runtime_identity` | `verification_runner_runtime.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is physically absent; retained runtime implementation remains 2B and dependency repair remains R4B. |
-| `lifecycle` | `verification_runner_lifecycle.py` | Parent-requested creation, inventory, quarantine, removal, and absence proof for the one owned private attempt tree. | none | No process start, Job/stdio/handle ownership, SQLite, Evidence, business gate, terminal publication, or final cleanup acceptance. | Retired profile/recovery mechanics are physically absent; retained lifecycle implementation remains 2B; any second acceptance owner is repaired by R4B. |
-| `process_adapter` | `verification_runner_process.py` | Consume the closed request, establish the Job before trusted code, enforce process/resource/output/time bounds, drain and discard output, terminate and wait for process-tree zero, close handles, and return the closed result. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Retired Candidate/AppContainer/profile/ACL branches are physically absent; the current business-freshness callback is repaired by R4B; retained adapter implementation remains 2B. |
-| `os_adapter` | `_verification_runner_win32.py` | Thin Windows Job, process, stdio, accounting, termination, wait, and handle primitives. | `value_model` | No parent policy, repository, persistence, gate, cleanup acceptance, LPAC/AppContainer/profile/ACL/ETW/registry-recovery module, or reverse import. | The retired LPAC and native branches are physically absent; retained thin primitives remain 2B. |
+| `cli` | `cli.py` | Parse and format the existing public surface and dispatch the Runner route to the parent service. | `service` | No Runner eligibility, authority, persistence, process, native, or cleanup decision; no Runner dispatch to `process_adapter` or `os_adapter`. | Direct process/native CLI branches are physically absent. |
+| `service` | `verification_runner_service.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | It is the sole business and cleanup-acceptance owner. |
+| `repository` | `storage.py`, `tasks.py`, `contracts.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema/Evidence compatibility stays repository-owned with no reverse edge. |
+| `target_plan` | `artifact_manifest.py`, `verification_runner_git.py`, `verification_runner_plan.py` | Parent-invoked exact target observation/materialization and fixed-plan decode/validation. | `repository`, `value_model` | No CLI policy, canonical database ownership, completion decision, trusted-code or verification-command launch, terminal publication, or cleanup acceptance. | Target/plan code is read-only until parent-owned materialization. |
+| `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The module is dependency-pure and has no compatibility shim consumer. |
+| `runtime_identity` | `verification_runner_runtime.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is physically absent. |
+| `lifecycle` | `verification_runner_lifecycle.py` | Parent-requested creation, inventory, quarantine, removal, and absence proof for the one owned private attempt tree. | none | No process start, Job/stdio/handle ownership, SQLite, Evidence, business gate, terminal publication, or final cleanup acceptance. | Profile/recovery alternatives are physically absent. |
+| `process_adapter` | `verification_runner_process.py` | Consume the closed request, establish the Job before trusted code, enforce process/resource/output/time bounds, drain and discard output, terminate and wait for process-tree zero, close handles, and return the closed result. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Candidate/AppContainer/profile/ACL branches and business-freshness callbacks are absent. |
+| `os_adapter` | `_verification_runner_win32.py` | Thin Windows Job, process, stdio, accounting, termination, wait, and handle primitives. | `value_model` | No parent policy, repository, persistence, gate, cleanup acceptance, LPAC/AppContainer/profile/ACL/ETW/registry-recovery module, or reverse import. | Only thin native primitives remain. |
 
 The complete inter-layer edge set is therefore exactly:
 
@@ -3363,9 +3774,9 @@ or an equivalent Task/Contract/criterion/target freshness callback is a
 business-gate reverse edge; the service performs those checks before launch,
 between bounded adapter calls where applicable, and after the returned result.
 
-### TG-M24.2A Target-Plan Implementation
+### Target-Plan Implementation
 
-TG-M24.2A realizes only the `target_plan` registry row. It adds
+The `target_plan` registry row owns
 `verification_runner_git.py` and `verification_runner_plan.py`; it does not add
 or change CLI dispatch, the parent service, SQLite, Evidence, completion,
 runtime identity, lifecycle, process, or native behavior. The modules may use
@@ -3447,13 +3858,13 @@ decodes strict UTF-8 JSON with duplicate-member, float, non-finite,
 unknown-member, and type rejection. It validates the exact specification shape
 and only the plan-known scalar/collection bounds before selection. Final
 Windows quoting, fixed executable/bootstrap insertion, materialized absolute
-paths, and the `command_line_utf16_units` bound remain TG-M24.2B request
+paths, and the `command_line_utf16_units` bound remain process-request
 admission and are not evaluated by this module. Raw bytes use ordinary
 labeled SHA-256. Canonical normalized plan and selected-entry values use the
 domains `taskgov-verification-runner-plan-v1\0` and
 `taskgov-verification-runner-plan-entry-v1\0`. `trusted_local = true` plus one
 exact basis selects `plan_state=runner`, `route=runner`; false opt-in, absence,
-or no current-Task entry is a closed M21 fallback; a current-Task mismatch,
+or no current-Task entry is a closed manual fallback; a current-Task mismatch,
 duplicate basis, ambiguity, or malformed input raises one sanitized bounded
 plan error. Successful resolutions use exactly the specification matrix:
 `absent/m21_fallback/plan_absent`,
@@ -3469,14 +3880,14 @@ raw and semantic digests provide the physical-plan binding. Arguments and
 private values remain in-process only and are not members of the resolution
 digest or any durable projection.
 
-The 2A integration gate assembles actual plan-resolution and target-
+The integration boundary assembles actual plan-resolution and target-
 materialization outputs into the existing pure
 `resolution_idempotency_digest`. That seal already binds Task/Contract,
 authority/criterion, review-target kind/value/base/generation, target material,
 and plan raw/semantic/selected-entry identities without including plan bytes,
 argv, or steps. `target_plan` does not import or invoke the parent service;
-TG-M24.2C remains the owner of orchestration, persistence, and dispatch
-consumption.
+the parent service remains the owner of orchestration, persistence, and
+dispatch consumption.
 
 ### Typed Process Value Boundary
 
@@ -3553,7 +3964,7 @@ case-insensitively unique keys `APPDATA`, `HOME`, `LOCALAPPDATA`,
 Windows directory; and the three `PYTHON*` values are exactly `"1"`. It has no
 additional or ambient key, and all path values satisfy `absolute_path`.
 
-Accepted 2B fixes the package-runtime executable source to the operating-system
+The process boundary fixes the package-runtime executable source to the operating-system
 image path of the current parent process. `sys.executable` is used only to
 corroborate the same physical file; neither value is resolved through `PATH`,
 configuration, a plan, or target material. The runtime-identity layer observes
@@ -3589,10 +4000,10 @@ is never persisted, and creates no transport.
 For both result records, `outcome` is an adapter-local `result_code` and
 `reason` is either null or an adapter-local `result_code`; `launch_state` uses
 the exact closed set above. These codes are bounded sanitized structural
-values, not arbitrary text. R2C gates only the closed record-member sets, the
-`result_code` grammar, nullability, and those member-to-grammar bindings. It
-does not define a concrete code taxonomy or outcome/reason pairing. Accepted
-2B owns that local membership and pairing, while accepted 2C owns the closed
+values, not arbitrary text. The value-model boundary owns only the closed
+record-member sets, `result_code` grammar, nullability, and those member-to-
+grammar bindings. The process adapter owns concrete local membership and
+pairing, while the parent service owns the closed
 durable/public mapping and projection. The parent service accepts no arbitrary
 adapter text, remains the sole business-interpretation and persistence owner,
 and persists only the mapped existing durable outcome. This freeze does not
@@ -3602,7 +4013,7 @@ count, uniqueness, range, and order relation above, so it has at most one
 sanitized result per request step. A result contains no exit code, output byte,
 argv, environment value, credential, path, exception body, or arbitrary text.
 
-Accepted 2B closes the adapter-local pairings exactly as follows; a slash joins
+The adapter-local pairings are exactly as follows; a slash joins
 `outcome / reason / launch_state`, and `null` is the only absent reason:
 
 `RunnerProcessStepPairingsV1`:
@@ -3643,7 +4054,7 @@ CPU and process counts are checked sums and request-level memory is the checked
 maximum. A limit or cleanup failure may omit accounting, but it never changes
 the three mandatory Boolean cleanup proofs. Windows rejects creation beyond the
 active-process limit, while the child may surface that rejection only as the
-ordinary sanitized `step_nonzero`; 2B adds no completion-port or notification
+ordinary sanitized `step_nonzero`; the adapter adds no completion-port or notification
 infrastructure solely to reclassify it as a resource result.
 
 process_zero, handles_closed, and raw_output_discarded must all be true before
@@ -3651,7 +4062,7 @@ the service can accept process cleanup. The lifecycle layer separately returns
 only the same safe `attempt_id` and the exact `private_tree_state` set above;
 it returns no path or filesystem detail.
 
-The 2B lifecycle cleanup call accepts only its fixed parent-owned Runner paths
+The lifecycle cleanup call accepts only its fixed parent-owned Runner paths
 and one valid `attempt_id`. It returns `state=absent` only after a bounded
 no-follow removal and a fresh proof that both the exact attempt and quarantine
 entries are absent while their owning parent-directory identities remain
@@ -3663,7 +4074,7 @@ out-of-root deletion, copy-back, alternate cleanup root, or diagnostic detail.
 An invalid attempt identifier is rejected before cleanup rather than converted
 to either result state.
 
-### Cleanup Acceptance, Privacy, And Non-Activation
+### Cleanup Acceptance And Privacy
 
 The process adapter is the sole owner of its Job, descendants, drains, and
 handles. The lifecycle layer is the sole mechanic allowed to remove and prove
@@ -3680,23 +4091,19 @@ exception bodies remain transient and are never stored. Cleanup or privacy
 uncertainty fails closed. The records above define no serializer, file spool,
 queue, pipe, socket, RPC, worker, daemon, subprocess wrapper, supervisor,
 heartbeat, retry protocol, secondary state store, or second database
-connection. M25 separation requires later explicit authority; R2C adds no IPC,
-process, schema, public CLI, Skill trigger, completion gate, or product behavior.
+connection. Any later process separation requires explicit authority; this
+boundary adds no IPC, schema, public CLI, Skill trigger, or second completion
+gate.
 
 This remains a reliability and privacy boundary for trusted code, not a
 hostile-code sandbox or a claim of network isolation. Candidate C, B-to-C,
 LPAC/AppContainer, Package-SID ACLs, ETW, registry/profile recovery, transfer
 state machines, supervisors, trust-root hardening, and diagnostic fault
-matrices are not qualification gates. Their inventory-approved retired code,
-tests, fixtures, manifests, Candidate runtime material, and direct retired
-native seams were accepted R4A physical-deletion scope and are now physically
-absent; they are not architecture nodes. Retained dependency violations are
-R4B scope. R3A/R3B and 2A/2B/2C own
-only their already-routed later storage, Evidence, target/plan, adapter/
-lifecycle, and parent-integration work. R2C repairs or activates none of them
-and changes no R2A inventory or R2B action selector.
+matrices are not qualification gates. Their code, tests, fixtures, manifests,
+Candidate runtime material, and direct native seams are physically absent and
+are not architecture nodes.
 
-## TG-M24.2C Parent Service And Audit Graph
+## Runner Parent Service And Audit Graph
 
 `cli.py` keeps the existing `review target set` parser and formatters and calls
 only `verification_runner_service.py` for that dispatch. The service consumes
@@ -3746,7 +4153,7 @@ adapter. No SQLite writer spans filesystem or process work.
 the atomic T1 insert, cleanup-only append, and atomic terminal append. The
 repository enforces at most one resolution, attempt, cleanup event, and
 observation per project/Task/target generation despite the deliberately more
-permissive R3A physical indexes. Exact idempotency-digest replay returns the
+permissive physical indexes. Exact idempotency-digest replay returns the
 existing row set; a different digest, extra row, ownership mismatch, or second
 pending owner fails closed. `BEGIN IMMEDIATE` makes each same-generation
 repository transaction atomic, while the retained Runner OS lock serializes
@@ -3754,17 +4161,17 @@ the complete reconciliation/T1/process/T2 route. A caller that cannot take
 that lock performs no T1 and cannot launch a process.
 
 The parent supplies one fresh 16-lowercase-hex token to each pure
-`generate_runner_id` call. A resolution uses the accepted 2A seal and the
+`generate_runner_id` call. A resolution uses the target-plan seal and the
 manifest-bound `RunnerImplementationIdentity`. Its
 `runner_policy_digest` is the fixed
 `verification Runner orchestration policy v1` label
 `sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8`.
 The label is not recomputed from the manifest, target, plan, or runtime and
 adds no sandbox or security claim; `runner_implementation_digest` separately
-binds the strict current release-manifest identity. The accepted 2B layer has
+binds the strict current release-manifest identity. The process layer has
 no durable canonical runtime digest, so `runtime_digest` is always null in the
 resolution and Runner source projection; the implementation digest and fixed
-policy label are the only durable execution identities in 2C.
+policy label are the only durable execution identities.
 
 For an admitted attempt, the service alone owns this sequence under the one
 zero-wait Runner lock already acquired before T1:
@@ -3782,7 +4189,7 @@ append one terminal graph, or fail closed without an observation
 ```
 
 The terminal mapper copies `outcome`, `reason`, `launch_state`, ordered step
-summary, duration, and optional accounting from the accepted 2B result without
+summary, duration, and optional accounting from the accepted process result without
 adding a code. `launch_state=launched` maps to `route=runner`; `no_launch` maps
 to `route=m21_fallback`. `complete_plan` is one only for a launched pass with
 null reason, the complete planned ordinal set, every step passing, and no
@@ -3799,8 +4206,17 @@ One terminal repository transaction inserts exactly the observation, its
 `evidence_ledger.py` admits this source only from the internal Runner dispatch,
 derives `machine_observed/verification_runner/1`, recomputes the existing
 sanitized source projection and digest, and rejects a caller-selected
-assurance, producer, source, or criterion. No Runner Reference is a Bundle
-member, completion-cycle basis, Verification Receipt, or Evidence JSON source.
+assurance, producer, source, or criterion. The terminal transaction itself
+creates no completion cycle or Bundle, advances neither Evidence nor Viewer
+generation, and never creates a Verification Receipt. For
+`gate_eligibility_version=0`, the Reference and link remain standalone audit
+history and are never a Bundle member, completion basis, or Evidence JSON
+source. For a schema-v21 `gate_eligibility_version=1` qualifying pass, later
+completion capture selects that exact stored observation, Reference, and link;
+`evidence_projection.py` reuses the existing Reference and link as Bundle
+members and emits only the sanitized projection in Bundle v2. The closed
+no-launch fallback adds no Runner member, and every other terminal blocks
+completion.
 
 Restart reads immutable DB state before filesystem mutation. An attempt intent
 without an observation is never relaunched. The service asks lifecycle to
@@ -3828,16 +4244,21 @@ maintenance opportunity; a post-T1 error performs none and relies on the
 already-advanced due state. Internal Runner writes add no maintenance call and
 advance neither Evidence nor Viewer generation.
 
-The shared schema-v20 validator admits only the four states in the
+The shared Runner graph validator admits only the four states in the
 specification cardinality table. Every observation has exactly one matching
 Reference/link and cleanup event; a cleanup-only event has a null terminal
 observation; every pending intent has neither; all other combinations fail.
-Bundle/cycle Runner pointers remain null and Task Runner basis remains zero.
-Viewer validates and discards the graph. Managed backup copies the SQLite rows
-but not the private Runner tree; recovery therefore treats a restored pending
-intent as an unknown-result cleanup-only case after proving physical absence.
-No schema object, migration, public projection, Bundle format, Skill text, or
-M21 gate changes in 2C.
+Schema v20 admits only `gate_eligibility_version=0`, Task marker `0`, and null
+completion-cycle/Bundle Runner pointers. Schema v21 retains that audit-only
+shape and additionally admits the closed version-`1`/marker-`2` shape; only an
+exact qualifying pass may bind its observation and the two pre-existing
+evidence identities into completion, while fallback keeps the manual Receipt
+basis and null Runner pointers. Viewer validates and discards Runner-only data.
+Managed backup copies the SQLite rows but not the private Runner tree; recovery
+therefore treats a restored pending intent as an unknown-result cleanup-only
+case after proving physical absence. The service path adds no further schema
+object, migration, public projection, Bundle format, Skill text, or manual
+Receipt-gate behavior.
 
 ## Validation And Test Design
 
@@ -3852,11 +4273,11 @@ a real consuming project or Git state. Tests cover:
 - task validation, ordering, pause/block/current/next, done/reopen,
   completion evidence, every review tier/target/receipt/finding, Contract,
   checkpoint, handoff, and Effort route;
-- the TG-M21.4C shared stored-Task fault matrix once in a focused validator
+- the shared stored-Task fault matrix once in a focused validator
   module, plus representative public/lifecycle/doctor/Viewer route canaries,
   selected-batch query bounds, no-write failure, and last-good publication in
   a separate consumer-boundary module;
-- the TG-M21.4D Contract-pointer matrix in one focused relation module and its
+- the Contract-pointer matrix in one focused relation module and its
   selected-batch single-query, pre-v8 no-query, recovery set-fatal, valid-state,
   lifecycle, doctor/setup, and last-good Viewer canaries in one separate
   consumer-boundary module rather than duplicating every command fixture;
@@ -3908,8 +4329,8 @@ filter of standard discovery, while `all` runs the original discovered suite
 in its original order. New `test*.py` modules therefore fail closed until
 classified; new methods in an owned module inherit that module's lane.
 
-Accepted R4A removed the TG-M24.1A LPAC module, mandatory native fixture, and
-dedicated retired-route tests from standard discovery. No such residue remains
+The retired LPAC module, mandatory native fixture, and dedicated route tests are
+absent from standard discovery. No such residue remains
 in the standard test partition, which continues to contain only the three base
 lanes `fast`, `integration`, and `release`. No replacement meta-test framework,
 implementation-shape-only assertion, disabled test, or new SKIP may stand in

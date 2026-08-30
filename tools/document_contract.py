@@ -1,4 +1,4 @@
-"""Offline semantic checks for this repository's documentation authority."""
+"""Offline structural checks for this repository's documentation authority."""
 from __future__ import annotations
 
 import argparse
@@ -19,11 +19,6 @@ AUTHORITY = "docs/authority.md"
 DESIGN = "docs/design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
-EXECUTION_INDEX = "docs/execution-contracts/README.md"
-M22 = "docs/execution-contracts/tg-m22-evidence-ledger.md"
-M23 = "docs/execution-contracts/tg-m23-derived-evidence.md"
-M23_PROCESS = "docs/execution-contracts/tg-m23-process-safety.md"
-M24 = "docs/execution-contracts/tg-m24-verification-runner.md"
 
 CANONICAL_DOCS = (
     "AGENTS.md",
@@ -32,11 +27,6 @@ CANONICAL_DOCS = (
     "docs/specification.md",
     DESIGN,
     "plan.md",
-    EXECUTION_INDEX,
-    M22,
-    M23,
-    M23_PROCESS,
-    M24,
     HISTORY_INDEX,
 )
 METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL,)
@@ -50,323 +40,17 @@ ROUTE_SECTIONS = (
         "## Selective Current Authority",
         ("specification.md", "design.md", "../plan.md"),
     ),
-    (
-        AUTHORITY,
-        "## Mixed Current And Conditional Execution Authority",
-        (
-            "execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence",
-            "execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence",
-            "execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety",
-            "execution-contracts/tg-m24-verification-runner.md#tg-m24-verification-runner",
-        ),
-    ),
-    (
-        AUTHORITY,
-        "## Documentation Governance Sequence",
-        ("../plan.md#tg-doc-sequence",),
-    ),
     (AUTHORITY, "## Non-Authoritative History", ("history/README.md",)),
-    (
-        EXECUTION_INDEX,
-        "## Indexed Contracts",
-        (
-            "tg-m22-evidence-ledger.md#tg-m22-sequence",
-            "tg-m23-derived-evidence.md#tg-m23-derived-evidence",
-            "tg-m23-process-safety.md#tg-m23-process-safety",
-            "tg-m24-verification-runner.md#tg-m24-verification-runner",
-        ),
-    ),
-    (
-        EXECUTION_INDEX,
-        "## Cross-Sequence Documentation Gateway",
-        (
-            "../../plan.md#tg-doc-sequence",
-            "../../plan.md#tg-doc-2",
-            "../../plan.md#tg-doc-3",
-        ),
-    ),
-    (
-        M23,
-        "## Process Safety Route",
-        ("tg-m23-process-safety.md#tg-m23-process-safety",),
-    ),
-    (
-        M23_PROCESS,
-        "## Parent Route",
-        ("tg-m23-derived-evidence.md#tg-m23-1",),
-    ),
 )
 
-SOURCE_OWNER_RELATIONS = (
-    ("agents.md", ("agent behavior", "safety", "workflow")),
-    ("docs/specification.md", ("product behavior",)),
-    ("docs/design.md", ("implementation structure",)),
-    ("plan.md", ("current decisions", "open issues")),
-    ("docs/authority.md", ("task contract", "indexed execution detail")),
+TRIGGER_ROUTE_OWNER_TOKENS = (
+    ("docs/specification.md",),
+    ("docs/design.md",),
+    ("plan.md",),
+    ("docs/release-install.md",),
+    (),
+    ("docs/history/README.md",),
 )
-SOURCE_KNOWN_OWNERS = tuple(owner for owner, _topics in SOURCE_OWNER_RELATIONS)
-SOURCE_START_RELATIONS = (
-    (
-        ("start of every task", "start of each task"),
-        ("read and follow", "read"),
-        ("minimal start set",),
-    ),
-    (("agents.md",),),
-    (("docs/authority.md",),),
-    (("live task contract",), ("public cli",)),
-)
-REREAD_RELATIONS = (
-    (
-        ("re-read", "reread"),
-        ("minimal start set",),
-        ("new task",),
-        ("milestone",),
-        ("execution-unit boundary", "execution unit boundary"),
-        ("planning",),
-        ("editing",),
-        ("verification",),
-        ("review",),
-    ),
-    (
-        (
-            "implementation-affecting decision",
-            "implementation affecting decision",
-            "decision that affects implementation",
-            "decision affecting implementation",
-        ),
-        ("docs/authority.md",),
-        ("task contract",),
-        ("directly coupled",),
-        ("implementation",),
-        ("tests",),
-    ),
-    (
-        ("full read",),
-        ("docs/specification.md",),
-        ("docs/design.md",),
-        ("plan.md",),
-        ("conditional contract",),
-        ("authority-layout", "authority layout"),
-        ("transition",),
-        ("cross-cutting", "cross cutting"),
-        ("missing",),
-        ("ambiguous",),
-        ("conflict",),
-    ),
-)
-TRIGGER_ROUTE_RELATIONS = (
-    (("supported product behavior",), ("docs/specification.md",)),
-    (("module ownership", "test architecture"), ("docs/design.md",)),
-    (("current decision", "open issue"), ("plan.md",)),
-    (
-        ("tg-m22 unit purpose",),
-        ("docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence",),
-    ),
-    (
-        ("tg-m23 unit", "core data"),
-        ("docs/execution-contracts/tg-m23-derived-evidence.md",),
-    ),
-    (
-        ("tg-m23 windows process", "atomic publication"),
-        (
-            "docs/execution-contracts/tg-m23-process-safety.md",
-            "core owner/router",
-        ),
-    ),
-    (
-        ("documentation governance", "tg-doc unit"),
-        ("../plan.md#tg-doc-sequence", "plan.md#tg-doc-2", "plan.md#tg-doc-3"),
-    ),
-    (
-        ("tg-m24 unit detail",),
-        (
-            "accepted predecessor",
-            "current unit",
-            "inactive unit",
-            "superseded unit",
-            "current execution contract",
-            "ascii anchor",
-        ),
-    ),
-    (("published artifact", "release identity"), ("docs/release-install.md",)),
-    (
-        ("live status", "completion history"),
-        ("public cli", "live task contract", "no git-document mirror"),
-    ),
-    (
-        ("historical lineage", "retired evidence"),
-        ("docs/history/readme.md", "exceptional reason"),
-    ),
-)
-ROWS_M22 = (
-    ("TG-M22.1A / 25", "tg_task_0e1d93d81eb843ab", "accepted TG-M21.4D and completed TG-DOC.1"),
-    ("TG-M22.2 / 30", "tg_task_88bfe19eb6cffe2e", "accepted TG-M22.1A"),
-    ("TG-M21.5 / 40", "tg_task_e7701fb907020905", "accepted TG-M22.2"),
-    ("TG-M22.3 / 50", "tg_task_ae6f52c4f7b25549", "accepted TG-M21.5"),
-    ("TG-M22.4 / 60", "tg_task_0a90b4caf566a8fd", "accepted TG-M22.3"),
-)
-ROWS_M23 = (
-    ("TG-M23.1 / 10", "tg_task_722ac8a308a23d1c", "accepted TG-M22.4"),
-    ("TG-M23.2 / 20", "tg_task_d5511d2ca7db93dc", "accepted TG-M23.1"),
-    ("TG-M23.3 / 30", "tg_task_0ada32d2b4f9759d", "accepted TG-M23.2"),
-)
-ROWS_M24 = (
-    (
-        "TG-M24.R1 / 10",
-        "tg_task_8af2eee60acb0830",
-        "reviewed R2 bootstrap boundary",
-    ),
-    ("TG-M24.R2A / 20", "tg_task_96a03f1d76799f79", "accepted TG-M24.R1"),
-    ("TG-M24.R2B / 25", "tg_task_ca8d0d81cd1962ab", "accepted TG-M24.R2A"),
-    ("TG-M24.R2C / 30", "tg_task_252701fe03f530af", "accepted TG-M24.R2B"),
-    ("TG-M24.R4A / 40", "tg_task_83d2af496ac84982", "accepted TG-M24.R2C"),
-    ("TG-M24.R4V / 45", "tg_task_006bee9937e25af9", "accepted TG-M24.R4A"),
-    ("TG-M24.R3A / 50", "tg_task_a6d113455aa2cdfe", "accepted TG-M24.R4V"),
-    ("TG-M24.R3B / 60", "tg_task_c343ed2ec8acedf8", "accepted TG-M24.R3A"),
-    ("TG-M24.R4B / 70", "tg_task_e04fd31e6713cfa1", "accepted TG-M24.R3B"),
-    ("TG-M24.R5 / 80", "tg_task_89e9ac8d34df2e95", "accepted TG-M24.R4B"),
-    ("TG-M24.2A / 90", "tg_task_2c6fd4707ac1e81b", "accepted TG-M24.R5"),
-    ("TG-M24.2B / 100", "tg_task_f8880aeb93c3ad52", "accepted TG-M24.2A"),
-    ("TG-M24.2C / 110", "tg_task_8cc06027db5be49f", "accepted TG-M24.2B"),
-    ("TG-M24.2D / 120", "tg_task_fafad7bc62df7576", "accepted TG-M24.2C"),
-    ("TG-M24.3A / 130", "tg_task_2b7efe1c4545cca8", "accepted TG-M24.2D"),
-    ("TG-M24.3B / 135", "tg_task_1c3f41dc4bc88a68", "accepted TG-M24.3A"),
-    ("TG-M24.3C / 138", "tg_task_dc015144091f8e60", "accepted TG-M24.3B"),
-    ("TG-M24.4A / 140", "tg_task_0da786589eb5144a", "accepted TG-M24.3C"),
-    ("TG-M24.4B / 150", "tg_task_220ff054e445f40e", "accepted TG-M24.4A"),
-    ("TG-M24.4C / 160", "tg_task_b0a3bf776bea1e93", "accepted TG-M24.4B"),
-    ("TG-M24.4D / 170", "tg_task_f81f2d126f033a59", "accepted TG-M24.4C"),
-    ("TG-M24.CP4 / 180", "tg_task_a9e1229d594594d4", "accepted TG-M24.4D"),
-)
-ROWS_DOC = (
-    (
-        "TG-DOC.2 / 40",
-        "tg_task_bf2aa245019f5c9f",
-        "TG-M23-DERIVED-EVIDENCE",
-        "accepted TG-M23.3",
-        "accepted predecessor; required before TG-M24.R1",
-    ),
-    (
-        "TG-DOC.3 / 20",
-        "tg_task_f7d02678293c67c7",
-        "TG-DOC-LIFECYCLE",
-        "accepted TG-M24.CP4 and accepted TG-DOC.2",
-        "current post-M24 normalization",
-    ),
-)
-
-R2C_BOUNDARY_HEADING = "## Accepted TG-M24.R2C Trusted-Local Runner Architecture Boundary"
-R2C_BOUNDARY_TABLE_HEADING = "### Closed Runner-Slice Module Registry"
-R2C_TABLE_HEADER_ROLES = {
-    "layer": (r"\blayer\b", r"\b(?:id|identifier)\b"),
-    "modules": (r"\bmodules?\b",),
-    "responsibility": (r"\bresponsibilit", r"\b(?:runner|ownership)\b"),
-    "imports": (r"\bimports?\b",),
-    "forbidden": (r"\b(?:forbidden|reverse)\b",),
-    "route": (r"\b(?:route|owner)\b", r"\b(?:transitional|nonconformance)\b"),
-}
-R2C_LAYER_MODULES = {
-    "cli": ("cli.py",),
-    "service": ("verification_runner_service.py",),
-    "repository": ("storage.py", "tasks.py", "contracts.py", "reviews.py", "verification_receipts.py", "completion.py", "evidence_ledger.py", "evidence_projection.py", "maintenance.py"),
-    "target_plan": ("artifact_manifest.py", "verification_runner_git.py", "verification_runner_plan.py"),
-    "value_model": ("verification_runner.py",),
-    "runtime_identity": ("verification_runner_runtime.py", "self_status.py"),
-    "lifecycle": ("verification_runner_lifecycle.py",),
-    "process_adapter": ("verification_runner_process.py",),
-    "os_adapter": ("_verification_runner_win32.py",),
-}
-R2C_LAYER_IMPORTS = {
-    "cli": ("service",),
-    "service": ("repository", "target_plan", "value_model", "runtime_identity", "lifecycle", "process_adapter"),
-    "repository": ("value_model",),
-    "target_plan": ("repository", "value_model"),
-    "value_model": (),
-    "runtime_identity": ("repository", "value_model"),
-    "lifecycle": (),
-    "process_adapter": ("value_model", "os_adapter"),
-    "os_adapter": ("value_model",),
-}
-R2C_LAYER_ROUTE_UNITS = {
-    "cli": ("R4B",),
-    "service": ("R4B", "2C"),
-    "repository": ("R3A", "R3B", "R4B"),
-    "target_plan": ("R4B", "2A"),
-    "value_model": ("R4V", "R3A", "R3B", "R4B"),
-    "runtime_identity": ("R4B", "2B"),
-    "lifecycle": ("R4B", "2B"),
-    "process_adapter": ("R4B", "2B"),
-    "os_adapter": ("2B",),
-}
-R2C_LAYER_RESPONSIBILITY_PATTERNS = {
-    "cli": (r"public", r"pars", r"format", r"dispatch.*(?:parent )?service"),
-    "service": (r"parent.*orchestrat", r"sole.*(?:eligibility|authority)", r"persistence", r"cleanup acceptance"),
-    "repository": (r"canonical sqlite", r"task/contract", r"business gate", r"parent service"),
-    "target_plan": (r"parent-invoked", r"target", r"plan"),
-    "value_model": (r"pure", r"identifier", r"value validation"),
-    "runtime_identity": (r"parent-invoked", r"executable", r"package-integrity"),
-    "lifecycle": (r"parent-requested", r"private attempt tree", r"(?:removal|absence proof)"),
-    "process_adapter": (r"closed request", r"job", r"output", r"process-tree zero", r"close handles", r"closed result"),
-    "os_adapter": (r"windows job", r"process", r"stdio", r"handle primitives"),
-}
-R2C_LAYER_FORBIDDEN_PATTERNS = {
-    "cli": (r"no runner eligibility", r"no runner dispatch.*process_adapter.*os_adapter"),
-    "service": (r"no os mechanics", r"no delegation.*cleanup acceptance"),
-    "repository": (r"no process launch", r"no import.*process_adapter.*os_adapter", r"no filesystem cleanup"),
-    "target_plan": (r"no cli policy", r"no .*verification-command launch", r"no .*cleanup acceptance"),
-    "value_model": (r"no i/o", r"no import.*cli.*service.*repository", r"business-gate"),
-    "runtime_identity": (r"no process launch", r"no .*database", r"no .*cleanup acceptance"),
-    "lifecycle": (r"no process start", r"no .*job/stdio/handle", r"no .*final cleanup acceptance"),
-    "process_adapter": (r"no canonical state", r"no import.*cli.*service.*repository", r"business gate"),
-    "os_adapter": (r"no parent policy", r"repository", r"cleanup acceptance", r"reverse import"),
-}
-R2C_RECORD_MEMBERS = {
-    "RunnerProcessRequestV1": ("version", "attempt_id", "executable", "materialized_root", "scratch_root", "clean_environment", "steps", "cancel_signal"),
-    "RunnerProcessStepV1": ("ordinal", "step_id", "mode", "entrypoint", "argv", "cwd", "shell", "path_lookup", "timeout_seconds", "cpu_seconds", "memory_mib", "process_limit", "output_byte_limit"),
-    "RunnerProcessResultV1": ("version", "attempt_id", "outcome", "reason", "launch_state", "failed_step_ordinal", "duration_ms", "cpu_time_ms", "peak_job_memory_bytes", "total_process_count", "process_zero", "handles_closed", "raw_output_discarded", "steps"),
-    "RunnerProcessStepResultV1": ("ordinal", "outcome", "reason", "launch_state", "cpu_time_ms", "peak_job_memory_bytes", "total_process_count"),
-    "RunnerPrivateTreeResultV1": ("attempt_id", "state"),
-}
-R2C_BOUND_CONTROLS = {
-    "request_version": ("=", "1"),
-    "accepted_plan_blob_utf8_bytes": ("<=", "65536"),
-    "attempt_id": ("=", "ASCII /tg_verification_runner_attempt_[0-9a-f]{16}/ (47 bytes)"),
-    "identifier": ("=", "ASCII /[a-z0-9][a-z0-9._-]{0,63}/ (1..64 bytes)"),
-    "result_code": ("=", "ASCII /[a-z][a-z0-9_]{0,63}/ (1..64 bytes)"),
-    "absolute_path": ("=", 'well-formed Unicode, absolute normalized Windows path, no NUL or Unicode Cc, no "." or ".." segment, 1..4096 UTF-8 bytes and 1..4096 UTF-16 code units'),
-    "relative_path": ("=", '"." or 1..32 "/"-separated ASCII /[A-Za-z0-9_][A-Za-z0-9._-]{0,127}/ components, no "." or ".." component, total 1..512 bytes'),
-    "script_entrypoint": ("=", 'non-dot relative_path ending in ".py"'),
-    "module_entrypoint": ("=", '1..16 "."-separated ASCII /[A-Za-z_][A-Za-z0-9_]{0,63}/ components, total 1..512 bytes'),
-    "literal_arg": ("=", "well-formed Unicode with no Unicode Cc, 0..4096 UTF-8 bytes and 0..4096 UTF-16 code units"),
-    "path_ownership": ("=", "executable is a parent-verified fixed absolute package-runtime identity outside materialized_root and scratch_root with no PATH lookup; materialized_root and scratch_root are distinct target and scratch children of one owned attempt root; no symlink or reparse traversal"),
-    "resolved_relative_path": ("=", "every entrypoint and cwd resolves beneath materialized_root"),
-    "step_count": ("=", "1..16"),
-    "argv_count_per_step": ("=", "0..64"),
-    "timeout_seconds": ("=", "1..900"),
-    "total_timeout_seconds": ("=", "1..1800"),
-    "cpu_seconds": ("=", "1..900"),
-    "memory_mib": ("=", "64..2048"),
-    "process_limit": ("=", "1..32"),
-    "output_byte_limit": ("=", "1048576"),
-    "command_line_utf16_units": ("<=", "24576 after exact Windows quoting and fixed bootstrap insertion"),
-    "clean_environment_entry_count": ("=", "11"),
-    "clean_environment_value_utf8_bytes": ("=", "1..4096"),
-    "clean_environment_keys": ("=", "APPDATA, HOME, LOCALAPPDATA, PYTHONDONTWRITEBYTECODE, PYTHONNOUSERSITE, PYTHONUTF8, SystemRoot, TEMP, TMP, USERPROFILE, WINDIR"),
-    "clean_environment_paths": ("=", "APPDATA=scratch_root/roaming; HOME=USERPROFILE=scratch_root/home; LOCALAPPDATA=scratch_root/local; TEMP=TMP=scratch_root/tmp; SystemRoot=WINDIR=parent-verified Windows directory"),
-    "clean_environment_literals": ("=", 'PYTHONDONTWRITEBYTECODE=PYTHONNOUSERSITE=PYTHONUTF8="1"'),
-    "clean_environment_block_utf16_units": ("<=", "24576 including the terminal double NUL"),
-    "result_version": ("=", "1"),
-    "result_attempt_id": ("=", "request.attempt_id"),
-    "result_outcome": ("=", "result_code"),
-    "result_reason": ("=", "null or result_code"),
-    "step_result_outcome": ("=", "result_code"),
-    "step_result_reason": ("=", "null or result_code"),
-    "launch_state": ("=", "no_launch|launched"),
-    "private_tree_state": ("=", "absent|uncertain"),
-    "result_step_count": ("=", "0..request.step_count and 0..16"),
-    "result_step_ordinals": ("=", "unique, request-ordered values in 1..request.step_count"),
-    "failed_step_ordinal": ("=", "null or a value in 1..request.step_count"),
-}
 
 VOLATILE_ID = re.compile(
     r"\btg_(?:event|handoff|checkpoint|review_request|review_receipt|"
@@ -385,214 +69,6 @@ LIVE_STATUS_KV = re.compile(
     r"completed_at|completion_commit_hash)\s*(?::|=)\s*"
     r"(?P<value>\S(?:.*\S)?)\s*$"
 )
-LIVE_EXECUTION = re.compile(
-    r"(?i)\bis\s+the\s+(?:current|next)\s+(?:sequential\s+)?"
-    r"(?:task|unit)\b"
-)
-LIVE_EXECUTION_REVERSE = re.compile(
-    r"(?i)\b(?:the\s+)?(?:current|next)\s+(?:sequential\s+)?(?:task|unit)"
-    r"\s*(?:is|:|=)\s*TG-[A-Z0-9.]+\b"
-)
-TASK_ID = re.compile(r"(?i)\bTG-[A-Z0-9.]+\b")
-TASK_STATUS_VALUES = {
-    "ready",
-    "in_progress",
-    "review_pending",
-    "blocked",
-    "paused",
-    "done",
-}
-# These units' status is enforced only by registry, sequence, anchor, and heading checks.
-STRUCTURAL_STATUS_UNITS = (
-    "TG-M24.2D",
-    "TG-M24.3A",
-    "TG-M24.3B",
-    "TG-M24.3C",
-    "TG-M24.4A",
-    "TG-M24.4B",
-    "TG-M24.4C",
-    "TG-M24.4D",
-    "TG-DOC.3",
-)
-NONCURRENT_UNITS = tuple(
-    row[0].split(" /", 1)[0]
-    for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
-    for row in rows
-    if row[0].split(" /", 1)[0] not in STRUCTURAL_STATUS_UNITS
-) + ("TG-M24.1", "TG-M24.1A", "TG-M24.1B")
-NONCURRENT_SUBJECTS = tuple(
-    sorted(
-        set(NONCURRENT_UNITS) | {"TG-M22", "TG-M23", "TG-M24", "TG-DOC"},
-        key=lambda value: (-len(value), value),
-    )
-)
-CURRENT_STATUS_CLAIM = re.compile(
-    rf"\b(?:{'|'.join(re.escape(value) for value in NONCURRENT_SUBJECTS)})\b"
-    r"(?:\s+(?:sequence|unit|units))?\s+(?:is|are)\s+(?:the\s+)?current\b",
-    re.IGNORECASE,
-)
-M24_R3B_ALIAS = r"(?:TG-M24\.)?R3B"
-M24_R4B_ALIAS = r"(?:TG-M24\.)?R4B"
-M24_R5_ALIAS = r"(?:TG-M24\.)?R5"
-M24_2A_ALIAS = r"(?:TG-M24\.)?2A"
-M24_2B_ALIAS = r"(?:TG-M24\.)?2B"
-M24_2C_ALIAS = r"(?:TG-M24\.)?2C"
-M24_1B_ALIAS = r"(?:TG-M24\.)?1B"
-M24_LATER_UNIT_ALIAS = r"(?:TG-M24\.)?(?:R[0-9]+[A-Z]?|[0-9]+[A-Z]?|CP[0-9]+)"
-M24_R3B_TOKEN = rf"{M24_R3B_ALIAS}(?![A-Za-z0-9_-])"
-M24_R4B_TOKEN = rf"{M24_R4B_ALIAS}(?![A-Za-z0-9_-])"
-M24_R5_TOKEN = rf"{M24_R5_ALIAS}(?![A-Za-z0-9_-])"
-M24_2A_TOKEN = rf"{M24_2A_ALIAS}(?![A-Za-z0-9_-])"
-M24_2B_TOKEN = rf"{M24_2B_ALIAS}(?![A-Za-z0-9_-])"
-M24_2C_TOKEN = rf"{M24_2C_ALIAS}(?![A-Za-z0-9_-])"
-M24_1B_TOKEN = rf"{M24_1B_ALIAS}(?![A-Za-z0-9_-])"
-M24_1B_CURRENT_CLAIM = re.compile(
-    rf"(?:\bcurrent\s+{M24_1B_TOKEN}"
-    rf"|\b{M24_1B_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:(?:is|are|remains?)\s+(?:the\s+)?(?:sole\s+)?current\b"
-    r"|owns?\s+(?:the\s+)?current(?:\s+formal)?\s+authority\b)"
-    r"|\bcurrent\s+(?:(?:runtime\s+qualification-and-supply|formal)\s+)?"
-    r"authority\s+belongs(?:\s+only)?\s+to\b"
-    rf"\s+(?:the\s+)?{M24_1B_TOKEN})",
-    re.IGNORECASE,
-)
-M24_R3B_CURRENT_CLAIM = re.compile(
-    rf"(?:\bcurrent\s+{M24_R3B_TOKEN}"
-    rf"|\b{M24_R3B_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:(?:is|are|remains?)\s+(?:the\s+)?(?:sole\s+)?current\b"
-    r"|owns?\s+(?:the\s+)?current(?:\s+formal)?\s+authority\b)"
-    r"|\bcurrent\s+(?:formal\s+)?authority\s+belongs(?:\s+only)?\s+to\b"
-    rf"\s+(?:the\s+)?{M24_R3B_TOKEN})",
-    re.IGNORECASE,
-)
-M24_R4B_CURRENT_CLAIM = re.compile(
-    rf"(?:\bcurrent\s+{M24_R4B_TOKEN}"
-    rf"|\b{M24_R4B_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:(?:is|are|remains?)\s+(?:the\s+)?(?:sole\s+)?current\b"
-    r"|owns?\s+(?:the\s+)?current(?:\s+formal)?\s+authority\b)"
-    r"|\bcurrent\s+(?:formal\s+)?authority\s+belongs(?:\s+only)?\s+to\b"
-    rf"\s+(?:the\s+)?{M24_R4B_TOKEN})",
-    re.IGNORECASE,
-)
-M24_R5_CURRENT_CLAIM = re.compile(
-    rf"(?:\bcurrent\s+{M24_R5_TOKEN}"
-    rf"|\b{M24_R5_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:(?:is|are|remains?)\s+(?:the\s+)?(?:sole\s+)?current\b"
-    r"|owns?\s+(?:the\s+)?current(?:\s+formal)?\s+authority\b)"
-    r"|\bcurrent\s+(?:formal\s+)?authority\s+belongs(?:\s+only)?\s+to\b"
-    rf"\s+(?:the\s+)?{M24_R5_TOKEN})",
-    re.IGNORECASE,
-)
-M24_2A_CURRENT_CLAIM = re.compile(
-    rf"(?:\bcurrent\s+{M24_2A_TOKEN}"
-    rf"|\b{M24_2A_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:(?:is|are|remains?)\s+(?:the\s+)?(?:sole\s+)?current\b"
-    r"|owns?\s+(?:the\s+)?current(?:\s+formal)?\s+authority\b)"
-    r"|\bcurrent\s+(?:formal\s+)?authority\s+belongs(?:\s+only)?\s+to\b"
-    rf"\s+(?:the\s+)?{M24_2A_TOKEN})",
-    re.IGNORECASE,
-)
-M24_2B_CURRENT_CLAIM = re.compile(
-    rf"(?:\bcurrent\s+{M24_2B_TOKEN}"
-    rf"|\b{M24_2B_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:(?:is|are|remains?)\s+(?:the\s+)?(?:sole\s+)?current\b"
-    r"|owns?\s+(?:the\s+)?current(?:\s+formal)?\s+authority\b)"
-    r"|\bcurrent\s+(?:formal\s+)?authority\s+belongs(?:\s+only)?\s+to\b"
-    rf"\s+(?:the\s+)?{M24_2B_TOKEN})",
-    re.IGNORECASE,
-)
-M24_2C_CURRENT_CLAIM = re.compile(
-    rf"(?:\bcurrent\s+{M24_2C_TOKEN}"
-    rf"|\b{M24_2C_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:(?:is|are|remains?)\s+(?:the\s+)?(?:sole\s+)?current\b"
-    r"|owns?\s+(?:the\s+)?current(?:\s+formal)?\s+authority\b)"
-    r"|\bcurrent\s+(?:formal\s+)?authority\s+belongs(?:\s+only)?\s+to\b"
-    rf"\s+(?:the\s+)?{M24_2C_TOKEN})",
-    re.IGNORECASE,
-)
-M24_R4B_INACTIVE_CLAIM = re.compile(
-    rf"(?:\binactive\s+{M24_R4B_TOKEN}"
-    rf"|\b{M24_R4B_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:is|are|remains?)\s+(?:(?:an?|the)\s+)?inactive\b"
-    rf"|\b{M24_R4B_TOKEN}(?:\s+through\s+{M24_LATER_UNIT_ALIAS}"
-    r"|\s+and\s+(?:every\s+)?later\s+units?)\s+"
-    r"(?:are|remain)\s+inactive\b)",
-    re.IGNORECASE,
-)
-M24_R5_INACTIVE_CLAIM = re.compile(
-    rf"(?:\binactive\s+{M24_R5_TOKEN}"
-    rf"|\b{M24_R5_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:is|are|remains?)\s+(?:(?:an?|the)\s+)?inactive\b"
-    rf"|\b{M24_R5_TOKEN}(?:\s+through\s+{M24_LATER_UNIT_ALIAS}"
-    r"|\s+and\s+(?:every\s+)?later\s+units?)\s+"
-    r"(?:are|remain)\s+inactive\b)",
-    re.IGNORECASE,
-)
-M24_2A_INACTIVE_CLAIM = re.compile(
-    rf"(?:\binactive\s+{M24_2A_TOKEN}"
-    rf"|\binactive\s+{M24_2A_ALIAS}-through-{M24_LATER_UNIT_ALIAS}"
-    r"(?![A-Za-z0-9_-])"
-    rf"|\b{M24_2A_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:is|are|remains?)\s+(?:(?:an?|the)\s+)?inactive\b"
-    rf"|\b{M24_2A_TOKEN}(?:\s+through\s+{M24_LATER_UNIT_ALIAS}"
-    r"|\s+and\s+(?:every\s+)?later\s+units?)\s+"
-    r"(?:are|remain)\s+inactive\b)",
-    re.IGNORECASE,
-)
-M24_2B_INACTIVE_CLAIM = re.compile(
-    rf"(?:\binactive\s+{M24_2B_TOKEN}"
-    rf"|\binactive\s+{M24_2B_ALIAS}-through-{M24_LATER_UNIT_ALIAS}"
-    r"(?![A-Za-z0-9_-])"
-    rf"|\b{M24_2B_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:is|are|remains?)\s+(?:(?:an?|the)\s+)?inactive\b"
-    rf"|\b{M24_2B_TOKEN}(?:\s+through\s+{M24_LATER_UNIT_ALIAS}"
-    r"|\s+and\s+(?:every\s+)?later\s+units?)\s+"
-    r"(?:are|remain)\s+inactive\b)",
-    re.IGNORECASE,
-)
-M24_2C_INACTIVE_CLAIM = re.compile(
-    rf"(?:\binactive\s+{M24_2C_TOKEN}"
-    rf"|\binactive\s+{M24_2C_ALIAS}-through-{M24_LATER_UNIT_ALIAS}"
-    r"(?![A-Za-z0-9_-])"
-    rf"|\b{M24_2C_TOKEN}(?:\s+(?:sequence|unit|route))?\s+"
-    r"(?:is|are|remains?)\s+(?:(?:an?|the)\s+)?inactive\b"
-    rf"|\b{M24_2C_TOKEN}(?:\s+through\s+{M24_LATER_UNIT_ALIAS}"
-    r"|\s+and\s+(?:every\s+)?later\s+units?)\s+"
-    r"(?:are|remain)\s+inactive\b)",
-    re.IGNORECASE,
-)
-M24_STALE_SHADOW_FUTURE_CLAIM = re.compile(
-    r"\bThe\s+M24\s+Runner\s+may\s+later\s+add\s+a\s+runner-observation\s+table\s+"
-    r"and\s+a\s+new\s+tagged\s+verification-basis/bundle\s+version\b",
-    re.IGNORECASE,
-)
-M24_STALE_NO_RUNTIME_CLAIM = re.compile(
-    r"\bTG-M23\s+authority\s+is\s+accepted-predecessor\s+only,\s+and\s+no\s+"
-    r"TG-M24\s+Runner\s+runtime\s+is\s+active\.\s+Load\s+files\s+only\b",
-    re.IGNORECASE,
-)
-M24_STALE_UNQUALIFIED_RUNNER_ABSENCE_CLAIM = re.compile(
-    r"\bdoctor\s+only\s+reports\s+stored\s+projection\s+facts\.\s+There\s+is\s+"
-    r"no\s+Evidence\s+command\b[^.]{0,256}"
-    r"\bAnalyzer,\s+Runner,\s+or\s+additional\s+normal-loop\s+call\b",
-    re.IGNORECASE,
-)
-M24_STALE_UNQUALIFIED_VERIFICATION_EXECUTION_CLAIM = re.compile(
-    r"(?:\bThe\s+current\s+product\s+deliberately\s+excludes\b[^.]{0,256}"
-    r"\bacceptance\s+checklists,\s+verification-command\s+execution,\s+generic\b"
-    r"|\bDeferred\s+work\s+includes\s+profile\s+authoring,\s+"
-    r"verification-command\s+execution,\s+external\s+Issue\s+delivery\b"
-    r"|\bTaskgov\s+does\s+not\s+run\s+verification,\s+authenticate\s+the\s+"
-    r"caller\s+or\s+process,\s+assess\s+test\s+quality,\s+infer\s+coverage,\s+"
-    r"or\s+prove\s+the\s+result\s+or\s+that\s+the\s+run\s+actually\s+"
-    r"exercised\s+the\s+copied\s+target\b)",
-    re.IGNORECASE,
-)
-UNIT_CURRENT_CLAIM = re.compile(
-    r"\b(?:(?:an?|the|named)\s+)?(?:(?:tg-[a-z0-9.]+)\s+)?"
-    r"(?:execution\s+)?units?\s+(?:is|are)\s+(?:the\s+)?current\b",
-    re.IGNORECASE,
-)
 LIVE_REVIEW_TARGET_FIELDS = {
     "review_target_kind",
     "review_target_value",
@@ -603,10 +79,6 @@ LIVE_REVIEW_TARGET_KV = re.compile(
     r"(?i)^(?P<field>review_target_kind|review_target_value|"
     r"review_target_base_revision|review_target_generation)\s*(?::|=)\s*"
     r"(?P<value>\S(?:.*\S)?)\s*$"
-)
-MARKDOWN_OWNER_PATH = re.compile(
-    r"(?i)(?:\.\./)*(?:[a-z0-9_.-]+/)*[a-z0-9_.-]+\.md"
-    r"(?:#[a-z0-9_-]+)?"
 )
 ANCHOR = re.compile(r'^<a id="([a-z0-9_-]+)"></a>$')
 ATX_HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+|$)(.*)$")
@@ -631,6 +103,7 @@ SHORTCUT_REFERENCE = re.compile(
 EXTERNAL_TARGET = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 WINDOWS_DRIVE_TARGET = re.compile(r"^[A-Za-z]:[/\\]")
 INLINE_TICKS = re.compile(re.escape(chr(96)) + r"+")
+INLINE_CODE_TOKEN = re.compile(r"(?<!`)`([^`\r\n]+)`(?!`)")
 RAW_HTML_BLOCK_TAGS = (
     "address",
     "article",
@@ -741,47 +214,20 @@ FENCE_LIST_PREFIX = re.compile(
     r"^ {0,3}(?:[-+*]|\d{1,9}[.)])(?:[ \t]{1,4}|$)"
 )
 
-# The title tokens declare a document's structural role without fixing its
-# complete wording. Equivalent titles may add or reorder words.
-ROLE_TITLE_TOKENS = {
-    "AGENTS.md": ("agents",),
-    "README.md": ("task-governance-tool",),
-    AUTHORITY: ("authority", "index"),
-    "docs/specification.md": ("product", "specification"),
-    "docs/design.md": ("implementation", "design"),
-    "plan.md": ("decisions", "issues"),
-    EXECUTION_INDEX: ("execution", "contract", "index"),
-    M22: ("m22", "evidence", "ledger", "accepted", "contract"),
-    M23: ("m23", "derived", "evidence", "accepted", "contract"),
-    M23_PROCESS: ("m23", "process", "safety", "contract"),
-    M24: ("m24", "verification", "runner", "accepted", "contract"),
-    HISTORY_INDEX: ("historical", "documentation", "index"),
-    RELEASE_INSTALL: ("release", "install", "record"),
+ROLE_TITLES = {
+    "AGENTS.md": "# AGENTS.md",
+    "README.md": "# task-governance-tool",
+    AUTHORITY: "# Repository Authority Index",
+    "docs/specification.md": "# task-governance-tool Current Product Specification",
+    "docs/design.md": "# task-governance-tool Current Implementation Design",
+    "plan.md": "# task-governance-tool Current Decisions And Open Issues",
+    HISTORY_INDEX: "# Historical Documentation Index",
+    RELEASE_INSTALL: "# Release Candidate And Published Install Record",
 }
-
-# Status is read from the first structural role block, not from a wording hash.
-# Positive terms must be asserted rather than directly negated.  A separate
-# negative relation is required where the owner declares that no unit is
-# current; merely mentioning the word ``current`` is not sufficient.
-ROLE_BANNER_STATUS = {
-    EXECUTION_INDEX: (("mixed", "current", "accepted"), False),
-    M22: (("accepted", "predecessor"), False),
-    M23: (("accepted", "predecessor"), True),
-    M23_PROCESS: (("delegated", "accepted"), True),
-    M24: (
-        (
-            "accepted",
-            "formal",
-            "authority",
-            "predecessor",
-            "superseded",
-            "trusted-local",
-            "explicit",
-            "opt-in",
-        ),
-        True,
-    ),
-}
+HISTORY_MARKERS = (
+    "NON-AUTHORITATIVE HISTORY",
+    "NON-AUTHORITATIVE STUDY HISTORY",
+)
 
 
 @dataclass(frozen=True, order=True)
@@ -846,76 +292,6 @@ class Result:
             "metrics": [metric.to_data() for metric in self.metrics],
             "issues": [issue.to_data() for issue in self.issues],
         }
-
-
-@dataclass(frozen=True)
-class SequenceSpec:
-    path: str
-    heading: str
-    rows: tuple[tuple[str, ...], ...]
-    headers: tuple[str, ...]
-    identity_columns: int = 3
-
-
-SEQUENCES = (
-    SequenceSpec(
-        M22,
-        "## Accepted Sequence",
-        ROWS_M22,
-        ("Unit/order", "Task", "Dependency", "Bounded outcome and gate"),
-    ),
-    SequenceSpec(
-        M23,
-        "## Sequence Boundary",
-        ROWS_M23,
-        ("Unit/order", "Task", "Dependency"),
-    ),
-    SequenceSpec(
-        M24,
-        "## Sequence Boundary",
-        ROWS_M24,
-        (
-            "Unit/order",
-            "Task",
-            "Dependency",
-            "Purpose, permission boundary, and completion gate",
-        ),
-    ),
-    SequenceSpec(
-        "plan.md",
-        "### TG-DOC Documentation Governance Sequence",
-        ROWS_DOC,
-        (
-            "Unit/order",
-            "Task",
-            "Lane",
-            "Dependency",
-            "Authority status and successor gate",
-        ),
-        identity_columns=5,
-    ),
-)
-
-
-@dataclass(frozen=True)
-class DocumentationUnit:
-    unit: str
-    anchor: str
-    heading_status: str
-
-
-DOCUMENTATION_UNITS = (
-    DocumentationUnit(
-        "TG-DOC.2",
-        "tg-doc-2",
-        "accepted",
-    ),
-    DocumentationUnit(
-        "TG-DOC.3",
-        "tg-doc-3",
-        "current",
-    ),
-)
 
 
 def _is_link_like(path: Path) -> bool:
@@ -1486,208 +862,12 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
     return start, end
 
 
-def _semantic_section_blocks(scan: Scan, heading: str) -> tuple[str, ...] | None:
-    bounds = _section_bounds(scan, heading)
-    if bounds is None:
-        return None
-    blocks: list[str] = []
-    current: list[str] = []
-    for position in range(bounds[0] + 1, bounds[1]):
-        semantic = _semantic_prose(
-            scan.semantic[position], include_link_targets=True
-        )
-        if not scan.lines[position].strip():
-            if current:
-                blocks.append(" ".join(current))
-                current = []
-            continue
-        if not semantic.strip():
-            continue
-        starts_item = re.match(
-            r"^ {0,3}(?:[-+*]|\d{1,9}[.)])(?:[ \t]+|$)", semantic
-        )
-        if starts_item and current:
-            blocks.append(" ".join(current))
-            current = []
-        current.append(" ".join(semantic.lower().split()))
-    if current:
-        blocks.append(" ".join(current))
-    return tuple(blocks)
-
-
-def _relations_present(
-    blocks: tuple[str, ...] | None,
-    relations: tuple[tuple[tuple[str, ...], ...], ...],
-) -> bool:
-    return blocks is not None and all(
-        any(_relation_present(block, relation) for block in blocks)
-        for relation in relations
-    )
-
-
-def _relation_occurrence_negated(text: str, start: int, end: int) -> bool:
-    if _directly_negated(text, start):
-        return True
-    clause_start, _clause_end = _semantic_clause_bounds(text, start)
-    prefix = text[max(clause_start, start - 96) : start]
-    scope_breaks = tuple(re.finditer(r",\s*(?:and|but|yet|then)\b", prefix))
-    if scope_breaks:
-        prefix = prefix[scope_breaks[-1].end() :]
-    if re.search(
-        r"\b(?:(?:do|does|did|can|could|should|must|may|will|would)\s+not|"
-        r"never|avoid|without)\b[^.;]{0,80}$",
-        prefix,
-    ):
-        return True
-    suffix = text[end : end + 56]
-    return bool(
-        re.match(
-            r"\s+(?:(?:is|are|was|were|remains?|becomes?)\s+"
-            r"(?:not|never|no\s+longer)\b|"
-            r"(?:do|does|did|can|could|should|must|may|will|would)\s+not\b|"
-            r"(?:only\s+)?as\s+"
-            r"(?:an?\s+)?(?:reference|example|non-authority)\b)",
-            suffix,
-        )
-    )
-
-
-def _positive_relation_term(text: str, term: str) -> bool:
-    matches = tuple(re.finditer(re.escape(term), text))
-    return bool(matches) and all(
-        not _relation_occurrence_negated(text, match.start(), match.end())
-        for match in matches
-    )
-
-
-def _relation_present(
-    text: str, relation: tuple[tuple[str, ...], ...]
-) -> bool:
-    return all(
-        any(_positive_relation_term(text, alternative) for alternative in group)
-        for group in relation
-    )
-
-
-def _markdown_owner_paths(text: str) -> set[str]:
-    return {
-        match.group(0).lstrip("./").split("#", 1)[0].lower()
-        for match in MARKDOWN_OWNER_PATH.finditer(text)
-    }
-
-
-def _semantic_clause_bounds(text: str, position: int) -> tuple[int, int]:
-    path_positions = {
-        offset
-        for match in MARKDOWN_OWNER_PATH.finditer(text)
-        for offset in range(match.start(), match.end())
-    }
-    separators = [
-        index
-        for index, character in enumerate(text)
-        if character == ";" or (character == "." and index not in path_positions)
-    ]
-    before = [index for index in separators if index < position]
-    after = [index for index in separators if index >= position]
-    return (max(before) + 1 if before else 0, min(after) if after else len(text))
-
-
-def _source_owner_relation_present(
-    block: str, owner: str, topics: tuple[str, ...]
-) -> bool:
-    if _markdown_owner_paths(block) != _markdown_owner_paths(owner):
-        return False
-    if not _owner_asserted(block, owner, topics):
-        return False
-    return not any(
-        candidate != owner and _owner_asserted(block, candidate, topics)
-        for candidate in SOURCE_KNOWN_OWNERS
-    )
-
-
-def _owner_asserted(
-    block: str, owner: str, topics: tuple[str, ...] = ()
-) -> bool:
-    for match in re.finditer(re.escape(owner), block):
-        if _relation_occurrence_negated(block, match.start(), match.end()):
-            continue
-        clause_start, clause_end = _semantic_clause_bounds(block, match.start())
-        before = block[clause_start : match.start()]
-        after = block[match.end() : clause_end]
-        clause = block[clause_start:clause_end]
-        if _markdown_owner_paths(clause) != _markdown_owner_paths(owner):
-            continue
-        if topics and not all(
-            _positive_relation_term(clause, topic) for topic in topics
-        ):
-            continue
-        if re.match(
-            r"\s+(?:only\s+)?as\s+(?:an?\s+)?"
-            r"(?:reference|example|non-authority)\b",
-            after,
-        ):
-            continue
-        directed_match = re.search(
-            r"\b(?:follow|prefer|read|use|consult|select|route(?:d)?\s+by|"
-            r"govern(?:ed)?\s+by)\b[^.;]{0,160}$",
-            before,
-        )
-        directed_to_owner = bool(
-            directed_match
-            and not _relation_occurrence_negated(
-                before, directed_match.start(), directed_match.end()
-            )
-        )
-        owner_assertion = re.search(
-            r"^.{0,80}\b(?:owns?|governs?|controls?|"
-            r"is\s+(?:the\s+)?(?:owner|authority))\b",
-            after,
-        )
-        if directed_to_owner or owner_assertion:
-            return True
-    return False
-
-
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v5",
+        "schema": "taskgov-document-authority-v6",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": ["docs/specification.md", "docs/design.md", "plan.md"],
-        "mixed_execution": [
-            {
-                "path": M22,
-                "route_anchor": "tg-m22-sequence",
-                "current_units": [],
-                "inactive_units": [],
-            },
-            {
-                "path": M23,
-                "route_anchor": "tg-m23-derived-evidence",
-                "current_units": [],
-                "inactive_units": [],
-                "detail_routes": [
-                    {
-                        "path": M23_PROCESS,
-                        "route_anchor": "tg-m23-process-safety",
-                        "parent_anchor": "tg-m23-1",
-                        "owner_scope": "windows_process_private_temp_atomic_publication",
-                    }
-                ],
-            },
-            {
-                "path": M24,
-                "route_anchor": "tg-m24-verification-runner",
-                "current_units": [],
-                "inactive_units": [],
-                "superseded_units": ["TG-M24.1B"],
-            },
-        ],
-        "documentation_sequence": {
-            "path": "plan.md",
-            "route_anchor": "tg-doc-sequence",
-            "current_units": ["TG-DOC.3"],
-            "inactive_units": [],
-        },
+        "mixed_execution": [],
         "conditional": [],
         "history_index": HISTORY_INDEX,
     }
@@ -1749,7 +929,7 @@ def _registry(scan: Scan, issues: list[Issue]) -> dict[str, object] | None:
             Issue(
                 "authority_registry",
                 AUTHORITY,
-                "machine registry differs from the semantic authority graph",
+                "machine registry differs from the closed authority graph",
             )
         )
         return None
@@ -1876,51 +1056,9 @@ def _links_and_routes(
                 Issue(
                     "authority_route",
                     relative,
-                    f"{heading} differs from the semantic route set",
+                    f"{heading} differs from the closed route set",
                 )
             )
-
-
-def _m24_3a_owner_routes(
-    root: Path, scans: dict[str, Scan], issues: list[Issue]
-) -> None:
-    expected = (
-        (
-            "../specification.md#current-schema-v21-persistence-contract",
-            "docs/specification.md",
-            "current-schema-v21-persistence-contract",
-        ),
-        (
-            "../design.md#tg-m24-3a-schema21-design",
-            DESIGN,
-            "tg-m24-3a-schema21-design",
-        ),
-    )
-    bounds = _anchor_section(scans[M24], "tg-m24-3a")
-    observed = (
-        ()
-        if bounds is None
-        else tuple(
-            link.target
-            for link in scans[M24].links
-            if bounds[0] < link.line < bounds[1] and link.route_eligible
-        )
-    )
-    valid = Counter(observed) == Counter(target for target, _path, _anchor in expected)
-    if valid:
-        valid = all(
-            _resolve(root, M24, target) == (path, anchor)
-            and anchor in scans[path].anchors
-            for target, path, anchor in expected
-        )
-    if not valid:
-        issues.append(
-            Issue(
-                "authority_route",
-                M24,
-                "TG-M24.3A owner routes or explicit anchors are unavailable",
-            )
-        )
 
 
 def _cells(line: str) -> tuple[str, ...]:
@@ -1947,949 +1085,69 @@ def _section_table_range(scan: Scan, heading: str) -> tuple[int, int] | None:
     return start, end
 
 
-def _sequence_table(scan: Scan, heading: str) -> tuple[str, ...] | None:
-    table_range = _section_table_range(scan, heading)
-    if table_range is None:
-        return None
-    return tuple(scan.lines[table_range[0] : table_range[1]])
-
-
-def _semantic_table(scan: Scan, heading: str) -> tuple[str, ...] | None:
-    table_range = _section_table_range(scan, heading)
-    if table_range is None:
-        return None
-    return tuple(scan.semantic[table_range[0] : table_range[1]])
-
-
-def _sequences(scans: dict[str, Scan], issues: list[Issue]) -> None:
-    for spec in SEQUENCES:
-        scan = scans[spec.path]
-        table = _sequence_table(scan, spec.heading)
-        valid = table is not None and len(table) == len(spec.rows) + 2
-        if valid:
-            header = _cells(table[0])
-            separator = _cells(table[1])
-            valid = (
-                header == spec.headers
-                and len(separator) == len(header)
-                and all(re.fullmatch(r":?-{3,}:?", cell) for cell in separator)
-            )
-        if valid:
-            observed: list[tuple[str, ...]] = []
-            for row in table[2:]:
-                cells = _cells(row)
-                if len(cells) != len(header):
-                    valid = False
-                    break
-                observed.append(
-                    tuple(
-                        cell.strip(chr(96))
-                        for cell in cells[: spec.identity_columns]
-                    )
-                )
-            valid = valid and tuple(observed) == spec.rows
-        if valid and table is not None:
-            structural_rows = table[2:]
-            valid = all(
-                sum(task_id in row for row in structural_rows) == 1
-                for task_id in (row[1] for row in spec.rows)
-            )
-        if not valid:
-            issues.append(
-                Issue(
-                    "sequence_contract",
-                    spec.path,
-                    f"{spec.heading} Task identity, order, or dependency drifted",
-                )
-            )
-
-    m24 = scans[M24]
-    required_m24_anchors = (
-        "tg-m24-1",
-        "tg-m24-1a",
-        "tg-m24-1b",
-        "tg-m24-r1",
-        "tg-m24-r2a",
-        "tg-m24-r2b",
-        "tg-m24-r2c",
-        "tg-m24-r4a",
-        "tg-m24-r4v",
-        "tg-m24-r3a",
-        "tg-m24-r3b",
-        "tg-m24-r4b",
-        "tg-m24-r5",
-        "tg-m24-2a",
-        "tg-m24-2b",
-        "tg-m24-2c",
-        "tg-m24-2",
-        "tg-m24-3",
-        "tg-m24-3a",
-        "tg-m24-3b",
-        "tg-m24-3c",
-        "tg-m24-4a",
-        "tg-m24-4b",
-        "tg-m24-4c",
-        "tg-m24-4",
-        "tg-m24-cp4",
-    )
-    if any(anchor not in m24.anchors for anchor in required_m24_anchors):
-        issues.append(
-            Issue(
-                "sequence_contract",
-                M24,
-                "M24 unit anchors are incomplete",
-            )
-        )
-    else:
-        positions = tuple(m24.anchors[anchor] for anchor in required_m24_anchors)
-        if positions != tuple(sorted(positions)) or len(set(positions)) != len(
-            positions
-        ):
-            issues.append(
-                Issue(
-                    "sequence_contract",
-                    M24,
-                    "M24 unit anchors are out of order",
-                )
-            )
-
-
-def _bounded_reading_controls(
+def _structural_reading_controls(
     scans: dict[str, Scan], issues: list[Issue]
 ) -> None:
     agents = scans["AGENTS.md"]
-    source_blocks = _semantic_section_blocks(agents, "## Source Of Truth")
-    reread_blocks = _semantic_section_blocks(agents, "## Reread Rule")
-    valid_agents = (
-        _relations_present(source_blocks, SOURCE_START_RELATIONS)
-        and source_blocks is not None
-        and all(
-            any(
-                _source_owner_relation_present(block, owner, topics)
-                for block in source_blocks
-            )
-            for owner, topics in SOURCE_OWNER_RELATIONS
-        )
-        and _relations_present(reread_blocks, REREAD_RELATIONS)
-    )
-    if not valid_agents:
+    if any(
+        _section_bounds(agents, heading) is None
+        for heading in ("## Source Of Truth", "## Reread Rule")
+    ):
         issues.append(
             Issue(
                 "authority_route",
                 "AGENTS.md",
-                "bounded start, owner selection, or reread relations are incomplete",
+                "required start and reread sections are missing or duplicated",
             )
         )
 
     authority = scans[AUTHORITY]
-    table = _semantic_table(authority, "## Trigger Routing")
-    valid_routes = table is not None and len(table) == len(TRIGGER_ROUTE_RELATIONS) + 2
-    rows: tuple[tuple[str, ...], ...] = ()
-    if valid_routes:
-        header = tuple(cell.lower() for cell in _cells(table[0]))
-        separator = _cells(table[1])
+    table_range = _section_table_range(authority, "## Trigger Routing")
+    valid_routes = (
+        table_range is not None
+        and table_range[1] - table_range[0]
+        == len(TRIGGER_ROUTE_OWNER_TOKENS) + 2
+    )
+    if valid_routes and table_range is not None:
+        start, end = table_range
+        header = tuple(cell.lower() for cell in _cells(authority.semantic[start]))
+        separator = _cells(authority.semantic[start + 1])
         valid_routes = (
             header == ("trigger", "required selective route")
             and len(separator) == 2
             and all(re.fullmatch(r":?-{3,}:?", cell) for cell in separator)
         )
         if valid_routes:
-            parsed: list[tuple[str, ...]] = []
-            for raw_row in table[2:]:
-                cells = tuple(cell.lower() for cell in _cells(raw_row))
-                if len(cells) != 2:
+            for position, expected_tokens in zip(
+                range(start + 2, end), TRIGGER_ROUTE_OWNER_TOKENS
+            ):
+                semantic_cells = _cells(authority.semantic[position])
+                raw_cells = _cells(authority.lines[position])
+                if (
+                    len(semantic_cells) != 2
+                    or len(raw_cells) != 2
+                    or not semantic_cells[0].strip()
+                    or not semantic_cells[1].strip()
+                ):
                     valid_routes = False
                     break
-                parsed.append(cells)
-            rows = tuple(parsed)
-    if valid_routes:
-        relation_counts: Counter[int] = Counter()
-        for trigger, route in rows:
-            matches = [
-                index
-                for index, (identity, _owners) in enumerate(TRIGGER_ROUTE_RELATIONS)
-                if _relation_present(
-                    trigger, tuple((term,) for term in identity)
+                semantic_route = semantic_cells[1]
+                observed_tokens = tuple(
+                    match.group(1)
+                    for match in INLINE_CODE_TOKEN.finditer(raw_cells[1])
+                    if match.group(1) in semantic_route
                 )
-            ]
-            if len(matches) != 1:
-                valid_routes = False
-                break
-            relation_index = matches[0]
-            relation_counts[relation_index] += 1
-            owners = TRIGGER_ROUTE_RELATIONS[relation_index][1]
-            owner_relation = tuple((term,) for term in owners)
-            if not _relation_present(route, owner_relation):
-                valid_routes = False
-                break
-            expected_paths = _markdown_owner_paths(" ".join(owners))
-            observed_paths = _markdown_owner_paths(route)
-            if observed_paths != expected_paths:
-                valid_routes = False
-                break
-        valid_routes = valid_routes and relation_counts == Counter(
-            range(len(TRIGGER_ROUTE_RELATIONS))
-        )
+                if observed_tokens != expected_tokens:
+                    valid_routes = False
+                    break
     if not valid_routes:
         issues.append(
             Issue(
                 "authority_route",
                 AUTHORITY,
-                "trigger-to-owner selective routing is incomplete or ambiguous",
+                "trigger-route table structure or ordered owner tokens differ",
             )
         )
-
-
-def _registry_routes(
-    scans: dict[str, Scan], registry: dict[str, object], issues: list[Issue]
-) -> None:
-    route_objects: list[dict[str, object]] = []
-    mixed = registry["mixed_execution"]
-    assert isinstance(mixed, list)
-    route_objects.extend(item for item in mixed if isinstance(item, dict))
-    documentation = registry["documentation_sequence"]
-    assert isinstance(documentation, dict)
-    route_objects.append(documentation)
-
-    for route in route_objects:
-        path = route["path"]
-        anchor = route["route_anchor"]
-        if (
-            not isinstance(path, str)
-            or not isinstance(anchor, str)
-            or path not in scans
-            or anchor not in scans[path].anchors
-        ):
-            issues.append(
-                Issue(
-                    "authority_route",
-                    AUTHORITY,
-                    "registered owner path or route anchor is unavailable",
-                )
-            )
-        details = route.get("detail_routes", [])
-        if isinstance(details, list):
-            for detail in details:
-                if not isinstance(detail, dict):
-                    continue
-                detail_path = detail.get("path")
-                detail_anchor = detail.get("route_anchor")
-                parent_anchor = detail.get("parent_anchor")
-                if (
-                    not isinstance(detail_path, str)
-                    or not isinstance(detail_anchor, str)
-                    or detail_path not in scans
-                    or detail_anchor not in scans[detail_path].anchors
-                    or not isinstance(parent_anchor, str)
-                    or not isinstance(path, str)
-                    or path not in scans
-                    or parent_anchor not in scans[path].anchors
-                ):
-                    issues.append(
-                        Issue(
-                            "authority_route",
-                            AUTHORITY,
-                            "delegated detail route or parent anchor is unavailable",
-                        )
-                    )
-
-    conditional = registry["conditional"]
-    assert isinstance(conditional, list)
-    m24_routes = [
-        route
-        for route in route_objects
-        if route.get("path") == M24
-        and route.get("route_anchor") == "tg-m24-verification-runner"
-    ]
-    if conditional or len(m24_routes) != 1:
-        issues.append(
-            Issue(
-                "authority_route",
-                AUTHORITY,
-                "mixed M24 owner or route anchor is unavailable",
-            )
-        )
-
-
-def _m24_trusted_local_authority_sync(
-    scans: dict[str, Scan], issues: list[Issue]
-) -> None:
-    """Keep only the explicit, user-adopted M24 Runner boundary as a canary."""
-    scan = scans.get(M24)
-    if scan is None:
-        return
-    prose = " ".join(
-        " ".join(_semantic_prose(line).lower().split())
-        for line in scan.semantic
-    )
-    required = (
-        "trusted-local repository",
-        "explicit opt-in",
-        "untrusted or external target uses the m21 manual verification fallback",
-        "fixed argv",
-        "shell=false",
-        "credential-excluding environment",
-        "job object",
-        "timeout",
-        "bounded output",
-        "private temporary",
-        "cleanup",
-        "raw stdout and stderr are transient and are never persisted",
-        "only the closed runner outcome is persisted",
-        "does not claim network isolation, hostile-code containment, or zero capability",
-        "does not activate product code or a runner runtime",
-        "candidate c, b-to-c, lpac, appcontainer, etw, and registry recovery are not current m24 gates",
-        "runner-slice module registry and acyclic dependency graph",
-        "cli.py may call only verification_runner_service.py",
-        "repository and persistence modules never launch or import the process or os adapter",
-        "closed typed bounded request plus its local boolean cancellation signal",
-        "returns only the closed bounded sanitized result",
-        "opens no canonical state",
-        "verification_runner_service.py alone combines the process",
-        "blocks on either uncertainty",
-        "authorizes cleanup success or terminal persistence",
-        "no raw output, argv, environment, credential, private path, exit code, or exception body crosses that persistence boundary",
-        "logical request/result records add no serializer, ipc, worker, process, queue, pipe, socket, rpc, spool, supervisor, retry layer, schema, public cli, or product activation",
-        "direct service-to-retired-os seam",
-        "are physically absent after accepted r4a",
-        "no archive or dormant copy",
-        "dependency-pure, legacy-stable value-model foundation",
-        "supplied by accepted r4v",
-        "callback in the process adapter",
-        "second cleanup-acceptance owner",
-        "transitional nonconformance routed to r4b",
-        "r2c repaired none of them and changed no r2a/r2b disposition or action selector",
-    )
-    if any(phrase not in prose for phrase in required):
-        issues.append(
-            Issue(
-                "m24_trusted_local_authority_sync",
-                M24,
-                "trusted-local opt-in, manual fallback, process bounds, cleanup, privacy, or non-activation drifted",
-            )
-        )
-
-    status_bindings = (
-        ("tg-m24-r1", "tg-m24.r1", "accepted"),
-        ("tg-m24-r2a", "tg-m24.r2a", "accepted"),
-        ("tg-m24-r2b", "tg-m24.r2b", "accepted"),
-        ("tg-m24-r2c", "tg-m24.r2c", "accepted"),
-        ("tg-m24-r4a", "tg-m24.r4a", "accepted"),
-        ("tg-m24-r4v", "tg-m24.r4v", "accepted"),
-        ("tg-m24-r3a", "tg-m24.r3a", "accepted"),
-        ("tg-m24-r3b", "tg-m24.r3b", "accepted"),
-        ("tg-m24-r4b", "tg-m24.r4b", "accepted"),
-        ("tg-m24-r5", "tg-m24.r5", "accepted"),
-        ("tg-m24-2a", "tg-m24.2a", "accepted"),
-        ("tg-m24-2b", "tg-m24.2b", "accepted"),
-        ("tg-m24-2c", "tg-m24.2c", "accepted"),
-        ("tg-m24-2", "tg-m24.2d", "accepted"),
-        ("tg-m24-3a", "tg-m24.3a", "accepted"),
-        ("tg-m24-3b", "tg-m24.3b", "accepted"),
-        ("tg-m24-3c", "tg-m24.3c", "accepted"),
-        ("tg-m24-4a", "tg-m24.4a", "accepted"),
-        ("tg-m24-4b", "tg-m24.4b", "accepted"),
-        ("tg-m24-4c", "tg-m24.4c", "accepted"),
-        ("tg-m24-4", "tg-m24.4d", "accepted"),
-        ("tg-m24-cp4", "tg-m24.cp4", "accepted"),
-    )
-    observed_statuses: list[tuple[str, str, str]] = []
-    for anchor, unit, expected_status in status_bindings:
-        bounds = _anchor_section(scan, anchor)
-        headings = (
-            ()
-            if bounds is None
-            else tuple(
-                line
-                for level, line, position in scan.headings
-                if level == 2 and bounds[0] < position < bounds[1]
-            )
-        )
-        expected_shape = (
-            len(headings) == 2 and headings[1] == "## Expansion Boundary"
-            if anchor == "tg-m24-cp4"
-            else len(headings) == 1
-        )
-        heading = headings[0].lower() if headings else ""
-        status_is_exact = (
-            expected_shape
-            and re.search(rf"\b{re.escape(unit)}\b", heading) is not None
-            and _positive_status_term(heading, expected_status)
-            and all(
-                not _positive_status_term(heading, other)
-                for other in ("accepted", "current", "inactive", "superseded")
-                if other != expected_status
-            )
-        )
-        if status_is_exact:
-            observed_statuses.append((anchor, unit, expected_status))
-    if tuple(observed_statuses) != status_bindings:
-        issues.append(
-            Issue(
-                "m24_current_binding",
-                M24,
-                "M24 accepted, current, or inactive structural status headings drifted",
-            )
-        )
-
-
-def _m24_r2c_architecture_boundary(
-    scans: dict[str, Scan], issues: list[Issue]
-) -> None:
-    """Validate R2C structure without treating prose layout as authority."""
-
-    def normalized(value: str) -> str:
-        return " ".join(value.casefold().split())
-
-    def patterns_match(value: str, patterns: tuple[str, ...]) -> bool:
-        semantic = normalized(value)
-        return all(re.search(pattern, semantic) is not None for pattern in patterns)
-
-    def positive_patterns_match(value: str, patterns: tuple[str, ...]) -> bool:
-        semantic = normalized(value)
-        for pattern in patterns:
-            matches = tuple(re.finditer(pattern, semantic))
-            if not matches or any(
-                _relation_occurrence_negated(semantic, match.start(), match.end())
-                or re.search(
-                    r"\b(?:not|no|never)\b"
-                    r"(?:\s+[a-z0-9_/-]+){0,4}\s*$",
-                    semantic[max(0, match.start() - 80) : match.start()],
-                )
-                for match in matches
-            ):
-                return False
-        return True
-
-    def section_blocks(heading: str) -> tuple[str, ...]:
-        section = _section_bounds(design, heading)
-        if section is None:
-            return ()
-        blocks: list[str] = []
-        current: list[str] = []
-        for position in range(section[0] + 1, section[1]):
-            line = _semantic_prose(design.lines[position]).strip()
-            if not line:
-                if current:
-                    blocks.append(normalized(" ".join(current)))
-                    current = []
-                continue
-            current.append(line)
-        if current:
-            blocks.append(normalized(" ".join(current)))
-        return tuple(blocks)
-
-    def header_role(value: str) -> str | None:
-        semantic = normalized(value)
-        matches = tuple(
-            role
-            for role, patterns in R2C_TABLE_HEADER_ROLES.items()
-            if all(re.search(pattern, semantic) is not None for pattern in patterns)
-        )
-        return matches[0] if len(matches) == 1 else None
-
-    def comma_tokens(value: str, pattern: str) -> tuple[str, ...] | None:
-        tokens = tuple(part.strip() for part in value.replace("`", "").split(","))
-        return tokens if tokens and all(re.fullmatch(pattern, token) for token in tokens) else None
-
-    def acyclic(edges: set[tuple[str, str]]) -> bool:
-        visiting: set[str] = set()
-        visited: set[str] = set()
-        graph = {
-            layer: {target for source, target in edges if source == layer}
-            for layer in R2C_LAYER_MODULES
-        }
-
-        def visit(layer: str) -> bool:
-            if layer in visiting:
-                return False
-            if layer in visited:
-                return True
-            visiting.add(layer)
-            if not all(visit(target) for target in graph[layer]):
-                return False
-            visiting.remove(layer)
-            visited.add(layer)
-            return True
-
-        return all(visit(layer) for layer in graph)
-
-    design = scans[DESIGN]
-    bounds = _section_bounds(design, R2C_BOUNDARY_HEADING)
-    table = _sequence_table(design, R2C_BOUNDARY_TABLE_HEADING)
-    valid = (
-        bounds is not None
-        and design.anchors.get("tg-m24-r2c-runner-architecture-boundary", len(design.lines))
-        < bounds[0]
-        and table is not None
-        and len(table) == len(R2C_LAYER_MODULES) + 2
-    )
-
-    observed_edges: set[tuple[str, str]] = set()
-    column_indexes: dict[str, int] = {}
-    if valid and table is not None:
-        header = _cells(table[0])
-        separator = _cells(table[1])
-        roles = tuple(header_role(cell) for cell in header)
-        valid = (
-            len(header) == len(R2C_TABLE_HEADER_ROLES)
-            and None not in roles
-            and set(roles) == set(R2C_TABLE_HEADER_ROLES)
-            and len(separator) == len(header)
-            and all(re.fullmatch(r":?-{3,}:?", cell) for cell in separator)
-        )
-        if valid:
-            column_indexes = {
-                role: index for index, role in enumerate(roles) if role is not None
-            }
-
-    observed_layers: set[str] = set()
-    observed_modules: list[str] = []
-    cleanup_responsibility_layers: set[str] = set()
-    if valid and table is not None:
-        for row in table[2:]:
-            cells = _cells(row)
-            if len(cells) != len(R2C_TABLE_HEADER_ROLES):
-                valid = False
-                break
-            layer = cells[column_indexes["layer"]].strip().strip("`")
-            if re.fullmatch(r"[a-z][a-z0-9_]*", layer) is None:
-                valid = False
-                break
-            modules = comma_tokens(
-                cells[column_indexes["modules"]],
-                r"_?[A-Za-z][A-Za-z0-9_]*\.py",
-            )
-            import_cell = cells[column_indexes["imports"]]
-            imports = (
-                ()
-                if normalized(import_cell).strip("`") == "none"
-                else comma_tokens(import_cell, r"[a-z][a-z0-9_]*")
-            )
-            routes = tuple(
-                re.findall(
-                    r"(?<![A-Za-z0-9])(?:TG-M24\.)?"
-                    r"(R[0-9]+[A-Z]?|CP[0-9]+|[0-9]+[A-Z])"
-                    r"(?![A-Za-z0-9])",
-                    cells[column_indexes["route"]],
-                )
-            )
-            if (
-                layer not in R2C_LAYER_MODULES
-                or layer in observed_layers
-                or modules is None
-                or imports is None
-                or len(modules) != len(set(modules))
-                or set(modules) != set(R2C_LAYER_MODULES[layer])
-                or len(imports) != len(set(imports))
-                or set(imports) != set(R2C_LAYER_IMPORTS[layer])
-                or len(routes) != len(set(routes))
-                or set(routes) != set(R2C_LAYER_ROUTE_UNITS[layer])
-                or not positive_patterns_match(
-                    cells[column_indexes["responsibility"]],
-                    R2C_LAYER_RESPONSIBILITY_PATTERNS[layer],
-                )
-                or not patterns_match(
-                    cells[column_indexes["forbidden"]],
-                    R2C_LAYER_FORBIDDEN_PATTERNS[layer],
-                )
-            ):
-                valid = False
-                break
-            observed_layers.add(layer)
-            observed_modules.extend(modules)
-            observed_edges.update((layer, target) for target in imports)
-            if re.search(
-                r"\bcleanup acceptance\b",
-                normalized(cells[column_indexes["responsibility"]]),
-            ):
-                cleanup_responsibility_layers.add(layer)
-        valid = valid and observed_layers == set(R2C_LAYER_MODULES) and len(
-            observed_modules
-        ) == len(set(observed_modules)) and cleanup_responsibility_layers == {"service"}
-
-    text_blocks = (
-        ()
-        if bounds is None
-        else tuple(
-            tuple(design.lines[start + 1 : end])
-            for info, start, end in design.fences
-            if bounds[0] < start < end < bounds[1] and info.strip() == "text"
-        )
-    )
-    layer_names = "|".join(re.escape(layer) for layer in R2C_LAYER_MODULES)
-    edge_pattern = re.compile(
-        rf"(?<![a-z0-9_])(?P<source>{layer_names})\s*->\s*"
-        rf"(?P<target>{layer_names})(?![a-z0-9_])"
-    )
-    edge_blocks: list[tuple[tuple[str, str], ...]] = []
-    record_blocks: list[dict[str, tuple[str, ...]]] = []
-    bound_blocks: list[dict[str, tuple[str, str]]] = []
-    record_names = "|".join(re.escape(name) for name in R2C_RECORD_MEMBERS)
-    record_pattern = re.compile(
-        rf"\b(?P<name>{record_names})\s*=\s*(?P<body>.*?)"
-        rf"(?=(?:{record_names})\s*=|$)"
-    )
-    control_names = "|".join(
-        re.escape(name) for name in sorted(R2C_BOUND_CONTROLS, key=len, reverse=True)
-    )
-    control_pattern = re.compile(
-        rf"(?<![A-Za-z0-9_])(?P<key>{control_names})\s*"
-        rf"(?P<operator><=|=)\s*"
-    )
-    classified_blocks = 0
-    for block in text_blocks:
-        joined = "\n".join(block).strip()
-        collapsed = " ".join(joined.split())
-        edge_matches = tuple(edge_pattern.finditer(joined))
-        if edge_matches and not edge_pattern.sub("", joined).strip():
-            edge_blocks.append(
-                tuple(
-                    (match.group("source"), match.group("target"))
-                    for match in edge_matches
-                )
-            )
-            classified_blocks += 1
-            continue
-        if re.search(rf"\b(?:{record_names})\s*=", collapsed):
-            matches = tuple(record_pattern.finditer(collapsed))
-            records: dict[str, tuple[str, ...]] = {}
-            records_valid = (
-                bool(matches)
-                and matches[0].start() == 0
-                and matches[-1].end() == len(collapsed)
-            )
-            for match in matches:
-                raw_members = tuple(
-                    member.strip() for member in match.group("body").split(",")
-                )
-                members = tuple(
-                    member for member in raw_members if re.fullmatch(r"[a-z_]+", member)
-                )
-                if (
-                    len(members) != len(raw_members)
-                    or match.group("name") in records
-                ):
-                    records_valid = False
-                records[match.group("name")] = members
-            valid = valid and records_valid
-            record_blocks.append(records)
-            classified_blocks += 1
-            continue
-        header = re.match(r"^RunnerProcessBoundsV1\s*:\s*", collapsed)
-        if header is not None:
-            body = collapsed[header.end() :]
-            matches = tuple(control_pattern.finditer(body))
-            controls: dict[str, tuple[str, str]] = {}
-            controls_valid = bool(matches) and matches[0].start() == 0
-            for index, match in enumerate(matches):
-                end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
-                value = " ".join(body[match.end() : end].strip(" ;").split())
-                key = match.group("key")
-                if not value or key in controls:
-                    controls_valid = False
-                controls[key] = (match.group("operator"), value)
-            valid = valid and controls_valid
-            bound_blocks.append(controls)
-            classified_blocks += 1
-            continue
-        valid = False
-
-    expected_edges = {
-        (layer, target)
-        for layer, targets in R2C_LAYER_IMPORTS.items()
-        for target in targets
-    }
-    explicit_edges = set(edge_blocks[0]) if len(edge_blocks) == 1 else set()
-    valid = (
-        valid
-        and classified_blocks == len(text_blocks) == 3
-        and len(edge_blocks) == 1
-        and len(edge_blocks[0]) == len(explicit_edges)
-        and explicit_edges == expected_edges == observed_edges
-        and acyclic(explicit_edges)
-        and len(record_blocks) == 1
-        and set(record_blocks[0]) == set(R2C_RECORD_MEMBERS)
-        and all(
-            len(record_blocks[0][name]) == len(set(record_blocks[0][name]))
-            and set(record_blocks[0][name]) == set(members)
-            for name, members in R2C_RECORD_MEMBERS.items()
-        )
-        and len(bound_blocks) == 1
-    )
-    expected_controls = {
-        key: (operator, " ".join(value.split()))
-        for key, (operator, value) in R2C_BOUND_CONTROLS.items()
-    }
-    if bound_blocks:
-        valid = valid and bound_blocks[0] == expected_controls
-    else:
-        valid = False
-
-    excluded: set[int] = set()
-    if bounds is not None:
-        for _info, start, end in design.fences:
-            if bounds[0] < start < end < bounds[1]:
-                excluded.update(range(start, end + 1))
-        table_range = _section_table_range(design, R2C_BOUNDARY_TABLE_HEADING)
-        if table_range is not None:
-            excluded.update(range(table_range[0], table_range[1]))
-    prose = normalized(
-        " ".join(
-            _semantic_prose(design.lines[position])
-            for position in range(bounds[0] + 1, bounds[1])
-            if position not in excluded
-        )
-    ) if bounds is not None else ""
-    cleanup_blocks = section_blocks(
-        "### Cleanup Acceptance, Privacy, And Non-Activation"
-    )
-    cleanup_owner_block = next(
-        (
-            block
-            for block in cleanup_blocks
-            if re.search(r"single cleanup-\s*acceptance owner", block)
-        ),
-        "",
-    )
-    privacy_block = next(
-        (block for block in cleanup_blocks if "raw output" in block),
-        "",
-    )
-    architecture_absence_block = next(
-        (block for block in cleanup_blocks if "define no serializer" in block),
-        "",
-    )
-    activation_block = next(
-        (block for block in cleanup_blocks if "r2c adds no ipc" in block),
-        "",
-    )
-    cleanup_inputs = (
-        "verification_runner_service.py",
-        "process-tree zero",
-        "handle closure",
-        "output discard",
-        "private-tree absence",
-        "terminal persistence",
-    )
-    privacy_inputs = (
-        "raw output",
-        "argv",
-        "environment",
-        "credentials",
-        "private paths",
-        "exit codes",
-        "exception bodies",
-    )
-    architecture_absence_elements = (
-        "serializer",
-        "file spool",
-        "queue",
-        "pipe",
-        "socket",
-        "rpc",
-        "worker",
-        "daemon",
-        "subprocess wrapper",
-        "supervisor",
-        "heartbeat",
-        "retry protocol",
-        "secondary state store",
-        "second database connection",
-    )
-    activation_elements = (
-        "ipc",
-        "process",
-        "schema",
-        "public cli",
-        "skill trigger",
-        "completion gate",
-        "product behavior",
-    )
-    cleanup_owner_relation = re.sub(r"-\s+", "-", cleanup_owner_block)
-    focused_relations_valid = (
-        all(term in cleanup_owner_block for term in cleanup_inputs)
-        and all(
-            _positive_relation_term(cleanup_owner_relation, term)
-            for term in (
-                "single cleanup-acceptance owner",
-                "alone combines",
-                "alone authorizes",
-            )
-        )
-        and all(term in privacy_block for term in privacy_inputs)
-        and _positive_relation_term(privacy_block, "remain transient")
-        and _positive_relation_term(privacy_block, "never stored")
-        and all(
-            term in architecture_absence_block
-            for term in architecture_absence_elements
-        )
-        and _positive_relation_term(
-            architecture_absence_block,
-            "define no serializer",
-        )
-        and all(term in activation_block for term in activation_elements)
-        and _positive_relation_term(activation_block, "r2c adds no ipc")
-    )
-    semantic_relations = (
-        r"member sets are closed",
-        r"bounded sanitized structural values.{0,80}not arbitrary text",
-        r"r2c gates only.{0,180}result_code.{0,120}bindings",
-        r"does not define a concrete code taxonomy.{0,100}pairing",
-        r"2b owns.{0,100}membership.{0,80}pairing.{0,180}2c owns.{0,140}mapping.{0,80}projection",
-        r"parent service accepts no arbitrary adapter text.{0,160}persistence owner",
-        r"does not alter.{0,100}existing closed durable outcome",
-        r"observable payload.{0,80}one boolean.{0,120}no callback.{0,100}business gate",
-        r"trusted code.{0,100}not a hostile-code sandbox.{0,100}network isolation",
-        r"not qualification gates",
-        r"accepted r4a physical-deletion scope.{0,100}physically absent.{0,100}not architecture nodes.{0,100}r4b scope",
-        r"2a/2b/2c own.{0,220}r2c repairs or activates none",
-    )
-    design_prose = normalized(
-        " ".join(_semantic_prose(line) for line in design.semantic)
-    )
-    standard_lane_relations = (
-        r"accepted r4a removed.{0,100}tg-m24\.1a lpac module.{0,100}mandatory native fixture.{0,120}dedicated retired-route tests",
-        r"standard test partition.{0,100}only the three base lanes.{0,80}fast.{0,80}integration.{0,80}release",
-    )
-    valid = (
-        valid
-        and focused_relations_valid
-        and all(re.search(pattern, prose) is not None for pattern in semantic_relations)
-        and all(
-            re.search(pattern, design_prose) is not None
-            for pattern in standard_lane_relations
-        )
-    )
-    if not valid:
-        issues.append(
-            Issue(
-                "m24_r2c_architecture_boundary",
-                DESIGN,
-                "R2C layer registry, DAG, typed values, cleanup owner, privacy, routing, or non-activation drifted",
-            )
-        )
-
-
-def _anchor_section(scan: Scan, anchor: str) -> tuple[int, int] | None:
-    start = scan.anchors.get(anchor)
-    if start is None:
-        return None
-    later = [position for position in scan.anchors.values() if position > start]
-    return start, min(later) if later else len(scan.lines)
-
-
-def _documentation_sequence(scans: dict[str, Scan], issues: list[Issue]) -> None:
-    plan = scans["plan.md"]
-    required = ("tg-doc-sequence",) + tuple(unit.anchor for unit in DOCUMENTATION_UNITS)
-    if any(anchor not in plan.anchors for anchor in required):
-        issues.append(
-            Issue(
-                "sequence_contract",
-                "plan.md",
-                "documentation sequence anchors are incomplete",
-            )
-        )
-        return
-    positions = tuple(plan.anchors[anchor] for anchor in required)
-    if positions != tuple(sorted(positions)) or len(set(positions)) != len(positions):
-        issues.append(
-            Issue(
-                "sequence_contract",
-                "plan.md",
-                "documentation sequence anchors are out of order",
-            )
-        )
-
-    for unit in DOCUMENTATION_UNITS:
-        bounds = _anchor_section(plan, unit.anchor)
-        assert bounds is not None
-        next_heading = next(
-            (
-                line
-                for _level, line, position in plan.headings
-                if bounds[0] < position < bounds[1]
-            ),
-            "",
-        )
-        heading_lower = next_heading.lower()
-        valid = (
-            re.search(rf"\b{re.escape(unit.unit)}\b", next_heading) is not None
-            and _positive_status_term(heading_lower, unit.heading_status)
-        )
-        if not valid:
-            issues.append(
-                Issue(
-                    "sequence_contract",
-                    "plan.md",
-                    f"{unit.unit} owner heading status drifted",
-                )
-            )
-
-
-def _directly_negated(text: str, position: int) -> bool:
-    prefix = text[max(0, position - 32) : position].lower()
-    return bool(
-        re.search(
-            r"(?:\b(?:not|no|never)\s+(?:(?:the|an?)\s+)?|"
-            r"\bno\s+longer\s+|\b(?:formerly|previously)\s+|\bnon[-\s]*)$",
-            prefix,
-        )
-    )
-
-
-def _positive_status_term(text: str, term: str) -> bool:
-    pattern = r"\bpredecessors?\b" if term == "predecessor" else rf"\b{re.escape(term)}\b"
-    matches = tuple(re.finditer(pattern, text))
-    return bool(matches) and all(
-        not _directly_negated(text, match.start()) for match in matches
-    )
-
-
-def _negative_current_relation(text: str) -> bool:
-    return bool(
-        re.search(
-            r"\bno\s+(?:(?:tg-[a-z0-9.]+\s+)?(?:execution\s+)?)?"
-            r"units?\s+(?:is|are)\s+current\b"
-            r"|\b(?:(?:tg-[a-z0-9.]+\s+)?(?:execution\s+)?)?units?\s+"
-            r"(?:is|are)\s+(?:not|never|no\s+longer)\s+current\b"
-            r"|\bthere\s+(?:is|are)\s+no\s+current\s+(?:unit|task)s?\b",
-            text,
-        )
-    )
-
-
-def _has_current_status_contradiction(text: str) -> bool:
-    return any(
-        not _directly_negated(text, match.start())
-        for pattern in (
-            CURRENT_STATUS_CLAIM,
-            M24_1B_CURRENT_CLAIM,
-            M24_R3B_CURRENT_CLAIM,
-            M24_R4B_CURRENT_CLAIM,
-            M24_R5_CURRENT_CLAIM,
-            M24_2A_CURRENT_CLAIM,
-            M24_2B_CURRENT_CLAIM,
-            M24_2C_CURRENT_CLAIM,
-            M24_R4B_INACTIVE_CLAIM,
-            M24_R5_INACTIVE_CLAIM,
-            M24_2A_INACTIVE_CLAIM,
-            M24_2B_INACTIVE_CLAIM,
-            M24_2C_INACTIVE_CLAIM,
-            M24_STALE_SHADOW_FUTURE_CLAIM,
-            M24_STALE_NO_RUNTIME_CLAIM,
-            M24_STALE_UNQUALIFIED_RUNNER_ABSENCE_CLAIM,
-            M24_STALE_UNQUALIFIED_VERIFICATION_EXECUTION_CLAIM,
-        )
-        for match in pattern.finditer(text)
-    )
-
-
-def _has_positive_unit_current_relation(text: str) -> bool:
-    return any(
-        not _directly_negated(text, match.start())
-        for match in UNIT_CURRENT_CLAIM.finditer(text)
-    )
 
 
 def _has_live_review_target(text: str) -> bool:
@@ -2927,107 +1185,6 @@ def _has_live_status(text: str) -> bool:
                 and _is_live_status_value(cells[0], cells[1])
             ):
                 return True
-    return False
-
-
-def _has_unit_live_state(text: str) -> bool:
-    status_values = "|".join(sorted(TASK_STATUS_VALUES))
-    task_pattern = r"TG-[A-Z0-9.]+"
-    unit_status_patterns = (
-        re.compile(
-            rf"(?i)\b{task_pattern}\b[^\n]{{0,40}}\b"
-            rf"(?:status|current_status)\s*(?::|is|=)\s*"
-            rf"(?:{status_values})\b"
-        ),
-        re.compile(
-            rf"(?i)\b(?:the\s+)?(?:status|current\s+status)\s+of\s+"
-            rf"{task_pattern}\b\s*(?:is|:|=)\s*(?:{status_values})\b"
-        ),
-        re.compile(
-            rf"(?i)\b{task_pattern}\b\s*(?:is|:|=)\s*"
-            rf"(?:{status_values})\b"
-        ),
-        re.compile(
-            rf"(?i)\b{task_pattern}\b\s*(?:is|:|=)\s*"
-            rf"(?:the\s+)?(?:current|next)\b"
-        ),
-    )
-    target_pattern = re.compile(
-        r"(?i)\b(?P<field>review_target_kind|review_target_value|"
-        r"review_target_base_revision|review_target_generation)\s*(?::|=)\s*"
-        r"(?P<value>[^\s,;|]+)"
-    )
-    table_header: tuple[str, ...] | None = None
-    table_ready = False
-    for raw_line in text.splitlines():
-        line = _markdown_container_content(raw_line).strip()
-        if any(pattern.search(line) for pattern in unit_status_patterns):
-            return True
-        for target in target_pattern.finditer(line):
-            if TASK_ID.search(line[: target.start()]) and _is_live_review_target_value(
-                target.group("field"), target.group("value").rstrip(".")
-            ):
-                return True
-        if line.startswith("|") and line.endswith("|"):
-            cells = tuple(
-                " ".join(_semantic_prose(cell).lower().split())
-                for cell in _cells(line)
-            )
-            if any(TASK_ID.fullmatch(cell) for cell in cells) and any(
-                cell in TASK_STATUS_VALUES for cell in cells
-            ):
-                return True
-            if (
-                len(cells) >= 2
-                and cells[0] in {"current task", "current unit", "next task", "next unit"}
-                and TASK_ID.fullmatch(cells[1])
-            ):
-                return True
-            if table_header is None:
-                table_header = cells
-                table_ready = False
-                continue
-            if (
-                not table_ready
-                and len(cells) == len(table_header)
-                and all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells)
-            ):
-                table_ready = True
-                continue
-            if table_ready and len(cells) == len(table_header):
-                task_columns = tuple(
-                    index
-                    for index, header in enumerate(table_header)
-                    if header
-                    in {
-                        "task",
-                        "task id",
-                        "task_id",
-                        "unit",
-                        "unit id",
-                        "unit_id",
-                    }
-                )
-                target_columns = tuple(
-                    (index, header)
-                    for index, header in enumerate(table_header)
-                    if header in LIVE_REVIEW_TARGET_FIELDS
-                )
-                if any(
-                    TASK_ID.fullmatch(cells[task_index])
-                    and _is_live_review_target_value(
-                        field, cells[target_index]
-                    )
-                    for task_index in task_columns
-                    for target_index, field in target_columns
-                ):
-                    return True
-                continue
-            table_header = cells
-            table_ready = False
-            continue
-        table_header = None
-        table_ready = False
     return False
 
 
@@ -3090,16 +1247,6 @@ def _is_live_review_target_value(field: str, value: str) -> bool:
     return False
 
 
-def _normalize_quote_block(lines: tuple[str, ...] | list[str]) -> str:
-    payloads = []
-    for line in lines:
-        payload = line[1:] if line.startswith(">") else line
-        if payload.startswith(" "):
-            payload = payload[1:]
-        payloads.append(payload)
-    return " ".join("\n".join(payloads).split()).lower()
-
-
 def _roles(
     scans: dict[str, Scan],
     registry: dict[str, object] | None,
@@ -3116,59 +1263,21 @@ def _roles(
                 )
             )
         else:
-            title = h1[0][0].lower()
-            required_title = ROLE_TITLE_TOKENS.get(relative, ())
-            if not all(
-                _positive_status_term(title, token) for token in required_title
-            ):
+            if h1[0][0] != ROLE_TITLES[relative]:
                 issues.append(
                     Issue(
                         "document_role",
                         relative,
-                        "top-level heading contradicts the registered document role",
-                    )
-                )
-
-        required_banner = ROLE_BANNER_STATUS.get(relative)
-        if required_banner is not None:
-            banner = (
-                ""
-                if not scan.quotes
-                else _normalize_quote_block(scan.quotes[0])
-            )
-            positive_terms, requires_no_current = required_banner
-            valid_banner = all(
-                _positive_status_term(banner, term) for term in positive_terms
-            ) and (
-                not requires_no_current or _negative_current_relation(banner)
-            ) and not _has_positive_unit_current_relation(banner)
-            if not valid_banner:
-                issues.append(
-                    Issue(
-                        "document_role",
-                        relative,
-                        "first structural role block does not assert the registered authority status",
+                        "top-level heading differs from the closed document role",
                     )
                 )
 
         semantic = "\n".join(scan.semantic)
         semantic_prose = _semantic_prose(semantic)
-        normalized_semantic = " ".join(semantic_prose.split())
-        if _has_current_status_contradiction(normalized_semantic):
-            issues.append(
-                Issue(
-                    "document_role",
-                    relative,
-                    "prose contradicts the registered authority status",
-                )
-            )
         if (
             VOLATILE_ID.search(semantic_prose)
             or _has_live_status(semantic_prose)
-            or LIVE_EXECUTION.search(semantic_prose)
-            or LIVE_EXECUTION_REVERSE.search(semantic_prose)
             or _has_live_review_target(semantic_prose)
-            or _has_unit_live_state(semantic_prose)
         ):
             issues.append(
                 Issue(
@@ -3206,43 +1315,51 @@ def _roles(
             Issue(
                 "document_role",
                 AUTHORITY,
-                "current, execution, conditional, and history owners overlap",
+                "registered current, conditional, and history owners overlap",
             )
         )
 
 
-def _valid_history_declaration(block: str, *, index: bool) -> bool:
-    lowered = _normalize_quote_block(block.splitlines())
-    declared = _positive_status_term(lowered, "non-authoritative") or bool(
-        index
-        and re.search(r"\bnot\s+(?:the\s+)?current\s+authority\b", lowered)
-    )
-    conflicting = False
-    for match in re.finditer(r"\bauthoritative\b", lowered):
-        if not _directly_negated(lowered, match.start()):
-            conflicting = True
-            break
-    for match in re.finditer(r"\b(?:binding|current|active)\s+authority\b", lowered):
-        if _directly_negated(lowered, match.start()):
-            continue
-        relation = match.group(0)
-        if relation == "current authority":
-            suffix = lowered[match.end() : match.end() + 48]
-            prefix = lowered[max(0, match.start() - 8) : match.start()]
-            routed_replacement = bool(
-                re.match(r"\s+(?:is|remains)\s+(?:in\s+)?\[", suffix)
-                or prefix.endswith("for ")
+def _starts_with_history_marker(text: str) -> bool:
+    for marker in HISTORY_MARKERS:
+        if text == marker:
+            return True
+        if text.startswith(marker):
+            suffix = text[len(marker) :]
+            if suffix and not (suffix[0].isalnum() or suffix[0] == "_"):
+                return True
+    return False
+
+
+def _contains_history_marker(text: str) -> bool:
+    for marker in HISTORY_MARKERS:
+        position = text.find(marker)
+        while position >= 0:
+            end = position + len(marker)
+            before_ok = position == 0 or not (
+                text[position - 1].isalnum() or text[position - 1] == "_"
             )
-            if routed_replacement:
-                continue
-        conflicting = True
-        break
-    return declared and not conflicting
+            after_ok = end == len(text) or not (
+                text[end].isalnum() or text[end] == "_"
+            )
+            if before_ok and after_ok:
+                return True
+            position = text.find(marker, position + 1)
+    return False
 
 
-def _visible_quote_warning(
-    lines: list[str], position: int, *, index: bool
-) -> bool:
+def _has_exact_history_marker(block: list[str]) -> bool:
+    payloads: list[str] = []
+    for line in block:
+        payload = line[1:] if line.startswith(">") else line
+        if payload.startswith(" "):
+            payload = payload[1:]
+        payloads.append(payload.strip())
+    visible_text = " ".join(_semantic_prose(" ".join(payloads)).split())
+    return _contains_history_marker(visible_text)
+
+
+def _visible_quote_history_marker(lines: list[str], position: int) -> bool:
     block: list[str] = []
     inline_carry = ""
     html_comment = False
@@ -3283,10 +1400,10 @@ def _visible_quote_warning(
         if not indented_code:
             block.append("> " + masked)
         position += 1
-    return bool(block) and _valid_history_declaration("\n".join(block), index=index)
+    return _has_exact_history_marker(block)
 
 
-def _first_structural_warning(text: str, *, index: bool = False) -> bool:
+def _first_structural_history_marker(text: str) -> bool:
     lines = text.replace("\r\n", "\n").splitlines()
     position = 0
     while position < len(lines) and not lines[position].strip():
@@ -3298,14 +1415,14 @@ def _first_structural_warning(text: str, *, index: bool = False) -> bool:
     heading = ATX_HEADING.fullmatch(masked_first)
     if heading and len(heading.group(1)) == 1:
         body = re.sub(r"[ \t]+#+[ \t]*$", "", heading.group(2)).strip()
-        if _valid_history_declaration(body, index=index):
+        if _starts_with_history_marker(_semantic_prose(body)):
             return True
         position += 1
         while position < len(lines) and not lines[position].strip():
             position += 1
     if position >= len(lines) or not lines[position].startswith(">"):
         return False
-    return _visible_quote_warning(lines, position, index=index)
+    return _visible_quote_history_marker(lines, position)
 
 
 def _history(root: Path, index: Scan, issues: list[Issue]) -> None:
@@ -3374,7 +1491,7 @@ def _history(root: Path, index: Scan, issues: list[Issue]) -> None:
                 )
             )
             continue
-        if not _first_structural_warning(text):
+        if not _first_structural_history_marker(text):
             issues.append(
                 Issue(
                     "history_banner",
@@ -3383,7 +1500,7 @@ def _history(root: Path, index: Scan, issues: list[Issue]) -> None:
                 )
             )
 
-    if not _first_structural_warning("\n".join(index.lines) + "\n", index=True):
+    if not _first_structural_history_marker("\n".join(index.lines) + "\n"):
         issues.append(
             Issue(
                 "history_banner",
@@ -3533,14 +1650,7 @@ def check_document_contract(repo_root: str | os.PathLike[str]) -> Result:
     if all(relative in scans for relative in CANONICAL_DOCS):
         registry = _registry(scans[AUTHORITY], issues)
         _links_and_routes(root, scans, issues)
-        _m24_3a_owner_routes(root, scans, issues)
-        _sequences(scans, issues)
-        _bounded_reading_controls(scans, issues)
-        _m24_trusted_local_authority_sync(scans, issues)
-        _m24_r2c_architecture_boundary(scans, issues)
-        _documentation_sequence(scans, issues)
-        if registry is not None:
-            _registry_routes(scans, registry, issues)
+        _structural_reading_controls(scans, issues)
         _history(root, scans[HISTORY_INDEX], issues)
 
     _roles(scans, registry, issues)

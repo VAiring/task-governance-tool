@@ -8,25 +8,16 @@ and its exact commit, tag, Release, archive, checksum, and Release body remain
 unchanged. This record also does not authorize installing or overwriting a
 Skill in any project.
 
-Current TG-M24 authority replaces the former fixed-Candidate-C and adversarial
-LPAC route with an ordered trusted-local Runner repair and implementation
-sequence. Accepted R3A/R3B supplied the schema-v20 storage and activation
-baseline, accepted TG-M24.3A froze the schema-v21 contract, accepted
-TG-M24.3B/3C supplied persistence and gate integration, accepted TG-M24.4A/4B
-validated the Runner and compatibility boundaries, and accepted TG-M24.4C
-reconciled only the v0.13 package and release-candidate identity. Accepted
-TG-M24.4D performed final integrated acceptance without changing that identity.
-Accepted TG-M24.CP4 performed only the final no-debt checkpoint and M25 handoff;
-it changed no product byte, recorded no correction, and did not change the
-candidate identity. Current TG-DOC.3 changes documentation authority only.
-An explicitly opted-in trusted-local target may use
-the existing target-set Runner: an exact-current complete-plan pass supplies
+The current v0.13.0 candidate includes the schema-v21 evidence and Runner gate
+basis while preserving the published v0.10.0 identity and the fixed v0.13.0
+package boundary described below. An explicitly opted-in trusted-local target
+may use the existing target-set Runner: an exact-current complete-plan pass supplies
 the Runner-observation completion basis without a Verification Receipt, while
-the exact closed no-launch fallback alone returns to the M21 Receipt path.
+the exact closed no-launch fallback alone returns to the manual Receipt path.
 Pending, stale, cleanup-only, and other terminal Runner branches remain
 blocking. This adds no Runner command or Skill trigger and adds only the two
 closed target-set JSON success fields.
-Untrusted or external targets remain on the M21 manual verification path.
+Untrusted or external targets remain on the manual verification path.
 
 ## Current Candidate Identity
 
@@ -100,7 +91,7 @@ The archive must exclude:
 
 For the current v0.13.0 candidate, archive-inventory acceptance means proving
 that this packaged-core inventory, manifest coverage, and exclusion boundary
-are exact without producing or publishing an archive. The R4A-approved retired
+are exact without producing or publishing an archive. The accepted retired
 Candidate/LPAC/native assets remain physically absent from tracked repository
 and package material, with no tracked archive or dormant package copy.
 
@@ -272,7 +263,7 @@ gate authority. Schema v21 widens only the frozen gate-basis discriminators,
 preserves schema-v20 audit history as ineligible, and admits only a fresh
 eligibility-version-1 exact-current Runner graph to the completion selector.
 A qualifying complete-plan pass supplies the Runner-observation branch; the
-exact closed no-launch fallback alone delegates to the existing M21 Receipt
+exact closed no-launch fallback alone delegates to the existing manual Receipt
 branch, and every other selected Runner state blocks. Migration from v1-v20 to
 v21 and schema-v21 reentry are ordered and repeatable and never promote old
 audit rows. A migrated capture-version-0 target remains read-only lineage and
@@ -567,7 +558,7 @@ checker and lane runner are repository tooling, not installable `taskgov`
 commands or target-project writes. A prior v0.10.0 result, Task receipt,
 approval object, or historical gate never satisfies a future candidate.
 
-TG-M24.4C validates this CI policy and wiring locally only. It does not invoke
+Candidate validation checks this CI policy and wiring locally only. It does not invoke
 `workflow_dispatch`, contact GitHub, or satisfy a later externally authorized
 release operation.
 
@@ -590,8 +581,8 @@ Pre-v19 cycles remain `legacy_unknown`; setup repairs, doctor observes, and
 post-commit order is Evidence, Viewer, then backup. Schema v21 preserves audit
 history as gate-ineligible. A fresh exact-current eligibility-version-1 Runner
 pass supplies the Runner-observation completion branch; only the exact closed
-no-launch result falls back to M21, while all other selected Runner states
-block. Viewer snapshot v4 accepts source schemas v5-v21 while exposing no
+no-launch result falls back to the manual Receipt branch, while all other
+selected Runner states block. Viewer snapshot v4 accepts source schemas v5-v21 while exposing no
 Evidence UI. No Analyzer, network/model invocation, new command leaf, new
 Skill trigger, or public output beyond the two closed target-set JSON success
 fields is activated. With no post-target `task show`, the manual/fallback

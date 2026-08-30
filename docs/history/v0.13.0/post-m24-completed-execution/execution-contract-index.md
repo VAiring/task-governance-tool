@@ -1,3 +1,17 @@
+> [!CAUTION]
+> **NON-AUTHORITATIVE HISTORY**
+>
+> - Source path: `docs/execution-contracts/README.md`
+> - Source commit: `cd08834d023ac5967e2ae18004aff7b41277ee99`
+> - Current replacements: [docs/authority.md](../../../authority.md),
+>   [docs/specification.md](../../../specification.md),
+>   [docs/design.md](../../../design.md), and
+>   [plan.md](../../../../plan.md). Use the public CLI for live Task state and
+>   evidence.
+> - Capture unit: `TG-DOC.3`
+>
+> The exact source blob begins below.
+
 # Current And Conditional Execution Contract Index
 
 > [!IMPORTANT]

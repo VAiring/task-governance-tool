@@ -1,6 +1,8 @@
 # Historical Documentation Index
 
 > [!CAUTION]
+> **NON-AUTHORITATIVE HISTORY**
+>
 > Files indexed here are preserved implementation history, not current
 > authority. Use the active [specification](../specification.md),
 > [design](../design.md), root [AGENTS.md](../../AGENTS.md), and root
@@ -286,8 +288,7 @@ evidence remain available only through the public CLI.
   read set before M22 execution.
 - Current replacements: [docs/authority.md](../authority.md),
   [docs/specification.md](../specification.md),
-  [docs/design.md](../design.md), [plan.md](../../plan.md), and the applicable
-  [conditional execution contract index](../execution-contracts/README.md).
+  [docs/design.md](../design.md), and [plan.md](../../plan.md).
   Use the public CLI for live Task state and evidence. This capture is lineage
   only and cannot fill a current authority gap or satisfy a gate.
 
@@ -301,10 +302,9 @@ evidence remain available only through the public CLI.
 - Capture unit: `TG-M23.1`
 - Capture purpose: preserve the exact accepted-but-inactive TG-M23 authority
   body before its current one-level core/process-safety owner split.
-- Current replacements:
-  [TG-M23 core owner/router](../execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence)
-  and
-  [TG-M23 process-safety owner](../execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety).
+- Current replacements: [docs/authority.md](../authority.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md).
   Use the public CLI for live Task state and evidence. This capture is lineage
   only and cannot fill a current authority gap or satisfy a gate.
 
@@ -319,8 +319,9 @@ evidence remain available only through the public CLI.
 - Capture purpose: preserve the exact accepted-but-inactive TG-M24 authority
   body before M24.1 freezes the Runner design and the owner changes from a
   conditional-only route to mixed accepted-predecessor/inactive authority.
-- Current replacement:
-  [TG-M24 mixed owner](../execution-contracts/tg-m24-verification-runner.md#tg-m24-verification-runner).
+- Current replacements: [docs/authority.md](../authority.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md).
   Use the public CLI for live Task state and evidence. This capture is lineage
   only and cannot fill a current authority gap or satisfy a gate.
 
@@ -335,10 +336,59 @@ evidence remain available only through the public CLI.
 - Capture purpose: preserve the exact mixed TG-M24 authority body before the
   inactive combined TG-M24.3 contract was decomposed into three sequential
   units.
-- Current replacements:
-  [TG-M24.3A schema-v21 contract](../execution-contracts/tg-m24-verification-runner.md#tg-m24-3a),
-  [TG-M24.3B persistence foundation](../execution-contracts/tg-m24-verification-runner.md#tg-m24-3b),
-  and
-  [TG-M24.3C Runner gate integration](../execution-contracts/tg-m24-verification-runner.md#tg-m24-3c).
+- Current replacements: [docs/authority.md](../authority.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md).
   Use the public CLI for live Task state and evidence. This capture is lineage
   only and cannot fill a current authority gap or satisfy a gate.
+
+## v0.13.0 Post-M24 Completed Execution Lineage
+
+These six immutable captures preserve the completed M22 through M24 execution
+contracts, their index, and the pre-normalization plan from source commit
+`cd08834d023ac5967e2ae18004aff7b41277ee99`.
+
+- Capture unit: `TG-DOC.3`
+- Current replacements: [docs/authority.md](../authority.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md). Use the public
+  CLI for live Task state and evidence.
+- Capture purpose: preserve exact completed execution lineage before its active
+  sources are retired and the normal read set is reduced to current subsystem
+  authority.
+
+### Completed execution-contract index
+
+- Source path: `docs/execution-contracts/README.md`
+- Immutable history:
+  [v0.13.0/post-m24-completed-execution/execution-contract-index.md](v0.13.0/post-m24-completed-execution/execution-contract-index.md)
+
+### Completed TG-M22 evidence-ledger execution contract
+
+- Source path: `docs/execution-contracts/tg-m22-evidence-ledger.md`
+- Immutable history:
+  [v0.13.0/post-m24-completed-execution/tg-m22-evidence-ledger.md](v0.13.0/post-m24-completed-execution/tg-m22-evidence-ledger.md)
+
+### Completed TG-M23 derived-evidence execution contract
+
+- Source path: `docs/execution-contracts/tg-m23-derived-evidence.md`
+- Immutable history:
+  [v0.13.0/post-m24-completed-execution/tg-m23-derived-evidence.md](v0.13.0/post-m24-completed-execution/tg-m23-derived-evidence.md)
+
+### Completed TG-M23 process-safety execution contract
+
+- Source path: `docs/execution-contracts/tg-m23-process-safety.md`
+- Immutable history:
+  [v0.13.0/post-m24-completed-execution/tg-m23-process-safety.md](v0.13.0/post-m24-completed-execution/tg-m23-process-safety.md)
+
+### Completed TG-M24 verification-Runner execution contract
+
+- Source path: `docs/execution-contracts/tg-m24-verification-runner.md`
+- Immutable history:
+  [v0.13.0/post-m24-completed-execution/tg-m24-verification-runner.md](v0.13.0/post-m24-completed-execution/tg-m24-verification-runner.md)
+
+### Pre-normalization current-decision and execution plan
+
+- Source path: `plan.md`
+- Immutable history:
+  [v0.13.0/post-m24-completed-execution/plan.md](v0.13.0/post-m24-completed-execution/plan.md)

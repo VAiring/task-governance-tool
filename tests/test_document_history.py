@@ -42,6 +42,72 @@ M243_DECOMPOSITION_SOURCE = (
 )
 M243_DECOMPOSITION_RELATIVE = "v0.12.0/tg-m24-pre-m243-decomposition.md"
 M243_DECOMPOSITION_CAPTURE = HISTORY_ROOT / M243_DECOMPOSITION_RELATIVE
+POST_M24_SOURCE_COMMIT = "cd08834d023ac5967e2ae18004aff7b41277ee99"
+POST_M24_CAPTURE_ROOT = (
+    HISTORY_ROOT / "v0.13.0" / "post-m24-completed-execution"
+)
+POST_M24_CAPTURES = {
+    "execution-contract-index.md": {
+        "source": "docs/execution-contracts/README.md",
+        "body_size": 5_638,
+        "body_sha256": (
+            "8d668f649d997ea70dc86eeacb16fd2a9f617acc979d16c59e7779e7f1e1bb14"
+        ),
+        "archive_sha256": (
+            "e0e45928f6a97c7c7ad78a726794cb6c86251be6af4cde4788f63a298e6a2348"
+        ),
+    },
+    "tg-m22-evidence-ledger.md": {
+        "source": "docs/execution-contracts/tg-m22-evidence-ledger.md",
+        "body_size": 108_080,
+        "body_sha256": (
+            "c0ee276951dde5c267ee72c829b453bb442c565964dfc04dd51e30aff00593f2"
+        ),
+        "archive_sha256": (
+            "64576563a31216f873d45a3b77921aca9956edab0fc4e70d7bed9cfcf6cf463f"
+        ),
+    },
+    "tg-m23-derived-evidence.md": {
+        "source": "docs/execution-contracts/tg-m23-derived-evidence.md",
+        "body_size": 24_823,
+        "body_sha256": (
+            "c7df648cb60228b57767011fa5516b324f54f41dc73e36bb1ac9d55697227cee"
+        ),
+        "archive_sha256": (
+            "8c439d9855cb9eb1187b729faba3c457ceacc03c7cc6c6adffb0d26c01257216"
+        ),
+    },
+    "tg-m23-process-safety.md": {
+        "source": "docs/execution-contracts/tg-m23-process-safety.md",
+        "body_size": 19_970,
+        "body_sha256": (
+            "e20fde1319b93887b8525bc2f715ed6980e298aef10c610e784410207969f485"
+        ),
+        "archive_sha256": (
+            "5cae9f76493bd792a1a347a0ff6cd7653448311211530ae7b7fda3a2be18357f"
+        ),
+    },
+    "tg-m24-verification-runner.md": {
+        "source": "docs/execution-contracts/tg-m24-verification-runner.md",
+        "body_size": 43_720,
+        "body_sha256": (
+            "53e2d3a2d0c2a6be6e713f2949262c414b33f16c32d2e5c2c63cfde791757c41"
+        ),
+        "archive_sha256": (
+            "1f5961cf94c876158f364878178ba6d1dd4d663a6bc08a07c39a6c55a93fe6c9"
+        ),
+    },
+    "plan.md": {
+        "source": "plan.md",
+        "body_size": 35_150,
+        "body_sha256": (
+            "705331e4cdd8f5b4225a130950bf3352c2db7289294e9a5f1854b72b3cd14744"
+        ),
+        "archive_sha256": (
+            "10cd682d69a01c48d845f9c7e301e6d71cd939f8b970fa3369f699edf6433312"
+        ),
+    },
+}
 M20S3_TASK = "tg_task_286129dbca4d25ab"
 ROADMAP_SOURCE_COMMIT = "af5e19545e4f5b59817c70fbc5e2763c0dbf2e1e"
 RETIRED_ROADMAP = ROOT / "docs" / "implementation-roadmap.md"
@@ -53,6 +119,12 @@ ROADMAP_RETIREMENT_CAPTURE = (
 )
 ROADMAP_REPLACEMENT_LINKS = (
     "../../AGENTS.md",
+    "../specification.md",
+    "../design.md",
+    "../../plan.md",
+)
+CURRENT_AUTHORITY_REPLACEMENT_LINKS = (
+    "../authority.md",
     "../specification.md",
     "../design.md",
     "../../plan.md",
@@ -221,7 +293,7 @@ STUDY_HISTORIES = {
 
 
 class DocumentHistoryTests(unittest.TestCase):
-    def test_current_m214_contract_owners_are_routed_without_retired_duplicates(self):
+    def test_current_contract_owners_are_routed_without_retired_duplicates(self):
         authority = (ROOT / "docs" / "authority.md").read_text(
             encoding="utf-8-sig"
         )
@@ -243,43 +315,29 @@ class DocumentHistoryTests(unittest.TestCase):
         )
 
         current_contracts = (
-            (
-                "## Current TG-M21.4B Recovery Candidate Validity Contract",
-                "tg_task_9b746fbe5fe4927f",
-            ),
-            (
-                "## Current TG-M21.4C Stored Task Read And Privacy Contract",
-                "tg_task_efa90606fed8fba0",
-            ),
-            (
-                "## Current TG-M21.4D Stored Contract Pointer Integrity Contract",
-                "tg_task_7051724dca3f1501",
-            ),
+            "## Recovery Candidate Validity Contract",
+            "## Stored Task Read And Privacy Contract",
+            "## Stored Contract Pointer Integrity Contract",
         )
         starts = []
-        for heading, task_id in current_contracts:
+        for heading in current_contracts:
             with self.subTest(heading=heading):
                 self.assertEqual(specification.count(heading), 1)
                 self.assertNotIn(heading, design)
                 start = specification.index(heading)
                 end = specification.find("\n## ", start + 1)
                 section = specification[start : len(specification) if end < 0 else end]
-                self.assertEqual(section.count(f"`{task_id}`"), 1)
                 starts.append(start)
         self.assertEqual(starts, sorted(starts))
 
         implementation_owners = (
-            "### Current TG-M21.4C Shared Stored Task Row/Batch Validator",
-            "### Current TG-M21.4D Stored Contract Pointer Relationship Boundary",
+            "### Shared Stored Task Row/Batch Validator",
+            "### Stored Contract Pointer Relationship Boundary",
         )
         for heading in implementation_owners:
             with self.subTest(implementation_owner=heading):
                 self.assertEqual(design.count(heading), 1)
                 self.assertNotIn(heading, specification)
-
-        retired_owner = "### TG-M21.4B Recovery Candidate Validity Matrix"
-        self.assertNotIn(retired_owner, specification)
-        self.assertNotIn(retired_owner, design)
 
     def test_archives_are_fixed_exact_captures_with_non_authority_banners(self):
         version_root = HISTORY_ROOT / "v0.10.0"
@@ -359,6 +417,7 @@ class DocumentHistoryTests(unittest.TestCase):
         self.assertIn("not current", index)
         self.assertIn("append-only", index)
         self.assertNotIn("](../implementation-roadmap.md)", index)
+        self.assertNotIn("](../execution-contracts/", index)
         for relative, expected in ARCHIVES.items():
             with self.subTest(relative=relative):
                 heading = expected.get(
@@ -478,10 +537,7 @@ class DocumentHistoryTests(unittest.TestCase):
         )
         self.assertEqual(section.count(M23_AUTHORITY_SPLIT_SOURCE_COMMIT), 1)
         self.assertIn("Capture unit: `TG-M23.1`", section)
-        for target in (
-            "../execution-contracts/tg-m23-derived-evidence.md#tg-m23-derived-evidence",
-            "../execution-contracts/tg-m23-process-safety.md#tg-m23-process-safety",
-        ):
+        for target in CURRENT_AUTHORITY_REPLACEMENT_LINKS:
             self.assertEqual(section.count(f"]({target})"), 1)
 
     def test_m243_decomposition_capture_preserves_exact_source_provenance(self):
@@ -538,12 +594,79 @@ class DocumentHistoryTests(unittest.TestCase):
         self.assertEqual(index.count(f"]({M243_DECOMPOSITION_RELATIVE})"), 1)
         self.assertEqual(section.count(M243_DECOMPOSITION_SOURCE_COMMIT), 1)
         self.assertIn("Capture unit: `TG-M24.3`", section)
-        for target in (
-            "../execution-contracts/tg-m24-verification-runner.md#tg-m24-3a",
-            "../execution-contracts/tg-m24-verification-runner.md#tg-m24-3b",
-            "../execution-contracts/tg-m24-verification-runner.md#tg-m24-3c",
-        ):
+        for target in CURRENT_AUTHORITY_REPLACEMENT_LINKS:
             self.assertEqual(section.count(f"]({target})"), 1)
+
+    def test_post_m24_capture_set_preserves_exact_source_provenance(self):
+        actual_names = {
+            path.name for path in POST_M24_CAPTURE_ROOT.glob("*.md")
+        }
+        self.assertEqual(actual_names, set(POST_M24_CAPTURES))
+
+        index = (HISTORY_ROOT / "README.md").read_text(encoding="utf-8")
+        heading = "v0.13.0 Post-M24 Completed Execution Lineage"
+        sections = re.findall(
+            rf"^## {re.escape(heading)}\n(.*?)(?=^## |\Z)",
+            index,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertEqual(len(sections), 1)
+        section = sections[0]
+        self.assertEqual(section.count(POST_M24_SOURCE_COMMIT), 1)
+        self.assertEqual(section.count("Capture unit: `TG-DOC.3`"), 1)
+        for target in CURRENT_AUTHORITY_REPLACEMENT_LINKS:
+            self.assertEqual(section.count(f"]({target})"), 1)
+
+        for relative, expected in POST_M24_CAPTURES.items():
+            with self.subTest(relative=relative):
+                capture = POST_M24_CAPTURE_ROOT / relative
+                data = capture.read_bytes()
+                self.assertEqual(
+                    hashlib.sha256(data).hexdigest(),
+                    expected["archive_sha256"],
+                )
+
+                source = subprocess.run(
+                    [
+                        "git",
+                        "show",
+                        f"{POST_M24_SOURCE_COMMIT}:{expected['source']}",
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(source.returncode, 0)
+                self.assertEqual(len(source.stdout), expected["body_size"])
+                self.assertEqual(
+                    hashlib.sha256(source.stdout).hexdigest(),
+                    expected["body_sha256"],
+                )
+                self.assertTrue(data.endswith(source.stdout))
+                body = data[-expected["body_size"] :]
+                self.assertEqual(body, source.stdout)
+
+                prefix = data[: -expected["body_size"]].decode("utf-8")
+                self.assertTrue(
+                    prefix.startswith(
+                        "> [!CAUTION]\n"
+                        "> **NON-AUTHORITATIVE HISTORY**\n"
+                    )
+                )
+                for structural_field in (
+                    f"> - Source path: `{expected['source']}`",
+                    f"> - Source commit: `{POST_M24_SOURCE_COMMIT}`",
+                    "> - Current replacements:",
+                    "> - Capture unit: `TG-DOC.3`",
+                    "> The exact source blob begins below.",
+                ):
+                    self.assertEqual(prefix.count(structural_field), 1)
+
+                indexed_relative = (
+                    "v0.13.0/post-m24-completed-execution/" + relative
+                )
+                self.assertEqual(index.count(f"]({indexed_relative})"), 1)
+                self.assertEqual(section.count(f"`{expected['source']}`"), 1)
 
     def test_m20_study_is_retired_to_no_rerun_tombstones(self):
         receipt_root = ROOT / "fixtures" / "m20"

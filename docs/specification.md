@@ -1,51 +1,24 @@
 # task-governance-tool Current Product Specification
 
-Status: The immutable published product remains v0.10.0/schema v16/Viewer v4 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
+Status: The immutable published product remains v0.10.0/schema v16/Viewer v4
+sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.13.0 with SQLite schema v21, Viewer
-snapshot v4 accepting source schemas v5-v21, and 21 public command leaves. It retains the TG-M21 Receipt, the accepted TG-M22.2/TG-M21.5 capture/admission boundaries, the accepted TG-M22.3 native Bundles and fixed Evidence JSON v1, accepted TG-M22.4 integrated acceptance with strict recovery and stored-Task/Contract-pointer validation, accepted TG-M23.1 derived-evidence design, accepted bounded offline/mock TG-M23.2 implementation, accepted TG-M23.3 offline/mock integrated Analyzer acceptance, and accepted documentation-only TG-M24.1 Runner design.
-TG-M20S.3 remains inactive and no TG-M23 unit is current. TG-M24.1 and
-TG-M24.1A are accepted predecessors; the fixed-Candidate-C and adversarial
-LPAC route formerly owned by TG-M24.1B is superseded. Current TG-M24 authority
-is the ordered repair and implementation sequence for an explicitly adopted
-trusted-local Runner. Accepted TG-M24.R3A supplied only the private schema-v20
-migration/storage foundation. Accepted TG-M24.R3B publicly activates that
-existing schema without activating Runner execution or a completion gate.
-Accepted TG-M24.R4B repaired only pre-Runner core behavior and dependency
-violations. Accepted TG-M24.R5 retired only the already identified fixed
-OS-temp diagnostic residue. Accepted TG-M24.2A supplied explicit trusted-local
-plan authority, exact target binding, and bounded private materialization.
-Accepted TG-M24.2B supplied the bounded local process adapter and deterministic
-cleanup without activating a public Runner or completion gate. Accepted
-TG-M24.2C supplied parent-service orchestration and audit-only schema-v20
-observation and Evidence capture; it cannot satisfy verification or completion.
-Accepted TG-M24.2D covered only that already-implemented shadow slice from one
-fresh exact target and activated no additional product behavior or Runner
-completion gate. TG-M24.3A accepted the schema-v21 gate-basis contract below,
-TG-M24.3B accepted its persistence and compatibility boundary, and TG-M24.3C
-accepted its gate integration. TG-M24.4A accepted its supported, fallback,
-failure, cleanup, and privacy flows, TG-M24.4B accepted legacy, core, migration,
-recovery, and fresh-state compatibility, and TG-M24.4C accepted package and
-release-candidate reconciliation. TG-M24.4D accepted final integrated
-acceptance. TG-M24.CP4 accepted the final no-debt checkpoint and M25 handoff
-without changing a product byte or recording a correction. Current TG-DOC.3
-owns only documentation normalization and history closure.
-Completed execution narrative is history, and the Task
-database owns live state and evidence.
-
-Accepted TG-M24.R3A prepared only a private, non-public schema-v20 storage
-foundation and left the public schema constant, setup target, Viewer source
-range, and schema-v19 native version-1 Bundle writer unchanged. Accepted
-TG-M24.R3B activates public schema v20, the Bundle-v2 null-Runner writer, and
-Evidence/Viewer/managed backup/recovery compatibility. It creates no Runner
-record, Reference/link/member/projection, process launch, or gate authority,
-and neither unit alone authorizes a main or canonical-state cutover.
+snapshot v4 accepting source schemas v5-v21, and 21 public command leaves.
+Its supported behavior includes tool-owned Verification Receipt subjects,
+versioned Review provenance, immutable Evidence References and completion
+Bundles, deterministic Evidence JSON, the bounded offline/mock derived-evidence
+Analyzer, and the explicitly opted-in trusted-local verification Runner with a
+closed manual fallback. Schema v20 remains a supported migration source and
+audit-only Runner lineage; only fresh schema-v21 gate-eligible evidence may
+satisfy the Runner branch. TG-M20S.3 remains an accepted but inactive static
+contract. Completed execution narrative belongs only in indexed history, and
+the Task database owns live state and evidence.
 
 This document specifies supported product behavior. The concise
 [authority index](authority.md) routes implementation structure to
 `docs/design.md`, durable agent behavior to root `AGENTS.md`, current decisions,
-open issues, gateways, and non-delegated static contracts to root `plan.md`, and
-exact current-or-inactive execution-unit detail to the applicable routed formal
-document. The project-local Task database, inspected
+open issues, gateways, and non-delegated static contracts to root `plan.md`.
+The project-local Task database, inspected
 through the public CLI, owns live Task state and evidence. Indexed files under
 [`docs/history/`](history/README.md) are non-authoritative lineage only.
 Required current behavior never depends on historical text.
@@ -54,10 +27,10 @@ Required current behavior never depends on historical text.
 
 `docs/authority.md` is the repository-visible registry and selective-read
 router. Root `AGENTS.md` plus that index are the mandatory start set; the live
-Task Contract selects the applicable current and conditional owners. An
-indexed execution contract may mix current and conditional units only as
-explicitly routed; a conditional unit remains inactive until its dependency
-and activation gates are satisfied. History is indexed by `docs/history/README.md`.
+Task Contract selects the applicable current owners and sections. No execution
+or documentation-governance sequence is currently active or conditional;
+completed sequence detail is indexed non-authoritative history. History is
+indexed by `docs/history/README.md`.
 Each captured body is immutable after its capture commit; later history work
 may append a new file and index entry but never revise an archived body.
 
@@ -345,14 +318,14 @@ one query-only transaction. It also returns exactly one routing Boolean
 `effort_advisory_enabled`; invalid advisory configuration returns false plus
 the existing continuation warning. Text show does not add that flag.
 
-Every Task-loading operation applies the current TG-M21.4C stored-row contract
-and TG-M21.4D Contract-relationship contract
+Every Task-loading operation applies the current stored-row and
+Contract-relationship contracts
 before an allow-list projection, compact omission, derived-state use, or
 write-basis use. Bounded list/current/next reads validate the complete rows in
 their selected batch and do not add an unrelated full-table scan. `task show`
 and Task-backed lifecycle operations validate the selected complete row before
 reading or mutating dependent state. The shared failure result is defined in
-the current TG-M21.4C and TG-M21.4D sections below.
+the current stored-Task validation sections below.
 
 The deterministic Skill call graph is:
 
@@ -758,9 +731,8 @@ fresh PASS receipts; unrelated safe lanes continue.
 
 No attempt counter, persisted latch, semantic-failure parser, automatic
 Task/Contract/status/handoff mutation, mandatory checkpoint, project test
-strategy, instruction-chain adoption, or workflow engine is added. TG-M16.4
-synchronized this guidance and its behavioral acceptance; setup creates no
-bootstrap Task and edits no consuming-project instruction.
+strategy, instruction-chain adoption, or workflow engine is added. Setup
+creates no bootstrap Task and edits no consuming-project instruction.
 
 ## Review And Completion
 
@@ -809,16 +781,115 @@ requirement, qualifying current-generation counts, fallback state, bounded
 recent receipts/findings, and blocking counts including
 `changes_requested_current_generation`. It never emits raw review content.
 
-### Current Schema-v21 Review Provenance And Bundle Boundary
+### Versioned Review Provenance And Bundle Boundary
 
-New `independent` and `self_review_fallback` Receipts use the existing `review receipt add` leaf with the closed human, LLM, deterministic-tool, hybrid, and explicit-unknown matrix; conditional model and Skill identifiers; and fixed ordered profile, lens, context, and method codes. No free-form capability or caller assurance exists.
-The normalized immutable v1 record and structural digest bind the exact Receipt and target. Every public Review Receipt has one `review_provenance` union: native independent/fallback rows expose v1 with `bound_attestation/trusted_caller/1`; pre-v18 rows expose version-zero absence with `legacy_unknown/legacy_migration/1`; and Tier-0 `not_required` has null provenance and no provenance row.
-These states are distinct. The original Receipt remains caller-attested, and neither it nor provenance proves identity, execution, competence, independence, quality, diversity, or truth. Migration adds only zero/null discriminators and never parses reviewer keys/summaries, backfills provenance, creates an Evidence Reference for an old row, or strengthens legacy evidence.
-Native v1/null rows are included in their schema-v18 Evidence Reference and in
-their schema-v19 Bundle-v1 or schema-v20/v21 Bundle-v2; migrated v0 rows have none.
-Viewer snapshot v4 validates and discards provenance with no field, panel,
-filter, or UI. Evidence JSON is an automatic generated projection, not a
-command.
+New `independent` and `self_review_fallback` Receipts use the existing
+`review receipt add` leaf. Every public Review Receipt has exactly one
+`review_provenance` union. A native independent/fallback Receipt exposes one v1
+object with exactly these keys:
+
+```text
+review_provenance_id provenance_version reviewer_class model_state
+declared_model_id skill_state declared_skill_id declared_skill_version
+review_profiles review_lenses context_relation method_codes assurance_class
+producer_class producer_version digest
+```
+
+The ID is `tg_review_provenance_` plus 16 lowercase hexadecimal characters;
+`provenance_version` is integer `1`; assurance and producer are exactly
+`bound_attestation/trusted_caller/1`; and `digest` is
+`sha256:<64-lowercase-hex>`. The digest is SHA-256 over
+`taskgov-review-provenance-v1\0` plus canonical sorted-key compact UTF-8 JSON
+containing exactly `project_id`, `task_id`, `review_receipt_id`, `receipt_kind`,
+`target`, and every v1 public field from `provenance_version` through
+`producer_version`. `target` is exactly
+`{kind,value,base_revision,generation,capture_version}`. The random provenance
+ID and digest are excluded from that input.
+
+A pre-v18 independent/fallback Receipt has no native row and projects the same
+keys with `provenance_version=0`, null ID/digest and null v1 semantic fields and
+collections, plus exactly `legacy_unknown/legacy_migration/1`. A Tier-0
+`not_required` Receipt projects `review_provenance=null` and owns no provenance
+row. Legacy absence, explicit v1 unknown, empty v1 code sets, and not-required
+are distinct states; no migration or reader infers one from reviewer key,
+summary, kind, or verdict.
+
+The exact scalar vocabularies and fixed collection orders are:
+
+```text
+reviewer_class   human llm deterministic_tool hybrid unknown
+model_state      declared not_applicable unknown
+skill_state      declared not_applicable not_used unknown
+context_relation same_context forked_context fresh_context external_context
+                 not_applicable unknown
+review_profiles  general authority_contract implementation verification
+                 migration_compatibility privacy_safety release_acceptance
+review_lenses    correctness contract_compliance state_completion_integrity
+                 privacy target_safety verification_regression
+                 migration_compatibility maintainability accessibility
+                 performance release_integrity
+method_codes     review_packet_inspection authority_cross_check diff_inspection
+                 source_inspection test_inspection
+                 verification_evidence_inspection artifact_inspection
+                 runtime_observation deterministic_rule_check
+```
+
+At most four profiles, eight lenses, and eight methods are accepted. Each is a
+set: duplicates are invalid, empty is valid, and storage/public projection uses
+the fixed enum order regardless of option order. `context_relation` is one
+required code. Declared model and Skill IDs are 1-128 ASCII bytes matching
+`[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}`; declared Skill version is 1-64 ASCII
+bytes matching `[A-Za-z0-9][A-Za-z0-9._+-]{0,63}`. Values are preserved
+byte-for-byte after the common privacy check and are identifiers, not
+free-form capability claims.
+
+The existing leaf requires `--reviewer-class`, `--model-state`,
+`--skill-state`, and `--context-relation`; permits optional
+`--declared-model-id`, `--declared-skill-id`, and
+`--declared-skill-version`; and permits repeatable `--review-profile`,
+`--review-lens`, and `--review-method` only for independent/fallback Receipts.
+No value is defaulted or inferred. Every provenance option is forbidden for
+`not_required`. Type, enum, bound, duplicate, grammar, or cross-field failure
+uses `invalid_review_evidence`; privacy rejection retains precedence and emits
+no rejected value.
+
+| Case | `reviewer_class` | Model state and ID | Skill state and ID/version |
+|---|---|---|---|
+| Human | `human` | `not_applicable`, no ID | `not_applicable`, no ID/version |
+| LLM without Skill | `llm` | `declared` with ID, or `unknown` without ID | `not_used`, no ID/version |
+| LLM with Skill | `llm` | `declared` with ID, or `unknown` without ID | `declared` with ID/version, or `unknown` with neither |
+| Deterministic tool | `deterministic_tool` | `not_applicable`, no ID | `not_applicable`, no ID/version |
+| Hybrid | `hybrid` | `declared` with ID, or `unknown` without ID | `declared` with ID/version, `not_used`, or `unknown` |
+| Applicable data unavailable | `unknown` | `unknown`, no ID | `unknown`, no ID/version |
+| Review not required | no provenance object | no model state | no Skill state |
+| Legacy independent/fallback | v0 absence | `legacy_unknown` | `legacy_unknown` |
+
+The matrix is exact. Human and deterministic-tool require both states
+`not_applicable`; LLM and hybrid require model `declared` with its ID or
+`unknown` without one; declared Skill use requires both ID and version;
+`not_used` and `unknown` require both absent; reviewer class `unknown` requires
+both states `unknown`. Verdict does not alter this matrix. Profile/lens/method
+sets and context add no capability, applicability, or further inference.
+
+Schema v18 stores the version discriminator and nullable provenance ID on the
+Receipt plus normalized immutable `review_receipt_provenance` and
+`review_receipt_provenance_codes` rows. Code rows contain only
+`profile|lens|method`, a zero-based contiguous ordinal within kind, and an
+allowed code; duplicate code or ordinal is invalid. Migrated
+independent/fallback is `0/null`, native independent/fallback is `1/non-null`
+with exactly one v1 row, and `not_required` is `0/null`. The Receipt,
+provenance, and code rows commit atomically. Migration creates no provenance,
+ID, digest, declaration, or Evidence Reference, and every reentry/read path
+validates the exact version/kind/null/code/digest matrix.
+
+Native v1/null provenance is included in the Review Receipt Evidence Reference
+and native Bundle. Migrated v0 Receipts have neither and cannot enter a native
+Bundle. Viewer snapshot v4 validates and discards provenance with no field,
+panel, filter, or UI. The original Receipt assertion remains caller-attested;
+neither it nor provenance proves identity, execution, competence,
+independence, quality, diversity, or truth, changes a gate, or stores a person,
+session, prompt, chat, reasoning, raw output, command, log, environment,
+credential, or provider body.
 
 ### Git Snapshot And Target Binding
 
@@ -1310,7 +1381,7 @@ completion cycle, and closed assurance/producer/version. Git observation is
 classes. Migration synthesizes no historical Reference. Schema-v19 and
 schema-v20 criterion links, native Bundles, and Evidence JSON are active;
 the canonical Analyzer writer remains inactive. The schema-v20 Runner writer
-is active only for the TG-M24.2C audit graph defined below and remains
+is active only for the audit graph defined below and remains
 ineligible for every verification and completion gate.
 
 ### Receipt Meaning And Record
@@ -1333,12 +1404,42 @@ verification_subject result duration_ms scope_coverage source_revision created_a
 ```
 
 `verification_receipt_id` is `tg_verification_receipt_` plus 16 lowercase hex
-characters. `verification_subject` is tool-owned. Native rows use basis version
-1, kind `task_verification_criterion`, and the capture's non-null authority
-snapshot and verification criterion IDs with null legacy label. Migrated v17
-rows use basis version 0, kind `legacy_caller_label`, null IDs, and their exact
-old label. The retained storage column receives only the internal fixed value
-for native rows; it is neither caller input nor public evidence. `result` is exactly `pass`, `fail`,
+characters. `verification_subject` is tool-owned and has exactly these keys:
+
+```text
+basis_version kind authority_snapshot_id verification_criterion_id
+legacy_caller_label
+```
+
+Its closed compatibility matrix is:
+
+| Durable row | Subject basis | Snapshot / criterion | Public subject |
+|---|---:|---|---|
+| Receipt or cycle migrated from schema v17 | `0` | both null | Receipt kind `legacy_caller_label` with the unchanged stored label; a cycle gains no inferred label or subject |
+| Native Receipt | `1` | both non-null and equal to the capture-version-1 target binding | kind `task_verification_criterion`, the two IDs, and null legacy label |
+| Native cycle with nonempty verification | `1` | both non-null and equal to its qualifying subject-v1 Receipt | the linked Receipt remains required and `pass/full` on the manual branch |
+| Native cycle with trimmed-empty verification | `1` | both null | no Receipt or subject is invented |
+| Exact partial legacy-reopen bridge | `0` | both null | its existing verification-basis-v0 behavior is unchanged |
+
+The subject discriminator is independent of cycle
+`verification_basis_version`; a valid v17 native cycle keeps verification
+basis 1 while receiving subject basis 0/null/null. The retained physical
+`command_label TEXT NOT NULL` column receives the unchanged caller label only
+for basis-zero Receipts and the fixed internal compatibility value
+`taskgov-owned-verification-subject-v1` only for basis-one Receipts. That value
+is never caller input, a public label, an Evidence Reference or Bundle field,
+or a digest input.
+
+The public basis-zero subject is exactly version `0`, kind
+`legacy_caller_label`, null snapshot/criterion IDs, and the unchanged label.
+The basis-one subject is version `1`, kind `task_verification_criterion`, the
+two non-null IDs, and null `legacy_caller_label`. A native Bundle uses a
+separate four-key subject object containing only `basis_version`, `kind`,
+`authority_snapshot_id`, and `verification_criterion_id`; because only basis
+one is admitted, the legacy-label key is absent rather than null. Parent Task,
+Contract, and target objects complete the compound identity.
+
+`result` is exactly `pass`, `fail`,
 or `timeout`. `duration_ms` is a nonnegative signed-64-bit integer.
 `scope_coverage` is exactly `full` or `partial`; `full` is the caller's claim
 that this run covers the entire exact current Task `verification` text, while
@@ -1380,14 +1481,14 @@ actually exercised the copied target. Invoking Receipt add is the caller's
 attestation of those facts. It stores no command body or argument, exit code,
 stdout/stderr, log, environment, exception, stack trace, prompt/chat, diff,
 credential, or free-form coverage prose. A gate-ineligible version-0 graph
-created by the accepted audit-only TG-M24.2C Runner remains separate: it neither
-creates nor qualifies a Receipt and cannot satisfy the M21 verification or
+created by the audit-only schema-v20 Runner remains separate: it neither
+creates nor qualifies a Receipt and cannot satisfy the manual verification or
 completion gate. Current gate-eligible version-1 Runner selection is governed
 only by the schema-v21 three-branch matrix below. Approved exceptions, result-file import,
 configured runners that create, import, or qualify Receipts, signatures, and
 debug retention are outside this initial Receipt contract.
 
-### Verification Receipt Eligibility And The M21 Completion Arm
+### Verification Receipt Eligibility And Manual Completion
 
 A Receipt is exact-current only when all of its project, Task, Contract
 revision, verification-expectation digest, and complete source-revision tuple
@@ -1395,7 +1496,7 @@ equal the locked current values. All other Receipts remain append-only audit
 history and never reactivate.
 
 The current explicit `--verification-complete` assertion remains required for
-every done transition. This section defines the M21 Receipt arm consumed by the
+every done transition. This section defines the manual Receipt arm consumed by the
 schema-v21 three-branch selector under Current Schema-v21 Persistence Contract.
 When Task `verification` is empty on marker `0`, no Receipt is required and the
 current attestation behavior is preserved. When the selector chooses the manual
@@ -1461,7 +1562,7 @@ completion-history or Viewer Receipt projection.
 
 Completion-check fail-fast ordering retains the existing missing-attestation
 and target checks, then applies the schema-v21 three-branch selector before
-review-receipt sufficiency. When that selector chooses an M21 manual arm, the
+review-receipt sufficiency. When that selector chooses the manual Receipt arm, the
 missing/blocking Verification Receipt gate retains these readiness codes and
 fixed messages:
 
@@ -1570,10 +1671,10 @@ For an expectation empty after trimming on marker `0`, the gate is
 `required=false`, `satisfied=true`, with both nullable fields null. For a
 nonempty expectation on a non-done Task, no target yields
 `review_target_required` and a capture-version-0 target yields
-`evidence_basis_stale`. The M21 manual arm then yields Receipt-required,
+`evidence_basis_stale`. The manual Receipt arm then yields Receipt-required,
 Receipt-blocking, or satisfied with the qualifying Receipt ID. Marker-`2`
 targets instead use the current schema-v21 matrix below: only the exact closed
-no-launch fallback delegates to those M21 values, while an exact qualifying
+no-launch fallback delegates to those manual Receipt values, while an exact qualifying
 Runner pass is satisfied with a null Receipt ID. A legacy done Task whose matching
 completion cycle has basis version 0, whether migrated or created by the sole
 compatibility bridge, is an explicit legacy exemption:
@@ -1627,11 +1728,11 @@ check, and foreign keys without reconciliation or backfill.
 Migration 19 `completion_evidence_bundles` adds immutable criterion links, Bundle membership and Finding snapshots, completion Bundles, cycle `evidence_basis_version`/bundle linkage, and Evidence projection state. Every existing cycle becomes version 0 with null bundle ID; migration creates no historical Bundle or link and projects that absence only as `legacy_unknown`.
 Every native schema-v19 completion atomically inserts one version-1 Bundle with
 its cycle, Task update, event, links, selected gate evidence, Finding snapshots,
-and projection-generation advance. Schema v20 and the accepted TG-M24.3B
-marker-zero schema-v21 baseline instead insert one version-2 Bundle whose basis is
+and projection-generation advance. Schema v20 and the marker-zero schema-v21
+baseline instead insert one version-2 Bundle whose basis is
 `caller_attestation` with the qualifying Receipt for nonempty verification or
 `not_required` with no Receipt for trimmed-empty verification, and its Runner
-observation is null. Accepted TG-M24.3C retains both branches and additionally
+observation is null. The current schema-v21 writer retains both branches and additionally
 admits the exact qualifying schema-v21 `runner_observation` branch, reusing its
 existing Runner Reference and criterion link as Bundle members. The sole partial
 legacy reopen bridge stays version 0/null and advances only that generation. A
@@ -1639,7 +1740,8 @@ Bundle is complete or the completion fails before write; its canonical payload
 is capped at 16 MiB.
 
 Bundle v2 adds exactly the root `verification_basis` object and
-`runner_observation` field to the v1 payload. For R3B,
+`runner_observation` field to the v1 payload. For the caller-attestation and
+not-required branches,
 `verification_basis` has exactly `basis_version=1`, the derived `kind`, the
 matching nullable `verification_receipt_id`, and
 `runner_observation_id=null`; `runner_observation` is null. Its envelope uses
@@ -1651,12 +1753,192 @@ Evidence JSON is a deterministic one-way SQLite projection. Canonical sorted-key
 The index includes every cycle, is ordered by Task ID, ordinal, and cycle ID, and is capped at 100,000 entries and 64 MiB without truncation. Publication flushes immutable Bundle files and atomically replaces `index.json` last; SQLite remains canonical, unreferenced files are ignored, and JSON is never imported or used to repair the database.
 Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, or network action and invokes neither Analyzer nor Runner. A current schema-v21 Runner-backed Bundle projects only the already-sanitized stored observation fixed below; publication adds no normal-loop call.
 
-## Current TG-M21.4B Recovery Candidate Validity Contract
+### Assurance, Evidence References, And Finding Snapshots
 
-TG-M21.4B, Task `tg_task_9b746fbe5fe4927f`, owns the current recovery
-classification correction. Its authority reference is
-`conversation_decision:2026-08-02:recovery-candidate-boundary-followup`.
-Every recognized managed candidate first passes physical-file, SQLite,
+Every Evidence Reference has exactly one assurance class and an independent
+versioned producer:
+
+```text
+assurance_class = machine_observed | bound_attestation |
+  deterministically_derived | external_reference | legacy_unknown | llm_derived
+producer_class = taskgov_core | taskgov_git | trusted_caller |
+  legacy_migration | external_system | batch_analyzer | verification_runner
+producer_version = positive integer
+```
+
+`machine_observed` means a bounded deterministic component directly observed
+the stated local process or Git-object fact, not that taskgov authenticated the
+machine, environment, user, or external meaning. `bound_attestation` is a
+trusted caller assertion bound to the exact Task, Contract, target, and
+generation. `deterministically_derived` is a pure versioned derivation that
+cannot be stronger than its sources. `external_reference` retains an external
+identity without claiming its content, existence, authority, or semantics.
+`legacy_unknown` is irrecoverable absent origin; migration and projection must
+not fill or strengthen it. `llm_derived` is a non-authoritative cited Analyzer
+claim and never satisfies a verification, review, completion, or release gate.
+Producer values are labels, not authentication, signatures, process identity,
+independence, or authority.
+
+The v1 source dispatch is exact and uses producer version 1:
+
+| Source kind/state | Assurance / producer | Immutable source projection | Current criterion relation |
+|---|---|---|---|
+| `artifact_manifest/complete_git` | `machine_observed/taskgov_git` | manifest ID/state/object format/comparison base/entry count/digest/null omission | acceptance `completion_basis`, when present |
+| `artifact_manifest/opaque_target/diff_fingerprint` | `bound_attestation/trusted_caller` | manifest ID/state/target kind/digest/`artifact_content_not_observed` | acceptance `completion_basis`, when present |
+| `artifact_manifest/opaque_target/external_revision` | `external_reference/external_system` | the same closed opaque projection | acceptance `completion_basis`, when present |
+| `verification_receipt/recorded` | `bound_attestation/trusted_caller` | Receipt ID, subject basis and IDs, result, duration, coverage, creation time; no legacy label or compatibility value | verification `verification_attestation`, exactly once |
+| `review_receipt/recorded` | `bound_attestation/trusted_caller` | Receipt ID, reviewer key, kind, verdict, summary, approval, creation time, and native v1/null provenance | acceptance `review_assessment` for each selected qualifying Receipt, when present |
+| `review_finding/recorded` | `bound_attestation/trusted_caller` | Finding ID, Receipt ID, severity, original summary, creation time | acceptance `review_finding` for current-generation Findings, when present |
+| `completion_evidence/git_commit` | `machine_observed/taskgov_git` | cycle ID/time and exact six-field completion evidence | acceptance `completion_basis`, when present |
+| `completion_evidence/external_revision` | `external_reference/external_system` | the same closed completion projection | acceptance `completion_basis`, when present |
+| `completion_evidence/commit_not_required` | `bound_attestation/trusted_caller` | the same closed completion projection | acceptance `completion_basis`, when present |
+| `runner_observation/recorded` | `machine_observed/verification_runner` | the closed sanitized Runner observation projection | verification `runner_observation` only for the active gate-eligible branch |
+
+Each `evidence_reference` stores exact project/Task/Contract ownership,
+authority snapshot, nullable criteria, complete target tuple, source ID/state,
+assurance/producer/version, nullable completion-cycle ID, and digest. Criteria
+must equal the snapshot links; Verification Receipt references require
+subject-basis one and its matching verification criterion; only completion
+evidence has a cycle ID; and a Finding copies its Receipt binding. Callers
+supply none of the dispatch, assurance, producer, binding, or relation.
+Evidence Reference IDs are
+`tg_evidence_reference_<16-lowercase-hex>`.
+
+The reference digest is SHA-256 over
+`taskgov-evidence-reference-v1\0` plus canonical JSON containing the exact
+source kind/state and projection, every required/nullable binding,
+assurance/producer/version, and no random reference ID or creation time. A
+Finding reference excludes `status`, `resolution_summary`, and `resolved_at`;
+resolution does not mutate or supersede it. A criterion link copies its source
+class and producer exactly; no link, Bundle, projection, analysis, or Runner
+operation transitively upgrades assurance.
+
+Criterion links use IDs `tg_criterion_evidence_link_<16-lower-hex>` and exactly
+`verification_attestation|review_assessment|review_finding|completion_basis|
+derived_analysis|runner_observation`. Construction is mechanical: when
+acceptance exists, the current manifest and completion evidence receive
+`completion_basis`, selected qualifying Review Receipts receive
+`review_assessment`, and current-generation Findings receive `review_finding`;
+when verification exists, its selected manual Receipt receives
+`verification_attestation`, or the gate-eligible Runner Reference receives
+`runner_observation`. Absent criteria omit their links without removing valid
+Bundle members. The canonical `derived_analysis` Reference/link writer remains
+inactive.
+
+A Bundle Finding snapshot contains all current-target-generation Findings and
+all earlier high/medium Findings, excludes earlier low Findings, and orders by
+target generation, creation time, then Finding ID. It has exactly
+`review_finding_id`, `review_receipt_id`, `target_generation`, `severity`,
+`summary`, `status`, `resolution_summary`, `created_at`, `resolved_at`,
+`evidence_reference_id`, `assurance_class`, `producer_class`,
+`producer_version`, and `digest`. Native Findings carry their Reference and
+`bound_attestation/trusted_caller/1`; pre-v18 Findings have a null Reference and
+`legacy_unknown/legacy_migration/1`, create no link, and add
+`historical_finding_reference_absent` once. The snapshot digest is SHA-256 over
+`taskgov-completion-bundle-finding-snapshot-v1\0` plus canonical JSON of every
+preceding field except `digest`.
+
+Every native completion inserts exactly one immutable Bundle with ID
+`tg_completion_evidence_bundle_<16-lowercase-hex>` in the same transaction as
+its cycle, Task update, event, and source-generation advance. The complete
+Bundle-v1 omission vocabulary, in order, is exactly
+`acceptance_criterion_absent`, `verification_criterion_absent`,
+`artifact_content_not_observed`, and
+`historical_finding_reference_absent`. They respectively mean revision-zero
+Contract acceptance, trimmed-empty Task verification, an opaque target, and at
+least one selected pre-v18 Finding with unknown Reference provenance. Empty
+Finding arrays and tier-derived Receipt counts are represented directly, not as
+omissions. Pre-v19 cycle absence is represented only by an index
+`legacy_unknown` entry and never by a native Bundle. Reopen validates but never
+edits a prior cycle or Bundle; later completion creates a new one and historical
+Bundles never satisfy a current gate.
+
+### Canonical Evidence Bundle And Index Formats
+
+The only generated paths are
+`state/current/evidence/index.json` and
+`state/current/evidence/bundles/<completion-evidence-bundle-id>.json` beneath
+the ignored canonical package state. There is no public command, custom path,
+import, endpoint, watcher, background worker, or Viewer Evidence UI.
+
+Canonical JSON accepts only null, Boolean, string, integer, array, and object;
+rejects floats, nonfinite values, lone surrogates, duplicate keys, and invalid
+Unicode; emits shortest-decimal integers and lowercase literals; uses the short
+escape for quote, backslash, and supported controls and lowercase `\u00xx` for
+other JSON controls; does not escape slash or valid non-ASCII scalars; orders
+object keys by Unicode code point; emits no insignificant whitespace; and never
+normalizes text. Durable files are BOM-free UTF-8 with one terminal LF.
+
+A preserved Bundle-v1 file is exactly this no-extra-key envelope plus LF:
+
+```text
+{"bundle_digest":"sha256:<64-lowercase-hex>","format_version":1,"payload":<bundle-payload>}
+```
+
+Its payload has exactly these keys and values:
+
+| Key | Exact value |
+|---|---|
+| `artifact_manifest` | `{artifact_manifest_id,state,object_format,comparison_base,digest,omission_code,entries}`; nullable fields are null and entries are exact ordinal rows `{ordinal,kind,old_path,new_path,before_mode,before_object_id,after_mode,after_object_id}` |
+| `authority_snapshot` | `{authority_snapshot_id,generation,digest}` |
+| `bundle_id` / `bundle_version` | Bundle ID / integer `1` |
+| `completion_cycle_id` / `cycle_ordinal` / `sealed_at` | cycle ID / positive integer / canonical UTC string |
+| `completion_evidence` | `{kind,revision,reason,external_revision_approved,completion_commit_required,completion_commit_hash}` with flags as `0|1` |
+| `contract` | `{revision,specified,scope,acceptance,constraints,authority_ref}` with Boolean `specified` |
+| `criteria` | `{criterion_id,kind,text,digest}` rows ordered acceptance then verification; absent criteria have no row |
+| `criterion_links` | objects `{criterion_evidence_link_id,criterion_id,evidence_reference_id,relation,assurance_class,producer_class,producer_version}` ordered by criterion kind, criterion ID, fixed relation order, Reference ID, then link ID |
+| `evidence_references` | objects `{evidence_reference_id,source_kind,source_state,source_id,assurance_class,producer_class,producer_version,contract_revision,authority_snapshot_id,acceptance_criterion_id,verification_criterion_id,target_kind,target_value,target_base_revision,target_generation,completion_cycle_id,digest}` ordered by fixed source-kind order, source ID, then Reference ID; nullable bindings are null |
+| `finding_snapshots` | exact snapshot rows in the Finding order above |
+| `omissions` | unique strings in fixed omission order |
+| `project_id` | project ID |
+| `review_receipts` | selected objects `{review_receipt_id,reviewer_key,receipt_kind,verdict,summary,user_approved,created_at,review_provenance}` in qualifying gate-basis order; `user_approved` is `0|1` and provenance is v1 or null |
+| `source_schema_version` | integer `19` |
+| `target` | `{kind,value,base_revision,generation,capture_version}` |
+| `task` | `{task_id,title,description,review_tier,verification}` |
+| `verification_receipt` | null without a verification criterion; otherwise `{verification_receipt_id,verification_subject,result,duration_ms,scope_coverage,created_at}` with subject exactly `{basis_version,kind,authority_snapshot_id,verification_criterion_id}`, basis 1/kind `task_verification_criterion`, and no legacy-label key |
+
+The fixed relation order is
+`verification_attestation,review_assessment,review_finding,completion_basis,
+derived_analysis,runner_observation`; the fixed Reference source-kind order is
+`artifact_manifest,verification_receipt,review_receipt,review_finding,
+completion_evidence,derived_analysis,runner_observation`. Text tie-breakers use
+unsigned UTF-8 order; generations and ordinals compare numerically. The v1
+Bundle digest is SHA-256 over
+`taskgov-completion-evidence-bundle-v1\0` plus canonical payload bytes without
+LF. The file digest hashes the complete envelope and LF.
+
+A preserved v1 index is the exact no-extra-key envelope
+`{"format_version":1,"index_digest":"sha256:<64-lowercase-hex>","payload":<index-payload>}`
+plus LF. Its payload has exactly `source_schema_version=19`, `project_id`,
+nonnegative `projection_generation`, `bundle_count`, `legacy_count`, and
+`entries`. Each entry has exactly `task_id`, `completion_cycle_id`,
+`cycle_ordinal`, `bundle_state`, `bundle_id`, `bundle_file`, `bundle_digest`,
+`file_digest`, and `sealed_at`. Native entries have state `native` and five
+non-null Bundle/file/seal fields; `legacy_unknown` entries have all five null.
+Entries order by Task ID, cycle ordinal, then cycle ID and counts equal their
+states. The index digest is SHA-256 over `taskgov-evidence-index-v1\0` plus
+canonical payload bytes without LF.
+
+Current index format v2 preserves that payload and ordering and adds exactly
+nullable `bundle_format_version` to each entry: null for `legacy_unknown`, 1
+for preserved Bundle v1, and 2 for Bundle v2. It uses domain
+`taskgov-evidence-index-v2\0`. Bundle v2 preserves every v1 member and adds only
+the closed `verification_basis` and nullable `runner_observation` roots defined
+by the schema-v21 verification-basis contract. Existing v1/v2 bytes and
+digests are immutable.
+
+Publication captures one coherent DB generation, validates all selected rows,
+writes and flushes immutable Bundle files first, and atomically replaces the
+index last. The index is the filesystem commit point. Consumers ignore
+unreferenced files and reject wrong identity/version/project/digest. Taskgov
+also compares index generation with canonical SQLite; a standalone consumer
+can prove only file self-consistency and declared generation. The index covers
+every cycle, has at most 100,000 entries and 67,108,864 UTF-8 bytes, and is
+never truncated. A Bundle is capped at 16,777,216 bytes.
+
+## Recovery Candidate Validity Contract
+
+Every recognized managed recovery candidate first passes physical-file, SQLite,
 schema/history/object, quick/foreign-key, project identity, binding lineage,
 filename/embedded metadata, generation repository, retention, and set-envelope
 validation. Only after the whole set passes may exact stored Task verification
@@ -1745,11 +2027,8 @@ rejecting the next character in each source schema. It does not generalize
 local rejection to another field
 or to structural, identity, lineage, metadata, or TOCTOU failure.
 
-## Current TG-M21.4C Stored Task Read And Privacy Contract
+## Stored Task Read And Privacy Contract
 
-TG-M21.4C, Task `tg_task_efa90606fed8fba0`, owns the accepted schema-v18
-stored Task read hardening retained through schema v21. Its authority reference is
-`conversation_decision:2026-08-03:pre-m22-qa-baseline-hardening`.
 Every Task-loading operation reads the source-schema capability once and
 validates each complete loaded Task row through one shared row/batch validator
 before public allow-listing, compact-field omission, filtering, derived-state
@@ -1790,19 +2069,16 @@ and last-good Viewer and emits only the existing fixed
 stored-state error, while a failure confined to setup's later Viewer stage
 remains `setup_incomplete`.
 
-Managed recovery preserves exactly one M21.4B exception: only stored Task
+Managed recovery preserves exactly one candidate-local exception: only stored Task
 `verification` privacy or source-schema capacity failure is candidate-local.
 Wrong storage class, enum, cross-field matrix, another Task field's
 privacy/capacity fault, or any other structural Task fault is whole-set fatal
 as `project_state_unreadable`; it cannot publish a canonical database or
 select an older candidate.
 
-## Current TG-M21.4D Stored Contract Pointer Integrity Contract
+## Stored Contract Pointer Integrity Contract
 
-TG-M21.4D, Task `tg_task_7051724dca3f1501`, owns the accepted schema-v18
-Contract-pointer relationship correction retained through schema v21. Its authority reference is
-`conversation_decision:2026-08-03:m21-4d-effort-observation`. After the
-TG-M21.4C scalar row checks pass, the same shared validation boundary performs
+After the scalar stored-Task row checks pass, the same shared validation boundary performs
 exactly one bounded bulk relationship read for the loaded Task IDs when the
 source schema is v8 or later and the batch is nonempty. Source schemas v1-v7
 have no Contract capability and perform no relationship read.
@@ -1825,10 +2101,10 @@ Bounded list/current/next therefore retain their selected-row behavior, while
 Doctor, Viewer, setup, migration/reentry, and managed recovery apply the check
 to their existing whole-Task batch.
 
-Every relationship fault uses the TG-M21.4C fixed exit-2
+Every relationship fault uses the stored-Task validator's fixed exit-2
 `project_state_unreadable` / `project state could not be read safely` result,
 with no rejected bytes, warning, partial projection, or write. It is a
-structural whole-set failure during recovery and never receives the M21.4B
+structural whole-set failure during recovery and never receives the candidate-local
 verification privacy/capacity candidate-local exception. Valid revision-zero
 and latest-positive states remain byte-compatible. Intentional empty review
 target with positive generation and canonical stored-lane behavior are
@@ -1876,16 +2152,11 @@ retains the realistic 12-Task/191-event fixture and historical completion/
 review trace through every supported source version. No migration parses
 private prose to invent structure.
 
-### Private Schema-v20 Foundation And Public Activation Boundary
+### Schema-v20 Foundation And Admission
 
-Throughout TG-M24.R3A, supported product behavior remains schema v19: the
-public `SCHEMA_VERSION` and setup `schema_to` remain 19, setup still accepts
-v1-v18 only as migration inputs, Viewer snapshot v4 still accepts v5-v19, and
-the schema-v19 native version-1 Bundle writer remains unchanged.
-
-R3A's schema-v20 work is restricted to an explicitly injected private database
-path. This is the sole non-public exception to the rule that explicit setup is
-the only migrator: it migrates one caller-owned disposable v19 database in
+The migration implementation retains one non-public helper restricted to an
+explicitly injected database path. It migrates one caller-owned disposable v19
+database in
 place, at the same path, inside one `BEGIN IMMEDIATE` transaction. It performs
 no copy, backup, publication, managed recovery, or canonical-state operation.
 Rollback restores the logical schema and data; SQLite file-byte identity is not
@@ -1900,11 +2171,11 @@ Bundle version 2 admits only `caller_attestation` or `not_required`, and its
 Runner observation pointer is always null. Any Runner observation, Reference,
 or criterion link remains standalone audit history and is never a completion
 cycle or Bundle basis at schema v20. Every schema-v20 Runner record is
-gate-ineligible version `0`. R3A owns only the complete physical DDL and
-storage-parent integrity defined by the design; 2A-2C own the future plan,
-process, observation, cleanup, and repository/service admission rules.
+gate-ineligible version `0`. The migration owns only the complete physical DDL
+and storage-parent integrity; plan, process, observation, cleanup, and service
+admission are separate current Runner subsystem boundaries.
 The Bundle table rebuild does not preserve or replay arbitrary caller DDL. A
-persistent index or trigger whose name is not R3A-owned but whose
+persistent index or trigger whose name is not migration-owned but whose
 `sqlite_master.tbl_name` is `completion_evidence_bundles` is unsupported
 attached residue: successful migration removes it with the old v19 Bundle
 table, while transaction rollback restores it. Unrelated standalone objects
@@ -1913,17 +2184,13 @@ Marker-only, partial-owned-object, same-version owned-object drift, a known
 later marker, busy/contention, integrity, or foreign-key failure is fail-closed
 and leaves no partial migration.
 
-TG-M24.R3B added no schema object or migration. It owns the accepted public
-schema-v20 activation: the public schema constant and setup target, the
+The supported schema-v20 boundary uses the public schema constant/setup target,
+the
 Bundle-v2 null-Runner payload/serialization/digest writer, and schema-v20
-compatibility for the existing M22 Evidence/JSON contract, Viewer, and managed
-backup/recovery. R3B creates no Runner resolution, attempt, sandbox event,
-observation, Evidence Reference/link, Bundle member, or Runner projection; 2C
-owns the first durable Runner mapping, write, and projection. R3A and R3B remain
-separate Tasks, commits, and fresh evidence gates. R3B owns the integration
-review over the exact matched commits. Only that PASS may authorize a code/main
-cutover; canonical database migration remains a later explicit public setup at
-a separate approval checkpoint.
+compatibility for Evidence JSON, Viewer, and managed backup/recovery. The
+schema activation itself creates no Runner resolution, attempt, sandbox event,
+observation, Evidence Reference/link, Bundle member, or Runner projection.
+Canonical database migration occurs only through explicit public setup.
 
 Public admission distinguishes a complete v19 source from a hybrid before any
 mutation. A database declared as v19 but containing any recognized v20-owned
@@ -1933,9 +2200,8 @@ Recognition follows SQLite's case-insensitive identifier equality: any catalog
 object occupying a v20-owned table, explicit-index, or trigger name is a
 collision, while a column marker is scoped to its designated parent table.
 Generated columns are column markers under the same rule.
-R3B admission initially required the four Runner tables and Runner
-Reference/link sets to be empty. Complete-v20 migration admission instead accepts
-either that empty predecessor state or the exact TG-M24.2C audit graph below.
+Complete-v20 migration admission accepts either empty Runner tables and
+Reference/link sets or the exact audit-only Runner graph below.
 It rejects a malformed, duplicate, foreign-owned, partially linked, or
 gate-eligible Runner graph. Every Task Runner-basis marker remains zero and
 every cycle/Bundle Runner-observation pointer remains null; native Bundle-v2
@@ -1944,26 +2210,22 @@ This check occurs before any database or sidecar write, migration backup,
 recovery copy/publication, Viewer publication, or managed-backup write. A complete v19 source alone may invoke migration
 20; a complete v20 source may invoke migration 21, and a complete v21 source
 receives validation-only reentry. Unrelated extra
-objects retain the existing policy, including R3A's deliberate removal of
+objects retain the existing policy, including deliberate removal of
 unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
 preservation of unrelated standalone objects.
 
-Schema v20 is the intermediate M24.2 shadow foundation and never becomes a
-qualifying Runner gate basis. Accepted TG-M24.3A owns the separate Tier 2
-schema-v21 contract below, accepted TG-M24.3B owns its persistence
-implementation, and accepted TG-M24.3C alone owns qualifying Runner-basis
-activation with explicit M21 fallback.
+Schema v20 is an audit-only Runner foundation and never becomes a qualifying
+Runner gate basis. The schema-v21 contract below owns current persistence and
+the qualifying Runner branch with explicit manual fallback.
 
 <a id="current-schema-v21-persistence-contract"></a>
 
-### Current Schema-v21 Persistence Contract
+### Schema-v21 Persistence Contract
 
-TG-M24.3A accepted this contract without changing product code. Accepted
-TG-M24.3B implemented its persistence and compatibility boundary, including the
-public schema constant, setup target, package identity, backup/recovery, and
-Viewer source range. It changes no public CLI or JSON shape, Viewer UI, Skill,
-Runner runtime, or completion gate. Accepted TG-M24.3C alone activates the
-qualifying Runner branch.
+Schema v21 is the public schema constant and setup target and is supported by
+the package identity, backup/recovery, and Viewer source range. Its migration
+changes no public CLI or JSON shape, Viewer UI, Skill, or Runner runtime; the
+current service separately activates the qualifying Runner branch.
 
 Migration 21 is exactly `verification_runner_gate_basis`. It adds no table,
 column, or index. It reuses `tasks.review_target_runner_basis_version`, the four
@@ -1981,7 +2243,7 @@ introduces no second storage model or parallel gate table.
 A complete-v20 source is exactly the currently admitted schema-v20 state: its
 owned schema and history are complete, every Task Runner marker is `0`, every
 Runner row is gate-eligibility version `0`, every cycle and Bundle Runner
-pointer is null, and any Runner rows form only an exact admitted TG-M24.2C
+pointer is null, and any Runner rows form only an exact admitted audit-only
 audit graph. Native v20 Bundles use only `caller_attestation` or `not_required`.
 Any v21 marker, gate-eligibility version `1`, `runner_observation` completion
 basis, partial owned object, malformed or foreign graph, duplicate, or unknown
@@ -2036,11 +2298,11 @@ exactly these completion-basis branches:
 
 | Branch | Current target and qualifying basis | Completion cycle and Bundle v2 |
 |---|---|---|
-| manual verification | Marker `0`, or marker `2` only after its exact-current gate-eligibility-version-`1` Runner result is a closed no-launch `m21_fallback`; the existing exact-current M21 Receipt is `pass/full` | `kind=caller_attestation`, the qualifying Receipt ID, and null Runner-observation ID |
+| manual verification | Marker `0`, or marker `2` only after its exact-current gate-eligibility-version-`1` Runner result is a closed no-launch `m21_fallback`; the existing exact-current manual Receipt is `pass/full` | `kind=caller_attestation`, the qualifying Receipt ID, and null Runner-observation ID |
 | verification not required | Trimmed-empty verification on a marker-`0` target | `kind=not_required`, and null Receipt and Runner-observation IDs |
 | Runner verification | Marker `2` and one exact-current gate-eligibility-version-`1` observation for the complete selected plan, launched with `route=runner`, `outcome=pass`, null reason, every step completed in order, and all cleanup/privacy proofs satisfied | `kind=runner_observation`, null Receipt ID, and the qualifying Runner-observation ID |
 
-The closed no-launch case is only the existing TG-M24.2C terminal shape:
+The closed no-launch case is only the existing audit-graph terminal shape:
 `route=m21_fallback`, `launch_state=no_launch`, `outcome=blocked_prelaunch`,
 reason `runtime_unavailable` or `process_setup_failed`, `complete_plan=0`, and
 proved process, handle, output-discard, lifecycle, and private-tree cleanup.
@@ -2053,21 +2315,20 @@ Marker `2` is only a closed branch discriminator; it never proves success by
 itself. A pending or inconsistent graph blocks. Once the selected exact-current
 Runner branch launched, every timeout, cancellation, nonzero, incomplete-plan,
 cleanup/privacy failure, or other non-pass blocks that target and cannot be
-overridden by an M21 Receipt. Only an admitted closed no-launch result whose
+overridden by a manual Receipt. Only an admitted closed no-launch result whose
 route is `m21_fallback` may take the manual branch. Every other structurally
 valid terminal, whether launched or no-launch, blocks and cannot be overridden
 by a Receipt. Unsupported, untrusted, external, manual, or visual work never
-receives marker `2` and stays on the existing M21 route.
+receives marker `2` and stays on the existing manual Receipt route.
 
-TG-M24.3B recognizes the complete schema-v21 tagged union but writes no marker
-`2`, no gate-eligibility-version-`1` graph, and no Runner completion basis. The
-M21 Receipt remains its sole gate for every new completion. If a same-schema
-database contains a structurally valid active marker-`2` target, 3B fails that
-target closed and requires an explicitly fresh target generation before using
-its M21 behavior; it never silently downgrades, consumes, or rewrites the
-Runner basis. TG-M24.3C consumes a valid 3B schema-v21 database without another
-migration and may select marker `2` only while capturing a fresh exact target.
-It never retrofits an existing marker-`0` target or schema-v20 observation.
+The schema-v21 storage validator recognizes the complete tagged union. Marker
+`2` and a gate-eligibility-version-`1` graph may be created only while capturing
+a fresh exact target through the current Runner service; no migration or
+ordinary manual writer synthesizes a Runner completion basis. The manual
+Receipt remains the sole gate for marker `0`. A structurally valid marker-`2`
+target is never silently downgraded, consumed by a marker-`0` writer, or
+rewritten. The current service never retrofits an existing marker-`0` target or
+schema-v20 observation.
 
 Contract revision, verification criterion, review-target tuple or generation,
 artifact manifest, plan/selected-entry basis, target material, implementation
@@ -2111,12 +2372,12 @@ sufficiency:
 
 | Current basis | Existing `gate` values | Receipt-add and completion behavior |
 |---|---|---|
-| marker `0` | unchanged M21 Receipt matrix | unchanged |
-| any live marker `2` read by 3B | `required=true`, `satisfied=false`, `blocking_code=evidence_basis_stale`, `qualifying_receipt_id=null` | Receipt-add and completion return existing `evidence_basis_stale` / `current evidence basis must be captured again` |
-| marker `2` read by 3C whose structurally valid graph is non-current because any named Contract, target, plan, implementation, policy, or related basis drifted | `required=true`, `satisfied=false`, `blocking_code=evidence_basis_stale`, `qualifying_receipt_id=null` | Receipt-add and completion return the same existing stale code/message before uniqueness or review sufficiency |
-| marker `2` with an exact-current 3C pending or cleanup-only graph | `required=true`, `satisfied=false`, `blocking_code=evidence_basis_stale`, `qualifying_receipt_id=null` | Receipt-add and completion return the same existing stale code/message |
+| marker `0` | unchanged manual Receipt matrix | unchanged |
+| any live marker `2` read by the compatibility selector that does not admit Runner completion | `required=true`, `satisfied=false`, `blocking_code=evidence_basis_stale`, `qualifying_receipt_id=null` | Receipt-add and completion return existing `evidence_basis_stale` / `current evidence basis must be captured again` |
+| marker `2` whose structurally valid graph is non-current because any named Contract, target, plan, implementation, policy, or related basis drifted | `required=true`, `satisfied=false`, `blocking_code=evidence_basis_stale`, `qualifying_receipt_id=null` | Receipt-add and completion return the same existing stale code/message before uniqueness or review sufficiency |
+| marker `2` with an exact-current pending or cleanup-only graph | `required=true`, `satisfied=false`, `blocking_code=evidence_basis_stale`, `qualifying_receipt_id=null` | Receipt-add and completion return the same existing stale code/message |
 | marker `2` with any exact-current structurally valid terminal other than the exact closed no-launch fallback or exact qualifying Runner pass | `required=true`, `satisfied=false`, `blocking_code=verification_receipt_blocking`, `qualifying_receipt_id=null` | Receipt-add returns `evidence_basis_stale`; completion returns existing `verification_receipt_blocking` / `current verification evidence does not satisfy the required result and coverage` |
-| marker `2` with the exact-current closed no-launch fallback | the unchanged M21 no-Receipt, blocking-Receipt, or qualifying-Receipt values | Receipt-add is allowed and completion uses the unchanged M21 errors or qualifying Receipt ID |
+| marker `2` with the exact-current closed no-launch fallback | the unchanged manual no-Receipt, blocking-Receipt, or qualifying-Receipt values | Receipt-add is allowed and completion uses the unchanged manual errors or qualifying Receipt ID |
 | marker `2` with the exact-current qualifying Runner pass | `required=true`, `satisfied=true`, `blocking_code=null`, `qualifying_receipt_id=null` | Receipt-add returns `evidence_basis_stale`; completion proceeds to the existing review gate |
 
 Because Runner branches cannot record a Receipt except after the exact closed
@@ -2124,20 +2385,20 @@ no-launch fallback, a qualifying Runner pass legitimately has zero Receipt
 counts while `gate.satisfied=true`. Any exact-current Receipt on another
 marker-`2` branch is inconsistent stored state rather than alternate evidence.
 A valid done version-one cycle is resolved before the live matrix and replays
-its validated stored branch, including when a 3B-compatible reader inspects
-later 3C-created history. Caller attestation keeps the qualifying M21 Receipt
+its validated stored branch, including when a compatibility reader inspects
+later Runner-completion history. Caller attestation keeps the qualifying manual Receipt
 projection, not-required keeps the existing empty-expectation projection, and
 `runner_observation` revalidates its exact stored graph/Bundle identity and
 projects `required=true`, `satisfied=true`, and both nullable gate fields null.
 Historical replay never compares that captured implementation identity with the
-currently installed package and authorizes no new 3B Runner completion. A
+currently installed package and authorizes no new compatibility-mode Runner completion. A
 cycle/Bundle mismatch fails before gate projection.
 
 This selector does not reorder existing argument, Task lookup/status,
 expectation, target-existence, expected-generation, or retained-capture checks.
 For Receipt-add it runs after those checks and before Receipt uniqueness; for
 completion it runs at the existing verification-gate position before review
-sufficiency. Active 3C evaluation checks basis freshness before outcome. Failure
+sufficiency. Current Runner-basis evaluation checks freshness before outcome. Failure
 to establish the current installed implementation identity retains the existing
 `package_core_modified` or `package_status_unknown` package-inspection result;
 after a successful inspection, identity mismatch maps to
@@ -2179,7 +2440,7 @@ Residual `SQLITE_BUSY`/`SQLITE_LOCKED` after the normal driver wait is exit 2
 `task database is busy; run the command again later` for reads and writes. The
 tool adds no retryable flag, longer timeout, sleep, backoff, or generic retry;
 handoff record's one complete retry is the sole exception. A failed write
-transaction leaves no row/event/receipt/Git/target change. A TG-M24.2C command
+transaction leaves no row/event/receipt/Git/target change. A Runner target-set command
 may nevertheless return an error after its atomic T1 or proved cleanup-only
 append has already committed; those completed transactions are not rolled
 back. Every Runner transaction that itself fails still leaves no partial graph.
@@ -2413,7 +2674,7 @@ layout, project, state ownership, package integrity, Git ignore when applicable,
 journal, schema, identity, binding, and artifacts.
 
 When canonical state is absent, setup checks only the canonical managed backup
-directory and applies the TG-M21.4B validity matrix. It chooses the newest
+directory and applies the recovery-candidate validity matrix. It chooses the newest
 eligible same-project, current-binding generation by publication time then ID;
 only a Task-verification capacity/privacy rejection may expose an older
 eligible generation. Existing unreadable canonical state is never overwritten.
@@ -2505,7 +2766,7 @@ generation. Viewer refresh runs second only for Viewer-relevant mutations, and
 due backup runs third. A changed handoff advances neither projection but may
 retry already-due Evidence before backup. Read-only, failed, replayed, no-op,
 setup configuration, and maintenance-internal operations trigger nothing.
-TG-M24.2C retains exactly the one existing target-set maintenance opportunity
+The Runner path retains exactly the one existing target-set maintenance opportunity
 only for a successful or fallback command. A post-T1 Runner error invokes no
 maintenance; T1 has already advanced the ordinary due state, so the next
 normal maintenance opportunity or explicit setup repair catches up. Internal
@@ -2577,7 +2838,7 @@ atomically replaces; failure preserves last good.
 
 Snapshot v4 accepts source schemas v5-v21. One query-only transaction validates
 schema/project/binding, reads generation, validates the complete source-aware
-Task batch through the TG-M21.4C row and TG-M21.4D relationship boundary, and
+Task batch through the stored-row and Contract-relationship boundary, and
 assembles rows; rendering and
 publication occur after close. A stored Task fault produces no snapshot or
 replacement and therefore preserves the last-good Viewer.
@@ -2720,8 +2981,8 @@ traceback, raw stream dump, and large diff patterns are rejected with
 `privacy_rejected` before storage. Rejected patterns include bearer tokens,
 authorization headers, private-key blocks, `password=`, `token=`, and
 `api_key=`. Public read projections revalidate stored content and cross-field
-matrices and Contract-pointer relationships through the current TG-M21.4C and
-TG-M21.4D shared validator before omission or
+matrices and Contract-pointer relationships through the shared stored-Task
+validator before omission or
 exposure. Invalid stored Task content returns only
 `project_state_unreadable` / `project state could not be read safely`, never
 the rejected value or a caller-input error. The existing `lane` and
@@ -2867,36 +3128,345 @@ state and evidence remain solely in the project-local Task database and are
 inspected through the public CLI. Current product, privacy, review, migration,
 and artifact requirements above do not depend on historical text.
 
-## Deferred Boundaries
+## Derived-Evidence Analyzer
 
-### Staged TG-M24 Trusted-Local Runner Boundary
+The Analyzer is an offline-first, non-authoritative consumer of one validated
+Evidence index entry and, for native state, its sealed Bundle. It uses only the
+ignored `<canonical-package-state>/analysis/` tree: immutable
+`outbox/tg_analysis_job_<16-lower-hex>.json`, atomically replaced
+`status/tg_analysis_job_<16-lower-hex>.json`, and paired
+`reports/tg_analysis_report_<16-lower-hex>.json` and
+`rendered/tg_analysis_report_<16-lower-hex>.md`. The report pair is provisional
+only while a complete running intent exists and immutable after publication.
+There is no Analyzer index or SQLite table. The Analyzer changes no Task,
+Contract, Evidence Reference, criterion link, Bundle, gate, CLI, Skill, setup,
+doctor, maintenance, or Viewer state.
 
-This boundary is staged. Accepted 2A covers only physical plan capture, strict
-plan selection, exact target observation, and private materialization. Accepted
-2B covers only the bounded runtime/process adapter and deterministic cleanup.
-Accepted 2C owns parent-service orchestration plus audit-only schema-v20
-observation and Evidence capture, and accepted 2D owns only integrated
-acceptance of that shadow slice. Accepted 3A froze the schema-v21 contract, and
-accepted 3B implemented its persistence boundary with unchanged M21 gates, and
-accepted 3C owns Runner gate integration, accepted 4A owns supported, fallback,
-failure, cleanup, and privacy acceptance, accepted 4B owns legacy, core,
-migration, recovery, and fresh-state acceptance, and accepted 4C owns package
-and release-candidate reconciliation. Accepted 4D owns final integrated
-acceptance. Accepted CP4 closed only the final no-debt checkpoint and M25
-handoff without changing a product byte or recording a correction. Current
-TG-DOC.3 changes documentation authority only.
+### Descriptor, Packet, Status, And Replay
 
-The approved execution direction is an explicit-opt-in Runner for repositories
+Descriptor v1 has exactly
+`analysis_job_id,descriptor_version,source_kind,source_key,source_basis,recipe,
+recipe_digest,descriptor_digest`; version is `1` and source kind is
+`native_bundle|legacy_index_entry`. `source_basis` has exactly
+`project_id,projection_generation,index_digest,entry`, where `entry` has exactly
+`task_id,completion_cycle_id,cycle_ordinal,bundle_state,bundle_id,bundle_file,
+bundle_digest,file_digest,sealed_at`. Native values reproduce one validated
+index entry and Bundle. Legacy state is `legacy_unknown` and its last five entry
+values are null; no Bundle lookup or Receipt/provenance-shaped value is added.
+
+Let `C(v)` be the accepted Bundle/index canonical JSON without LF; durable bytes
+are `C(v)||LF`. Let `H(d,b)` be raw SHA-256 over NUL-free ASCII `d`, NUL, and
+`b`; `S(h)` be `sha256:` plus 64 lowercase hex; and `I(p,h)` be prefix `p` plus
+the first 16 hex. Digests within canonical JSON stay full 71-byte ASCII, named
+digests use `S` unless null, and no implicit framing exists.
+
+Native source identity is exactly
+`project_id,task_id,completion_cycle_id,cycle_ordinal,bundle_id,bundle_digest,
+file_digest`; legacy identity is exactly
+`project_id,task_id,completion_cycle_id,cycle_ordinal,bundle_state`.
+`source_key=S(H("taskgov-analysis-source-v1",C(identity)))`. Recipe is exactly
+`producer_version,report_schema_version,renderer_version,prompt_schema_version,
+inference_mode,declared_model_id`; mode is `offline|codex_optional`, offline
+model is null, and any relevant byte/behavior change increments the applicable
+positive version. `recipe_digest=S(H("taskgov-analysis-recipe-v1",C(recipe)))`.
+`analysis_job_id=I("tg_analysis_job_",H("taskgov-analysis-job-v1",
+ASCII(source_key)||NUL||ASCII(recipe_digest)))`; `descriptor_digest` covers the
+exact descriptor without that digest under `taskgov-analysis-descriptor-v1`.
+The fixed legacy vectors are:
+
+- `C(identity)={"bundle_state":"legacy_unknown","completion_cycle_id":"c","cycle_ordinal":1,"project_id":"p","task_id":"t"}` produces
+  `source_key=sha256:43de9c707c10c49ab1b3bc939975b058bbf9b79dfbd495324ecd5e2135581fbf`;
+- `C(recipe)={"declared_model_id":null,"inference_mode":"offline","producer_version":1,"prompt_schema_version":1,"renderer_version":1,"report_schema_version":1}` produces
+  `recipe_digest=sha256:8ac0a31a34894d0d759b7844b8f0d8b6999520374f34a73b45a2a4cff7b29f3d`.
+
+After independent source validation the ID is derived. An absent ID is created
+exclusively. An existing descriptor replays the original basis only when source
+key, recipe digest, project ID, and all nine entry fields match; it never binds
+a later index. Generation/index-digest drift alone neither rewrites nor
+collides. Any other content under the same derived ID is a collision and is
+rejected. `published|failed|cancelled` replays its immutable outcome with no
+attempt; only a changed source identity or recipe creates a new job.
+
+Packet v1 has exactly
+`packet_version,analysis_job_id,source_kind,source_basis,source`; version is 1.
+Native source is the exact independently validated Bundle envelope; legacy
+source is null and carries content only through `source_basis`. Native packet
+size is capped at 16,842,752 bytes and legacy at 16,384; overflow is
+`packet_too_large` and never truncates. Packet bytes remain memory-only, are
+framed directly to stdin, and are discarded after the attempt; `packet.json`
+is forbidden and only its digest may persist.
+
+`prompt_bytes` is fixed, nonempty, versioned, BOM-free UTF-8/LF with one final
+LF and no NUL. With `packet_bytes=C(packet)` and shortest positive ASCII-decimal
+lengths P/Q, stdin is exactly:
+
+```text
+ASCII("taskgov-analysis-stdin-v1")||LF||ASCII("prompt-length:")||P||LF||
+ASCII("packet-length:")||Q||LF||LF||prompt_bytes||packet_bytes||LF
+```
+
+The frame is capped at 262,144 bytes; overflow is `input_too_large` without
+launch. `prompt_digest=S(H("taskgov-analysis-prompt-v1",prompt_bytes))`;
+identical `packet_digest` and report `input_digest` are
+`S(H("taskgov-analysis-packet-v1",packet_bytes))`; and
+`accepted_output_digest=S(H("taskgov-analysis-output-v1",strict canonical
+output bytes))`, with no LF in any canonical input. A prompt/frame byte change
+increments `prompt_schema_version`.
+
+Status has exactly
+`analysis_job_id,state,worker_attempt_count,adapter_attempt_count,inference_state,
+fixed_code,duration_ms,packet_digest,accepted_output_digest,report_id,
+report_digest,render_digest`. State is
+`pending|running|published|failed|cancelled`; inference state is
+`disabled|policy_blocked|pending|running|succeeded|input_too_large|unavailable|
+launch_failed|timeout|output_too_large|invalid_output|failed|cancelled`.
+Counters are integers 0..2; duration is 0..600,000 and no greater than
+`300000 * worker_attempt_count`. Fixed code is null except failed
+`source_invalid|packet_too_large|report_invalid|publication_failed|interrupted`
+or cancelled `cancelled`. The three report fields are all null or all non-null.
+
+For the status matrix below, `PS` is exactly
+`policy_blocked|input_too_large|succeeded|unavailable|launch_failed|timeout|
+output_too_large|invalid_output|failed`.
+
+Offline uses adapter count 0, inference `disabled`, and null output digest.
+Optional execution uses adapter count 0 for `pending|policy_blocked|
+input_too_large`, 1..2 for `running|succeeded|unavailable|launch_failed|
+timeout|output_too_large|invalid_output|failed`, and 0..2 for `cancelled`.
+Output digest is non-null exactly for `succeeded`; optional `running` and all
+members of `PS` require a packet, while pending may omit
+one. The exact no-adapter results are `offline/disabled`,
+`codex_optional/policy_blocked`, and `codex_optional/input_too_large`; no other
+result may claim the no-adapter-tree proof or consume no adapter attempt.
+
+Pending has zero worker/duration and null code, digests, and report tuple; its
+offline/optional inference is `disabled|pending`. Every other state has worker
+count 1..2. Running has null code and required packet; offline inference is
+`disabled`, optional inference is `pending|running` or a member of `PS`, output
+follows the succeeded-only rule, and the report tuple is either
+all null or an all-nonnull intent made only after report/render validation and
+the required tree-quiescent/no-tree cleanup proof. Published requires packet,
+an all-nonnull report tuple, null code, and inference `disabled` or a member of
+`PS`. Failed source/packet has no packet/output/report and inference
+`disabled|pending`; failed report/publication has packet, no report, and
+inference `disabled` or a member of `PS`. An `interrupted` failure has
+`disabled|pending` without packet, `disabled` or a non-succeeded member of `PS`
+with packet but no output, and `succeeded` with packet and output. The
+optional adapter-count-zero/inference-`failed` combination is valid only for
+the exact pre-call reclaim terminal described below. Cancelled has no report,
+fixed code `cancelled`, optional inference `cancelled` with adapter count 0..2
+or offline `disabled` with adapter count 0, and a packet exactly when source
+validation completed. Other terminal states have no rerun, timestamp, or raw
+error field.
+
+Status replacement is atomic. Pending-to-running increments the worker count.
+The no-wait lease enforces the 100,000-file cap and identifier order and selects
+at most one pending/reclaimable job. A complete intent receives bounded,
+counter-neutral recovery. A no-intent running row with worker count below 2
+first uses a counter-only compare-and-swap; the optional exact pre-call reclaim
+terminal is running worker 2, adapter 0, inference pending, packet set, null
+output/report/code to failed worker 2, adapter 0, inference failed, fixed code
+`interrupted`, with every other field unchanged. Reclaim does not launch,
+increment the adapter, or touch output/quarantine. A worker attempt is capped at
+300,000 ms; expiry is `failed/interrupted`; adapter count increments before
+lookup/call and never exceeds 2.
+Descriptor publication precedes pending status. Under the lease, a valid
+descriptor with an absent exact status leaf exclusively creates pending once;
+reports are neither scanned nor used as replay input. A present status requires
+exact pairing. Invalid present descriptor or status structure stays unchanged.
+
+### Report, Claims, And Citations
+
+Report v1 is exact canonical no-extra-key JSON with envelope
+`report_schema_version,report_digest,payload`. Payload has exactly, in this
+order, `report_id,analysis_job_id,source_kind,source_key,recipe_digest,
+inference_state,structural_facts,trusted_caller_declarations,legacy_absence,
+llm_derived,omissions,uncertainties,declared_code_occurrences,citations,
+reproducibility`. Structural facts, trusted declarations, derived claims, and
+omissions/uncertainties never substitute for each other; rendering is a pure
+projection, not evidence.
+
+Fact kinds are exactly
+`bundle|task|contract|target|authority_snapshot|criterion|criterion_link|
+artifact_manifest|artifact_entry|evidence_reference|verification_receipt|
+review_receipt|review_provenance|finding_snapshot|completion_evidence|omission`.
+Declaration kinds are exactly
+`reviewer_class|model_state|declared_model_id|skill_state|declared_skill_id|
+declared_skill_version|profile|lens|context_relation|method`. A Fact is
+`fact_kind,value,citation_ids` and holds only a cited scalar, null, empty array,
+or atomic source row. A Declaration is
+`declaration_kind,value,citation_ids` and holds only a cited v1 scalar, null, or
+one ordered code. Native `legacy_absence` is null; legacy absence has exactly
+`state=legacy_unknown,receipt_detail=unavailable,
+provenance_detail=unavailable,citation_id`.
+
+Omission and uncertainty have `code,citation_ids`. Analyzer-only omissions are
+`claim_capacity_exceeded|render_capacity_exceeded|legacy_detail_unavailable|
+inference_unavailable`; uncertainties are
+`insufficient_basis|conflicting_basis|legacy_absence`. A derived claim has
+`tag,non_authoritative,text,citation_ids,uncertainty`, where uncertainty is
+exactly `none|insufficient_basis|conflicting_basis|legacy_absence`; an occurrence has
+`kind,code,bundle_id,review_receipt_id,review_provenance_id,citation_ids`, where
+kind is exactly `profile|lens|method`.
+Facts/declarations are capped at 16,384, citations/occurrences at 65,536,
+omissions/uncertainties at 4,096, and each non-citation has 1..8 valid citation
+IDs. Arrays sort by unsigned lexicographic canonical-JSON element bytes,
+shorter prefix first, and reject duplicates; citation IDs are unique ascending
+ASCII. Copied source-row arrays retain their source order.
+
+`reproducibility` has exactly
+`producer_version,declared_model_id,prompt_schema_version,prompt_digest,
+input_digest,accepted_output_digest,report_schema_version,renderer_version`.
+Offline model/prompt/output digests are null. These are deterministic or
+declared values, not authenticated model or actor identity.
+
+For native input the validator independently derives a required-pointer
+multiset exactly equal to all source facts, declarations, occurrences, and
+omissions; subsets fail. Bundle envelope and payload metadata map to `bundle`;
+Task, Contract, target, and authority snapshot map identically; plural
+collections map to singular kinds; each criterion, link, artifact entry,
+Reference, Finding snapshot, scalar, null, or empty collection is represented
+exactly once. Native v1 Review provenance makes ID/version/assurance/producer/
+digest mandatory facts, each scalar a declaration, and each profile/lens/method
+code a declaration plus occurrence. An empty provenance collection produces
+one `review_provenance` fact with value `[]` and no occurrence. Null provenance
+is allowed only for `not_required` and produces one fact with no Receipt
+declaration or occurrence. Every pointer, value, kind, identity, and
+cardinality derives only from the Bundle; projection or report overflow is
+`report_invalid`, never an omission.
+
+Report omissions are the canonical union of source omissions and recomputed
+runtime omissions. `legacy_detail_unavailable` exists exactly for legacy
+input, `inference_unavailable` exactly when optional publication does not end
+in `succeeded`, and a capacity code exists exactly when its corresponding
+suffix is removed. Source omissions remain present; runtime omissions cite the
+Bundle root or legacy basis. Uncertainties are the deduplicated legacy
+`legacy_absence` plus non-`none` uncertainties from retained claims; native
+offline analysis has none. An extra, missing, or substituted item is
+`report_invalid`.
+
+Native citations have exactly
+`citation_id,citation_kind,source_key,bundle_id,bundle_digest,file_digest,
+json_pointer,entity_id,entity_digest`. The RFC 6901 pointer resolves inside the
+Bundle. Identity/digest pairs use ID+digest exactly for
+`authority_snapshot|criterion|artifact_manifest|artifact_entry|
+evidence_reference|review_provenance|finding_snapshot`; Task, criterion link,
+Receipt, and completion evidence use ID+null; Bundle, Contract, target, and
+omission use null+null. An artifact entry uses
+its manifest pair plus ordinal; an empty collection or absent verification uses
+a null-identity Bundle citation; null `not_required` provenance uses the Review
+Receipt identity; and Receipt/completion facts also cite their Evidence
+Reference. Legacy output has empty facts/declarations/occurrences and one
+`legacy_index_entry` citation `L` with exactly
+`citation_id,citation_kind,source_key,project_id,projection_generation,
+index_digest,task_id,completion_cycle_id,cycle_ordinal`, copied from the
+validated basis, and `citation_kind=legacy_index_entry`. Its
+`legacy_absence.citation_id` and every legacy `citation_ids` value equal
+`L.citation_id`; it exposes no other citation, Receipt, provenance, v0, Bundle,
+or inferred value. For native input, the source, Bundle, and file bindings equal
+the descriptor and packet, the citation source key equals the descriptor source
+key, each ID resolves exactly once, and report items bind only through
+`citation_ids`. Citation IDs
+are `I("tg_analysis_citation_",H("taskgov-analysis-citation-v1",C(citation
+without citation_id)))`; same ID with different bytes fails.
+
+Derived items use tag `llm_derived/batch_analyzer/1`,
+`non_authoritative=true`, privacy-guarded UTF-8 text up to 1,000 bytes, 1..8
+citations, one closed uncertainty, and at most 2,048 items. Repetition across
+Receipts/Bundles is descriptive only; grouping never authenticates identity,
+proves competence/independence, scores quality/diversity, upgrades assurance,
+fills unknown/null/legacy data, or changes a gate.
+
+Adapter output has exactly
+`output_schema_version,analysis_job_id,source_key,recipe_digest,claims`; version
+is 1 and claims count is 0..2,048. Each claim has exactly
+`text,source_refs,uncertainty`, with nonempty privacy-guarded text up to 1,000
+bytes and 1..8 unique refs. Every ref has exactly `{kind,json_pointer}`. Native
+refs are nonempty required-projection RFC 6901 `native_pointer` values and
+cannot claim `legacy_absence`; legacy output has exactly one
+`{kind:legacy_basis,json_pointer:null}` ref. Claims sort by unsigned
+lexicographic canonical-JSON element bytes; source refs sort by kind
+`legacy_basis,native_pointer`, then null before string and unsigned UTF-8
+pointer bytes; duplicates fail. The validator maps refs to exact citation IDs
+and supplies IDs, tags, and non-authority markers; adapter text cannot supply
+facts or declarations. Output over 65,536 bytes is `output_too_large`; any
+schema, privacy, binding, ordering, duplicate, reference, or native/legacy
+violation is `invalid_output`. Rejected bytes have null digest and never enter
+a report or durable state.
+
+Packet ID, kind, and basis byte-match the descriptor, and
+`payload.analysis_job_id` equals the descriptor and status ID. Report ID, kind,
+source key, and recipe digest match the descriptor, while running-intent or published
+status IDs and digests match the exact report and render. Reproducibility
+versions/model match the recipe; input and accepted-output digests and
+inference state match status. Before intent, any binding mismatch atomically
+publishes terminal `failed/report_invalid` with null report fields and no
+report/render destination.
+
+Report JSON and Markdown are capped at 16,777,216 and 8,388,608 bytes. From
+sorted claims, retain the longest report-fitting prefix and add
+`claim_capacity_exceeded` iff a suffix is removed; then retain the longest
+report-plus-Markdown-fitting prefix and add `render_capacity_exceeded` iff more
+are removed. Partial source items or a non-fitting skeleton are
+`report_invalid`. Exact identities are
+`report_id=I("tg_analysis_report_",H("taskgov-analysis-report-id-v1",
+ASCII(source_key)||NUL||ASCII(recipe_digest)||NUL||ASCII(inference_state)||NUL||
+ASCII(accepted_output_digest or "offline-null")))`,
+`report_digest=S(H("taskgov-analysis-report-v1",C(payload)))`, and
+`render_digest=S(SHA-256(exact Markdown bytes))`. A report pair becomes visible
+only with the exact-byte `publish_ready` proof defined by the
+[Analyzer process and publication design](design.md#derived-evidence-analyzer-process-and-publication-boundary).
+
+Markdown v1 is `T||LF||LF||join(B1..B10,LF||LF)||LF`, where
+`T=ASCII("# Task Governance Analysis Report v1")` and each block is
+`UTF8("## "||NAME)||LF||LF||ASCII("    ")||C(VALUE)`. The exact name/value
+order is `Identity` to the object `report_schema_version,report_digest,
+report_id,analysis_job_id,source_kind,source_key,recipe_digest,inference_state`,
+then `Structural Facts`, `Trusted Caller Declarations`, `Legacy Absence`,
+`LLM Derived`, `Omissions`, `Uncertainties`, `Declared Code Occurrences`,
+`Citations`, and `Reproducibility` to their like-named payload values. Output is
+BOM-free UTF-8/LF with no tab, fence, HTML, link, prose, wrapping,
+normalization, Markdown escape, or data outside those four-space canonical JSON
+blocks. Only JSON escaping applies; layout/escaping changes increment
+`renderer_version`.
+
+### Offline And Optional Analysis
+
+Offline mode publishes the deterministic report and Markdown with zero model
+calls. Optional logical shell-free argv is exactly
+`codex exec --ephemeral --sandbox read-only --ignore-user-config --ignore-rules
+--skip-git-repo-check --model <exact-approved-id> --output-schema
+<private-schema> -o <private-output> -`. Its output schema is strict
+`additionalProperties=false`; stdout/stderr are never report inputs. The
+process boundary uses a private cwd/home/environment, credential exclusion,
+immutable runtime identity, Windows token/Job/desktop/handle containment,
+attempt freshness, bounded timeout/cancel/tree termination, transient output
+disposal, and bounded worker joins as specified by the active design.
+
+No public CLI or Skill activates Analyzer execution. The implemented acceptance
+surface is credential-free offline/mock operation. Missing, launch, count, cap,
+nonzero-empty, expiry, cancellation, and invalid outcomes map only to
+`unavailable|launch_failed|interrupted|output_too_large|failed|timeout|
+cancelled|invalid_output`. Without separately approved provider credentials,
+data/model authority, proven isolation, non-tool-readable broker, and a
+pre-call spend ceiling, optional mode remains `policy_blocked`, makes zero live
+calls, incurs zero model cost, and stores no inference.
+
+## Trusted-Local Verification Runner
+
+### Eligibility, Plan, And Materialization
+
+The Runner is explicit opt-in for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified
-targets remain on the existing M21 manual verification route and are never made
+targets remain on the manual Verification Receipt route and are never made
 eligible by convenience, fallback, or a prior run. Eligibility and execution
 must bind the current Task, Contract, verification criterion, and exact target;
 use fixed argv with no shell or PATH lookup; exclude credentials from the child
 environment; execute only an exact private materialization; and copy no working
 tree or result bytes back to the target.
 
-TG-M24.2A implements only the dormant target-and-plan half of that boundary. It
-adds no public command, normal-loop call, durable Runner row, or target process.
+The target-plan boundary adds no public command or normal-loop call. It performs
+no durable Runner write and launches no target process.
 The sole plan is the current physical
 `<physical-package>/config/verification-runner.json`. `config/` is the existing
 local-only package region: the file is not generated by setup, listed in the
@@ -2932,12 +3502,12 @@ numeric process bounds, and `output_byte_limit = 1048576`. Order supplies the
 one-based ordinal. `shell` and `PATH` lookup are not plan inputs and remain
 fixed false.
 
-TG-M24.2A validates only bounds knowable from the plan: member types and byte
+Plan validation checks only bounds knowable from the plan: member types and byte
 grammars, entry and step counts, literal-argument counts and sizes, total
 timeout, and the declared resource/output values. The final quoted Windows
 command line depends on the later fixed executable, bootstrap insertion, and
 materialized absolute paths. Its `command_line_utf16_units <= 24576` check
-therefore remains a TG-M24.2B process-request admission check and is not
+therefore remains a process-request admission check and is not
 approximated or pre-authorized by plan validation.
 
 An absent config directory or plan file produces no plan source. It does not
@@ -2950,7 +3520,7 @@ produce empty raw bytes or a digest. The exact successful resolution matrix is:
 | valid opted-in plan with no entry for the current Task | `no_match` | `m21_fallback` | `plan_entry_absent` | raw digest, plan id, version, and semantic digest present; `plan_blob_object_id` null | null | `not_applicable` / empty |
 | exactly one current basis | `runner` | `runner` | null | raw digest, plan id, version, and semantic digest present; `plan_blob_object_id` null | selected-entry digest present | `full` / the selected one through 16 steps |
 
-These are the only successful 2A plan states, routes, reasons, and nullability
+These are the only successful plan states, routes, reasons, and nullability
 relations. If an opted-in plan contains the current Task, exactly one entry
 must match the current Contract revision and both current criterion digests;
 stale, partial, or multiple matches block. A malformed or over-bound plan also
@@ -2964,22 +3534,22 @@ prior target can supply authority. The schema-v20 compatibility field named
 `plan_blob_object_id` remains null for this physical-plan route; no selected
 target object is reinterpreted as plan authority.
 
-TG-M24.2A proves that composition through the existing pure
+The target-plan boundary proves that composition through the pure
 `resolution_idempotency_digest`: its closed input binds the current Task,
 Contract, authority and criterion identities, review-target kind/value/base and
 generation, target-material digest, and raw/semantic/selected plan digests. The
-seal contains no raw plan bytes, argv, or steps and remains an in-process value
-in this slice. TG-M24.2C owns parent-service orchestration, persistence, and
-dispatch consumption; it does not redefine the 2A component or seal semantics.
+seal contains no raw plan bytes, argv, or steps and remains an in-process value.
+The parent service owns orchestration, persistence, and dispatch consumption;
+it does not redefine the target-plan component or seal semantics.
 
-Only `git_snapshot` and `git_commit` are addressable by this dormant slice. A
+Only `git_snapshot` and `git_commit` are addressable by this Runner path. A
 snapshot means the complete stable stage-zero index and a commit means the
 complete exact commit tree. Every materialized file is read from those Git
 objects, never from the ambient working tree. A same-named config file present
 in target material is ordinary target data and grants no opt-in or plan
 authority. Sparse entries, symlinks, submodules, unsafe or colliding Windows
 paths, object loss, and target drift are rejected. An absent or unsupported
-target remains on M21 fallback; stale or inconsistent material blocks.
+target remains on the manual fallback; stale or inconsistent material blocks.
 
 The closed materialization bound is 10,000 regular files, 30,000 derived
 directories excluding the supplied destination root, depth 64, 512 MiB total
@@ -2990,7 +3560,7 @@ exclusive, every streamed blob is verified against its Git object ID, and a
 bounded post-write inventory must equal the admitted entry set exactly. No byte
 is copied back. Existing shell-free, no-lazy-fetch Git plumbing may be used only
 for read-only target/object observation; no plan entrypoint, verification
-command, hook, or target code is launched by TG-M24.2A.
+command, hook, or target code is launched during target planning or materialization.
 
 Each accepted execution must establish its Job and process limits before user
 code runs, bound wall time, process count, resources, and stdout/stderr, retire
@@ -3001,11 +3571,12 @@ verification or review evidence. Only the existing closed outcome and bounded
 structural evidence may be retained. Cleanup or privacy uncertainty is a
 blocking failure.
 
-### TG-M24.2C Audit-Only Parent Orchestration
+### Parent Service And Audit Graph
 
-TG-M24.2C consumes the existing `review target set` dispatch without adding a
-public command, argument, success-data field, text line, Skill trigger, or
-normal-loop call. The existing exact review-target transaction is called T1 in
+The parent service consumes the existing `review target set` dispatch without
+adding a public command, argument, text line, Skill trigger, or normal-loop
+call. JSON success adds only `verification_route` and `blocking_code`. The
+existing exact review-target transaction is called T1 in
 this boundary. A fallback T1 contains only that ordinary capture. An admitted
 Runner T1 atomically contains the same capture plus its resolution and attempt
 intent. Process work is a later parent-service phase. After preflight and
@@ -3022,7 +3593,7 @@ plan state, or another definite closed Runner-only failure before an attempt is
 admitted produces no Runner resolution, attempt, event, observation,
 Reference, or criterion link.
 The ordinary exact target is still captured and returned normally. This fallback
-does not weaken TG-M24.2A: malformed, ambiguous, stale, inconsistent, or
+does not weaken target-plan admission: malformed, ambiguous, stale, inconsistent, or
 over-bound plan/target material still blocks with no T1 write.
 
 Only an exact `runner` plan and target may add Runner state to T1. After
@@ -3052,7 +3623,7 @@ path or result.
 After intent, a terminal observation is allowed only after all three accepted
 process proofs (`process_zero`, `handles_closed`, and
 `raw_output_discarded`) are true and lifecycle independently proves the exact
-attempt and quarantine entries absent. A returned TG-M24.2B result maps its
+attempt and quarantine entries absent. An accepted process result maps its
 `outcome`, nullable `reason`, `launch_state`, step summary, duration, and
 bounded accounting one-to-one. A launched result uses observation
 `route=runner`; a closed no-launch result uses `route=m21_fallback`.
@@ -3073,9 +3644,18 @@ its one `runner_observation` link to the bound verification criterion, and the
 one cleanup event atomically. The Reference uses only the existing sanitized
 Runner observation source projection with
 `machine_observed/verification_runner/1`; it stores no raw process material.
-It is standalone audit history. It is never a Verification Receipt, completion
-cycle or Bundle member/basis, does not advance Evidence-projection generation,
-and is not published to Evidence JSON.
+The terminal transaction itself creates no completion cycle or Bundle, never
+creates a Verification Receipt, and advances no Evidence-projection generation.
+For `gate_eligibility_version=0`—the only version schema v20 admits and a
+permanently audit-only version when preserved under schema v21—the graph,
+Reference, and link remain standalone audit history and are not published to
+Evidence JSON. For a schema-v21 `gate_eligibility_version=1` graph, only a later
+exact-current qualifying Runner pass may become the completion basis. That
+completion reuses the existing Reference and link as Bundle members and carries
+the already-sanitized observation projection in Bundle v2 for Evidence JSON; it
+creates no duplicate Reference or criterion link. The exact closed no-launch
+fallback remains on the manual Receipt branch and contributes no Runner member;
+every other terminal blocks completion.
 
 Restart never relaunches a persisted attempt. Under the one Runner lock the
 service may clean only the exact database-named known tree. When absence is
@@ -3103,7 +3683,7 @@ route; feature code never reconstructs it. The schema-v20
 `sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8`.
 It is a structural policy label, not a security claim, and is not rederived
 from the separately manifest-bound Runner implementation digest. Because the
-accepted TG-M24.2B layer exposes no durable canonical runtime digest,
+process layer exposes no durable canonical runtime digest,
 `runtime_digest` is always null in the resolution and sanitized Runner source
 projection. The manifest-bound implementation digest and fixed policy label
 are the only durable execution-identity fields in this slice.
@@ -3117,27 +3697,32 @@ on-command-failure rule: T1 is a completed existing target-set mutation with
 its atomic Runner intent, cleanup-only is completed lifecycle closure, and the
 failed phase is later. No automatic relaunch, fallback success, Receipt,
 review, or completion claim is synthesized.
-Target-set text and failure output remain byte-compatible. Accepted TG-M24.3C
-adds only the two closed JSON success keys defined above.
+Target-set text and failure output remain byte-compatible. JSON success adds
+only the two closed keys defined above.
 
-Backup and recovery preserve the SQLite audit graph and validate its exact
-cardinality, ownership, digests, links, and gate-ineligible version. The
-private attempt tree is generated scratch state and is not copied into a
-managed database backup. Viewer snapshot v4 validates any graph and discards
-it; Viewer UI, public Task JSON, Bundle v2, completion history, M21 Receipt and
-completion semantics, schema/DDL, and Task Runner-basis markers remain
-unchanged.
+Backup and recovery preserve the SQLite Runner graph and validate its exact
+cardinality, ownership, digests, links, and schema-appropriate eligibility:
+schema v20 admits only version `0`, while schema v21 admits only the closed
+version-`0` or version-`1` tagged union above. The private attempt tree is
+generated scratch state and is not copied into a managed database backup.
+Viewer snapshot v4 validates the admitted tagged graph and any completed Bundle,
+then discards Runner-only data; its UI and public field set do not change. A
+version-`0` graph remains audit-only and cannot populate completion-cycle or
+Bundle Runner pointers. A version-`1` graph follows only the schema-v21
+completion behavior above. The Runner service adds no further schema/DDL or
+separate workflow action beyond the current schema-v21 storage contract.
 
 This boundary governs trusted code; it does not claim hostile-code containment,
 network isolation, LPAC/AppContainer confinement, or zero capability. Candidate
 C, Candidate B-to-C comparison, Package-SID ACL qualification, ETW diagnosis,
 claim-bound transfer/recovery, supervisor or trust-root layers, and diagnostic
-fault matrices are not M24 prerequisites or completion gates. Their repository
-and OS-temporary residues are owned by the dedicated inventory and physical-
-retirement units. TG-M24.2C adds no Runner command, schema, Skill trigger, or
-completion gate. Its only dispatch is the exact trusted-local opt-in branch of
-the existing target-set operation; qualifying gate authority remains inactive
-until its later sequential unit is accepted and synchronized.
+fault matrices are not product prerequisites or completion gates and have no
+active repository or OS-temporary implementation. The Runner adds no command,
+Skill trigger, or separate workflow action. Its only dispatch is the exact
+trusted-local opt-in branch of the existing target-set operation; qualifying
+gate authority is the closed schema-v21 branch above.
+
+## Deferred Boundaries
 
 The current product deliberately excludes pagination/search in CLI history,
 parent/child Tasks, acceptance checklists, a public command or Skill trigger for

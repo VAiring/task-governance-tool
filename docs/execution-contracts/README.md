@@ -12,14 +12,13 @@
 > dedicated tests physically absent without an archive or dormant copy.
 > TG-M24.R3A, TG-M24.R3B, TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B,
 > TG-M24.2C, TG-M24.2D, TG-M24.3A, TG-M24.3B, TG-M24.3C, TG-M24.4A,
-> TG-M24.4B, TG-M24.4C, and TG-M24.4D are accepted predecessors. TG-M24.CP4
-> owns current no-debt checkpoint and M25 handoff scope in its routed exact
-> sequence.
+> TG-M24.4B, TG-M24.4C, TG-M24.4D, and TG-M24.CP4 are accepted predecessors.
+> No TG-M24 execution unit is current in its routed exact sequence.
 > TG-M23 authority is accepted-predecessor only, and TG-M24 Runner
 > completion-gate authority belongs only to accepted TG-M24.3C; accepted
-> TG-M24.4A/TG-M24.4B/TG-M24.4C/TG-M24.4D own acceptance only. Current
-> TG-M24.CP4 changes no product byte and records no correction. TG-DOC.3
-> remains inactive under its separate plan route.
+> TG-M24.4A/TG-M24.4B/TG-M24.4C/TG-M24.4D own acceptance only. Accepted
+> TG-M24.CP4 changed no product byte and recorded no correction. TG-DOC.3
+> owns current documentation authority under its separate plan route.
 > Load files
 > only when the current Task Contract or the
 > [repository authority index](../authority.md) selects their exact path and
@@ -60,7 +59,7 @@ targets, reviews, receipts, or completion history.
   non-gating TG-M24.1B route, accepted TG-M24.3A schema-v21 contract,
   TG-M24.3B persistence foundation, TG-M24.3C gate integration, accepted
   TG-M24.4A/TG-M24.4B acceptance, accepted TG-M24.4C package acceptance,
-  accepted TG-M24.4D integrated acceptance, and current TG-M24.CP4 no-debt
+  accepted TG-M24.4D integrated acceptance, and accepted TG-M24.CP4 no-debt
   checkpoint and M25 handoff detail. Its
   trusted-local explicit-opt-in boundary leaves
   untrusted and external work on the M21 manual fallback, and loading it
@@ -72,9 +71,9 @@ targets, reviews, receipts, or completion history.
   owns the non-product documentation units and their M23-to-M24 gateway.
 - [TG-DOC.2](../../plan.md#tg-doc-2) is the accepted post-M23 predecessor that
   precedes accepted TG-M24.1 design.
-- [TG-DOC.3](../../plan.md#tg-doc-3) preserves the post-M24 normalization scope
-  and remains inactive pending accepted TG-M24.CP4 and its separately owned
-  activation synchronization. CP4 remains current until that synchronization.
+- [TG-DOC.3](../../plan.md#tg-doc-3) owns the current post-M24 normalization
+  scope after accepted TG-M24.CP4 through its separately owned activation
+  synchronization.
 
 These plan routes add no product behavior and do not activate an inactive or
 superseded TG-M24 unit.

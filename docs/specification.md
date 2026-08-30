@@ -26,9 +26,9 @@ accepted its gate integration. TG-M24.4A accepted its supported, fallback,
 failure, cleanup, and privacy flows, TG-M24.4B accepted legacy, core, migration,
 recovery, and fresh-state compatibility, and TG-M24.4C accepted package and
 release-candidate reconciliation. TG-M24.4D accepted final integrated
-acceptance. TG-M24.CP4 is the sole current unit and owns only the final no-debt
-checkpoint and M25 handoff; it changes no product byte and records no
-correction.
+acceptance. TG-M24.CP4 accepted the final no-debt checkpoint and M25 handoff
+without changing a product byte or recording a correction. Current TG-DOC.3
+owns only documentation normalization and history closure.
 Completed execution narrative is history, and the Task
 database owns live state and evidence.
 
@@ -2882,8 +2882,9 @@ accepted 3C owns Runner gate integration, accepted 4A owns supported, fallback,
 failure, cleanup, and privacy acceptance, accepted 4B owns legacy, core,
 migration, recovery, and fresh-state acceptance, and accepted 4C owns package
 and release-candidate reconciliation. Accepted 4D owns final integrated
-acceptance. Current CP4 owns only the final no-debt checkpoint and M25 handoff;
-it changes no product byte and records no correction.
+acceptance. Accepted CP4 closed only the final no-debt checkpoint and M25
+handoff without changing a product byte or recording a correction. Current
+TG-DOC.3 changes documentation authority only.
 
 The approved execution direction is an explicit-opt-in Runner for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified

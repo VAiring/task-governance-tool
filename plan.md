@@ -218,7 +218,7 @@ completed integrated acceptance and
 accepted TG-M23.1 froze the derived-evidence design; accepted TG-M23.2 supplies
 only its bounded offline/mock implementation predecessor.
 
-### Accepted TG-M22.4/TG-M23 And Current TG-M24 Trusted-Local Repair Gateway
+### Accepted TG-M22.4/TG-M23/TG-M24 Gateway And Current TG-DOC.3
 
 Product behavior established by accepted TG-M22.3 remains owned by the active
 specification and its implementation structure by the active design. Exact
@@ -273,9 +273,10 @@ activation with explicit M21 fallback. Accepted TG-M24.4A owns supported,
 fallback, failure, cleanup, and privacy acceptance, and accepted TG-M24.4B owns
 legacy, core, migration, recovery, and fresh-state acceptance. Accepted
 TG-M24.4C owns only package and release-candidate reconciliation, and accepted
-TG-M24.4D owns final integrated acceptance. Current TG-M24.CP4 owns only the
-final no-debt checkpoint and M25 handoff; it changes no product byte and
-records no correction.
+TG-M24.4D owns final integrated acceptance. Accepted TG-M24.CP4 closed only the
+final no-debt checkpoint and M25 handoff; it changed no product byte and
+recorded no correction. Current TG-DOC.3 owns only the post-M24 documentation
+normalization and history closure.
 Schema-v20 shadow evidence cannot satisfy
 that gate. The current v0.13.0 candidate identity is schema v21; schema v20
 remains the M24.2 intermediate shadow foundation and migration source.
@@ -297,7 +298,8 @@ accepted predecessors; TG-M24.1B is superseded. TG-M24.3A's documentation-only
 schema-v21 contract freeze, TG-M24.3B's persistence foundation, TG-M24.3C's
 gate integration, TG-M24.4A acceptance, TG-M24.4B compatibility acceptance,
 and TG-M24.4C package acceptance are accepted, as is TG-M24.4D integrated
-acceptance. Current formal authority belongs only to TG-M24.CP4.
+acceptance, and TG-M24.CP4 is accepted. No TG-M24 unit is current; current
+documentation authority belongs to TG-DOC.3 through its separate gateway.
 Exact unit identity, order, dependency, permission, and gate detail is owned by the
 [TG-M24 Verification Runner execution contract](docs/execution-contracts/tg-m24-verification-runner.md),
 not duplicated in this gateway.
@@ -312,7 +314,7 @@ public setup action at a separate approval checkpoint.
 Accepted TG-M24.R1 consumed only the reviewed R2 bootstrap boundary and changed
 no product byte; accepted R2A, R2B, R2C, R4A, and R4V changed no supported product
 behavior. Accepted 3C supplies the predecessor gate; accepted 4A, 4B, 4C, and
-4D and current CP4 advance in exact order, use fresh current evidence, and never
+4D and accepted CP4 advanced in exact order, used fresh current evidence, and never
 reuse superseded Candidate-C, LPAC, or diagnostic recovery evidence.
 The approved 2C decision is the narrow audit-only route: preflight fallback
 retains the ordinary target-only path, while an eligible call takes one
@@ -350,11 +352,11 @@ gateways. The Task database remains the sole owner of live status and evidence.
 | Unit/order | Task | Lane | Dependency | Authority status and successor gate |
 |---|---|---|---|---|
 | TG-DOC.2 / 40 | `tg_task_bf2aa245019f5c9f` | `TG-M23-DERIVED-EVIDENCE` | accepted TG-M23.3 | accepted predecessor; required before TG-M24.R1 |
-| TG-DOC.3 / 20 | `tg_task_99371b8db2d43eb2` | `TG-DOC-LIFECYCLE` | accepted TG-M24.CP4 and accepted TG-DOC.2 | inactive post-M24 |
+| TG-DOC.3 / 20 | `tg_task_f7d02678293c67c7` | `TG-DOC-LIFECYCLE` | accepted TG-M24.CP4 and accepted TG-DOC.2 | current post-M24 normalization |
 
-TG-M24.CP4 remains the current formal M24 authority through its later Task
-acceptance and until TG-DOC.3 is activated by a separate atomic status
-synchronization. This is static cross-sequence authority, not live Task status.
+TG-M24.CP4 is accepted. TG-DOC.3 owns current formal documentation authority
+through its separate atomic status synchronization. This is static cross-
+sequence authority, not live Task status.
 
 <a id="tg-doc-2"></a>
 
@@ -406,10 +408,10 @@ also remain valid provenance or algorithm checks rather than active-prose pins.
 
 <a id="tg-doc-3"></a>
 
-### TG-DOC.3 Inactive Post-M24 Documentation Normalization And History Closure
+### TG-DOC.3 Current Post-M24 Documentation Normalization And History Closure
 
 The canonical row above solely owns TG-DOC.3 identity, lane and order,
-dependencies, and inactive status. This section owns its preserved post-M24
+dependencies, and current status. This section owns its preserved post-M24
 scope and gates.
 
 It preserves the former post-M24 closure: fold final supported M21-M24 behavior

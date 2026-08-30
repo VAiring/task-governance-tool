@@ -45,9 +45,9 @@ DOC2_ROW = (
     "accepted predecessor; required before TG-M24.R1 |"
 )
 DOC3_ROW = (
-    "| TG-DOC.3 / 20 | `tg_task_99371b8db2d43eb2` | "
+    "| TG-DOC.3 / 20 | `tg_task_f7d02678293c67c7` | "
     "`TG-DOC-LIFECYCLE` | accepted TG-M24.CP4 and accepted TG-DOC.2 | "
-    "inactive post-M24 |"
+    "current post-M24 normalization |"
 )
 
 
@@ -683,8 +683,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
+                "## TG-M24.CP4 Accepted Final No-Debt Repair Checkpoint And M25 Handoff",
                 "## TG-M24.CP4 Current Final No-Debt Repair Checkpoint And M25 Handoff",
-                "## TG-M24.CP4 Inactive Final No-Debt Repair Checkpoint And M25 Handoff",
             )
             self.assertIn(
                 "m24_current_binding",
@@ -696,7 +696,7 @@ class DocumentContractTests(unittest.TestCase):
                 root,
                 contract.M24,
                 "<a id=\"tg-m24-r4a\"></a>",
-                "## TG-M24.CP4 Current Duplicate Owner\n\n"
+                "## TG-M24.CP4 Accepted Duplicate Owner\n\n"
                 "<a id=\"tg-m24-r4a\"></a>",
             )
             self.assertIn(
@@ -708,8 +708,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "## TG-M24.CP4 Current Final No-Debt Repair Checkpoint And M25 Handoff",
-                "## TG-M24.CP4 Final No-Debt Repair Checkpoint And M25 Handoff Current",
+                "## TG-M24.CP4 Accepted Final No-Debt Repair Checkpoint And M25 Handoff",
+                "## TG-M24.CP4 Final No-Debt Repair Checkpoint And M25 Handoff Accepted",
             )
             result = contract.check_document_contract(root)
             self.assertTrue(result.ok, result.issues)
@@ -923,10 +923,10 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 "wrong_anchor",
-                "- [TG-DOC.3](../../plan.md#tg-doc-3) preserves the post-M24 "
-                "normalization scope",
-                "- [TG-DOC.3](../../plan.md#tg-doc-2) preserves the post-M24 "
-                "normalization scope",
+                "- [TG-DOC.3](../../plan.md#tg-doc-3) owns the current post-M24 "
+                "normalization",
+                "- [TG-DOC.3](../../plan.md#tg-doc-2) owns the current post-M24 "
+                "normalization",
             ),
         )
         for name, old, new in gateway_mutations:
@@ -1354,9 +1354,15 @@ class DocumentContractTests(unittest.TestCase):
                 for item in mixed
                 if isinstance(item, dict) and item.get("path") == contract.M24
             )
-            self.assertEqual(m24["current_units"], ["TG-M24.CP4"])
+            self.assertEqual(m24["current_units"], [])
             self.assertEqual(m24["inactive_units"], [])
             self.assertEqual(m24["superseded_units"], ["TG-M24.1B"])
+            self.assertNotIn("TG-M24.CP4", m24["current_units"])
+            self.assertNotIn("TG-M24.CP4", m24["inactive_units"])
+            documentation = registry["documentation_sequence"]
+            self.assertIsInstance(documentation, dict)
+            self.assertEqual(documentation["current_units"], ["TG-DOC.3"])
+            self.assertEqual(documentation["inactive_units"], [])
             self.assertNotIn("TG-M24.1", m24["current_units"])
             self.assertNotIn("TG-M24.1A", m24["inactive_units"])
             self.assertNotIn("TG-M24.R2C", m24["inactive_units"])
@@ -1624,6 +1630,7 @@ class DocumentContractTests(unittest.TestCase):
             "TG-M24.R4B",
             "TG-M24.R5",
             "TG-M24.2A",
+            "TG-M24.CP4",
             "TG-DOC.2",
             "TG-M21.5",
         ):
@@ -1741,7 +1748,7 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "# TG-M24 Verification Runner Current Execution Contract",
+                "# TG-M24 Verification Runner Accepted Execution Contract",
                 "# TG-M24 Verification Runner Mixed Execution Contract",
             )
             self.assertIn(
@@ -1777,8 +1784,8 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "# TG-M24 Verification Runner Current Execution Contract",
-                "# TG-M24 Verification Runner Not Current Execution Contract",
+                "# TG-M24 Verification Runner Accepted Execution Contract",
+                "# TG-M24 Verification Runner Not Accepted Execution Contract",
             )
             self.assertIn(
                 "document_role",
@@ -1789,13 +1796,13 @@ class DocumentContractTests(unittest.TestCase):
             self.replace(
                 root,
                 contract.M24,
-                "# TG-M24 Verification Runner Current Execution Contract",
-                "TG-M24 Verification Runner Current Execution Contract",
+                "# TG-M24 Verification Runner Accepted Execution Contract",
+                "TG-M24 Verification Runner Accepted Execution Contract",
             )
             self.append(
                 root,
                 contract.M24,
-                "\n> # TG-M24 Verification Runner Current Execution Contract\n",
+                "\n> # TG-M24 Verification Runner Accepted Execution Contract\n",
             )
             self.assertIn(
                 "document_role",
@@ -1924,7 +1931,7 @@ class DocumentContractTests(unittest.TestCase):
             (
                 "doc3_task",
                 DOC3_ROW.replace(
-                    "`tg_task_99371b8db2d43eb2`",
+                    "`tg_task_f7d02678293c67c7`",
                     "`tg_task_1111111111111111`",
                 ),
             ),
@@ -1945,7 +1952,10 @@ class DocumentContractTests(unittest.TestCase):
             ),
             (
                 "doc3_status",
-                DOC3_ROW.replace("inactive post-M24", "accepted post-M24"),
+                DOC3_ROW.replace(
+                    "current post-M24 normalization",
+                    "inactive post-M24 normalization",
+                ),
             ),
         )
 

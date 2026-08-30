@@ -520,7 +520,7 @@ coverage.
 - `docs/design.md`: implementation design and boundaries.
 - `plan.md`: current decisions, open issues, cross-sequence gateways, and
   non-delegated static contracts. Its
-  `plan.md#tg-doc-sequence` route owns accepted post-M23 TG-DOC.2 and inactive
+  `plan.md#tg-doc-sequence` route owns accepted post-M23 TG-DOC.2 and current
   post-M24 TG-DOC.3; accepted TG-DOC.2 is the predecessor of M24.1.
 - `docs/execution-contracts/`: indexed mixed current/conditional authority. M22
   routes through
@@ -539,9 +539,10 @@ coverage.
   flows. Accepted 4B validates legacy, core, migration, recovery, and
   fresh-state compatibility. Accepted 4C reconciles only the package and
   release-candidate boundary, and accepted 4D performs final integrated
-  acceptance without changing that behavior or package identity. Current CP4
-  owns only the final no-debt repair checkpoint and M25 handoff; it changes no
-  product byte and records no correction.
+  acceptance without changing that behavior or package identity. Accepted CP4
+  closed only the final no-debt repair checkpoint and M25 handoff without
+  changing a product byte or recording a correction. Current TG-DOC.3 changes
+  documentation authority only.
   Exact-current complete-plan pass uses its Runner observation, exact closed
   no-launch alone falls back to M21 Receipts, and other selected Runner states
   block. No new CLI leaf, public JSON field beyond the two approved target-set

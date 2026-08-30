@@ -1,9 +1,9 @@
-# TG-M24 Verification Runner Current Execution Contract
+# TG-M24 Verification Runner Accepted Execution Contract
 
 <a id="tg-m24-verification-runner"></a>
 
 > [!IMPORTANT]
-> CURRENT FORMAL AUTHORITY.
+> ACCEPTED PREDECESSOR FORMAL AUTHORITY.
 > This document owns the TG-M24 repair and acceptance sequence.
 > TG-M24.1 and TG-M24.1A are accepted predecessors, but their adversarial-code
 > qualification details are excluded from this sequence's gates. TG-M24.1B is
@@ -17,9 +17,9 @@
 > public-activation baseline; TG-M24.R4B, TG-M24.R5, TG-M24.2A, TG-M24.2B, and
 > TG-M24.2C and TG-M24.2D are accepted predecessors. TG-M24.3A, TG-M24.3B,
 > TG-M24.3C, TG-M24.4A, TG-M24.4B, TG-M24.4C, and TG-M24.4D are accepted
-> predecessors. TG-M24.CP4 owns current formal authority and remains current
-> until TG-DOC.3 is activated through the separately owned documentation
-> gateway.
+> predecessors. TG-M24.CP4 is accepted; no TG-M24 execution unit is current,
+> and TG-DOC.3 owns current formal
+> documentation authority through its separately owned activation gateway.
 > Its scope remains trusted-local, and its permission boundary is explicit
 > opt-in.
 > The separate TG-M24.R2 bootstrap Task supplies only a reviewed phase-one
@@ -702,7 +702,7 @@ with no open High or Medium finding.
 
 <a id="tg-m24-cp4"></a>
 
-## TG-M24.CP4 Current Final No-Debt Repair Checkpoint And M25 Handoff
+## TG-M24.CP4 Accepted Final No-Debt Repair Checkpoint And M25 Handoff
 
 Task `tg_task_a9e1229d594594d4` closes M24 only from one clean reviewed
 candidate. Against baseline `888a77759cfc59376089b8ebdc509e748638f603`,
@@ -713,7 +713,7 @@ DAG drift, or open M24 work blocks closure. CP4 changes no product byte and
 records no correction. Completion requires all current checks, a current
 `pass/full` Receipt, and two independent Tier 2 PASS reviews before the M25
 handoff and TG-DOC.3 normalization may begin. Its formal-current binding
-retires only through the separately owned TG-DOC.3 activation synchronization.
+retired through the separately owned TG-DOC.3 activation synchronization.
 
 ## Expansion Boundary
 

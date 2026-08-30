@@ -32,9 +32,9 @@ boundary, and TG-M24.3C accepted Runner completion-gate integration. TG-M24.4A
 accepted supported, fallback, failure, cleanup, and privacy flows, and
 TG-M24.4B accepted legacy, core, migration, recovery, and fresh-state
 compatibility, TG-M24.4C accepted package and release-candidate reconciliation,
-and TG-M24.4D accepted final integrated acceptance. TG-M24.CP4 is the sole
-current TG-M24 authority and owns only the final no-debt checkpoint and M25
-handoff; it changes no product byte and records no correction.
+and TG-M24.4D accepted final integrated acceptance. TG-M24.CP4 accepted the
+final no-debt checkpoint and M25 handoff without changing a product byte or
+recording a correction. Current TG-DOC.3 changes documentation authority only.
 TG-M16.4 behavioral acceptance remains part of the current baseline. The Task
 database owns live state and evidence.
 

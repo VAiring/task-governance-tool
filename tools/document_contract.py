@@ -248,10 +248,10 @@ ROWS_DOC = (
     ),
     (
         "TG-DOC.3 / 20",
-        "tg_task_99371b8db2d43eb2",
+        "tg_task_f7d02678293c67c7",
         "TG-DOC-LIFECYCLE",
         "accepted TG-M24.CP4 and accepted TG-DOC.2",
-        "inactive post-M24",
+        "current post-M24 normalization",
     ),
 )
 
@@ -402,8 +402,8 @@ TASK_STATUS_VALUES = {
     "paused",
     "done",
 }
-# This split's status is enforced only by registry, sequence, anchor, and heading checks.
-M24_SPLIT_STRUCTURAL_STATUS_UNITS = (
+# These units' status is enforced only by registry, sequence, anchor, and heading checks.
+STRUCTURAL_STATUS_UNITS = (
     "TG-M24.2D",
     "TG-M24.3A",
     "TG-M24.3B",
@@ -412,13 +412,13 @@ M24_SPLIT_STRUCTURAL_STATUS_UNITS = (
     "TG-M24.4B",
     "TG-M24.4C",
     "TG-M24.4D",
-    "TG-M24.CP4",
+    "TG-DOC.3",
 )
 NONCURRENT_UNITS = tuple(
     row[0].split(" /", 1)[0]
     for rows in (ROWS_M22, ROWS_M23, ROWS_M24, ROWS_DOC)
     for row in rows
-    if row[0].split(" /", 1)[0] not in M24_SPLIT_STRUCTURAL_STATUS_UNITS
+    if row[0].split(" /", 1)[0] not in STRUCTURAL_STATUS_UNITS
 ) + ("TG-M24.1", "TG-M24.1A", "TG-M24.1B")
 NONCURRENT_SUBJECTS = tuple(
     sorted(
@@ -754,7 +754,7 @@ ROLE_TITLE_TOKENS = {
     M22: ("m22", "evidence", "ledger", "accepted", "contract"),
     M23: ("m23", "derived", "evidence", "accepted", "contract"),
     M23_PROCESS: ("m23", "process", "safety", "contract"),
-    M24: ("m24", "verification", "runner", "current", "contract"),
+    M24: ("m24", "verification", "runner", "accepted", "contract"),
     HISTORY_INDEX: ("historical", "documentation", "index"),
     RELEASE_INSTALL: ("release", "install", "record"),
 }
@@ -764,23 +764,22 @@ ROLE_TITLE_TOKENS = {
 # negative relation is required where the owner declares that no unit is
 # current; merely mentioning the word ``current`` is not sufficient.
 ROLE_BANNER_STATUS = {
-    EXECUTION_INDEX: (("mixed", "current", "conditional", "accepted", "inactive"), False),
+    EXECUTION_INDEX: (("mixed", "current", "accepted"), False),
     M22: (("accepted", "predecessor"), False),
     M23: (("accepted", "predecessor"), True),
     M23_PROCESS: (("delegated", "accepted"), True),
     M24: (
         (
-            "current",
+            "accepted",
             "formal",
             "authority",
-            "accepted",
             "predecessor",
             "superseded",
             "trusted-local",
             "explicit",
             "opt-in",
         ),
-        False,
+        True,
     ),
 }
 
@@ -914,7 +913,7 @@ DOCUMENTATION_UNITS = (
     DocumentationUnit(
         "TG-DOC.3",
         "tg-doc-3",
-        "inactive",
+        "current",
     ),
 )
 
@@ -1678,7 +1677,7 @@ def _expected_registry() -> dict[str, object]:
             {
                 "path": M24,
                 "route_anchor": "tg-m24-verification-runner",
-                "current_units": ["TG-M24.CP4"],
+                "current_units": [],
                 "inactive_units": [],
                 "superseded_units": ["TG-M24.1B"],
             },
@@ -1686,8 +1685,8 @@ def _expected_registry() -> dict[str, object]:
         "documentation_sequence": {
             "path": "plan.md",
             "route_anchor": "tg-doc-sequence",
-            "current_units": [],
-            "inactive_units": ["TG-DOC.3"],
+            "current_units": ["TG-DOC.3"],
+            "inactive_units": [],
         },
         "conditional": [],
         "history_index": HISTORY_INDEX,
@@ -2292,7 +2291,7 @@ def _m24_trusted_local_authority_sync(
         ("tg-m24-4b", "tg-m24.4b", "accepted"),
         ("tg-m24-4c", "tg-m24.4c", "accepted"),
         ("tg-m24-4", "tg-m24.4d", "accepted"),
-        ("tg-m24-cp4", "tg-m24.cp4", "current"),
+        ("tg-m24-cp4", "tg-m24.cp4", "accepted"),
     )
     observed_statuses: list[tuple[str, str, str]] = []
     for anchor, unit, expected_status in status_bindings:
@@ -2823,7 +2822,7 @@ def _documentation_sequence(scans: dict[str, Scan], issues: list[Issue]) -> None
                 Issue(
                     "sequence_contract",
                     "plan.md",
-                    f"{unit.unit} accepted/inactive owner heading drifted",
+                    f"{unit.unit} owner heading status drifted",
                 )
             )
 

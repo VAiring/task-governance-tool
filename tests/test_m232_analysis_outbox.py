@@ -94,7 +94,7 @@ class AnalysisOutboxTests(unittest.TestCase):
 
     def test_canonical_paths_and_descriptor_before_status_enqueue(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve(strict=True)
             fixed_root = root / "skill" / "state" / "current"
             fixed_root.mkdir(parents=True)
             paths = analysis_state_paths(fixed_root)

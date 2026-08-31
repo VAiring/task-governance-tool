@@ -188,6 +188,7 @@ def row_counts(db: Path) -> dict[str, int]:
 
 class RunnerServiceFixture:
     def __init__(self, root: Path) -> None:
+        root = Path(root).resolve(strict=True)
         self.repo = root / "repo"
         self.db = root / "state" / "taskgov.sqlite"
         self.repo.mkdir(parents=True)
@@ -297,6 +298,19 @@ class RunnerServiceFixture:
 
 
 class VerificationRunnerServiceTests(unittest.TestCase):
+    def test_fixture_canonicalizes_temporary_root_before_deriving_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary)
+            alias_component = temporary_root / "alias-component"
+            alias_component.mkdir()
+
+            fixture = RunnerServiceFixture(alias_component / "..")
+            canonical_root = temporary_root.resolve(strict=True)
+
+            self.assertEqual(fixture.repo.parent, canonical_root)
+            self.assertEqual(fixture.repo, fixture.target.project.canonical_repo)
+            self.assertEqual(fixture.db, fixture.target.db_path)
+
     def test_commit_revision_is_required_before_git_resolution(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary))

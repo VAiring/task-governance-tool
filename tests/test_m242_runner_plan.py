@@ -580,6 +580,19 @@ class StrictPlanValidationTests(VerificationRunnerPlanTestCase):
     def assert_invalid_value(self, value, code="plan_invalid"):
         self.assert_plan_error(lambda: resolve(source_from_value(value)), code)
 
+    def test_plan_error_is_traceback_compatible(self):
+        try:
+            raise VerificationRunnerPlanError(code="plan_invalid")
+        except VerificationRunnerPlanError as caught:
+            error = caught
+            attached_traceback = caught.__traceback__
+
+        error.__traceback__ = attached_traceback
+
+        self.assertIs(error.__traceback__, attached_traceback)
+        self.assertEqual(error.code, "plan_invalid")
+        self.assertEqual(str(error), PLAN_ERROR_MESSAGE)
+
     def test_source_digest_and_blob_bound_are_strict(self):
         raw = canonical_json_bytes(plan_payload())
         self.assert_plan_error(

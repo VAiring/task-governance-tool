@@ -77,7 +77,7 @@ _RELATIVE_COMPONENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}\Z")
 _MODULE_COMPONENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}\Z")
 
 
-@dataclass(frozen=True)
+@dataclass
 class VerificationRunnerPlanError(Exception):
     code: str
     message: str = PLAN_ERROR_MESSAGE

@@ -886,20 +886,68 @@ class AnalysisIntegrationTests(unittest.TestCase):
             )
 
     def test_worker_import_closure_excludes_storage_cli_and_network_modules(self):
-        script = (
-            "import json,sys;"
-            f"sys.path.insert(0,{str(SCRIPTS_ROOT)!r});"
-            "import task_governance_tool.analysis_worker;"
-            "forbidden=("
-            "'sqlite3','socket','subprocess','requests','urllib',"
-            "'task_governance_tool.storage','task_governance_tool.tasks',"
-            "'task_governance_tool.cli','task_governance_tool.setup',"
-            "'task_governance_tool.maintenance',"
-            "'task_governance_tool.evidence_projection');"
-            "loaded=sorted(name for name in sys.modules "
-            "if any(name==item or name.startswith(item+'.') for item in forbidden));"
-            "print(json.dumps(loaded,separators=(',',':')))"
+        forbidden = (
+            "sqlite3",
+            "socket",
+            "subprocess",
+            "requests",
+            "urllib.request",
+            "http.client",
+            "task_governance_tool.storage",
+            "task_governance_tool.tasks",
+            "task_governance_tool.cli",
+            "task_governance_tool.setup",
+            "task_governance_tool.maintenance",
+            "task_governance_tool.evidence_projection",
         )
+        script = f"""
+import json
+import sys
+
+forbidden = {forbidden!r}
+denied = []
+allowed = []
+
+class DeniedImport(RuntimeError):
+    pass
+
+class ImportGuard:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in {{"urllib", "urllib.parse"}}:
+            allowed.append(fullname)
+            return None
+        if fullname.startswith("urllib.") or any(
+            fullname == item or fullname.startswith(item + ".")
+            for item in forbidden
+        ):
+            denied.append(fullname)
+            raise DeniedImport(fullname)
+        return None
+
+sys.meta_path.insert(0, ImportGuard())
+sys.path.insert(0, {str(SCRIPTS_ROOT)!r})
+import task_governance_tool.analysis_worker
+__import__("urllib.parse", fromlist=("*",))
+worker_denials = list(denied)
+
+fixture_denials = []
+for name in forbidden:
+    denied.clear()
+    try:
+        __import__(name, fromlist=("*",))
+    except DeniedImport as exc:
+        if exc.args != (name,) or denied != [name]:
+            raise
+        fixture_denials.append(name)
+    else:
+        raise AssertionError(name)
+
+print(json.dumps({{
+    "allowed": sorted(set(allowed)),
+    "fixture_denials": fixture_denials,
+    "worker_denials": worker_denials,
+}}, separators=(",", ":")))
+"""
         completed = subprocess.run(
             [sys.executable, "-I", "-B", "-c", script],
             cwd=ROOT,
@@ -909,7 +957,14 @@ class AnalysisIntegrationTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(json.loads(completed.stdout), [])
+        self.assertEqual(
+            json.loads(completed.stdout),
+            {
+                "allowed": ["urllib", "urllib.parse"],
+                "fixture_denials": list(forbidden),
+                "worker_denials": [],
+            },
+        )
 
 
 if __name__ == "__main__":

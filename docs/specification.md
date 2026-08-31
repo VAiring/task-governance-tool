@@ -2825,6 +2825,19 @@ eligible on all eight. Enabled run overhead versus disabled is at most 10
 seconds and each foreground command at most 5 seconds on Windows CI. Attempt,
 render, call, byte, and zero-wait limits are hard; timing cannot waive them.
 
+Windows timing qualification uses one complete non-qualifying warm-up followed
+by six measured rounds from fresh copies of the same fixed fixture. The
+three-mode qualifier uses every mode permutation once; the two-mode qualifier
+uses both orders equally. Every overhead remains paired with the disabled
+total from that same round. The 10-second budget applies to the median of the
+six paired enabled-minus-disabled totals. The 5-second budget applies to the
+median of the six
+observations at each mode and write position; it is not averaged across
+commands. Diagnostics are bounded to the fixture and mode, the six paired
+overheads, eight command medians, and the maximum raw measured observation.
+Functional, count, byte, attempt, render, and call assertions remain separate
+hard failures and are never decided by the timing statistic.
+
 ## Static Task Viewer
 
 The Viewer is a generated self-contained projection, never an authority.

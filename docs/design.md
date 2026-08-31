@@ -4349,6 +4349,18 @@ Tier-2 changes use two independent exact-target reviews. Tests hard-fail count,
 byte, subprocess, attempt, and render limits; performance budgets never justify
 loosening a deterministic bound or adding asynchronous architecture.
 
+The release-lane backup/Viewer performance module separates deterministic
+functional and capacity checks from timing classification. Each fixed fixture
+uses fresh database copies for one warm-up round and six measured rounds. The
+three-mode qualifier uses all six permutations once, while the two-mode
+qualifier repeats both orders equally. One local helper classifies the same-
+round paired enabled-minus-disabled overhead using the six-sample median, and
+the median observation at each command position against the existing budgets.
+The helper emits only
+bounded numeric diagnostics. The warm-up is excluded from qualification; no
+functional, count, byte, attempt, render, or call failure is excluded or
+statistically masked.
+
 ## Deferred Boundaries
 
 Deferred work includes profile authoring, a public command or Skill trigger for

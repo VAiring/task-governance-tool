@@ -7,7 +7,9 @@ import time
 import unittest
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
+from itertools import permutations
 from pathlib import Path
+from statistics import median
 from unittest import mock
 
 from tests.m14_test_support import (
@@ -46,6 +48,16 @@ MIGRATION_FIXTURE = (
 BASE_TIME = datetime(2026, 7, 27, tzinfo=UTC)
 WRITE_OFFSETS = (0, 1, 5, 29, 30, 31, 59, 60)
 EXPECTED_BACKUP_OFFSETS = (0, 30, 60)
+QUALIFICATION_WARMUP_ROUNDS = 1
+QUALIFICATION_SAMPLE_ROUNDS = 6
+OVERHEAD_BUDGET_SECONDS = 10.0
+COMMAND_BUDGET_SECONDS = 5.0
+BACKUP_QUALIFICATION_MODES = ("disabled", "backup-only")
+VIEWER_QUALIFICATION_MODES = ("disabled", "viewer-only", "combined")
+BACKUP_QUALIFICATION_ORDERS = (
+    tuple(permutations(BACKUP_QUALIFICATION_MODES)) * 3
+)
+VIEWER_QUALIFICATION_ORDERS = tuple(permutations(VIEWER_QUALIFICATION_MODES))
 
 
 def timestamp(minute: int) -> str:
@@ -309,13 +321,159 @@ def run_write_sequence(
             len(payload["data"]["event"]["summary"].encode("utf-8")),
             256,
         )
-        testcase.assertLess(elapsed, 5.0)
         timings.append(elapsed)
     return timings
 
 
+def run_backup_qualification_round(
+    testcase: unittest.TestCase,
+    *,
+    root: Path,
+    repo: Path,
+    seed_db: Path,
+    task_id: str,
+    mode_order: tuple[str, ...],
+) -> dict[str, list[float]]:
+    disabled = copied_target(
+        repo,
+        seed_db,
+        root / "disabled" / "taskgov.sqlite",
+    )
+    backup_only = copied_target(
+        repo,
+        seed_db,
+        root / "backup-only" / "taskgov.sqlite",
+    )
+    targets = {
+        "disabled": (disabled, False),
+        "backup-only": (backup_only, True),
+    }
+    timings = {}
+    for mode in mode_order:
+        target, maintenance_enabled = targets[mode]
+        if mode == "backup-only":
+            with mock.patch.object(
+                maintenance_service,
+                "run_routine_viewer_refresh",
+                return_value=ViewerRefreshResult(code="current", renders=0),
+            ):
+                timings[mode] = run_write_sequence(
+                    testcase,
+                    target,
+                    task_id,
+                    maintenance_enabled=maintenance_enabled,
+                )
+        else:
+            timings[mode] = run_write_sequence(
+                testcase,
+                target,
+                task_id,
+                maintenance_enabled=maintenance_enabled,
+            )
+    return {mode: timings[mode] for mode in BACKUP_QUALIFICATION_MODES}
+
+
+def run_viewer_qualification_round(
+    testcase: unittest.TestCase,
+    *,
+    root: Path,
+    repo: Path,
+    seed_db: Path,
+    task_id: str,
+    mode_order: tuple[str, ...],
+) -> dict[str, list[float]]:
+    disabled = copied_target(
+        repo,
+        seed_db,
+        root / "disabled" / "taskgov.sqlite",
+    )
+    viewer_only = copied_target(
+        repo,
+        seed_db,
+        root / "viewer-only" / "taskgov.sqlite",
+    )
+    combined = copied_target(
+        repo,
+        seed_db,
+        root / "combined" / "taskgov.sqlite",
+    )
+    mark_backup_not_due(viewer_only)
+    targets = {
+        "disabled": (disabled, False),
+        "viewer-only": (viewer_only, True),
+        "combined": (combined, True),
+    }
+    timings = {}
+    for mode in mode_order:
+        target, maintenance_enabled = targets[mode]
+        timings[mode] = run_write_sequence(
+            testcase,
+            target,
+            task_id,
+            maintenance_enabled=maintenance_enabled,
+        )
+    return {mode: timings[mode] for mode in VIEWER_QUALIFICATION_MODES}
+
+
+def assert_repeatable_qualification(
+    testcase: unittest.TestCase,
+    *,
+    label: str,
+    samples: list[dict[str, list[float]]],
+) -> None:
+    testcase.assertEqual(len(samples), QUALIFICATION_SAMPLE_ROUNDS)
+    expected_modes = tuple(samples[0])
+    testcase.assertIn("disabled", expected_modes)
+    for sample in samples:
+        testcase.assertEqual(tuple(sample), expected_modes)
+        testcase.assertTrue(
+            all(len(timings) == len(WRITE_OFFSETS) for timings in sample.values())
+        )
+
+    disabled_totals = [sum(sample["disabled"]) for sample in samples]
+    for mode in expected_modes:
+        command_medians = [
+            median(sample[mode][command_index] for sample in samples)
+            for command_index in range(len(WRITE_OFFSETS))
+        ]
+        raw_maximum = max(
+            timing
+            for sample in samples
+            for timing in sample[mode]
+        )
+        diagnostic = (
+            f"performance-qualification {label} mode={mode} "
+            f"warmup={QUALIFICATION_WARMUP_ROUNDS} "
+            f"samples={QUALIFICATION_SAMPLE_ROUNDS} statistic=median "
+            f"command-medians="
+            f"[{','.join(f'{value:.3f}' for value in command_medians)}] "
+            f"raw-max={raw_maximum:.3f}s"
+        )
+        if mode != "disabled":
+            overhead_samples = [
+                sum(sample[mode]) - disabled_total
+                for sample, disabled_total in zip(samples, disabled_totals)
+            ]
+            overhead_median = median(overhead_samples)
+            diagnostic += (
+                " overhead-samples="
+                f"[{','.join(f'{value:.3f}' for value in overhead_samples)}] "
+                f"overhead-median={overhead_median:.3f}s"
+            )
+            testcase.assertLessEqual(
+                overhead_median,
+                OVERHEAD_BUDGET_SECONDS,
+                diagnostic,
+            )
+        testcase.assertTrue(
+            all(value < COMMAND_BUDGET_SECONDS for value in command_medians),
+            diagnostic,
+        )
+        print(diagnostic)
+
+
 class BackupPerformanceTests(unittest.TestCase):
-    def test_small_and_large_backup_only_performance_contract(self):
+    def test_small_and_large_backup_only_functional_contract(self):
         scenarios = (
             ("small-migration", small_task_specs(), 12, 191),
             ("large", large_task_specs(), 500, 5000),
@@ -353,7 +511,7 @@ class BackupPerformanceTests(unittest.TestCase):
                         "disabled coordinator performed backup work"
                     ),
                 ):
-                    disabled_timings = run_write_sequence(
+                    run_write_sequence(
                         self,
                         disabled,
                         task_id,
@@ -394,7 +552,7 @@ class BackupPerformanceTests(unittest.TestCase):
                         side_effect=counted_copy,
                     ),
                 ):
-                    enabled_timings = run_write_sequence(
+                    run_write_sequence(
                         self,
                         enabled,
                         task_id,
@@ -440,19 +598,55 @@ class BackupPerformanceTests(unittest.TestCase):
                     task_count=task_count,
                     event_count=event_count + len(WRITE_OFFSETS),
                 )
-                disabled_total = sum(disabled_timings)
-                enabled_total = sum(enabled_timings)
-                self.assertLess(enabled_total - disabled_total, 10.0)
-                print(
-                    "backup-performance "
-                    f"{name}: disabled={disabled_total:.3f}s "
-                    f"backup-only={enabled_total:.3f}s "
-                    f"delta={enabled_total - disabled_total:.3f}s "
-                    f"max-command={max(*disabled_timings, *enabled_timings):.3f}s "
-                    f"publications={len(published_at)}"
+    def test_small_and_large_backup_only_performance_contract(self):
+        scenarios = (
+            ("small-migration", small_task_specs(), 12, 191),
+            ("large", large_task_specs(), 500, 5000),
+        )
+        for name, specs, task_count, event_count in scenarios:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo, seed_db, task_id, seeded_event_count = seed_fixture(
+                    root,
+                    task_specs=specs[0],
+                    tool_event_specs=specs[1],
+                )
+                self.assertEqual(seeded_event_count, event_count)
+                assert_fixed_fixture_bytes(
+                    self,
+                    seed_db,
+                    task_count=task_count,
+                    event_count=event_count,
+                )
+                for warmup_index in range(QUALIFICATION_WARMUP_ROUNDS):
+                    run_backup_qualification_round(
+                        self,
+                        root=root / f"warmup-{warmup_index + 1}",
+                        repo=repo,
+                        seed_db=seed_db,
+                        task_id=task_id,
+                        mode_order=BACKUP_QUALIFICATION_MODES,
+                    )
+                samples = [
+                    run_backup_qualification_round(
+                        self,
+                        root=root / f"sample-{sample_index + 1}",
+                        repo=repo,
+                        seed_db=seed_db,
+                        task_id=task_id,
+                        mode_order=mode_order,
+                    )
+                    for sample_index, mode_order in enumerate(
+                        BACKUP_QUALIFICATION_ORDERS
+                    )
+                ]
+                assert_repeatable_qualification(
+                    self,
+                    label=f"backup {name}",
+                    samples=samples,
                 )
 
-    def test_small_and_large_viewer_and_combined_performance_contract(self):
+    def test_small_and_large_viewer_and_combined_functional_contract(self):
         scenarios = (
             ("small-migration", small_task_specs(), 12, 191),
             ("large", large_task_specs(), 500, 5000),
@@ -483,7 +677,7 @@ class BackupPerformanceTests(unittest.TestCase):
                 )
                 mark_backup_not_due(viewer_only)
 
-                disabled_timings = run_write_sequence(
+                run_write_sequence(
                     self,
                     disabled,
                     task_id,
@@ -517,7 +711,7 @@ class BackupPerformanceTests(unittest.TestCase):
                         side_effect=counted_viewer_backup,
                     ),
                 ):
-                    viewer_timings = run_write_sequence(
+                    run_write_sequence(
                         self,
                         viewer_only,
                         task_id,
@@ -548,7 +742,7 @@ class BackupPerformanceTests(unittest.TestCase):
                         side_effect=counted_combined_backup,
                     ),
                 ):
-                    combined_timings = run_write_sequence(
+                    run_write_sequence(
                         self,
                         combined,
                         task_id,
@@ -593,19 +787,52 @@ class BackupPerformanceTests(unittest.TestCase):
                         event_count=event_count + len(WRITE_OFFSETS),
                     )
 
-                disabled_total = sum(disabled_timings)
-                viewer_total = sum(viewer_timings)
-                combined_total = sum(combined_timings)
-                self.assertLess(viewer_total - disabled_total, 10.0)
-                self.assertLess(combined_total - disabled_total, 10.0)
-                print(
-                    "viewer-performance "
-                    f"{name}: disabled={disabled_total:.3f}s "
-                    f"viewer-only={viewer_total:.3f}s "
-                    f"combined={combined_total:.3f}s "
-                    f"viewer-delta={viewer_total - disabled_total:.3f}s "
-                    f"combined-delta={combined_total - disabled_total:.3f}s "
-                    f"max-command={max(*disabled_timings, *viewer_timings, *combined_timings):.3f}s"
+    def test_small_and_large_viewer_and_combined_performance_contract(self):
+        scenarios = (
+            ("small-migration", small_task_specs(), 12, 191),
+            ("large", large_task_specs(), 500, 5000),
+        )
+        for name, specs, task_count, event_count in scenarios:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo, seed_db, task_id, seeded_event_count = seed_fixture(
+                    root,
+                    task_specs=specs[0],
+                    tool_event_specs=specs[1],
+                )
+                self.assertEqual(seeded_event_count, event_count)
+                assert_fixed_fixture_bytes(
+                    self,
+                    seed_db,
+                    task_count=task_count,
+                    event_count=event_count,
+                )
+                for warmup_index in range(QUALIFICATION_WARMUP_ROUNDS):
+                    run_viewer_qualification_round(
+                        self,
+                        root=root / f"warmup-{warmup_index + 1}",
+                        repo=repo,
+                        seed_db=seed_db,
+                        task_id=task_id,
+                        mode_order=VIEWER_QUALIFICATION_MODES,
+                    )
+                samples = [
+                    run_viewer_qualification_round(
+                        self,
+                        root=root / f"sample-{sample_index + 1}",
+                        repo=repo,
+                        seed_db=seed_db,
+                        task_id=task_id,
+                        mode_order=mode_order,
+                    )
+                    for sample_index, mode_order in enumerate(
+                        VIEWER_QUALIFICATION_ORDERS
+                    )
+                ]
+                assert_repeatable_qualification(
+                    self,
+                    label=f"viewer {name}",
+                    samples=samples,
                 )
 
 

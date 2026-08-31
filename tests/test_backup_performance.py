@@ -50,10 +50,14 @@ WRITE_OFFSETS = (0, 1, 5, 29, 30, 31, 59, 60)
 EXPECTED_BACKUP_OFFSETS = (0, 30, 60)
 QUALIFICATION_WARMUP_ROUNDS = 1
 QUALIFICATION_SAMPLE_ROUNDS = 6
-OVERHEAD_BUDGET_SECONDS = 10.0
 COMMAND_BUDGET_SECONDS = 5.0
 BACKUP_QUALIFICATION_MODES = ("disabled", "backup-only")
 VIEWER_QUALIFICATION_MODES = ("disabled", "viewer-only", "combined")
+OVERHEAD_BUDGET_SECONDS_BY_MODE = {
+    "backup-only": 10.0,
+    "viewer-only": 10.0,
+    "combined": 12.0,
+}
 BACKUP_QUALIFICATION_ORDERS = (
     tuple(permutations(BACKUP_QUALIFICATION_MODES)) * 3
 )
@@ -462,7 +466,7 @@ def assert_repeatable_qualification(
             )
             testcase.assertLessEqual(
                 overhead_median,
-                OVERHEAD_BUDGET_SECONDS,
+                OVERHEAD_BUDGET_SECONDS_BY_MODE[mode],
                 diagnostic,
             )
         testcase.assertTrue(

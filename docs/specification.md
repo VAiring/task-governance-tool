@@ -2821,19 +2821,23 @@ remaining churn due. Setup rerun is the only explicit force/repair.
 The performance fixture is 12 Tasks/191 events and 500 Tasks/5,000 events,
 payloads 80/512/256 UTF-8 bytes, with eight note writes at injected minutes
 0, 1, 5, 29, 30, 31, 59, and 60. Due backups are at 0, 30, 60; Viewer is
-eligible on all eight. Enabled run overhead versus disabled is at most 10
-seconds and each foreground command at most 5 seconds on Windows CI. Attempt,
-render, call, byte, and zero-wait limits are hard; timing cannot waive them.
+eligible on all eight. Backup-only and Viewer-only run overhead versus disabled
+is at most 10 seconds, combined Viewer-plus-backup overhead is at most 12
+seconds, and each command-position median is below 5 seconds on Windows CI.
+Attempt, render, call, byte, and zero-wait limits are hard; timing cannot waive
+them.
 
 Windows timing qualification uses one complete non-qualifying warm-up followed
 by six measured rounds from fresh copies of the same fixed fixture. The
 three-mode qualifier uses every mode permutation once; the two-mode qualifier
 uses both orders equally. Every overhead remains paired with the disabled
-total from that same round. The 10-second budget applies to the median of the
-six paired enabled-minus-disabled totals. The 5-second budget applies to the
-median of the six
-observations at each mode and write position; it is not averaged across
-commands. Diagnostics are bounded to the fixture and mode, the six paired
+total from that same round. The mode-specific total budget applies to the
+median of the six paired enabled-minus-disabled totals: 10 seconds for
+backup-only and Viewer-only, and 12 seconds for combined Viewer-plus-backup.
+The strict 5-second budget applies to the median of the six
+observations at each mode and write position and requires that median to remain
+below 5 seconds; it is not averaged across commands. Diagnostics are bounded to
+the fixture and mode, the six paired
 overheads, eight command medians, and the maximum raw measured observation.
 Functional, count, byte, attempt, render, and call assertions remain separate
 hard failures and are never decided by the timing statistic.

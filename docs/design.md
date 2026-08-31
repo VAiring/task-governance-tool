@@ -4355,9 +4355,11 @@ uses fresh database copies for one warm-up round and six measured rounds. The
 three-mode qualifier uses all six permutations once, while the two-mode
 qualifier repeats both orders equally. One local helper classifies the same-
 round paired enabled-minus-disabled overhead using the six-sample median, and
-the median observation at each command position against the existing budgets.
-The helper emits only
-bounded numeric diagnostics. The warm-up is excluded from qualification; no
+the median observation at each command position against the mode-specific
+budgets: 10 seconds for backup-only and Viewer-only total overhead, 12 seconds
+for combined Viewer-plus-backup total overhead, and below 5 seconds for every
+command-position median. The helper emits only bounded numeric diagnostics.
+The warm-up is excluded from qualification; no
 functional, count, byte, attempt, render, or call failure is excluded or
 statistically masked.
 

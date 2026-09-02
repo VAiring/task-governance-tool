@@ -307,19 +307,16 @@ The product must not become:
 ## Target Project Safety
 
 - Inspect target projects read-only by default.
-- The accepted Runner Plan authoring contract is inactive until its separately
-  reviewed TG-RPA.5 activation. That activation must update this guardrail in
-  the same revision as the implementation and public contract. When active,
-  taskgov-managed Plan publication is authorized only by an explicit
+- Taskgov-managed Runner Plan publication is authorized only by an explicit
   `task edit --runner-plan-action` invocation and is bounded to the one
   canonical ignored physical
   `config/verification-runner.json` (and its canonical `config` directory when
   initially absent); it authorizes no other target file, setup side effect,
-  Runner launch, Skill trigger, Git write, or external mutation. Until that
-  activation completes, no current command is authorized to create or edit the
-  Runner Plan. A separately and concretely user-approved direct local edit is
-  not taskgov-managed publication and remains governed by the general target-
-  project mutation rules below.
+  Runner launch, Skill trigger, Git write, or external mutation. No setup,
+  inspection, Task-only edit, or other command authorizes Plan publication. A
+  separately and concretely user-approved direct local edit is not
+  taskgov-managed publication and remains governed by the general target-project
+  mutation rules below.
 - Do not modify a target project simply because task-governance-tool inspected
   it.
 - A changed project path is not evidence of move, copy, or fork intent.

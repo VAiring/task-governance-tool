@@ -39,6 +39,7 @@ from task_governance_tool.tasks import (
     validation_error,
 )
 from task_governance_tool.verification_runner_plan import (
+    PLAN_BLOB_UTF8_BYTE_LIMIT,
     VerificationRunnerPlan,
     VerificationRunnerPlanBasis,
     VerificationRunnerPlanError,
@@ -169,7 +170,9 @@ def _validate_action_and_draft(
     return action, None
 
 
-def _reject_incompatible_action_options(edit_input: dict[str, Any]) -> None:
+def validate_runner_plan_action_options(edit_input: dict[str, Any]) -> None:
+    """Reject Task-edit modes that cannot share one Plan action."""
+
     if _INCOMPATIBLE_ACTION_FIELDS.intersection(edit_input) or (
         isinstance(edit_input.get("status"), str)
         and edit_input["status"].strip() == "done"
@@ -699,7 +702,7 @@ def edit_task_with_runner_plan(
             edit_input=exact_edit_input,
         )
 
-    _reject_incompatible_action_options(exact_edit_input)
+    validate_runner_plan_action_options(exact_edit_input)
     if not exact_edit_input:
         return _edit_plan_only(
             target,

@@ -74,7 +74,9 @@ network state. Read-only Git subprocesses are permitted only for the exact
 validation and review operations defined below. Explicit setup may create the
 canonical ignored package-local state and generated Viewer; successful
 business mutations may perform the opted-in bounded same-process maintenance
-defined below.
+defined below. One explicit `task edit --runner-plan-action` invocation may
+also create or replace only the canonical ignored package-local Runner Plan
+under the current authoring contract.
 
 ## Package, Runtime, And Generated State
 
@@ -219,7 +221,7 @@ Current success-data projections are:
 | default `task.current` | `tasks`, `count`, `limit`, `statuses` |
 | `task.effort` enabled | `task_id`, `enabled`, `profile`, `measurements`, `thresholds`, `exceeded`, `basis`, `observation`, `coverage`, `attribution`, `unknown_reasons`, `warning_key`, `suggested_action` |
 | `task.show` | exactly `task`, `events`, `suggested_next_action`, `review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`, `effort_advisory_enabled`, `completion_history`, `verification_evidence` |
-| `task.edit` | `task`, `changed_fields`, `event`, plus `contract_write` only for Contract input |
+| `task.edit` | `task`, `changed_fields`, `event`, plus `contract_write` only for Contract input and `runner_plan_update` only when a Runner Plan action was supplied |
 | `task.complete` | `task`, `changed_fields`, `event` |
 | `handoff.record` | `handoff`, `local_record` |
 | `handoff.list` | `handoffs`, `count`, `total_matching`, `limit`, `states` |
@@ -3739,22 +3741,19 @@ Skill trigger, or separate workflow action. Its only dispatch is the exact
 trusted-local opt-in branch of the existing target-set operation; qualifying
 gate authority is the closed schema-v21 branch above.
 
-## Accepted But Inactive Runner Plan Authoring And Control Contract
+## Current Runner Plan Authoring And Control Contract
 
-This section is an **accepted but inactive** implementation contract for lane
-`TG-RUNNER-PLAN-AUTHORING`, Tasks TG-RPA.1 through TG-RPA.6. It does not describe
-current CLI behavior and grants no config write, Task side effect, process
-launch, target mutation, or external operation merely by being present. Until
-TG-RPA.5 completes its separately reviewed activation, the product retains
-exactly 21 public command leaves, rejects the options described below, never
-creates or edits the Runner Plan, and continues to use `review target set` as
-the sole Runner dispatch. Schema v21, setup non-generation, current PlanV1
-capture/resolution, Runner execution, Evidence, Viewer, and completion behavior
-remain unchanged.
+This section is the current implementation contract for bounded Runner Plan
+authoring. The product retains exactly 21 public command leaves and adds only an
+explicit action option to the existing `task edit` leaf. This contract grants no
+config write, Task side effect, process launch, target mutation, or external
+operation without that invocation. `review target set` remains the sole Runner
+dispatch. Schema v21, setup non-generation, current PlanV1 capture/resolution,
+Runner execution, Evidence, Viewer, and completion behavior remain unchanged.
 
 ### Closed Draft And Actions
 
-Activation reuses the one existing ignored physical file
+Authoring reuses the one existing ignored physical file
 `<physical-package>/config/verification-runner.json` and the exact current
 PlanV1, EntryV1, and StepV1 member sets. It adds no PlanV2, second config,
 per-entry enabled flag, tombstone, setup generation, or Git-tracked plan. The
@@ -3792,7 +3791,7 @@ members, non-string member types, and raw-document overflow remain
 current PlanV1 reader validation nor reclassifies an existing manually authored
 Plan source.
 
-The future existing-leaf option is
+The existing-leaf option is
 `task edit <task-id> --runner-plan-action <action>`, where the closed action set
 and effects are:
 
@@ -3967,13 +3966,12 @@ them satisfy a new current gate.
 
 Authoring never calls `review target set`, captures a review target, launches a
 process, creates a Receipt or Runner graph, or changes the existing
-target-plan/process/lifecycle/native/completion/Evidence/Viewer paths. TG-RPA.5
-may activate this contract only after TG-RPA.1 through TG-RPA.4 complete their
-sequential Tier 2 gates and it synchronizes `AGENTS.md`, the public CLI, active
+target-plan/process/lifecycle/native/completion/Evidence/Viewer paths. The
+activation revision synchronizes `AGENTS.md`, the public CLI, active
 specification/design/plan, CLI contract reference, README opt-in examples,
-package manifest, and focused tests in one reviewed revision. The Skill and
-normal Task loop remain unchanged. TG-RPA.6 then performs acceptance-only full
-offline validation; a correction returns to its owning predecessor Task.
+package manifest, and focused tests. The Skill and normal Task loop remain
+unchanged. TG-RPA.6 performs acceptance-only full offline validation; a
+correction returns to its owning predecessor Task.
 
 ## Deferred Boundaries
 

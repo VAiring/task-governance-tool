@@ -47,11 +47,12 @@ effectively ignored before setup. This narrow target-local rule is recommended:
 
 ```gitignore
 /.agents/skills/task-governance-tool/state/
+/.agents/skills/task-governance-tool/config/verification-runner.json
 ```
 
-The rule covers only generated state owned by this Skill. An enclosing
-worktree rule for the same directory is also accepted. A non-Git directory is
-also a valid governed project and needs no Git ignore check.
+The rules cover only generated state and the explicitly authored local Runner
+Plan. An enclosing worktree rule for the same paths is also accepted. A non-Git
+directory is also a valid governed project and needs no Git ignore check.
 
 From the target-project root, preview and then perform setup:
 
@@ -422,10 +423,71 @@ constraints use the strict input guard. Completion-history public text has no
 legacy exception and is strictly revalidated before `task show` or Viewer
 output.
 
-It is local-first and uses no network service. It does not mutate target-project
-files or Git state, run project-specific verification automatically, or create
-external Issues/PRs. SQLite remains helper state; governing project documents
-and current user decisions remain authoritative.
+It is local-first and uses no network service. Except for one explicit
+`task edit --runner-plan-action` write to the canonical ignored package-local
+Runner Plan, it does not mutate target-project files or Git state. It does not
+run project-specific verification automatically or create external Issues/PRs.
+SQLite remains helper state; governing project documents and current user
+decisions remain authoritative.
+
+### Explicit Runner Plan authoring
+
+Runner Plan authoring is optional and is not part of the normal Skill loop. It
+uses the existing `task edit` command and never launches the Runner or sets a
+review target. For an initial entry or a deliberate step replacement, prepare a
+strict draft containing only `version` and one through 16 existing StepV1
+objects, then explicitly choose `replace`:
+
+```json
+{
+  "version": 1,
+  "steps": [
+    {
+      "step_id": "focused",
+      "mode": "script",
+      "entrypoint": "tests/test_focused.py",
+      "argv": [],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "cpu_seconds": 60,
+      "memory_mib": 256,
+      "process_limit": 4,
+      "output_byte_limit": 1048576
+    }
+  ]
+}
+```
+
+```powershell
+Get-Content -Raw -Encoding utf8 .\runner-plan-draft.json |
+  python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --runner-plan-action replace --json
+```
+
+The other actions read no stdin:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --runner-plan-action rebind --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --runner-plan-action detach --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --runner-plan-action disable --json
+```
+
+`rebind` preserves an existing entry's steps while moving it to the exact Task
+basis. `detach` removes only that Task's entries. `disable` preserves all
+entries and turns global local trust off; no action automatically re-enables a
+disabled Plan. A real Contract or verification-basis edit can carry one action
+in the same invocation, for example:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --verification "python -m unittest -q tests.test_focused" --runner-plan-action rebind --json
+```
+
+If that Task update succeeds but Plan publication cannot be confirmed, the Task
+remains committed and the response returns
+`task_applied_runner_plan_unconfirmed`. Do not rely on Runner execution until a
+later explicit Plan-only `replace`, `rebind`, `detach`, or `disable` succeeds.
+See
+[`task-governance-tool/references/cli_contracts.md`](task-governance-tool/references/cli_contracts.md)
+for the closed input, result, and error contracts.
 
 ## Immutable Published v0.10.0 Artifact
 

@@ -216,16 +216,15 @@ without inference or a second `task show`.
 
 <a id="runner-plan-authoring"></a>
 
-### Approved Inactive Runner Plan Authoring And Control Contract
+### Approved Active Runner Plan Authoring And Control Contract
 
 The user approved one bounded follow-up that makes the existing physical
 Runner Plan authorable without adding a command leaf or another Runner
-execution decision. This is a Tier 2, accepted-but-inactive contract. Current
-behavior remains the exact 21-leaf CLI, setup never generates the Plan, and
-`review target set` remains the sole Runner dispatch until the activation gate
-below completes. The active [specification](docs/specification.md) owns the
-closed future behavior and [design](docs/design.md) owns its implementation
-boundaries; this section owns the decision and execution sequence.
+execution decision. The active contract retains the exact 21-leaf CLI, setup
+never generates the Plan, and `review target set` remains the sole Runner
+dispatch. The active [specification](docs/specification.md) owns the closed
+behavior and [design](docs/design.md) owns its implementation boundaries; this
+section owns the decision and execution sequence.
 
 The frozen choices are:
 
@@ -292,13 +291,12 @@ the narrowest focused tests plus the applicable release, lane, document, and
 diff checks; a redundant full-suite requirement is deliberately excluded from
 those units. TG-RPA.6 alone owns the final full deterministic offline suite.
 
-TG-RPA.5 is the only activation gateway. Its one reviewed revision must switch
-the inactive markers and synchronize implementation, public CLI/JSON/text,
+TG-RPA.5 is the only activation gateway. Its one reviewed revision switches the
+inactive markers and synchronizes implementation, public CLI/JSON/text,
 `AGENTS.md`, formal owners, CLI reference, README, final package manifest, and
 focused tests.
-Until that unit completes, none of the new arguments or writes is current
-product behavior. TG-RPA.6 validates but does not broaden the activated
-contract. Registration authorizes governance records and the listed future
+TG-RPA.6 validates but does not broaden the activated contract. Registration
+authorizes governance records and the listed future
 repository-local implementation only; it grants no commit, push, network,
 external CI, publication, target-project installation, or unrelated mutation.
 

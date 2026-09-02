@@ -4363,17 +4363,15 @@ The warm-up is excluded from qualification; no
 functional, count, byte, attempt, render, or call failure is excluded or
 statistically masked.
 
-## Accepted But Inactive Runner Plan Authoring And Control Design
+## Current Runner Plan Authoring And Control Design
 
-This is the **accepted but inactive** implementation design for
-`TG-RUNNER-PLAN-AUTHORING`. It is not wired into the current package. Reading
-this section or registering its Tasks authorizes no config write, Task edit,
-process launch, target mutation, or external operation. Until the TG-RPA.5
-activation revision is complete, `verification_runner_plan.py` remains
-read-only, the CLI retains 21 leaves and no Runner Plan option, setup never
-creates the config, and the existing `review target set` parent service remains
-the sole Runner dispatch. Schema v21 and the current Runner, Evidence, Viewer,
-and completion graphs do not change.
+This is the current implementation design for bounded Runner Plan authoring.
+The CLI retains 21 leaves and exposes the one explicit Plan action option on
+`task edit`; reading this section alone authorizes no config write, Task edit,
+process launch, target mutation, or external operation. Setup never creates the
+config, and the existing `review target set` parent service remains the sole
+Runner dispatch. Schema v21 and the current Runner, Evidence, Viewer, and
+completion graphs do not change.
 
 ### Separate Authoring Control Boundary
 
@@ -4386,7 +4384,7 @@ graph. It adds these exact ownership boundaries:
 | `verification_runner_plan_authoring.py` | Strict RunnerPlanDraftV1 decode and pure `replace|rebind|detach|disable` transforms over one validated PlanV1 value. | No filesystem, SQLite, Git, target, CLI, process, Evidence, Viewer, or logging I/O. |
 | `verification_runner_plan_publisher.py` | Capture/revalidate the one canonical physical authoring source for every action and, when supplied, publish one already-canonical bounded candidate through the complete-file replacement boundary. | No Task or Contract decision, database access, action selection, process launch, target materialization, or Runner graph write. |
 | `verification_runner_plan_edit.py` | Parent control orchestration, option compatibility, current/future basis selection, DB-first sequencing, publisher invocation, and typed success/partial-success result. | No parser/text formatting, Runner dispatch, process/lifecycle/native call, schema change, Evidence/Viewer write, automatic action, or command inference. |
-| `cli.py` | In TG-RPA.5 only, parse the one action option, read bounded stdin for `replace`, call the parent control service, format the closed result/warning, and schedule ordinary maintenance for a committed Task mutation. | No Plan semantics, basis derivation, physical publication, Runner launch, or second approval protocol. |
+| `cli.py` | Parse the one action option, read bounded stdin for `replace`, call the parent control service, format the closed result/warning, and schedule ordinary maintenance for a committed Task mutation. | No Plan semantics, basis derivation, physical publication, Runner launch, or second approval protocol. |
 
 The new control-edge set is exactly:
 
@@ -4523,7 +4521,7 @@ action succeeds. A Plan-only publisher failure has no Task result to preserve
 and uses the ordinary failed Task-edit envelope. No hidden retry, journal,
 pending row, second connection, worker, daemon, or automatic follow-up exists.
 
-TG-RPA.5 maps a committed Task plus Plan failure to `ok=true`, the fixed
+The CLI maps a committed Task plus Plan failure to `ok=true`, the fixed
 `task_applied_runner_plan_unconfirmed` warning, and the closed unconfirmed
 projection. This keeps the existing coordinator eligible for exactly one
 ordinary post-commit maintenance opportunity for the actual Task mutation.

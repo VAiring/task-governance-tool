@@ -192,6 +192,19 @@ class CliHelpTests(unittest.TestCase):
                     normalized,
                 )
 
+    def test_runner_plan_action_is_only_on_existing_task_edit_leaf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            edit = install.run("task", "edit", "--help")
+            add = install.run("task", "add", "--help")
+
+        self.assertEqual(edit.returncode, 0, edit.stderr)
+        self.assertEqual(add.returncode, 0, add.stderr)
+        normalized = " ".join(edit.stdout.split())
+        self.assertIn("--runner-plan-action {replace,rebind,detach,disable}", normalized)
+        self.assertNotIn("--runner-plan-action", add.stdout)
+        self.assertEqual(parser_leaf_commands(build_parser()), PUBLIC_COMMAND_LEAVES)
+
     def test_review_and_handoff_help_keep_only_implemented_stage_commands(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))

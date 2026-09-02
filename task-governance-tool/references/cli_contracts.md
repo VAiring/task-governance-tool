@@ -141,7 +141,10 @@ Rollback-journal contention maps to `database_busy`; unsupported WAL state
 maps to `unsupported_journal_mode`. Raw SQLite or operating-system details are
 never emitted. Git observation occurs outside SQLite transactions. Write
 commands revalidate their task/Contract/review basis under a short write
-transaction before one atomic business update.
+transaction before one atomic business update. The explicit Runner Plan action
+is the sole exception to a one-store description: a real Task basis edit commits
+first, closes SQLite, and only then confirms or publishes one separately
+committed canonical Plan file as described under `task edit`.
 
 The normal no-finding Tier 2 manual/fallback Skill graph is bounded to ten
 governance subprocess calls when the Effort Advisory is off and eleven when the
@@ -709,6 +712,8 @@ numeric `dispatch_authorization` JSON reader. It returns the original summary
 unchanged and authorizes no write or external operation. New checkpoint input
 and every other checkpoint field use strict normal validation.
 
+<a id="task-edit"></a>
+
 ### `task edit`
 
 Update task state or metadata:
@@ -728,10 +733,61 @@ Editable arguments are:
 --commit-not-required --verification-complete --review-complete
 --contract-scope --contract-acceptance --contract-constraints
 --contract-authority-ref --contract-change-reason
+--runner-plan-action replace|rebind|detach|disable
 ```
 
 Success data contains `task`, `changed_fields`, and `event`, plus
-`contract_write` for Contract operations.
+`contract_write` for Contract operations. An action-bearing success also adds
+exactly `runner_plan_update={"action":<action>,"status":<status>}`, where status
+is `updated|unchanged|unconfirmed`. Without an action, JSON, text, warnings, and
+errors retain the existing shape.
+
+`--runner-plan-action` is an explicit opt-in to author only the canonical
+ignored physical package file `config/verification-runner.json`; it adds no
+command leaf and never launches the Runner or sets a review target. The actions
+are closed:
+
+| Action | Standard input | Plan effect |
+|---|---|---|
+| `replace` | one document | Upsert the addressed Task entry from a strict `RunnerPlanDraftV1`; this is the only initial-set action. |
+| `rebind` | not read | Require one addressed entry, preserve its steps and position, and bind it to the exact current or future Task basis. |
+| `detach` | not read | Remove every addressed Task entry while preserving all unrelated entries and order. |
+| `disable` | not read | Set only global `trusted_local=false`; preserve Plan ID, entries, and order. |
+
+The `replace` stdin document contains exactly `version=1` and `steps`, is capped
+at 65,536 UTF-8 bytes by one read of at most 65,537 bytes, and contains one
+through 16 exact existing StepV1 objects. Task ID, Contract revision,
+verification digests, criterion digest, and `coverage=full` are derived by the
+tool. No action discovers commands, infers coverage, changes setup, or
+re-enables a disabled Plan.
+
+An action may be Plan-only or accompany one actual Contract-revision or
+verification-expectation change. A Plan-only success returns the current Task,
+empty `changed_fields`, null `event`, no Task/Contract write, and no maintenance.
+Other metadata may accompany an action only with an actual basis change.
+Done, completion-evidence, reopen, verification-complete, and review-complete
+modes are incompatible with every Plan action. When an enabled Plan has one
+exact-current addressed entry, an actionless edit that would change its basis
+fails with `runner_plan_action_required`; an absent, disabled, unreadable,
+malformed, ambiguous, stale, or no-entry Plan does not block the ordinary Task
+edit.
+
+For a combined edit, the Task transaction commits and closes before Plan source
+confirmation or publication. A later Plan failure never rolls the Task back:
+the command returns `ok=true`, `status=unconfirmed`, and the first warning is
+exactly `task_applied_runner_plan_unconfirmed` with message `Task update
+completed but Runner Plan disposition is unconfirmed; apply an explicit Plan
+action before relying on Runner execution`. Existing maintenance warnings
+follow it. The caller must complete one explicit Plan-only repair before relying
+on Runner execution. Config-only and pre-commit failures remain ordinary failed
+Task-edit envelopes with no maintenance. Text success appends exactly `Runner
+Plan: <action> <status>` after existing Task/Contract lines.
+
+The additional fixed errors are `runner_plan_action_required` and
+`runner_plan_entry_required` at exit 1; unsafe/malformed/ambiguous Plan source
+errors and config-only `runner_plan_changed|runner_plan_update_failed` use exit
+2. Draft privacy rejection remains `privacy_rejected` at exit 1. Error output
+never contains draft bytes, Plan bytes, argv, paths, or publisher detail.
 
 Task Contract activation is allowed only on an exact revision-zero
 `ready|blocked -> in_progress` transition. Later semantic revisions are

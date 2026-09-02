@@ -19,6 +19,7 @@ from tests.m14_test_support import (
     initialize_taskgov_internal,
     run_taskgov_internal,
 )
+from tests.runner_phase_diagnostics import trace_runner_prelaunch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +28,9 @@ SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
+from task_governance_tool import _verification_runner_win32 as runner_win32  # noqa: E402
 from task_governance_tool import cli as cli_module  # noqa: E402
+from task_governance_tool import verification_runner_process as runner_process  # noqa: E402
 from task_governance_tool import verification_runner_service as service  # noqa: E402
 from task_governance_tool.artifact_manifest import (  # noqa: E402
     opaque_artifact_observation,
@@ -1717,7 +1720,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             )
             repo_before = file_snapshot(fixture.repo)
 
-            with mock.patch.dict(
+            with trace_runner_prelaunch(
+                runner_process,
+                runner_win32,
+            ) as prelaunch_trace, mock.patch.dict(
                 os.environ,
                 {credential_name: credential_value},
             ):
@@ -1758,6 +1764,11 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     observation.completed_step_count,
                 ),
                 ("runner", "launched", "pass", None, 1, 1),
+                prelaunch_trace.assertion_message,
+            )
+            self.assertEqual(
+                prelaunch_trace.assertion_message,
+                "runner_prelaunch_phase=last:path_recheck",
             )
             self.assertEqual(
                 generation["cleanup_event"].terminal_observation_id,

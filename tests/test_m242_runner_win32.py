@@ -9,7 +9,10 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
+
+from tests.runner_phase_diagnostics import trace_runner_prelaunch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +32,52 @@ ATTEMPT_ID = "tg_verification_runner_attempt_0123456789abcdef"
 
 
 class RunnerWin32PureTests(unittest.TestCase):
+    def test_prelaunch_phase_trace_keeps_only_closed_failure_categories(self):
+        class FakeJob:
+            def prove_configuration(self) -> None:
+                raise RuntimeError("raw job detail")
+
+        class FakePipes:
+            def prove_before_create(self) -> None:
+                return None
+
+        job = FakeJob()
+        fake_process = SimpleNamespace(
+            _ensure_same_observation=lambda _observation: None,
+        )
+        fake_win32 = SimpleNamespace(
+            NativeJob=FakeJob,
+            StdioPipes=FakePipes,
+            create_job=lambda _limits: job,
+            create_stdio_pipes=FakePipes,
+            create_suspended_child=lambda **_kwargs: job.prove_configuration(),
+        )
+
+        with trace_runner_prelaunch(fake_process, fake_win32) as trace:
+            with self.assertRaisesRegex(RuntimeError, "raw job detail"):
+                fake_win32.create_suspended_child()
+
+        self.assertEqual(
+            trace.assertion_message,
+            "runner_prelaunch_phase=failed:job_proof",
+        )
+        self.assertNotIn("raw job detail", trace.assertion_message)
+
+        fake_process = SimpleNamespace(
+            _ensure_same_observation=lambda _observation: (_ for _ in ()).throw(
+                RuntimeError("raw path detail")
+            ),
+        )
+        with trace_runner_prelaunch(fake_process, fake_win32) as trace:
+            with self.assertRaisesRegex(RuntimeError, "raw path detail"):
+                fake_process._ensure_same_observation(None)
+
+        self.assertEqual(
+            trace.assertion_message,
+            "runner_prelaunch_phase=failed:path_recheck",
+        )
+        self.assertNotIn("raw path detail", trace.assertion_message)
+
     def test_limit_validation_is_closed(self):
         self.assertEqual(
             win32.JobLimits(900, 900, 2048, 32),
@@ -1050,7 +1099,7 @@ class RunnerWin32NativeTests(unittest.TestCase):
         self.assertFalse(cleanup_failed.handles_closed)
         self.assertTrue(cleanup_failed.raw_output_discarded)
 
-        with patch.object(
+        with trace_runner_prelaunch(process, win32) as prelaunch_trace, patch.object(
             win32.SuspendedChild,
             "resume_once",
             side_effect=win32.RunnerWin32Error("process_resume_failed"),
@@ -1059,6 +1108,11 @@ class RunnerWin32NativeTests(unittest.TestCase):
         self.assertEqual(
             (resume_failed.outcome, resume_failed.reason),
             ("process_error", "process_resume_failed"),
+            prelaunch_trace.assertion_message,
+        )
+        self.assertEqual(
+            prelaunch_trace.assertion_message,
+            "runner_prelaunch_phase=last:path_recheck",
         )
         self.assert_process_zero(resume_failed)
 

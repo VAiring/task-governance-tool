@@ -301,6 +301,7 @@ class DocumentHistoryTests(unittest.TestCase):
             encoding="utf-8-sig"
         )
         design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8-sig")
+        plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
 
         selective_start = authority.index("## Selective Current Authority")
         selective_end = authority.index("\n## ", selective_start + 1)
@@ -338,6 +339,39 @@ class DocumentHistoryTests(unittest.TestCase):
             with self.subTest(implementation_owner=heading):
                 self.assertEqual(design.count(heading), 1)
                 self.assertNotIn(heading, specification)
+
+        m25_owners = (
+            (
+                specification,
+                "## Current M25 Select-Split-Merge-Register Contract",
+                "\n## ",
+            ),
+            (
+                design,
+                "## Current M25 Select-Split-Merge-Register Design",
+                "\n## ",
+            ),
+            (
+                plan,
+                "### M25 Active Select-Split-Merge-Register Guidance",
+                "\n### ",
+            ),
+        )
+        for owner, heading, next_heading in m25_owners:
+            with self.subTest(m25_owner=heading):
+                self.assertEqual(owner.count(heading), 1)
+                start = owner.index(heading)
+                end = owner.find(next_heading, start + 1)
+                section = owner[start : len(owner) if end < 0 else end]
+                self.assertNotIn("Inactive", section)
+        self.assertNotIn(
+            "## Accepted But Inactive M25 Select-Split-Merge-Register Contract",
+            specification,
+        )
+        self.assertNotIn(
+            "## Accepted But Inactive M25 Select-Split-Merge-Register Design",
+            design,
+        )
 
     def test_archives_are_fixed_exact_captures_with_non_authority_banners(self):
         version_root = HISTORY_ROOT / "v0.10.0"

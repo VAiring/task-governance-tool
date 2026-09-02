@@ -321,6 +321,84 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("verification and review gates", skill_md.lower())
         self.assertIn("current governed task", openai_yaml.lower())
 
+    def test_m25_taskization_and_review_tier_guidance_is_synchronized(self):
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow_path = SKILL_ROOT / "references" / "task_workflow.md"
+        workflow = workflow_path.read_text(encoding="utf-8")
+        manifest = json.loads(
+            (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
+        )
+
+        self.assertIn("explicit request to register or taskize", skill_md)
+        self.assertIn("explicit scope addition", skill_md)
+        self.assertIn(
+            "[references/task_workflow.md](references/task_workflow.md)",
+            skill_md,
+        )
+
+        start = workflow.index("## Taskize Or Add Scope")
+        end = workflow.index("\n## Safety Boundary", start)
+        taskization = workflow[start:end]
+        headings = (
+            "### One-Pass Select-Split-Merge",
+            "### Registration, Contract, And Ordering",
+            "### Review Tier Selection",
+            "### Explicit Mid-Task Scope Addition",
+            "### Partial-Add Recovery",
+        )
+        self.assertEqual(
+            [taskization.count(heading) for heading in headings],
+            [1] * 5,
+        )
+        self.assertEqual(
+            [taskization.index(heading) for heading in headings],
+            sorted(taskization.index(heading) for heading in headings),
+        )
+        self.assertLess(
+            taskization.index("**Select**"),
+            taskization.index("**Split**"),
+        )
+        self.assertLess(
+            taskization.index("**Split**"),
+            taskization.index("**Merge**"),
+        )
+
+        tier_rows = [
+            line
+            for line in taskization.splitlines()
+            if line.startswith("|") and line.endswith("|")
+        ]
+        self.assertEqual(len(tier_rows), 5)
+        self.assertTrue(tier_rows[2].endswith("| Tier 2 |"))
+        self.assertTrue(tier_rows[3].endswith("| Tier 0 |"))
+        self.assertTrue(tier_rows[4].endswith("| Tier 1 |"))
+        for disposition in (
+            "`keep-current`",
+            "revise or Merge into current",
+            "successor",
+            "Handoff",
+        ):
+            self.assertIn(disposition, taskization)
+        for boundary in (
+            "revision-zero Task",
+            "one grouped question",
+            "add only groups proven missing",
+            "do not reconstruct or rerun it",
+            "integration review never",
+        ):
+            self.assertIn(boundary, taskization)
+        self.assertNotIn('--title "Implement bounded change"', workflow)
+        self.assertIn("--review-tier 1", taskization)
+        self.assertIn("normal no-finding Tier 2 task", workflow)
+
+        for relative in ("SKILL.md", "references/task_workflow.md"):
+            digest = hashlib.sha256((SKILL_ROOT / relative).read_bytes()).hexdigest()
+            self.assertEqual(manifest["core_files"][relative], f"sha256:{digest}")
+        self.assertEqual(
+            manifest["core_files"]["agents/openai.yaml"],
+            "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
+        )
+
     def test_task_show_verification_evidence_exact_keys_are_packaged(self):
         contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
             encoding="utf-8"

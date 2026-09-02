@@ -10,7 +10,7 @@ Bundles, deterministic Evidence JSON, the bounded offline/mock derived-evidence
 Analyzer, and the explicitly opted-in trusted-local verification Runner with a
 closed manual fallback. Schema v20 remains a supported migration source and
 audit-only Runner lineage; schema v21 is the current persistence and gate basis.
-M25 Select-Split-Merge-Register remains an accepted but inactive static design.
+M25 Select-Split-Merge-Register is active only in the Skill instruction layer.
 The Task database owns live state and evidence; completed execution narrative
 belongs only in indexed history.
 
@@ -3518,17 +3518,17 @@ design. The exact publication-commit form is indexed by
 [the historical documentation index](history/README.md); no active product or
 release guarantee depends on that historical copy.
 
-## Accepted But Inactive M25 Select-Split-Merge-Register Design
+## Current M25 Select-Split-Merge-Register Design
 
-M25.1, Task `tg_task_8e33e15cd97a28ee`, freezes the instruction-layer design
-for the inactive contract in `docs/specification.md`. Nothing in this section is
-wired into the current package. Later separately approved activation may change
-Skill guidance and package references while the deterministic CLI, repository
-interfaces, schema, Viewer, Runner, and command inventory remain unchanged.
+M25.1, Task `tg_task_8e33e15cd97a28ee`, froze the instruction-layer design in
+`docs/specification.md`. M25.2, Task `tg_task_d891cd538d9e7364`, activates it
+only in Skill guidance and the task-workflow package reference. The
+deterministic CLI, repository interfaces, schema, Viewer, Runner, and command
+inventory remain unchanged.
 
 ### Session-Local Select-Split-Merge Classifier
 
-The future Skill treats one semantic taskization or scope-addition outcome as
+The Skill treats one semantic taskization or scope-addition outcome as
 one session-local event and classifies it as either `registration` or
 `mid_task_scope_addition`. Replies, clarifications, paraphrases, and answers
 about that outcome remain the same event; only materially changed authority for
@@ -3611,7 +3611,7 @@ target-project, Git, network, or external-system permission.
 
 ### Review Tier Resolver
 
-The future instruction layer resolves each final group before registration:
+The instruction layer resolves each final group before registration:
 
 1. apply every explicit binding authority floor governing that scope;
 2. with no binding mapping, select Tier 2 for schema/migration, JSON contract,
@@ -3631,7 +3631,7 @@ review gate; later integration review is not a substitute.
 ### Mid-Task Adapter And State Effects
 
 For an explicit addition to an `in_progress` or `review_pending` Task, the
-future Skill applies the same one-pass classifier to the addition and its
+Skill applies the same one-pass classifier to the addition and its
 relationship to the current responsibility:
 
 1. already-covered scope selects `keep-current`, performs no Contract write,
@@ -3655,19 +3655,18 @@ proposal is not persisted as a new model or reconstructed from Handoff. The
 same event cannot run another Split after global Merge. Scope preservation
 precedes any pause or block, and the normal Task loop gains no new call.
 
-### Atomic Future Synchronization Boundary
+### Atomic Instruction-Layer Synchronization Boundary
 
-A later separately approved Tier 2 activation must change these surfaces in
-one reviewed revision:
+M25.2 changes these surfaces in one reviewed Tier 2 revision:
 
 - add only the concise trigger gate and disposition rules to
   `task-governance-tool/SKILL.md`;
 - place the full one-pass sequence, responsibility/fragment cases, Tier table,
   ordering examples, and recovery rules in
   `task-governance-tool/references/task_workflow.md`;
-- update `task-governance-tool/release-manifest.json` for the changed package
-  digests and apply the repository's then-current version/release rules;
-- switch the inactive markers and implementation-facing routing in
+- update `task-governance-tool/release-manifest.json` only for the changed
+  package digests under the current version/release rules;
+- switch the formerly inactive markers and implementation-facing routing in
   `docs/specification.md` and `docs/design.md`, and synchronize the approved
   static execution contract in `plan.md`; and
 - update `tests/test_skill_self_containment.py`,
@@ -3676,16 +3675,14 @@ one reviewed revision:
   owning suites cannot express the behavioral cases without duplication.
 
 `task-governance-tool/agents/openai.yaml` is in the synchronization review set
-but is expected to remain byte-identical because its current registration and
+and remains byte-identical because its current registration and
 scope-preservation metadata already covers the two triggers. Scripts,
 migrations, repositories, CLI parsing/output, Viewer code/template, and public
-command leaves are outside the write set and must be proven unchanged. The
-activation must be proposed and approved separately; M25.1 registers no
-activation or implementation Task.
+command leaves are outside the write set and must be proven unchanged.
 
 ### Neutral Forward-Test Boundary
 
-Activation acceptance uses fresh, minimal-context agents that receive the
+M25.2 acceptance uses fresh, minimal-context agents that receive the
 candidate Skill and neutral workloads, not the expected branch or M20S study
 result. A separate evaluator checks both the response and resulting Task DB.
 The fixed matrix includes:
@@ -3713,8 +3710,7 @@ The fixed matrix includes:
 Positive, negative, and unknown cases use parallel wording and equal available
 authority so the prompt does not reveal the expected result. A valid result
 must match the specification branch and actual stored effects; self-reported
-intent alone is insufficient. Current behavior is not forward-tested against
-these expectations because activation has not occurred.
+intent alone is insufficient.
 
 <a id="trusted-local-runner-architecture"></a>
 
@@ -4588,9 +4584,9 @@ stale detection, parent/child/checklist execution units, manual backup/restore/
 export, generic browser-state persistence, live server, browser launch,
 network synchronization, and update checking.
 
-Any extension, including the accepted but inactive M25
-Select-Split-Merge-Register design, must preserve local-first operation, current
-privacy and target-project safety, explicit authority for mutation, narrow
+Any extension to M25 Select-Split-Merge-Register must preserve local-first
+operation, current privacy and target-project safety, explicit authority for
+mutation, narrow
 repository boundaries, and concise Skill guidance. It requires synchronized
 specification, design, plan, tests, and review rather than reuse of a historical
 design capture.

@@ -10,8 +10,8 @@ Bundles, deterministic Evidence JSON, the bounded offline/mock derived-evidence
 Analyzer, and the explicitly opted-in trusted-local verification Runner with a
 closed manual fallback. Schema v20 remains a supported migration source and
 audit-only Runner lineage; only fresh schema-v21 gate-eligible evidence may
-satisfy the Runner branch. M25 Select-Split-Merge-Register remains an accepted
-but inactive static contract. Completed execution narrative belongs only in
+satisfy the Runner branch. M25 Select-Split-Merge-Register is active only as
+Skill instruction-layer guidance. Completed execution narrative belongs only in
 indexed history, and
 the Task database owns live state and evidence.
 
@@ -1194,19 +1194,19 @@ absence, projection mismatch, reused reopen link, ordinal overflow, invalid
 gate relationship, and cycle/event ownership conflict; it is not a completion
 check blocker code.
 
-## Accepted But Inactive M25 Select-Split-Merge-Register Contract
+## Current M25 Select-Split-Merge-Register Contract
 
-M25.1, Task `tg_task_8e33e15cd97a28ee`, freezes design authority for two and
+M25.1, Task `tg_task_8e33e15cd97a28ee`, froze design authority for two and
 only two explicit user-authority events: an instruction to register or taskize
 already-authorized work, and an explicit scope addition to an `in_progress` or
-`review_pending` Task. This contract is an acceptance boundary for separately
-approved activation, not current Skill or product behavior. Discovery, a test
+`review_pending` Task. M25.2, Task `tg_task_d891cd538d9e7364`, activates that
+contract only in current Skill and task-workflow guidance. Discovery, a test
 failure, an Effort result, task size, or model preference does not create either
 event.
 
 ### Candidate-First Split And One Global Merge
 
-The future instruction layer first fixes one authority envelope containing the
+The Skill instruction layer first fixes one authority envelope containing the
 complete authorized outcome, its permission boundary, any binding order, and
 any explicit Contract or Review Tier mapping. It then performs one flat
 candidate-first Split at stable responsibility boundaries. A provisional
@@ -1352,18 +1352,19 @@ An unresolved proposal is not persisted as a new model or reconstructed from a
 Handoff. The same explicit addition event never starts another Split after its
 global Merge.
 
-### Inactive Boundary
+### Active Instruction-Layer Boundary
 
-M25 Select-Split-Merge-Register changes no current `SKILL.md`, package
-reference, public command, normal Task-loop call count, SQLite schema, JSON
-contract, Viewer field, automatic Task creation, runtime Task splitting,
-parent/child or dependency model, background LLM work, network behavior, or
-target-project mutation. Its grouping and tier-basis reasoning remain
-session-local and are not persisted as a basis or worksheet. Inputs and outputs
-use existing Contract prose only when explicit authority supplies them; only
-the selected Task, Review Tier, and lane/order results use other existing
-fields. In-scope discovery, test-driven cross-module failure, and unrequested
-work remain governed by current rules and cannot invoke this future policy.
+M25 Select-Split-Merge-Register is active only in current `SKILL.md` and
+`references/task_workflow.md`. It changes no public command, normal Task-loop
+call count, SQLite schema, JSON contract, Viewer field, automatic Task creation,
+runtime Task splitting, parent/child or dependency model, background LLM work,
+network behavior, or target-project mutation. Its grouping and tier-basis
+reasoning remain session-local and are not persisted as a basis or worksheet.
+Inputs and outputs use existing Contract prose only when explicit authority
+supplies them; only the selected Task, Review Tier, and lane/order results use
+other existing fields. In-scope discovery, test-driven cross-module failure,
+and unrequested work remain governed by current rules and cannot invoke this
+policy.
 
 ## Current Schema-v21 Verification, Ledger, And Bundle Contract
 
@@ -4002,7 +4003,7 @@ beyond the one-shot envelope, external Issue lifecycle/sync until its intake
 contract, cross-project profiles, daily network update checks, reviewer
 identity/signatures/attestation, and a generic workflow engine.
 
-Deferred features, the retired TG-M20S study result, and the accepted but
-inactive M25 Select-Split-Merge-Register design never change current acceptance,
-add a normal-loop command, or authorize target/external mutation until their
-separately approved implementation and synchronization gates complete.
+Deferred features and the retired TG-M20S study result never change current
+acceptance, add a normal-loop command, or authorize target/external mutation
+until their separately approved implementation and synchronization gates
+complete. Active M25 instruction guidance adds none of those capabilities.

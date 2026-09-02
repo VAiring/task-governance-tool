@@ -152,13 +152,16 @@ gates. It is not the product contract, execution ledger, or evidence store:
 
 <a id="m25-select-split-merge-register"></a>
 
-### M25 Accepted Inactive Select-Split-Merge-Register Design
+### M25 Active Select-Split-Merge-Register Guidance
 
 M25.1, Task `tg_task_8e33e15cd97a28ee`, in lane
 `TG-M25-TASK-DECOMPOSITION` at order 10, is sequenced after TG-RPA.6; the Task
 database owns fulfillment of that gateway. It is a Tier 2 docs-only unit for
 two explicit authority events: a request to register or taskize authorized
 work, and an explicit scope addition to an in-progress or review-pending Task.
+M25.2, Task `tg_task_d891cd538d9e7364`, at order 20 activates that accepted
+contract only in Skill and task-workflow guidance after M25.1; the Task database
+owns fulfillment of the activation and its review gates.
 
 The accepted design selects stable responsibilities, performs one flat Split,
 then one global Merge of all fragment-only transitive groups and never
@@ -190,11 +193,11 @@ its own scope, and Merge into current uses the maximum. A required Tier raise
 precedes Contract revision, so failure cannot leave expanded scope below its
 floor. Later integration review never replaces each Task's required gate.
 
-Design-first registers no automatic implementation Task. This acceptance
-activates no current behavior and adds no command, schema, JSON or database
-field, Viewer/Runner change, Skill trigger, parent/child or dependency model,
-normal-loop call, network use, target mutation, or execution unit. The exact
-Task DB record owns live state.
+Design-first registers no automatic implementation Task. M25.2 activates only
+the two explicit Skill routing events and adds no command, schema, JSON or
+database field, Viewer/Runner change, parent/child or dependency model,
+normal-loop call, network use, target mutation, or automatic execution unit.
+The exact Task DB record owns live state.
 
 <a id="current-verification-receipt"></a>
 
@@ -385,9 +388,6 @@ or changed acceptance still requires explicit authority.
 These items are not implementation authority. Each needs a separately approved
 contract and execution unit.
 
-- The accepted inactive M25 Select-Split-Merge-Register contract does not itself
-  authorize activation. Never register or activate implementation as a design
-  side effect.
 - Decide separately whether to approve the still-proposed verification-
   guardrail successor inventory before reconsidering that Skill-only guidance.
 - Decide whether later product scope should add project-profile detection,

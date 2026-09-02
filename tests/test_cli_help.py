@@ -202,8 +202,29 @@ class CliHelpTests(unittest.TestCase):
         self.assertEqual(add.returncode, 0, add.stderr)
         normalized = " ".join(edit.stdout.split())
         self.assertIn("--runner-plan-action {replace,rebind,detach,disable}", normalized)
+        for expected in (
+            "replace, rebind, or detach the selected Task's Runner Plan entry",
+            "disable sets global trusted_local=false while preserving entries",
+            "the first replace on an absent Plan opts the repository in with trusted_local=true",
+            "replace reads one JSON draft from stdin",
+        ):
+            self.assertIn(expected, normalized)
+        self.assertNotIn(
+            "disable the selected Task's local Runner Plan entry",
+            normalized,
+        )
         self.assertNotIn("--runner-plan-action", add.stdout)
         self.assertEqual(parser_leaf_commands(build_parser()), PUBLIC_COMMAND_LEAVES)
+
+        readme = " ".join(
+            (ROOT / "README.md").read_text(encoding="utf-8").split()
+        )
+        self.assertIn("first explicit `replace` against an absent Plan", readme)
+        self.assertIn("repository's trusted-local Runner opt-in", readme)
+        self.assertIn(
+            "`disable` instead sets global `trusted_local=false` while preserving",
+            readme,
+        )
 
     def test_review_and_handoff_help_keep_only_implemented_stage_commands(self):
         with tempfile.TemporaryDirectory() as tmp:

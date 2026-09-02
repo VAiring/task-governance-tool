@@ -585,9 +585,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="{replace,rebind,detach,disable}",
         default=argparse.SUPPRESS,
         help=(
-            "explicitly replace, rebind, detach, or disable the selected "
-            "Task's local Runner Plan entry; replace reads one JSON draft "
-            "from stdin"
+            "replace, rebind, or detach the selected Task's Runner Plan "
+            "entry; disable sets global trusted_local=false while preserving "
+            "entries; the first replace on an absent Plan opts the repository "
+            "in with trusted_local=true; replace reads one JSON draft from "
+            "stdin"
         ),
     )
     task_complete_parser = task_subparsers.add_parser(

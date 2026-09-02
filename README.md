@@ -434,9 +434,11 @@ decisions remain authoritative.
 
 Runner Plan authoring is optional and is not part of the normal Skill loop. It
 uses the existing `task edit` command and never launches the Runner or sets a
-review target. For an initial entry or a deliberate step replacement, prepare a
-strict draft containing only `version` and one through 16 existing StepV1
-objects, then explicitly choose `replace`:
+review target. The first explicit `replace` against an absent Plan creates the
+fixed local Plan with `trusted_local=true`; this is the repository's
+trusted-local Runner opt-in. For that initial entry or a deliberate step
+replacement, prepare a strict draft containing only `version` and one through
+16 existing StepV1 objects, then explicitly choose `replace`:
 
 ```json
 {
@@ -471,11 +473,13 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo .
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --runner-plan-action disable --json
 ```
 
-`rebind` preserves an existing entry's steps while moving it to the exact Task
-basis. `detach` removes only that Task's entries. `disable` preserves all
-entries and turns global local trust off; no action automatically re-enables a
-disabled Plan. A real Contract or verification-basis edit can carry one action
-in the same invocation, for example:
+`replace`, `rebind`, and `detach` address the selected Task's entries:
+`replace` upserts the supplied steps, `rebind` preserves existing steps while
+moving the entry to the exact Task basis, and `detach` removes only that Task's
+entries. `disable` instead sets global `trusted_local=false` while preserving
+all entries; no action automatically re-enables a disabled Plan. A real
+Contract or verification-basis edit can carry one action in the same
+invocation, for example:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --verification "python -m unittest -q tests.test_focused" --runner-plan-action rebind --json

@@ -1209,11 +1209,16 @@ event.
 The future instruction layer first fixes one authority envelope containing the
 complete authorized outcome, its permission boundary, any binding order, and
 any explicit Contract or Review Tier mapping. It then performs one flat
-candidate-first Split at stable responsibility boundaries. Each proposed slice
-must:
+candidate-first Split at stable responsibility boundaries. A provisional
+candidate states one bounded responsibility, its authorized consumed inputs and
+produced outputs, and any concrete fragment-to-owner coupling. It may expose
+that it cannot yet stand as a Task; that fact is input to the one global Merge,
+not a reason to reject the candidate before Merge.
 
-- state one bounded responsibility and the authorized inputs it consumes and
-  outputs it produces;
+After that Merge, each final slice must:
+
+- own one bounded final responsibility with its authorized consumed inputs and
+  produced outputs;
 - leave the repository in a correct state when completed after its represented
   predecessors;
 - have verification and review whose result is locally attributable to that
@@ -1276,10 +1281,18 @@ or test detail alone does not cross this boundary.
 
 If several final groups are being added and the existing `task add` sequence
 fails after a strict subset succeeds, stop the pass and inspect the exact
-registered set through existing reads. Preserve the authorized remainder and,
-after the ordinary failure is resolved, add only groups proven missing. Never
-delete a successful registration, duplicate one, repartition the set, widen a
-Contract, or restart Select-Split-Merge.
+registered set through existing reads. While the same uninterrupted event still
+holds the transient final set, preserve the authorized remainder and, after the
+ordinary failure is resolved, add only groups proven missing. Never delete a
+successful registration, duplicate one, repartition the set, widen a Contract,
+or restart Select-Split-Merge.
+
+If the transient final set is lost before recovery, do not reconstruct or rerun
+it. Preserve a bounded Handoff summary when its existing limits can state
+the unregistered outcome truthfully, then require current explicit authority
+before any new write. If the exact remainder or permission boundary is no longer
+clear, use the one grouped question above; a confirmed whole remainder may use
+one revision-zero Task, without disturbing successful registrations.
 
 ### Review Tier And Design-First Rules
 
@@ -1318,11 +1331,12 @@ to the addition and its relationship to the current responsibility:
 - an addition already wholly covered by the current Contract is `keep-current`;
   it makes no Contract write and preserves the current Review Tier;
 - an addition that remains in or globally Merges into the current
-  responsibility uses the existing semantic Contract-revision path; its Tier is
-  the maximum of the current Tier and every applicable resulting floor, so it
-  rises only when the floor rises and never auto-lowers. Contract revision and
-  any required Tier change use their existing separate writes, and review does
-  not advance between them;
+  responsibility has the maximum of the current Tier and every applicable
+  resulting floor. When that value is higher, raise the Tier through its
+  existing edit before using the existing semantic Contract-revision path; it
+  never auto-lowers. Review does not advance between the two writes. A failed
+  Contract write can therefore leave only unchanged scope at a conservatively
+  higher Tier, never expanded scope below its floor;
 - a final successor group uses the floor for its own scope, not the current
   Task's Tier. Registration requires an explicit taskization or separate-Task
   direction; otherwise present one proposal without a Task write; and
@@ -1344,11 +1358,12 @@ M25 Select-Split-Merge-Register changes no current `SKILL.md`, package
 reference, public command, normal Task-loop call count, SQLite schema, JSON
 contract, Viewer field, automatic Task creation, runtime Task splitting,
 parent/child or dependency model, background LLM work, network behavior, or
-target-project mutation. Its inputs, outputs, tier basis, and grouping remain
-session-local reasoning expressed only through existing Task fields and
-lane/order. In-scope discovery, test-driven cross-module failure, and
-unrequested work remain governed by current rules and cannot invoke this future
-policy.
+target-project mutation. Its grouping and tier-basis reasoning remain
+session-local and are not persisted as a basis or worksheet. Inputs and outputs
+use existing Contract prose only when explicit authority supplies them; only
+the selected Task, Review Tier, and lane/order results use other existing
+fields. In-scope discovery, test-driven cross-module failure, and unrequested
+work remain governed by current rules and cannot invoke this future policy.
 
 ## Current Schema-v21 Verification, Ledger, And Bundle Contract
 

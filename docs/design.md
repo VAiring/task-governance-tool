@@ -3557,13 +3557,20 @@ The classifier runs this fixed sequence once:
    boundaries within it.
 2. `Split` once into a flat candidate set whose exact unions conserve the whole
    outcome and explicit permission envelope without omission or expansion, and
-   whose sequence uses representable order.
+   whose sequence uses representable order. A provisional candidate may expose
+   missing repository-state or attributable-gate independence so that the Merge
+   can attach that fragment to its concrete owner.
 3. `Merge` all concretely coupled, fragment-only transitive groups in one global
    pass. Multiple disjoint groups may merge simultaneously; sharing files,
    tests, commands, or fixtures alone creates no coupling. Ambiguous ownership
    invokes the fallback rather than an arbitrary group.
 4. Treat the resulting groups as final. There is no recursive classification,
    second Merge, re-Split, parent/child graph, or size-based optimization.
+
+Only final groups must each own one bounded responsibility and its authorized
+inputs/outputs, leave a correct repository state after represented predecessors,
+carry locally attributable verification and review, and be resumable from
+Contract, routed authority, and declared predecessor outputs.
 
 ### Registration Adapter And Partial-Add Recovery
 
@@ -3586,10 +3593,18 @@ implementation Task requires a later explicit registration event based on the
 produced design authority; the adapter does not synthesize it.
 
 After a strict subset of an existing `task add` sequence succeeds, the adapter
-stops and reads the exact registered set. It preserves successful additions and
-the authorized remainder, then adds only groups proven missing after the
-ordinary failure is resolved. It performs no deletion, duplicate add,
+stops and reads the exact registered set. During the same uninterrupted event,
+it compares that read with the still-transient final set, preserves successful
+additions and the authorized remainder, then adds only groups proven missing
+after the ordinary failure is resolved. It performs no deletion, duplicate add,
 repartition, batch retry, or second Select-Split-Merge pass.
+
+If interruption loses the transient final set, the adapter does not reconstruct
+or rerun it. It uses existing Handoff only for a truthful bounded remainder
+summary, never as a hidden worksheet or registration authority. Any later write
+requires current explicit authority; unclear remainder or permission uses the
+one grouped question, and a confirmed unsplit remainder may be one revision-zero
+Task without changing successful additions.
 
 Registration changes governance state only. It grants no implementation,
 target-project, Git, network, or external-system permission.
@@ -3621,10 +3636,11 @@ relationship to the current responsibility:
 
 1. already-covered scope selects `keep-current`, performs no Contract write,
    and preserves the current Tier;
-2. a final group kept in or globally merged into current uses the existing
-   semantic Contract-revision write, then a separate existing Tier edit only
-   when `max(current Tier, resulting floors)` is higher; it never auto-lowers
-   and review does not advance between those writes;
+2. a final group kept in or globally merged into current computes
+   `max(current Tier, resulting floors)`. When higher, the existing Tier edit
+   occurs first; the semantic Contract-revision write follows. It never
+   auto-lowers and review does not advance between those writes. A failed second
+   write therefore leaves unchanged scope at a conservative higher Tier;
 3. a successor uses its own scope floor and existing lane/order. The same
    message registers it only when explicit taskization or separate placement is
    present; otherwise the adapter emits one write-free proposal; and
@@ -3681,8 +3697,9 @@ The fixed matrix includes:
   reconstruction from Contract/authority/predecessor output, and ambiguous
   ownership falling back instead of being guessed;
 - one whole-outcome revision-zero Task, the sole grouped-question boundary,
-  design-first without automatic implementation registration, and partial-add
-  recovery that preserves successful writes and adds only proven omissions;
+  design-first without automatic implementation registration, same-event
+  partial-add recovery that preserves successful writes and adds only proven
+  omissions, and interruption after a partial add with no reconstruction;
 - binding Tier floors, one example for every Tier 2 protected category, wholly
   mechanical Tier 0, residual Tier 1, every excluded Tier-2 rationale, explicit
   higher Tier, and no ordinary lowering of a binding floor;

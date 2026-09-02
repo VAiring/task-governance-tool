@@ -172,7 +172,11 @@ Contracts copy explicit authority only. Missing split or Contract detail falls
 back to one whole-outcome revision-zero Task when outcome and permission are
 clear; exact mandated-boundary conflicts or unclear outcome/permission use one
 grouped question and no partial write. Partial-add recovery preserves successful
-registrations and adds only proven omissions without deletion or repartition.
+registrations and adds only proven omissions without deletion or repartition
+while the same event retains its transient final set. After interruption loses
+that set, no reconstruction occurs; current explicit authority governs a
+grouped question when the exact remainder or permission is unclear, or one
+confirmed revision-zero remainder Task when both are clear.
 
 Binding authority supplies a Review Tier floor. With no mapping, the closed
 fallback is Tier 2 for schema/migration, JSON contract, CLI write behavior,
@@ -182,8 +186,9 @@ Tier 0 for wholly mechanical meaning-preserving work; and Tier 1 otherwise.
 Unknown, size, difficulty, duration, failure count, safety wording, or reviewer
 availability never alone selects Tier 2. Mid-Task keep preserves Tier, revise
 raises only to a higher resulting floor and never auto-lowers, a successor uses
-its own scope, and Merge into current uses the maximum. Later integration
-review never replaces each Task's required gate.
+its own scope, and Merge into current uses the maximum. A required Tier raise
+precedes Contract revision, so failure cannot leave expanded scope below its
+floor. Later integration review never replaces each Task's required gate.
 
 Design-first registers no automatic implementation Task. This acceptance
 activates no current behavior and adds no command, schema, JSON or database

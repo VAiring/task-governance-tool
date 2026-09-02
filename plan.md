@@ -150,32 +150,54 @@ gates. It is not the product contract, execution ledger, or evidence store:
   bounded legacy lineage. This is preservation, not acceptance of caller-
   supplied legacy vocabulary.
 
-<a id="tg-m20s-3"></a>
+<a id="m25-select-split-merge-register"></a>
 
-### TG-M20S.3 Accepted Inactive Decomposition Design
+### M25 Active Select-Split-Merge-Register Guidance
 
-The later explicit user decision registered TG-M20S.3, Task
-`tg_task_286129dbca4d25ab`, in lane `TG-M20S-TASK-DECOMPOSITION` at order 30,
-dependent on accepted TG-M20S.2. It is a Tier 2 design-only unit for two
-explicit authority events: a request to register or taskize authorized work,
-and an explicit scope addition to an in-progress or review-pending Task.
+M25.1, Task `tg_task_8e33e15cd97a28ee`, in lane
+`TG-M25-TASK-DECOMPOSITION` at order 10, is sequenced after TG-RPA.6; the Task
+database owns fulfillment of that gateway. It is a Tier 2 docs-only unit for
+two explicit authority events: a request to register or taskize authorized
+work, and an explicit scope addition to an in-progress or review-pending Task.
+M25.2, Task `tg_task_d891cd538d9e7364`, at order 20 activates that accepted
+contract only in Skill and task-workflow guidance after M25.1; the Task database
+owns fulfillment of the activation and its review gates.
 
-The accepted design uses independently acceptable, verifiable, committable,
-and completable scope to distinguish keep-current, revise-current,
-propose-successor, handoff, pause, and block. Explicit taskization permits one
-non-recursive bounded multi-Task registration pass when the candidates map
-one-to-one to accepted outcomes and scope, order, and permissions are
-unchanged. A proposed mid-Task successor still requires explicit user approval
-before registration, and only one proposal is allowed per explicit addition.
-Unknown or negative independence forbids decomposition rather than generating
-more questions; exact whole-scope registration or current-Contract revision is
-the safe fallback when authorized.
+The accepted design selects stable responsibilities, performs one flat Split,
+then one global Merge of all fragment-only transitive groups and never
+re-Splits. Final slices conserve exact scope and permissions, declare consumed
+inputs and produced outputs, leave a correct ordered repository state, carry
+locally attributable verification/review, and fit a fresh-agent context without
+requiring standalone user value. Sharing files, tests, commands, or fixtures
+alone does not force Merge.
 
-Design acceptance activates no current behavior and adds no automatic Task
-creation, recursive or size-only split, command, schema, Viewer field,
-parent/child model, background LLM work, network use, target-project mutation,
-or implementation Task. In-scope discovery and cross-module failure remain
-outside until separately supported. The exact Task DB record owns live state.
+Contracts copy explicit authority only. Missing split or Contract detail falls
+back to one whole-outcome revision-zero Task when outcome and permission are
+clear; exact mandated-boundary conflicts or unclear outcome/permission use one
+grouped question and no partial write. Partial-add recovery preserves successful
+registrations and adds only proven omissions without deletion or repartition
+while the same event retains its transient final set. After interruption loses
+that set, no reconstruction occurs; current explicit authority governs a
+grouped question when the exact remainder or permission is unclear, or one
+confirmed revision-zero remainder Task when both are clear.
+
+Binding authority supplies a Review Tier floor. With no mapping, the closed
+fallback is Tier 2 for schema/migration, JSON contract, CLI write behavior,
+target mutation, privacy/logging, Skill trigger, verification/review/completion
+gate, milestone/plan acceptance, and implementation-binding normative docs;
+Tier 0 for wholly mechanical meaning-preserving work; and Tier 1 otherwise.
+Unknown, size, difficulty, duration, failure count, safety wording, or reviewer
+availability never alone selects Tier 2. Mid-Task keep preserves Tier, revise
+raises only to a higher resulting floor and never auto-lowers, a successor uses
+its own scope, and Merge into current uses the maximum. A required Tier raise
+precedes Contract revision, so failure cannot leave expanded scope below its
+floor. Later integration review never replaces each Task's required gate.
+
+Design-first registers no automatic implementation Task. M25.2 activates only
+the two explicit Skill routing events and adds no command, schema, JSON or
+database field, Viewer/Runner change, parent/child or dependency model,
+normal-loop call, network use, target mutation, or automatic execution unit.
+The exact Task DB record owns live state.
 
 <a id="current-verification-receipt"></a>
 
@@ -213,6 +235,92 @@ leaf, network/live-model action, or target mutation. Gate integration adds only
 the closed `verification_route` and nullable `blocking_code` fields to the
 existing target-set JSON success response, so the Skill selects the branch
 without inference or a second `task show`.
+
+<a id="runner-plan-authoring"></a>
+
+### Approved Active Runner Plan Authoring And Control Contract
+
+The user approved one bounded follow-up that makes the existing physical
+Runner Plan authorable without adding a command leaf or another Runner
+execution decision. The active contract retains the exact 21-leaf CLI, setup
+never generates the Plan, and `review target set` remains the sole Runner
+dispatch. The active [specification](docs/specification.md) owns the closed
+behavior and [design](docs/design.md) owns its implementation boundaries; this
+section owns the decision and execution sequence.
+
+The frozen choices are:
+
+- add only `task edit <task-id> --runner-plan-action
+  replace|rebind|detach|disable`; `replace` alone consumes one strict bounded
+  `RunnerPlanDraftV1` from standard input;
+- keep the existing PlanV1 and canonical ignored
+  `config/verification-runner.json`; the first absent-file `replace` uses fixed
+  `plan_id=taskgov-local-plan` and explicit `trusted_local=true`, while every
+  present-plan action preserves Plan ID and no action re-enables a disabled
+  Plan;
+- derive Task ID, future Contract revision, verification expectation and
+  criterion digests, and full coverage mechanically; never discover or infer
+  steps, trust, coverage, or test sufficiency;
+- privacy-check every recognized caller StepV1 string leaf through the existing
+  common guard before its grammar or size validation, with
+  `privacy_rejected` precedence and no change to current PlanV1 reader
+  admission;
+- require one explicit Plan disposition in the same invocation when an actual
+  Contract/verification basis edit would stale a currently enabled exact-match
+  entry; do not require it for metadata/status edits or automatically follow
+  the Task;
+- allow a Plan-only invocation for initial/repair/update/disable work, so the
+  normal basis-change path uses one command and one user approval rather than a
+  mandatory preview/apply pair;
+- after the SQLite writer closes, revalidate the originally captured physical
+  Plan source for every action; a semantic no-op performs confirmation only and
+  never rewrites or normalizes the file;
+- commit a real Task edit first and publish the Plan second. These are separate
+  operations, not a cross-store atomic transaction. A later Plan failure keeps
+  the Task, leaves the requested Plan disposition unconfirmed, reports the
+  fixed `task_applied_runner_plan_unconfirmed` partial-success warning, and
+  requires one explicit Plan-only repair before the caller relies on Runner
+  execution;
+- make global disable only `trusted_local=false` with entries and history
+  retained; make Task disable only `detach`; neither cancels an in-flight
+  attempt nor deletes prior Runner observations, Evidence, Bundles, or
+  completion history; and
+- document opt-in and operations in the root README and formal CLI reference
+  at activation. Do not add a Skill trigger or a normal-loop README/Skill read.
+
+No product choice remains open before implementation. An implementation Task
+may report a concrete conflict with current code, tests, or platform behavior,
+but it must not add preview tokens, PlanV2, a SQLite journal, automatic Task or
+Plan mutation, command inference, a new execution route, a re-enable workflow,
+or a broader safety claim as a repair.
+
+The approved sequence is one sequential lane. The Task database owns each
+unit's live status, Contract revision, target, evidence, and review history;
+the table records only the static dependency and responsibility split:
+
+| Order | Task | Static outcome and write boundary |
+|---:|---|---|
+| 10 | TG-RPA.1 / `tg_task_d3e404b8a6708d2e` | Freeze this inactive contract in AGENTS, specification, design, and plan and register the finite successor set. No package behavior. |
+| 20 | TG-RPA.2 / `tg_task_471494a3a894d381` | Implement only strict privacy-first draft decoding and pure PlanV1 `replace|rebind|detach|disable` transforms with focused tests and corresponding packaged-file manifest updates. No I/O. |
+| 30 | TG-RPA.3 / `tg_task_3a0295e436162d18` | Implement only the canonical physical Plan publisher, expected-source revalidation, complete-file replacement, physical failure tests, and corresponding packaged-file manifest updates. No DB or Runner dispatch. |
+| 40 | TG-RPA.4 / `tg_task_0b3390367e9e1274` | Implement only internal DB-first Task-edit/Plan coordination, typed partial-success handling, focused tests, and corresponding packaged-file manifest updates. No public parser connection. |
+| 50 | TG-RPA.5 / `tg_task_0f489923a89ffadc` | Connect only the existing `task edit` leaf and atomically synchronize AGENTS, current formal docs, CLI contract, README, final package manifest, help/output, and focused acceptance. Skill guidance remains unchanged. |
+| 60 | TG-RPA.6 / `tg_task_bdb4541db361dd64` | Acceptance-only exact-target regression, all offline lanes, and two independent reviews. Product corrections return to the owning predecessor. |
+
+Each unit depends on acceptance of every earlier order in this lane and is
+Tier 2 with two independent exact-target reviews. TG-RPA.2 through TG-RPA.5 use
+the narrowest focused tests plus the applicable release, lane, document, and
+diff checks; a redundant full-suite requirement is deliberately excluded from
+those units. TG-RPA.6 alone owns the final full deterministic offline suite.
+
+TG-RPA.5 is the only activation gateway. Its one reviewed revision switches the
+inactive markers and synchronizes implementation, public CLI/JSON/text,
+`AGENTS.md`, formal owners, CLI reference, README, final package manifest, and
+focused tests.
+TG-RPA.6 validates but does not broaden the activated contract. Registration
+authorizes governance records and the listed future
+repository-local implementation only; it grants no commit, push, network,
+external CI, publication, target-project installation, or unrelated mutation.
 
 <a id="tg-m12-3"></a>
 
@@ -280,9 +388,6 @@ or changed acceptance still requires explicit authority.
 These items are not implementation authority. Each needs a separately approved
 contract and execution unit.
 
-- After accepted TG-M20S.3, decide separately whether to approve a bounded
-  activation unit. Never register or activate implementation as a design side
-  effect.
 - Decide separately whether to approve the still-proposed verification-
   guardrail successor inventory before reconsidering that Skill-only guidance.
 - Decide whether later product scope should add project-profile detection,

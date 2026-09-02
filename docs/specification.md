@@ -10,8 +10,9 @@ Bundles, deterministic Evidence JSON, the bounded offline/mock derived-evidence
 Analyzer, and the explicitly opted-in trusted-local verification Runner with a
 closed manual fallback. Schema v20 remains a supported migration source and
 audit-only Runner lineage; only fresh schema-v21 gate-eligible evidence may
-satisfy the Runner branch. TG-M20S.3 remains an accepted but inactive static
-contract. Completed execution narrative belongs only in indexed history, and
+satisfy the Runner branch. M25 Select-Split-Merge-Register is active only as
+Skill instruction-layer guidance. Completed execution narrative belongs only in
+indexed history, and
 the Task database owns live state and evidence.
 
 This document specifies supported product behavior. The concise
@@ -74,7 +75,9 @@ network state. Read-only Git subprocesses are permitted only for the exact
 validation and review operations defined below. Explicit setup may create the
 canonical ignored package-local state and generated Viewer; successful
 business mutations may perform the opted-in bounded same-process maintenance
-defined below.
+defined below. One explicit `task edit --runner-plan-action` invocation may
+also create or replace only the canonical ignored package-local Runner Plan
+under the current authoring contract.
 
 ## Package, Runtime, And Generated State
 
@@ -219,7 +222,7 @@ Current success-data projections are:
 | default `task.current` | `tasks`, `count`, `limit`, `statuses` |
 | `task.effort` enabled | `task_id`, `enabled`, `profile`, `measurements`, `thresholds`, `exceeded`, `basis`, `observation`, `coverage`, `attribution`, `unknown_reasons`, `warning_key`, `suggested_action` |
 | `task.show` | exactly `task`, `events`, `suggested_next_action`, `review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`, `effort_advisory_enabled`, `completion_history`, `verification_evidence` |
-| `task.edit` | `task`, `changed_fields`, `event`, plus `contract_write` only for Contract input |
+| `task.edit` | `task`, `changed_fields`, `event`, plus `contract_write` only for Contract input and `runner_plan_update` only when a Runner Plan action was supplied |
 | `task.complete` | `task`, `changed_fields`, `event` |
 | `handoff.record` | `handoff`, `local_record` |
 | `handoff.list` | `handoffs`, `count`, `total_matching`, `limit`, `states` |
@@ -1191,158 +1194,176 @@ absence, projection mismatch, reused reopen link, ordinal overflow, invalid
 gate relationship, and cycle/event ownership conflict; it is not a completion
 check blocker code.
 
-## Accepted But Inactive TG-M20S.3 Decomposition Contract
+## Current M25 Select-Split-Merge-Register Contract
 
-TG-M20S.3, Task `tg_task_286129dbca4d25ab`, freezes design authority for two
-and only two explicit user-authority events: an instruction to register or
-taskize already-authorized work, and an explicit scope addition to an
-`in_progress` or `review_pending` Task. This is an acceptance boundary for a
-separately approved activation unit, not current Skill or product behavior.
-The supporting M20S observation covered one repository, scenario, pair, and
-model/tool cohort, so it does not justify automatic self-splitting or any
-broader discovery trigger.
+M25.1, Task `tg_task_8e33e15cd97a28ee`, froze design authority for two and
+only two explicit user-authority events: an instruction to register or taskize
+already-authorized work, and an explicit scope addition to an `in_progress` or
+`review_pending` Task. M25.2, Task `tg_task_d891cd538d9e7364`, activates that
+contract only in current Skill and task-workflow guidance. Discovery, a test
+failure, an Effort result, task size, or model preference does not create either
+event.
 
-### Independence And Boundedness
+### Candidate-First Split And One Global Merge
 
-A candidate boundary has four independently assessed fields:
+The Skill instruction layer first fixes one authority envelope containing the
+complete authorized outcome, its permission boundary, any binding order, and
+any explicit Contract or Review Tier mapping. It then performs one flat
+candidate-first Split at stable responsibility boundaries. A provisional
+candidate states one bounded responsibility, its authorized consumed inputs and
+produced outputs, and any concrete fragment-to-owner coupling. It may expose
+that it cannot yet stand as a Task; that fact is input to the one global Merge,
+not a reason to reject the candidate before Merge.
 
-- `acceptance_independent=yes` means its outcome and acceptance can be stated
-  and accepted without silently accepting another candidate's outcome.
-- `verification_independent=yes` means bounded verification can attribute a
-  pass or failure to that candidate. Reusing a command or fixture is allowed;
-  sharing one indivisible acceptance result is not.
-- `commit_independent=yes` means it can form a coherent reviewed revision
-  without landing a partial or unaccepted part of another candidate. Touching
-  the same file is not by itself a failure; an inseparable atomic change is.
-- `completion_independent=yes` means that, after any predecessor expressible
-  by existing lane ordering completes, the candidate can satisfy its own
-  Contract, review, and evidence gates without revising another active Task or
-  borrowing that Task's current evidence.
+After that Merge, each final slice must:
 
-Each field is `yes`, `no`, or `unknown`. `yes` requires explicit authority and
-concrete project evidence, `no` records a concrete coupling, and `unknown`
-records missing or ambiguous information. Aggregate independence is `yes` only
-for the single all-`yes` combination, `no` whenever any field is `no`, and
-`unknown` otherwise; a concrete `no` dominates simultaneous unknowns.
-Decomposition is eligible only when
-every field for every candidate is `yes`, the candidates are a disjoint and
-complete partition of the user's authorized outcome, their order is
-representable with the existing sequential/optional lane model, and their
-permissions do not exceed the original authority. File count, line count,
-estimated effort, duration, risk, or a general impression that work is large
-never supplies a `yes` value.
+- own one bounded final responsibility with its authorized consumed inputs and
+  produced outputs;
+- leave the repository in a correct state when completed after its represented
+  predecessors;
+- have verification and review whose result is locally attributable to that
+  responsibility;
+- use the existing sequential/optional lane and order model; and
+- be resumable by a fresh agent from its Task Contract, routed authority, and
+  declared predecessor outputs without relying on prior chat or a hidden
+  worksheet.
 
-One explicit event permits only one non-recursive assessment pass. Candidate
-count is bounded by, and mapped one-to-one to, the finite independently
-accepted outcomes actually present in that authority; one outcome cannot be
-split by file, step, test, or implementation detail unless the user already
-accepted those as separate outcomes. The agent cannot invent a parent Task,
-descendant Tasks, acceptance clauses, or additional work to improve the
-partition.
+A slice need not deliver standalone user value. Shared files, tests, commands,
+or fixtures do not alone prevent separate slices. File count, line count,
+estimated effort, duration, risk wording, or implementation steps do not create
+a responsibility boundary.
 
-### Explicit Registration Decision
+The flat candidates must conserve the authority envelope exactly: their scope
+union is complete and non-overlapping, their permission union preserves the
+complete explicitly authorized permission envelope without omission, no group
+exceeds that original boundary, and their ordering adds no unapproved outcome.
+The instruction layer then performs one global Merge pass over the complete
+flat set. Every fragment-only candidate is merged with the responsibility that
+consumes its output or owns its acceptance. A candidate is fragment-only when it
+cannot leave a correct repository state, cannot carry attributable local
+verification and review, or expresses only part of an inseparable
+responsibility. Concretely coupled fragments form their transitive groups in
+that same pass, which may merge several disjoint groups at once. Ambiguous
+ownership uses the fallback below rather than an arbitrary Merge. The pass does
+not merge candidates merely because they share files, tests, commands, or
+fixtures.
 
-An explicit request to register or taskize authorized work permits the
-following bounded result without asking once per Task:
+The merged set is final for that explicit event. It is never Split again,
+recursively decomposed, or optimized through a second Merge pass. If a valid
+flat set cannot be formed, the registration and grouped-question fallbacks
+below apply instead of inventing another boundary. A reply, clarification,
+paraphrase, or answer about the same taskization or scope-addition outcome stays
+in the same event; only materially changed authority for scope, order, or
+permission starts a new event.
 
-| Condition | Result | Write boundary |
-|---|---|---|
-| Every candidate satisfies all four fields, the partition is complete and non-overlapping, order is representable, and permissions are unchanged | `register-bounded-set` | Use the existing `task add` path once per candidate in the single approved pass. |
-| Any field is `no` or `unknown`, or the proposed order or partition is not representable, but one truthful Contract can contain the whole authorized outcome and the user did not mandate incompatible separate boundaries | `register-single` | Use the existing `task add` path once for the complete outcome. |
-| Authority is insufficient to state even one truthful Contract, or the write would expand scope or permissions | `no-write` | Do not invent a Task or acceptance. Apply the existing clarification, handoff, pause, or blocking rule only where its normal preconditions already exist. |
+### Explicit Registration And Contract Population
 
-The taskization instruction authorizes these bounded Task-registration writes;
-it does not authorize implementation, target-project mutation, external work,
-or changed permissions. A failed multi-Task assessment therefore collapses to
-one honest Task when possible, not to omitted scope or repeated clarification
-merely to optimize decomposition.
+An explicit request to register or taskize work authorizes one existing
+`task add` write for each final group. It authorizes no implementation,
+target-project mutation, Git or network operation, external delivery, or
+permission expansion. Each non-zero Contract copies only scope, acceptance,
+constraints, and authority reference that the governing sources or user
+instruction state explicitly. It never infers acceptance or permissions merely
+to make a split look complete.
 
-If the user mandated exact separate Task boundaries and any boundary is `no` or
-`unknown`, the result is `no-write`, not a silent merge; report the conflict and
-request changed authority only when it is needed to proceed. If a bounded
-multi-add fails after a strict subset was registered, stop the pass, inspect
-the exact registrations through existing reads, and report or durably preserve
-the authorized remainder. Retry only an unambiguously missing candidate after
-the ordinary failure is resolved; never duplicate, repartition, or widen it.
+When the authorized outcome is clear but the authority lacks the detail needed
+for a truthful multi-Task Split or complete non-zero Contracts, register one
+whole-outcome revision-zero Task. Revision zero records that Contract detail is
+still absent; it does not prove or invent that detail. This is the normal
+fallback and does not trigger one question per candidate.
 
-### Explicit Mid-Task Scope-Addition Decision
+There is one grouped-question boundary. Ask one question containing all and
+only the missing facts when the user mandated separate boundaries that cannot
+be represented truthfully, or when the outcome or permission boundary is too
+unclear to register even one honest whole-outcome Task. Do not register a
+partial interpretation before that answer. Missing size, implementation, path,
+or test detail alone does not cross this boundary.
 
-For one explicit scope addition to an `in_progress` or `review_pending` Task,
-first select one of the first four scope dispositions below, then evaluate the
-continuation state. `pause` and `block` are status outcomes layered after scope
-is preserved; they never substitute for placing the authorized addition. The
-six outcomes therefore cover scope and continuation without treating them as
-one lossy axis.
+If several final groups are being added and the existing `task add` sequence
+fails after a strict subset succeeds, stop the pass and inspect the exact
+registered set through existing reads. While the same uninterrupted event still
+holds the transient final set, preserve the authorized remainder and, after the
+ordinary failure is resolved, add only groups proven missing. Never delete a
+successful registration, duplicate one, repartition the set, widen a Contract,
+or restart Select-Split-Merge.
 
-| Outcome | Exact condition | Required effect |
-|---|---|---|
-| `keep-current` | The stated addition is already wholly covered by the current Contract and no explicit repartition was authorized. | Make no Contract or Task write. Do not create overlapping duplicate acceptance. An unchanged Contract preserves current review evidence only while its exact target still covers the material; changed target material requires the normal fresh target and review. |
-| `revise-current` | The addition is new and the user directs it to remain current, or decomposition is ineligible but the complete addition can be safely and exactly incorporated. | Use the existing semantic Contract-revision path. A `review_pending` Task returns to `in_progress`, and stale target, review, and completion evidence do not remain current. |
-| `propose-successor` | The addition is outside the current Contract, all four fields are `yes`, the partition/order/permissions tests pass, and the user has not directed it to remain current. | Present one exact successor proposal and leave the current Contract, review target, receipts, findings, and completion evidence unchanged. Register nothing until approval. An explicit instruction in the same user message to register the addition separately is that approval, so no duplicate confirmation is required. |
-| `handoff` | The addition is explicitly deferred or cannot safely enter the current Contract or a successor decision yet, and remains authorized work worth preserving. | Use the existing local Handoff path for its bounded sanitized summary and rationale fields, each at most 1,000 characters. They identify the unresolved outcome and pending decision; they do not expand current acceptance or prove a successor Contract. Nonblocking work may continue; an acceptance-preventing addition must then receive the applicable pause/block status and cannot be used to claim the user's total requested outcome is complete. |
-| `pause` | After the required scope disposition, a temporary missing decision or external state prevents safe progress on the active/review-pending Task, while later continuation remains expected. | Use the existing pause transition and concrete pause reason; do not create a Task. |
-| `block` | After the required scope disposition, missing authority, safety, dependency, or decision prevents acceptance and no safe authorized progress or narrower preservation route remains. | Use the existing blocker transition as the last resort; do not create a Task. |
+If the transient final set is lost before recovery, do not reconstruct or rerun
+it. Preserve a bounded Handoff summary when its existing limits can state
+the unregistered outcome truthfully, then require current explicit authority
+before any new write. If the exact remainder or permission boundary is no longer
+clear, use the one grouped question above; a confirmed whole remainder may use
+one revision-zero Task, without disturbing successful registrations.
 
-An explicit placement direction controls only an otherwise valid disjoint
-partition. It cannot authorize duplicated acceptance or override a `no` or
-`unknown` independence result. Moving work already covered by the current
-Contract into a successor requires an explicit repartition and the existing
-semantic Contract-revision consequences.
+### Review Tier And Design-First Rules
 
-When no placement direction exists, all four `yes` values select one
-`propose-successor`; any `no` or `unknown` forbids a split. If the addition can
-still be incorporated exactly, select `revise-current`. Otherwise use
-`handoff` as the scope-preservation disposition, then select continue, `pause`,
-or `block` strictly by the existing nonblocking, temporary, and acceptance-
-preventing meanings. Unknown information never becomes inferred acceptance and
-never triggers a decomposition-only question while safe current work can
-continue.
+A binding authority mapping sets the minimum Review Tier for the scope it
+governs. Ordinary Task registration, partitioning, or wording cannot lower that
+floor; changing the mapping is an explicit governance change. With no binding
+mapping, use this closed fallback:
 
-When an accepted addition must be revised into the current Contract and then
-paused or blocked, perform the existing Contract-only semantic revision before
-the separate status transition. The latter must not erase or replace the scope
-disposition. A successor-approval wait does not pause or block a current Task
-that can still progress within its unchanged Contract. An acceptance-
-preventing addition that cannot yet enter a Contract is summarized in Handoff
-first and then pauses or blocks the owning Task; a nonblocking Handoff never
-hides a mandatory unresolved part of the user's overall request.
+| Scope delta | Review Tier floor |
+|---|---|
+| Schema or migration; JSON contract; CLI write behavior; target-project mutation; privacy or logging; Skill trigger; verification, review, or completion gate; milestone or plan acceptance; implementation-binding normative documentation | Tier 2 |
+| Wholly mechanical and meaning-preserving work | Tier 0 |
+| Every other bounded scope | Tier 1 |
 
-The one successor proposal must state its proposed Contract, review tier,
-kind/lane/order, exact added scope, and what remains in the current Task. A
-current-before-successor relationship uses the next available order in the
-same sequential lane; `optional` is allowed only for genuinely independent
-work. If existing ordering cannot express the relationship, splitting is
-ineligible. Approval invokes only the existing `task add` path. Rejection or a
-direction to keep the addition current selects `revise-current` when safe;
-withdrawal requires explicit user direction.
+Unknown facts, size, difficulty, duration, failure count, safety wording, or
+reviewer availability never alone selects Tier 2. Each final group receives its
+own applicable floor. An explicitly authorized higher Tier is allowed, but
+ordinary registration input cannot lower the floor. A later integration review
+never replaces that Task's required review.
 
-At most one proposal may be produced from one explicit addition event, and it
-cannot be recursively subdivided during that event. A rejection, paraphrase,
-clarification, or reply about the same added outcome remains the same event;
-only a materially changed user instruction for scope, order, or permission can
-start a new assessment. Before the session ends, the current Task completes,
-or an unresolved proposal is otherwise left behind, the existing Handoff path
-must record a bounded sanitized summary of every added outcome and, in the
-rationale, that a user decision is pending. Handoff is not lossless proposal
-storage: it does not preserve the full proposed Contract, review tier,
-lane/order, or partition and
-must never be used to reconstruct or register them. A resumed agent surfaces
-the unresolved Handoff without generating an alternative proposal; it requires
-current explicit authority for any missing exact fields. No persisted proposal
-counter or event schema is introduced. Across every branch, scope disposition
-occurs before any continuation status: all authorized scope remains in the
-unchanged or revised current Contract, an approved successor, or a pending
-proposal/Handoff summary, with any pause/block recorded only afterward. It is
-never silently discarded.
+When explicit authority or an implementation-binding owner requires a design
+decision before an implementation Contract can be truthful, register only the
+bounded design responsibility unless existing authority already states both
+truthful ordered slices. Its produced decision becomes declared authority and a
+consumed input only for a later explicit registration event; design-first never
+invents an implementation Task. If already-authorized design and implementation
+responsibilities cannot each meet the slice conditions above, the global Merge
+keeps them together.
 
-### Inactive Boundary
+### Explicit Mid-Task Scope Addition
 
-TG-M20S.3 changes no current `SKILL.md`, package reference, public command,
-normal Task-loop call count, SQLite schema, JSON contract, Viewer field,
-automatic Task creation, runtime Task splitting, parent/child model, background
-LLM work, network behavior, or target-project mutation. In-scope discovery,
-test-driven cross-module failure, and unrequested work remain governed by the
-current keep/block/Handoff rules and cannot invoke this future decomposition
+For one explicit addition to an `in_progress` or `review_pending` Task, first
+preserve the scope and permission envelope, then apply Select-Split-Merge once
+to the addition and its relationship to the current responsibility:
+
+- an addition already wholly covered by the current Contract is `keep-current`;
+  it makes no Contract write and preserves the current Review Tier;
+- an addition that remains in or globally Merges into the current
+  responsibility has the maximum of the current Tier and every applicable
+  resulting floor. When that value is higher, raise the Tier through its
+  existing edit before using the existing semantic Contract-revision path; it
+  never auto-lowers. Review does not advance between the two writes. A failed
+  Contract write can therefore leave only unchanged scope at a conservatively
+  higher Tier, never expanded scope below its floor;
+- a final successor group uses the floor for its own scope, not the current
+  Task's Tier. Registration requires an explicit taskization or separate-Task
+  direction; otherwise present one proposal without a Task write; and
+- an addition that cannot yet be placed truthfully uses the existing bounded
+  Handoff path, followed by continue, pause, or block under their existing
+  preconditions. Status never substitutes for preserving authorized scope.
+
+A current-before-successor relationship must fit existing lane/order. Moving
+already-covered work to a successor requires explicit repartition authority.
+Contract revision retains all existing target/evidence invalidation effects;
+`keep-current` retains evidence only while the ordinary exact-target rules do.
+An unresolved proposal is not persisted as a new model or reconstructed from a
+Handoff. The same explicit addition event never starts another Split after its
+global Merge.
+
+### Active Instruction-Layer Boundary
+
+M25 Select-Split-Merge-Register is active only in current `SKILL.md` and
+`references/task_workflow.md`. It changes no public command, normal Task-loop
+call count, SQLite schema, JSON contract, Viewer field, automatic Task creation,
+runtime Task splitting, parent/child or dependency model, background LLM work,
+network behavior, or target-project mutation. Its grouping and tier-basis
+reasoning remain session-local and are not persisted as a basis or worksheet.
+Inputs and outputs use existing Contract prose only when explicit authority
+supplies them; only the selected Task, Review Tier, and lane/order results use
+other existing fields. In-scope discovery, test-driven cross-module failure,
+and unrequested work remain governed by current rules and cannot invoke this
 policy.
 
 ## Current Schema-v21 Verification, Ledger, And Bundle Contract
@@ -3739,6 +3760,238 @@ Skill trigger, or separate workflow action. Its only dispatch is the exact
 trusted-local opt-in branch of the existing target-set operation; qualifying
 gate authority is the closed schema-v21 branch above.
 
+## Current Runner Plan Authoring And Control Contract
+
+This section is the current implementation contract for bounded Runner Plan
+authoring. The product retains exactly 21 public command leaves and adds only an
+explicit action option to the existing `task edit` leaf. This contract grants no
+config write, Task side effect, process launch, target mutation, or external
+operation without that invocation. `review target set` remains the sole Runner
+dispatch. Schema v21, setup non-generation, current PlanV1 capture/resolution,
+Runner execution, Evidence, Viewer, and completion behavior remain unchanged.
+
+### Closed Draft And Actions
+
+Authoring reuses the one existing ignored physical file
+`<physical-package>/config/verification-runner.json` and the exact current
+PlanV1, EntryV1, and StepV1 member sets. It adds no PlanV2, second config,
+per-entry enabled flag, tombstone, setup generation, or Git-tracked plan. The
+only new caller document is strict UTF-8 JSON from standard input with the
+closed shape:
+
+```text
+RunnerPlanDraftV1 = version, steps
+```
+
+`version` is exactly integer `1`. The raw stdin document is capped at 65,536
+UTF-8 bytes by reading at most one byte beyond the limit before rejection.
+`steps` is one through 16 exact StepV1 objects under all existing per-step,
+aggregate timeout, literal-argument, and separate 65,536-byte final-plan
+bounds. Unknown, missing, duplicate, floating,
+non-finite, differently typed, malformed, trailing, empty, or over-bound input
+is rejected before mutation. The draft never accepts Task ID, Contract
+revision, expectation or criterion digest, coverage, Plan ID, trust, shell,
+PATH lookup, review target, or command-discovery input. Taskgov derives the
+addressed Task ID and exact future Contract/verification basis and fixes
+`coverage="full"`; it does not infer a command, entrypoint, argument, coverage,
+test sufficiency, or trust from repository files, project documentation,
+verification prose, prior evidence, or an LLM decision.
+
+After bounded UTF-8, duplicate-free JSON, closed-member, and member-type
+recognition, every caller-supplied StepV1 string leaf (`step_id`, `mode`,
+`entrypoint`, each `argv` item, and `cwd`) is passed unchanged through the
+existing common deny-by-default privacy guard under the fixed field label
+`Runner Plan draft`. This check precedes that leaf's enum, grammar, UTF-8,
+UTF-16, and candidate validation. A privacy rejection for an otherwise
+recognized string leaf therefore takes precedence over `invalid_argument` and
+returns `privacy_rejected`; malformed or duplicate JSON, unknown or missing
+members, non-string member types, and raw-document overflow remain
+`invalid_argument`. The guard is draft-input admission only: it neither changes
+current PlanV1 reader validation nor reclassifies an existing manually authored
+Plan source.
+
+The existing-leaf option is
+`task edit <task-id> --runner-plan-action <action>`, where the closed action set
+and effects are:
+
+| Action | Standard input | Exact Plan effect |
+|---|---|---|
+| `replace` | one RunnerPlanDraftV1 | Remove every entry for the addressed Task and insert one future-basis entry with the supplied steps at the earliest removed position, or append it when none existed. It is the only initial-set/upsert action. |
+| `rebind` | not read | Require one existing entry for the Task, preserve its steps and position, and replace only its basis with the exact future basis. |
+| `detach` | not read | Remove every entry for the addressed Task while preserving all other relative order; absence is an idempotent no-op and an empty entries array remains a valid retained Plan. |
+| `disable` | not read | Set only global `trusted_local=false`; preserve Plan ID, every entry, and their order. An absent or already-disabled Plan is an idempotent no-op and no file is created for absence. |
+
+On the first `replace` when the file is absent, taskgov creates PlanV1 with
+`version=1`, fixed `plan_id="taskgov-local-plan"`,
+`trusted_local=true`, and the one derived entry. On every present Plan,
+`plan_id`, unrelated entries, and their order are preserved. `replace`,
+`rebind`, and `detach` never change `trusted_local`; in particular, they do not
+re-enable a disabled Plan. This contract adds no dedicated re-enable action or
+restore workflow. It does not claim that a user cannot later make a separately
+authorized direct local edit.
+
+Per-Task cardinality is closed: `replace` and `detach` deterministically repair
+zero, one, or multiple distinct-basis entries as defined above; `rebind`
+requires exactly one and returns a bounded missing-entry or ambiguity error
+otherwise; and `disable` is independent of Task-entry count after structural
+Plan validation. An exact duplicate basis remains the existing invalid
+`plan_ambiguous` source and no action rewrites it.
+
+The first absent-file `replace` may create only the canonical physical
+`config` directory when it is lexically absent, after the package-root,
+containment, no-reparse, current-index, and effective-ignore checks succeed.
+No other action creates that directory. A publication failure may leave only
+that identity-owned empty ignored directory; it is not a Plan source or
+authority and is never recursively cleaned as part of authoring.
+
+### One-Invocation Task Coordination
+
+A Plan action may be the only requested mutation, or it may accompany one
+actual Task basis change in the same public invocation and under the same user
+approval. A basis change is exactly a new Task Contract revision or a changed
+Task `verification` value. Title, description, status, priority, kind,
+lane/order, tags, notes, review tier, pause/block state, reopen, completion, and
+review-target changes do not independently require or authorize a Plan update.
+
+When one valid present Plan has `trusted_local=true` and its sole entry for the
+Task exactly matches the pre-edit current basis, a basis-changing edit must
+include exactly one of `replace`, `rebind`, `detach`, or `disable`. Taskgov does
+not choose an action or automatically carry the entry forward. An absent,
+disabled, unreadable, malformed, ambiguous, already-stale, or no-entry Plan
+does not hold Task authority hostage: a Task-only edit may still proceed under
+the ordinary Task contract and the existing Runner remains fallback or
+fail-closed. A requested Plan action still requires a valid source appropriate
+to that action.
+
+One invocation may combine a Plan action with other ordinary metadata fields
+only when it also produces an actual basis change. Plan-only use supplies no
+other Task-edit field. Runner Plan actions are incompatible with done,
+completion-evidence, reopen, verification-complete, and review-complete modes;
+they never invoke completion's Runner selector. A config-only `replace` or
+`rebind` requires a current nonterminal Task and positive Contract plus
+verification criterion. Config-only `detach` and global `disable` may address
+an existing terminal Task because they perform no Task business write. The
+positional Task ID binds project and Task scope; for `disable` it does not make
+the global flag task-local.
+
+The direct `task edit` invocation is the mutation authority. An agent should
+present the combined Task and Plan disposition before invoking it, but no
+mandatory preview command, confirmation token, second approval, or second
+normal-path CLI round trip is added. `--read-only` retains its existing
+write-rejection semantics.
+
+### Ordered Commit And Partial Success
+
+The coordinator first captures and validates the current Task, Contract,
+criterion, Plan source, action, draft, option combination, and expected Plan
+identity/digest. For a Task edit it derives the future basis and pure action
+result in memory inside the existing bounded Task transaction, including
+complete candidate Plan bytes only when normalized semantics change, then
+commits and closes SQLite. Only afterward must the publisher revalidate the
+expected absent-or-current Plan source for every action. A semantic no-op uses
+that boundary only to confirm the expected source and performs no publication;
+a changed action publishes the complete candidate by a single-file atomic
+replacement. No SQLite writer spans a filesystem read or write.
+
+The Task transaction and Plan publication are two separately committed
+operations; they are not one atomic transaction. A Task/DB failure leaves the
+canonical Plan unchanged. A detected source drift, failed required source
+confirmation, or publication failure after a Task commit never rolls the Task
+back and never guesses, merges, or overwrites newer Plan bytes. The requested
+Plan disposition is then unconfirmed. Whether the expected source stayed
+unchanged or another authorized writer changed it, no eligibility state is
+inferred; the Task basis commit itself can change an unchanged entry's prior
+exact-match status. The caller must not rely
+on Runner execution until one explicit config-only `rebind`, `replace`,
+`detach`, or `disable` succeeds. There is no compensating Task edit, two-phase
+commit, pending SQLite row, retry daemon, or automatic repair.
+
+The source check is a bounded compare-before-replace guard, not a claim of
+cross-process linearizability, power-loss durability, Git/config transaction
+atomicity, or zero drift after the final check. Existing target-set admission
+remains the final freshness owner. Readers may observe only a complete old or
+complete new canonical file; temporary material is bounded, private, and
+removed on ordinary failure.
+
+Without a Plan action, `task edit` retains its exact current success and
+failure data. With an action, success adds exactly:
+
+```text
+runner_plan_update = action, status
+action = replace|rebind|detach|disable
+status = updated|unchanged|unconfirmed
+```
+
+`unchanged` means the pure action produces the same normalized Plan semantics,
+including absent-source or missing-entry `detach`, absent/already-disabled
+`disable`, and an otherwise identical replacement or rebind. A semantic no-op
+has no candidate publication, does not normalize valid noncanonical raw bytes
+as a side effect, and returns `unchanged` only after post-transaction
+confirmation that the expected source still matches. `updated` means changed
+normalized semantics were successfully published as complete canonical bytes.
+`unconfirmed` is available only after an actual Task commit followed by an
+unsuccessful required Plan source confirmation or publication.
+
+Plan-only success returns the current Task, empty `changed_fields`, null
+`event`, no Task/Contract write, and `updated|unchanged`. If required source
+confirmation or publication fails after an actual Task commit, the command is
+a successful partial result with the committed Task/event,
+`status=unconfirmed`, and exactly one Runner-Plan-originated bounded warning:
+
+```text
+task_applied_runner_plan_unconfirmed
+Task update completed but Runner Plan disposition is unconfirmed; apply an explicit Plan action before relying on Runner execution
+```
+
+Ordinary post-commit maintenance still receives exactly one opportunity for
+that committed Task mutation. Its existing zero through three maintenance
+warnings, when any, follow the one authoring warning in their existing order.
+A pre-commit failure or config-only source-confirmation/publication failure
+remains an ordinary failed command with the existing empty Task-edit failure
+data and no maintenance. An action-bearing text success appends exactly
+`Runner Plan: <action> <status>` after the existing Task/Contract lines; an
+invocation without an action remains byte-compatible.
+
+The new authoring failure map is closed:
+
+| Condition | Code / exit | Fixed public message |
+|---|---|---|
+| caller StepV1 string rejected by the common privacy guard | `privacy_rejected` / 1 | `Runner Plan draft appears to contain a secret, raw log, or dump content` |
+| invalid action, stdin draft, candidate, or caller value | `invalid_argument` / 1 | `arguments are invalid` |
+| incompatible Task-edit options | `invalid_option_combination` / 1 | `Runner Plan action cannot be combined with these task edit options` |
+| required disposition omitted for an enabled exact-match entry | `runner_plan_action_required` / 1 | `Runner Plan action is required for this Task basis change` |
+| `rebind` has no Task entry | `runner_plan_entry_required` / 1 | `Runner Plan entry is required for rebind` |
+| unsafe, malformed, over-bound, duplicate-basis, or ambiguous source | existing `plan_source_invalid|plan_invalid|plan_too_large|plan_ambiguous` / 2 | existing sanitized Plan message |
+| expected source changes before a config-only confirmation or publication | `runner_plan_changed` / 2 | `Runner Plan changed before update; no Plan change was made` |
+| another config-only source-confirmation or publication failure | `runner_plan_update_failed` / 2 | `Runner Plan update did not complete` |
+
+After a Task commit, any later Plan source-revalidation, drift, or publication
+failure maps instead to the successful unconfirmed partial result above.
+Existing Task, Contract, database, and storage errors keep their current
+mappings. No response, warning, event, log,
+database, Evidence, Viewer, or history projection contains Runner Draft/Plan
+bytes, steps, argv, publisher paths, rejected input, or publisher exception
+detail.
+
+### Disable, Evidence, And Activation Boundary
+
+`disable` affects only admission of future attempts; it neither cancels an
+in-flight process nor deletes entries, canonical files, Runner graph rows,
+observations, References, Bundles, completion cycles, or history. `detach`
+removes every entry for the addressed Task from the current Plan and no other
+entry. A Task basis change makes older Runner
+observations historical; it never converts them into a current Receipt or lets
+them satisfy a new current gate.
+
+Authoring never calls `review target set`, captures a review target, launches a
+process, creates a Receipt or Runner graph, or changes the existing
+target-plan/process/lifecycle/native/completion/Evidence/Viewer paths. The
+activation revision synchronizes `AGENTS.md`, the public CLI, active
+specification/design/plan, CLI contract reference, README opt-in examples,
+package manifest, and focused tests. The Skill and normal Task loop remain
+unchanged. TG-RPA.6 performs acceptance-only full offline validation; a
+correction returns to its owning predecessor Task.
+
 ## Deferred Boundaries
 
 The current product deliberately excludes pagination/search in CLI history,
@@ -3750,7 +4003,7 @@ beyond the one-shot envelope, external Issue lifecycle/sync until its intake
 contract, cross-project profiles, daily network update checks, reviewer
 identity/signatures/attestation, and a generic workflow engine.
 
-Deferred features, the retired TG-M20S study result, and the accepted but
-inactive TG-M20S.3 design never change current acceptance, add a normal-loop
-command, or authorize target/external mutation until their separately approved
-implementation and synchronization gates complete.
+Deferred features and the retired TG-M20S study result never change current
+acceptance, add a normal-loop command, or authorize target/external mutation
+until their separately approved implementation and synchronization gates
+complete. Active M25 instruction guidance adds none of those capabilities.

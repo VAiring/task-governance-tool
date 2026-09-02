@@ -15,7 +15,7 @@ checkpointing, or completing work with `task-governance-tool`.
 - [Pause, Resume, And Block](#pause-resume-and-block)
 - [Scope Control And Local Handoff](#scope-control-and-local-handoff)
 - [Review And Completion](#review-and-completion)
-- [Register Tasks](#register-tasks)
+- [Taskize Or Add Scope](#taskize-or-add-scope)
 - [Safety Boundary](#safety-boundary)
 
 ## Source Of Truth And Install Boundary
@@ -544,18 +544,141 @@ and saved completion cycles, but those records remain audit-only and the Task
 requires a fresh current verification basis, target, review receipts, and
 completion evidence.
 
-## Register Tasks
+## Taskize Or Add Scope
 
-Register only explicit user-approved work:
+Use this guidance for two and only two explicit authority events: a request to
+register or taskize already-authorized work, and an explicit scope addition to
+an `in_progress` or `review_pending` Task. Discovery, a test failure, an Effort
+result, task size, difficulty, or model preference does not invoke it. Replies
+and clarifications about the same outcome stay in the same event; only
+materially changed scope, order, or permission authority starts another event.
+Keep the authority envelope, candidates, fragment coupling, grouping, and Tier
+basis session-local; do not persist a classifier record, worksheet, or basis.
+
+### One-Pass Select-Split-Merge
+
+Apply this fixed sequence once:
+
+1. **Select** one authority envelope containing the complete authorized
+   outcome, its permission boundary, binding order, explicit Contract facts,
+   and binding Review Tier mappings.
+2. **Split** once into a flat candidate set at stable responsibility
+   boundaries. Conserve a complete, non-overlapping scope union and the complete
+   explicit permission union without omission or expansion, and use only order
+   representable by existing lane/order.
+3. **Merge** every concretely coupled fragment-only transitive group in one
+   global pass. Several disjoint groups may merge in that pass. Sharing files,
+   tests, commands, or fixtures alone does not force a Merge; ambiguous
+   ownership uses the fallback below instead of a guessed owner.
+4. Treat the result as final. Do not recursively classify, run a second Merge,
+   re-Split, create a parent/child graph, or optimize by size.
+
+A provisional candidate states one bounded responsibility, its authorized
+consumed inputs and produced outputs, and any concrete fragment-to-owner
+coupling. It may expose that it cannot yet stand alone; final viability is
+judged only after Merge. Each final group must own its bounded responsibility,
+leave a correct repository state after represented predecessors, carry locally
+attributable verification and review, use existing lane/order, and be resumable
+by a fresh agent from its Contract, routed authority, and predecessor outputs.
+A group need not provide standalone user value.
+
+For example, an independently valid JSON contract and a consuming CLI change
+may remain ordered final responsibilities when each leaves a correct state and
+owns its gate; the later group declares the earlier output as an input. A
+fixture-only candidate with no independent repository state or acceptance
+Merges into its concrete consumer. A tutorial that consumes stable implemented
+behavior may remain a later responsibility when its own checker is attributable.
+
+### Registration, Contract, And Ordering
+
+Register only explicit user-approved work. Each final group uses one existing
+`task add`; registration grants no implementation, target-project, Git,
+network, or external-operation permission. A non-zero Contract copies only
+explicit scope, acceptance, constraints, and authority reference.
+
+When the outcome and registration permission are clear but the authority lacks
+truthful split or complete Contract detail, register one whole-outcome
+revision-zero Task. Ask one grouped question containing all and only the missing
+facts, with no partial write, only when user-mandated separate boundaries cannot
+be represented truthfully or the outcome or permission boundary is too unclear
+for one honest whole-outcome Task. Missing size, implementation, path, or test
+detail alone does not cross that sole question boundary.
+
+When binding authority requires a design decision first, register only the
+design responsibility unless the same authority already states truthful ordered
+design and implementation Contracts. Register later implementation only in a
+later explicit event based on the produced design authority. Every final Task
+retains its own locally attributable verification and review; a later
+integration review never excuses a deficient slice.
+
+After selecting Tier 1 for a bounded non-mechanical contributor-guide update
+with no protected delta, an explicit registration may be:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py task add --repo <target-project> --title "Implement bounded change" --kind sequential --lane TG-M14 --order 20 --priority high --review-tier 2 --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task add --repo <target-project> --title "Clarify localized contributor guide" --kind sequential --lane TG-EXAMPLE --order 20 --priority normal --review-tier 1 --json
 ```
 
 Do not invent dependency graphs or import a project plan. Initial `done` and
 initial `paused` are rejected. For an initially blocked task, supply
 `--blocked-reason`. Let the deterministic CLI fill omitted sequential
 lane/order fields and return them.
+
+### Review Tier Selection
+
+A binding authority mapping is the minimum Review Tier for its governed scope.
+Ordinary registration or splitting cannot lower that floor. With no binding
+mapping, use this closed fallback:
+
+| Scope delta | Review Tier floor |
+|---|---|
+| Schema or migration; JSON contract; CLI write behavior; target-project mutation; privacy or logging; Skill trigger; verification, review, or completion gate; milestone or plan acceptance; implementation-binding normative documentation | Tier 2 |
+| Wholly mechanical and meaning-preserving work | Tier 0 |
+| Every other bounded scope | Tier 1 |
+
+An explicitly authorized higher Tier is allowed. Unknown facts, size,
+difficulty, duration, failure count, safety wording, or reviewer availability
+never alone selects Tier 2. Splitting cannot lower a Task's applicable floor,
+and a sibling Task's Tier does not propagate. Every final Task must satisfy its
+own gate rather than relying on later integration review.
+
+### Explicit Mid-Task Scope Addition
+
+Apply the same one-pass classifier to the addition and its relationship to the
+current responsibility, then choose exactly one disposition:
+
+- `keep-current`: already-covered scope makes no Contract write and preserves
+  the current Tier;
+- revise or Merge into current: use the maximum of the current Tier and every
+  resulting floor. When higher, raise the Tier first and then make the semantic
+  Contract revision; never auto-lower or advance review between those writes;
+- successor: use the successor's own scope floor and existing lane/order.
+  Register it only when explicit taskization or separate placement is present;
+  otherwise make one write-free proposal; or
+- Handoff: when truthful placement is not yet possible, use the existing
+  bounded Handoff and then continue, pause, or block only under their existing
+  conditions.
+
+Moving already-covered work requires explicit repartition authority. An
+unrepresentable order creates no implicit dependency. Scope preservation occurs
+before any pause or block, and this guidance adds no normal-loop call. A
+semantic Contract revision retains the existing target and evidence
+invalidation effects; `keep-current` preserves them only under ordinary
+exact-target rules.
+
+### Partial-Add Recovery
+
+If a strict subset of a multi-Task `task add` sequence succeeds, stop and read
+the exact registered set. During the same uninterrupted event, compare it with
+the still-transient final set, preserve successful additions and the authorized
+remainder, then add only groups proven missing after the ordinary failure is
+resolved. Do not delete, duplicate, repartition, batch-retry, or rerun
+Select-Split-Merge.
+
+If interruption loses the transient final set, do not reconstruct or rerun it.
+Use existing Handoff only for a truthful bounded remainder summary. Any later
+write requires current explicit authority; use the sole grouped question when
+the exact remainder or permission is unclear, or one confirmed revision-zero
+remainder Task when both are clear.
 
 ## Safety Boundary
 

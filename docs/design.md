@@ -10,9 +10,9 @@ Bundles, deterministic Evidence JSON, the bounded offline/mock derived-evidence
 Analyzer, and the explicitly opted-in trusted-local verification Runner with a
 closed manual fallback. Schema v20 remains a supported migration source and
 audit-only Runner lineage; schema v21 is the current persistence and gate basis.
-TG-M20S.3 remains an accepted but inactive static design. The Task database owns
-live state and evidence; completed execution narrative belongs only in indexed
-history.
+M25 Select-Split-Merge-Register is active only in the Skill instruction layer.
+The Task database owns live state and evidence; completed execution narrative
+belongs only in indexed history.
 
 This document is the current implementation design for the behavior specified
 in `docs/specification.md`. The [authority index](authority.md) and live Task
@@ -3518,144 +3518,155 @@ design. The exact publication-commit form is indexed by
 [the historical documentation index](history/README.md); no active product or
 release guarantee depends on that historical copy.
 
-## Accepted But Inactive TG-M20S.3 Activation Design
+## Current M25 Select-Split-Merge-Register Design
 
-TG-M20S.3, Task `tg_task_286129dbca4d25ab`, freezes the instruction-layer
-design for the accepted decomposition contract in `docs/specification.md`.
-Nothing in this section is wired into the current package. A later separately
-approved activation changes Skill guidance and package references while the
-deterministic CLI, repository interfaces, schema, Viewer, and command inventory
-remain unchanged.
+M25.1, Task `tg_task_8e33e15cd97a28ee`, froze the instruction-layer design in
+`docs/specification.md`. M25.2, Task `tg_task_d891cd538d9e7364`, activates it
+only in Skill guidance and the task-workflow package reference. The
+deterministic CLI, repository interfaces, schema, Viewer, Runner, and command
+inventory remain unchanged.
 
-### Instruction-Layer Classifier
+### Session-Local Select-Split-Merge Classifier
 
-The future Skill treats one explicit user message as one session-local event
-and classifies it as either `registration` or `mid_task_scope_addition` before
-considering decomposition. An in-scope discovery, test failure, Effort result,
-cross-module failure, inferred dependency, or model preference does not create
-either event.
+The Skill treats one semantic taskization or scope-addition outcome as
+one session-local event and classifies it as either `registration` or
+`mid_task_scope_addition`. Replies, clarifications, paraphrases, and answers
+about that outcome remain the same event; only materially changed authority for
+scope, order, or permission creates a new event. An in-scope discovery, test
+failure, Effort result, cross-module failure, inferred dependency, task size,
+or model preference does not create either event.
 
-For that event the agent forms a bounded worksheet containing only:
+For the event, session-local reasoning holds only:
 
-- the total authorized outcome and unchanged permission boundary;
-- candidate outcome/acceptance partitions already supported by authority;
-- `acceptance_independent`, `verification_independent`,
-  `commit_independent`, and `completion_independent`, each as
-  `yes|no|unknown` with a concrete reason;
-- the existing `kind`, `lane`, `order`, and review tier capable of expressing
-  the proposed sequence; and
-- any explicit user placement direction.
+- the complete authorized outcome and unchanged permission boundary;
+- explicit Contract facts, binding Review Tier mappings, order, and placement;
+- flat candidate responsibilities with their consumed inputs, produced outputs,
+  repository-state boundary, local verification/review attribution, and
+  existing lane/order representation; and
+- concrete fragment-to-owner coupling used by the one global Merge.
 
-The worksheet is transient reasoning, not a database record, JSON contract,
-Task field, or prompt-log artifact. Aggregate independence is `yes` only when
-all four fields are `yes`, `no` when any field is `no`, and `unknown` otherwise.
-A known `no` therefore dominates any simultaneous unknown. The scope-
-conservation check is separate: the candidate union must equal the authorized
-outcome exactly, with no overlap, omission, new permission, or inferred work.
+These values are not a database record, JSON contract, Task field, dependency
+model, parser input, helper-owned worksheet, or prompt-log artifact. A fresh
+agent boundary is satisfied when the final group's existing Task Contract,
+routed authority, and declared predecessor outputs are sufficient; it has no
+numeric token, file, line, or duration threshold.
 
-The classifier performs one pass. It cannot classify the result again,
-subdivide a proposed successor, invent a parent, or use size/effort metrics as
-predicate evidence. Candidate count cannot exceed the one-to-one, explicitly
-accepted outcomes in the initiating authority; an outcome cannot be expanded
-into candidates by file, step, test, or implementation detail. This makes the
-number of potential writes finite without an arbitrary repository-wide cap.
+The classifier runs this fixed sequence once:
 
-### Registration Adapter
+1. `Select` the one explicit authority envelope and stable responsibility
+   boundaries within it.
+2. `Split` once into a flat candidate set whose exact unions conserve the whole
+   outcome and explicit permission envelope without omission or expansion, and
+   whose sequence uses representable order. A provisional candidate may expose
+   missing repository-state or attributable-gate independence so that the Merge
+   can attach that fragment to its concrete owner.
+3. `Merge` all concretely coupled, fragment-only transitive groups in one global
+   pass. Multiple disjoint groups may merge simultaneously; sharing files,
+   tests, commands, or fixtures alone creates no coupling. Ambiguous ownership
+   invokes the fallback rather than an arbitrary group.
+4. Treat the resulting groups as final. There is no recursive classification,
+   second Merge, re-Split, parent/child graph, or size-based optimization.
 
-For explicit taskization, the classifier returns one of
-`register_bounded_set`, `register_single`, or `no_write`:
+Only final groups must each own one bounded responsibility and its authorized
+inputs/outputs, leave a correct repository state after represented predecessors,
+carry locally attributable verification and review, and be resumable from
+Contract, routed authority, and declared predecessor outputs.
 
-1. `register_bounded_set` requires aggregate `yes` for every candidate, proven
-   conservation, representable order, and unchanged permissions. The existing
-   `task add` leaf is invoked once per candidate; the initiating request is the
-   approval for the finite set and no per-Task confirmation is inserted.
-2. `register_single` is the negative and unknown fallback only when one exact
-   Contract can truthfully preserve the whole authorized outcome and the user
-   did not mandate incompatible separate boundaries. It invokes `task add`
-   once and does not ask a decomposition-only question.
-3. `no_write` applies when even the whole Contract is not authorized or
-   expressible, or when the user mandated exact separate Tasks but a boundary
-   is `no` or `unknown`. The agent reports the missing fact or conflict without
-   inventing, silently merging, or partially redefining Tasks.
+### Registration Adapter And Partial-Add Recovery
 
-If a repeated existing `task add` sequence fails after a strict subset was
-written, the agent stops the pass, inspects the exact registered set through
-existing reads, and reports or durably preserves the still-authorized
-remainder. It adds only unambiguously missing candidates after the ordinary
-failure is resolved; it never blindly retries, duplicates a Task, expands the
-partition, or starts a recursive decomposition pass.
+For explicit taskization, each final group uses one existing `task add`. The
+group's non-zero Contract copies only explicit scope, acceptance, constraints,
+and authority reference. Inputs and outputs remain prose in those existing
+fields, while order remains existing lane/order; no dependency or worksheet
+field is introduced.
+
+If outcome and registration permission are clear but split or Contract detail
+is missing, the adapter adds one whole-outcome Task with Contract revision zero.
+It asks no per-candidate question. It asks one grouped question, with no partial
+write, only when exact user-mandated boundaries conflict with a truthful final
+set or outcome/permission is too unclear for one honest whole-outcome Task.
+
+If explicit authority requires an implementation-binding design decision first,
+the adapter registers only that design responsibility unless the same authority
+already states truthful ordered design and implementation Contracts. A later
+implementation Task requires a later explicit registration event based on the
+produced design authority; the adapter does not synthesize it.
+
+After a strict subset of an existing `task add` sequence succeeds, the adapter
+stops and reads the exact registered set. During the same uninterrupted event,
+it compares that read with the still-transient final set, preserves successful
+additions and the authorized remainder, then adds only groups proven missing
+after the ordinary failure is resolved. It performs no deletion, duplicate add,
+repartition, batch retry, or second Select-Split-Merge pass.
+
+If interruption loses the transient final set, the adapter does not reconstruct
+or rerun it. It uses existing Handoff only for a truthful bounded remainder
+summary, never as a hidden worksheet or registration authority. Any later write
+requires current explicit authority; unclear remainder or permission uses the
+one grouped question, and a confirmed unsplit remainder may be one revision-zero
+Task without changing successful additions.
 
 Registration changes governance state only. It grants no implementation,
 target-project, Git, network, or external-system permission.
 
+### Review Tier Resolver
+
+The instruction layer resolves each final group before registration:
+
+1. apply every explicit binding authority floor governing that scope;
+2. with no binding mapping, select Tier 2 for schema/migration, JSON contract,
+   CLI write behavior, target mutation, privacy/logging, Skill trigger,
+   verification/review/completion gate, milestone/plan acceptance, or
+   implementation-binding normative documentation;
+3. otherwise select Tier 0 only for wholly mechanical meaning-preserving work;
+   and
+4. select Tier 1 for every remaining scope.
+
+An explicitly authorized higher Tier is permitted. Ordinary registration input
+cannot lower a binding floor; only an explicit governance change can change the
+mapping. Unknown, size, difficulty, duration, failure count, safety wording, or
+reviewer availability never alone selects Tier 2. Each Task retains its own
+review gate; later integration review is not a substitute.
+
 ### Mid-Task Adapter And State Effects
 
 For an explicit addition to an `in_progress` or `review_pending` Task, the
-future Skill first chooses the scope disposition, then its continuation state:
+Skill applies the same one-pass classifier to the addition and its
+relationship to the current responsibility:
 
-1. recognize a semantic no-op as `keep-current`;
-2. honor an explicit keep-current placement as `revise-current` when the
-   addition is new and can be incorporated safely;
-3. with aggregate `yes` and proven conservation/order, either register the one
-   successor when the same message explicitly approves separate registration,
-   or emit one write-free `propose-successor`;
-4. with aggregate `no` or `unknown`, forbid splitting and use
-   `revise-current` when one exact safe Contract can hold the addition; and
-5. otherwise use `handoff` as the bounded scope-preservation disposition;
-   after it, continue for a nonblocking addition or overlay `pause` or `block`
-   under the existing temporary or acceptance-preventing rules and only after
-   safe authorized work is exhausted.
+1. already-covered scope selects `keep-current`, performs no Contract write,
+   and preserves the current Tier;
+2. a final group kept in or globally merged into current computes
+   `max(current Tier, resulting floors)`. When higher, the existing Tier edit
+   occurs first; the semantic Contract-revision write follows. It never
+   auto-lowers and review does not advance between those writes. A failed second
+   write therefore leaves unchanged scope at a conservative higher Tier;
+3. a successor uses its own scope floor and existing lane/order. The same
+   message registers it only when explicit taskization or separate placement is
+   present; otherwise the adapter emits one write-free proposal; and
+4. an addition that cannot yet be placed truthfully uses existing bounded
+   Handoff, then continue, pause, or block only under their existing conditions.
 
-The proposal contains the exact proposed Contract, review tier, lane/order,
-permission boundary, and current-versus-successor partition. A proposal does
-not call taskgov. While it is unresolved, safe work within the unchanged
-current Contract continues. If the session or current Task would end first,
-the existing `handoff record` path stores only its at-most-1,000-character
-sanitized summary covering every added outcome and an at-most-1,000-character
-pending-decision rationale. It is deliberately not an
-encoding of the full proposed Contract, review tier, lane/order, partition, or
-event identity. A resumed agent surfaces the unresolved Handoff but neither
-reconstructs nor registers a successor from it; missing exact fields require
-current explicit authority. Rejection, paraphrase, clarification, or a direct
-answer about that proposal does not reset the one-proposal allowance; only
-materially changed user authority for scope, order, or permission creates a
-new event. No persisted event ID, proposal counter, or new state is added.
+Moving already-covered work requires explicit repartition authority, and an
+unrepresentable order never creates an implicit dependency. Existing semantic
+revision continues to invalidate stale target, review, and completion evidence;
+`keep-current` preserves them only under ordinary exact-target rules. A pending
+proposal is not persisted as a new model or reconstructed from Handoff. The
+same event cannot run another Split after global Merge. Scope preservation
+precedes any pause or block, and the normal Task loop gains no new call.
 
-An approved successor uses one existing `task add`. A successor that must
-follow the current Task uses the next available order in its sequential lane;
-`optional` is used only when the outcome is genuinely independent. An
-unrepresentable relationship fails decomposition instead of creating an
-implicit dependency. An explicit instruction to keep the work current uses the
-existing Contract-only `task edit` path. Its current revision, target,
-receipts, findings, completion evidence, and `review_pending -> in_progress`
-effects remain exactly those of the existing semantic-revision contract.
+### Atomic Instruction-Layer Synchronization Boundary
 
-`keep-current` and a pending proposal perform no Contract write. Their current
-target and evidence remain valid only for unchanged target material; ordinary
-target replacement and fresh review still apply after later material changes.
-Handoff preserves but does not expand acceptance or satisfy the total user
-request. If an addition cannot safely enter a Contract but prevents acceptance,
-the Handoff write occurs first and the applicable pause/block status write
-second. Pause and block never replace the scope disposition or create a Task.
-When `revise-current` must be followed by a pause or blocker, the Contract-only
-edit is performed first and the separate status edit second, preserving
-existing CLI validation. The normal current/next/execution/review/completion
-green path adds no governance call; only the two explicit event paths can
-invoke the already-public writes described above.
-
-### Atomic Future Synchronization Boundary
-
-A later separately approved Tier 2 activation must change these surfaces in
-one reviewed revision:
+M25.2 changes these surfaces in one reviewed Tier 2 revision:
 
 - add only the concise trigger gate and disposition rules to
   `task-governance-tool/SKILL.md`;
-- place the full predicates, decision tables, ordering examples, restart
-  preservation rule, and negative/unknown cases in
+- place the full one-pass sequence, responsibility/fragment cases, Tier table,
+  ordering examples, and recovery rules in
   `task-governance-tool/references/task_workflow.md`;
-- update `task-governance-tool/release-manifest.json` for the changed package
-  digests and apply the repository's then-current version/release rules;
-- switch the inactive markers and implementation-facing routing in
+- update `task-governance-tool/release-manifest.json` only for the changed
+  package digests under the current version/release rules;
+- switch the formerly inactive markers and implementation-facing routing in
   `docs/specification.md` and `docs/design.md`, and synchronize the approved
   static execution contract in `plan.md`; and
 - update `tests/test_skill_self_containment.py`,
@@ -3664,46 +3675,42 @@ one reviewed revision:
   owning suites cannot express the behavioral cases without duplication.
 
 `task-governance-tool/agents/openai.yaml` is in the synchronization review set
-but is expected to remain byte-identical because its current registration and
+and remains byte-identical because its current registration and
 scope-preservation metadata already covers the two triggers. Scripts,
 migrations, repositories, CLI parsing/output, Viewer code/template, and public
-command leaves are outside the write set and must be proven unchanged. The
-activation must be proposed and approved separately; TG-M20S.3 registers no
-implementation Task.
+command leaves are outside the write set and must be proven unchanged.
 
 ### Neutral Forward-Test Boundary
 
-Activation acceptance uses fresh, minimal-context agents that receive the
+M25.2 acceptance uses fresh, minimal-context agents that receive the
 candidate Skill and neutral workloads, not the expected branch or M20S study
 result. A separate evaluator checks both the response and resulting Task DB.
 The fixed matrix includes:
 
-- registration: an eligible multi-outcome partition, a large but atomically
-  coupled outcome, an unknown verification/commit boundary, and user-mandated
-  separate boundaries that are not independently valid; plus an injected
-  failure after one successful `task add`, followed by exact-set inspection,
-  explicit or durable remainder preservation, and retry of only the
-  unambiguously missing candidate with no duplicate or repartition;
-- mid-Task positive paths: already-covered scope, explicit keep-current,
-  independently eligible addition without placement, and an explicit separate-
-  Task instruction;
-- mid-Task fallbacks: concrete coupling, incomplete evidence, nonblocking
-  preservation, revise-then-pause, revise-then-block, a temporary no-safe-
-  progress wait, and an acceptance-preventing authority or safety failure; and
-- invariants: one proposal per event, no Task write before approval, no
-  recursive or size-only split, exact scope conservation, correct Contract and
-  review invalidation/preservation, unchanged current command leaves and schema,
-  fresh review when changed material escapes an unchanged Contract's prior
-  target, Handoff/resume in a fresh session without reconstructing or emitting
-  a second proposal even when valid proposed Contract fields exceed Handoff
-  bounds, and no invocation from discovery, test failure, Effort, or cross-
-  module failure alone.
+- responsibility slices that share files, tests, commands, or fixtures yet
+  remain separate; an internal enabling slice without standalone user value;
+  and fragment ownership whose transitive groups merge once with no re-Split;
+- exact scope/permission conservation, representable ordering, fresh-agent
+  reconstruction from Contract/authority/predecessor output, and ambiguous
+  ownership falling back instead of being guessed;
+- one whole-outcome revision-zero Task, the sole grouped-question boundary,
+  design-first without automatic implementation registration, same-event
+  partial-add recovery that preserves successful writes and adds only proven
+  omissions, and interruption after a partial add with no reconstruction;
+- binding Tier floors, one example for every Tier 2 protected category, wholly
+  mechanical Tier 0, residual Tier 1, every excluded Tier-2 rationale, explicit
+  higher Tier, and no ordinary lowering of a binding floor;
+- mid-Task keep, revise, successor, and merge-into-current Tier effects,
+  including separate Contract/Tier writes and no auto-lowering; and
+- unchanged current command leaves, schema, Runner, normal-loop call count,
+  target/evidence freshness, Handoff bounds, and no invocation from discovery,
+  test failure, Effort, or cross-module failure alone. Each Task's review gate
+  must pass independently of later integration review.
 
 Positive, negative, and unknown cases use parallel wording and equal available
 authority so the prompt does not reveal the expected result. A valid result
 must match the specification branch and actual stored effects; self-reported
-intent alone is insufficient. Current behavior is not forward-tested against
-these expectations because activation has not occurred.
+intent alone is insufficient.
 
 <a id="trusted-local-runner-architecture"></a>
 
@@ -4363,6 +4370,211 @@ The warm-up is excluded from qualification; no
 functional, count, byte, attempt, render, or call failure is excluded or
 statistically masked.
 
+## Current Runner Plan Authoring And Control Design
+
+This is the current implementation design for bounded Runner Plan authoring.
+The CLI retains 21 leaves and exposes the one explicit Plan action option on
+`task edit`; reading this section alone authorizes no config write, Task edit,
+process launch, target mutation, or external operation. Setup never creates the
+config, and the existing `review target set` parent service remains the sole
+Runner dispatch. Schema v21 and the current Runner, Evidence, Viewer, and
+completion graphs do not change.
+
+### Separate Authoring Control Boundary
+
+The activated design keeps Plan authoring outside the closed Runner execution
+graph. It adds these exact ownership boundaries:
+
+| Owner | Responsibility | Forbidden responsibility |
+|---|---|---|
+| `verification_runner_plan.py` | Existing physical capture/resolution plus shared pure PlanV1 value decode, validation, and canonical encoding used by both readers and authoring. | No Plan publication, Task/SQLite write, CLI decision, process launch, or Runner graph write. |
+| `verification_runner_plan_authoring.py` | Strict RunnerPlanDraftV1 decode and pure `replace|rebind|detach|disable` transforms over one validated PlanV1 value. | No filesystem, SQLite, Git, target, CLI, process, Evidence, Viewer, or logging I/O. |
+| `verification_runner_plan_publisher.py` | Capture/revalidate the one canonical physical authoring source for every action and, when supplied, publish one already-canonical bounded candidate through the complete-file replacement boundary. | No Task or Contract decision, database access, action selection, process launch, target materialization, or Runner graph write. |
+| `verification_runner_plan_edit.py` | Parent control orchestration, option compatibility, current/future basis selection, DB-first sequencing, publisher invocation, and typed success/partial-success result. | No parser/text formatting, Runner dispatch, process/lifecycle/native call, schema change, Evidence/Viewer write, automatic action, or command inference. |
+| `cli.py` | Parse the one action option, read bounded stdin for `replace`, call the parent control service, format the closed result/warning, and schedule ordinary maintenance for a committed Task mutation. | No Plan semantics, basis derivation, physical publication, Runner launch, or second approval protocol. |
+
+The new control-edge set is exactly:
+
+```text
+cli -> verification_runner_plan_edit
+verification_runner_plan_edit -> tasks/contracts/reviews
+verification_runner_plan_edit -> verification_runner_plan_authoring
+verification_runner_plan_edit -> verification_runner_plan_publisher
+verification_runner_plan_publisher -> verification_runner_plan
+verification_runner_plan_publisher -> state_paths
+verification_runner_plan_authoring -> verification_runner_plan
+verification_runner_plan_authoring -> tasks (common privacy guard only)
+```
+
+These edges do not alter the existing Runner-layer registry or add a reverse
+edge into `verification_runner_service`, `verification_runner_process`,
+`verification_runner_lifecycle`, `_verification_runner_win32`, storage,
+completion, Evidence, or Viewer. The execution reader continues to capture and
+resolve the same PlanV1 bytes; it neither imports nor invokes authoring or its
+publisher.
+
+`verification_runner_plan.py` may expose immutable Plan/Entry value objects and
+pure canonical decode/encode helpers instead of duplicating its existing
+closed validators. Its current `VerificationRunnerPlanSource`, source capture,
+error sanitization, normalized digest, exact-basis selection, and fallback/
+block behavior remain byte- and semantics-compatible. The authoring transform
+accepts only a validated value and the future basis supplied by its parent. It
+preserves Plan ID, global trust except for `disable`, all unrelated entries,
+and their order, with the cardinality and insertion rules fixed by the
+specification. It creates the fixed initial Plan only for `replace` against an
+absent source. No action reads the ambient target, verifies entrypoint
+existence, predicts command success, or evaluates test coverage.
+
+The draft decoder, and not the shared PlanV1 reader decoder, applies the
+existing pure `tasks.reject_private_or_raw_content` guard to every recognized
+caller-supplied StepV1 string leaf with the fixed field label
+`Runner Plan draft`. It performs that complete leaf pass before enum, grammar,
+UTF-8, UTF-16, candidate, or transform validation, returns the existing
+`privacy_rejected` error without the rejected value, and emits no candidate on
+failure. It does not call `validate_text`, add a second privacy pattern set, or
+change admission of an existing physical PlanV1 source.
+
+`runner_plan_update.status=unchanged` means the pure action produces the same
+normalized Plan semantics. A semantic no-op returns no publication candidate
+and does not normalize valid noncanonical bytes as a side effect, but it still
+requires post-transaction confirmation of the expected source before the
+parent may return `unchanged`. Changed semantics produce canonical candidate
+bytes, and their successful publication is `updated`. The pure action result
+therefore determines the intended status without a later semantic guess; the
+publisher determines whether that disposition was safely confirmed.
+
+### Publisher Boundary
+
+The publisher receives the already resolved governed repository root and
+physical package root, one expected `RunnerPlanAuthoringSource`, and either
+complete canonical candidate bytes or an explicit confirmation-only marker.
+The closed source record contains state
+`absent_directory|absent_file|present`, the observed package/config/file
+physical identities applicable to that state, and raw bytes/digest only for a
+present file. It is a new authoring-only value; the current execution
+`VerificationRunnerPlanSource` stays unchanged. Capture and revalidation reuse
+the current no-follow physical path, regular-single-link, size, case-alias,
+current-index absence, and effective-ignore rules for
+`config/verification-runner.json`. It never accepts a caller path and never
+changes an index entry, selected review-target material, database, setup
+artifact, release artifact, or any target-project path other than the one
+canonical ignored config directory/file authorized by the invocation.
+
+Every action invokes this boundary after the SQLite writer is closed. The
+publisher first revalidates the expected source record. With the confirmation-
+only marker it then returns success without creating a directory, temporary
+file, or canonical file. With candidate bytes it proceeds to publication. A
+source mismatch is never treated as an unchanged semantic result.
+
+Only `replace` against `absent_directory` may create the exact physical
+`config` directory, exclusively and without a reparse traversal, after the
+repository/index/ignore checks pass. No other action creates it. If later
+publication fails, that identity-owned empty ignored directory may remain; it
+contains no Plan source and is not recursively removed. A present foreign,
+linked, replaced, or nonempty unexpected directory fails closed.
+
+For a detected mismatch, unsafe path, concurrent source change, invalid
+candidate, temporary-file failure, or replacement failure, the publisher
+returns one sanitized closed failure and does not claim a confirmed disposition
+or a new canonical Plan.
+Temporary material is created exclusively in the resolved or just-created
+physical config directory, has one bounded purpose, is never a Plan source,
+and is removed on ordinary failure. Successful publication replaces the
+canonical name only with complete bytes; a reader sees a complete old or new
+file, not a partially written JSON document.
+
+This is a compare-before-replace guard and complete-file atomic replacement,
+not a linearizable filesystem compare-and-swap primitive. It promises no
+cross-process exclusion after the last comparison, power-loss durability,
+Git/config transaction, or atomicity with SQLite. The later target-set capture
+and exact-basis comparison remain the authoritative final freshness checks.
+
+### Parent Coordination Sequence
+
+`verification_runner_plan_edit.py` owns one bounded operation:
+
+1. resolve the existing project/package boundary and read the selected stored
+   Task, its Contract/criterion basis, and the physical Plan source;
+2. validate the action, Task-field compatibility, current matching-entry
+   rule, and the bounded stdin draft, without writing;
+3. for Plan-only work, obtain the exact current basis through a read
+   transaction and bypass `edit_task`, so no Task event or business write is
+   created;
+4. for a real basis-changing edit, use the existing Task/Contract write
+   transaction, derive its exact future Task/Contract/expectation/criterion
+   basis, compute the pure action result, and build and validate full candidate
+   Plan bytes in memory only when semantics change, then commit and close
+   SQLite;
+5. for every action, invoke the publisher only after the writer is closed,
+   using the originally captured expected source and either the candidate or
+   the confirmation-only marker; and
+6. return the typed Plan result together with the existing Task result and one
+   mutation classification for CLI maintenance.
+
+The locked Task reread must still match the preflight basis. Candidate creation
+inside the Task transaction performs only pure computation; no temporary or
+canonical filesystem write occurs while SQLite owns a writer. If Task
+validation, Contract revision, basis derivation, candidate bounds, or DB commit
+fails, the transaction rolls back and publication is never called.
+
+After a committed basis change, a publisher source-confirmation or publication
+failure returns the committed Task result plus
+`runner_plan_update.status=unconfirmed`; it does not reopen SQLite or compensate
+the Task. Whether the expected source stayed unchanged or another authorized
+writer caused the mismatch, the service makes no eligibility claim; the Task
+basis commit itself can change an unchanged entry's prior exact-match status.
+The caller must not rely on Runner execution until a later explicit Plan-only
+action succeeds. A Plan-only publisher failure has no Task result to preserve
+and uses the ordinary failed Task-edit envelope. No hidden retry, journal,
+pending row, second connection, worker, daemon, or automatic follow-up exists.
+
+The CLI maps a committed Task plus Plan failure to `ok=true`, the fixed
+`task_applied_runner_plan_unconfirmed` warning, and the closed unconfirmed
+projection. This keeps the existing coordinator eligible for exactly one
+ordinary post-commit maintenance opportunity for the actual Task mutation.
+The one authoring warning precedes any existing maintenance warnings and is not
+a claim that the requested Plan action succeeded or that current eligibility
+is known. A config-only success or failure performs no Task maintenance; an
+invocation without a Plan action remains byte-shape compatible with the
+existing CLI.
+
+Completion/done/reopen modes are rejected before this control service because
+the compatibility completion path has its own Runner selector and cannot be
+combined with authoring. A combined edit must produce an actual basis change;
+other metadata may accompany that change but cannot make a Plan action valid
+by itself. A Plan-only branch is the only supported way to make a config change
+without a basis edit. `replace` implies one bounded stdin read; other actions
+do not read stdin.
+
+### Activation And Test Allocation
+
+The sequential implementation allocation is deliberately narrow:
+
+- TG-RPA.2 owns only shared pure Plan values, draft decode, transforms, and
+  focused action/round-trip/privacy tests, including privacy precedence over a
+  recognized leaf's grammar or size failure and no candidate emission, plus
+  release-manifest synchronization for its changed packaged files;
+- TG-RPA.3 owns only the physical publisher and focused path, no-op
+  confirmation, drift, replacement, failure-cleanup, and privacy tests, plus
+  release-manifest
+  synchronization for its changed packaged files;
+- TG-RPA.4 owns only the internal coordination service and focused DB/order/
+  partial-success/no-launch tests, plus release-manifest synchronization for
+  its changed packaged files;
+- TG-RPA.5 alone connects the public parser and synchronizes active formal
+  documents, `AGENTS.md`, CLI contract reference, README opt-in examples, final
+  package-manifest state, help/output behavior, and focused end-to-end tests;
+- TG-RPA.6 changes no product behavior and runs final exact-target acceptance,
+  including the full deterministic offline suite.
+
+Every unit is Tier 2 and receives two independent exact-target reviews. Earlier
+code units run their focused tests plus manifest/lane/document checks as
+applicable; they do not repeat the full suite. The full suite is reserved for
+TG-RPA.6. No unit adds a schema/migration, PlanV2, setup/doctor/Viewer/Evidence
+route, Skill trigger, public leaf, Runner execution command, automatic command
+discovery, re-enable action, hostile-code claim, network action, or M24
+redesign.
+
 ## Deferred Boundaries
 
 Deferred work includes profile authoring, a public command or Skill trigger for
@@ -4372,8 +4584,9 @@ stale detection, parent/child/checklist execution units, manual backup/restore/
 export, generic browser-state persistence, live server, browser launch,
 network synchronization, and update checking.
 
-Any extension, including the accepted but inactive TG-M20S.3 design, must
-preserve local-first operation, current privacy and target-project safety,
-explicit authority for mutation, narrow repository boundaries, and concise
-Skill guidance. It requires synchronized specification, design, plan, tests,
-and review rather than reuse of a historical design capture.
+Any extension to M25 Select-Split-Merge-Register must preserve local-first
+operation, current privacy and target-project safety, explicit authority for
+mutation, narrow
+repository boundaries, and concise Skill guidance. It requires synchronized
+specification, design, plan, tests, and review rather than reuse of a historical
+design capture.

@@ -107,6 +107,13 @@ from task_governance_tool.tasks import (
     validate_current_status_filter,
     validate_task_id,
 )
+from task_governance_tool.verification_runner_plan_edit import (
+    PLAN_BLOB_UTF8_BYTE_LIMIT,
+    RUNNER_PLAN_ACTIONS,
+    VerificationRunnerPlanError,
+    edit_task_with_runner_plan,
+    validate_runner_plan_action_options,
+)
 from task_governance_tool.verification_receipts import (
     VerificationReceiptError,
     add_verification_receipt,
@@ -119,6 +126,22 @@ from task_governance_tool.verification_runner_service import (
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
 EXIT_TOOL_ERROR = 2
+RUNNER_PLAN_UNCONFIRMED_WARNING = {
+    "code": "task_applied_runner_plan_unconfirmed",
+    "message": (
+        "Task update completed but Runner Plan disposition is unconfirmed; "
+        "apply an explicit Plan action before relying on Runner execution"
+    ),
+}
+RUNNER_PLAN_USAGE_ERROR_CODES = frozenset(
+    {
+        "invalid_argument",
+        "invalid_option_combination",
+        "privacy_rejected",
+        "runner_plan_action_required",
+        "runner_plan_entry_required",
+    }
+)
 BOUNDED_DIAGNOSTIC_OMISSION_MESSAGE = (
     "diagnostic details omitted to satisfy the bounded output limit"
 )
@@ -557,6 +580,16 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--contract-constraints", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--contract-authority-ref", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--contract-change-reason", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument(
+        "--runner-plan-action",
+        metavar="{replace,rebind,detach,disable}",
+        default=argparse.SUPPRESS,
+        help=(
+            "explicitly replace, rebind, detach, or disable the selected "
+            "Task's local Runner Plan entry; replace reads one JSON draft "
+            "from stdin"
+        ),
+    )
     task_complete_parser = task_subparsers.add_parser(
         "complete",
         help="check or complete one task through the existing completion gate",
@@ -2150,6 +2183,28 @@ def task_edit_input(args: argparse.Namespace) -> dict[str, Any]:
     return {field: getattr(args, field) for field in EDIT_ARGUMENT_FIELDS if hasattr(args, field)}
 
 
+def read_runner_plan_draft_stdin() -> bytes:
+    stream = getattr(sys.stdin, "buffer", None)
+    if stream is None:
+        raise VerificationRunnerPlanError(
+            code="invalid_argument",
+            message="arguments are invalid",
+        )
+    try:
+        payload = stream.read(PLAN_BLOB_UTF8_BYTE_LIMIT + 1)
+    except (OSError, TypeError, ValueError) as exc:
+        raise VerificationRunnerPlanError(
+            code="invalid_argument",
+            message="arguments are invalid",
+        ) from exc
+    if type(payload) is not bytes or len(payload) > PLAN_BLOB_UTF8_BYTE_LIMIT:
+        raise VerificationRunnerPlanError(
+            code="invalid_argument",
+            message="arguments are invalid",
+        )
+    return payload
+
+
 def task_edit_failure_result(
     context: CommandContext,
     *,
@@ -2209,28 +2264,63 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
             exit_code=EXIT_USAGE,
         )
 
+    runner_plan_action = getattr(context.args, "runner_plan_action", None)
     edit_input = task_edit_input(context.args)
+    try:
+        if runner_plan_action in RUNNER_PLAN_ACTIONS:
+            validate_runner_plan_action_options(edit_input)
+        runner_plan_draft_blob = (
+            read_runner_plan_draft_stdin()
+            if runner_plan_action == "replace"
+            else None
+        )
+    except (TaskValidationError, VerificationRunnerPlanError) as exc:
+        return task_edit_failure_result(
+            context,
+            project_id=target.project.project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=EXIT_USAGE,
+        )
+
     effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
     try:
-        with closing(connect_initialized(target)) as connection:
-            with connection:
-                result = edit_task(
-                    connection,
-                    target.project,
-                    getattr(context.args, "task_id", ""),
-                    effort_profile=effort_profile,
-                    database_target=target,
-                    runner_selector=(
-                        lambda task, completion_revision: (
-                            select_current_verification_runner_basis(
-                                target,
-                                task=task,
-                                completion_revision=completion_revision,
-                            )
-                        )
-                    ),
-                    **edit_input,
+        runner_selector = (
+            lambda task, completion_revision: (
+                select_current_verification_runner_basis(
+                    target,
+                    task=task,
+                    completion_revision=completion_revision,
                 )
+            )
+        )
+        if runner_plan_action is None and target.canonical_fixed is not True:
+            with closing(connect_initialized(target)) as connection:
+                with connection:
+                    result = edit_task(
+                        connection,
+                        target.project,
+                        getattr(context.args, "task_id", ""),
+                        effort_profile=effort_profile,
+                        database_target=target,
+                        runner_selector=runner_selector,
+                        **edit_input,
+                    )
+            runner_plan_update = None
+            task_mutation = "committed" if result.event is not None else "none"
+        else:
+            coordinated = edit_task_with_runner_plan(
+                target,
+                getattr(context.args, "task_id", ""),
+                runner_plan_action=runner_plan_action,
+                runner_plan_draft_blob=runner_plan_draft_blob,
+                effort_profile=effort_profile,
+                runner_selector=runner_selector,
+                **edit_input,
+            )
+            result = coordinated.edit_result
+            runner_plan_update = coordinated.runner_plan_update
+            task_mutation = coordinated.task_mutation
     except TaskValidationError as exc:
         return task_edit_failure_result(
             context,
@@ -2264,6 +2354,18 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
                 else EXIT_USAGE
             ),
         )
+    except VerificationRunnerPlanError as exc:
+        return task_edit_failure_result(
+            context,
+            project_id=target.project.project_id,
+            code=exc.code,
+            message=exc.message,
+            exit_code=(
+                EXIT_USAGE
+                if exc.code in RUNNER_PLAN_USAGE_ERROR_CODES
+                else EXIT_TOOL_ERROR
+            ),
+        )
     except StorageError as exc:
         return task_edit_failure_result(
             context,
@@ -2288,20 +2390,35 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
     data = {"task": result.task, "changed_fields": result.changed_fields, "event": result.event}
     if result.contract_write is not None:
         data["contract_write"] = result.contract_write
+    warnings: list[dict[str, str]] = []
+    text = task_edit_text(
+        result.task,
+        result.changed_fields,
+        result.event,
+        result.contract_write,
+    )
+    if runner_plan_update is not None:
+        data["runner_plan_update"] = {
+            "action": runner_plan_update.action,
+            "status": runner_plan_update.status,
+        }
+        text = (
+            f"{text}\nRunner Plan: "
+            f"{runner_plan_update.action} {runner_plan_update.status}"
+        )
+        if runner_plan_update.status == "unconfirmed":
+            warnings.append(dict(RUNNER_PLAN_UNCONFIRMED_WARNING))
+            text = f"{text}\n{RUNNER_PLAN_UNCONFIRMED_WARNING['message']}"
     return CommandResult(
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
         data=data,
-        text=task_edit_text(
-            result.task,
-            result.changed_fields,
-            result.event,
-            result.contract_write,
-        ),
+        warnings=warnings,
+        text=text,
         exit_code=EXIT_SUCCESS,
         mutation_outcome=MutationOutcome(
-            state_changed=result.event is not None,
+            state_changed=task_mutation == "committed",
             viewer_relevant=True,
         ),
     )

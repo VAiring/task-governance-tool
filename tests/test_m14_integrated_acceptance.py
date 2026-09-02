@@ -292,10 +292,18 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
             self.assertRegex(text, r"(?i)(?:viewer )?snapshot v4")
 
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("effort_advisory_enabled", skill)
         self.assertIn("task effort", skill)
         self.assertRegex(skill, r"(?i)\bten\b")
         self.assertRegex(skill, r"(?i)\beleven\b")
+        self.assertIn(
+            "[references/task_workflow.md](references/task_workflow.md)", skill
+        )
+        self.assertEqual(workflow.count("## Taskize Or Add Scope"), 1)
+        self.assertNotIn("## Register Tasks", workflow)
 
         metadata = (SKILL_ROOT / "agents" / "openai.yaml").read_text(
             encoding="utf-8"

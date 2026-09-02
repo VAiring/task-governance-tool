@@ -445,6 +445,12 @@ class EditTaskResult:
     contract_write: dict[str, Any] | None = None
 
 
+TaskEditBasisPrecommitValidator = Callable[
+    [dict[str, Any], dict[str, Any]],
+    None,
+]
+
+
 @dataclass(frozen=True)
 class CompletionBasis:
     task: dict[str, Any] = field(repr=False)
@@ -3542,6 +3548,7 @@ def edit_task(
     database_target: DatabaseTarget | None = None,
     completion_plan: CompletionPlan | None = None,
     runner_selector: RunnerSelectionProvider | None = None,
+    basis_precommit_validator: TaskEditBasisPrecommitValidator | None = None,
     **edit_input: Any,
 ) -> EditTaskResult:
     from task_governance_tool.effort import (
@@ -3638,6 +3645,7 @@ def edit_task(
             locked_existing,
             caller_edit_input=edit_input,
             contract_input=contract_input,
+            basis_precommit_validator=basis_precommit_validator,
         )
         if result.event is not None:
             record_task_transition(
@@ -4031,6 +4039,8 @@ def edit_task(
         recorded_markers.append("verification complete")
     if review_complete:
         recorded_markers.append("review complete")
+    if basis_precommit_validator is not None:
+        basis_precommit_validator(locked_existing, updated)
     if not changed_fields and add_note is None and not recorded_markers:
         raise validation_error("invalid_argument", "task edit did not change any fields")
 

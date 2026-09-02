@@ -17,6 +17,13 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 try:
     from task_governance_tool import verification_runner_plan as plan_module
+    from task_governance_tool import state_paths as state_paths_module
+    from task_governance_tool import (
+        verification_runner_plan_authoring as authoring_module,
+    )
+    from task_governance_tool import (
+        verification_runner_plan_publisher as publisher_module,
+    )
     from task_governance_tool.verification_runner_plan import (
         PLAN_ARG_LIMIT,
         PLAN_BLOB_UTF8_BYTE_LIMIT,
@@ -26,11 +33,38 @@ try:
         PLAN_SEMANTIC_DOMAIN,
         PLAN_SOURCE_ERROR_MESSAGE,
         PLAN_STEP_LIMIT,
+        VerificationRunnerPlan,
+        VerificationRunnerPlanBasis,
+        VerificationRunnerPlanEntry,
         VerificationRunnerPlanError,
         VerificationRunnerPlanSource,
         capture_verification_runner_plan,
+        decode_verification_runner_plan,
+        encode_verification_runner_plan,
         resolve_verification_runner_plan,
     )
+    from task_governance_tool.verification_runner_plan_authoring import (
+        ENTRY_REQUIRED_MESSAGE,
+        INITIAL_PLAN_ID,
+        INVALID_ARGUMENT_MESSAGE,
+        PRIVACY_FIELD,
+        decode_runner_plan_draft,
+        detach_verification_runner_plan,
+        disable_verification_runner_plan,
+        rebind_verification_runner_plan,
+        replace_verification_runner_plan,
+    )
+    from task_governance_tool.verification_runner_plan_publisher import (
+        CONFIRM_RUNNER_PLAN_SOURCE,
+        INVALID_ARGUMENT_MESSAGE as PUBLISHER_INVALID_ARGUMENT_MESSAGE,
+        RUNNER_PLAN_CHANGED_MESSAGE,
+        RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+        RunnerPlanAuthoringSource,
+        capture_runner_plan_authoring_source,
+        publish_verification_runner_plan,
+    )
+    from task_governance_tool.tasks import TaskValidationError
+    from task_governance_tool.state_paths import StatePathError
 finally:
     sys.path.pop(0)
 
@@ -105,6 +139,38 @@ def source_from_raw(raw):
 
 def source_from_value(value):
     return source_from_raw(canonical_json_bytes(value))
+
+
+def decoded_plan(*, trusted_local=True, entries=None, **updates):
+    return decode_verification_runner_plan(
+        canonical_json_bytes(
+            plan_payload(
+                trusted_local=trusted_local,
+                entries=entries,
+                **updates,
+            )
+        )
+    )
+
+
+def plan_basis(**updates):
+    value = {
+        "task_id": TASK_ID,
+        "contract_revision": CONTRACT_REVISION,
+        "verification_expectation_digest": EXPECTATION_DIGEST,
+        "verification_criterion_digest": CRITERION_DIGEST,
+    }
+    value.update(updates)
+    return VerificationRunnerPlanBasis(**value)
+
+
+def draft_bytes(*, steps=None, **updates):
+    value = {
+        "version": 1,
+        "steps": [step_payload()] if steps is None else steps,
+    }
+    value.update(updates)
+    return canonical_json_bytes(value)
 
 
 def resolve(source, **updates):
@@ -766,6 +832,1344 @@ class StrictPlanValidationTests(VerificationRunnerPlanTestCase):
         error = self.assert_plan_error(lambda: resolve(source_from_raw(raw)))
         self.assertNotIn(secret, error.code)
         self.assertNotIn(secret, str(error))
+
+
+class PlanValueAndEncodingTests(VerificationRunnerPlanTestCase):
+    def test_decode_encode_uses_physical_shape_and_preserves_semantic_digests(self):
+        value = plan_payload()
+        noncanonical = json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8")
+        plan = decode_verification_runner_plan(noncanonical)
+        encoded = encode_verification_runner_plan(plan)
+
+        self.assertEqual(encoded, canonical_json_bytes(value))
+        encoded_step = json.loads(encoded)["entries"][0]["steps"][0]
+        self.assertEqual(encoded_step, step_payload())
+        self.assertNotIn("ordinal", encoded_step)
+        self.assertNotIn("shell", encoded_step)
+        self.assertNotIn("path_lookup", encoded_step)
+
+        noncanonical_resolution = resolve(source_from_raw(noncanonical))
+        canonical_resolution = resolve(source_from_raw(encoded))
+        self.assertEqual(
+            noncanonical_resolution.plan_semantic_digest,
+            canonical_resolution.plan_semantic_digest,
+        )
+        self.assertEqual(
+            noncanonical_resolution.selected_entry_digest,
+            canonical_resolution.selected_entry_digest,
+        )
+
+    def test_plan_value_allows_distinct_bases_but_rejects_exact_duplicates(self):
+        second_basis = entry_payload(
+            contract_revision=CONTRACT_REVISION + 1,
+            verification_expectation_digest="c" * 64,
+            verification_criterion_digest="sha256:" + "d" * 64,
+        )
+        plan = decoded_plan(entries=[entry_payload(), second_basis])
+        self.assertEqual(len(plan.entries), 2)
+        self.assert_plan_error(
+            lambda: resolve(source_from_raw(encode_verification_runner_plan(plan))),
+            "plan_ambiguous",
+        )
+
+        exact_duplicate = plan_payload(entries=[entry_payload(), entry_payload()])
+        self.assert_plan_error(
+            lambda: decode_verification_runner_plan(
+                canonical_json_bytes(exact_duplicate)
+            ),
+            "plan_ambiguous",
+        )
+
+    def test_existing_plan_reader_does_not_apply_draft_privacy_guard(self):
+        secret_literal = "api_key=PLAN_READER_LITERAL"
+        value = plan_payload(
+            entries=[
+                entry_payload(
+                    steps=[step_payload(argv=[secret_literal])],
+                )
+            ]
+        )
+        with mock.patch.object(
+            authoring_module,
+            "reject_private_or_raw_content",
+        ) as privacy_guard:
+            plan = decode_verification_runner_plan(canonical_json_bytes(value))
+            resolved = resolve(
+                source_from_raw(encode_verification_runner_plan(plan))
+            )
+        privacy_guard.assert_not_called()
+        self.assertEqual(resolved.steps[0].argv, (secret_literal,))
+
+    def test_reader_error_priority_and_numeric_types_remain_compatible(self):
+        wrong_entries_type = plan_payload(entries={})
+        self.assert_plan_error(
+            lambda: decode_verification_runner_plan(
+                canonical_json_bytes(wrong_entries_type)
+            ),
+            "plan_too_large",
+        )
+
+        invalid_id_and_too_many_entries = plan_payload(
+            plan_id="UPPER",
+            entries=[
+                entry_payload(task_id=f"tg_task_{number:016x}")
+                for number in range(PLAN_ENTRY_LIMIT + 1)
+            ],
+        )
+        self.assert_plan_error(
+            lambda: decode_verification_runner_plan(
+                canonical_json_bytes(invalid_id_and_too_many_entries)
+            ),
+            "plan_invalid",
+        )
+
+        float_output_limit = plan_payload(
+            entries=[
+                entry_payload(
+                    steps=[step_payload(output_byte_limit=1_048_576.0)]
+                )
+            ]
+        )
+        self.assert_plan_error(
+            lambda: decode_verification_runner_plan(
+                json.dumps(float_output_limit).encode("utf-8")
+            ),
+            "plan_invalid",
+        )
+
+    def test_closed_plan_values_reject_subclass_overrides(self):
+        plan = decoded_plan()
+        entry = plan.entries[0]
+
+        class ForgedEntry(VerificationRunnerPlanEntry):
+            def physical_value(self):
+                return {"unknown": True}
+
+        forged_entry = ForgedEntry(
+            task_id=entry.task_id,
+            contract_revision=entry.contract_revision,
+            verification_expectation_digest=entry.verification_expectation_digest,
+            verification_criterion_digest=entry.verification_criterion_digest,
+            coverage=entry.coverage,
+            steps=entry.steps,
+        )
+        self.assert_plan_error(
+            lambda: VerificationRunnerPlan(
+                version=plan.version,
+                plan_id=plan.plan_id,
+                trusted_local=plan.trusted_local,
+                entries=(forged_entry,),
+            )
+        )
+
+        class ForgedPlan(VerificationRunnerPlan):
+            def physical_value(self):
+                return {"unknown": True}
+
+        forged_plan = ForgedPlan(
+            version=plan.version,
+            plan_id=plan.plan_id,
+            trusted_local=plan.trusted_local,
+            entries=plan.entries,
+        )
+        self.assert_plan_error(lambda: encode_verification_runner_plan(forged_plan))
+
+
+class RunnerPlanAuthoringTests(VerificationRunnerPlanTestCase):
+    def assert_authoring_error(self, callable_, code, message=INVALID_ARGUMENT_MESSAGE):
+        with self.assertRaises(VerificationRunnerPlanError) as raised:
+            callable_()
+        self.assertEqual(raised.exception.code, code)
+        self.assertEqual(str(raised.exception), message)
+        return raised.exception
+
+    def test_draft_decoder_is_strict_and_reuses_step_bounds(self):
+        draft = decode_runner_plan_draft(draft_bytes())
+        self.assertEqual(draft.version, 1)
+        self.assertEqual(draft.steps[0].step_id, "focused")
+        padded = draft_bytes()
+        padded += b" " * (PLAN_BLOB_UTF8_BYTE_LIMIT - len(padded))
+        self.assertEqual(
+            decode_runner_plan_draft(padded).steps[0].step_id,
+            "focused",
+        )
+
+        invalid_values = (
+            {},
+            {"version": 1, "steps": [], "unknown": True},
+            {"version": True, "steps": [step_payload()]},
+            {"version": 1, "steps": []},
+            {
+                "version": 1,
+                "steps": [step_payload(), step_payload()],
+            },
+            {
+                "version": 1,
+                "steps": [
+                    step_payload(step_id="one", timeout_seconds=900),
+                    step_payload(step_id="two", timeout_seconds=900),
+                    step_payload(step_id="three", timeout_seconds=1),
+                ],
+            },
+            {
+                "version": 1,
+                "steps": [step_payload(argv=["value"] * (PLAN_ARG_LIMIT + 1))],
+            },
+            {
+                "version": 1,
+                "steps": [
+                    step_payload(step_id=f"step-{number}")
+                    for number in range(PLAN_STEP_LIMIT + 1)
+                ],
+            },
+        )
+        for value in invalid_values:
+            with self.subTest(value=value):
+                self.assert_authoring_error(
+                    lambda value=value: decode_runner_plan_draft(
+                        canonical_json_bytes(value)
+                    ),
+                    "invalid_argument",
+                )
+
+        invalid_raw = (
+            b'{"version":1,"version":1,"steps":[]}',
+            b'{"version":1,"steps":[],"number":1.5}',
+            b'{"version":1,"steps":[],"number":NaN}',
+            b'{"version":1,"steps":[]} trailing',
+            b"\xff",
+            b" " * (PLAN_BLOB_UTF8_BYTE_LIMIT + 1),
+        )
+        for raw in invalid_raw:
+            with self.subTest(raw=raw[:80]):
+                self.assert_authoring_error(
+                    lambda raw=raw: decode_runner_plan_draft(raw),
+                    "invalid_argument",
+                )
+
+    def test_draft_value_is_factory_owned(self):
+        steps = decode_runner_plan_draft(draft_bytes()).steps
+        for build in (
+            lambda: authoring_module.RunnerPlanDraftV1(),
+            lambda: authoring_module.RunnerPlanDraftV1(version=1, steps=steps),
+        ):
+            self.assert_authoring_error(build, "invalid_argument")
+
+        forged = object.__new__(authoring_module.RunnerPlanDraftV1)
+        object.__setattr__(forged, "version", 1)
+        object.__setattr__(forged, "steps", steps)
+        self.assert_authoring_error(
+            lambda: replace_verification_runner_plan(
+                None,
+                basis=plan_basis(),
+                draft=forged,
+            ),
+            "invalid_argument",
+        )
+
+    def test_draft_privacy_guard_receives_every_original_string_leaf(self):
+        steps = [
+            step_payload(argv=["--one", "value"]),
+            step_payload(
+                step_id="module-check",
+                mode="module",
+                entrypoint="checks.focused",
+                argv=["--two"],
+                cwd="tests",
+            ),
+        ]
+        with mock.patch.object(
+            authoring_module,
+            "reject_private_or_raw_content",
+        ) as privacy_guard:
+            decode_runner_plan_draft(draft_bytes(steps=steps))
+        self.assertEqual(
+            privacy_guard.call_args_list,
+            [
+                mock.call(PRIVACY_FIELD, "focused"),
+                mock.call(PRIVACY_FIELD, "script"),
+                mock.call(PRIVACY_FIELD, "tests/focused_check.py"),
+                mock.call(PRIVACY_FIELD, "--one"),
+                mock.call(PRIVACY_FIELD, "value"),
+                mock.call(PRIVACY_FIELD, "."),
+                mock.call(PRIVACY_FIELD, "module-check"),
+                mock.call(PRIVACY_FIELD, "module"),
+                mock.call(PRIVACY_FIELD, "checks.focused"),
+                mock.call(PRIVACY_FIELD, "--two"),
+                mock.call(PRIVACY_FIELD, "tests"),
+            ],
+        )
+
+    def test_draft_structure_is_fully_recognized_before_privacy(self):
+        invalid = [
+            step_payload(argv=["api_key=SECRET"]),
+            step_payload(step_id="second", cwd=7),
+        ]
+        with mock.patch.object(
+            authoring_module,
+            "reject_private_or_raw_content",
+        ) as privacy_guard:
+            self.assert_authoring_error(
+                lambda: decode_runner_plan_draft(draft_bytes(steps=invalid)),
+                "invalid_argument",
+            )
+        privacy_guard.assert_not_called()
+
+    def test_privacy_precedes_version_leaf_grammar_size_and_ranges(self):
+        secret = "api_key=TOP_SECRET_VALUE"
+        leaf_cases = (
+            ({"step_id": secret}, {}),
+            ({"mode": secret}, {}),
+            ({"entrypoint": secret}, {}),
+            ({"argv": [secret]}, {}),
+            ({"cwd": secret}, {}),
+            ({"argv": ["x" * 4_097 + " " + secret]}, {}),
+            ({"timeout_seconds": 0, "argv": [secret]}, {}),
+            ({"argv": [secret]}, {"version": 2}),
+        )
+        for step_update, draft_update in leaf_cases:
+            with self.subTest(step_update=tuple(step_update), draft_update=draft_update):
+                with self.assertRaises(TaskValidationError) as raised:
+                    decode_runner_plan_draft(
+                        draft_bytes(
+                            steps=[step_payload(**step_update)],
+                            **draft_update,
+                        )
+                    )
+                self.assertEqual(raised.exception.code, "privacy_rejected")
+                self.assertEqual(raised.exception.field, PRIVACY_FIELD)
+                self.assertEqual(
+                    str(raised.exception),
+                    "Runner Plan draft appears to contain a secret, raw log, "
+                    "or dump content",
+                )
+                self.assertNotIn(secret, str(raised.exception))
+
+        earlier_invalid_later_private = [
+            step_payload(step_id="invalid space"),
+            step_payload(step_id="later", argv=[secret]),
+        ]
+        with self.assertRaises(TaskValidationError) as raised:
+            decode_runner_plan_draft(
+                draft_bytes(steps=earlier_invalid_later_private)
+            )
+        self.assertEqual(raised.exception.code, "privacy_rejected")
+
+    def test_structural_and_member_type_errors_precede_privacy(self):
+        secret = "api_key=TOP_SECRET_VALUE"
+        unknown = step_payload(argv=[secret])
+        unknown["unknown"] = "value"
+        missing = step_payload(argv=[secret])
+        del missing["cwd"]
+        invalid_steps = (
+            [unknown],
+            [missing],
+            [step_payload(argv=[secret], cwd=1)],
+            [step_payload(argv=[secret], timeout_seconds=1.5)],
+        )
+        for steps in invalid_steps:
+            with self.subTest(keys=tuple(steps[0])):
+                self.assert_authoring_error(
+                    lambda steps=steps: decode_runner_plan_draft(
+                        draft_bytes(steps=steps)
+                    ),
+                    "invalid_argument",
+                )
+
+        duplicate = (
+            b'{"version":1,"version":1,"steps":['
+            + canonical_json_bytes(step_payload(argv=[secret]))
+            + b"]}"
+        )
+        self.assert_authoring_error(
+            lambda: decode_runner_plan_draft(duplicate),
+            "invalid_argument",
+        )
+
+    def test_replace_creates_appends_repairs_and_recognizes_no_op(self):
+        future = plan_basis(
+            contract_revision=9,
+            verification_expectation_digest="c" * 64,
+            verification_criterion_digest="sha256:" + "d" * 64,
+        )
+        draft = decode_runner_plan_draft(
+            draft_bytes(steps=[step_payload(step_id="replacement", argv=["new"])])
+        )
+
+        created = replace_verification_runner_plan(
+            None,
+            basis=future,
+            draft=draft,
+        )
+        self.assertTrue(created.changed)
+        self.assertEqual(created.plan.plan_id, INITIAL_PLAN_ID)
+        self.assertIs(created.plan.trusted_local, True)
+        self.assertEqual(created.plan.entries[0].basis(), future)
+
+        other_a = "tg_task_1111111111111111"
+        other_b = "tg_task_2222222222222222"
+        other_c = "tg_task_3333333333333333"
+        second_target = entry_payload(
+            contract_revision=CONTRACT_REVISION + 1,
+            verification_expectation_digest="e" * 64,
+            verification_criterion_digest="sha256:" + "f" * 64,
+        )
+        present = decoded_plan(
+            trusted_local=False,
+            entries=[
+                entry_payload(task_id=other_a),
+                entry_payload(),
+                entry_payload(task_id=other_b),
+                second_target,
+                entry_payload(task_id=other_c),
+            ],
+        )
+        repaired = replace_verification_runner_plan(
+            present,
+            basis=future,
+            draft=draft,
+        )
+        self.assertEqual(
+            [entry.task_id for entry in repaired.plan.entries],
+            [other_a, TASK_ID, other_b, other_c],
+        )
+        self.assertEqual(repaired.plan.entries[1].basis(), future)
+        self.assertIs(repaired.plan.trusted_local, False)
+        self.assertEqual(repaired.plan.plan_id, present.plan_id)
+        self.assertEqual(
+            repaired.candidate_bytes,
+            encode_verification_runner_plan(repaired.plan),
+        )
+
+        no_match = decoded_plan(entries=[entry_payload(task_id=other_a)])
+        appended = replace_verification_runner_plan(
+            no_match,
+            basis=future,
+            draft=draft,
+        )
+        self.assertEqual(appended.plan.entries[-1].task_id, TASK_ID)
+
+        unchanged_plan = decoded_plan()
+        unchanged_draft = decode_runner_plan_draft(draft_bytes())
+        unchanged = replace_verification_runner_plan(
+            unchanged_plan,
+            basis=plan_basis(),
+            draft=unchanged_draft,
+        )
+        self.assertFalse(unchanged.changed)
+        self.assertIs(unchanged.plan, unchanged_plan)
+        self.assertIsNone(unchanged.candidate_bytes)
+
+    def test_rebind_requires_one_entry_and_changes_only_its_basis(self):
+        future = plan_basis(
+            contract_revision=12,
+            verification_expectation_digest="c" * 64,
+            verification_criterion_digest="sha256:" + "d" * 64,
+        )
+        other = entry_payload(task_id=OTHER_TASK_ID)
+        present = decoded_plan(entries=[other, entry_payload()])
+        rebound = rebind_verification_runner_plan(present, basis=future)
+        self.assertTrue(rebound.changed)
+        self.assertEqual(rebound.plan.plan_id, present.plan_id)
+        self.assertEqual(rebound.plan.trusted_local, present.trusted_local)
+        self.assertEqual(rebound.plan.entries[0], present.entries[0])
+        self.assertEqual(rebound.plan.entries[1].basis(), future)
+        self.assertEqual(rebound.plan.entries[1].steps, present.entries[1].steps)
+
+        unchanged = rebind_verification_runner_plan(
+            present,
+            basis=plan_basis(),
+        )
+        self.assertFalse(unchanged.changed)
+        self.assertIs(unchanged.plan, present)
+
+        missing = decoded_plan(entries=[other])
+        self.assert_authoring_error(
+            lambda: rebind_verification_runner_plan(missing, basis=future),
+            "runner_plan_entry_required",
+            ENTRY_REQUIRED_MESSAGE,
+        )
+        self.assert_authoring_error(
+            lambda: rebind_verification_runner_plan(None, basis=future),
+            "runner_plan_entry_required",
+            ENTRY_REQUIRED_MESSAGE,
+        )
+
+        multiple = decoded_plan(
+            entries=[
+                entry_payload(),
+                entry_payload(
+                    contract_revision=CONTRACT_REVISION + 1,
+                    verification_expectation_digest="e" * 64,
+                    verification_criterion_digest="sha256:" + "f" * 64,
+                ),
+            ]
+        )
+        self.assert_authoring_error(
+            lambda: rebind_verification_runner_plan(multiple, basis=future),
+            "plan_ambiguous",
+            PLAN_ERROR_MESSAGE,
+        )
+
+    def test_detach_repairs_cardinality_and_retains_an_empty_plan(self):
+        absent = detach_verification_runner_plan(None, task_id=TASK_ID)
+        self.assertFalse(absent.changed)
+        self.assertIsNone(absent.plan)
+
+        other = decoded_plan(entries=[entry_payload(task_id=OTHER_TASK_ID)])
+        no_match = detach_verification_runner_plan(other, task_id=TASK_ID)
+        self.assertFalse(no_match.changed)
+        self.assertIs(no_match.plan, other)
+
+        multiple = decoded_plan(
+            trusted_local=False,
+            entries=[
+                entry_payload(),
+                entry_payload(
+                    contract_revision=CONTRACT_REVISION + 1,
+                    verification_expectation_digest="c" * 64,
+                    verification_criterion_digest="sha256:" + "d" * 64,
+                ),
+            ],
+        )
+        detached = detach_verification_runner_plan(multiple, task_id=TASK_ID)
+        self.assertTrue(detached.changed)
+        self.assertEqual(detached.plan.entries, ())
+        self.assertEqual(detached.plan.plan_id, multiple.plan_id)
+        self.assertIs(detached.plan.trusted_local, False)
+
+        other_a = "tg_task_1111111111111111"
+        other_b = "tg_task_2222222222222222"
+        ordered = decoded_plan(
+            entries=[
+                entry_payload(task_id=other_a),
+                entry_payload(),
+                entry_payload(task_id=other_b),
+                entry_payload(
+                    contract_revision=CONTRACT_REVISION + 1,
+                    verification_expectation_digest="e" * 64,
+                    verification_criterion_digest="sha256:" + "f" * 64,
+                ),
+            ]
+        )
+        ordered_result = detach_verification_runner_plan(
+            ordered,
+            task_id=TASK_ID,
+        )
+        self.assertEqual(
+            [entry.task_id for entry in ordered_result.plan.entries],
+            [other_a, other_b],
+        )
+
+    def test_disable_changes_only_trust_and_is_idempotent(self):
+        absent = disable_verification_runner_plan(None)
+        self.assertFalse(absent.changed)
+        self.assertIsNone(absent.plan)
+
+        disabled_plan = decoded_plan(trusted_local=False)
+        disabled = disable_verification_runner_plan(disabled_plan)
+        self.assertFalse(disabled.changed)
+        self.assertIs(disabled.plan, disabled_plan)
+
+        enabled_plan = decoded_plan()
+        result = disable_verification_runner_plan(enabled_plan)
+        self.assertTrue(result.changed)
+        self.assertIs(result.plan.trusted_local, False)
+        self.assertEqual(result.plan.plan_id, enabled_plan.plan_id)
+        self.assertEqual(result.plan.entries, enabled_plan.entries)
+
+    def test_changed_candidate_enforces_entry_and_exact_byte_bounds(self):
+        full_plan = decoded_plan(
+            entries=[
+                entry_payload(task_id=f"tg_task_{number:016x}")
+                for number in range(PLAN_ENTRY_LIMIT)
+            ]
+        )
+        simple_draft = decode_runner_plan_draft(draft_bytes())
+        self.assert_authoring_error(
+            lambda: replace_verification_runner_plan(
+                full_plan,
+                basis=plan_basis(),
+                draft=simple_draft,
+            ),
+            "invalid_argument",
+        )
+
+        arguments = ["x" * 4_096] * 15 + [""]
+        base_draft = decode_runner_plan_draft(
+            draft_bytes(steps=[step_payload(argv=arguments)])
+        )
+        base = replace_verification_runner_plan(
+            None,
+            basis=plan_basis(),
+            draft=base_draft,
+        )
+        remaining = PLAN_BLOB_UTF8_BYTE_LIMIT - len(base.candidate_bytes)
+        self.assertGreaterEqual(remaining, 0)
+        self.assertLess(remaining, 4_096)
+
+        arguments[-1] = "x" * remaining
+        boundary_draft = decode_runner_plan_draft(
+            draft_bytes(steps=[step_payload(argv=arguments)])
+        )
+        boundary = replace_verification_runner_plan(
+            None,
+            basis=plan_basis(),
+            draft=boundary_draft,
+        )
+        self.assertEqual(
+            len(boundary.candidate_bytes),
+            PLAN_BLOB_UTF8_BYTE_LIMIT,
+        )
+
+        arguments[-1] += "x"
+        oversized_draft = decode_runner_plan_draft(
+            draft_bytes(steps=[step_payload(argv=arguments)])
+        )
+        self.assert_authoring_error(
+            lambda: replace_verification_runner_plan(
+                None,
+                basis=plan_basis(),
+                draft=oversized_draft,
+            ),
+            "invalid_argument",
+        )
+
+
+class RunnerPlanPublisherTests(VerificationRunnerPlanTestCase):
+    def candidate(self, **updates):
+        return encode_verification_runner_plan(decoded_plan(**updates))
+
+    def assert_publisher_error(self, callback, code, message):
+        with self.assertRaises(VerificationRunnerPlanError) as raised:
+            callback()
+        self.assertEqual(raised.exception.code, code)
+        self.assertEqual(str(raised.exception), message)
+        return raised.exception
+
+    def assert_no_temporary(self, config):
+        if config.exists():
+            self.assertFalse(
+                any(
+                    child.name.startswith(".taskgov-runner-plan-")
+                    for child in config.iterdir()
+                )
+            )
+
+    def test_authoring_capture_closes_three_states_and_hides_raw_repr(self):
+        raw_value = plan_payload()
+        raw_value["entries"][0]["steps"][0]["argv"] = [
+            "publisher-raw-marker"
+        ]
+        raw = json.dumps(raw_value, indent=2, sort_keys=True).encode("utf-8")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            absent_directory = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(absent_directory.state, "absent_directory")
+            self.assertIsNotNone(absent_directory.package_identity)
+            self.assertIsNone(absent_directory.config_identity)
+
+            config = package / "config"
+            config.mkdir()
+            absent_file = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(absent_file.state, "absent_file")
+            self.assertEqual(
+                absent_file.package_identity,
+                absent_directory.package_identity,
+            )
+            self.assertIsNotNone(absent_file.config_identity)
+            self.assertIsNone(absent_file.file_identity)
+
+            plan = config / "verification-runner.json"
+            plan.write_bytes(raw)
+            present = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(present.state, "present")
+            self.assertEqual(present.raw_blob, raw)
+            self.assertEqual(
+                present.raw_digest,
+                "sha256:" + hashlib.sha256(raw).hexdigest(),
+            )
+            self.assertNotIn("publisher-raw-marker", repr(present))
+
+            self.assertEqual(
+                RunnerPlanAuthoringSource(
+                    state="present",
+                    package_identity=present.package_identity,
+                    config_identity=present.config_identity,
+                    file_identity=present.file_identity,
+                    raw_blob=present.raw_blob,
+                    raw_digest=present.raw_digest,
+                ),
+                present,
+            )
+
+    def test_authoring_absence_requires_local_only_without_changing_reader_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary, ignored=False)
+            self.assertIsNone(capture_verification_runner_plan(repo, package))
+            self.assert_plan_error(
+                lambda: capture_runner_plan_authoring_source(repo, package),
+                "plan_source_invalid",
+                source=True,
+            )
+
+    def test_authoring_capture_rejects_case_variant_index_alias(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            blob_source = repo / "blob-source.json"
+            blob_source.write_bytes(self.candidate())
+            object_id = git(repo, "hash-object", "-w", "blob-source.json").stdout
+            alias = "Package/Config/Verification-Runner.json"
+            git(
+                repo,
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                "100644",
+                object_id.decode("ascii").strip(),
+                alias,
+            )
+            self.assertIsNone(capture_verification_runner_plan(repo, package))
+            self.assert_plan_error(
+                lambda: capture_runner_plan_authoring_source(repo, package),
+                "plan_source_invalid",
+                source=True,
+            )
+
+    def test_authoring_capture_rejects_hardlinked_canonical_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            source = repo / "source-plan.json"
+            source.write_bytes(self.candidate())
+            plan = package / "config" / "verification-runner.json"
+            plan.parent.mkdir()
+            plan.hardlink_to(source)
+            self.assertGreater(plan.stat().st_nlink, 1)
+            self.assert_plan_error(
+                lambda: capture_runner_plan_authoring_source(repo, package),
+                "plan_source_invalid",
+                source=True,
+            )
+
+    def test_authoring_capture_rejects_oversized_present_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            self.write_physical_plan(
+                package,
+                b"x" * (PLAN_BLOB_UTF8_BYTE_LIMIT + 1),
+            )
+            self.assert_plan_error(
+                lambda: capture_runner_plan_authoring_source(repo, package),
+                "plan_source_invalid",
+                source=True,
+            )
+
+    def test_single_link_check_rejects_an_entry_swapped_after_inspection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            plan = self.write_physical_plan(package, self.candidate())
+            expected = capture_runner_plan_authoring_source(repo, package)
+            replacement = plan.parent / "replacement.json"
+            replacement.write_bytes(self.candidate(plan_id="foreign-plan"))
+            real_inspect = publisher_module.inspect_physical_file
+
+            def inspect_then_swap(path, *, root, max_bytes=None):
+                observed = real_inspect(path, root=root, max_bytes=max_bytes)
+                publisher_module.os.replace(replacement, path)
+                return observed
+
+            with mock.patch.object(
+                publisher_module,
+                "inspect_physical_file",
+                side_effect=inspect_then_swap,
+            ):
+                self.assertFalse(
+                    publisher_module._single_link_matches(
+                        plan,
+                        root=package,
+                        expected=expected.file_identity,
+                    )
+                )
+
+    def test_authoring_capture_rejects_a_reparse_config_boundary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            config = package / "config"
+            config.mkdir()
+            details = config.lstat()
+            target_identity = (int(details.st_dev), int(details.st_ino))
+            real_is_reparse = state_paths_module._is_reparse
+
+            def classify_target_as_reparse(observed):
+                if (int(observed.st_dev), int(observed.st_ino)) == target_identity:
+                    return True
+                return real_is_reparse(observed)
+
+            with mock.patch.object(
+                state_paths_module,
+                "_is_reparse",
+                side_effect=classify_target_as_reparse,
+            ):
+                self.assert_plan_error(
+                    lambda: capture_runner_plan_authoring_source(repo, package),
+                    "plan_source_invalid",
+                    source=True,
+                )
+
+    def test_confirmation_only_revalidates_but_never_writes_or_normalizes(self):
+        for state in ("absent_directory", "absent_file", "present"):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as temporary:
+                repo, package = self.make_repo(temporary)
+                config = package / "config"
+                plan = config / "verification-runner.json"
+                original = None
+                if state != "absent_directory":
+                    config.mkdir()
+                if state == "present":
+                    original = json.dumps(
+                        plan_payload(),
+                        indent=2,
+                        sort_keys=True,
+                    ).encode("utf-8")
+                    plan.write_bytes(original)
+                expected = capture_runner_plan_authoring_source(repo, package)
+
+                with (
+                    mock.patch.object(
+                        publisher_module,
+                        "create_physical_directory_exclusive",
+                    ) as create_directory,
+                    mock.patch.object(
+                        publisher_module,
+                        "_create_temporary",
+                    ) as create_temporary,
+                    mock.patch.object(publisher_module.os, "replace") as replace,
+                ):
+                    publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        CONFIRM_RUNNER_PLAN_SOURCE,
+                    )
+                create_directory.assert_not_called()
+                create_temporary.assert_not_called()
+                replace.assert_not_called()
+                self.assertEqual(config.exists(), state != "absent_directory")
+                self.assertEqual(plan.exists(), state == "present")
+                if original is not None:
+                    self.assertEqual(plan.read_bytes(), original)
+
+    def test_candidate_publication_covers_all_three_source_states(self):
+        candidate = self.candidate(plan_id="published-plan")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            publish_verification_runner_plan(repo, package, expected, candidate)
+            config = package / "config"
+            plan = config / "verification-runner.json"
+            self.assertEqual(plan.read_bytes(), candidate)
+            self.assertEqual([item.name for item in config.iterdir()], [plan.name])
+            self.assertEqual(
+                capture_runner_plan_authoring_source(repo, package).raw_blob,
+                candidate,
+            )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            config = package / "config"
+            config.mkdir()
+            sentinel = config / "viewer.json"
+            sentinel.write_text("{}", encoding="utf-8")
+            expected = capture_runner_plan_authoring_source(repo, package)
+            config_identity = expected.config_identity
+            publish_verification_runner_plan(repo, package, expected, candidate)
+            current = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(current.config_identity, config_identity)
+            self.assertEqual(current.raw_blob, candidate)
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "{}")
+            self.assert_no_temporary(config)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate(trusted_local=False)
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            replaced_identity = expected.file_identity
+            real_replace = publisher_module.os.replace
+            with mock.patch.object(
+                publisher_module.os,
+                "replace",
+                side_effect=real_replace,
+            ) as replace:
+                publish_verification_runner_plan(repo, package, expected, candidate)
+            self.assertEqual(replace.call_count, 1)
+            current = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(current.raw_blob, candidate)
+            self.assertNotEqual(current.file_identity, replaced_identity)
+            self.assert_no_temporary(plan.parent)
+
+    def test_successful_replace_is_the_final_publication_boundary(self):
+        candidate = self.candidate(plan_id="published-plan")
+
+        for state, expected_captures in (
+            ("absent_directory", 1),
+            ("present", 2),
+        ):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as temporary:
+                repo, package = self.make_repo(temporary)
+                if state == "present":
+                    self.write_physical_plan(package, self.candidate())
+                expected = capture_runner_plan_authoring_source(repo, package)
+
+                with mock.patch.object(
+                    publisher_module,
+                    "capture_runner_plan_authoring_source",
+                    side_effect=[expected] * expected_captures,
+                ) as capture:
+                    publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        candidate,
+                    )
+
+                self.assertEqual(capture.call_count, expected_captures)
+                plan = package / "config" / "verification-runner.json"
+                self.assertEqual(plan.read_bytes(), candidate)
+                self.assert_no_temporary(plan.parent)
+
+    def test_safe_source_drift_is_changed_and_foreign_bytes_are_preserved(self):
+        candidate = self.candidate(plan_id="candidate-plan")
+        foreign = self.candidate(plan_id="foreign-plan")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            plan = self.write_physical_plan(package, self.candidate())
+            expected = capture_runner_plan_authoring_source(repo, package)
+            plan.write_bytes(foreign)
+            self.assert_publisher_error(
+                lambda: publish_verification_runner_plan(
+                    repo,
+                    package,
+                    expected,
+                    candidate,
+                ),
+                "runner_plan_changed",
+                RUNNER_PLAN_CHANGED_MESSAGE,
+            )
+            self.assertEqual(plan.read_bytes(), foreign)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            prior_identity = expected.file_identity
+            replacement = plan.parent / "replacement.json"
+            replacement.write_bytes(original)
+            publisher_module.os.replace(replacement, plan)
+            observed = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(observed.raw_blob, original)
+            self.assertNotEqual(observed.file_identity, prior_identity)
+            self.assert_publisher_error(
+                lambda: publish_verification_runner_plan(
+                    repo,
+                    package,
+                    expected,
+                    candidate,
+                ),
+                "runner_plan_changed",
+                RUNNER_PLAN_CHANGED_MESSAGE,
+            )
+            self.assertEqual(plan.read_bytes(), original)
+            self.assert_no_temporary(plan.parent)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            config = package / "config"
+            config.mkdir()
+            expected = capture_runner_plan_authoring_source(repo, package)
+            plan = config / "verification-runner.json"
+            plan.write_bytes(foreign)
+            self.assert_publisher_error(
+                lambda: publish_verification_runner_plan(
+                    repo,
+                    package,
+                    expected,
+                    candidate,
+                ),
+                "runner_plan_changed",
+                RUNNER_PLAN_CHANGED_MESSAGE,
+            )
+            self.assertEqual(plan.read_bytes(), foreign)
+
+    def test_config_identity_drift_is_changed_without_touching_new_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            config = package / "config"
+            config.mkdir()
+            expected = capture_runner_plan_authoring_source(repo, package)
+            old_config = package / "old-config"
+            config.rename(old_config)
+            config.mkdir()
+            sentinel = config / "foreign.txt"
+            sentinel.write_text("foreign", encoding="utf-8")
+
+            self.assert_publisher_error(
+                lambda: publish_verification_runner_plan(
+                    repo,
+                    package,
+                    expected,
+                    self.candidate(),
+                ),
+                "runner_plan_changed",
+                RUNNER_PLAN_CHANGED_MESSAGE,
+            )
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "foreign")
+            self.assertFalse((config / "verification-runner.json").exists())
+
+    def test_ignore_policy_drift_fails_closed_without_touching_plan(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            (repo / ".gitignore").unlink()
+
+            self.assert_publisher_error(
+                lambda: publish_verification_runner_plan(
+                    repo,
+                    package,
+                    expected,
+                    self.candidate(plan_id="candidate-plan"),
+                ),
+                "runner_plan_update_failed",
+                RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+            )
+            self.assertEqual(plan.read_bytes(), original)
+            self.assert_no_temporary(plan.parent)
+
+    def test_temp_after_source_drift_is_removed_before_replace(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            foreign = self.candidate(plan_id="foreign-plan")
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            real_create = publisher_module._create_temporary
+
+            def create_then_drift(config, candidate, *, root):
+                result = real_create(config, candidate, root=root)
+                plan.write_bytes(foreign)
+                return result
+
+            with (
+                mock.patch.object(
+                    publisher_module,
+                    "_create_temporary",
+                    side_effect=create_then_drift,
+                ),
+                mock.patch.object(publisher_module.os, "replace") as replace,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(plan_id="candidate-plan"),
+                    ),
+                    "runner_plan_changed",
+                    RUNNER_PLAN_CHANGED_MESSAGE,
+                )
+            replace.assert_not_called()
+            self.assertEqual(plan.read_bytes(), foreign)
+            self.assert_no_temporary(plan.parent)
+
+    def test_foreign_temp_replacement_is_not_deleted_by_cleanup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            real_create = publisher_module._create_temporary
+            foreign = b"foreign-temporary-object"
+            observed_paths = []
+
+            def replace_owned_temp(config, candidate, *, root):
+                owned = real_create(config, candidate, root=root)
+                owned.path.unlink()
+                owned.path.write_bytes(foreign)
+                observed_paths.append(owned.path)
+                return owned
+
+            with mock.patch.object(
+                publisher_module,
+                "_create_temporary",
+                side_effect=replace_owned_temp,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(plan_id="candidate-plan"),
+                    ),
+                    "runner_plan_update_failed",
+                    RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+                )
+            self.assertEqual(len(observed_paths), 1)
+            self.assertEqual(observed_paths[0].read_bytes(), foreign)
+            self.assertEqual(plan.read_bytes(), original)
+
+    def test_initial_create_rejects_foreign_directory_content_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            real_create = publisher_module._create_temporary
+            foreign_paths = []
+
+            def create_temp_and_foreign(config, candidate, *, root):
+                owned = real_create(config, candidate, root=root)
+                foreign = config / "foreign.txt"
+                foreign.write_text("foreign", encoding="utf-8")
+                foreign_paths.append(foreign)
+                return owned
+
+            with mock.patch.object(
+                publisher_module,
+                "_create_temporary",
+                side_effect=create_temp_and_foreign,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(),
+                    ),
+                    "runner_plan_update_failed",
+                    RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+                )
+            config = package / "config"
+            self.assertEqual(len(foreign_paths), 1)
+            self.assertEqual(foreign_paths[0].read_text(encoding="utf-8"), "foreign")
+            self.assertFalse((config / "verification-runner.json").exists())
+            self.assert_no_temporary(config)
+
+    def test_initial_create_rechecks_temp_identity_after_inventory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            real_check = publisher_module._single_link_matches
+            calls = 0
+            foreign = b"foreign-after-inventory"
+            foreign_paths = []
+
+            def swap_on_final_check(path, *, root, expected):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    path.unlink()
+                    path.write_bytes(foreign)
+                    foreign_paths.append(path)
+                return real_check(path, root=root, expected=expected)
+
+            with (
+                mock.patch.object(
+                    publisher_module,
+                    "_single_link_matches",
+                    side_effect=swap_on_final_check,
+                ),
+                mock.patch.object(publisher_module.os, "replace") as replace,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(),
+                    ),
+                    "runner_plan_update_failed",
+                    RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+                )
+            replace.assert_not_called()
+            self.assertEqual(calls, 2)
+            self.assertEqual(foreign_paths[0].read_bytes(), foreign)
+            self.assertFalse(
+                (package / "config" / "verification-runner.json").exists()
+            )
+
+    def test_initial_directory_race_is_reported_as_source_change(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+
+            def create_racing_directory(config, *, root):
+                config.mkdir()
+                raise StatePathError()
+
+            with mock.patch.object(
+                publisher_module,
+                "create_physical_directory_exclusive",
+                side_effect=create_racing_directory,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(),
+                    ),
+                    "runner_plan_changed",
+                    RUNNER_PLAN_CHANGED_MESSAGE,
+                )
+            self.assertTrue((package / "config").is_dir())
+            self.assertFalse(
+                (package / "config" / "verification-runner.json").exists()
+            )
+
+    def test_replace_failure_preserves_canonical_and_cleans_owned_temp(self):
+        injected = "private-path-and-exception-detail"
+        candidate = self.candidate(plan_id="candidate-plan")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            with mock.patch.object(
+                publisher_module.os,
+                "replace",
+                side_effect=OSError(injected),
+            ):
+                error = self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        candidate,
+                    ),
+                    "runner_plan_update_failed",
+                    RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+                )
+            self.assertNotIn(injected, repr(error))
+            self.assertNotIn(str(repo), repr(error))
+            self.assertEqual(plan.read_bytes(), original)
+            self.assert_no_temporary(plan.parent)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            with mock.patch.object(
+                publisher_module.os,
+                "replace",
+                side_effect=OSError(injected),
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        candidate,
+                    ),
+                    "runner_plan_update_failed",
+                    RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+                )
+            config = package / "config"
+            self.assertTrue(config.is_dir())
+            self.assertEqual(tuple(config.iterdir()), ())
+
+    def test_replace_failure_reports_a_safely_observed_last_moment_drift(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            foreign = self.candidate(plan_id="foreign-plan")
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            real_replace = publisher_module.os.replace
+
+            def install_foreign_then_fail(_source, _destination):
+                foreign_path = plan.parent / "foreign.json"
+                foreign_path.write_bytes(foreign)
+                real_replace(foreign_path, plan)
+                raise OSError("private-race-detail")
+
+            with mock.patch.object(
+                publisher_module.os,
+                "replace",
+                side_effect=install_foreign_then_fail,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(plan_id="candidate-plan"),
+                    ),
+                    "runner_plan_changed",
+                    RUNNER_PLAN_CHANGED_MESSAGE,
+                )
+            self.assertEqual(plan.read_bytes(), foreign)
+            self.assert_no_temporary(plan.parent)
+
+    def test_candidate_validation_is_canonical_bounded_and_write_free_on_error(self):
+        invalid_candidates = (
+            json.dumps(plan_payload(), indent=2, sort_keys=True).encode("utf-8"),
+            b"x" * (PLAN_BLOB_UTF8_BYTE_LIMIT + 1),
+            bytearray(self.candidate()),
+            b"",
+        )
+        for candidate in invalid_candidates:
+            with self.subTest(candidate_type=type(candidate).__name__), tempfile.TemporaryDirectory() as temporary:
+                repo, package = self.make_repo(temporary)
+                expected = capture_runner_plan_authoring_source(repo, package)
+                error = self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        candidate,
+                    ),
+                    "invalid_argument",
+                    PUBLISHER_INVALID_ARGUMENT_MESSAGE,
+                )
+                self.assertNotIn(str(repo), repr(error))
+                self.assertFalse((package / "config").exists())
+
+    def test_exact_maximum_candidate_publishes_without_residue(self):
+        arguments = ["x" * 4_096] * 15 + [""]
+        base = replace_verification_runner_plan(
+            None,
+            basis=plan_basis(),
+            draft=decode_runner_plan_draft(
+                draft_bytes(steps=[step_payload(argv=arguments)])
+            ),
+        )
+        remaining = PLAN_BLOB_UTF8_BYTE_LIMIT - len(base.candidate_bytes)
+        arguments[-1] = "x" * remaining
+        boundary = replace_verification_runner_plan(
+            None,
+            basis=plan_basis(),
+            draft=decode_runner_plan_draft(
+                draft_bytes(steps=[step_payload(argv=arguments)])
+            ),
+        )
+        self.assertEqual(len(boundary.candidate_bytes), PLAN_BLOB_UTF8_BYTE_LIMIT)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            publish_verification_runner_plan(
+                repo,
+                package,
+                expected,
+                boundary.candidate_bytes,
+            )
+            plan = package / "config" / "verification-runner.json"
+            self.assertEqual(plan.read_bytes(), boundary.candidate_bytes)
+            self.assert_no_temporary(plan.parent)
 
 
 if __name__ == "__main__":

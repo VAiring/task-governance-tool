@@ -136,6 +136,12 @@ or ten calls respectively.
 
 ## Operating Rules
 
+- Invoke task decomposition only for an explicit request to register or taskize
+  already-authorized work, or for an explicit scope addition to an
+  `in_progress` or `review_pending` Task. Route either event through the
+  one-pass guidance in [references/task_workflow.md](references/task_workflow.md).
+  Discovery, a test failure, an Effort result, task size, or model preference
+  does not invoke that guidance or add a normal-loop call.
 - Register only explicit tasks. `task add --status done` and initial `paused`
   are prohibited.
 - Rediscover `in_progress`, `review_pending`, `paused`, and `blocked` work with
@@ -255,7 +261,8 @@ push, open PRs, create Issues, or mutate target files.
 
 ## References
 
-Read [references/task_workflow.md](references/task_workflow.md) when selecting,
+Read [references/task_workflow.md](references/task_workflow.md) when taskizing
+explicit work, handling an explicit active-Task scope addition, selecting,
 pausing, resuming, handing off, reviewing, checkpointing, or completing work.
 
 Read [references/cli_contracts.md](references/cli_contracts.md) when exact

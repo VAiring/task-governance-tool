@@ -307,6 +307,16 @@ The product must not become:
 ## Target Project Safety
 
 - Inspect target projects read-only by default.
+- Taskgov-managed Runner Plan publication is authorized only by an explicit
+  `task edit --runner-plan-action` invocation and is bounded to the one
+  canonical ignored physical
+  `config/verification-runner.json` (and its canonical `config` directory when
+  initially absent); it authorizes no other target file, setup side effect,
+  Runner launch, Skill trigger, Git write, or external mutation. No setup,
+  inspection, Task-only edit, or other command authorizes Plan publication. A
+  separately and concretely user-approved direct local edit is not
+  taskgov-managed publication and remains governed by the general target-project
+  mutation rules below.
 - Do not modify a target project simply because task-governance-tool inspected
   it.
 - A changed project path is not evidence of move, copy, or fork intent.

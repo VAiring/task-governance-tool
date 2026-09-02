@@ -34,6 +34,7 @@ FIXTURE_LINK_TARGETS = (
     "docs/releases/v0.12.0.md",
     "docs/releases/v0.13.0.md",
     "task-governance-tool/LICENSE",
+    "task-governance-tool/references/cli_contracts.md",
 )
 class DocumentContractTests(unittest.TestCase):
     @classmethod

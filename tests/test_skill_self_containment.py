@@ -950,20 +950,27 @@ class SkillSelfContainmentTests(unittest.TestCase):
         for text in (readme, release_note):
             self.assertRegex(text.lower(), r"\b(?:only|no other)\b")
 
-    def test_target_ignore_guidance_is_only_the_root_anchored_skill_state(self):
-        expected = "/.agents/skills/task-governance-tool/state/"
-        for relative in ("README.md", "docs/release-install.md"):
+    def test_target_ignore_guidance_is_root_anchored_and_bounded(self):
+        expected_state = "/.agents/skills/task-governance-tool/state/"
+        expected_blocks = {
+            "README.md": (
+                "/.agents/skills/task-governance-tool/state/\n"
+                "/.agents/skills/task-governance-tool/config/verification-runner.json"
+            ),
+            "docs/release-install.md": expected_state,
+        }
+        for relative, expected_block in expected_blocks.items():
             with self.subTest(relative=relative):
                 text = (ROOT / relative).read_text(encoding="utf-8")
                 matching_blocks = [
                     block.strip()
                     for block in re.findall(r"```(?:text|gitignore)\n(.*?)```", text, re.DOTALL)
-                    if expected in block.splitlines()
+                    if expected_state in block.splitlines()
                 ]
-                self.assertEqual(matching_blocks, [expected])
+                self.assertEqual(matching_blocks, [expected_block])
 
         gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
-        self.assertIn(expected, gitignore)
+        self.assertIn(expected_state, gitignore)
         self.assertNotIn("*.sqlite", gitignore)
         self.assertNotIn("*.sqlite3", gitignore)
         self.assertNotIn("*.db", gitignore)

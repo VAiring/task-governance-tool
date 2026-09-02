@@ -24,8 +24,10 @@ from task_governance_tool.storage import (  # noqa: E402
     DatabaseTarget,
     ProjectIdentity,
     connect_initialized,
+    contract_criterion_digest,
     initialize_uuid_database,
     project_identity,
+    verification_expectation_digest,
 )
 from task_governance_tool.tasks import (  # noqa: E402
     TaskRepositoryError,
@@ -157,8 +159,8 @@ class RunnerPlanEditFixture:
             ),
         )
 
-    def write_exact_plan(self, *, trusted_local=True):
-        basis = self.basis()
+    def write_exact_plan(self, *, trusted_local=True, basis=None):
+        basis = self.basis() if basis is None else basis
         steps = decode_runner_plan_draft(draft_blob()).steps
         plan = VerificationRunnerPlan(
             version=PLAN_VERSION,
@@ -649,6 +651,51 @@ class RunnerPlanEditTests(unittest.TestCase):
                 )
                 self.assertEqual(fixture.database_dump(), committed)
                 self.assert_plan_matches_basis(fixture, fixture.basis())
+
+    def test_postcommit_source_confirmation_failure_keeps_task_commit_unconfirmed(self):
+        with runner_plan_edit_fixture() as fixture:
+            current = fixture.basis()
+            prospective = replace(
+                current,
+                verification_expectation_digest=(
+                    verification_expectation_digest(FUTURE_VERIFICATION)
+                ),
+                verification_criterion_digest=contract_criterion_digest(
+                    "verification",
+                    FUTURE_VERIFICATION,
+                ),
+            )
+            self.assertNotEqual(prospective, current)
+            original = fixture.write_exact_plan(basis=prospective)
+            events_before = fixture.event_count()
+
+            with mock.patch.object(
+                edit_module,
+                "publish_verification_runner_plan",
+                side_effect=VerificationRunnerPlanError(
+                    code="runner_plan_changed",
+                    message=RUNNER_PLAN_CHANGED_MESSAGE,
+                ),
+            ) as publish:
+                partial = edit_module.edit_task_with_runner_plan(
+                    fixture.target,
+                    fixture.task_id,
+                    runner_plan_action="rebind",
+                    verification=FUTURE_VERIFICATION,
+                )
+
+            publish.assert_called_once()
+            self.assertIs(publish.call_args.args[3], CONFIRM_RUNNER_PLAN_SOURCE)
+            self.assertEqual(partial.task_mutation, "committed")
+            self.assertEqual(partial.runner_plan_update.status, "unconfirmed")
+            self.assertIsNotNone(partial.edit_result.event)
+            self.assertIn("verification", partial.edit_result.changed_fields)
+            self.assertEqual(
+                fixture.task_row()["verification"],
+                FUTURE_VERIFICATION,
+            )
+            self.assertEqual(fixture.event_count(), events_before + 1)
+            self.assertEqual(fixture.plan_path.read_bytes(), original)
 
     def test_private_draft_and_incompatible_options_fail_before_mutation_or_launch(self):
         with runner_plan_edit_fixture() as fixture:

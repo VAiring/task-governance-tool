@@ -3879,10 +3879,10 @@ operations; they are not one atomic transaction. A Task/DB failure leaves the
 canonical Plan unchanged. A detected source drift, failed required source
 confirmation, or publication failure after a Task commit never rolls the Task
 back and never guesses, merges, or overwrites newer Plan bytes. The requested
-Plan disposition is then unconfirmed. If the expected source stayed unchanged,
-its prior exact-match entry is stale against the new basis or its prior absent/
-disabled/no-match route remains ineligible; if another authorized writer
-changed the source, no eligibility state is inferred. The caller must not rely
+Plan disposition is then unconfirmed. Whether the expected source stayed
+unchanged or another authorized writer changed it, no eligibility state is
+inferred; the Task basis commit itself can change an unchanged entry's prior
+exact-match status. The caller must not rely
 on Runner execution until one explicit config-only `rebind`, `replace`,
 `detach`, or `disable` succeeds. There is no compensating Task edit, two-phase
 commit, pending SQLite row, retry daemon, or automatic repair.

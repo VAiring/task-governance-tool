@@ -4513,9 +4513,9 @@ fails, the transaction rolls back and publication is never called.
 After a committed basis change, a publisher source-confirmation or publication
 failure returns the committed Task result plus
 `runner_plan_update.status=unconfirmed`; it does not reopen SQLite or compensate
-the Task. When the expected source stayed unchanged it remains stale, absent,
-disabled, or no-match against the new basis. When another authorized writer
-caused the mismatch, the service makes no eligibility claim.
+the Task. Whether the expected source stayed unchanged or another authorized
+writer caused the mismatch, the service makes no eligibility claim; the Task
+basis commit itself can change an unchanged entry's prior exact-match status.
 The caller must not rely on Runner execution until a later explicit Plan-only
 action succeeds. A Plan-only publisher failure has no Task result to preserve
 and uses the ordinary failed Task-edit envelope. No hidden retry, journal,

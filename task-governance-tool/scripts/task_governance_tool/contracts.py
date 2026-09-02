@@ -16,6 +16,7 @@ from task_governance_tool.storage import (
 )
 from task_governance_tool.tasks import (
     SQLITE_INT64_MAX,
+    TaskEditBasisPrecommitValidator,
     TaskRepositoryError,
     TaskValidationError,
     bounded_transition_summary,
@@ -56,7 +57,6 @@ CONTRACT_LIMITS = {
     "contract_authority_ref": 500,
     "contract_change_reason": 1000,
 }
-
 
 @dataclass(frozen=True)
 class ContractWriteResult:
@@ -496,6 +496,7 @@ def _activate_revision_zero(
     *,
     caller_edit_input: dict[str, Any],
     contract_input: dict[str, Any],
+    basis_precommit_validator: TaskEditBasisPrecommitValidator | None,
 ) -> ContractEditResult:
     raw_status = caller_edit_input.get("status")
     if (
@@ -518,6 +519,16 @@ def _activate_revision_zero(
         revision=1,
         initial=True,
     )
+    prospective = dict(existing)
+    prospective.update(
+        {
+            "status": "in_progress",
+            "blocked_reason": "",
+            "current_contract_revision": 1,
+        }
+    )
+    if basis_precommit_validator is not None:
+        basis_precommit_validator(existing, prospective)
     now = utc_now()
     savepoint = f"taskgov_contract_{secrets.token_hex(4)}"
     connection.execute(f"SAVEPOINT {savepoint}")
@@ -632,6 +643,7 @@ def _later_revision(
     *,
     caller_edit_input: dict[str, Any],
     contract_input: dict[str, Any],
+    basis_precommit_validator: TaskEditBasisPrecommitValidator | None,
 ) -> ContractEditResult:
     if caller_edit_input:
         raise validation_error(
@@ -679,6 +691,8 @@ def _later_revision(
         and values["acceptance"] == current["acceptance"]
         and values["constraints_text"] == current["constraints"]
     ):
+        if basis_precommit_validator is not None:
+            basis_precommit_validator(existing, dict(existing))
         row = _read_internal_task(
             connection,
             project_id=project.project_id,
@@ -786,6 +800,10 @@ def _later_revision(
         }
         and existing[field] != value
     ]
+    prospective = dict(existing)
+    prospective.update(update_values)
+    if basis_precommit_validator is not None:
+        basis_precommit_validator(existing, prospective)
     now = utc_now()
     savepoint = f"taskgov_contract_{secrets.token_hex(4)}"
     connection.execute(f"SAVEPOINT {savepoint}")
@@ -909,6 +927,7 @@ def edit_contract(
     *,
     caller_edit_input: dict[str, Any],
     contract_input: dict[str, Any],
+    basis_precommit_validator: TaskEditBasisPrecommitValidator | None = None,
 ) -> ContractEditResult:
     current_revision = validate_sqlite_int64(
         existing["current_contract_revision"],
@@ -921,6 +940,7 @@ def edit_contract(
             existing,
             caller_edit_input=caller_edit_input,
             contract_input=contract_input,
+            basis_precommit_validator=basis_precommit_validator,
         )
     return _later_revision(
         connection,
@@ -928,4 +948,5 @@ def edit_contract(
         existing,
         caller_edit_input=caller_edit_input,
         contract_input=contract_input,
+        basis_precommit_validator=basis_precommit_validator,
     )

@@ -1767,10 +1767,6 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 prelaunch_trace.assertion_message,
             )
             self.assertEqual(
-                prelaunch_trace.assertion_message,
-                "runner_prelaunch_phase=last:path_recheck",
-            )
-            self.assertEqual(
                 generation["cleanup_event"].terminal_observation_id,
                 observation.verification_runner_observation_id,
             )

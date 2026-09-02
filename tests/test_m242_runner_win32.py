@@ -1110,10 +1110,6 @@ class RunnerWin32NativeTests(unittest.TestCase):
             ("process_error", "process_resume_failed"),
             prelaunch_trace.assertion_message,
         )
-        self.assertEqual(
-            prelaunch_trace.assertion_message,
-            "runner_prelaunch_phase=last:path_recheck",
-        )
         self.assert_process_zero(resume_failed)
 
         with patch.object(

@@ -204,6 +204,12 @@ def _plan_is_local_only(repo: Path, plan: Path) -> bool:
     )
 
 
+def verification_runner_plan_is_local_only(repo: Path, plan: Path) -> bool:
+    """Expose the existing canonical Plan index/ignore policy to its publisher."""
+
+    return _plan_is_local_only(repo, plan)
+
+
 def capture_verification_runner_plan(
     repo: Path,
     physical_package_root: Path,

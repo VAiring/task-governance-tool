@@ -17,8 +17,12 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 try:
     from task_governance_tool import verification_runner_plan as plan_module
+    from task_governance_tool import state_paths as state_paths_module
     from task_governance_tool import (
         verification_runner_plan_authoring as authoring_module,
+    )
+    from task_governance_tool import (
+        verification_runner_plan_publisher as publisher_module,
     )
     from task_governance_tool.verification_runner_plan import (
         PLAN_ARG_LIMIT,
@@ -50,7 +54,17 @@ try:
         rebind_verification_runner_plan,
         replace_verification_runner_plan,
     )
+    from task_governance_tool.verification_runner_plan_publisher import (
+        CONFIRM_RUNNER_PLAN_SOURCE,
+        INVALID_ARGUMENT_MESSAGE as PUBLISHER_INVALID_ARGUMENT_MESSAGE,
+        RUNNER_PLAN_CHANGED_MESSAGE,
+        RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+        RunnerPlanAuthoringSource,
+        capture_runner_plan_authoring_source,
+        publish_verification_runner_plan,
+    )
     from task_governance_tool.tasks import TaskValidationError
+    from task_governance_tool.state_paths import StatePathError
 finally:
     sys.path.pop(0)
 
@@ -1420,6 +1434,742 @@ class RunnerPlanAuthoringTests(VerificationRunnerPlanTestCase):
             ),
             "invalid_argument",
         )
+
+
+class RunnerPlanPublisherTests(VerificationRunnerPlanTestCase):
+    def candidate(self, **updates):
+        return encode_verification_runner_plan(decoded_plan(**updates))
+
+    def assert_publisher_error(self, callback, code, message):
+        with self.assertRaises(VerificationRunnerPlanError) as raised:
+            callback()
+        self.assertEqual(raised.exception.code, code)
+        self.assertEqual(str(raised.exception), message)
+        return raised.exception
+
+    def assert_no_temporary(self, config):
+        if config.exists():
+            self.assertFalse(
+                any(
+                    child.name.startswith(".taskgov-runner-plan-")
+                    for child in config.iterdir()
+                )
+            )
+
+    def test_authoring_capture_closes_three_states_and_hides_raw_repr(self):
+        raw_value = plan_payload()
+        raw_value["entries"][0]["steps"][0]["argv"] = [
+            "publisher-raw-marker"
+        ]
+        raw = json.dumps(raw_value, indent=2, sort_keys=True).encode("utf-8")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            absent_directory = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(absent_directory.state, "absent_directory")
+            self.assertIsNotNone(absent_directory.package_identity)
+            self.assertIsNone(absent_directory.config_identity)
+
+            config = package / "config"
+            config.mkdir()
+            absent_file = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(absent_file.state, "absent_file")
+            self.assertEqual(
+                absent_file.package_identity,
+                absent_directory.package_identity,
+            )
+            self.assertIsNotNone(absent_file.config_identity)
+            self.assertIsNone(absent_file.file_identity)
+
+            plan = config / "verification-runner.json"
+            plan.write_bytes(raw)
+            present = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(present.state, "present")
+            self.assertEqual(present.raw_blob, raw)
+            self.assertEqual(
+                present.raw_digest,
+                "sha256:" + hashlib.sha256(raw).hexdigest(),
+            )
+            self.assertNotIn("publisher-raw-marker", repr(present))
+
+            self.assertEqual(
+                RunnerPlanAuthoringSource(
+                    state="present",
+                    package_identity=present.package_identity,
+                    config_identity=present.config_identity,
+                    file_identity=present.file_identity,
+                    raw_blob=present.raw_blob,
+                    raw_digest=present.raw_digest,
+                ),
+                present,
+            )
+
+    def test_authoring_absence_requires_local_only_without_changing_reader_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary, ignored=False)
+            self.assertIsNone(capture_verification_runner_plan(repo, package))
+            self.assert_plan_error(
+                lambda: capture_runner_plan_authoring_source(repo, package),
+                "plan_source_invalid",
+                source=True,
+            )
+
+    def test_authoring_capture_rejects_case_variant_index_alias(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            blob_source = repo / "blob-source.json"
+            blob_source.write_bytes(self.candidate())
+            object_id = git(repo, "hash-object", "-w", "blob-source.json").stdout
+            alias = "Package/Config/Verification-Runner.json"
+            git(
+                repo,
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                "100644",
+                object_id.decode("ascii").strip(),
+                alias,
+            )
+            self.assertIsNone(capture_verification_runner_plan(repo, package))
+            self.assert_plan_error(
+                lambda: capture_runner_plan_authoring_source(repo, package),
+                "plan_source_invalid",
+                source=True,
+            )
+
+    def test_authoring_capture_rejects_hardlinked_canonical_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            source = repo / "source-plan.json"
+            source.write_bytes(self.candidate())
+            plan = package / "config" / "verification-runner.json"
+            plan.parent.mkdir()
+            plan.hardlink_to(source)
+            self.assertGreater(plan.stat().st_nlink, 1)
+            self.assert_plan_error(
+                lambda: capture_runner_plan_authoring_source(repo, package),
+                "plan_source_invalid",
+                source=True,
+            )
+
+    def test_authoring_capture_rejects_oversized_present_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            self.write_physical_plan(
+                package,
+                b"x" * (PLAN_BLOB_UTF8_BYTE_LIMIT + 1),
+            )
+            self.assert_plan_error(
+                lambda: capture_runner_plan_authoring_source(repo, package),
+                "plan_source_invalid",
+                source=True,
+            )
+
+    def test_single_link_check_rejects_an_entry_swapped_after_inspection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            plan = self.write_physical_plan(package, self.candidate())
+            expected = capture_runner_plan_authoring_source(repo, package)
+            replacement = plan.parent / "replacement.json"
+            replacement.write_bytes(self.candidate(plan_id="foreign-plan"))
+            real_inspect = publisher_module.inspect_physical_file
+
+            def inspect_then_swap(path, *, root, max_bytes=None):
+                observed = real_inspect(path, root=root, max_bytes=max_bytes)
+                publisher_module.os.replace(replacement, path)
+                return observed
+
+            with mock.patch.object(
+                publisher_module,
+                "inspect_physical_file",
+                side_effect=inspect_then_swap,
+            ):
+                self.assertFalse(
+                    publisher_module._single_link_matches(
+                        plan,
+                        root=package,
+                        expected=expected.file_identity,
+                    )
+                )
+
+    def test_authoring_capture_rejects_a_reparse_config_boundary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            config = package / "config"
+            config.mkdir()
+            details = config.lstat()
+            target_identity = (int(details.st_dev), int(details.st_ino))
+            real_is_reparse = state_paths_module._is_reparse
+
+            def classify_target_as_reparse(observed):
+                if (int(observed.st_dev), int(observed.st_ino)) == target_identity:
+                    return True
+                return real_is_reparse(observed)
+
+            with mock.patch.object(
+                state_paths_module,
+                "_is_reparse",
+                side_effect=classify_target_as_reparse,
+            ):
+                self.assert_plan_error(
+                    lambda: capture_runner_plan_authoring_source(repo, package),
+                    "plan_source_invalid",
+                    source=True,
+                )
+
+    def test_confirmation_only_revalidates_but_never_writes_or_normalizes(self):
+        for state in ("absent_directory", "absent_file", "present"):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as temporary:
+                repo, package = self.make_repo(temporary)
+                config = package / "config"
+                plan = config / "verification-runner.json"
+                original = None
+                if state != "absent_directory":
+                    config.mkdir()
+                if state == "present":
+                    original = json.dumps(
+                        plan_payload(),
+                        indent=2,
+                        sort_keys=True,
+                    ).encode("utf-8")
+                    plan.write_bytes(original)
+                expected = capture_runner_plan_authoring_source(repo, package)
+
+                with (
+                    mock.patch.object(
+                        publisher_module,
+                        "create_physical_directory_exclusive",
+                    ) as create_directory,
+                    mock.patch.object(
+                        publisher_module,
+                        "_create_temporary",
+                    ) as create_temporary,
+                    mock.patch.object(publisher_module.os, "replace") as replace,
+                ):
+                    publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        CONFIRM_RUNNER_PLAN_SOURCE,
+                    )
+                create_directory.assert_not_called()
+                create_temporary.assert_not_called()
+                replace.assert_not_called()
+                self.assertEqual(config.exists(), state != "absent_directory")
+                self.assertEqual(plan.exists(), state == "present")
+                if original is not None:
+                    self.assertEqual(plan.read_bytes(), original)
+
+    def test_candidate_publication_covers_all_three_source_states(self):
+        candidate = self.candidate(plan_id="published-plan")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            publish_verification_runner_plan(repo, package, expected, candidate)
+            config = package / "config"
+            plan = config / "verification-runner.json"
+            self.assertEqual(plan.read_bytes(), candidate)
+            self.assertEqual([item.name for item in config.iterdir()], [plan.name])
+            self.assertEqual(
+                capture_runner_plan_authoring_source(repo, package).raw_blob,
+                candidate,
+            )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            config = package / "config"
+            config.mkdir()
+            sentinel = config / "viewer.json"
+            sentinel.write_text("{}", encoding="utf-8")
+            expected = capture_runner_plan_authoring_source(repo, package)
+            config_identity = expected.config_identity
+            publish_verification_runner_plan(repo, package, expected, candidate)
+            current = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(current.config_identity, config_identity)
+            self.assertEqual(current.raw_blob, candidate)
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "{}")
+            self.assert_no_temporary(config)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate(trusted_local=False)
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            replaced_identity = expected.file_identity
+            real_replace = publisher_module.os.replace
+            with mock.patch.object(
+                publisher_module.os,
+                "replace",
+                side_effect=real_replace,
+            ) as replace:
+                publish_verification_runner_plan(repo, package, expected, candidate)
+            self.assertEqual(replace.call_count, 1)
+            current = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(current.raw_blob, candidate)
+            self.assertNotEqual(current.file_identity, replaced_identity)
+            self.assert_no_temporary(plan.parent)
+
+    def test_successful_replace_is_the_final_publication_boundary(self):
+        candidate = self.candidate(plan_id="published-plan")
+
+        for state, expected_captures in (
+            ("absent_directory", 1),
+            ("present", 2),
+        ):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as temporary:
+                repo, package = self.make_repo(temporary)
+                if state == "present":
+                    self.write_physical_plan(package, self.candidate())
+                expected = capture_runner_plan_authoring_source(repo, package)
+
+                with mock.patch.object(
+                    publisher_module,
+                    "capture_runner_plan_authoring_source",
+                    side_effect=[expected] * expected_captures,
+                ) as capture:
+                    publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        candidate,
+                    )
+
+                self.assertEqual(capture.call_count, expected_captures)
+                plan = package / "config" / "verification-runner.json"
+                self.assertEqual(plan.read_bytes(), candidate)
+                self.assert_no_temporary(plan.parent)
+
+    def test_safe_source_drift_is_changed_and_foreign_bytes_are_preserved(self):
+        candidate = self.candidate(plan_id="candidate-plan")
+        foreign = self.candidate(plan_id="foreign-plan")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            plan = self.write_physical_plan(package, self.candidate())
+            expected = capture_runner_plan_authoring_source(repo, package)
+            plan.write_bytes(foreign)
+            self.assert_publisher_error(
+                lambda: publish_verification_runner_plan(
+                    repo,
+                    package,
+                    expected,
+                    candidate,
+                ),
+                "runner_plan_changed",
+                RUNNER_PLAN_CHANGED_MESSAGE,
+            )
+            self.assertEqual(plan.read_bytes(), foreign)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            prior_identity = expected.file_identity
+            replacement = plan.parent / "replacement.json"
+            replacement.write_bytes(original)
+            publisher_module.os.replace(replacement, plan)
+            observed = capture_runner_plan_authoring_source(repo, package)
+            self.assertEqual(observed.raw_blob, original)
+            self.assertNotEqual(observed.file_identity, prior_identity)
+            self.assert_publisher_error(
+                lambda: publish_verification_runner_plan(
+                    repo,
+                    package,
+                    expected,
+                    candidate,
+                ),
+                "runner_plan_changed",
+                RUNNER_PLAN_CHANGED_MESSAGE,
+            )
+            self.assertEqual(plan.read_bytes(), original)
+            self.assert_no_temporary(plan.parent)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            config = package / "config"
+            config.mkdir()
+            expected = capture_runner_plan_authoring_source(repo, package)
+            plan = config / "verification-runner.json"
+            plan.write_bytes(foreign)
+            self.assert_publisher_error(
+                lambda: publish_verification_runner_plan(
+                    repo,
+                    package,
+                    expected,
+                    candidate,
+                ),
+                "runner_plan_changed",
+                RUNNER_PLAN_CHANGED_MESSAGE,
+            )
+            self.assertEqual(plan.read_bytes(), foreign)
+
+    def test_config_identity_drift_is_changed_without_touching_new_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            config = package / "config"
+            config.mkdir()
+            expected = capture_runner_plan_authoring_source(repo, package)
+            old_config = package / "old-config"
+            config.rename(old_config)
+            config.mkdir()
+            sentinel = config / "foreign.txt"
+            sentinel.write_text("foreign", encoding="utf-8")
+
+            self.assert_publisher_error(
+                lambda: publish_verification_runner_plan(
+                    repo,
+                    package,
+                    expected,
+                    self.candidate(),
+                ),
+                "runner_plan_changed",
+                RUNNER_PLAN_CHANGED_MESSAGE,
+            )
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "foreign")
+            self.assertFalse((config / "verification-runner.json").exists())
+
+    def test_ignore_policy_drift_fails_closed_without_touching_plan(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            (repo / ".gitignore").unlink()
+
+            self.assert_publisher_error(
+                lambda: publish_verification_runner_plan(
+                    repo,
+                    package,
+                    expected,
+                    self.candidate(plan_id="candidate-plan"),
+                ),
+                "runner_plan_update_failed",
+                RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+            )
+            self.assertEqual(plan.read_bytes(), original)
+            self.assert_no_temporary(plan.parent)
+
+    def test_temp_after_source_drift_is_removed_before_replace(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            foreign = self.candidate(plan_id="foreign-plan")
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            real_create = publisher_module._create_temporary
+
+            def create_then_drift(config, candidate, *, root):
+                result = real_create(config, candidate, root=root)
+                plan.write_bytes(foreign)
+                return result
+
+            with (
+                mock.patch.object(
+                    publisher_module,
+                    "_create_temporary",
+                    side_effect=create_then_drift,
+                ),
+                mock.patch.object(publisher_module.os, "replace") as replace,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(plan_id="candidate-plan"),
+                    ),
+                    "runner_plan_changed",
+                    RUNNER_PLAN_CHANGED_MESSAGE,
+                )
+            replace.assert_not_called()
+            self.assertEqual(plan.read_bytes(), foreign)
+            self.assert_no_temporary(plan.parent)
+
+    def test_foreign_temp_replacement_is_not_deleted_by_cleanup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            real_create = publisher_module._create_temporary
+            foreign = b"foreign-temporary-object"
+            observed_paths = []
+
+            def replace_owned_temp(config, candidate, *, root):
+                owned = real_create(config, candidate, root=root)
+                owned.path.unlink()
+                owned.path.write_bytes(foreign)
+                observed_paths.append(owned.path)
+                return owned
+
+            with mock.patch.object(
+                publisher_module,
+                "_create_temporary",
+                side_effect=replace_owned_temp,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(plan_id="candidate-plan"),
+                    ),
+                    "runner_plan_update_failed",
+                    RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+                )
+            self.assertEqual(len(observed_paths), 1)
+            self.assertEqual(observed_paths[0].read_bytes(), foreign)
+            self.assertEqual(plan.read_bytes(), original)
+
+    def test_initial_create_rejects_foreign_directory_content_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            real_create = publisher_module._create_temporary
+            foreign_paths = []
+
+            def create_temp_and_foreign(config, candidate, *, root):
+                owned = real_create(config, candidate, root=root)
+                foreign = config / "foreign.txt"
+                foreign.write_text("foreign", encoding="utf-8")
+                foreign_paths.append(foreign)
+                return owned
+
+            with mock.patch.object(
+                publisher_module,
+                "_create_temporary",
+                side_effect=create_temp_and_foreign,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(),
+                    ),
+                    "runner_plan_update_failed",
+                    RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+                )
+            config = package / "config"
+            self.assertEqual(len(foreign_paths), 1)
+            self.assertEqual(foreign_paths[0].read_text(encoding="utf-8"), "foreign")
+            self.assertFalse((config / "verification-runner.json").exists())
+            self.assert_no_temporary(config)
+
+    def test_initial_create_rechecks_temp_identity_after_inventory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            real_check = publisher_module._single_link_matches
+            calls = 0
+            foreign = b"foreign-after-inventory"
+            foreign_paths = []
+
+            def swap_on_final_check(path, *, root, expected):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    path.unlink()
+                    path.write_bytes(foreign)
+                    foreign_paths.append(path)
+                return real_check(path, root=root, expected=expected)
+
+            with (
+                mock.patch.object(
+                    publisher_module,
+                    "_single_link_matches",
+                    side_effect=swap_on_final_check,
+                ),
+                mock.patch.object(publisher_module.os, "replace") as replace,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(),
+                    ),
+                    "runner_plan_update_failed",
+                    RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+                )
+            replace.assert_not_called()
+            self.assertEqual(calls, 2)
+            self.assertEqual(foreign_paths[0].read_bytes(), foreign)
+            self.assertFalse(
+                (package / "config" / "verification-runner.json").exists()
+            )
+
+    def test_initial_directory_race_is_reported_as_source_change(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+
+            def create_racing_directory(config, *, root):
+                config.mkdir()
+                raise StatePathError()
+
+            with mock.patch.object(
+                publisher_module,
+                "create_physical_directory_exclusive",
+                side_effect=create_racing_directory,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(),
+                    ),
+                    "runner_plan_changed",
+                    RUNNER_PLAN_CHANGED_MESSAGE,
+                )
+            self.assertTrue((package / "config").is_dir())
+            self.assertFalse(
+                (package / "config" / "verification-runner.json").exists()
+            )
+
+    def test_replace_failure_preserves_canonical_and_cleans_owned_temp(self):
+        injected = "private-path-and-exception-detail"
+        candidate = self.candidate(plan_id="candidate-plan")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            with mock.patch.object(
+                publisher_module.os,
+                "replace",
+                side_effect=OSError(injected),
+            ):
+                error = self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        candidate,
+                    ),
+                    "runner_plan_update_failed",
+                    RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+                )
+            self.assertNotIn(injected, repr(error))
+            self.assertNotIn(str(repo), repr(error))
+            self.assertEqual(plan.read_bytes(), original)
+            self.assert_no_temporary(plan.parent)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            with mock.patch.object(
+                publisher_module.os,
+                "replace",
+                side_effect=OSError(injected),
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        candidate,
+                    ),
+                    "runner_plan_update_failed",
+                    RUNNER_PLAN_UPDATE_FAILED_MESSAGE,
+                )
+            config = package / "config"
+            self.assertTrue(config.is_dir())
+            self.assertEqual(tuple(config.iterdir()), ())
+
+    def test_replace_failure_reports_a_safely_observed_last_moment_drift(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            original = self.candidate()
+            foreign = self.candidate(plan_id="foreign-plan")
+            plan = self.write_physical_plan(package, original)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            real_replace = publisher_module.os.replace
+
+            def install_foreign_then_fail(_source, _destination):
+                foreign_path = plan.parent / "foreign.json"
+                foreign_path.write_bytes(foreign)
+                real_replace(foreign_path, plan)
+                raise OSError("private-race-detail")
+
+            with mock.patch.object(
+                publisher_module.os,
+                "replace",
+                side_effect=install_foreign_then_fail,
+            ):
+                self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        self.candidate(plan_id="candidate-plan"),
+                    ),
+                    "runner_plan_changed",
+                    RUNNER_PLAN_CHANGED_MESSAGE,
+                )
+            self.assertEqual(plan.read_bytes(), foreign)
+            self.assert_no_temporary(plan.parent)
+
+    def test_candidate_validation_is_canonical_bounded_and_write_free_on_error(self):
+        invalid_candidates = (
+            json.dumps(plan_payload(), indent=2, sort_keys=True).encode("utf-8"),
+            b"x" * (PLAN_BLOB_UTF8_BYTE_LIMIT + 1),
+            bytearray(self.candidate()),
+            b"",
+        )
+        for candidate in invalid_candidates:
+            with self.subTest(candidate_type=type(candidate).__name__), tempfile.TemporaryDirectory() as temporary:
+                repo, package = self.make_repo(temporary)
+                expected = capture_runner_plan_authoring_source(repo, package)
+                error = self.assert_publisher_error(
+                    lambda: publish_verification_runner_plan(
+                        repo,
+                        package,
+                        expected,
+                        candidate,
+                    ),
+                    "invalid_argument",
+                    PUBLISHER_INVALID_ARGUMENT_MESSAGE,
+                )
+                self.assertNotIn(str(repo), repr(error))
+                self.assertFalse((package / "config").exists())
+
+    def test_exact_maximum_candidate_publishes_without_residue(self):
+        arguments = ["x" * 4_096] * 15 + [""]
+        base = replace_verification_runner_plan(
+            None,
+            basis=plan_basis(),
+            draft=decode_runner_plan_draft(
+                draft_bytes(steps=[step_payload(argv=arguments)])
+            ),
+        )
+        remaining = PLAN_BLOB_UTF8_BYTE_LIMIT - len(base.candidate_bytes)
+        arguments[-1] = "x" * remaining
+        boundary = replace_verification_runner_plan(
+            None,
+            basis=plan_basis(),
+            draft=decode_runner_plan_draft(
+                draft_bytes(steps=[step_payload(argv=arguments)])
+            ),
+        )
+        self.assertEqual(len(boundary.candidate_bytes), PLAN_BLOB_UTF8_BYTE_LIMIT)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, package = self.make_repo(temporary)
+            expected = capture_runner_plan_authoring_source(repo, package)
+            publish_verification_runner_plan(
+                repo,
+                package,
+                expected,
+                boundary.candidate_bytes,
+            )
+            plan = package / "config" / "verification-runner.json"
+            self.assertEqual(plan.read_bytes(), boundary.candidate_bytes)
+            self.assert_no_temporary(plan.parent)
 
 
 if __name__ == "__main__":

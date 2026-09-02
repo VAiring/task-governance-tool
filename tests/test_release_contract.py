@@ -351,7 +351,10 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             "references/copied.md",
             "research.md",
             "task-governance-tool/state/current/taskgov.sqlite",
+            "task-governance-tool/config/verification-runner.json",
             "task-governance-tool/config/viewer.json",
+            "task-governance-tool/config/effort-advisory.json",
+            "task-governance-tool/config/unrecognized-local.json",
             ".agents/skills/example/state/taskgov.sqlite-wal",
             "output/task-viewer.html",
             "cache/__pycache__/module.pyc",
@@ -386,13 +389,14 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             )
             state.parent.mkdir(parents=True)
             state.write_bytes(b"local generated state")
-            config = fixture / "task-governance-tool" / "config" / "viewer.json"
-            config.parent.mkdir()
-            config.write_text(
-                '{"schema_version":1,"profile":"visibility-refresh-v1",'
-                '"refresh_interval_seconds":30}',
-                encoding="utf-8",
-            )
+            config = fixture / "task-governance-tool" / "config"
+            config.mkdir()
+            for name in (
+                "verification-runner.json",
+                "viewer.json",
+                "effort-advisory.json",
+            ):
+                (config / name).write_text("local config", encoding="utf-8")
 
             result = check_fixture(fixture)
 

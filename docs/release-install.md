@@ -123,22 +123,36 @@ Install one physical package copy per governed project at exactly:
 
 No other ordinary stateful layout is supported. Before installation or update,
 show the complete destination and obtain explicit user approval. Do not
-overwrite an existing package without a separate update decision, and do not
-delete its generated project-local `state/` while replacing packaged core
-files.
+overwrite an existing package without a separate update decision. During an
+approved update, do not delete generated project-local `state/`, and leave each
+existing supported project-local configuration file byte-for-byte unchanged
+while replacing packaged core files:
 
-For a Git-managed target project, ensure the canonical Skill state directory
-is effectively ignored. This narrow target-local rule is recommended:
+- `config/verification-runner.json`
+- `config/viewer.json`
+- `config/effort-advisory.json`
+
+This preservation guarantee is limited to those three named paths. Release
+artifacts remain free of all `config/` content; that artifact exclusion does
+not extend byte preservation to unrecognized configuration files.
+
+For a Git-managed target project, the required taskgov ignore treatment is
+limited to generated Skill state and the canonical Runner Plan. These narrow
+target-local rules are recommended:
 
 ```gitignore
 /.agents/skills/task-governance-tool/state/
+/.agents/skills/task-governance-tool/config/verification-runner.json
 ```
 
-An enclosing worktree rule for the same directory is also accepted. Do not
-recommend repository-wide extension globs. The one directory rule contains
-this Skill's database, sidecars, backups, locks, generated Evidence JSON, and Viewer without
-hiding unrelated project fixtures or assets. Non-Git governed directories are
-valid and do not require an ignore file.
+Equivalent enclosing-worktree rules for those same paths are also accepted.
+Do not recommend repository-wide extension globs. The state-directory rule
+contains this Skill's database, sidecars, backups, locks, generated Evidence
+JSON, and generated Viewer without hiding unrelated project fixtures or
+assets. The Runner Plan rule ignores only its one canonical file. Upgrade
+preservation and Git ignore are independent: taskgov adds no ignore requirement
+for `config/viewer.json` or `config/effort-advisory.json`. Non-Git governed
+directories are valid and do not require an ignore file.
 
 From the target-project root, preview setup before the explicit write:
 
@@ -287,6 +301,14 @@ and no-partial-write behavior before it can become a release.
 The v0.11.0 and v0.12.0 candidate notes remain immutable lineage, and their
 rehearsals cannot satisfy this current gate. No candidate rehearsal selects or
 mutates user-wide, linked, junction, or custom-`--db` state.
+
+The same rehearsal must seed `config/verification-runner.json`,
+`config/viewer.json`, and `config/effort-advisory.json` before candidate
+packaged-core replacement and prove that each remains byte-identical through
+replacement, subsequent `setup` and migration, and paired rollback. Those
+files remain project-local and are not added to rollback's managed artifact
+set. Existing package-inventory and artifact-exclusion assertions must
+continue to prove that release artifacts contain no `config/` content.
 
 Rollback restores one matched pre-migration package, database, and managed
 artifact set as a single compatibility point, then proves that the legacy

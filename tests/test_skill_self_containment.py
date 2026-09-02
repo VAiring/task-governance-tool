@@ -1035,7 +1035,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "/.agents/skills/task-governance-tool/state/\n"
                 "/.agents/skills/task-governance-tool/config/verification-runner.json"
             ),
-            "docs/release-install.md": expected_state,
+            "docs/release-install.md": (
+                "/.agents/skills/task-governance-tool/state/\n"
+                "/.agents/skills/task-governance-tool/config/verification-runner.json"
+            ),
         }
         for relative, expected_block in expected_blocks.items():
             with self.subTest(relative=relative):
@@ -1194,13 +1197,17 @@ class SkillSelfContainmentTests(unittest.TestCase):
             generated_viewer = generated / "viewer" / "task-viewer.html"
             generated_viewer.parent.mkdir()
             generated_viewer.write_text("generated", encoding="utf-8")
-            generated_config = source / "config" / "viewer.json"
-            generated_config.parent.mkdir()
-            generated_config.write_text(
-                '{"schema_version":1,"profile":"visibility-refresh-v1",'
-                '"refresh_interval_seconds":30}',
-                encoding="utf-8",
-            )
+            generated_config = source / "config"
+            generated_config.mkdir()
+            for name in (
+                "verification-runner.json",
+                "viewer.json",
+                "effort-advisory.json",
+            ):
+                (generated_config / name).write_text(
+                    "local config",
+                    encoding="utf-8",
+                )
             for name in (
                 "scratch.sqlite",
                 "scratch.sqlite3",
@@ -1406,7 +1413,12 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 f"scripts/task_governance_tool/{module}",
                 manifest["core_files"],
             )
-        self.assertNotIn("config/viewer.json", manifest["core_files"])
+        for relative in (
+            "config/verification-runner.json",
+            "config/viewer.json",
+            "config/effort-advisory.json",
+        ):
+            self.assertNotIn(relative, manifest["core_files"])
         self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))
         self.assertFalse(any(path.startswith("task-governance-tool/config/") for path in tracked))
         self.assertFalse(any(path.endswith("/task-viewer.html") for path in tracked))

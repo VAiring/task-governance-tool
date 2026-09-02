@@ -26,6 +26,20 @@ LEGACY_COMMIT = "f017ee228d435d892fb7136c5e79b3063320fac5"
 LEGACY_COMPLETION = "a" * 40
 POST_UPGRADE_VERIFICATION = "Run post-upgrade integrated acceptance"
 POST_UPGRADE_FINGERPRINT = "sha256:" + "b" * 64
+SUPPORTED_LOCAL_CONFIG_CONTENTS = {
+    Path("config/verification-runner.json"): (
+        b'{\r\n  "version": 1, "plan_id": "upgrade-rehearsal", '
+        b'"trusted_local": true, "entries": []\r\n}\r\n'
+    ),
+    Path("config/viewer.json"): (
+        b'{ "schema_version": 1, "profile": "visibility-refresh-v1", '
+        b'"refresh_interval_seconds": 47 }\r\n'
+    ),
+    Path("config/effort-advisory.json"): (
+        b'{\r\n  "schema_version": 1, "profile": "informational-v1", '
+        b'"enabled": false, "thresholds": {}\r\n}\r\n'
+    ),
+}
 LEGACY_SETUP_WRITES = [
     "legacy_state_publish",
     "migration_backup",
@@ -84,10 +98,27 @@ def staged_package_paths() -> tuple[Path, ...]:
     return tuple(paths)
 
 
+def supported_local_config_snapshot(skill_root: Path) -> dict[Path, bytes]:
+    return {
+        relative: (skill_root / relative).read_bytes()
+        for relative in SUPPORTED_LOCAL_CONFIG_CONTENTS
+        if (skill_root / relative).is_file()
+    }
+
+
+def seed_supported_local_configs(skill_root: Path) -> dict[Path, bytes]:
+    for relative, content in SUPPORTED_LOCAL_CONFIG_CONTENTS.items():
+        target = skill_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    return supported_local_config_snapshot(skill_root)
+
+
 def overlay_current_package(skill_root: Path) -> None:
     state = skill_root / "state"
+    config = skill_root / "config"
     for child in tuple(skill_root.iterdir()):
-        if child == state:
+        if child in {state, config}:
             continue
         if child.is_dir():
             shutil.rmtree(child)
@@ -100,6 +131,23 @@ def overlay_current_package(skill_root: Path) -> None:
         destination = skill_root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
+
+
+def restore_compatibility_point(skill_root: Path, compatibility: Path) -> None:
+    config = skill_root / "config"
+    for child in tuple(skill_root.iterdir()):
+        if child == config:
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+    for source in compatibility.iterdir():
+        destination = skill_root / source.name
+        if source.is_dir():
+            shutil.copytree(source, destination)
+        else:
+            shutil.copyfile(source, destination)
 
 
 def run_cli(
@@ -332,10 +380,20 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             shutil.copytree(legacy_skill, compatibility)
             compatibility_snapshot = tree_snapshot(compatibility)
             legacy_state_snapshot = tree_snapshot(legacy_skill / "state")
+            self.assertFalse((compatibility / "config").exists())
+            supported_config_snapshot = seed_supported_local_configs(legacy_skill)
+            self.assertEqual(
+                supported_config_snapshot,
+                SUPPORTED_LOCAL_CONFIG_CONTENTS,
+            )
 
             overlay_current_package(legacy_skill)
             overlay_state_snapshot = tree_snapshot(legacy_skill / "state")
             self.assertEqual(overlay_state_snapshot, legacy_state_snapshot)
+            self.assertEqual(
+                supported_local_config_snapshot(legacy_skill),
+                supported_config_snapshot,
+            )
             version = run_cli(legacy_skill, project, "--version")
             self.assertEqual(version.returncode, 0)
             self.assertEqual(version.stdout.strip(), "taskgov 0.13.0")
@@ -352,6 +410,10 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertEqual(
                 tree_snapshot(legacy_skill / "state"),
                 overlay_state_snapshot,
+            )
+            self.assertEqual(
+                supported_local_config_snapshot(legacy_skill),
+                supported_config_snapshot,
             )
 
             failed_result = run_injected_setup(legacy_skill, project)
@@ -377,6 +439,10 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                 )
             )
             self.assertEqual(sqlite_version(legacy_db), 2)
+            self.assertEqual(
+                supported_local_config_snapshot(legacy_skill),
+                supported_config_snapshot,
+            )
 
             upgraded = self.invoke(
                 legacy_skill, project, "setup",
@@ -387,6 +453,10 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertEqual(upgraded["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(upgraded["data"]["completed_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(upgraded["data"]["evidence_status"], "published")
+            self.assertEqual(
+                supported_local_config_snapshot(legacy_skill),
+                supported_config_snapshot,
+            )
 
             current_db = legacy_skill / "state" / "current" / "taskgov.sqlite"
             viewer = (
@@ -636,9 +706,19 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
 
             # Never invoke the legacy runtime until its matching package and
             # schema-v2 state have both been restored.
-            shutil.rmtree(legacy_skill)
-            shutil.copytree(compatibility, legacy_skill)
-            self.assertEqual(tree_snapshot(legacy_skill), compatibility_snapshot)
+            restore_compatibility_point(legacy_skill, compatibility)
+            self.assertEqual(
+                tuple(
+                    item
+                    for item in tree_snapshot(legacy_skill)
+                    if item[0] != "config" and not item[0].startswith("config/")
+                ),
+                compatibility_snapshot,
+            )
+            self.assertEqual(
+                supported_local_config_snapshot(legacy_skill),
+                supported_config_snapshot,
+            )
             restored_db = next(
                 (legacy_skill / "state" / "projects").glob("*/taskgov.sqlite")
             )

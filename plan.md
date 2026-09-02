@@ -150,32 +150,46 @@ gates. It is not the product contract, execution ledger, or evidence store:
   bounded legacy lineage. This is preservation, not acceptance of caller-
   supplied legacy vocabulary.
 
-<a id="tg-m20s-3"></a>
+<a id="m25-select-split-merge-register"></a>
 
-### TG-M20S.3 Accepted Inactive Decomposition Design
+### M25 Accepted Inactive Select-Split-Merge-Register Design
 
-The later explicit user decision registered TG-M20S.3, Task
-`tg_task_286129dbca4d25ab`, in lane `TG-M20S-TASK-DECOMPOSITION` at order 30,
-dependent on accepted TG-M20S.2. It is a Tier 2 design-only unit for two
-explicit authority events: a request to register or taskize authorized work,
-and an explicit scope addition to an in-progress or review-pending Task.
+M25.1, Task `tg_task_8e33e15cd97a28ee`, in lane
+`TG-M25-TASK-DECOMPOSITION` at order 10, is sequenced after TG-RPA.6; the Task
+database owns fulfillment of that gateway. It is a Tier 2 docs-only unit for
+two explicit authority events: a request to register or taskize authorized
+work, and an explicit scope addition to an in-progress or review-pending Task.
 
-The accepted design uses independently acceptable, verifiable, committable,
-and completable scope to distinguish keep-current, revise-current,
-propose-successor, handoff, pause, and block. Explicit taskization permits one
-non-recursive bounded multi-Task registration pass when the candidates map
-one-to-one to accepted outcomes and scope, order, and permissions are
-unchanged. A proposed mid-Task successor still requires explicit user approval
-before registration, and only one proposal is allowed per explicit addition.
-Unknown or negative independence forbids decomposition rather than generating
-more questions; exact whole-scope registration or current-Contract revision is
-the safe fallback when authorized.
+The accepted design selects stable responsibilities, performs one flat Split,
+then one global Merge of all fragment-only transitive groups and never
+re-Splits. Final slices conserve exact scope and permissions, declare consumed
+inputs and produced outputs, leave a correct ordered repository state, carry
+locally attributable verification/review, and fit a fresh-agent context without
+requiring standalone user value. Sharing files, tests, commands, or fixtures
+alone does not force Merge.
 
-Design acceptance activates no current behavior and adds no automatic Task
-creation, recursive or size-only split, command, schema, Viewer field,
-parent/child model, background LLM work, network use, target-project mutation,
-or implementation Task. In-scope discovery and cross-module failure remain
-outside until separately supported. The exact Task DB record owns live state.
+Contracts copy explicit authority only. Missing split or Contract detail falls
+back to one whole-outcome revision-zero Task when outcome and permission are
+clear; exact mandated-boundary conflicts or unclear outcome/permission use one
+grouped question and no partial write. Partial-add recovery preserves successful
+registrations and adds only proven omissions without deletion or repartition.
+
+Binding authority supplies a Review Tier floor. With no mapping, the closed
+fallback is Tier 2 for schema/migration, JSON contract, CLI write behavior,
+target mutation, privacy/logging, Skill trigger, verification/review/completion
+gate, milestone/plan acceptance, and implementation-binding normative docs;
+Tier 0 for wholly mechanical meaning-preserving work; and Tier 1 otherwise.
+Unknown, size, difficulty, duration, failure count, safety wording, or reviewer
+availability never alone selects Tier 2. Mid-Task keep preserves Tier, revise
+raises only to a higher resulting floor and never auto-lowers, a successor uses
+its own scope, and Merge into current uses the maximum. Later integration
+review never replaces each Task's required gate.
+
+Design-first registers no automatic implementation Task. This acceptance
+activates no current behavior and adds no command, schema, JSON or database
+field, Viewer/Runner change, Skill trigger, parent/child or dependency model,
+normal-loop call, network use, target mutation, or execution unit. The exact
+Task DB record owns live state.
 
 <a id="current-verification-receipt"></a>
 
@@ -366,9 +380,9 @@ or changed acceptance still requires explicit authority.
 These items are not implementation authority. Each needs a separately approved
 contract and execution unit.
 
-- After accepted TG-M20S.3, decide separately whether to approve a bounded
-  activation unit. Never register or activate implementation as a design side
-  effect.
+- The accepted inactive M25 Select-Split-Merge-Register contract does not itself
+  authorize activation. Never register or activate implementation as a design
+  side effect.
 - Decide separately whether to approve the still-proposed verification-
   guardrail successor inventory before reconsidering that Skill-only guidance.
 - Decide whether later product scope should add project-profile detection,

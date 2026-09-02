@@ -10,9 +10,9 @@ Bundles, deterministic Evidence JSON, the bounded offline/mock derived-evidence
 Analyzer, and the explicitly opted-in trusted-local verification Runner with a
 closed manual fallback. Schema v20 remains a supported migration source and
 audit-only Runner lineage; schema v21 is the current persistence and gate basis.
-TG-M20S.3 remains an accepted but inactive static design. The Task database owns
-live state and evidence; completed execution narrative belongs only in indexed
-history.
+M25 Select-Split-Merge-Register remains an accepted but inactive static design.
+The Task database owns live state and evidence; completed execution narrative
+belongs only in indexed history.
 
 This document is the current implementation design for the behavior specified
 in `docs/specification.md`. The [authority index](authority.md) and live Task
@@ -3518,130 +3518,126 @@ design. The exact publication-commit form is indexed by
 [the historical documentation index](history/README.md); no active product or
 release guarantee depends on that historical copy.
 
-## Accepted But Inactive TG-M20S.3 Activation Design
+## Accepted But Inactive M25 Select-Split-Merge-Register Design
 
-TG-M20S.3, Task `tg_task_286129dbca4d25ab`, freezes the instruction-layer
-design for the accepted decomposition contract in `docs/specification.md`.
-Nothing in this section is wired into the current package. A later separately
-approved activation changes Skill guidance and package references while the
-deterministic CLI, repository interfaces, schema, Viewer, and command inventory
-remain unchanged.
+M25.1, Task `tg_task_8e33e15cd97a28ee`, freezes the instruction-layer design
+for the inactive contract in `docs/specification.md`. Nothing in this section is
+wired into the current package. Later separately approved activation may change
+Skill guidance and package references while the deterministic CLI, repository
+interfaces, schema, Viewer, Runner, and command inventory remain unchanged.
 
-### Instruction-Layer Classifier
+### Session-Local Select-Split-Merge Classifier
 
-The future Skill treats one explicit user message as one session-local event
-and classifies it as either `registration` or `mid_task_scope_addition` before
-considering decomposition. An in-scope discovery, test failure, Effort result,
-cross-module failure, inferred dependency, or model preference does not create
-either event.
+The future Skill treats one semantic taskization or scope-addition outcome as
+one session-local event and classifies it as either `registration` or
+`mid_task_scope_addition`. Replies, clarifications, paraphrases, and answers
+about that outcome remain the same event; only materially changed authority for
+scope, order, or permission creates a new event. An in-scope discovery, test
+failure, Effort result, cross-module failure, inferred dependency, task size,
+or model preference does not create either event.
 
-For that event the agent forms a bounded worksheet containing only:
+For the event, session-local reasoning holds only:
 
-- the total authorized outcome and unchanged permission boundary;
-- candidate outcome/acceptance partitions already supported by authority;
-- `acceptance_independent`, `verification_independent`,
-  `commit_independent`, and `completion_independent`, each as
-  `yes|no|unknown` with a concrete reason;
-- the existing `kind`, `lane`, `order`, and review tier capable of expressing
-  the proposed sequence; and
-- any explicit user placement direction.
+- the complete authorized outcome and unchanged permission boundary;
+- explicit Contract facts, binding Review Tier mappings, order, and placement;
+- flat candidate responsibilities with their consumed inputs, produced outputs,
+  repository-state boundary, local verification/review attribution, and
+  existing lane/order representation; and
+- concrete fragment-to-owner coupling used by the one global Merge.
 
-The worksheet is transient reasoning, not a database record, JSON contract,
-Task field, or prompt-log artifact. Aggregate independence is `yes` only when
-all four fields are `yes`, `no` when any field is `no`, and `unknown` otherwise.
-A known `no` therefore dominates any simultaneous unknown. The scope-
-conservation check is separate: the candidate union must equal the authorized
-outcome exactly, with no overlap, omission, new permission, or inferred work.
+These values are not a database record, JSON contract, Task field, dependency
+model, parser input, helper-owned worksheet, or prompt-log artifact. A fresh
+agent boundary is satisfied when the final group's existing Task Contract,
+routed authority, and declared predecessor outputs are sufficient; it has no
+numeric token, file, line, or duration threshold.
 
-The classifier performs one pass. It cannot classify the result again,
-subdivide a proposed successor, invent a parent, or use size/effort metrics as
-predicate evidence. Candidate count cannot exceed the one-to-one, explicitly
-accepted outcomes in the initiating authority; an outcome cannot be expanded
-into candidates by file, step, test, or implementation detail. This makes the
-number of potential writes finite without an arbitrary repository-wide cap.
+The classifier runs this fixed sequence once:
 
-### Registration Adapter
+1. `Select` the one explicit authority envelope and stable responsibility
+   boundaries within it.
+2. `Split` once into a flat candidate set whose exact unions conserve the whole
+   outcome and explicit permission envelope without omission or expansion, and
+   whose sequence uses representable order.
+3. `Merge` all concretely coupled, fragment-only transitive groups in one global
+   pass. Multiple disjoint groups may merge simultaneously; sharing files,
+   tests, commands, or fixtures alone creates no coupling. Ambiguous ownership
+   invokes the fallback rather than an arbitrary group.
+4. Treat the resulting groups as final. There is no recursive classification,
+   second Merge, re-Split, parent/child graph, or size-based optimization.
 
-For explicit taskization, the classifier returns one of
-`register_bounded_set`, `register_single`, or `no_write`:
+### Registration Adapter And Partial-Add Recovery
 
-1. `register_bounded_set` requires aggregate `yes` for every candidate, proven
-   conservation, representable order, and unchanged permissions. The existing
-   `task add` leaf is invoked once per candidate; the initiating request is the
-   approval for the finite set and no per-Task confirmation is inserted.
-2. `register_single` is the negative and unknown fallback only when one exact
-   Contract can truthfully preserve the whole authorized outcome and the user
-   did not mandate incompatible separate boundaries. It invokes `task add`
-   once and does not ask a decomposition-only question.
-3. `no_write` applies when even the whole Contract is not authorized or
-   expressible, or when the user mandated exact separate Tasks but a boundary
-   is `no` or `unknown`. The agent reports the missing fact or conflict without
-   inventing, silently merging, or partially redefining Tasks.
+For explicit taskization, each final group uses one existing `task add`. The
+group's non-zero Contract copies only explicit scope, acceptance, constraints,
+and authority reference. Inputs and outputs remain prose in those existing
+fields, while order remains existing lane/order; no dependency or worksheet
+field is introduced.
 
-If a repeated existing `task add` sequence fails after a strict subset was
-written, the agent stops the pass, inspects the exact registered set through
-existing reads, and reports or durably preserves the still-authorized
-remainder. It adds only unambiguously missing candidates after the ordinary
-failure is resolved; it never blindly retries, duplicates a Task, expands the
-partition, or starts a recursive decomposition pass.
+If outcome and registration permission are clear but split or Contract detail
+is missing, the adapter adds one whole-outcome Task with Contract revision zero.
+It asks no per-candidate question. It asks one grouped question, with no partial
+write, only when exact user-mandated boundaries conflict with a truthful final
+set or outcome/permission is too unclear for one honest whole-outcome Task.
+
+If explicit authority requires an implementation-binding design decision first,
+the adapter registers only that design responsibility unless the same authority
+already states truthful ordered design and implementation Contracts. A later
+implementation Task requires a later explicit registration event based on the
+produced design authority; the adapter does not synthesize it.
+
+After a strict subset of an existing `task add` sequence succeeds, the adapter
+stops and reads the exact registered set. It preserves successful additions and
+the authorized remainder, then adds only groups proven missing after the
+ordinary failure is resolved. It performs no deletion, duplicate add,
+repartition, batch retry, or second Select-Split-Merge pass.
 
 Registration changes governance state only. It grants no implementation,
 target-project, Git, network, or external-system permission.
 
+### Review Tier Resolver
+
+The future instruction layer resolves each final group before registration:
+
+1. apply every explicit binding authority floor governing that scope;
+2. with no binding mapping, select Tier 2 for schema/migration, JSON contract,
+   CLI write behavior, target mutation, privacy/logging, Skill trigger,
+   verification/review/completion gate, milestone/plan acceptance, or
+   implementation-binding normative documentation;
+3. otherwise select Tier 0 only for wholly mechanical meaning-preserving work;
+   and
+4. select Tier 1 for every remaining scope.
+
+An explicitly authorized higher Tier is permitted. Ordinary registration input
+cannot lower a binding floor; only an explicit governance change can change the
+mapping. Unknown, size, difficulty, duration, failure count, safety wording, or
+reviewer availability never alone selects Tier 2. Each Task retains its own
+review gate; later integration review is not a substitute.
+
 ### Mid-Task Adapter And State Effects
 
 For an explicit addition to an `in_progress` or `review_pending` Task, the
-future Skill first chooses the scope disposition, then its continuation state:
+future Skill applies the same one-pass classifier to the addition and its
+relationship to the current responsibility:
 
-1. recognize a semantic no-op as `keep-current`;
-2. honor an explicit keep-current placement as `revise-current` when the
-   addition is new and can be incorporated safely;
-3. with aggregate `yes` and proven conservation/order, either register the one
-   successor when the same message explicitly approves separate registration,
-   or emit one write-free `propose-successor`;
-4. with aggregate `no` or `unknown`, forbid splitting and use
-   `revise-current` when one exact safe Contract can hold the addition; and
-5. otherwise use `handoff` as the bounded scope-preservation disposition;
-   after it, continue for a nonblocking addition or overlay `pause` or `block`
-   under the existing temporary or acceptance-preventing rules and only after
-   safe authorized work is exhausted.
+1. already-covered scope selects `keep-current`, performs no Contract write,
+   and preserves the current Tier;
+2. a final group kept in or globally merged into current uses the existing
+   semantic Contract-revision write, then a separate existing Tier edit only
+   when `max(current Tier, resulting floors)` is higher; it never auto-lowers
+   and review does not advance between those writes;
+3. a successor uses its own scope floor and existing lane/order. The same
+   message registers it only when explicit taskization or separate placement is
+   present; otherwise the adapter emits one write-free proposal; and
+4. an addition that cannot yet be placed truthfully uses existing bounded
+   Handoff, then continue, pause, or block only under their existing conditions.
 
-The proposal contains the exact proposed Contract, review tier, lane/order,
-permission boundary, and current-versus-successor partition. A proposal does
-not call taskgov. While it is unresolved, safe work within the unchanged
-current Contract continues. If the session or current Task would end first,
-the existing `handoff record` path stores only its at-most-1,000-character
-sanitized summary covering every added outcome and an at-most-1,000-character
-pending-decision rationale. It is deliberately not an
-encoding of the full proposed Contract, review tier, lane/order, partition, or
-event identity. A resumed agent surfaces the unresolved Handoff but neither
-reconstructs nor registers a successor from it; missing exact fields require
-current explicit authority. Rejection, paraphrase, clarification, or a direct
-answer about that proposal does not reset the one-proposal allowance; only
-materially changed user authority for scope, order, or permission creates a
-new event. No persisted event ID, proposal counter, or new state is added.
-
-An approved successor uses one existing `task add`. A successor that must
-follow the current Task uses the next available order in its sequential lane;
-`optional` is used only when the outcome is genuinely independent. An
-unrepresentable relationship fails decomposition instead of creating an
-implicit dependency. An explicit instruction to keep the work current uses the
-existing Contract-only `task edit` path. Its current revision, target,
-receipts, findings, completion evidence, and `review_pending -> in_progress`
-effects remain exactly those of the existing semantic-revision contract.
-
-`keep-current` and a pending proposal perform no Contract write. Their current
-target and evidence remain valid only for unchanged target material; ordinary
-target replacement and fresh review still apply after later material changes.
-Handoff preserves but does not expand acceptance or satisfy the total user
-request. If an addition cannot safely enter a Contract but prevents acceptance,
-the Handoff write occurs first and the applicable pause/block status write
-second. Pause and block never replace the scope disposition or create a Task.
-When `revise-current` must be followed by a pause or blocker, the Contract-only
-edit is performed first and the separate status edit second, preserving
-existing CLI validation. The normal current/next/execution/review/completion
-green path adds no governance call; only the two explicit event paths can
-invoke the already-public writes described above.
+Moving already-covered work requires explicit repartition authority, and an
+unrepresentable order never creates an implicit dependency. Existing semantic
+revision continues to invalidate stale target, review, and completion evidence;
+`keep-current` preserves them only under ordinary exact-target rules. A pending
+proposal is not persisted as a new model or reconstructed from Handoff. The
+same event cannot run another Split after global Merge. Scope preservation
+precedes any pause or block, and the normal Task loop gains no new call.
 
 ### Atomic Future Synchronization Boundary
 
@@ -3650,8 +3646,8 @@ one reviewed revision:
 
 - add only the concise trigger gate and disposition rules to
   `task-governance-tool/SKILL.md`;
-- place the full predicates, decision tables, ordering examples, restart
-  preservation rule, and negative/unknown cases in
+- place the full one-pass sequence, responsibility/fragment cases, Tier table,
+  ordering examples, and recovery rules in
   `task-governance-tool/references/task_workflow.md`;
 - update `task-governance-tool/release-manifest.json` for the changed package
   digests and apply the repository's then-current version/release rules;
@@ -3668,8 +3664,8 @@ but is expected to remain byte-identical because its current registration and
 scope-preservation metadata already covers the two triggers. Scripts,
 migrations, repositories, CLI parsing/output, Viewer code/template, and public
 command leaves are outside the write set and must be proven unchanged. The
-activation must be proposed and approved separately; TG-M20S.3 registers no
-implementation Task.
+activation must be proposed and approved separately; M25.1 registers no
+activation or implementation Task.
 
 ### Neutral Forward-Test Boundary
 
@@ -3678,26 +3674,24 @@ candidate Skill and neutral workloads, not the expected branch or M20S study
 result. A separate evaluator checks both the response and resulting Task DB.
 The fixed matrix includes:
 
-- registration: an eligible multi-outcome partition, a large but atomically
-  coupled outcome, an unknown verification/commit boundary, and user-mandated
-  separate boundaries that are not independently valid; plus an injected
-  failure after one successful `task add`, followed by exact-set inspection,
-  explicit or durable remainder preservation, and retry of only the
-  unambiguously missing candidate with no duplicate or repartition;
-- mid-Task positive paths: already-covered scope, explicit keep-current,
-  independently eligible addition without placement, and an explicit separate-
-  Task instruction;
-- mid-Task fallbacks: concrete coupling, incomplete evidence, nonblocking
-  preservation, revise-then-pause, revise-then-block, a temporary no-safe-
-  progress wait, and an acceptance-preventing authority or safety failure; and
-- invariants: one proposal per event, no Task write before approval, no
-  recursive or size-only split, exact scope conservation, correct Contract and
-  review invalidation/preservation, unchanged current command leaves and schema,
-  fresh review when changed material escapes an unchanged Contract's prior
-  target, Handoff/resume in a fresh session without reconstructing or emitting
-  a second proposal even when valid proposed Contract fields exceed Handoff
-  bounds, and no invocation from discovery, test failure, Effort, or cross-
-  module failure alone.
+- responsibility slices that share files, tests, commands, or fixtures yet
+  remain separate; an internal enabling slice without standalone user value;
+  and fragment ownership whose transitive groups merge once with no re-Split;
+- exact scope/permission conservation, representable ordering, fresh-agent
+  reconstruction from Contract/authority/predecessor output, and ambiguous
+  ownership falling back instead of being guessed;
+- one whole-outcome revision-zero Task, the sole grouped-question boundary,
+  design-first without automatic implementation registration, and partial-add
+  recovery that preserves successful writes and adds only proven omissions;
+- binding Tier floors, one example for every Tier 2 protected category, wholly
+  mechanical Tier 0, residual Tier 1, every excluded Tier-2 rationale, explicit
+  higher Tier, and no ordinary lowering of a binding floor;
+- mid-Task keep, revise, successor, and merge-into-current Tier effects,
+  including separate Contract/Tier writes and no auto-lowering; and
+- unchanged current command leaves, schema, Runner, normal-loop call count,
+  target/evidence freshness, Handoff bounds, and no invocation from discovery,
+  test failure, Effort, or cross-module failure alone. Each Task's review gate
+  must pass independently of later integration review.
 
 Positive, negative, and unknown cases use parallel wording and equal available
 authority so the prompt does not reveal the expected result. A valid result
@@ -4577,8 +4571,9 @@ stale detection, parent/child/checklist execution units, manual backup/restore/
 export, generic browser-state persistence, live server, browser launch,
 network synchronization, and update checking.
 
-Any extension, including the accepted but inactive TG-M20S.3 design, must
-preserve local-first operation, current privacy and target-project safety,
-explicit authority for mutation, narrow repository boundaries, and concise
-Skill guidance. It requires synchronized specification, design, plan, tests,
-and review rather than reuse of a historical design capture.
+Any extension, including the accepted but inactive M25
+Select-Split-Merge-Register design, must preserve local-first operation, current
+privacy and target-project safety, explicit authority for mutation, narrow
+repository boundaries, and concise Skill guidance. It requires synchronized
+specification, design, plan, tests, and review rather than reuse of a historical
+design capture.

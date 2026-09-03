@@ -317,6 +317,7 @@ def _seed_targeted_m21_fixture(
     root: Path,
     *,
     record_receipt: bool,
+    verification_required: bool = True,
 ):
     install = make_physical_install(root, git_managed=True)
     (install.project_root / "fixture.txt").write_text(
@@ -372,8 +373,14 @@ def _seed_targeted_m21_fixture(
         "in_progress",
         "--review-tier",
         "0",
-        "--verification",
-        "python -m unittest tests.test_m243b_schema21_compatibility",
+        *(
+            (
+                "--verification",
+                "python -m unittest tests.test_m243b_schema21_compatibility",
+            )
+            if verification_required
+            else ()
+        ),
         "--contract-scope",
         "Validate one persisted schema21 Runner history fixture.",
         "--contract-acceptance",
@@ -415,7 +422,7 @@ def _seed_targeted_m21_fixture(
         "--summary",
         "Tier zero review is not required",
     )
-    if record_receipt:
+    if record_receipt and verification_required:
         _installed_json(
             testcase,
             install,
@@ -437,11 +444,17 @@ def _seed_targeted_m21_fixture(
     return install, target, task_id, commit
 
 
-def _seed_completed_m21_fixture(testcase: unittest.TestCase, root: Path):
+def _seed_completed_m21_fixture(
+    testcase: unittest.TestCase,
+    root: Path,
+    *,
+    verification_required: bool = True,
+):
     install, target, task_id, commit = _seed_targeted_m21_fixture(
         testcase,
         root,
-        record_receipt=True,
+        record_receipt=verification_required,
+        verification_required=verification_required,
     )
     _installed_json(
         testcase,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -14,17 +15,14 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from tests import test_m242_r3a_schema20_storage as _schema20_fixture  # noqa: E402
 from tests import test_m243b_schema21_compatibility as _schema21_fixture  # noqa: E402
-from tests.m14_test_support import tree_snapshot  # noqa: E402
-from task_governance_tool import storage  # noqa: E402
-from task_governance_tool.analysis_contracts import (  # noqa: E402
-    build_descriptor,
-    default_recipe,
-)
-from task_governance_tool.analysis_packet import build_analysis_packet  # noqa: E402
-from task_governance_tool.evidence_consumer import (  # noqa: E402
+from tests.evidence_reader_oracle import (  # noqa: E402
     read_evidence_index,
     validate_evidence_source,
 )
+from tests.m14_test_support import tree_snapshot  # noqa: E402
+from tests.test_m242_runner_service import RunnerServiceFixture  # noqa: E402
+from tests.test_m243c_runner_gate import _complete_runner_pass  # noqa: E402
+from task_governance_tool import storage  # noqa: E402
 from task_governance_tool.evidence_projection import (  # noqa: E402
     build_projection_bundle_artifact,
 )
@@ -161,11 +159,60 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
                     ),
                 )
 
-    def test_fresh_v21_bundle_reaches_analyzer_packet_without_evidence_write(
+    def _assert_published_v21_source(self, target, task_id: str):
+        publication = _schema21_fixture.publish_setup_evidence_projection(
+            target,
+            observed_at="2026-08-29T00:00:00Z",
+        )
+        self.assertEqual(publication.code, "succeeded")
+        before = tree_snapshot(target.resolved_evidence_root)
+        published_index = json.loads(target.resolved_evidence_index.read_bytes())
+        published_entry = next(
+            row
+            for row in published_index["payload"]["entries"]
+            if row["task_id"] == task_id
+        )
+        published_bundle = json.loads(
+            (target.resolved_evidence_root / published_entry["bundle_file"]).read_bytes()
+        )
+
+        index = read_evidence_index(target.resolved_evidence_root)
+        entry = next(row for row in index.entries if row["task_id"] == task_id)
+        source = validate_evidence_source(index, entry)
+        self.assertEqual((index.source_schema_version, index.format_version), (21, 2))
+        self.assertEqual(index.project_id, target.project.project_id)
+        self.assertEqual(
+            index.projection_generation,
+            published_index["payload"]["projection_generation"],
+        )
+        self.assertEqual(index.index_digest, published_index["index_digest"])
+        self.assertEqual(entry, published_entry)
+        self.assertEqual(entry["bundle_format_version"], 2)
+        self.assertEqual(source.source_kind, "native_bundle")
+        self.assertEqual(
+            source.source_basis,
+            {
+                "index_format_version": 2,
+                "source_schema_version": 21,
+                "project_id": index.project_id,
+                "projection_generation": index.projection_generation,
+                "index_digest": index.index_digest,
+                "entry": published_entry,
+            },
+        )
+        self.assertEqual(source.source, published_bundle)
+        self.assertEqual(source.source["format_version"], 2)
+        self.assertEqual(source.source["payload"]["source_schema_version"], 21)
+        self.assertEqual(source.source["payload"]["bundle_version"], 2)
+        self.assertEqual(source.source["payload"]["task"]["task_id"], task_id)
+        self.assertEqual(tree_snapshot(target.resolved_evidence_root), before)
+        return source
+
+    def test_fresh_v21_bundle_reaches_independent_reader_without_evidence_write(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory(
-            prefix=".tmp-m244b-fresh-analyzer-",
+            prefix=".tmp-m244b-fresh-reader-",
             dir=ROOT,
         ) as temporary:
             _install, target, task_id = (
@@ -174,37 +221,108 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
                     Path(temporary),
                 )
             )
-            publication = _schema21_fixture.publish_setup_evidence_projection(
-                target,
-                observed_at="2026-08-29T00:00:00Z",
+            source = self._assert_published_v21_source(target, task_id)
+            payload = source.source["payload"]
+            self.assertEqual(
+                payload["verification_basis"],
+                {
+                    "basis_version": 1,
+                    "kind": "caller_attestation",
+                    "verification_receipt_id": payload["verification_receipt"][
+                        "verification_receipt_id"
+                    ],
+                    "runner_observation_id": None,
+                },
             )
-            self.assertEqual(publication.code, "succeeded")
-            before = tree_snapshot(target.resolved_evidence_root)
+            self.assertIsNone(payload["runner_observation"])
 
-            index = read_evidence_index(target.resolved_evidence_root)
-            entry = next(row for row in index.entries if row["task_id"] == task_id)
-            source = validate_evidence_source(index, entry)
+            # TG-M23R.10 retires this separate Analyzer packet-only block.
+            from task_governance_tool.analysis_contracts import (
+                build_descriptor,
+                default_recipe,
+            )
+            from task_governance_tool.analysis_packet import build_analysis_packet
+            from task_governance_tool.evidence_consumer import (
+                read_evidence_index as analyzer_read_evidence_index,
+                validate_evidence_source as analyzer_validate_evidence_source,
+            )
+
+            before = tree_snapshot(target.resolved_evidence_root)
+            analyzer_index = analyzer_read_evidence_index(target.resolved_evidence_root)
+            analyzer_entry = next(
+                row for row in analyzer_index.entries if row["task_id"] == task_id
+            )
+            analyzer_source = analyzer_validate_evidence_source(
+                analyzer_index, analyzer_entry
+            )
             descriptor = build_descriptor(
-                source_kind=source.source_kind,
-                source_basis=source.source_basis,
+                source_kind=analyzer_source.source_kind,
+                source_basis=analyzer_source.source_basis,
                 recipe=default_recipe(),
             )
-            packet = build_analysis_packet(descriptor, source)
+            packet = build_analysis_packet(descriptor, analyzer_source)
+            self.assertEqual(descriptor["source_basis"], analyzer_source.source_basis)
+            self.assertEqual(packet.value["source_basis"], analyzer_source.source_basis)
+            self.assertEqual(packet.value["source"], analyzer_source.source)
+            self.assertEqual(tree_snapshot(target.resolved_evidence_root), before)
 
-            self.assertEqual(
-                (index.source_schema_version, index.format_version),
-                (21, 2),
+    def test_fresh_not_required_completion_reaches_independent_reader(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix=".tmp-m244b-not-required-reader-",
+            dir=ROOT,
+        ) as temporary:
+            _install, target, task_id = _schema21_fixture._seed_completed_m21_fixture(
+                self,
+                Path(temporary),
+                verification_required=False,
             )
-            self.assertEqual(entry["bundle_format_version"], 2)
-            self.assertEqual(source.source["format_version"], 2)
-            self.assertEqual(source.source["payload"]["source_schema_version"], 21)
-            self.assertEqual(descriptor["source_basis"], source.source_basis)
-            self.assertEqual(packet.value["source_basis"], source.source_basis)
-            self.assertEqual(packet.value["source"], source.source)
+            source = self._assert_published_v21_source(target, task_id)
+            payload = source.source["payload"]
             self.assertEqual(
-                tree_snapshot(target.resolved_evidence_root),
-                before,
+                payload["verification_basis"],
+                {
+                    "basis_version": 1,
+                    "kind": "not_required",
+                    "verification_receipt_id": None,
+                    "runner_observation_id": None,
+                },
             )
+            self.assertEqual(payload["task"]["verification"], "")
+            self.assertIsNone(payload["verification_receipt"])
+            self.assertIsNone(payload["runner_observation"])
+
+    def test_fresh_runner_completion_reaches_independent_reader(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix=".tmp-m244b-runner-reader-",
+            dir=ROOT,
+        ) as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            # The existing fixture completes against a test-only physical-basis mock.
+            _complete_runner_pass(fixture)
+            storage.configure_project_maintenance(
+                fixture.target,
+                requested_interval_minutes=None,
+                requested_generations=None,
+            )
+            source = self._assert_published_v21_source(fixture.target, fixture.task_id)
+            payload = source.source["payload"]
+            runner = payload["runner_observation"]
+            self.assertEqual(
+                payload["verification_basis"],
+                {
+                    "basis_version": 1,
+                    "kind": "runner_observation",
+                    "verification_receipt_id": None,
+                    "runner_observation_id": runner["observation_id"],
+                },
+            )
+            self.assertIsNone(payload["verification_receipt"])
+            self.assertEqual(
+                (runner["gate_eligibility_version"], runner["route"], runner["outcome"]),
+                (1, "runner", "pass"),
+            )
+            self.assertEqual(runner["complete_plan"], 1)
+            self.assertEqual(runner["completed_step_count"], runner["total_step_count"])
 
 
 if __name__ == "__main__":

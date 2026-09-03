@@ -192,7 +192,7 @@ class RunnerGitTests(unittest.TestCase):
                     scan.return_value.__enter__.return_value = iter(())
                     self.assert_git_error(
                         lambda destination=invalid_destination: (
-                            materialize_runner_target(repo, material, destination)
+                            git_module._require_empty_destination(repo, destination)
                         ),
                         "materialization_failed",
                         MATERIALIZATION_ERROR_MESSAGE,

@@ -17,16 +17,16 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from tests.m23_test_support import (
+from tests.evidence_test_support import (
     EVIDENCE_REFERENCE_DOMAIN,
     domain_digest,
     reference_json_bytes,
     refresh_bundle_seals,
     valid_native_payload,
 )
-from tests.m14_test_support import make_physical_install
+from tests.m14_test_support import make_physical_install, tree_snapshot
 
-from task_governance_tool.evidence_consumer import (
+from tests.evidence_reader_oracle import (
     EvidenceConsumerError,
     ValidatedEvidenceSource,
     read_evidence_index,
@@ -258,6 +258,8 @@ def _consumer_source(payload: dict[str, object]) -> ValidatedEvidenceSource:
     return ValidatedEvidenceSource(
         "native_bundle",
         {
+            "index_format_version": 2,
+            "source_schema_version": 21,
             "project_id": payload["project_id"],
             "projection_generation": 1,
             "index_digest": "sha256:" + "9" * 64,
@@ -1104,6 +1106,8 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
         source = ValidatedEvidenceSource(
             "native_bundle",
             {
+                "index_format_version": 2,
+                "source_schema_version": 21,
                 "project_id": bundle.payload["project_id"],
                 "projection_generation": 1,
                 "index_digest": index.index_digest,
@@ -1119,6 +1123,10 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
             source.source["payload"]["verification_basis"]["kind"],
             "not_required",
         )
+        self.assertEqual(source.source, bundle.envelope)
+        self.assertEqual(source.source_basis["index_format_version"], 2)
+        self.assertEqual(source.source_basis["source_schema_version"], 21)
+        self.assertEqual(source.source_basis["entry"], entry)
 
     def test_source21_runner_history_is_read_only_compatible(self) -> None:
         bundle = build_bundle_artifact(_source21_runner_payload())
@@ -1126,6 +1134,8 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
         source = ValidatedEvidenceSource(
             "native_bundle",
             {
+                "index_format_version": 2,
+                "source_schema_version": 21,
                 "project_id": bundle.payload["project_id"],
                 "projection_generation": 2,
                 "index_digest": "sha256:" + "9" * 64,
@@ -1138,6 +1148,10 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
             source.source["payload"]["runner_observation"],
             _runner_projection(),
         )
+        self.assertEqual(source.source, bundle.envelope)
+        self.assertEqual(source.source_basis["index_format_version"], 2)
+        self.assertEqual(source.source_basis["source_schema_version"], 21)
+        self.assertEqual(source.source_basis["entry"], entry)
         malformed = _source21_runner_payload()
         malformed["runner_observation"]["gate_eligibility_version"] = 0
         with self.assertRaises(EvidenceProjectionError):
@@ -1638,6 +1652,28 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
             original = json.loads(
                 (target.resolved_evidence_root / entry["bundle_file"]).read_bytes()
             )["payload"]
+
+            before = tree_snapshot(target.resolved_evidence_root)
+            validated_index = read_evidence_index(target.resolved_evidence_root)
+            source = validate_evidence_source(validated_index, entry)
+            self.assertEqual(source.source["format_version"], 2)
+            self.assertEqual(source.source["payload"], original)
+            self.assertEqual(source.source_basis["index_format_version"], 2)
+            self.assertEqual(source.source_basis["source_schema_version"], 21)
+            self.assertEqual(source.source_basis["entry"], entry)
+            self.assertEqual(
+                source.source["payload"]["verification_basis"],
+                {
+                    "basis_version": 1,
+                    "kind": "caller_attestation",
+                    "verification_receipt_id": original["verification_receipt"][
+                        "verification_receipt_id"
+                    ],
+                    "runner_observation_id": None,
+                },
+            )
+            self.assertIsNone(source.source["payload"]["runner_observation"])
+            self.assertEqual(tree_snapshot(target.resolved_evidence_root), before)
 
             with closing(storage_module.connect(target.db_path)) as connection:
                 artifact, observation_id = _persist_later_runner_history_fixture(

@@ -322,6 +322,282 @@ authorizes governance records and the listed future
 repository-local implementation only; it grants no commit, push, network,
 external CI, publication, target-project installation, or unrelated mutation.
 
+<a id="m23-retirement"></a>
+
+### Approved Pending M23 Retirement And Evidence Test Oracle
+
+The approved outcome is to retire the M23 Analyzer subsystem and retain only
+its independent Evidence-reading/validation capability, necessary test helpers,
+and the small non-authority/compatibility boundary below. The retained reader
+belongs to repository tests, not the installable runtime. This section owns the
+pending static execution contracts; the Task database owns status and evidence.
+Registration does not start implementation. Until TG-M23R.10's atomic switch,
+the current Analyzer specification and design remain applicable to the existing
+runtime. Preparatory Tasks leave that runtime and its dedicated tests working.
+
+The retained capability checks Evidence index/Bundle file self-consistency,
+declared generation, versions, identities, canonical bytes/digests, relations,
+and the existing bounded semantics/privacy rules. It does not authenticate
+authors, prove source-code correctness, or establish freshness against SQLite.
+It imports neither SQLite/storage nor the producing Evidence semantic validator.
+Existing bounded filesystem primitives may be reused; independence does not
+require reimplementing file I/O or Windows safety infrastructure.
+
+The final product boundary retains the rule that facts, caller declarations,
+LLM inference, and uncertainty are not interchangeable, and that derived
+explanations do not satisfy verification, review, or completion gates. It does
+not retain a report schema, renderer, citation-generation subsystem, or future
+Reporting adapter. Any later non-test reader path is a separate product decision.
+
+Common scope and permission boundaries for every unit:
+
+- Preserve schema v21, the public CLI/JSON and normal Skill loop, Bundle v1/v2
+  and index formats/digests, existing durable rows, and Runner gate semantics.
+  Keep `derived_analysis`, `llm_derived`, and `batch_analyzer` as writer-disabled
+  compatibility vocabulary; retain unrelated `deterministically_derived` uses.
+  Do not create a migration, rewrite existing evidence, or require all M23
+  strings to disappear.
+- Leave existing ignored `state/current/analysis/` artifacts untouched and
+  inert after retirement. Do not add cleanup, import, relocation, or repair.
+  Package replacement continues to preserve state and the three named local
+  configuration files under `docs/release-install.md`.
+- No new runtime reader, CLI, config, automatic execution, completion gate,
+  live model, Linux support, or M24 redesign. Do not repair M23's v2 report
+  pipeline before deleting it or transplant its Win32/process/outbox foundation.
+- Preparation may copy the existing reader/codec into tests and adapt only the
+  Analyzer-specific wrappers. Do not rewrite its validators wholesale, add a
+  generic validation framework, or expand the existing threat model. Temporary
+  duplicate runtime/test code and the old support facade retire at TG-M23R.10.
+- This request authorizes formal planning and ready Task registration only.
+  Later execution requires user approval of the sequence. Neither registration
+  nor execution approval implies Git staging/commit/push, external CI, release,
+  installation into a real project, or unrelated filesystem mutation.
+  Existing Git-backed review/completion and tracked-inventory checks still need
+  separately authorized exact Git material; do not weaken those checks or add a
+  workaround when that approval is absent.
+
+All units are sequential in lane `TG-M23R`, at orders 10 through 110 below.
+Each consumes completed predecessor outputs and its cited current owners;
+same-lane ordering represents the dependencies without a new dependency model.
+This deliberately serializes the two schema-consumer migrations so their shared
+fixtures and final cutover inventory have one resumable order.
+
+| Unit / order | Bounded responsibility | Review |
+|---|---|---|
+| TG-M23R.1 / 10 | Separate reusable Evidence fixtures | Tier 1 |
+| TG-M23R.2 / 20 | Preserve the independent canonical codec in tests | Tier 1 |
+| TG-M23R.3 / 30 | Extract the neutral test-only Evidence reader | Tier 1 |
+| TG-M23R.4 / 40 | Preserve existing reader rejection/regression coverage | Tier 1 |
+| TG-M23R.5 / 50 | Migrate schema-v20 Evidence test consumers | Tier 1 |
+| TG-M23R.6 / 60 | Migrate schema-v21/Runner Evidence test consumers | Tier 1 |
+| TG-M23R.7 / 70 | Exercise completion-to-JSON-to-reader integration | Tier 1 |
+| TG-M23R.8 / 80 | Prepare package-replacement preservation coverage | Tier 1 |
+| TG-M23R.9 / 90 | Prepare Runner implementation-identity compatibility coverage | Tier 1 |
+| TG-M23R.10 / 100 | Retire runtime, packaging, and current authority atomically | Tier 2 |
+| TG-M23R.11 / 110 | Run final offline integrated acceptance | Tier 2 |
+
+<a id="tg-m23r-1"></a>
+
+#### TG-M23R.1 — Reusable Evidence Fixtures
+
+Scope: extract only Evidence constants, reference encoding/digest/seal helpers,
+native/legacy Bundle/index builders, and ordinary tree snapshots from
+`tests/m23_test_support.py` into `tests/evidence_test_support.py`. Keep Analyzer
+helpers in the old support file and re-export moved names there until cutover.
+Retain the existing M22 payload fixture; do not duplicate its implementation.
+
+Acceptance: moved fixtures produce the same bytes/digests and serve both old
+Analyzer tests and future reader tests. The fixture's `json.dumps` reference
+encoder stays independent of the reader codec. Verification: focused fixture
+parity and representative existing consumer tests; import/discovery checks for
+the four M24 consumer modules named in units 5–7. No runtime edits.
+
+<a id="tg-m23r-2"></a>
+
+#### TG-M23R.2 — Independent Canonical Codec
+
+Scope: copy the Evidence-needed pure canonical encoder/parser and minimum error
+support from `analysis_contracts.py` into `tests/evidence_reader_codec.py`, with
+focused tests. Keep the original runtime module unchanged; copy no descriptor,
+recipe, job, packet, report, retry, or process contract.
+
+Acceptance: existing literal canonical-byte vectors, duplicate-key, float,
+noncanonical, and invalid-UTF-8 checks pass independently of the producer and
+fixture encoder. Verification: the new focused codec tests and lane discovery.
+
+<a id="tg-m23r-3"></a>
+
+#### TG-M23R.3 — Neutral Test-Only Reader
+
+Scope: copy the existing `evidence_consumer.py` read/validation core into
+`tests/evidence_reader_oracle.py`, using unit 2's codec. Replace only its
+Analyzer-dependent source wrapper/basis validation, remove descriptor replay,
+and preserve the full selected index entry, including v2
+`bundle_format_version`. Keep the runtime consumer unchanged.
+
+Acceptance: v1 native/legacy and one existing v2 fixture can be read without
+changing source files; the neutral result preserves index version, selected
+entry, and exact Bundle envelope or explicit legacy absence. There is no
+Analyzer, storage, producer-validator, packet, or report dependency. Existing
+`state_paths` bounded read primitives remain reusable. Verification: focused
+positive/read-only/binding tests, import-boundary review, and lane discovery.
+This is a test helper, not a new public schema or API.
+
+<a id="tg-m23r-4"></a>
+
+#### TG-M23R.4 — Reader Regression Coverage
+
+Scope: adapt the Evidence-only cases from
+`tests/test_m232_evidence_consumer.py` into a neutral reader test module.
+Preserve canonical/literal digest, resealed semantic tamper, relation, path,
+provenance, privacy, timestamp, and no-write checks against unit 3's reader.
+Do not carry over the descriptor-replay case; keep the original M23 tests until
+unit 10. Correct a defect in the extracted copy only within those existing
+Evidence requirements.
+
+Acceptance: the retained cases detect the same supported-format regressions
+without importing Analyzer runtime. Verification: neutral reader/codec tests
+and lane discovery. No exhaustive new adversarial matrix or producer hardening.
+
+<a id="tg-m23r-5"></a>
+
+#### TG-M23R.5 — Schema-v20 Test Consumers
+
+Scope: switch Evidence fixture/reader uses in
+`tests/test_m242_evidence_compatibility.py` and
+`tests/test_m242_r3b_schema20_activation.py` to the neutral helpers. Retain the
+old descriptor-replay block and only its required imports until unit 10.
+
+Acceptance: schema-v20 null-Runner v2, v2 index referencing unchanged v1 Bundle,
+and legacy null/absence retain their existing meaning and version information.
+Verification: the affected compatibility/activation cases plus neutral reader
+tests and lane discovery. No migration, storage, or projection implementation
+change and no new Analyzer acceptance.
+
+<a id="tg-m23r-6"></a>
+
+#### TG-M23R.6 — Schema-v21 And Runner Test Consumers
+
+Scope: migrate reader/fixture uses in
+`tests/test_m243b_schema21_compatibility.py` to the neutral helpers. Use existing
+fixtures to cover source-v21 v2 caller-attestation, not-required, and qualifying
+Runner-observation forms; preserve source-schema/index binding and existing
+Runner wrong-type/identifier rejection checks.
+
+Acceptance: the full v2 entry and sanitized Runner projection survive the
+reader without schema downgrade or source mutation. Verification: affected
+reader compatibility cases, the existing stored-history canaries affected by
+helper changes, and lane discovery. Do not change Runner gates, storage,
+recovery, or the producer to satisfy the oracle.
+
+<a id="tg-m23r-7"></a>
+
+#### TG-M23R.7 — Completion-To-Reader Integration
+
+Scope: adapt `tests/test_m244b_legacy_fresh_acceptance.py` so its existing
+isolated completion and Evidence publication fixtures feed the independent
+reader directly. Keep the old packet-only block and its minimal imports until
+unit 10; it is not the new reader's acceptance endpoint.
+
+Acceptance: existing v19-to-v20-to-v21 history preservation and fresh v21
+completion-to-Bundle/index-to-reader checks pass, including the Runner-backed
+and not-required fixtures. Assert preserved version/basis and before/after
+source snapshots. Verification: this focused integration module and its
+directly changed helper tests. No report, explanation format, or runtime route.
+
+<a id="tg-m23r-8"></a>
+
+#### TG-M23R.8 — Package Replacement Preservation
+
+Scope: reuse `tests/test_m19_legacy_upgrade_rehearsal.py` package-overlay and
+physical-install helpers for a bounded replacement regression. Cover exact
+manifest-owned core replacement while preserving existing database/Evidence,
+an inert analysis-artifact sentinel, and the three supported config files.
+Keep additions test-only and locally owned; no installer or cleanup feature.
+Adapt the shared test inventory helper to the candidate manifest where its
+current `git ls-files` selection would require already-deleted files, and check
+its existing callers. The replacement regression itself must not require Git
+staging; the release checker's existing tracked-inventory gate is unchanged.
+
+Acceptance: the test passes before and after retirement by comparing installed
+core with the candidate's actual inventory, not a fixed M23 file count. State
+and config bytes remain unchanged by package replacement; obsolete nonmanifest
+core is not retained. Verification: the focused replacement case and affected
+helper tests, with lane discovery if a test module is added. Do not require a
+new historical binary/archive, a live project upgrade, or another schema matrix.
+
+<a id="tg-m23r-9"></a>
+
+#### TG-M23R.9 — Runner Identity Compatibility
+
+Scope: add only missing focused assertions to existing Runner runtime/gate and
+schema-v21 history tests, reusing their disposable package/graph fixtures.
+Exercise a valid changed manifest implementation identity, live-basis staleness,
+and a completed historical Runner graph/Bundle retaining its captured identity.
+
+Acceptance: package changes require the existing fresh live target basis;
+historical completion still reads without rebinding to the installed digest.
+No immutable observation/Bundle is rewritten or promoted. Verification: the
+focused identity/live-stale/history cases. Reuse already sufficient cases rather
+than duplicate them. The existing public Plan-to-`runner_pass` canary is run in
+unit 11; do not add another native-process harness or change Runner behavior.
+
+<a id="tg-m23r-10"></a>
+
+#### TG-M23R.10 — Atomic Runtime And Authority Retirement
+
+Scope: after units 1–9, remove `analysis_contracts.py`, `analysis_packet.py`,
+`analysis_outbox.py`, `analysis_validator.py`, `analysis_renderer.py`,
+`analysis_worker.py`, `codex_analysis_adapter.py`, `_analysis_windows_process.py`,
+`_analysis_win32.py`, and the packaged `evidence_consumer.py`. Remove the now
+superseded M23 dedicated tests/support, the two temporary M24 Analyzer blocks,
+Analyzer-only `state_paths.py`/`state_resolver.py` names and fields, and their
+manifest/test-lane entries. Refresh hashes for actually changed packaged files.
+
+In the same reviewed revision, capture the retiring current Analyzer sections
+with their exact source commit and non-authoritative banner into a new document
+indexed by `docs/history/README.md`; do not alter old captures or archive runtime
+code separately. Replace current M23 support/process/report contracts in
+`docs/specification.md` and `docs/design.md` with the short Evidence
+non-authority/compatibility rule and test-oracle ownership. Synchronize direct
+current references in README, candidate release/install notes, plan, and
+document-contract tests where required. Keep the existing authority registry;
+add no new conditional owner or AGENTS contract inventory.
+
+Acceptance: runtime removal, exact package/test inventory, history indexing,
+and active-document switch form one coherent change, never separate committed
+intermediate states. The retained reader tests and four M24 modules import and
+pass; no live runtime consumer depends on a deleted module. Reserved vocabulary,
+schema/data, supported config, and old analysis artifacts remain unchanged.
+Verification: affected reader/M24/resolver/replacement/identity tests, document
+and release contract checkers, test-lane check, and `git diff --check`. Tier 2
+requires two independent reviews of that exact switch. Full suite belongs to
+unit 11, not every preparatory Task. Fix only direct cutover defects here.
+
+<a id="tg-m23r-11"></a>
+
+#### TG-M23R.11 — Final Offline Acceptance
+
+Scope: acceptance only of the exact retired candidate. Run the existing full
+offline suite through `python -B tools/test_lanes.py --repo . --lane all`, plus
+document/release contract, lane-inventory, and diff checks. Confirm the suite
+includes the retained reader matrix, replacement/history coverage, and existing
+public Plan-to-`runner_pass` Windows canary; included tests need no duplicate run.
+
+Acceptance: all required local checks pass and two independent Tier 2 reviews
+find no blocking regression or scope expansion. Report actual environment and
+results without claiming GitHub CI or publication. Corrections return to their
+owning unit through the existing workflow; this Task does not authorize broad
+repair, weaker tests, skipped native acceptance, or new implementation. A
+failure is evidence for bounded diagnosis, not authority to enlarge this plan.
+
+Across the sequence, each Tier 1 unit needs one independent review and Tier 2
+needs two. New test modules are assigned once in `tools/test_lanes.py` and the
+partition is checked. Per-unit verification is focused on changed behavior;
+the full suite is reserved for unit 11. No numeric file/line/time limit, repeated
+whole-project audit, new mandatory worksheet, or speculative safety gate is
+added to make a Task complete.
+
 <a id="tg-m12-3"></a>
 
 ### TG-M12.3 Approved Static Contract

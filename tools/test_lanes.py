@@ -52,6 +52,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_completion_history_projection",
         "test_completion_pure_helpers",
         "test_effort_advisory",
+        "test_evidence_test_support",
         "test_git_snapshot",
         "test_handoffs",
         "test_m214c_stored_task_validation",

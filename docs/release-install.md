@@ -2,22 +2,29 @@
 
 This note owns both the current local package candidate and the immutable
 published artifact identity. Version 0.13.0 is an unpublished local candidate:
-no candidate commit, push, tag, archive, checksum, GitHub Release, or
-publication is fixed, claimed, or authorized. The published v0.10.0 artifact
-and its exact commit, tag, Release, archive, checksum, and Release body remain
-unchanged. This record also does not authorize installing or overwriting a
-Skill in any project.
+no exact final candidate commit, tag, archive, checksum, or GitHub Release
+identity is fixed. An ordinary push to `main` is CI input, not release
+publication, and this record authorizes no external release operation. The
+published v0.10.0 artifact and its exact commit, tag, Release, archive,
+checksum, and Release body remain unchanged. This record also does not
+authorize installing or overwriting a Skill in any project.
 
 The current v0.13.0 candidate includes the schema-v21 evidence and Runner gate
 basis while preserving the published v0.10.0 identity and the fixed v0.13.0
-package boundary described below. An explicitly opted-in trusted-local target
-may use the existing target-set Runner: an exact-current complete-plan pass supplies
-the Runner-observation completion basis without a Verification Receipt, while
-the exact closed no-launch fallback alone returns to the manual Receipt path.
-Pending, stale, cleanup-only, and other terminal Runner branches remain
-blocking. This adds no Runner command or Skill trigger and adds only the two
-closed target-set JSON success fields.
-Untrusted or external targets remain on the manual verification path.
+package boundary described below. Explicit `task edit --runner-plan-action`
+supports `replace`, `rebind`, `detach`, and `disable`; the first absent-Plan
+`replace` opts in with `trusted_local=true`, while `disable` sets the global
+flag false without deleting entries. An action-bearing success adds the closed
+`runner_plan_update` (`action` plus `updated`, `unchanged`, or `unconfirmed`
+status); task edit never dispatches the Runner. `review target set` remains the
+sole Runner dispatch and adds the closed `verification_route` and nullable
+`blocking_code` fields. For an explicitly opted-in trusted-local
+target, an exact-current complete-plan pass supplies the Runner-observation
+completion basis without a Verification Receipt, while the exact closed
+no-launch fallback alone returns to the manual Receipt path. Pending, stale,
+cleanup-only, and other terminal Runner branches remain blocking. No Runner
+command or Skill trigger is added. Untrusted or external targets remain on the
+manual verification path.
 
 ## Current Candidate Identity
 
@@ -177,7 +184,9 @@ Git repository.
 `setup` is the only public initializer and migrator. It also performs the
 one-way opt-in to bounded local maintenance and directly publishes or repairs
 canonical Evidence JSON and Viewer. It is explicit, noninteractive, idempotent, and limited
-to the supported physical project-scoped package.
+to the supported physical project-scoped package. Setup never creates or edits
+the Runner Plan; taskgov-managed authoring requires explicit
+`task edit --runner-plan-action`.
 
 Setup reports `schema_to=21` and `evidence_status` as `not_present`, `current`,
 `published`, or `repair_required`. Its ordered write vocabulary includes
@@ -508,10 +517,11 @@ provenance.
 
 ## Safety And Privacy
 
-`taskgov` may write only canonical generated Skill state after setup and the
-explicit task-state operation requested by the caller. It does not edit target
-project source, stage or write Git, open a browser, create an Issue or PR, or
-use the network.
+`taskgov` may write only canonical generated Skill state after setup, the
+explicit task-state operation requested by the caller, and, only under explicit
+`task edit --runner-plan-action`, the canonical ignored Runner Plan. It does not
+edit target-project source, stage or write Git, open a browser, create an Issue
+or PR, or use the network.
 
 Default retention excludes raw stdout/stderr, stack traces, environment dumps,
 full prompts or conversations, authorization material, raw provider bodies,
@@ -605,14 +615,16 @@ history as gate-ineligible. A fresh exact-current eligibility-version-1 Runner
 pass supplies the Runner-observation completion branch; only the exact closed
 no-launch result falls back to the manual Receipt branch, while all other
 selected Runner states block. Viewer snapshot v4 accepts source schemas v5-v21 while exposing no
-Evidence UI. No Analyzer, network/model invocation, new command leaf, new
-Skill trigger, or public output beyond the two closed target-set JSON success
-fields is activated. With no post-target `task show`, the manual/fallback
-no-finding Tier 2 flow is bounded to ten calls, or eleven with the enabled
-Effort Advisory; the Receiptless Runner-pass path is one call lower. The public
-inventory remains exactly 21
-leaves. Nothing in this candidate records a publishable commit, creates a tag
-or archive, dispatches CI, pushes, or publishes a Release.
+Evidence UI. No Analyzer, network/model invocation, new command leaf, or new
+Skill trigger is activated. Action-bearing `task edit` adds only the closed
+`runner_plan_update` (`action` and status); `review target set` remains the sole
+Runner dispatch and retains its two closed route fields. With no post-target `task show`, the
+manual/fallback no-finding Tier 2 flow is bounded to ten calls, or eleven with
+the enabled Effort Advisory; the Receiptless Runner-pass path is one call
+lower. The public inventory remains exactly 21 leaves. No exact final candidate
+commit, tag, archive, checksum, or GitHub Release identity is fixed. An ordinary
+push to `main` is CI input, not release publication; nothing here dispatches CI
+or publishes a Release.
 
 ## Immutable Published v0.10.0 Summary
 

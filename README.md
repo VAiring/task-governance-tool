@@ -6,9 +6,11 @@ task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
 Release `0.13.0` uses SQLite schema v21 and Viewer snapshot v4 with source
-schemas 5 through 21 as the current unpublished local candidate contract. It
-has not been pushed, tagged, or published. The immutable published release
-remains v0.10.0 at its recorded commit, tag, and GitHub prerelease.
+schemas 5 through 21 as the current unpublished local candidate contract. No
+exact final candidate commit, tag, archive, checksum, or GitHub Release identity
+is fixed. An ordinary push to `main` is CI input, not release publication. The
+immutable published release remains v0.10.0 at its recorded commit, tag, and
+GitHub prerelease.
 
 ## License
 
@@ -39,8 +41,10 @@ each governed project at exactly:
 
 Only this project-scoped physical layout is supported for ordinary use. Show
 the exact destination and obtain approval before installing or replacing it.
-The release artifact and package creation process never initialize project
-state.
+An approved package update preserves `config/verification-runner.json`,
+`config/viewer.json`, and `config/effort-advisory.json` byte-for-byte. Release
+artifacts exclude all `config/` content, and package creation never initializes
+project state.
 
 For a Git-managed target, ensure the canonical Skill state directory is
 effectively ignored before setup. This narrow target-local rule is recommended:
@@ -70,7 +74,8 @@ repair. It also supports one unambiguous same-binding legacy backup-only
 source: recovery occurs in the private fixed-layout stage and never recreates
 the old legacy primary. A moved legacy backup-only source is not a relocation
 candidate and fails no-write as `project_state_unreadable`. It does not add a
-recovery command or accept a recovery path.
+recovery command or accept a recovery path. Setup never creates or edits the
+Runner Plan.
 
 The 0.13.0 candidate retains one immutable project identity in the fixed
 package-local `state/current/` layout and keeps the governed-directory binding
@@ -477,7 +482,10 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo .
 `replace` upserts the supplied steps, `rebind` preserves existing steps while
 moving the entry to the exact Task basis, and `detach` removes only that Task's
 entries. `disable` instead sets global `trusted_local=false` while preserving
-all entries; no action automatically re-enables a disabled Plan. A real
+all entries; no action automatically re-enables a disabled Plan. An
+action-bearing JSON success adds `runner_plan_update` with the selected action
+and `updated`, `unchanged`, or `unconfirmed` status; an invocation without an
+action retains its existing output. A real
 Contract or verification-basis edit can carry one action in the same
 invocation, for example:
 
@@ -509,8 +517,10 @@ The current v0.13.0 package is an unpublished local candidate described by
 [docs/releases/v0.13.0.md](docs/releases/v0.13.0.md). The immutable v0.12.0
 and v0.11.0 candidate-lineage notes remain at
 [docs/releases/v0.12.0.md](docs/releases/v0.12.0.md) and
-[docs/releases/v0.11.0.md](docs/releases/v0.11.0.md). No commit, tag, archive,
-checksum, GitHub Release, push, or publication is claimed or authorized for it.
+[docs/releases/v0.11.0.md](docs/releases/v0.11.0.md). No exact final candidate
+commit, tag, archive, checksum, or GitHub Release identity is fixed. An ordinary
+push to `main` is not release publication, and no publication operation is
+authorized here.
 
 ## Development Checks
 

@@ -11,15 +11,9 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from task_governance_tool.analysis_contracts import (  # noqa: E402
-    build_descriptor,
-    default_recipe,
-    descriptor_replay_matches,
-)
-from task_governance_tool.evidence_consumer import (  # noqa: E402
+from tests.evidence_reader_oracle import (  # noqa: E402
     ValidatedEvidenceSource,
     read_evidence_index,
-    revalidate_descriptor_source,
     validate_evidence_source,
 )
 from task_governance_tool.evidence_projection import (  # noqa: E402
@@ -28,7 +22,7 @@ from task_governance_tool.evidence_projection import (  # noqa: E402
     build_bundle_artifact,
     build_index_artifact,
 )
-from tests.m23_test_support import (  # noqa: E402
+from tests.evidence_test_support import (  # noqa: E402
     reference_json_bytes,
     refresh_bundle_seals,
     valid_native_payload,
@@ -105,6 +99,8 @@ class M242EvidenceCompatibilityTests(unittest.TestCase):
         source = ValidatedEvidenceSource(
             "native_bundle",
             {
+                "index_format_version": 2,
+                "source_schema_version": 20,
                 "project_id": payload["project_id"],
                 "projection_generation": 8,
                 "index_digest": "sha256:" + "8" * 64,
@@ -116,6 +112,10 @@ class M242EvidenceCompatibilityTests(unittest.TestCase):
             source.source["payload"]["verification_basis"]["kind"],
             "not_required",
         )
+        self.assertEqual(source.source, bundle.envelope)
+        self.assertEqual(source.source_basis["index_format_version"], 2)
+        self.assertEqual(source.source_basis["source_schema_version"], 20)
+        self.assertEqual(source.source_basis["entry"], entry)
 
     def test_v2_index_can_reference_unchanged_v1_bundle(self) -> None:
         bundle = build_bundle_artifact(valid_native_payload())
@@ -181,6 +181,28 @@ class M242EvidenceCompatibilityTests(unittest.TestCase):
             source = validate_evidence_source(validated_index, native)
             self.assertEqual(source.source["format_version"], 1)
             self.assertEqual(source.source["bundle_digest"], bundle.bundle_digest)
+            self.assertEqual(source.source, bundle.envelope)
+            self.assertEqual(source.source_basis["index_format_version"], 2)
+            self.assertEqual(source.source_basis["source_schema_version"], 20)
+            self.assertEqual(source.source_basis["entry"], native)
+            legacy_source = validate_evidence_source(validated_index, legacy)
+            self.assertIsNone(legacy_source.source)
+            self.assertEqual(legacy_source.source_basis["entry"], legacy)
+
+            # Retire this existing Analyzer replay block at TG-M23R.10.
+            from task_governance_tool.analysis_contracts import (
+                build_descriptor,
+                default_recipe,
+                descriptor_replay_matches,
+            )
+            from task_governance_tool.evidence_consumer import (
+                read_evidence_index as read_analyzer_index,
+                revalidate_descriptor_source,
+                validate_evidence_source as validate_analyzer_source,
+            )
+
+            analyzer_index = read_analyzer_index(root)
+            analyzer_source = validate_analyzer_source(analyzer_index, native)
 
             old_entry = dict(native)
             old_entry.pop("bundle_format_version")
@@ -196,14 +218,14 @@ class M242EvidenceCompatibilityTests(unittest.TestCase):
             )
             current_descriptor = build_descriptor(
                 source_kind="native_bundle",
-                source_basis=source.source_basis,
+                source_basis=analyzer_source.source_basis,
                 recipe=default_recipe(),
             )
             self.assertTrue(
                 descriptor_replay_matches(old_descriptor, current_descriptor)
             )
             replay = revalidate_descriptor_source(
-                validated_index,
+                analyzer_index,
                 old_descriptor,
             )
             self.assertEqual(replay.source_basis, old_descriptor["source_basis"])

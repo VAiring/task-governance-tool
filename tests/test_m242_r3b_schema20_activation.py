@@ -44,7 +44,7 @@ from tests.m223_test_support import (  # noqa: E402
     logical_database_digest,
     remove_v20_runner_shadow_for_test,
 )
-from tests.m23_test_support import reference_json_bytes  # noqa: E402
+from tests.evidence_test_support import reference_json_bytes  # noqa: E402
 
 
 BUNDLE_V2_DOMAIN = b"taskgov-completion-evidence-bundle-v2\0"

@@ -167,6 +167,86 @@ class RunnerGitTests(unittest.TestCase):
                 "sha256:" + hashlib.sha256(payload).hexdigest(),
             )
 
+    def test_ignored_repo_local_private_destination_preserves_repository(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = self.make_repo(temporary)
+            target = self.seed_commit(
+                repo,
+                {
+                    ".gitignore": (
+                        b"/.agents/skills/task-governance-tool/state/\n"
+                    ),
+                    "payload.txt": b"committed bytes\n",
+                },
+            )
+            (repo / "payload.txt").write_bytes(b"ambient working bytes\n")
+            observed, material = self.prepare_commit_material(repo, target)
+
+            for invalid_destination in (repo, repo.parent):
+                with self.subTest(destination=invalid_destination), mock.patch.object(
+                    git_module.os,
+                    "scandir",
+                ) as scan:
+                    # Isolate the relationship guard from the earlier
+                    # nonempty-destination rejection.
+                    scan.return_value.__enter__.return_value = iter(())
+                    self.assert_git_error(
+                        lambda destination=invalid_destination: (
+                            materialize_runner_target(repo, material, destination)
+                        ),
+                        "materialization_failed",
+                        MATERIALIZATION_ERROR_MESSAGE,
+                    )
+                    scan.assert_called_once_with(invalid_destination)
+
+            destination = (
+                repo
+                / ".agents"
+                / "skills"
+                / "task-governance-tool"
+                / "state"
+                / "current"
+                / "verification-runner"
+                / "attempts"
+                / "tg_verification_runner_attempt_0123456789abcdef"
+                / "target"
+            )
+            destination.mkdir(parents=True)
+            git(
+                repo,
+                "check-ignore",
+                "--quiet",
+                "--",
+                str(destination.relative_to(repo)),
+            )
+            payload_before = (repo / "payload.txt").read_bytes()
+            index_before = (repo / ".git" / "index").read_bytes()
+            refs_before = git(repo, "show-ref").stdout
+            status_before = git(repo, "status", "--porcelain=v1", "-z").stdout
+
+            result = materialize_runner_target(repo, material, destination)
+
+            self.assertEqual(
+                (destination / "payload.txt").read_bytes(),
+                b"committed bytes\n",
+            )
+            self.assertEqual(
+                (destination / ".gitignore").read_bytes(),
+                b"/.agents/skills/task-governance-tool/state/\n",
+            )
+            self.assertEqual((repo / "payload.txt").read_bytes(), payload_before)
+            self.assertEqual((repo / ".git" / "index").read_bytes(), index_before)
+            self.assertEqual(git(repo, "show-ref").stdout, refs_before)
+            self.assertEqual(
+                git(repo, "status", "--porcelain=v1", "-z").stdout,
+                status_before,
+            )
+            self.assertEqual(
+                result.target_material_digest,
+                observed.target_material_digest,
+            )
+            self.assertEqual((result.entry_count, result.directory_count), (2, 0))
+
     def test_staged_materialization_uses_index_bytes_and_omits_ambient_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             repo = self.make_repo(temporary)

@@ -766,12 +766,6 @@ def _require_empty_destination(
     except OSError as exc:
         raise _materialization_error() from exc
     try:
-        canonical_destination.relative_to(canonical_repo)
-    except ValueError:
-        pass
-    else:
-        raise _materialization_error()
-    try:
         canonical_repo.relative_to(canonical_destination)
     except ValueError:
         pass

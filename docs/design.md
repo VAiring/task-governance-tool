@@ -3832,6 +3832,16 @@ extracts an archive, follows a link/reparse, replaces an entry, copies back, or
 launches target code. Failure leaves cleanup acceptance to the separate
 `lifecycle` owner.
 
+The parent-created canonical attempt target may be beneath the governed
+repository because both the ordinary project-scoped package and the self-host
+package keep their ignored generated state there. That lexical relationship
+does not make the repository root the execution destination or authorize an
+arbitrary repository write: materialization still accepts only the supplied
+already-owned empty physical directory, rejects a destination equal to or
+containing the repository, and confines every exclusive write and inventory
+check to that destination. The `lifecycle` owner remains responsible for its
+creation and cleanup.
+
 `verification_runner_plan.py` owns:
 
 ```

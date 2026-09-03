@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from functools import cache
 from pathlib import Path
 
 from tools.release_contract import (
@@ -27,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
 
 
+@cache
 def tracked_paths() -> tuple[str, ...]:
     result = subprocess.run(
         ["git", "-C", str(ROOT), "ls-files", "-z"],
@@ -46,7 +48,6 @@ def tracked_paths() -> tuple[str, ...]:
     )
 
 
-BASE_TRACKED_PATHS = tracked_paths()
 RUNTIME_CONTRACT = collect_runtime_contract()
 
 
@@ -113,11 +114,11 @@ def issue_codes(result) -> set[str]:
 def check_fixture(
     fixture: Path,
     *,
-    inventory: tuple[str, ...] = BASE_TRACKED_PATHS,
+    inventory: tuple[str, ...] | None = None,
 ):
     return check_release_contract(
         fixture,
-        tracked_paths=inventory,
+        tracked_paths=tracked_paths() if inventory is None else inventory,
         runtime_contract=RUNTIME_CONTRACT,
     )
 
@@ -163,7 +164,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                     / "task-governance-tool"
                     / "release-manifest.json"
                 ).unlink(),
-                BASE_TRACKED_PATHS,
+                tracked_paths(),
                 "manifest_missing",
             ),
             (
@@ -174,7 +175,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                     / "assets"
                     / "task-viewer.template.html"
                 ).unlink(),
-                BASE_TRACKED_PATHS,
+                tracked_paths(),
                 "package_integrity_mismatch",
             ),
             (
@@ -182,7 +183,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                 lambda fixture: (
                     fixture / "task-governance-tool" / "unexpected.txt"
                 ).write_text("unexpected\n", encoding="utf-8"),
-                (*BASE_TRACKED_PATHS, "task-governance-tool/unexpected.txt"),
+                (*tracked_paths(), "task-governance-tool/unexpected.txt"),
                 "package_integrity_mismatch",
             ),
             (
@@ -190,7 +191,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                 lambda fixture: (
                     fixture / "task-governance-tool" / "SKILL.md"
                 ).write_text("changed\n", encoding="utf-8"),
-                BASE_TRACKED_PATHS,
+                tracked_paths(),
                 "package_integrity_mismatch",
             ),
         )
@@ -232,7 +233,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
 
             result = check_fixture(
                 fixture,
-                inventory=(*BASE_TRACKED_PATHS, "NOTICE"),
+                inventory=(*tracked_paths(), "NOTICE"),
             )
 
             self.assertIn("license_manifest_mismatch", issue_codes(result))
@@ -368,7 +369,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                     fixture = copy_release_fixture(Path(temporary))
                     result = check_fixture(
                         fixture,
-                        inventory=(*BASE_TRACKED_PATHS, relative),
+                        inventory=(*tracked_paths(), relative),
                     )
                     matching = [
                         issue
@@ -603,7 +604,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
 
             result = check_release_contract(
                 fixture,
-                tracked_paths=BASE_TRACKED_PATHS,
+                tracked_paths=tracked_paths(),
             )
 
             self.assertIn("runtime_owner_mismatch", issue_codes(result))

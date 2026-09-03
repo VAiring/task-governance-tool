@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -65,6 +66,40 @@ def assert_lane_error(
 
 
 class TestLanePolicyTests(unittest.TestCase):
+    def test_check_discovery_does_not_require_git_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            environment = {
+                key: value
+                for key, value in os.environ.items()
+                if not key.upper().startswith("GIT_")
+            }
+            environment["GIT_DIR"] = str(Path(temporary) / "missing-git-dir")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    str(RUNNER),
+                    "--repo",
+                    str(ROOT),
+                    "--check",
+                ],
+                cwd=ROOT,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, "")
+        self.assertRegex(
+            completed.stdout,
+            r"\Atest lanes: PASS \(all=\d+; fast=\d+; "
+            r"integration=\d+; release=\d+\)\n\Z",
+        )
+
     def test_current_inventory_exactly_matches_standard_discovery(self):
         inventory = discover_tests(ROOT)
         standard_ids = standard_discovery_ids()

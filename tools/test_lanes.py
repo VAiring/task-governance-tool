@@ -54,6 +54,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_effort_advisory",
         "test_evidence_reader_codec",
         "test_evidence_reader_oracle",
+        "test_evidence_reader_regressions",
         "test_evidence_test_support",
         "test_git_snapshot",
         "test_handoffs",

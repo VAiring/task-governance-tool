@@ -112,7 +112,8 @@ _BUNDLE_PRIVACY_PATTERNS = (
     ),
     re.compile(r"\b(?:Set-)?Cookie\s*:", re.IGNORECASE),
     re.compile(
-        r"\b[A-Z0-9_.-]*(?:Password|Passwd|Pwd|Token|Secret|Cookie|Credential|Credentials|Api[-_]?Key|ApiKey|Access[-_]?Key|AccessKey|Private[-_]?Key|PrivateKey)[A-Z0-9_.-]*\s*[:=]\s*\S+",
+        r"\b(?!(?<![A-Z0-9_.-])(?-i:max_tokens|token_count|password_length)[ \t]*=[ \t]*[0-9]+(?=$|[\s`;,)}\]]))"
+        r"[A-Z0-9_.-]*(?:Password|Passwd|Pwd|Token|Secret|Cookie|Credential|Credentials|Api[-_]?Key|ApiKey|Access[-_]?Key|AccessKey|Private[-_]?Key|PrivateKey)[A-Z0-9_.-]*\s*[:=]\s*\S+",
         re.IGNORECASE,
     ),
     re.compile(

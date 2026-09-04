@@ -650,6 +650,139 @@ class TaskValidationTests(unittest.TestCase):
                 validated = validate_task_input(title="Task", add_note=note)
                 self.assertEqual(validated["add_note"], note)
 
+    def test_numeric_metadata_examples_survive_caller_and_stored_validation(self):
+        for value in (
+            "max_tokens=4096",
+            "token_count=1024",
+            "password_length=12",
+        ):
+            with self.subTest(value=value):
+                self.assert_privacy_pattern_parity(value)
+                validated = validate_task_input(
+                    title=value,
+                    description=value,
+                    verification=value,
+                    add_note=value,
+                )
+                for field in ("title", "description", "verification", "add_note"):
+                    self.assertEqual(validated[field], value)
+                row = valid_stored_task_row(
+                    title=value,
+                    description=value,
+                    verification=value,
+                )
+                original = dict(row)
+                result = validate_stored_task_rows(
+                    [row],
+                    source_schema_version=7,
+                    expected_project_id=row["project_id"],
+                )
+                self.assertIsNone(result.verification_rejection)
+                self.assertEqual(row, original)
+
+    def test_numeric_metadata_accepts_only_documented_integer_syntax(self):
+        for value in (
+            "max_tokens=0",
+            "token_count=0001024",
+            "password_length \t=\t 12",
+            "max_tokens=4096 ",
+            "token_count=1024\tverified",
+            "password_length=12\nverified",
+            "`max_tokens=4096`",
+            "token_count=1024, verified",
+            "password_length=12; verified",
+            "(max_tokens=4096)",
+            "[token_count=1024]",
+            "{password_length=12}",
+            "max_tokens=4096 token_count=1024 password_length=12",
+            "max_tokens=" + ("9" * 600),
+        ):
+            with self.subTest(value=value):
+                self.assert_privacy_pattern_parity(value)
+                validated = validate_task_input(title="Task", add_note=value)
+                self.assertEqual(validated["add_note"], value)
+
+    def test_numeric_metadata_rejects_other_keys_and_nonnumeric_assignments(self):
+        for value in (
+            "MAX_TOKENS=4096",
+            "Token_count=1024",
+            "Password_length=12",
+            "api_token_count=1024",
+            "password_length_hint=12",
+            "max_tokens_extra=4096",
+            "custom.max_tokens=4096",
+            "custom-token_count=1024",
+            ".max_tokens=4096",
+            "-token_count=1024",
+            "--password_length=12",
+            "max_tokens:4096",
+            "max_tokens=secret",
+            "token_count=removed",
+            "password_length=fixed",
+            "max_tokens=-1",
+            "max_tokens=+1",
+            "token_count=1.5",
+            "token_count=1e3",
+            "password_length=0x10",
+            "max_tokens=4096suffix",
+            "token_count=1024_token",
+            "password_length=12/secret",
+            "max_tokens=4096.",
+            'max_tokens="4096"',
+            "token_count='1024'",
+            '{"password_length":"12"}',
+            "max_tokens=\u0661\u0662",
+            "token_count=\uff11\uff12",
+            "password_length=12\u0661",
+            "max_tokens\n=4096",
+            "token_count=\n1024",
+            "password_length\u00a0=12",
+            "Fix token=removed",
+            "Document password=fixed",
+        ):
+            with self.subTest(value=value):
+                self.assert_privacy_pattern_parity(value)
+                self.assert_validation_error(
+                    "privacy_rejected",
+                    validate_task_input,
+                    title="Task",
+                    add_note=value,
+                    field="add_note",
+                )
+
+    def test_numeric_metadata_does_not_hide_credentials_or_dumps(self):
+        for value in (
+            ".max_tokens=4096",
+            "-token_count=1024",
+            "--password_length=12",
+            "max_tokens=4096 token=secret",
+            "password=secret token_count=1024",
+            "password_length=12 Authorization: Bearer secret",
+            "Authorization=max_tokens=4096",
+            "token=max_tokens=4096",
+            '{"token":"max_tokens=4096"}',
+            "Fix max_tokens=4096 token=removed",
+            "token_count=1024\nTraceback (most recent call last)",
+            "password_length=12\nstdout: private output",
+        ):
+            with self.subTest(value=value):
+                self.assert_privacy_pattern_parity(value)
+                self.assert_validation_error(
+                    "privacy_rejected",
+                    validate_task_input,
+                    title="Task",
+                    description=value,
+                    field="description",
+                )
+                row = valid_stored_task_row(description=value)
+                with self.assertRaises(StorageError) as caught:
+                    validate_stored_task_rows(
+                        [row],
+                        source_schema_version=7,
+                        expected_project_id=row["project_id"],
+                    )
+                self.assertEqual(caught.exception.code, "project_state_unreadable")
+
     def test_legacy_m19_7_stored_guard_is_exact_and_preserves_original_bytes(self):
         accepted = (
             "dispatch_authorization=1",

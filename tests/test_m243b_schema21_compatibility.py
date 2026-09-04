@@ -368,6 +368,7 @@ def _seed_targeted_m21_fixture(
     record_receipt: bool,
     verification_required: bool = True,
     source_schema_version: int = 21,
+    title: str = "Persisted schema21 Runner history",
 ):
     if source_schema_version not in (21, 22):
         raise AssertionError("completion fixture supports only historical21 or current22")
@@ -424,7 +425,7 @@ def _seed_targeted_m21_fixture(
         "--repo",
         str(install.project_root),
         "--title",
-        "Persisted schema21 Runner history",
+        title,
         "--status",
         "in_progress",
         "--review-tier",
@@ -506,6 +507,7 @@ def _seed_completed_m21_fixture(
     *,
     verification_required: bool = True,
     source_schema_version: int = 21,
+    title: str = "Persisted schema21 Runner history",
 ):
     install, target, task_id, commit = _seed_targeted_m21_fixture(
         testcase,
@@ -513,6 +515,7 @@ def _seed_completed_m21_fixture(
         record_receipt=verification_required,
         verification_required=verification_required,
         source_schema_version=source_schema_version,
+        title=title,
     )
     _installed_json(
         testcase,

@@ -3189,6 +3189,14 @@ including authorization/Bearer headers, private-key blocks, password/token/API
 key assignments, Python traceback headers, raw stdout/stderr headings, and
 repeated raw Git diffs.
 
+The broad sensitive-key assignment branch excludes only the three exact
+numeric metadata forms defined in the specification (`max_tokens`,
+`token_count`, `password_length`). A branch-local lexical exclusion keeps the
+original input visible to every other detector; it neither short-circuits the
+guard nor transforms stored bytes. The test-only Evidence reader independently
+implements the same policy without importing the production guard. Existing
+field limits, JSON scalar handling, legacy reads, and error mapping are unchanged.
+
 The ordinary matcher receives caller text unchanged. It rejects both
 `dispatch_authorization=<value>` and the JSON key
 `"dispatch_authorization":<value>`, including numeric values; no generic

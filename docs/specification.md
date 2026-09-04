@@ -3093,6 +3093,20 @@ character limit and still use the common privacy guard and state validation.
 `lane` is canonicalized by trimming outer whitespace; `blocked_reason` is
 retained as supplied after string/privacy checks.
 
+Three nonsecret numeric metadata assignments are not credential assignments:
+exact lowercase `max_tokens`, `token_count`, and `password_length`, followed by
+`=` and one or more ASCII digits. Spaces or tabs may surround `=`; zero and
+leading zeros are valid, with no additional numeric bound beyond the field's
+existing text limit. The value ends at end-of-input, whitespace, a backtick,
+comma, semicolon, or closing `)`, `]`, or `}`. For example, `max_tokens=4096`,
+`token_count=1024`, and `password_length=12` are accepted unchanged by caller,
+stored-text, and Evidence validation. This does not exempt prefixed/suffixed or
+differently cased keys, colon assignments, quoted numeric strings, signs,
+decimals, exponents, or digit-prefixed nonnumeric values. Existing JSON
+nonsecret scalar handling is unchanged. All other credential and dump checks
+still inspect the entire original input; recognized metadata never hides a
+separate credential or makes an ambiguous token/status assignment safe.
+
 Normal and new caller input has no release- or project-specific privacy
 exception. Both the lowercase equality form
 `dispatch_authorization=<value>` and a JSON

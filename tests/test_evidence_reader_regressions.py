@@ -404,6 +404,51 @@ class EvidenceReaderRegressionTests(unittest.TestCase):
             self.assertIn('"token": null', source.source["payload"]["task"]["description"])
             self.assertEqual(tree_snapshot(evidence), before)
 
+    def test_numeric_metadata_policy_survives_independent_bundle_read(self):
+        accepted = (
+            "max_tokens=4096 token_count=1024 password_length=12",
+            "Metadata (`max_tokens = 004096`); token_count=0] password_length=12}",
+        )
+        rejected = (
+            "max_tokens=4096 token=secret-value",
+            "token=secret-value password_length=12",
+            "token=max_tokens=4096",
+            "max_tokens=4096 Authorization: Bearer secret-value",
+            "max_tokens=4096\nTraceback (most recent call last)",
+            "max_tokens=4096secret",
+            "token_count=1.5",
+            "password_length=-12",
+            'password_length="12"',
+            "token_count=1e3",
+            "max_tokens=\u0664\u0660\u0669\u0666",
+            "api_token_count=1024",
+            "password_length_hint=12",
+            "MAX_TOKENS=4096",
+            ".max_tokens=4096",
+            "-token_count=1024",
+            "--password_length=12",
+            "Fix token=removed; max_tokens=4096",
+        )
+        for value in (*accepted, *rejected):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as temporary:
+                evidence = write_evidence_tree(Path(temporary))
+
+                def update_description(payload):
+                    payload["task"]["description"] = value
+                    refresh_inner_digests(payload)
+
+                entry = self._reseal_bundle(evidence, update_description)
+                index = read_evidence_index(evidence)
+                before = tree_snapshot(evidence)
+                if value in accepted:
+                    source = validate_evidence_source(index, entry)
+                    self.assertEqual(source.source["payload"]["task"]["description"], value)
+                else:
+                    with self.assertRaises(EvidenceConsumerError) as raised:
+                        validate_evidence_source(index, entry)
+                    self.assertEqual(raised.exception.code, "source_invalid")
+                self.assertEqual(tree_snapshot(evidence), before)
+
     def test_timestamp_routes_require_real_canonical_utc_seconds(self):
         def mutate_review_created_at(value: str):
             def mutate(payload) -> None:

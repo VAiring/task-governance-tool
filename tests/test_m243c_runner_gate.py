@@ -10,7 +10,12 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import _copy_skill, run_taskgov_internal
+from tests.m14_test_support import (
+    _copy_skill,
+    refresh_test_manifest,
+    run_taskgov_internal,
+    tree_snapshot,
+)
 from tests.test_m242_runner_service import RunnerServiceFixture, git
 from tests.verification_receipt_test_support import (
     add_receipt,
@@ -938,6 +943,117 @@ class M243CRunnerGateTests(unittest.TestCase):
                     ).fetchone()
                 self.assertIsNotNone(cycle)
                 self.assertEqual(cycle[0], expected_basis)
+
+    def test_valid_package_identity_change_makes_live_runner_basis_stale(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            skill_parent = fixture.repo / ".agents" / "skills"
+            skill_parent.mkdir(parents=True)
+            installed_skill_root = _copy_skill(skill_parent)
+            fixture.target = replace(
+                fixture.target,
+                skill_root=installed_skill_root,
+            )
+            implementation_before = service.capture_runner_implementation(
+                installed_skill_root
+            )
+            original_prepared = fixture.prepared
+
+            def prepare_with_installed_identity():
+                return replace(
+                    original_prepared(),
+                    implementation=implementation_before,
+                )
+
+            with mock.patch.object(
+                fixture,
+                "prepared",
+                side_effect=prepare_with_installed_identity,
+            ):
+                prepared, intent = _launch(fixture)
+            observation = _persist_terminal(fixture, intent, branch="pass")
+            self.assertEqual(
+                observation.runner_implementation_digest,
+                implementation_before.implementation_digest,
+            )
+
+            # Only Plan admission and the existing private target seam are
+            # substituted; package capture and physical comparison stay real.
+            with mock.patch.object(
+                service,
+                "capture_verification_runner_plan",
+                return_value=None,
+            ), mock.patch.object(
+                service,
+                "resolve_verification_runner_plan",
+                return_value=prepared.plan,
+            ), mock.patch(
+                "tests.m14_test_support.resolve_database_target",
+                return_value=fixture.target,
+            ):
+                _seed_review_receipts(fixture)
+                state_before = tree_snapshot(fixture.db.parent)
+                current = show_task(
+                    fixture.db,
+                    fixture.repo,
+                    fixture.task_id,
+                    json_output=True,
+                )
+                current_check = _complete_with_matching_commit(fixture, check=True)
+                self.assertEqual(current.returncode, 0, current.stdout)
+                self.assertEqual(current_check.returncode, 0, current_check.stdout)
+                self.assertEqual(
+                    json.loads(current.stdout)["data"]["verification_evidence"][
+                        "gate"
+                    ],
+                    {
+                        "required": True,
+                        "satisfied": True,
+                        "blocking_code": None,
+                        "qualifying_receipt_id": None,
+                    },
+                )
+                self.assertEqual(
+                    json.loads(current_check.stdout)["data"]["blocking_codes"],
+                    [],
+                )
+
+                core = installed_skill_root / "SKILL.md"
+                core.write_bytes(
+                    core.read_bytes() + b"\n<!-- Package identity fixture. -->\n"
+                )
+                refresh_test_manifest(installed_skill_root)
+                implementation_after = service.capture_runner_implementation(
+                    installed_skill_root
+                )
+                self.assertNotEqual(
+                    implementation_after.implementation_digest,
+                    implementation_before.implementation_digest,
+                )
+                stale = show_task(
+                    fixture.db,
+                    fixture.repo,
+                    fixture.task_id,
+                    json_output=True,
+                )
+                stale_check = _complete_with_matching_commit(fixture, check=True)
+
+            self.assertEqual(stale.returncode, 0, stale.stdout)
+            self.assertEqual(
+                json.loads(stale.stdout)["data"]["verification_evidence"]["gate"],
+                {
+                    "required": True,
+                    "satisfied": False,
+                    "blocking_code": "evidence_basis_stale",
+                    "qualifying_receipt_id": None,
+                },
+            )
+            self.assertEqual(stale_check.returncode, 0, stale_check.stdout)
+            self.assertEqual(
+                json.loads(stale_check.stdout)["data"]["blocking_codes"],
+                ["evidence_basis_stale"],
+            )
+            self.assertEqual(tree_snapshot(fixture.db.parent), state_before)
 
     def test_completion_workflow_does_not_import_runner_service(self):
         module_name = "task_governance_tool.verification_runner_service"

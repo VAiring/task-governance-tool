@@ -24,7 +24,11 @@ from tests.evidence_test_support import (
     refresh_bundle_seals,
     valid_native_payload,
 )
-from tests.m14_test_support import make_physical_install, tree_snapshot
+from tests.m14_test_support import (
+    make_physical_install,
+    refresh_test_manifest,
+    tree_snapshot,
+)
 
 from tests.evidence_reader_oracle import (
     EvidenceConsumerError,
@@ -63,6 +67,9 @@ from task_governance_tool.verification_runner import (
     verification_runner_attempt_digest,
     verification_runner_observation_digest,
     verification_runner_sandbox_event_digest,
+)
+from task_governance_tool.verification_runner_runtime import (
+    capture_runner_implementation,
 )
 from task_governance_tool.verification_receipts import (
     VerificationGate,
@@ -1796,19 +1803,50 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
                     },
                 )
                 original_generation = int(stored_task["review_target_generation"])
+                runner_tables = (
+                    "verification_runner_resolutions",
+                    "verification_runner_attempts",
+                    "verification_runner_observations",
+                    "verification_runner_sandbox_events",
+                )
                 runner_counts = tuple(
                     connection.execute(
                         f"SELECT COUNT(*) FROM {table_name} WHERE task_id = ?",
                         (task_id,),
                     ).fetchone()[0]
-                    for table_name in (
-                        "verification_runner_resolutions",
-                        "verification_runner_attempts",
-                        "verification_runner_observations",
-                        "verification_runner_sandbox_events",
-                    )
+                    for table_name in runner_tables
                 )
+                runner_graph_before = {
+                    table_name: [
+                        tuple(row)
+                        for row in connection.execute(
+                            f"SELECT * FROM {table_name} WHERE task_id = ? "
+                            "ORDER BY rowid",
+                            (task_id,),
+                        ).fetchall()
+                    ]
+                    for table_name in runner_tables
+                }
 
+            captured_implementation = artifact.payload["runner_observation"][
+                "runner_implementation_digest"
+            ]
+            history_before = tree_snapshot(install.skill_root / "state")
+            implementation_before = capture_runner_implementation(install.skill_root)
+            core = install.skill_root / "SKILL.md"
+            core.write_bytes(
+                core.read_bytes() + b"\n<!-- Historical package identity fixture. -->\n"
+            )
+            refresh_test_manifest(install.skill_root)
+            implementation_after = capture_runner_implementation(install.skill_root)
+            self.assertNotEqual(
+                implementation_after.implementation_digest,
+                implementation_before.implementation_digest,
+            )
+            self.assertNotEqual(
+                captured_implementation,
+                implementation_after.implementation_digest,
+            )
             shown = _installed_json(
                 self,
                 install,
@@ -1840,6 +1878,36 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
                     target,
                     generated_at="2026-08-28T00:01:00Z",
                 ).snapshot
+                runner_graph_after = {
+                    table_name: [
+                        tuple(row)
+                        for row in connection.execute(
+                            f"SELECT * FROM {table_name} WHERE task_id = ? "
+                            "ORDER BY rowid",
+                            (task_id,),
+                        ).fetchall()
+                    ]
+                    for table_name in runner_tables
+                }
+                replayed_projection = storage_module.capture_evidence_projection_basis(
+                    connection,
+                    project_id=target.project.project_id,
+                )
+                self.assertEqual(len(replayed_projection.native_bundles), 1)
+                replayed_bundle = build_projection_bundle_artifact(
+                    replayed_projection.native_bundles[0]
+                )
+            self.assertEqual(runner_graph_after, runner_graph_before)
+            self.assertEqual(replayed_bundle.bundle_digest, artifact.bundle_digest)
+            self.assertEqual(replayed_bundle.payload_bytes, rebuilt.payload_bytes)
+            self.assertEqual(replayed_bundle.document, rebuilt.document)
+            self.assertEqual(
+                replayed_bundle.payload["runner_observation"][
+                    "runner_implementation_digest"
+                ],
+                captured_implementation,
+            )
+            self.assertEqual(tree_snapshot(install.skill_root / "state"), history_before)
             self.assertEqual(snapshot["snapshot_version"], 4)
             self.assertEqual(snapshot["source_schema_version"], 21)
             serialized = json.dumps(snapshot, sort_keys=True)

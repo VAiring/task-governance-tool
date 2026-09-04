@@ -2227,11 +2227,14 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                                 source_id="tg_derived_analysis_0000000000000001",
                             )
                             fields = tuple(reference)
+                            # Inject past current DDL, then restore checks before reentry.
+                            connection.execute("PRAGMA ignore_check_constraints = ON")
                             connection.execute(
                                 f"INSERT INTO evidence_references({', '.join(fields)}) "
                                 f"VALUES ({', '.join('?' for _ in fields)})",
                                 tuple(reference[field] for field in fields),
                             )
+                            connection.execute("PRAGMA ignore_check_constraints = OFF")
                         connection.commit()
                         with self.assertRaises(StorageError) as failure:
                             apply_migrations(connection)

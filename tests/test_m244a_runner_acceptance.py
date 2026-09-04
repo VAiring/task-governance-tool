@@ -417,6 +417,8 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
             finally:
                 _stop_schema20_runtime_oracle()
             storage.rehearse_schema21_storage(target.db_path)
+            with closing(storage.connect(target.db_path)) as connection:
+                self.assertEqual(storage.apply_migrations(connection), ([22], []))
             with closing(storage.connect_initialized_readonly(target)) as connection:
                 task = service.read_internal_task(
                     connection,

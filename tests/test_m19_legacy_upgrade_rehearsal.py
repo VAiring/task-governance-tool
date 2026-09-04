@@ -15,8 +15,11 @@ from typing import Any
 
 from tests.m14_test_support import (
     extract_skill_at_commit,
-    require_repository_git as require_git,
     run_repository_git as run_git,
+)
+from tests.test_m243b_schema21_compatibility import (
+    _seed_completed_m21_fixture,
+    publish_setup_evidence_projection,
 )
 
 
@@ -73,28 +76,27 @@ def extract_legacy_skill(destination: Path) -> Path:
     return extract_skill_at_commit(destination, LEGACY_COMMIT)
 
 
-def staged_package_paths() -> tuple[Path, ...]:
-    raw = require_git(
-        "ls-files",
-        "-z",
-        "--",
-        "task-governance-tool",
+def candidate_package_paths() -> tuple[Path, ...]:
+    manifest = json.loads(
+        (CURRENT_SKILL_ROOT / "release-manifest.json").read_bytes()
     )
+    core_files = manifest["core_files"]
+    if not isinstance(core_files, dict) or not core_files:
+        raise AssertionError("current package inventory is empty")
     paths: list[Path] = []
-    for item in raw.split(b"\0"):
-        if not item:
-            continue
-        decoded = item.decode("utf-8")
-        relative = PurePosixPath(decoded)
+    for name in sorted((*core_files, "release-manifest.json")):
+        relative = PurePosixPath(name)
         if (
             not relative.parts
-            or relative.parts[0] != "task-governance-tool"
+            or relative.is_absolute()
+            or relative.parts[0] in {"state", "config"}
             or any(part in {"", ".", ".."} for part in relative.parts)
         ):
             raise AssertionError("current package inventory is invalid")
-        paths.append(Path(*relative.parts[1:]))
-    if not paths:
-        raise AssertionError("current staged package inventory is empty")
+        path = Path(*relative.parts)
+        if not (CURRENT_SKILL_ROOT / path).is_file():
+            raise AssertionError("current package file is missing")
+        paths.append(path)
     return tuple(paths)
 
 
@@ -124,10 +126,8 @@ def overlay_current_package(skill_root: Path) -> None:
             shutil.rmtree(child)
         else:
             child.unlink()
-    for relative in staged_package_paths():
+    for relative in candidate_package_paths():
         source = CURRENT_SKILL_ROOT / relative
-        if not source.is_file():
-            raise AssertionError("current staged package file is missing")
         destination = skill_root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
@@ -322,6 +322,55 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             f"{result.stderr}\n{result.stdout}",
         )
         return json_payload(result)
+
+    def test_candidate_core_replacement_preserves_state_and_supported_configs(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            install, target, task_id = _seed_completed_m21_fixture(self, Path(tmp))
+            publication = publish_setup_evidence_projection(
+                target, observed_at="2026-09-04T00:00:00Z"
+            )
+            self.assertEqual(publication.code, "succeeded")
+            index = json.loads(target.resolved_evidence_index.read_bytes())
+            entry = next(
+                row for row in index["payload"]["entries"]
+                if row["task_id"] == task_id
+            )
+            self.assertTrue(install.db_path.is_file())
+            self.assertTrue(
+                (target.resolved_evidence_root / entry["bundle_file"]).is_file()
+            )
+
+            configs = seed_supported_local_configs(install.skill_root)
+            sentinel = install.fixed_root / "analysis" / "retained-sentinel.json"
+            sentinel.parent.mkdir(parents=True, exist_ok=True)
+            sentinel.write_bytes(b'{"inert":true}\n')
+            obsolete = install.skill_root / "scripts" / "obsolete-core.py"
+            obsolete.write_bytes(b"# obsolete nonmanifest core\n")
+            (install.skill_root / "scripts" / "taskgov.py").write_bytes(
+                b"# superseded installed core\n"
+            )
+            state_before = tree_snapshot(install.skill_root / "state")
+
+            overlay_current_package(install.skill_root)
+
+            installed_core = {
+                path.relative_to(install.skill_root): path.read_bytes()
+                for path in install.skill_root.rglob("*")
+                if path.is_file()
+                and path.relative_to(install.skill_root).parts[0]
+                not in {"state", "config"}
+            }
+            candidate_core = {
+                relative: (CURRENT_SKILL_ROOT / relative).read_bytes()
+                for relative in candidate_package_paths()
+            }
+            self.assertEqual(installed_core, candidate_core)
+            self.assertFalse(obsolete.exists())
+            self.assertEqual(tree_snapshot(install.skill_root / "state"), state_before)
+            self.assertEqual(supported_local_config_snapshot(install.skill_root), configs)
+            self.assertEqual(sentinel.read_bytes(), b'{"inert":true}\n')
 
     def test_exact_legacy_package_upgrades_and_rolls_back_as_one_compatibility_point(
         self,

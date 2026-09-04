@@ -33,6 +33,8 @@ PRIVATE_SCHEMA20_VERSION = 20
 PRIVATE_SCHEMA20_MIGRATION_NAME = "verification_runner_shadow"
 PRIVATE_SCHEMA21_VERSION = 21
 PRIVATE_SCHEMA21_MIGRATION_NAME = "verification_runner_gate_basis"
+PRIVATE_SCHEMA22_VERSION = 22
+PRIVATE_SCHEMA22_MIGRATION_NAME = "evidence_reservation_cleanup"
 VIEWER_MIN_SOURCE_SCHEMA_VERSION = 5
 STORED_TASK_VERIFICATION_LIMIT_V17 = 500
 STORED_TASK_VERIFICATION_LIMIT_V18 = 1_000
@@ -6831,6 +6833,59 @@ def _schema21_expected_objects() -> dict[str, tuple[str, str, str]]:
     return result
 
 
+def _schema22_replacement_statements() -> tuple[str, ...]:
+    """Return the private v22 Evidence replacements, not a migration path."""
+
+    statements: list[str] = []
+    for legacy_statements, table_name in (
+        (evidence_ledger_capture_schema_statements(), "evidence_references"),
+        (completion_evidence_bundle_schema_statements(), "criterion_evidence_links"),
+    ):
+        for statement in legacy_statements:
+            if not _normalized_schema_sql(statement).startswith("CREATE "):
+                continue
+            kind, name, owner = _schema20_statement_identity(statement)
+            if owner != table_name or name == "trg_criterion_evidence_links_matrix_insert":
+                continue
+            if kind == "table":
+                # Derive only the six closed SQL allow-lists; legacy DDL stays intact.
+                statement = (
+                    statement.replace(", 'derived_analysis'", "")
+                    .replace(", 'llm_derived'", "")
+                    .replace(", 'batch_analyzer'", "")
+                )
+            statements.append(statement)
+    return (
+        *statements,
+        _completion_evidence_bundle_v20_table_sql(
+            schema_version=PRIVATE_SCHEMA21_VERSION,
+        ).replace("source_schema_version = 21", "source_schema_version IN (21, 22)"),
+        *_bundle_v20_recreated_object_statements(),
+        _criterion_evidence_links_v20_matrix_trigger_sql(),
+        _task_completion_cycle_evidence_basis_v21_trigger_sql().replace(
+            "bundle.source_schema_version = 21", "bundle.source_schema_version = 22",
+        ),
+    )
+
+
+def _schema22_expected_objects() -> dict[str, tuple[str, str, str]]:
+    result = _schema21_expected_objects()
+    for statement in _schema22_replacement_statements():
+        kind, name, table_name = _schema20_statement_identity(statement)
+        result[name] = (kind, table_name, _normalized_schema_sql(statement))
+    return result
+
+
+def _validate_schema22_owned_contract(connection: sqlite3.Connection) -> None:
+    """Recognize exact private v22 owned DDL without admitting stored rows."""
+
+    if _owned_schema_sql_fingerprint(
+        connection,
+        schema_version=PRIVATE_SCHEMA22_VERSION,
+    ) != _SCHEMA22_OWNED_SCHEMA_FINGERPRINT:
+        raise _unreadable_project_state()
+
+
 def _unowned_rebuilt_table_attachments(
     connection: sqlite3.Connection,
     *,
@@ -8712,6 +8767,7 @@ def _owned_schema_sql_fingerprint(
     if schema_version not in {
         PRIVATE_SCHEMA20_VERSION,
         PRIVATE_SCHEMA21_VERSION,
+        PRIVATE_SCHEMA22_VERSION,
     }:
         raise AssertionError("owned schema fingerprint version is unsupported")
     owned_names = tuple(
@@ -8771,8 +8827,12 @@ _SCHEMA20_OWNED_SCHEMA_FINGERPRINT = (
 _SCHEMA21_OWNED_SCHEMA_FINGERPRINT = (
     "8b7aa6d9619c2e98118c9c9c0ed8979a7e56c7ef9c5d3de51980f41a35f80558"
 )
+_SCHEMA22_OWNED_SCHEMA_FINGERPRINT = (
+    "711309d9dcf8dbf9513ef5c1dadeef9faf96c11436b4ef21c06388838f8f9b71"
+)
 _SCHEMA20_EXPECTED_OBJECTS = tuple(_schema20_expected_objects().items())
 _SCHEMA21_EXPECTED_OBJECTS = tuple(_schema21_expected_objects().items())
+_SCHEMA22_EXPECTED_OBJECTS = tuple(_schema22_expected_objects().items())
 
 
 def _validate_completion_evidence_bundle_schema_contract(

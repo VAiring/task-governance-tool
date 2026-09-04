@@ -599,6 +599,222 @@ the full suite is reserved for unit 11. No numeric file/line/time limit, repeate
 whole-project audit, new mandatory worksheet, or speculative safety gate is
 added to make a Task complete.
 
+<a id="m23-schema-cleanup"></a>
+
+### M23 Retirement Follow-Up — Schema Reservation Cleanup
+
+This approved follow-up removes the retired Analyzer's unused vocabulary from
+the current schema, not the shared Evidence tables or their valid records.
+It follows TG-M23R.11 in the same `TG-M23R` sequential lane, at orders
+120–190. The eight TG-M23S units below own future execution detail; the Task
+database alone owns their status. Registration authorizes this plan and ready
+Task records, not implementation, migration of the self-host database, Git
+operations, external CI, installation, or release.
+
+The existing TG-M23R.1–11 contracts remain unchanged. Their schema-v21 and
+reserved-vocabulary preservation rule is the predecessor boundary, not a
+prohibition on this separately approved follow-up. Current supported behavior
+stays schema v21 until TG-M23S.7 activates the prepared schema v22 change and
+synchronizes the applicable specification, design, and candidate documents.
+
+#### Outcome And Bounded Compatibility
+
+- Remove `derived_analysis` from the source-kind/relation CHECK allow-lists,
+  `llm_derived` from assurance allow-lists, and `batch_analyzer` from producer
+  allow-lists in current `evidence_references` and `criterion_evidence_links`.
+  Remove corresponding unused current enum/order/dispatch reservations.
+  Keep the tables, columns, valid source kinds, `deterministically_derived`,
+  and the independent test-only Evidence reader.
+- Preserve supported old-schema definitions and migration/read compatibility.
+  Legacy DDL, rejection tests, and historical explanations may still name the
+  retired values. No repository-wide zero-string test or unrelated schema,
+  handoff, source-file, or document decomposition is part of this cleanup.
+- Use one forward migration from complete schema v21 to v22. The physical
+  rebuild includes the two Evidence tables and
+  `completion_evidence_bundles`, whose source-version CHECK must admit new
+  source-22/v2 Bundles. Restore their owned indexes/triggers and the coupled
+  completion-cycle guard. No business column/table or Runner protocol is added.
+- Preserve existing business rows, IDs, relations, provenance, completed
+  history, and sealed Bundle payloads/source versions/digests. Existing Bundle
+  files remain byte-identical. A regenerated index truthfully reports source
+  schema 22 and may change bytes/digest while referencing those same old
+  Bundles. New Bundles are source-22/format-2; index format 2, Bundle digest
+  domains, Viewer snapshot 4, CLI shapes, and verification/review rules remain.
+- Existing writers cannot create the retired values. Migration validates its
+  actual source using the existing storage boundaries; unexpected reserved-value
+  rows are rejected without deletion, conversion, or inferred replacement.
+  An unowned index/trigger attached to one of the three rebuilt tables is
+  rejected before rebuild rather than silently lost or replayed. Unrelated
+  objects retain the existing preservation policy. No live-project census or
+  manual cleanup is a prerequisite for implementing this migration.
+- Reuse the established transaction, integrity/foreign-key validation,
+  marker-last, rollback, and connection-setting restoration patterns. Rollback
+  means logical schema/data preservation, not byte-identical SQLite files.
+  Explicit setup retains the existing pre-migration backup and paired-rollback
+  contract; ordinary commands never migrate or repair state.
+- Preserve M24 manual/not-required/Runner branches, no-relaunch recovery,
+  live implementation-drift invalidation, and self-contained historical Runner
+  evidence. This is version compatibility, not a new Runner gate or safety
+  framework. No Analyzer resurrection, model call, new runtime reader, CLI,
+  config, normal-loop call, platform port, or general migration framework.
+
+Preparation uses the existing explicit-connection helpers and isolated test
+databases. Units 1–6 keep the public current-schema target and ordinary schema-21
+behavior unchanged; they may extend narrow version-aware helpers for explicit
+schema-22 tests, but introduce no rehearsal command, alternate state mode, or
+parallel candidate runtime. Each packaged-code change refreshes its actual
+manifest digests, and each new test module is classified once in the existing
+test lanes. Tests for legacy schema 21 remain explicit old-schema tests rather
+than being indiscriminately rewritten to expect 22.
+
+All eight units are Tier 2 because they change schema, its coupled contracts or
+write/gate boundaries, or final acceptance. Each requires two independent
+reviews of its own target. Units 1–7 use focused checks for the changed boundary
+plus applicable document/release/lane and diff checks. The existing full offline
+suite runs in unit 8, not at every preparation boundary. Reuse sufficient
+existing tests; add cases only for new version/rebuild behavior, not a fresh
+cross-product of every legacy fault. No numeric size/time gate or repeated
+whole-project audit is added.
+
+<a id="tg-m23s-1"></a>
+
+#### TG-M23S.1 — Schema-v22 Definitions
+
+Input: the accepted M23 retirement and current schema-v21 definitions.
+Scope: define the three v22 replacement tables, their owned indexes/triggers,
+the coupled cycle guard, and exact schema-object recognition in `storage.py`.
+Keep old version-specific SQL available for source admission and migration.
+Output: a privately constructible, recognizable v22 physical schema with the
+six reservation allow-lists narrowed and source-22/v2 Bundle admission.
+Acceptance: focused temporary-database DDL tests prove the intended CHECK/FK/
+index/trigger changes and rejection of the removed values, with unchanged
+business columns and unchanged schema-21 definitions/public initialization.
+No migration algorithm, public activation, or broad storage refactor.
+
+<a id="tg-m23s-2"></a>
+
+#### TG-M23S.2 — Stored Evidence And History Validation
+
+Input: unit 1's exact schema definitions.
+Scope: make existing storage-owned Evidence, Bundle, cycle, and Runner-graph
+validators explicitly understand schema 22 with the same schema-21 semantic
+rules and narrowed current vocabulary. Preserve old source-version validation.
+Output: validation of a schema-22 database containing retained source-19/20/21
+Bundles/history, including its existing storage-owned projection-basis capture,
+without a public schema switch. New source-22 payload validation is unit 4.
+Acceptance: focused valid/corrupt fixture tests cover retained
+manual and Runner history, source-version discrimination, reserved-value
+rejection, and the existing no-promotion/no-privacy-upgrade boundary. Exact-21
+guards must neither wrongly reject 22 nor silently skip its history checks.
+Current Task lifecycle/Runner selection belongs to unit 5; no new gate matrix.
+
+<a id="tg-m23s-3"></a>
+
+#### TG-M23S.3 — Transactional Schema-v21 To v22 Migration
+
+Input: units 1–2's physical definitions and stored-state validators.
+Scope: implement the one explicit-connection migration/reentry path, rebuilding
+only the three declared tables and coupled owned objects. Preserve accepted
+source rows and unrelated objects, reject unexpected reserved rows or attached
+unowned objects before rebuild, and record the new marker last.
+Output: tested migration callable independently of public setup activation;
+its populated fixtures retain source-19/20/21 Bundles, not new source-22 output.
+Acceptance: representative populated v21 Evidence/Runner history survives;
+fresh construction reaches the same v22 owned schema; exact-v22 reentry is
+validation-only; representative failures during rebuild and before commit
+roll back schema/data and restore connection settings. Run quick/FK checks and
+preservation assertions, including sealed Bundle payload/digest identity.
+No reverse migration, data deletion/repair, live database edit, or exhaustive
+fault-injection framework. Public migration dispatch remains unchanged here.
+
+<a id="tg-m23s-4"></a>
+
+#### TG-M23S.4 — Evidence Projection And Independent Reader Compatibility
+
+Input: migrated v22 fixtures from unit 3 and the retained test-only reader.
+Scope: extend `evidence_projection.py` and the independent test reader/support
+to admit source-22/v2 Bundle/index material without a new format or domain,
+including the coupled storage validation of new source-22 payloads.
+Output: pure fixtures/builders generate and independently validate new
+schema-22 Evidence; actual Task completion-writer integration is unit 5.
+A new index can reference unchanged source-19/v1 and source-20/21/v2 Bundles.
+Acceptance: focused producer-to-oracle tests cover manual/not-required/Runner
+arms, truthful source versions, old Bundle bytes/digests, index refresh, and
+representative version/digest rejection. The oracle does not import the
+producer's semantic validator or SQLite. No report, runtime-reader route,
+new publication mechanism, or requirement to preserve regenerated index bytes.
+
+<a id="tg-m23s-5"></a>
+
+#### TG-M23S.5 — Task Lifecycle And Runner Schema Compatibility
+
+Input: units 2–4's schema-aware validation, migration, and Evidence encoding.
+Scope: adapt existing current-state Task/verification/completion/Runner
+repository paths to schema 22 and derive new Bundle source version from the
+actual database. Remove exact-21 assumptions only where they represent the
+same supported gate capability. Output: existing lifecycle and selector work
+on explicit v22 test databases while ordinary CLI remains on v21.
+Acceptance: focused tests cover manual Receipt, not-required, qualifying Runner
+pass, the existing fallback/blocking classifications, reopen/fresh targeting,
+and retained historical Runner evidence. Reuse current gate matrices and
+implementation-drift tests; do not add a native process harness or alter Plan,
+process, cleanup, receipt, review, or completion semantics.
+
+<a id="tg-m23s-6"></a>
+
+#### TG-M23S.6 — Setup And Projection Consumer Compatibility
+
+Input: units 1–5's explicit schema-22 database and lifecycle support.
+Scope: prepare source-schema-22 validation/dispatch in setup, doctor, backup,
+recovery, resolver/relocation, and Viewer helpers. Keep old source handling and
+the public migration target at 21 until unit 7.
+Output: isolated v22 consumer fixtures work through the existing boundaries.
+Acceptance: representative schema-22 backup/recovery, read-only diagnosis,
+Viewer-v4, and relocation source-version tests pass with unchanged public
+fields, candidate-local versus set-fatal error handling, config preservation,
+and no-relaunch behavior. Reuse existing recovery and Viewer fixtures rather
+than duplicating their complete matrices. No new maintenance policy, recovery
+algorithm, artifact type, configuration, or live self-host setup.
+
+<a id="tg-m23s-7"></a>
+
+#### TG-M23S.7 — Atomic Current-Schema Activation And Residue Removal
+
+Input: the independently verified outputs of units 1–6.
+Scope: switch `SCHEMA_VERSION` and all supported setup migration/reentry
+dispatch paths to 22, including the current early returns for source 20/21.
+Remove remaining current-only Analyzer enum/order reservations while retaining
+necessary legacy compatibility and negative tests. Synchronize the exact
+affected specification/design sections, `plan.md` current decisions (not the
+unchanged TG-M23R.1–11 contracts), README, CLI reference, candidate
+release/install notes, manifest, and version-sensitive contract tests. Align
+current-schema wording in `SKILL.md` and `references/task_workflow.md` without
+changing their triggers, procedures, or normal-loop calls.
+Output: one coherent current schema-22 candidate with no partial public cutover.
+Acceptance: fresh setup, populated v21 upgrade, v22 no-write reentry, new
+completion-to-Evidence/oracle, and Viewer/backup canaries pass; package and
+document versions agree. Current definitions reject all three retired values;
+valid evidence and old compatibility still work. This unit wires prepared
+work and fixes direct integration defects, not a deferred migration/consumer
+implementation backlog. No release, Git mutation, or real self-host migration
+is authorized by this registration.
+
+<a id="tg-m23s-8"></a>
+
+#### TG-M23S.8 — Final Schema Cleanup Acceptance
+
+Input: unit 7's coherent current candidate.
+Scope: run `python -B tools/test_lanes.py --repo . --lane all` and the existing
+document/release/lane/diff checks, including isolated package upgrade and
+matched rollback coverage. Acceptance: all required local checks and two
+independent reviews pass; existing Evidence/Task identities, old Bundle bytes,
+the three supported configs, and historical Runner behavior are preserved.
+Confirm the existing public Plan-to-`runner_pass` canary is included, without
+duplicating its execution or claiming external CI/publication. Report remaining
+legacy vocabulary by its compatibility owner, not as failed physical cleanup.
+This is acceptance, not new implementation or permission to weaken a test;
+direct defects follow the existing bounded repair/reconciliation workflow.
+
 <a id="tg-m12-3"></a>
 
 ### TG-M12.3 Approved Static Contract

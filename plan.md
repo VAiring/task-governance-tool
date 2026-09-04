@@ -753,6 +753,11 @@ including the coupled storage validation of new source-22 payloads.
 Output: pure fixtures/builders generate and independently validate new
 schema-22 Evidence; actual Task completion-writer integration is unit 5.
 A new index can reference unchanged source-19/v1 and source-20/21/v2 Bundles.
+Pure rendering admits the explicit schema-22 container while the public target
+remains 21; index identity comes from that container and Bundle identity from
+each sealed row. Shared stored-row validation admits source-22 Bundles only in
+a physical schema-22 container, including selected-history reads, without
+changing the current completion writer or adding per-Bundle schema reads.
 Acceptance: focused producer-to-oracle tests cover manual/not-required/Runner
 arms, truthful source versions, old Bundle bytes/digests, index refresh, and
 representative version/digest rejection. The oracle does not import the

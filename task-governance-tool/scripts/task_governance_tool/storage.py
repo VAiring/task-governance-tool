@@ -13271,6 +13271,7 @@ def _validate_selected_completion_bundle_history(
     *,
     cycles: tuple[CompletionCycle, ...],
     runner_generations: dict[tuple[str, str, int], dict[str, Any]],
+    container_schema_version: int,
 ) -> None:
     """Validate and replay only Bundles owned by the returned history cycles."""
 
@@ -13470,6 +13471,7 @@ def _validate_selected_completion_bundle_history(
         _validate_one_completion_evidence_bundle_row(
             bundle_id=bundle_id,
             row=row,
+            container_schema_version=container_schema_version,
             cycle=cycle,
             snapshot=snapshot,
             owner_links=authority.links.get(bundle.authority_snapshot_id, {}),
@@ -13534,7 +13536,8 @@ def _validate_selected_schema21_completion_bundle_history(
 ) -> None:
     """Revalidate selected v21/v22 native Bundle history before replay."""
 
-    if current_schema_version(connection) not in {
+    container_schema_version = current_schema_version(connection)
+    if container_schema_version not in {
         PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
     } or not any(
         cycle.evidence_basis_version == 1 for cycle in cycles
@@ -13559,6 +13562,7 @@ def _validate_selected_schema21_completion_bundle_history(
             connection,
             cycles=cycles,
             runner_generations=runner_generations,
+            container_schema_version=container_schema_version,
         )
     except sqlite3.Error as exc:
         error = evidence_ledger_sqlite_error(exc)
@@ -19047,13 +19051,15 @@ def _completion_bundle_version_basis_valid(
             and cycle.verification_basis_kind is None
             and cycle.verification_runner_observation_id is None
         )
-    if (source_schema_version, bundle_version) not in {(20, 2), (21, 2)}:
+    if (source_schema_version, bundle_version) not in {(20, 2), (21, 2), (22, 2)}:
         return False
     if verification_basis_kind != cycle.verification_basis_kind:
         return False
     if verification_basis_kind == "runner_observation":
         return (
-            source_schema_version == PRIVATE_SCHEMA21_VERSION
+            source_schema_version in {
+                PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+            }
             and verification_receipt_id is None
             and verification_runner_observation_id is not None
             and verification_runner_observation_id
@@ -19077,6 +19083,7 @@ def _validate_one_completion_evidence_bundle_row(
     *,
     bundle_id: str,
     row: sqlite3.Row | dict[str, Any],
+    container_schema_version: int,
     cycle: CompletionCycle | None,
     snapshot: sqlite3.Row | dict[str, Any] | None,
     owner_links: dict[str, str],
@@ -19106,6 +19113,10 @@ def _validate_one_completion_evidence_bundle_row(
     payload_size = row["payload_size_bytes"]
     if (
         COMPLETION_EVIDENCE_BUNDLE_ID_PATTERN.fullmatch(bundle_id) is None
+        or (
+            row["source_schema_version"] == PRIVATE_SCHEMA22_VERSION
+            and container_schema_version != PRIVATE_SCHEMA22_VERSION
+        )
         or cycle is None
         or cycle.evidence_basis_version != 1
         or cycle.completion_evidence_bundle_id != bundle_id
@@ -19198,7 +19209,9 @@ def _validate_one_completion_evidence_bundle_row(
     )
     if (
         runner_eligibility_one
-        and row["source_schema_version"] != PRIVATE_SCHEMA21_VERSION
+        and row["source_schema_version"] not in {
+            PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+        }
     ):
         raise evidence_ledger_inconsistent()
     runner_identity_matches = (
@@ -19470,10 +19483,11 @@ def _validate_completion_evidence_bundle_rows(
         "SELECT * FROM completion_evidence_bundles "
         "ORDER BY completion_evidence_bundle_id"
     ).fetchall()
+    container_schema_version = current_schema_version(connection)
     if (
         _validated_runner_generations is None
         and bundle_rows
-        and current_schema_version(connection) in {
+        and container_schema_version in {
             PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
         }
     ):
@@ -19645,6 +19659,7 @@ def _validate_completion_evidence_bundle_rows(
         _validate_one_completion_evidence_bundle_row(
             bundle_id=bundle_id,
             row=row,
+            container_schema_version=container_schema_version,
             cycle=cycles.get(str(row["completion_cycle_id"])),
             snapshot=snapshots.get(str(row["authority_snapshot_id"])),
             owner_links=snapshot_links.get(

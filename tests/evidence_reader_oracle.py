@@ -1188,7 +1188,7 @@ def _validate_source_basis(value: object, *, source_kind: str) -> dict[str, Any]
         _integer(basis["source_schema_version"]),
         _integer(basis["index_format_version"]),
     )
-    if version_pair not in {(19, 1), (20, 2), (21, 2)}:
+    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2)}:
         _invalid()
     _project_id(basis["project_id"])
     _integer(basis["projection_generation"])
@@ -1216,7 +1216,7 @@ def _validate_index_envelope(value: object) -> dict[str, Any]:
         _integer(payload["source_schema_version"]),
         _integer(envelope["format_version"]),
     )
-    if version_pair not in {(19, 1), (20, 2), (21, 2)}:
+    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2)}:
         _invalid()
     index_format_version = version_pair[1]
     _integer(payload["projection_generation"])
@@ -1919,7 +1919,7 @@ def _validate_bundle_payload(
         _invalid()
     if (
         maximum_source_schema_version is not None
-        and maximum_source_schema_version not in {19, 20, 21}
+        and maximum_source_schema_version not in {19, 20, 21, 22}
     ):
         _invalid()
     payload = _mapping(
@@ -1940,7 +1940,7 @@ def _validate_bundle_payload(
         )
         or (
             bundle_format_version == 2
-            and observed_version_pair not in {(20, 2), (21, 2)}
+            and observed_version_pair not in {(20, 2), (21, 2), (22, 2)}
         )
         or (
             maximum_source_schema_version is not None
@@ -2139,7 +2139,7 @@ def _validate_bundle_payload(
             )
             runner_id = verification_basis["runner_observation_id"]
             if (
-                observed_version_pair != (21, 2)
+                observed_version_pair not in {(21, 2), (22, 2)}
                 or verification_basis["verification_receipt_id"] is not None
                 or type(runner_id) is not str
                 or runner_id != runner["observation_id"]

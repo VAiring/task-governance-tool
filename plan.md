@@ -966,6 +966,58 @@ Verification: check the examples and affected-field inventory against current
 validators; document-contract check and `git diff --check`; two independent
 reviews of scope, tradeoffs and achievable acceptance, not a new test harness.
 
+##### Pending Recommendation — Manual Diagnostic Quotations
+
+This recommendation is not active behavior. Recommend an exception only for
+Task `title` and `description`, retaining their existing 200 and 4,000
+code-point limits. Use one plain-text form: `<context>: stderr: <quotation>`
+or `<context>: stdout: <quotation>`. The separators and lowercase stream
+labels are literal; context and quotation each contain non-whitespace text,
+with exactly one stream delimiter. The entire field must be one physical
+line, containing no line-boundary character recognized by `str.splitlines()`
+and no trailing line break. No quotation marks, code fences, introductory-verb
+allow-list, semantic classifier, setting, or per-use approval is required.
+
+Proposed accepted examples are `Investigate failure: stderr: permission denied`
+and `Inspect result: stdout: no matching rows`. A bare `stderr: permission denied`
+does not qualify. Only that one inline stream heading receives the exception.
+Existing credential and dump detectors still inspect the complete original
+field and the extracted quotation body; the body receives no recursive
+quotation exception. This second view preserves line-anchored checks, such as
+stack frames, when text follows the inline heading. Detected credentials,
+another raw-output heading, log blocks, stack traces, environment dumps and
+raw/large diffs remain rejected. Rejected examples include
+`Investigate failure: stderr: token=synthetic-secret`,
+`Investigate failure: stderr: at render (app.js:12:34)`, and the useful example
+followed by a newline and more output. Inputs outside this form keep existing
+behavior, including valid ordinary multiline descriptions.
+
+One physical line prevents pasted multiline logs; existing field limits
+already bound storage, so no additional numeric quote cap is proposed.
+This admits useful diagnostic context, not proof that content is harmless,
+manually authored, or free of unidentified private data, paths or secrets.
+Even a single line may disclose sensitive information; the user must sanitize
+it before entry. This policy does not authorize automatic Runner capture or
+add content to Verification Receipts. Notes are excluded: `add_note` becomes
+a prefixed, potentially truncated `event_summary`, so admitting it would need
+a separate preservation policy beyond these two Task fields.
+
+Future alignment belongs in the current privacy sections of the specification
+and design; `tasks.py`'s `contains_raw_output_value`, common guard, caller and
+stored-Task validation; `storage.py`'s authority-snapshot privacy mapping of
+`task_title`/`task_description` to `title`/`description`; and the Task-title
+check in `review_packet.py`. Completion sealing/readback and the independent
+`tests/evidence_reader_oracle.py` Bundle Task-field/privacy routes must apply
+the same policy without sharing the production matcher. Existing Task
+validation and completion/Evidence-reader tests own its later focused checks.
+Do not broaden other fields, rewrite old bytes, or change storage schemas.
+
+Remaining user decision: accept or revise this exact two-field, single-line,
+plain-text proposal. Runtime implementation requires later explicit Task
+registration. After that implementation installs the accepted rule in current
+owners and aligned validators/tests, replace this pending recommendation with
+a concise pointer. The other correction Tasks do not wait for adoption.
+
 <a id="tg-rnc-1"></a>
 
 #### TG-RNC.1 — Optional Runner Internal Entrypoint Name

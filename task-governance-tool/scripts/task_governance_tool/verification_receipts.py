@@ -78,7 +78,7 @@ RunnerSelectionProvider = Callable[
 ]
 
 
-@dataclass(frozen=True)
+@dataclass
 class VerificationReceiptError(Exception):
     code: str
     message: str

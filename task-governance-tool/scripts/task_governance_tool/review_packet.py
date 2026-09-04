@@ -106,7 +106,7 @@ OVERSIZED_PACKET_MESSAGE = "review packet exceeds the supported size"
 WINDOWS_DRIVE_PATH = re.compile(r"[A-Za-z]:")
 
 
-@dataclass(frozen=True)
+@dataclass
 class ReviewPacketError(Exception):
     code: str
     message: str

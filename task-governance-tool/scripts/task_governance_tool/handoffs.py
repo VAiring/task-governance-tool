@@ -59,7 +59,7 @@ COMPACT_HANDOFF_FIELDS = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass
 class HandoffError(Exception):
     code: str
     message: str

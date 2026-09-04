@@ -381,7 +381,7 @@ BENIGN_TITLE_RAW_OUTPUT_PREFIXES = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass
 class TaskValidationError(Exception):
     code: str
     message: str
@@ -391,7 +391,7 @@ class TaskValidationError(Exception):
         return self.message
 
 
-@dataclass(frozen=True)
+@dataclass
 class TaskRepositoryError(Exception):
     code: str
     message: str

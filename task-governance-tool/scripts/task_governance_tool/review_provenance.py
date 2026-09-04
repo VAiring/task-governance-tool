@@ -108,7 +108,7 @@ DIGEST_DOMAIN = b"taskgov-review-provenance-v1\0"
 INVALID_REVIEW_PROVENANCE_MESSAGE = "review provenance is invalid"
 
 
-@dataclass(frozen=True)
+@dataclass
 class ReviewProvenanceError(Exception):
     """Sanitized semantic failure convertible to ReviewEvidenceError."""
 

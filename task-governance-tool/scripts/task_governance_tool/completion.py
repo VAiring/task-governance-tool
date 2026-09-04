@@ -19,7 +19,7 @@ COMPLETION_CHECK_MAX_BYTES = 8_192
 FULL_GIT_OBJECT_ID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 
 
-@dataclass(frozen=True)
+@dataclass
 class CompletionEvidenceError(Exception):
     code: str
     message: str

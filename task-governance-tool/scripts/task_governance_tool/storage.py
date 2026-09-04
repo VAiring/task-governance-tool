@@ -6833,6 +6833,16 @@ def _schema21_expected_objects() -> dict[str, tuple[str, str, str]]:
     return result
 
 
+_SCHEMA22_REBUILT_TABLES = (
+    "evidence_references",
+    "criterion_evidence_links",
+    "completion_evidence_bundles",
+)
+_SCHEMA22_TEMP_TABLES = tuple(
+    f"{table_name}_v21" for table_name in _SCHEMA22_REBUILT_TABLES
+)
+
+
 def _schema22_replacement_statements() -> tuple[str, ...]:
     """Return the private v22 Evidence replacements, not a migration path."""
 
@@ -6886,10 +6896,29 @@ def _validate_schema22_owned_contract(connection: sqlite3.Connection) -> None:
         raise _unreadable_project_state()
     if _unowned_rebuilt_table_attachments(
         connection,
-        table_names=_SCHEMA21_REBUILT_TABLES,
+        table_names=tuple(dict.fromkeys(
+            (*_SCHEMA21_REBUILT_TABLES, *_SCHEMA22_REBUILT_TABLES)
+        )),
         expected_objects=_SCHEMA22_EXPECTED_OBJECTS,
-    ) or _schema21_temporary_table_present(connection):
+    ) or _schema21_temporary_table_present(connection) or (
+        _schema22_migration_temporary_name_collision(connection)
+    ):
         raise _unreadable_project_state()
+
+
+def _schema22_migration_temporary_name_collision(
+    connection: sqlite3.Connection,
+) -> bool:
+    return any(
+        connection.execute(
+            "SELECT 1 FROM sqlite_master "
+            "WHERE type IN ('table', 'index', 'view') "
+            "AND name = ? COLLATE NOCASE LIMIT 1",
+            (name,),
+        ).fetchone()
+        is not None
+        for name in _SCHEMA22_TEMP_TABLES
+    )
 
 
 def _unowned_rebuilt_table_attachments(
@@ -8567,6 +8596,153 @@ def validate_schema21_storage_for_recovery(
     _schema20_integrity_checks(connection)
     if task_rejection is not None:
         raise task_rejection
+
+
+def _schema22_preserved_object_snapshot(
+    connection: sqlite3.Connection,
+) -> tuple[tuple[str, str, str, str], ...]:
+    rows = connection.execute(
+        "SELECT type, name, tbl_name, sql FROM sqlite_master "
+        "WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' "
+        "ORDER BY type, name"
+    ).fetchall()
+    return tuple(
+        (str(row["type"]), str(row["name"]), str(row["tbl_name"]), str(row["sql"]))
+        for row in rows
+        if str(row["name"]) != "trg_task_completion_cycles_evidence_basis_insert"
+        if str(row["tbl_name"]) not in _SCHEMA22_REBUILT_TABLES
+    )
+
+
+def _migrate_schema22_connection(connection: sqlite3.Connection) -> bool:
+    """Migrate complete v21, or validation-only reenter explicit v22 storage."""
+
+    if connection.in_transaction:
+        raise StorageError(
+            "internal_error", "schema-v22 migration requires no active transaction"
+        )
+    foreign_keys_disabled = False
+    legacy_alter_enabled = False
+    try:
+        if (
+            int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 1
+            or int(connection.execute("PRAGMA legacy_alter_table").fetchone()[0])
+            != 0
+        ):
+            raise _unreadable_project_state()
+        version = current_schema_version(connection)
+        if version == PRIVATE_SCHEMA22_VERSION:
+            connection.execute("BEGIN")
+            try:
+                validate_schema22_storage(connection)
+            finally:
+                connection.rollback()
+            return False
+        if version != PRIVATE_SCHEMA21_VERSION:
+            raise StorageError(
+                "migration_required",
+                "schema-v22 migration requires complete schema version 21",
+            )
+
+        connection.execute("PRAGMA foreign_keys = OFF")
+        foreign_keys_disabled = True
+        connection.execute("PRAGMA legacy_alter_table = ON")
+        legacy_alter_enabled = True
+        if (
+            int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 0
+            or int(connection.execute("PRAGMA legacy_alter_table").fetchone()[0])
+            != 1
+        ):
+            raise _unreadable_project_state()
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            validate_schema21_storage(connection)
+            if _unowned_rebuilt_table_attachments(
+                connection,
+                table_names=_SCHEMA22_REBUILT_TABLES,
+                expected_objects=_SCHEMA22_EXPECTED_OBJECTS,
+            ) or _schema22_migration_temporary_name_collision(connection):
+                raise _unreadable_project_state()
+            preserved_tables = tuple(
+                str(row["name"])
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' "
+                    "AND name NOT LIKE 'sqlite_%' "
+                    "AND name != 'schema_migrations' ORDER BY name"
+                ).fetchall()
+            )
+            before = _selected_table_projection_snapshot(connection, preserved_tables)
+            column_basis = {name: value[0] for name, value in before.items()}
+            preserved_objects = _schema22_preserved_object_snapshot(connection)
+            connection.execute(
+                "DROP TRIGGER trg_task_completion_cycles_evidence_basis_insert"
+            )
+            for table_name, temporary_name in zip(
+                _SCHEMA22_REBUILT_TABLES, _SCHEMA22_TEMP_TABLES, strict=True
+            ):
+                connection.execute(
+                    f"ALTER TABLE {_quoted_identifier(table_name)} "
+                    f"RENAME TO {_quoted_identifier(temporary_name)}"
+                )
+            replacements = _schema22_replacement_statements()
+            for statement in replacements:
+                kind, _name, _table_name = _schema20_statement_identity(statement)
+                if kind == "table":
+                    connection.execute(statement)
+            for table_name, temporary_name in zip(
+                _SCHEMA22_REBUILT_TABLES, _SCHEMA22_TEMP_TABLES, strict=True
+            ):
+                projection = ", ".join(
+                    _quoted_identifier(column) for column in column_basis[table_name]
+                )
+                connection.execute(
+                    f"INSERT INTO {_quoted_identifier(table_name)} ({projection}) "
+                    f"SELECT {projection} FROM {_quoted_identifier(temporary_name)}"
+                )
+            for temporary_name in reversed(_SCHEMA22_TEMP_TABLES):
+                connection.execute(f"DROP TABLE {_quoted_identifier(temporary_name)}")
+            for statement in replacements:
+                kind, _name, _table_name = _schema20_statement_identity(statement)
+                if kind != "table":
+                    connection.execute(statement)
+            if _selected_table_projection_snapshot(
+                connection, preserved_tables, column_basis=column_basis
+            ) != before or _schema22_preserved_object_snapshot(
+                connection
+            ) != preserved_objects:
+                raise _unreadable_project_state()
+            _validate_schema22_owned_contract(connection)
+            _schema20_integrity_checks(connection)
+            connection.execute(
+                "INSERT INTO schema_migrations(version, name, applied_at) "
+                "VALUES (22, ?, ?)",
+                (PRIVATE_SCHEMA22_MIGRATION_NAME, utc_now()),
+            )
+            validate_schema22_storage(connection)
+            # Admitted external marker triggers must not change business rows.
+            if _selected_table_projection_snapshot(
+                connection, preserved_tables, column_basis=column_basis
+            ) != before:
+                raise _unreadable_project_state()
+            connection.commit()
+            return True
+        except Exception:
+            connection.rollback()
+            raise
+    except sqlite3.Error as exc:
+        if is_sqlite_busy_or_locked(exc):
+            raise StorageError("database_busy", DATABASE_BUSY_MESSAGE) from exc
+        raise _unreadable_project_state() from exc
+    finally:
+        if legacy_alter_enabled:
+            connection.execute("PRAGMA legacy_alter_table = OFF")
+        if foreign_keys_disabled:
+            connection.execute("PRAGMA foreign_keys = ON")
+        if (
+            int(connection.execute("PRAGMA legacy_alter_table").fetchone()[0]) != 0
+            or int(connection.execute("PRAGMA foreign_keys").fetchone()[0]) != 1
+        ):
+            raise _unreadable_project_state()
 
 
 def _migrate_schema21_connection(

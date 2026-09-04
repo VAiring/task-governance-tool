@@ -725,6 +725,15 @@ source rows and unrelated objects, reject unexpected reserved rows or attached
 unowned objects before rebuild, and record the new marker last.
 Output: tested migration callable independently of public setup activation;
 its populated fixtures retain source-19/20/21 Bundles, not new source-22 output.
+The private connection helper retains the established foreign-key-off /
+legacy-alter-on transaction pattern. It uses only `evidence_references_v21`,
+`criterion_evidence_links_v21`, and `completion_evidence_bundles_v21` as
+temporary table names, restores the coupled Evidence cycle guard, and compares
+all existing business rows plus object SQL outside those replacements before
+the marker-last validation/commit. Row preservation is checked again after the
+marker, including effects of admitted unrelated triggers. Exact-v22 reentry
+rejects attached unowned objects and temporary-name residue without repairing
+either.
 Acceptance: representative populated v21 Evidence/Runner history survives;
 fresh construction reaches the same v22 owned schema; exact-v22 reentry is
 validation-only; representative failures during rebuild and before commit

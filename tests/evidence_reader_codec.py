@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, NoReturn
 
 
-@dataclass(frozen=True)
+@dataclass
 class EvidenceCodecError(ValueError):
     """One fixed rejection at a test-only Evidence-codec boundary."""
 

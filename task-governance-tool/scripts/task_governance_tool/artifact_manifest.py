@@ -93,7 +93,7 @@ _INDEX_RECORD_FIXED_BYTES = 6 + 1 + 1 + 1 + 1
 _TREE_RECORD_FIXED_BYTES = 6 + 1 + len("commit") + 1 + 1
 
 
-@dataclass(frozen=True)
+@dataclass
 class ArtifactManifestError(Exception):
     code: str
     message: str

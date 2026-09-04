@@ -54,7 +54,7 @@ SNAPSHOT_ELEMENT_SUFFIX = "</script>"
 MAX_VIEWER_ARTIFACT_BYTES = 64 * 1024 * 1024
 
 
-@dataclass(frozen=True)
+@dataclass
 class ViewerError(Exception):
     code: str
     message: str

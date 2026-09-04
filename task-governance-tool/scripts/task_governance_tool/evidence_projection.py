@@ -326,7 +326,7 @@ _INDEX_ENTRY_KEYS = frozenset(
 _INDEX_V2_ENTRY_KEYS = frozenset({*_INDEX_ENTRY_KEYS, "bundle_format_version"})
 
 
-@dataclass(frozen=True)
+@dataclass
 class EvidenceProjectionError(Exception):
     code: str
     message: str

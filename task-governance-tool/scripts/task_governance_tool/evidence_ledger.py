@@ -97,7 +97,7 @@ EVIDENCE_BASIS_STALE_CODE = "evidence_basis_stale"
 EVIDENCE_BASIS_STALE_MESSAGE = "current evidence basis must be captured again"
 
 
-@dataclass(frozen=True)
+@dataclass
 class EvidenceLedgerError(Exception):
     code: str
     message: str

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-@dataclass(frozen=True)
+@dataclass
 class ArtifactLockError(Exception):
     contended: bool
 

@@ -508,7 +508,7 @@ _SUBJECT_KEYS = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass
 class EvidenceConsumerError(ValueError):
     code: str = "source_invalid"
     message: str = "Evidence source is invalid"

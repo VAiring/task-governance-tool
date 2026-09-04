@@ -702,6 +702,12 @@ rules and narrowed current vocabulary. Preserve old source-version validation.
 Output: validation of a schema-22 database containing retained source-19/20/21
 Bundles/history, including its existing storage-owned projection-basis capture,
 without a public schema switch. New source-22 payload validation is unit 4.
+During preparation, storage maps physical v22 only to the unchanged v21
+stored-Task field/privacy capabilities; its captured container identity stays
+22. This does not enable current Task lifecycle or Runner selection on v22.
+Selected history retains the source-19/v1 null verification-basis tag as
+non-Runner history; the subsequent Bundle validation still checks its sealed
+source/version and complete basis without promoting it.
 Acceptance: focused valid/corrupt fixture tests cover retained
 manual and Runner history, source-version discrimination, reserved-value
 rejection, and the existing no-promotion/no-privacy-upgrade boundary. Exact-21

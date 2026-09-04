@@ -6884,6 +6884,12 @@ def _validate_schema22_owned_contract(connection: sqlite3.Connection) -> None:
         schema_version=PRIVATE_SCHEMA22_VERSION,
     ) != _SCHEMA22_OWNED_SCHEMA_FINGERPRINT:
         raise _unreadable_project_state()
+    if _unowned_rebuilt_table_attachments(
+        connection,
+        table_names=_SCHEMA21_REBUILT_TABLES,
+        expected_objects=_SCHEMA22_EXPECTED_OBJECTS,
+    ) or _schema21_temporary_table_present(connection):
+        raise _unreadable_project_state()
 
 
 def _unowned_rebuilt_table_attachments(
@@ -7213,17 +7219,22 @@ def _validated_verification_runner_graph(
     if physical_schema_version not in {
         PRIVATE_SCHEMA20_VERSION,
         PRIVATE_SCHEMA21_VERSION,
+        PRIVATE_SCHEMA22_VERSION,
     }:
         return (), {}
     allowed_eligibility_versions = (
         {0, 1}
-        if physical_schema_version == PRIVATE_SCHEMA21_VERSION
+        if physical_schema_version in {
+            PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+        }
         else {0}
     )
     if selected_generation is not None:
         project_id, task_id, target_generation = selected_generation
         if (
-            physical_schema_version != PRIVATE_SCHEMA21_VERSION
+            physical_schema_version not in {
+                PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+            }
             or type(project_id) is not str
             or not project_id
             or type(task_id) is not str
@@ -7732,7 +7743,9 @@ def _validated_verification_runner_graph(
             current = resolutions.get((project_id, task_id, generation))
             if marker == 2:
                 if (
-                    physical_schema_version != PRIVATE_SCHEMA21_VERSION
+                    physical_schema_version not in {
+                        PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+                    }
                     or current is None
                     or current[0].gate_eligibility_version != 1
                 ):
@@ -7881,7 +7894,9 @@ def _validated_verification_runner_graph(
                 ),
                 _validated_runner_eligibility_version=(
                     observation.gate_eligibility_version
-                    if physical_schema_version == PRIVATE_SCHEMA21_VERSION
+                    if physical_schema_version in {
+                        PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+                    }
                     else 0
                 ),
             )
@@ -8488,6 +8503,35 @@ def validate_schema21_storage(
     _schema20_integrity_checks(connection)
 
 
+def validate_schema22_storage(
+    connection: sqlite3.Connection,
+    *,
+    _privacy_success_cache: set[tuple[str, str, str]] | None = None,
+) -> None:
+    """Validate explicit v22 storage with unchanged retained Evidence semantics."""
+
+    marker = connection.execute(
+        "SELECT name FROM schema_migrations WHERE version = 22"
+    ).fetchone()
+    if (
+        current_schema_version(connection) != PRIVATE_SCHEMA22_VERSION
+        or missing_migration_versions(connection, PRIVATE_SCHEMA22_VERSION)
+        or marker is None
+        or str(marker["name"]) != PRIVATE_SCHEMA22_MIGRATION_NAME
+        or connection.execute(
+            "SELECT 1 FROM schema_migrations WHERE version > 22 LIMIT 1"
+        ).fetchone()
+        is not None
+    ):
+        raise _unreadable_project_state()
+    _validate_schema22_owned_contract(connection)
+    _validate_schema21_admitted_rows(
+        connection,
+        _privacy_success_cache=_privacy_success_cache,
+    )
+    _schema20_integrity_checks(connection)
+
+
 def validate_schema21_storage_for_recovery(
     connection: sqlite3.Connection,
     *,
@@ -8845,6 +8889,9 @@ def _validate_completion_evidence_bundle_schema_contract(
     if version == PRIVATE_SCHEMA21_VERSION:
         _validate_schema21_owned_contract(connection)
         return
+    if version == PRIVATE_SCHEMA22_VERSION:
+        _validate_schema22_owned_contract(connection)
+        return
     marker = connection.execute(
         "SELECT name FROM schema_migrations WHERE version = 19"
     ).fetchone()
@@ -9000,7 +9047,7 @@ def _verification_receipt_trigger_definitions(
     }
     definitions: dict[str, str] = {}
     statements = list(verification_receipt_schema_statements())
-    if schema_version == PRIVATE_SCHEMA21_VERSION:
+    if schema_version in {PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
         statements = [
             (
                 _task_completion_cycle_verification_basis_v21_trigger_sql()
@@ -13019,7 +13066,9 @@ def _selected_history_runner_generations(
         runner_backed = basis_kind == "runner_observation" or (
             basis_kind == "caller_attestation" and eligibility == 1
         )
-        if basis_kind == "not_required":
+        # Preserved source19/v1 has no Runner tag. The subsequent Bundle
+        # validator still checks its original source/version and full basis.
+        if basis_kind in {None, "not_required"}:
             if eligibility == 1:
                 raise evidence_ledger_inconsistent()
             continue
@@ -13307,9 +13356,11 @@ def _validate_selected_schema21_completion_bundle_history(
     *,
     cycles: tuple[CompletionCycle, ...],
 ) -> None:
-    """Revalidate selected schema-v21 native Bundle history before replay."""
+    """Revalidate selected v21/v22 native Bundle history before replay."""
 
-    if current_schema_version(connection) != PRIVATE_SCHEMA21_VERSION or not any(
+    if current_schema_version(connection) not in {
+        PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+    } or not any(
         cycle.evidence_basis_version == 1 for cycle in cycles
     ):
         return
@@ -15310,6 +15361,12 @@ def _validate_evidence_ledger_schema_contract(
         )
         if match is None:
             raise AssertionError("evidence-ledger table inventory is incomplete")
+        expected_sql = _normalized_schema_sql(statement)
+        if (
+            match.group(1) == "evidence_references"
+            and current_schema_version(connection) == PRIVATE_SCHEMA22_VERSION
+        ):
+            expected_sql = dict(_SCHEMA22_EXPECTED_OBJECTS)["evidence_references"][2]
         row = connection.execute(
             "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
             (match.group(1),),
@@ -15318,7 +15375,7 @@ def _validate_evidence_ledger_schema_contract(
             row is None
             or row["sql"] is None
             or _normalized_schema_sql(str(row["sql"]))
-            != _normalized_schema_sql(statement)
+            != expected_sql
         ):
             raise evidence_ledger_inconsistent()
 
@@ -17651,7 +17708,9 @@ def _validate_selected_reference_source_chunk(
             elif source_kind == "runner_observation":
                 admitted_eligibility_versions = (
                     {0, 1}
-                    if source_schema_version == PRIVATE_SCHEMA21_VERSION
+                    if source_schema_version in {
+                        PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+                    }
                     else {0}
                 )
                 if (
@@ -18534,6 +18593,7 @@ def _validate_evidence_ledger_rows(
         19,
         PRIVATE_SCHEMA20_VERSION,
         PRIVATE_SCHEMA21_VERSION,
+        PRIVATE_SCHEMA22_VERSION,
     }:
         raise evidence_ledger_inconsistent()
     source_schema_version = (
@@ -18541,6 +18601,9 @@ def _validate_evidence_ledger_rows(
         if physical_schema_version == PRIVATE_SCHEMA20_VERSION
         else physical_schema_version
     )
+    if physical_schema_version == PRIVATE_SCHEMA22_VERSION:
+        # v22 changes Evidence DDL only; stored Task fields retain v21 rules.
+        source_schema_version = PRIVATE_SCHEMA21_VERSION
     try:
         task_validation = validate_stored_task_rows(
             task_rows,
@@ -19234,7 +19297,9 @@ def _validate_completion_evidence_bundle_rows(
     if (
         _validated_runner_generations is None
         and bundle_rows
-        and current_schema_version(connection) == PRIVATE_SCHEMA21_VERSION
+        and current_schema_version(connection) in {
+            PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+        }
     ):
         _, _validated_runner_generations = _validated_verification_runner_graph(
             connection
@@ -22572,6 +22637,7 @@ def _capture_evidence_projection_basis_rows(
         19,
         PRIVATE_SCHEMA20_VERSION,
         PRIVATE_SCHEMA21_VERSION,
+        PRIVATE_SCHEMA22_VERSION,
     }:
         raise evidence_ledger_inconsistent()
     state = read_evidence_projection_state(
@@ -22946,7 +23012,9 @@ def capture_evidence_projection_basis(
 
     if type(project_id) is not str or not project_id:
         raise evidence_ledger_inconsistent()
-    if current_schema_version(connection) != SCHEMA_VERSION:
+    if current_schema_version(connection) not in {
+        SCHEMA_VERSION, PRIVATE_SCHEMA22_VERSION,
+    }:
         raise evidence_ledger_inconsistent()
     _validate_evidence_ledger_schema_contract(connection)
     _validate_evidence_ledger_rows(connection)

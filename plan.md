@@ -2,8 +2,8 @@
 
 Decision baseline: v0.10.0 is the immutable published release; its exact
 identity lives in `docs/release-install.md`. The current unpublished local
-candidate is v0.13.0/schema v21/Viewer snapshot v4 with source compatibility
-v5-v21 and 21 public command leaves. This plan retains current decisions,
+candidate is v0.13.0/schema v22/Viewer snapshot v4 with source compatibility
+v5-v22 and 21 public command leaves. This plan retains current decisions,
 unfinished static contracts, and open issues only. Completed execution
 narrative is indexed as non-authoritative history, while the Task database,
 queried through the public CLI, solely owns live execution status and evidence.
@@ -204,7 +204,7 @@ The exact Task DB record owns live state.
 ### Current Verification Receipt Decision
 
 The schema-v18-origin Verification Receipt behavior retained by current schema
-v21 is defined by the active [specification](docs/specification.md) and
+v22 is defined by the active [specification](docs/specification.md) and
 [design](docs/design.md). Completed
 M21 design, activation, acceptance, and correction narrative is preserved only
 in [indexed non-authoritative history](docs/history/v0.11.0/pre-m22-completed-execution.md).
@@ -212,19 +212,29 @@ That history supplies no current gate or implementation authority.
 
 <a id="current-evidence-bundle-json"></a>
 
-### Current Schema-v21 Evidence Bundle And JSON Decision
+<a id="current-schema-v21-evidence-bundle-and-json-decision"></a>
+
+### Current Schema-v22 Evidence Bundle And JSON Decision
 
 The v0.13.0 candidate uses the schema-v18 capture foundation and public
 verification-admission boundary, schema-v19 immutable native completion
 Bundles, criterion links, Finding snapshots, and the fixed one-way Evidence
-JSON projection. Current schema-v21 native completions write Bundle v2 through
+JSON projection. Current schema-v22 native completions write source-22 Bundle v2 through
 the closed basis union: the two manual arms retain a null Runner observation,
 while the qualifying Runner arm reuses its exact sanitized stored observation.
-The format-v2 index can reference preserved Bundle-v1 bytes without rewriting
-them. Pre-v19 cycles remain index-only as `legacy_unknown`; SQLite remains
+The format-v2 index reports its actual source schema and can reference preserved
+source-19/v1 and source-20/21/v2 Bundles without rewriting their bytes or digests.
+Pre-v19 cycles remain index-only as `legacy_unknown`; SQLite remains
 canonical. Setup repairs the projection, doctor observes it read-only, and
 post-commit maintenance runs Evidence, Viewer, then backup. Viewer snapshot v4
-accepts v5-v21 but adds no Evidence UI.
+accepts v5-v22 but adds no Evidence UI.
+
+Schema v22 uses the approved [reservation cleanup](#m23-schema-cleanup):
+explicit setup reaches 22 from supported older sources and exact-22 reentry is
+validation-only. Current Evidence enum/order and DDL allow-lists no longer
+reserve `derived_analysis`, `llm_derived`, or `batch_analyzer`; old-schema DDL
+and rejection vocabulary remain compatibility-owned. Valid rows and shared
+Evidence tables, the schema-v21 Runner protocol, and the Skill loop are unchanged.
 
 The standalone Runner audit writer is reached only through the existing exact
 target-set dispatch. The completion gate admits only the exact qualifying pass

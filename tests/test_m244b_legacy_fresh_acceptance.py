@@ -159,7 +159,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
                     ),
                 )
 
-    def _assert_published_v21_source(self, target, task_id: str):
+    def _assert_published_current22_source(self, target, task_id: str):
         publication = _schema21_fixture.publish_setup_evidence_projection(
             target,
             observed_at="2026-08-29T00:00:00Z",
@@ -179,7 +179,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
         index = read_evidence_index(target.resolved_evidence_root)
         entry = next(row for row in index.entries if row["task_id"] == task_id)
         source = validate_evidence_source(index, entry)
-        self.assertEqual((index.source_schema_version, index.format_version), (21, 2))
+        self.assertEqual((index.source_schema_version, index.format_version), (22, 2))
         self.assertEqual(index.project_id, target.project.project_id)
         self.assertEqual(
             index.projection_generation,
@@ -193,7 +193,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
             source.source_basis,
             {
                 "index_format_version": 2,
-                "source_schema_version": 21,
+                "source_schema_version": 22,
                 "project_id": index.project_id,
                 "projection_generation": index.projection_generation,
                 "index_digest": index.index_digest,
@@ -202,13 +202,13 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
         )
         self.assertEqual(source.source, published_bundle)
         self.assertEqual(source.source["format_version"], 2)
-        self.assertEqual(source.source["payload"]["source_schema_version"], 21)
+        self.assertEqual(source.source["payload"]["source_schema_version"], 22)
         self.assertEqual(source.source["payload"]["bundle_version"], 2)
         self.assertEqual(source.source["payload"]["task"]["task_id"], task_id)
         self.assertEqual(tree_snapshot(target.resolved_evidence_root), before)
         return source
 
-    def test_fresh_v21_bundle_reaches_independent_reader_without_evidence_write(
+    def test_fresh_current22_bundle_reaches_independent_reader_without_evidence_write(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory(
@@ -219,9 +219,10 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
                 _schema21_fixture._seed_completed_m21_fixture(
                     self,
                     Path(temporary),
+                    source_schema_version=22,
                 )
             )
-            source = self._assert_published_v21_source(target, task_id)
+            source = self._assert_published_current22_source(target, task_id)
             payload = source.source["payload"]
             self.assertEqual(
                 payload["verification_basis"],
@@ -245,8 +246,9 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
                 self,
                 Path(temporary),
                 verification_required=False,
+                source_schema_version=22,
             )
-            source = self._assert_published_v21_source(target, task_id)
+            source = self._assert_published_current22_source(target, task_id)
             payload = source.source["payload"]
             self.assertEqual(
                 payload["verification_basis"],
@@ -274,7 +276,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
                 requested_interval_minutes=None,
                 requested_generations=None,
             )
-            source = self._assert_published_v21_source(fixture.target, fixture.task_id)
+            source = self._assert_published_current22_source(fixture.target, fixture.task_id)
             payload = source.source["payload"]
             runner = payload["runner_observation"]
             self.assertEqual(

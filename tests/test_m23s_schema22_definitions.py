@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from contextlib import closing, contextmanager
 from pathlib import Path
+from unittest import mock
 
 from tests.test_m243b_schema21_storage import (
     FIXED_TIME,
@@ -136,13 +137,15 @@ def _bundle_row() -> dict:
 
 
 @contextmanager
-def _empty_public_database():
+def _empty_public_database(*, schema_version: int = 21):
+    """Default to the explicit old21 DDL source; callers opt into current22."""
     with tempfile.TemporaryDirectory(prefix=".tmp-m23s-ddl-", dir=ROOT) as tmp:
-        initialized = storage.initialize_uuid_database(
-            _new_target(Path(tmp), "schema22-ddl"),
-            project_id_factory=lambda: _identity("schema22-ddl"),
-            clock=lambda: FIXED_TIME,
-        )
+        with mock.patch.object(storage, "SCHEMA_VERSION", schema_version):
+            initialized = storage.initialize_uuid_database(
+                _new_target(Path(tmp), "schema22-ddl"),
+                project_id_factory=lambda: _identity("schema22-ddl"),
+                clock=lambda: FIXED_TIME,
+            )
         with closing(storage.connect(initialized.target.db_path)) as connection:
             yield initialized, connection
 
@@ -171,8 +174,8 @@ def _construct_private_schema22(connection: sqlite3.Connection) -> None:
 
 
 class Schema22DefinitionTests(unittest.TestCase):
-    def test_public_initialization_and_schema21_definition_remain_unchanged(self):
-        self.assertEqual(storage.SCHEMA_VERSION, 21)
+    def test_public_initialization_is22_and_legacy21_definition_remains_unchanged(self):
+        self.assertEqual(storage.SCHEMA_VERSION, 22)
         self.assertEqual(storage.PRIVATE_SCHEMA22_VERSION, 22)
         self.assertEqual(
             storage.PRIVATE_SCHEMA22_MIGRATION_NAME,
@@ -187,6 +190,10 @@ class Schema22DefinitionTests(unittest.TestCase):
                 "8b7aa6d9619c2e98118c9c9c0ed8979a7e56c7ef9c5d3de51980f41a35f80558",
             )
             storage.validate_schema21_storage(connection)
+        with _empty_public_database(schema_version=22) as (initialized, connection):
+            self.assertEqual(initialized.schema_version, 22)
+            self.assertEqual(initialized.migrations_applied[-2:], [21, 22])
+            storage.validate_schema22_storage(connection)
             before = logical_database_digest(connection)
             self.assertEqual(storage.apply_migrations(connection), ([], []))
             self.assertEqual(logical_database_digest(connection), before)

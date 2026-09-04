@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +23,11 @@ from tests.m223_test_support import (  # noqa: E402
     remove_v19_bundle_storage_for_test,
     remove_v20_runner_shadow_for_test,
 )
-from tests.test_m17_recovery_hardening import _setup_current  # noqa: E402
+from tests.test_m17_recovery_hardening import _setup_current as _setup_runtime_current  # noqa: E402
+from tests.test_m243b_schema21_compatibility import (  # noqa: E402
+    _physical_current21_install,
+    _schema21_runtime,
+)
 from tests.test_m242_r3b_schema20_activation import (  # noqa: E402
     _add_task,
     _complete_task,
@@ -43,6 +48,29 @@ from task_governance_tool.storage import (  # noqa: E402
     connect_readonly,
     current_schema_version,
 )
+
+
+_SCHEMA21_RUNTIME = None
+
+
+def setUpModule() -> None:
+    global _SCHEMA21_RUNTIME
+    _SCHEMA21_RUNTIME = _schema21_runtime()
+    _SCHEMA21_RUNTIME.__enter__()
+
+
+def tearDownModule() -> None:
+    global _SCHEMA21_RUNTIME
+    _SCHEMA21_RUNTIME.__exit__(None, None, None)
+    _SCHEMA21_RUNTIME = None
+
+
+def _setup_current(root: Path):
+    with mock.patch(
+        "tests.test_m17_recovery_hardening.make_physical_install",
+        side_effect=_physical_current21_install,
+    ):
+        return _setup_runtime_current(root)
 
 
 class M243BSchema21RecoveryTests(unittest.TestCase):

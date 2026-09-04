@@ -145,11 +145,11 @@ def logical_database_digest(connection: sqlite3.Connection) -> str:
 
 
 def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
-    """Reduce an admissible schema-v21 fixture to the exact schema-v20 surface.
+    """Reduce an admissible schema-v21/v22 fixture to the exact schema-v20 surface.
 
     This is deliberately test-only fixture construction, not a supported product
-    reverse migration.  Rows that use schema-v21-only arms fail closed while the
-    surrounding transaction restores the original v21 fixture.
+    reverse migration. Rows using v21-only arms or sealed source22 Bundles fail
+    closed while the surrounding transaction restores the original fixture.
     """
 
     from task_governance_tool import storage
@@ -163,8 +163,13 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
     connection.row_factory = sqlite3.Row
     if connection.in_transaction:
         connection.commit()
+    source_version = storage.current_schema_version(connection)
+    validate_source = (
+        storage.validate_schema22_storage
+        if source_version == 22 else storage.validate_schema21_storage
+    )
     try:
-        storage.validate_schema21_storage(connection)
+        validate_source(connection)
     except Exception:
         connection.row_factory = row_factory_before
         raise
@@ -176,7 +181,23 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
     )
     connection.execute("PRAGMA foreign_keys = OFF")
     connection.execute("PRAGMA legacy_alter_table = ON")
+    evidence_tables = (
+        ("evidence_references", "criterion_evidence_links")
+        if source_version == 22 else ()
+    )
+    evidence_statements = tuple(
+        statement
+        for statement in (
+            *storage.evidence_ledger_capture_schema_statements(),
+            *storage.completion_evidence_bundle_schema_statements(),
+        )
+        if storage._normalized_schema_sql(statement).startswith("CREATE ")
+        and storage._schema20_statement_identity(statement)[2] in evidence_tables
+        and storage._schema20_statement_identity(statement)[1]
+        != "trg_criterion_evidence_links_matrix_insert"
+    )
     rebuilt_tables = (
+        *evidence_tables,
         "completion_evidence_bundles",
         "verification_runner_resolutions",
         "verification_runner_attempts",
@@ -185,7 +206,7 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
     temporary_names = tuple(f"{name}_v21_test" for name in rebuilt_tables)
     try:
         connection.execute("BEGIN IMMEDIATE")
-        storage.validate_schema21_storage(connection)
+        validate_source(connection)
         if any(storage.table_exists(connection, name) for name in temporary_names):
             raise AssertionError("schema-v21 reducer temporary table already exists")
         for trigger_name in (
@@ -207,12 +228,16 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
         )
         for statement in runner_tables[:3]:
             connection.execute(statement)
+        for statement in evidence_statements:
+            if storage._schema20_statement_identity(statement)[0] == "table":
+                connection.execute(statement)
         connection.execute(
             storage._completion_evidence_bundle_v20_table_sql(
                 schema_version=storage.PRIVATE_SCHEMA20_VERSION,
             )
         )
         copy_order = (
+            *evidence_tables,
             "verification_runner_resolutions",
             "verification_runner_attempts",
             "verification_runner_observations",
@@ -236,6 +261,7 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
             "verification_runner_observations_v21_test",
             "verification_runner_attempts_v21_test",
             "verification_runner_resolutions_v21_test",
+            *(f"{name}_v21_test" for name in reversed(evidence_tables)),
         ):
             connection.execute(f'DROP TABLE "{temporary_name}"')
 
@@ -251,6 +277,11 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
                 connection.execute(statement)
         for statement in storage._bundle_v20_recreated_object_statements():
             connection.execute(statement)
+        for statement in evidence_statements:
+            if storage._schema20_statement_identity(statement)[0] != "table":
+                connection.execute(statement)
+        if evidence_tables:
+            connection.execute(storage._criterion_evidence_links_v20_matrix_trigger_sql())
         v20_cycle_guards = (
             next(
                 statement
@@ -267,7 +298,7 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
         for statement in v20_cycle_guards:
             connection.execute(statement)
 
-        connection.execute("DELETE FROM schema_migrations WHERE version = 21")
+        connection.execute("DELETE FROM schema_migrations WHERE version IN (21, 22)")
         storage.validate_schema20_storage(
             connection,
             allow_native_bundle_v2=True,

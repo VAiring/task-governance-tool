@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import closing
+from contextlib import ExitStack, closing, contextmanager
 from copy import deepcopy
 from pathlib import Path
 from unittest import mock
@@ -81,6 +81,48 @@ from task_governance_tool.verification_receipts import (
     read_verification_evidence,
 )
 from task_governance_tool.viewer import build_viewer_snapshot
+
+
+@contextmanager
+def _schema21_runtime():
+    """Keep historical schema21 service fixtures at their original boundary."""
+    from tests.test_m242_r3b_schema20_activation import _SCHEMA20_RUNTIME_PATCH_TARGETS
+
+    with ExitStack() as stack:
+        for target in _SCHEMA20_RUNTIME_PATCH_TARGETS:
+            stack.enter_context(mock.patch(target, 21))
+        yield
+
+
+_SCHEMA21_RUNTIME = None
+
+
+def setUpModule() -> None:
+    global _SCHEMA21_RUNTIME
+    _SCHEMA21_RUNTIME = _schema21_runtime()
+    _SCHEMA21_RUNTIME.__enter__()
+
+
+def tearDownModule() -> None:
+    global _SCHEMA21_RUNTIME
+    _SCHEMA21_RUNTIME.__exit__(None, None, None)
+    _SCHEMA21_RUNTIME = None
+
+
+def _physical_current21_install(root: Path, *, git_managed: bool = False):
+    """Pin this copied package only; never change the public current runtime."""
+    install = make_physical_install(root, git_managed=git_managed)
+    installed_storage = install.skill_root / "scripts" / "task_governance_tool" / "storage.py"
+    source = installed_storage.read_text(encoding="utf-8")
+    current_declaration = "SCHEMA_VERSION = 22"
+    if source.count(current_declaration) != 1:
+        raise AssertionError("schema21 fixture requires the exact current declaration")
+    installed_storage.write_text(
+        source.replace(current_declaration, "SCHEMA_VERSION = 21", 1),
+        encoding="utf-8", newline="\n",
+    )
+    refresh_test_manifest(install.skill_root)
+    return install
 
 
 def _source21_not_required_payload() -> dict[str, object]:
@@ -325,8 +367,15 @@ def _seed_targeted_m21_fixture(
     *,
     record_receipt: bool,
     verification_required: bool = True,
+    source_schema_version: int = 21,
 ):
-    install = make_physical_install(root, git_managed=True)
+    if source_schema_version not in (21, 22):
+        raise AssertionError("completion fixture supports only historical21 or current22")
+    install = (
+        _physical_current21_install(root, git_managed=True)
+        if source_schema_version == 21
+        else make_physical_install(root, git_managed=True)
+    )
     (install.project_root / "fixture.txt").write_text(
         "schema21 Runner compatibility fixture\n",
         encoding="utf-8",
@@ -365,7 +414,7 @@ def _seed_targeted_m21_fixture(
     ).stdout.strip()
 
     setup = _installed_json(testcase, install, "setup")
-    testcase.assertEqual(setup["data"]["schema_to"], 21)
+    testcase.assertEqual(setup["data"]["schema_to"], source_schema_version)
     target = install.target
     added = _installed_json(
         testcase,
@@ -456,12 +505,14 @@ def _seed_completed_m21_fixture(
     root: Path,
     *,
     verification_required: bool = True,
+    source_schema_version: int = 21,
 ):
     install, target, task_id, commit = _seed_targeted_m21_fixture(
         testcase,
         root,
         record_receipt=verification_required,
         verification_required=verification_required,
+        source_schema_version=source_schema_version,
     )
     _installed_json(
         testcase,

@@ -49,7 +49,7 @@ class Schema22ConsumerTests(unittest.TestCase):
             path = Path(temporary) / "empty.sqlite3"
             with closing(storage.connect(path)) as connection:
                 storage.apply_migrations(connection)
-                self.assertTrue(storage._migrate_schema22_connection(connection))
+                self.assertEqual(storage.current_schema_version(connection), 22)
             before = tree_snapshot(Path(temporary))
             self.assertTrue(storage._is_exact_empty_completion_history_database(path))
             self.assertEqual(tree_snapshot(Path(temporary)), before)
@@ -66,69 +66,62 @@ class Schema22ConsumerTests(unittest.TestCase):
             configs = seed_supported_local_configs(install.skill_root)
             with closing(storage.connect_readonly(target.db_path)) as connection:
                 _basis, original = history_fixture._bundle_artifacts(connection, target.project.project_id)
-            # These local constants exercise prepared dispatch, not public
-            # activation; every schema, binding, and content validator stays real.
-            with mock.patch.object(storage, "SCHEMA_VERSION", 22), \
-                 mock.patch.object(backup, "SCHEMA_VERSION", 22), \
-                 mock.patch.object(state_resolver, "SCHEMA_VERSION", 22):
-                artifacts = publish_generations(target, "2098-09-04T00:00:00Z", "2099-09-04T00:00:00Z")
-                target.db_path.unlink()
-                before = tree_snapshot(install.skill_root)
-                candidate = backup.select_managed_backup_for_recovery(target)
-                self.assertIsNotNone(candidate)
-                self.assertEqual(candidate.path, artifacts[-1].path)
-                self.assertEqual(candidate.schema_version, 22)
-                resolution = state_resolver.resolve_setup_project_state(
-                    skill_root=install.skill_root, repo=install.project_root
+            # Public current dispatch keeps every binding/content validator real.
+            artifacts = publish_generations(target, "2098-09-04T00:00:00Z", "2099-09-04T00:00:00Z")
+            target.db_path.unlink()
+            before = tree_snapshot(install.skill_root)
+            candidate = backup.select_managed_backup_for_recovery(target)
+            self.assertIsNotNone(candidate)
+            self.assertEqual(candidate.path, artifacts[-1].path)
+            self.assertEqual(candidate.schema_version, 22)
+            resolution = state_resolver.resolve_setup_project_state(
+                skill_root=install.skill_root, repo=install.project_root
+            )
+            self.assertIsNone(resolution.error_code)
+            self.assertIsNotNone(resolution.fixed_recovery)
+            self.assertEqual(tree_snapshot(install.skill_root), before)
+            with backup.managed_backup_lock(target):
+                restored_version = backup.restore_managed_backup(
+                    target, candidate, expected_recovery=resolution.fixed_recovery
                 )
-                self.assertIsNone(resolution.error_code)
-                self.assertIsNotNone(resolution.fixed_recovery)
-                self.assertEqual(tree_snapshot(install.skill_root), before)
-                with backup.managed_backup_lock(target):
-                    restored_version = backup.restore_managed_backup(
-                        target, candidate, expected_recovery=resolution.fixed_recovery
-                    )
-                self.assertEqual(restored_version, 22)
-                with closing(storage.connect_readonly(target.db_path)) as connection:
-                    storage.validate_schema22_storage(connection)
-                    _basis, restored = history_fixture._bundle_artifacts(connection, target.project.project_id)
-                    self.assertEqual(restored, original)
-                self.assertEqual(supported_local_config_snapshot(install.skill_root), configs)
-                self.assertEqual(list(target.db_path.parent.glob(".taskgov-restore-*.tmp")), [])
-            self.assertEqual(storage.SCHEMA_VERSION, 21)
+            self.assertEqual(restored_version, 22)
+            with closing(storage.connect_readonly(target.db_path)) as connection:
+                storage.validate_schema22_storage(connection)
+                _basis, restored = history_fixture._bundle_artifacts(connection, target.project.project_id)
+                self.assertEqual(restored, original)
+            self.assertEqual(supported_local_config_snapshot(install.skill_root), configs)
+            self.assertEqual(list(target.db_path.parent.glob(".taskgov-restore-*.tmp")), [])
+            self.assertEqual(storage.SCHEMA_VERSION, 22)
 
     def test_verification_only_recovery_rejection_remains_candidate_local(self):
         with tempfile.TemporaryDirectory() as temporary:
             install, target, _identity = _setup_current(Path(temporary))
             title = _ready_recovery_task(self, install)
             with closing(storage.connect(target.db_path)) as connection:
-                self.assertTrue(storage._migrate_schema22_connection(connection))
-            with mock.patch.object(storage, "SCHEMA_VERSION", 22), \
-                 mock.patch.object(backup, "SCHEMA_VERSION", 22), \
-                 mock.patch.object(state_resolver, "SCHEMA_VERSION", 22):
-                artifacts = publish_generations(target, "2098-09-05T00:00:00Z", "2099-09-05T00:00:00Z")
-                replace_verification(artifacts[-1].path, title, "x" * 1001)
-                target.db_path.unlink()
-                before = tree_snapshot(install.skill_root)
-                candidate = backup.select_managed_backup_for_recovery(target)
-                self.assertIsNotNone(candidate)
-                self.assertEqual(candidate.path, artifacts[-2].path)
-                self.assertEqual(candidate.schema_version, 22)
-                newest = next(item for item in candidate.inventory if item.path == artifacts[-1].path)
-                self.assertFalse(newest.content_valid)
-                self.assertIn(artifacts[-1].path, {item.path for item in backup._discover(target)})
-                resolution = state_resolver.resolve_setup_project_state(
-                    skill_root=install.skill_root, repo=install.project_root
-                )
-                self.assertIsNone(resolution.error_code)
-                self.assertIsNotNone(resolution.fixed_recovery)
-                self.assertEqual(resolution.fixed_recovery.selected.path, artifacts[-2].path)
-                resolver_newest = next(
-                    item for item in resolution.fixed_recovery.managed_backups
-                    if item.path == artifacts[-1].path
-                )
-                self.assertFalse(resolver_newest.recovery_content_valid)
-                self.assertEqual(tree_snapshot(install.skill_root), before)
+                self.assertEqual(storage.current_schema_version(connection), 22)
+            artifacts = publish_generations(target, "2098-09-05T00:00:00Z", "2099-09-05T00:00:00Z")
+            replace_verification(artifacts[-1].path, title, "x" * 1001)
+            target.db_path.unlink()
+            before = tree_snapshot(install.skill_root)
+            candidate = backup.select_managed_backup_for_recovery(target)
+            self.assertIsNotNone(candidate)
+            self.assertEqual(candidate.path, artifacts[-2].path)
+            self.assertEqual(candidate.schema_version, 22)
+            newest = next(item for item in candidate.inventory if item.path == artifacts[-1].path)
+            self.assertFalse(newest.content_valid)
+            self.assertIn(artifacts[-1].path, {item.path for item in backup._discover(target)})
+            resolution = state_resolver.resolve_setup_project_state(
+                skill_root=install.skill_root, repo=install.project_root
+            )
+            self.assertIsNone(resolution.error_code)
+            self.assertIsNotNone(resolution.fixed_recovery)
+            self.assertEqual(resolution.fixed_recovery.selected.path, artifacts[-2].path)
+            resolver_newest = next(
+                item for item in resolution.fixed_recovery.managed_backups
+                if item.path == artifacts[-1].path
+            )
+            self.assertFalse(resolver_newest.recovery_content_valid)
+            self.assertEqual(tree_snapshot(install.skill_root), before)
 
     def test_bundle_and_runner_structure_remain_recovery_set_fatal(self):
         for fault in ("bundle", "runner"):
@@ -137,33 +130,30 @@ class Schema22ConsumerTests(unittest.TestCase):
                 local_title = _ready_recovery_task(self, install)
                 with closing(storage.connect(target.db_path)) as connection:
                     self.assertTrue(storage._migrate_schema22_connection(connection))
-                with mock.patch.object(storage, "SCHEMA_VERSION", 22), \
-                     mock.patch.object(backup, "SCHEMA_VERSION", 22), \
-                     mock.patch.object(state_resolver, "SCHEMA_VERSION", 22):
-                    artifacts = publish_generations(target, "2098-09-06T00:00:00Z", "2099-09-06T00:00:00Z")
-                    with closing(sqlite3.connect(artifacts[-1].path)) as connection:
-                        # The local verification exception cannot hide a graph fault.
-                        connection.execute("UPDATE tasks SET verification=? WHERE title=?", ("x" * 1001, local_title))
-                        if fault == "runner":
-                            connection.execute("UPDATE tasks SET review_target_runner_basis_version=2 WHERE task_id=?", (task_id,))
-                        else:
-                            trigger = connection.execute("SELECT sql FROM sqlite_master WHERE name='trg_completion_evidence_bundles_no_update'").fetchone()[0]
-                            connection.execute("DROP TRIGGER trg_completion_evidence_bundles_no_update")
-                            connection.execute("UPDATE completion_evidence_bundles SET bundle_digest=? WHERE task_id=?",
-                                               ("sha256:" + "f" * 64, task_id))
-                            connection.execute(trigger)
-                        connection.commit()
-                    target.db_path.unlink()
-                    before = tree_snapshot(install.skill_root)
-                    with self.assertRaises(storage.StorageError) as rejected:
-                        backup.select_managed_backup_for_recovery(target)
-                    self.assertEqual(rejected.exception.code, "setup_restore_failed")
-                    resolution = state_resolver.resolve_setup_project_state(
-                        skill_root=install.skill_root, repo=install.project_root
-                    )
-                    self.assertEqual(resolution.error_code, "project_state_unreadable")
-                    self.assertEqual(tree_snapshot(install.skill_root), before)
-                    self.assertFalse(target.db_path.exists())
+                artifacts = publish_generations(target, "2098-09-06T00:00:00Z", "2099-09-06T00:00:00Z")
+                with closing(sqlite3.connect(artifacts[-1].path)) as connection:
+                    # The local verification exception cannot hide a graph fault.
+                    connection.execute("UPDATE tasks SET verification=? WHERE title=?", ("x" * 1001, local_title))
+                    if fault == "runner":
+                        connection.execute("UPDATE tasks SET review_target_runner_basis_version=2 WHERE task_id=?", (task_id,))
+                    else:
+                        trigger = connection.execute("SELECT sql FROM sqlite_master WHERE name='trg_completion_evidence_bundles_no_update'").fetchone()[0]
+                        connection.execute("DROP TRIGGER trg_completion_evidence_bundles_no_update")
+                        connection.execute("UPDATE completion_evidence_bundles SET bundle_digest=? WHERE task_id=?",
+                                           ("sha256:" + "f" * 64, task_id))
+                        connection.execute(trigger)
+                    connection.commit()
+                target.db_path.unlink()
+                before = tree_snapshot(install.skill_root)
+                with self.assertRaises(storage.StorageError) as rejected:
+                    backup.select_managed_backup_for_recovery(target)
+                self.assertEqual(rejected.exception.code, "setup_restore_failed")
+                resolution = state_resolver.resolve_setup_project_state(
+                    skill_root=install.skill_root, repo=install.project_root
+                )
+                self.assertEqual(resolution.error_code, "project_state_unreadable")
+                self.assertEqual(tree_snapshot(install.skill_root), before)
+                self.assertFalse(target.db_path.exists())
 
     def test_viewer_and_doctor_helpers_keep_public_shapes_and_history_read_only(self):
         fixture = history_fixture.Schema22StoredValidationTests
@@ -172,12 +162,13 @@ class Schema22ConsumerTests(unittest.TestCase):
             target = fixture.target
             with closing(storage.connect_snapshot_readonly(target.db_path)) as connection:
                 original_view = viewer.build_viewer_snapshot(connection, target, generated_at=OBSERVED_AT).snapshot
-                original_doctor = storage.read_doctor_state(connection, target)
+                with mock.patch.object(storage, "SCHEMA_VERSION", 21):
+                    original_doctor = storage.read_doctor_state(connection, target)
                 _basis, original = history_fixture._bundle_artifacts(connection, target.project.project_id)
             with closing(storage.connect(target.db_path)) as connection:
                 self.assertTrue(storage._migrate_schema22_connection(connection))
             before = tree_snapshot(fixture.install.skill_root)
-            with mock.patch.object(storage, "SCHEMA_VERSION", 22), mock.patch.object(
+            with mock.patch.object(
                 tasks, "_consume_validated_viewer_task_batch",
                 wraps=tasks._consume_validated_viewer_task_batch,
             ) as consume_batch:
@@ -197,13 +188,26 @@ class Schema22ConsumerTests(unittest.TestCase):
             self.assertNotIn("runner_observation", serialized)
             self.assertNotIn("verification_basis", serialized)
             self.assertEqual(tree_snapshot(fixture.install.skill_root), before)
-            self.assertEqual(storage.SCHEMA_VERSION, 21)
+            self.assertEqual(storage.SCHEMA_VERSION, 22)
         finally:
             fixture.doClassCleanups()
 
-    def test_unpatched_public_doctor_and_resolver_still_reject_newer22_read_only(self):
+    def test_public_doctor_and_resolver_accept22_and_reject_newer23_read_only(self):
         with tempfile.TemporaryDirectory() as temporary:
-            install, _target, _task_id = _completed22(self, Path(temporary))
+            install, target, _task_id = _completed22(self, Path(temporary))
+            before = tree_snapshot(install.skill_root)
+            resolution = state_resolver.resolve_project_state(skill_root=install.skill_root, repo=install.project_root)
+            self.assertIsNone(resolution.error_code)
+            result = doctor.run_doctor(repo=str(install.project_root), repo_explicit=True,
+                                       script_path=install.entrypoint)
+            self.assertTrue(result.ok, result)
+            self.assertEqual(tree_snapshot(install.skill_root), before)
+            with closing(storage.connect(target.db_path)) as connection:
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, name, applied_at) VALUES (23, 'future_fixture', ?)",
+                    (OBSERVED_AT,),
+                )
+                connection.commit()
             before = tree_snapshot(install.skill_root)
             resolution = state_resolver.resolve_project_state(skill_root=install.skill_root, repo=install.project_root)
             self.assertEqual(resolution.error_code, "schema_too_new")
@@ -211,7 +215,7 @@ class Schema22ConsumerTests(unittest.TestCase):
                                        script_path=install.entrypoint)
             self.assertFalse(result.ok)
             self.assertEqual(result.errors[0]["code"], "schema_too_new")
-            self.assertEqual(result.data["components"]["project_state"]["required_schema_version"], 21)
+            self.assertEqual(result.data["components"]["project_state"]["required_schema_version"], 22)
             self.assertEqual(tree_snapshot(install.skill_root), before)
 
     def test_restored_pending_runner_is_not_relaunched_and_keeps_configs(self):
@@ -224,10 +228,8 @@ class Schema22ConsumerTests(unittest.TestCase):
             configs = seed_supported_local_configs(package)
             _prepared, intent = runner_fixture._launch(fixture)
             with closing(storage.connect(fixture.db)) as connection:
-                self.assertTrue(storage._migrate_schema22_connection(connection))
-            with mock.patch.object(storage, "SCHEMA_VERSION", 22), \
-                 mock.patch.object(backup, "SCHEMA_VERSION", 22), \
-                 mock.patch.object(runner_service, "run_process_request", side_effect=AssertionError("recovery relaunched Runner")) as process:
+                self.assertEqual(storage.current_schema_version(connection), 22)
+            with mock.patch.object(runner_service, "run_process_request", side_effect=AssertionError("recovery relaunched Runner")) as process:
                 artifacts = publish_generations(fixture.target, "2099-09-07T00:00:00Z")
                 with closing(storage.connect_readonly(fixture.db)) as connection:
                     original = storage.read_verification_runner_generation_locked(connection,

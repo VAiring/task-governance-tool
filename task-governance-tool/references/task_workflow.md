@@ -206,14 +206,14 @@ Before starting each execution unit, state its intended outcome, write scope,
 verification gate, and review tier. Update the task only after those values
 come from current authority.
 
-From schema v18 through current schema v21, explicit public `task add` and
+From schema v18 through current schema v22, explicit public `task add` and
 `task edit --verification` input is capped at 1,000 characters. Stored/read
 and internal-derived paths accept and preserve valid existing verification
 text through 1,000 characters. A metadata or lifecycle edit continues to
 validate untouched verification as stored state rather than replaying it as
 caller input; values over the source-schema limit fail closed.
 
-Schema v19 sealed version-1 Completion Evidence Bundles. At current schema v21,
+Schema v19 sealed version-1 Completion Evidence Bundles. At current schema v22,
 each successful native completion atomically seals exactly one version-2
 Bundle with the closed verification-basis union: `caller_attestation` or
 `not_required` with null `runner_observation`, or `runner_observation` with the
@@ -525,7 +525,7 @@ root and merge commits are unsupported.
 taskgov validates and records evidence only. It does not stage files, create
 commits or branches, push, open PRs, or write Issue comments.
 
-The schema-v21 Bundle-v2 seal is part of completion. Its closed verification
+The schema-v22 Bundle-v2 seal is part of completion. Its closed verification
 basis is `caller_attestation` or `not_required` with null
 `runner_observation`, or `runner_observation` with the qualifying exact
 observation. The due Evidence index-v2 refresh is bounded post-commit

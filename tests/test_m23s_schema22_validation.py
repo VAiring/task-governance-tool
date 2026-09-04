@@ -3,8 +3,9 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, nullcontext
 from pathlib import Path
+from unittest import mock
 
 from tests import test_m242_r3a_schema20_storage as schema19_fixture
 from tests import test_m242_r3b_schema20_activation as schema20_fixture
@@ -16,9 +17,16 @@ from task_governance_tool.verification_runner import verification_runner_attempt
 
 
 def _bundle_artifacts(connection, project_id: str):
-    basis = storage.capture_evidence_projection_basis(
-        connection, project_id=project_id
+    # Observe an explicit historical21 fixture through its old current-only
+    # capture seam; actual22 and unsupported versions retain public admission.
+    legacy_capture = (
+        mock.patch.object(storage, "SCHEMA_VERSION", 21)
+        if storage.current_schema_version(connection) == 21 else nullcontext()
     )
+    with legacy_capture:
+        basis = storage.capture_evidence_projection_basis(
+            connection, project_id=project_id
+        )
     return basis, {
         record.bundle.completion_evidence_bundle_id:
         build_projection_bundle_artifact(record)
@@ -171,7 +179,7 @@ class Schema22StoredValidationTests(unittest.TestCase):
                 )
                 self.assertEqual(retained, original)
             self.assertEqual(logical_database_digest(connection), snapshot)
-            self.assertEqual(storage.SCHEMA_VERSION, 21)
+            self.assertEqual(storage.SCHEMA_VERSION, 22)
             return after
         finally:
             connection.execute("PRAGMA query_only = OFF")

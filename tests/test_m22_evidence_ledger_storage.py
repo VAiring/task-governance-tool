@@ -954,12 +954,13 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
         )
 
     def test_schema_version_and_verification_capacity_are_layered(self):
-        self.assertEqual(SCHEMA_VERSION, 21)
+        self.assertEqual(SCHEMA_VERSION, 22)
         self.assertEqual(stored_task_verification_limit(17), 500)
         self.assertEqual(stored_task_verification_limit(18), 1_000)
         self.assertEqual(stored_task_verification_limit(19), 1_000)
         self.assertEqual(stored_task_verification_limit(20), 1_000)
         self.assertEqual(stored_task_verification_limit(21), 1_000)
+        self.assertEqual(stored_task_verification_limit(22), 1_000)
         self.assertEqual(TASK_VERIFICATION_INPUT_LIMIT, 1_000)
 
     def test_migration_rejects_v17_overflow_and_v18_captures_one_thousand(self):
@@ -1185,9 +1186,9 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         validate_evidence_ledger_storage(connection)
 
                         applied, warnings = apply_migrations(connection)
-                        self.assertEqual(applied, [19, 20, 21])
+                        self.assertEqual(applied, [19, 20, 21, 22])
                         self.assertEqual(warnings, [])
-                        self.assertEqual(current_schema_version(connection), 21)
+                        self.assertEqual(current_schema_version(connection), 22)
                         self.assertEqual(
                             connection.execute(
                                 "SELECT constraints_text "
@@ -3308,7 +3309,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21], []),
+                                ([20, 21, 22], []),
                             )
 
                     corrupt_owner = "corrupt-verification-project-owner"
@@ -3362,7 +3363,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21], []),
+                                ([20, 21, 22], []),
                             )
 
                     with closing(connect(db)) as connection:
@@ -3959,7 +3960,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21], []),
+                                ([20, 21, 22], []),
                             )
 
                     with closing(connect(target.db_path)) as connection:
@@ -4171,11 +4172,16 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                                 reference["project_id"].encode("utf-8")
                             )
                         fields = tuple(reference)
+                        if case == "reserved-kind":
+                            # The current DDL rejects this earlier; inject only to
+                            # retain the independent selected-source rejection check.
+                            connection.execute("PRAGMA ignore_check_constraints = ON")
                         connection.execute(
                             f"INSERT INTO evidence_references({', '.join(fields)}) "
                             f"VALUES ({', '.join('?' for _ in fields)})",
                             tuple(reference[field] for field in fields),
                         )
+                        connection.execute("PRAGMA ignore_check_constraints = OFF")
                         connection.commit()
 
                     before = db.read_bytes()

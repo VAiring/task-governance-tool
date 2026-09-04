@@ -9,8 +9,8 @@ published v0.10.0 artifact and its exact commit, tag, Release, archive,
 checksum, and Release body remain unchanged. This record also does not
 authorize installing or overwriting a Skill in any project.
 
-The current v0.13.0 candidate includes the schema-v21 evidence and Runner gate
-basis while preserving the published v0.10.0 identity and the fixed v0.13.0
+The current v0.13.0 candidate uses schema-v22 Evidence storage with the unchanged
+schema-v21 Runner gate protocol while preserving the published v0.10.0 identity and the fixed v0.13.0
 package boundary described below. Explicit `task edit --runner-plan-action`
 supports `replace`, `rebind`, `detach`, and `disable`; the first absent-Plan
 `replace` opts in with `trusted_local=true`, while `disable` sets the global
@@ -31,8 +31,8 @@ manual verification path.
 | Item | Value |
 |---|---|
 | Package version | `0.13.0` |
-| SQLite schema | v21 |
-| Viewer snapshot | v4, accepting source schemas v5-v21 (v5 through v21) |
+| SQLite schema | v22 |
+| Viewer snapshot | v4, accepting source schemas v5-v22 (v5 through v22) |
 | Public command leaves | 21 |
 | Supported runtime | Python 3.12 or newer on Windows |
 | Verified platform | Windows |
@@ -188,7 +188,7 @@ to the supported physical project-scoped package. Setup never creates or edits
 the Runner Plan; taskgov-managed authoring requires explicit
 `task edit --runner-plan-action`.
 
-Setup reports `schema_to=21` and `evidence_status` as `not_present`, `current`,
+Setup reports `schema_to=22` and `evidence_status` as `not_present`, `current`,
 `published`, or `repair_required`. Its ordered write vocabulary includes
 `evidence_projection_publish` after maintenance/binding and before
 `viewer_publish`; read-only preview plans it without writing.
@@ -287,9 +287,17 @@ preserves schema-v20 audit history as ineligible, and admits only a fresh
 eligibility-version-1 exact-current Runner graph to the completion selector.
 A qualifying complete-plan pass supplies the Runner-observation branch; the
 exact closed no-launch fallback alone delegates to the existing manual Receipt
-branch, and every other selected Runner state blocks. Migration from v1-v20 to
-v21 and schema-v21 reentry are ordered and repeatable and never promote old
-audit rows. A migrated capture-version-0 target remains read-only lineage and
+branch, and every other selected Runner state blocks. Migration 21 never
+promotes old audit rows. Current schema v22 removes the retired Analyzer
+reservations from the shared Evidence tables and current enums without
+changing that Runner protocol. Setup reaches v22 from complete v1-v21 sources;
+complete v20 continues through migration 21 and then 22, and exact-v22 reentry
+is validation-only. Migration 22 rejects unexpected retired-value rows and
+unowned attachments to its three rebuilt tables rather than deleting or
+converting them. It preserves valid business rows, IDs, and retained
+source-19/20/21 Bundle payloads/bytes/digests. New native Bundles use source
+22/format 2; a refreshed index reports source 22 with those unchanged old
+Bundle references. A migrated capture-version-0 target remains read-only lineage and
 must be replaced with a fresh capture-version-1 target before a new Receipt,
 Finding, or completion source can be recorded.
 
@@ -303,7 +311,7 @@ migration.
 The immutable v0.10.0 release acceptance rehearsed the transition from the
 exact legacy v0.1.0/schema-v2 baseline to v0.10.0/schema v16. The current
 v0.13.0 candidate must separately rehearse that isolated baseline through
-schema v21, including schema-v17 Receipt/completion preservation, subject and
+schema v22, including schema-v17 Receipt/completion preservation, subject and
 provenance migration, capture-v0/fresh retargeting, 500/1,000 capacity,
 preserved Bundle-v1 and native Bundle-v2 projection recovery, backup recovery,
 and no-partial-write behavior before it can become a release.
@@ -321,7 +329,7 @@ continue to prove that release artifacts contain no `config/` content.
 
 Rollback restores one matched pre-migration package, database, and managed
 artifact set as a single compatibility point, then proves that the legacy
-package can read that restored state. Running old code against schema v21,
+package can read that restored state. Running old code against schema v22,
 reverse-migrating in place, mixing generations, or treating a Git checkout
 alone as rollback is unsupported. After cutover, a defect is handled by a
 forward fix and new candidate/version, not a force update, history rewrite,
@@ -372,23 +380,24 @@ do not change either projection generation. Setup publishes Evidence then Viewer
 Evidence JSON is generated only at fixed `state/current/evidence/index.json`
 and `state/current/evidence/bundles/<completion-evidence-bundle-id>.json`, with
 the zero-wait lock at `state/current/evidence/taskgov-evidence.lock`. A
-schema-v20/v21 publication uses index format 2 and adds `bundle_format_version`:
+schema-v20-through-v22 publication uses index format 2 and adds `bundle_format_version`:
 null for `legacy_unknown`, 1 for a preserved Bundle v1, and 2 for a native
-Bundle v2. Existing v1 Bundle bytes and digests remain unchanged. The index is
+Bundle v2. Retained source-19/20/21 Bundle bytes and digests remain unchanged.
+The index reports its actual container schema, not a relabelled Bundle source. The index is
 published last, SQLite remains canonical, and JSON is never imported. Failure
 preserves the committed mutation and last-good index with one fixed warning.
 
 The Viewer is a self-contained, read-only `file://` projection under the
-ignored package state. Snapshot v4 accepts source schemas v5-v21 and includes
+ignored package state. Snapshot v4 accepts source schemas v5-v22 and includes
 the same bounded newest-first completion history as `task show`; sources v5-v14
-receive an empty, legacy-incomplete history and sources v15-v21 use stored
+receive an empty, legacy-incomplete history and sources v15-v22 use stored
 cycles. It omits internal event links,
 storage paths, maintenance internals, checkpoint content, handoffs,
 Verification Receipt data, Review provenance, raw evidence, environment data,
 and secrets. For sources v18+ it validates subject/provenance/capture bindings;
-v19-v21 also validate and discard Bundle linkage, and v20-v21 additionally
+v19-v22 also validate and discard Bundle linkage, and v20-v22 additionally
 validate the source-appropriate Bundle-v2 verification basis and Runner graph.
-Source v21 validates the complete tagged union. It
+Sources v21 and v22 validate the complete tagged union. It
 performs no network request and provides no database or task write control.
 
 An optional browser-only refresh profile may exist at the physical installed
@@ -619,7 +628,9 @@ post-commit order is Evidence, Viewer, then backup. Schema v21 preserves audit
 history as gate-ineligible. A fresh exact-current eligibility-version-1 Runner
 pass supplies the Runner-observation completion branch; only the exact closed
 no-launch result falls back to the manual Receipt branch, while all other
-selected Runner states block. Viewer snapshot v4 accepts source schemas v5-v21 while exposing no
+selected Runner states block. Current schema v22 removes only the retired
+Analyzer reservations, preserves source-19/20/21 Bundle bytes/digests, and writes
+source-22/v2 Bundles under the same protocol. Viewer snapshot v4 accepts source schemas v5-v22 while exposing no
 Evidence UI. No Analyzer, network/model invocation, new command leaf, or new
 Skill trigger is activated. Action-bearing `task edit` adds only the closed
 `runner_plan_update` (`action` and status); `review target set` remains the sole

@@ -100,7 +100,7 @@ class Schema22LifecycleTests(unittest.TestCase):
         self.assertEqual(cycle.verification_receipt_id, record.bundle.verification_receipt_id)
         self.assertEqual(cycle.verification_runner_observation_id, record.bundle.verification_runner_observation_id)
         self.assertEqual(_source(artifact.envelope).source, artifact.envelope)
-        self.assertEqual(storage.SCHEMA_VERSION, 21)
+        self.assertEqual(storage.SCHEMA_VERSION, 22)
         return artifact
 
     def test_actual22_manual_receipt_and_not_required_completion(self):
@@ -135,7 +135,7 @@ class Schema22LifecycleTests(unittest.TestCase):
                 runner_fixture._seed_review_receipts(fixture)
                 commit = _matching_commit(fixture)
                 with closing(storage.connect(fixture.db)) as connection:
-                    self.assertTrue(storage._migrate_schema22_connection(connection))
+                    self.assertEqual(storage.current_schema_version(connection), 22)
                     selected = _selection(connection, fixture.target, fixture.task_id)
                     before = _logical_snapshot(connection)
                     shown = tasks.show_task(connection, fixture.target.project, fixture.task_id,
@@ -171,8 +171,9 @@ class Schema22LifecycleTests(unittest.TestCase):
 
     def test_reopen_fresh22_target_does_not_reactivate_or_rewrite_old_runner_history(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
-            runner_fixture._complete_runner_pass(fixture)
+            with manual_fixture._schema21_runtime():
+                fixture = RunnerServiceFixture(Path(temporary))
+                runner_fixture._complete_runner_pass(fixture)
             with closing(storage.connect(fixture.db)) as connection:
                 project_id = fixture.target.project.project_id
                 old_basis, old_artifacts = _bundle_artifacts(connection, project_id)
@@ -222,17 +223,15 @@ class Schema22LifecycleTests(unittest.TestCase):
             runner_fixture._persist_terminal(fixture, intent, branch="pass")
             runner_fixture._seed_review_receipts(fixture)
             with closing(storage.connect(fixture.db)) as connection:
-                self.assertTrue(storage._migrate_schema22_connection(connection))
+                self.assertEqual(storage.current_schema_version(connection), 22)
                 task = tasks.read_internal_task(connection, fixture.target.project.project_id, fixture.task_id)
                 before = _logical_snapshot(connection)
             commit = _matching_commit(fixture)
             before_files = tree_snapshot(fixture.db.parent)
-            # Existing Plan seams stay unchanged; only the connection seam is
-            # adapted for explicit22. Physical package comparison remains real.
+            # Existing Plan seams stay unchanged. Both the public connection
+            # admission and the physical package comparison remain real.
             with mock.patch.object(service, "capture_verification_runner_plan", return_value=None), \
-                 mock.patch.object(service, "resolve_verification_runner_plan", return_value=prepared.plan), \
-                 mock.patch.object(service, "connect_initialized_task_readonly",
-                                   side_effect=lambda _target: storage.connect_readonly(fixture.db)):
+                 mock.patch.object(service, "resolve_verification_runner_plan", return_value=prepared.plan):
                 current = service.select_current_verification_runner_basis(fixture.target, task=task)
                 self.assertEqual(current.mode, "runner_observation")
                 with closing(storage.connect(fixture.db)) as connection:
@@ -258,7 +257,7 @@ class Schema22LifecycleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary))
             with closing(storage.connect(fixture.db)) as connection:
-                self.assertTrue(storage._migrate_schema22_connection(connection))
+                self.assertEqual(storage.current_schema_version(connection), 22)
                 with connection:
                     tasks.edit_task(connection, fixture.target.project, fixture.task_id, status="in_progress")
                 authority = reviews.read_review_target_authority_basis(connection, fixture.target.project, fixture.task_id)

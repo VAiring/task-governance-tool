@@ -463,6 +463,7 @@ class EvidenceReferenceTests(unittest.TestCase):
                 "created_at": "2026-01-01T00:00:00Z",
             },
         )
+        upgraded = ProducerAttribution("machine_observed", "taskgov_git")
         with self.assertRaises(EvidenceLedgerError):
             evidence_reference_digest(
                 source=source,
@@ -471,8 +472,14 @@ class EvidenceReferenceTests(unittest.TestCase):
                 contract_revision=3,
                 binding=binding(),
                 completion_cycle_id=None,
-                attribution=ProducerAttribution("llm_derived", "batch_analyzer"),
+                attribution=upgraded,
             )
+        for assurance, producer in (
+            ("llm_derived", "taskgov_core"),
+            ("machine_observed", "batch_analyzer"),
+        ):
+            with self.subTest(assurance=assurance, producer=producer), self.assertRaises(EvidenceLedgerError):
+                ProducerAttribution(assurance, producer)
         with self.assertRaises(EvidenceLedgerError):
             EvidenceSource(
                 source_kind="derived_analysis",

@@ -81,7 +81,6 @@ RELATION_ORDER = {
     "review_assessment": 1,
     "review_finding": 2,
     "completion_basis": 3,
-    "derived_analysis": 4,
     "runner_observation": 5,
 }
 SOURCE_KIND_ORDER = {
@@ -90,7 +89,6 @@ SOURCE_KIND_ORDER = {
     "review_receipt": 2,
     "review_finding": 3,
     "completion_evidence": 4,
-    "derived_analysis": 5,
     "runner_observation": 6,
 }
 

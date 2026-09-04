@@ -356,13 +356,31 @@ class Schema22MigrationTests(unittest.TestCase):
             self.assert_restored_connection(connection)
             storage.validate_schema21_storage(connection)
 
-    def test_public_initialization_and_migration_dispatch_remain_schema21(self):
-        with definitions._empty_public_database() as (initialized, connection):
-            self.assertEqual(storage.SCHEMA_VERSION, 21)
-            self.assertEqual(initialized.schema_version, 21)
+    def test_public_initialization_and_migration_dispatch_activate22(self):
+        with definitions._empty_public_database(schema_version=22) as (initialized, connection):
+            self.assertEqual(storage.SCHEMA_VERSION, 22)
+            self.assertEqual(initialized.schema_version, 22)
             before = _logical_snapshot(connection)
             self.assertEqual(storage.apply_migrations(connection), ([], []))
             self.assertEqual(_logical_snapshot(connection), before)
+        with _source_copy(self.target.db_path) as connection:
+            original = _rows(connection, include_markers=False)
+            _basis, artifacts = validation_fixture._bundle_artifacts(
+                connection, self.target.project.project_id
+            )
+            self.assertEqual(storage.apply_migrations(connection), ([22], []))
+            storage.validate_schema22_storage(connection)
+            self.assertEqual(_rows(connection, include_markers=False), original)
+            _basis, preserved = validation_fixture._bundle_artifacts(
+                connection, self.target.project.project_id
+            )
+            self.assertEqual(preserved, artifacts)
+            before = _logical_snapshot(connection)
+            self.assertEqual(storage.apply_migrations(connection), ([], []))
+            self.assertEqual(_logical_snapshot(connection), before)
+        with definitions._empty_public_database(schema_version=20) as (_initialized, connection):
+            self.assertEqual(storage.apply_migrations(connection), ([21, 22], []))
+            storage.validate_schema22_storage(connection)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
@@ -16,6 +17,7 @@ from tests.m223_test_support import (
     logical_database_digest,
     remove_v19_bundle_storage_for_test,
     remove_v20_runner_shadow_for_test,
+    remove_v21_gate_basis_for_test,
 )
 from tests.verification_receipt_test_support import (
     add_receipt,
@@ -48,6 +50,24 @@ from task_governance_tool.storage import (
 
 
 class CompletionEvidenceBundleStorageTests(unittest.TestCase):
+    def test_old_schema_fixture_reducer_rejects_sealed_source22_without_retagging(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo, db_path, task_id = self._representative_completion_fixture(Path(directory))
+            completed = complete_task(db_path, repo, task_id)
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            with closing(connect(db_path)) as connection:
+                self.assertEqual(current_schema_version(connection), 22)
+                self.assertEqual(connection.execute(
+                    "SELECT source_schema_version FROM completion_evidence_bundles"
+                ).fetchone()[0], 22)
+                before = logical_database_digest(connection)
+                with self.assertRaises(sqlite3.IntegrityError):
+                    remove_v21_gate_basis_for_test(connection)
+                self.assertEqual(logical_database_digest(connection), before)
+                self.assertEqual(current_schema_version(connection), 22)
+                self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+                self.assertEqual(connection.execute("PRAGMA legacy_alter_table").fetchone()[0], 0)
+
     def _initialized_database(self, root: Path) -> Path:
         repo = root / "repo"
         repo.mkdir()
@@ -179,7 +199,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             db_path = self._initialized_database(Path(directory))
             with closing(connect(db_path)) as connection:
-                self.assertEqual(SCHEMA_VERSION, 21)
+                self.assertEqual(SCHEMA_VERSION, 22)
                 remove_v20_runner_shadow_for_test(connection)
                 self.assertEqual(current_schema_version(connection), 19)
                 marker = connection.execute(

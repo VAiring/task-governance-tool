@@ -54,7 +54,6 @@ ASSURANCE_CLASSES = frozenset(
         "deterministically_derived",
         "external_reference",
         "legacy_unknown",
-        "llm_derived",
     }
 )
 PRODUCER_CLASSES = frozenset(
@@ -64,7 +63,6 @@ PRODUCER_CLASSES = frozenset(
         "trusted_caller",
         "legacy_migration",
         "external_system",
-        "batch_analyzer",
         "verification_runner",
     }
 )
@@ -771,7 +769,6 @@ class EvidenceSource:
         ):
             expected = _RUNNER_OBSERVATION_PROJECTION
         else:
-            # The derived-analysis writer remains reserved.
             raise _inconsistent()
         _identifier(self.source_id, _SOURCE_ID_PATTERNS[self.source_kind])
         if frozenset(projection) != expected:

@@ -720,7 +720,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
         )
         rendered = projection._render_projection(
             EvidenceProjectionBasis(
-                source_schema_version=21,
+                source_schema_version=22,
                 project_id=PROJECT_ID,
                 source_generation=2,
                 cycles=(cycle,),

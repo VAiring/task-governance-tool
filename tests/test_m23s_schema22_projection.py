@@ -6,6 +6,7 @@ import unittest
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
+from unittest import mock
 
 from tests import test_m243b_schema21_compatibility as schema21_fixture
 from tests import test_m23s_schema22_validation as validation_fixture
@@ -249,7 +250,8 @@ class Schema22StoredProjectionTests(unittest.TestCase):
         with _source_copy(self.target.db_path) as connection:
             project_id = self.target.project.project_id
             before_basis, before_artifacts = validation_fixture._bundle_artifacts(connection, project_id)
-            original = projection._render_projection(before_basis)
+            with mock.patch.object(projection, "SCHEMA_VERSION", 21):
+                original = projection._render_projection(before_basis)
             self.assertTrue(storage._migrate_schema22_connection(connection))
             snapshot = _logical_snapshot(connection)
             connection.execute("PRAGMA query_only = ON")
@@ -301,7 +303,7 @@ class Schema22StoredProjectionTests(unittest.TestCase):
                     )
                 self.assertEqual(rejected.exception.code, "completion_history_inconsistent")
                 with self.assertRaises(storage.StorageError):
-                    storage.capture_evidence_projection_basis(connection, project_id=project_id)
+                    validation_fixture._bundle_artifacts(connection, project_id)
                 self.assertEqual(_logical_snapshot(connection), snapshot)
             storage.validate_schema21_storage(connection)
 

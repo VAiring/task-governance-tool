@@ -3,8 +3,8 @@
 Use this reference when exact public commands, arguments, JSON fields, bounds,
 or error behavior matter.
 
-The current v0.13.0 package uses task schema v21 and offline snapshot v4 with
-source schemas v5 through v21. The published v0.10.0 release remains the
+The current v0.13.0 package uses task schema v22 and offline snapshot v4 with
+source schemas v5 through v22. The published v0.10.0 release remains the
 immutable schema-v16 predecessor.
 
 Schema v19 sealed native Bundle v1. Schema v20 preserves existing v1 bytes and
@@ -21,6 +21,13 @@ observation. It adds no public command, argument, Skill trigger, or Viewer
 surface. Gate integration adds only `verification_route` and `blocking_code` to
 the existing target-set JSON success data. Bundle/Evidence serialization adds no
 normal-loop call, and no post-target `task show` is added.
+
+Current schema v22 retains that protocol and removes only retired Analyzer
+reservations from the shared Evidence schema and current enums. Explicit
+setup migrates supported sources through 22; exact-v22 reentry validates
+without migration. New native Bundles use source 22/format 2. Retained
+source-19/20/21 Bundle bytes and digests are unchanged, while the refreshed
+format-2 index reports its actual source schema 22.
 
 ## Contents
 
@@ -241,7 +248,7 @@ Expired or stale context requires a fresh preview and fresh user approval.
     "viewer_publish"
   ],
   "schema_from": null,
-  "schema_to": 21,
+  "schema_to": 22,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -280,7 +287,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=21`. A later-stage failure reports only
+null observed values except `schema_to=22`. A later-stage failure reports only
 the durable ordered prefix.
 
 Setup is noninteractive and idempotent. It does not create a second
@@ -333,8 +340,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 21,
-      "required_schema_version": 21
+      "schema_version": 22,
+      "required_schema_version": 22
     },
     "task_summary": {
       "code": "ready",
@@ -424,7 +431,7 @@ dependent-state use, or use as a write basis. Exact SQLite storage classes,
 privacy/capacity, enums, and Task cross-field matrices are checked without
 coercion or repair. Bounded list/current/next commands validate only their
 selected complete-row batch and add no unrelated whole-table rescan.
-For source schemas v8-v21, the same boundary performs one bulk relationship
+For source schemas v8-v22, the same boundary performs one bulk relationship
 read for only those selected Task IDs. Revision zero requires no Contract row;
 a positive `current_contract_revision` must exist as the latest exact INTEGER
 revision owned by the same project and Task. Dangling, foreign, nonlatest,
@@ -437,7 +444,7 @@ faults use the same fixed error; genuine busy/locked state remains
 `database_busy`. Doctor, Viewer, setup, and recovery validate every Task row,
 including stored project ownership, as one whole batch.
 
-Any current schema-v21 stored Task fault returns exit 2, code
+Any current schema-v22 stored Task fault returns exit 2, code
 `project_state_unreadable`, and message
 `project state could not be read safely`. The command keeps its existing empty
 data shape and emits no warning, partial Task projection, rejected content, or
@@ -600,7 +607,7 @@ target, its blocking code is `evidence_basis_stale` before receipt-required or
 receipt-blocking evaluation. Trimmed-empty verification remains
 `required=false,satisfied=true,blocking_code=null` with a null subject.
 
-For a schema-v21 live target, the existing gate shape has a closed basis matrix.
+For a schema-v21 or schema-v22 live target, the existing gate shape has a closed basis matrix.
 Marker `0` keeps the M21 Receipt behavior. Marker `2` with a non-current,
 pending, or cleanup-only graph is stale and uses `evidence_basis_stale`; any
 other exact-current terminal Runner result except the two admitted results uses
@@ -1076,7 +1083,7 @@ python scripts/taskgov.py review target set --repo <target-project> <task-id> --
 generation. Git commits are resolved read-only and stored canonically. A diff
 fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
 
-At schema v21, this same target-set operation may use the explicitly opted-in
+At schema v21 or v22, this same target-set operation may use the explicitly opted-in
 trusted-local Runner route. It adds no argument or public Runner command. JSON
 success data is exactly the prior `task`, `changed_fields`, and `event` plus
 `verification_route` and `blocking_code`; text output is unchanged, and failure
@@ -1219,13 +1226,13 @@ daemon, thread, timer, detached process, queue, scheduler, service, or network.
 Evidence JSON paths are fixed at `state/current/evidence/index.json` and
 `state/current/evidence/bundles/<completion-evidence-bundle-id>.json`, with the lock at
 `state/current/evidence/taskgov-evidence.lock`; callers cannot select them.
-A schema-v20/v21 index uses `format_version=2` and adds
+A schema-v20-through-v22 index uses `format_version=2` and adds
 `bundle_format_version`: null for `legacy_unknown`, 1 for a preserved Bundle
-v1, and 2 for a native Bundle v2. New v21 Bundles use `format_version=2`, a
+v1, and 2 for a native Bundle v2. New v22 Bundles use `format_version=2`, a
 closed verification-basis union of `caller_attestation`, `not_required`, or
 `runner_observation`, and a matching nullable `runner_observation` field. The
 two M21 arms keep that field null; the Runner arm contains only the qualifying
-sanitized observation. Preserved v1 bytes and digests are unchanged. The index
+sanitized observation. Retained source-19/20/21 Bundle bytes and digests are unchanged. The index
 is published last, SQLite remains canonical, and JSON is never imported or
 displayed by the Viewer.
 
@@ -1252,14 +1259,14 @@ command, or normal-loop decision is added.
 
 These operations add no Skill command or LLM judgment. Their artifacts and
 paths are absent from public command output. Snapshot v4 reads source schemas
-5 through 21. Sources 5-14 receive an empty, legacy-incomplete completion
-history; sources 15-21 use stored cycles. Every Task receives the same bounded
+5 through 22. Sources 5-14 receive an empty, legacy-incomplete completion
+history; sources 15-22 use stored cycles. Every Task receives the same bounded
 five-key projection as `task show` without exposing internal event links,
 maintenance data, or checkpoint content.
 
 For sources v18+, Viewer capture validates Review Receipt provenance and
-verification-subject/capture bindings; v19-v21 also validate the Bundle
-discriminator, and v20-v21 additionally validate the source-appropriate
+verification-subject/capture bindings; v19-v22 also validate the Bundle
+discriminator, and v20-v22 additionally validate the source-appropriate
 Bundle-v2 verification basis and Runner graph. It discards those fields from snapshot v4. It
 adds no provenance UI, filter, panel, snapshot key, or normal-loop behavior.
 

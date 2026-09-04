@@ -137,7 +137,7 @@ def _physical_current20_install(root: Path) -> PhysicalInstall:
         / "storage.py"
     )
     source = installed_storage.read_text(encoding="utf-8")
-    current_declaration = "SCHEMA_VERSION = 21"
+    current_declaration = "SCHEMA_VERSION = 22"
     if source.count(current_declaration) != 1:
         raise AssertionError("schema-v20 oracle could not pin installed runtime")
     installed_storage.write_text(

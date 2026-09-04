@@ -160,11 +160,11 @@ or ten calls respectively.
   authority. Leave revision zero otherwise without asking. Revise a Contract
   only from later explicit authority and record the reason.
 - Explicit public `task add` and `task edit --verification` input is limited to
-  1,000 characters. Schema-v18-through-v21 stored/read paths preserve an
+  1,000 characters. Schema-v18-through-v22 stored/read paths preserve an
   existing valid value through 1,000 characters; metadata and lifecycle edits
   continue to treat untouched verification bytes as stored state rather than
   caller input.
-- Schema v19 sealed Bundle v1; current schema v21 automatically seals Bundle v2
+- Schema v19 sealed Bundle v1; current schema v22 automatically seals Bundle v2
   with the closed verification-basis union: `caller_attestation` or
   `not_required` with null `runner_observation`, or `runner_observation` with
   the qualifying exact observation. Evidence index v2 can reference preserved

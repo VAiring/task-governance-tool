@@ -817,7 +817,7 @@ def _validate_bundle_payload(
     if (
         not _is_int(source_schema_version)
         or (source_schema_version, bundle_format_version)
-        not in {(19, 1), (20, 2), (21, 2)}
+        not in {(19, 1), (20, 2), (21, 2), (22, 2)}
         or source_schema_version > maximum_source_schema_version
         or not _is_int(payload["bundle_version"])
         or payload["bundle_version"] != bundle_format_version
@@ -1128,7 +1128,7 @@ def read_evidence_report(
     if (
         not _is_int(format_version)
         or (format_version, payload["source_schema_version"])
-        not in {(1, 19), (2, 20), (2, 21)}
+        not in {(1, 19), (2, 20), (2, 21), (2, 22)}
     ):
         raise _invalid()
     project_id = _string(payload["project_id"])

@@ -2,14 +2,15 @@
 
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
-The current unpublished candidate is v0.13.0 with SQLite schema v21, Viewer
-snapshot v4 accepting source schemas v5-v21, and 21 public command leaves. Its
+The current unpublished candidate is v0.13.0 with SQLite schema v22, Viewer
+snapshot v4 accepting source schemas v5-v22, and 21 public command leaves. Its
 active implementation includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
 verification Runner with a closed manual fallback. Schema v20 remains a
 supported migration source and
-audit-only Runner lineage; schema v21 is the current persistence and gate basis.
+audit-only Runner lineage; schema v22 is current persistence and retains the
+schema-v21 Runner gate protocol unchanged.
 M25 Select-Split-Merge-Register is active only in the Skill instruction layer.
 The Task database owns live state and evidence; completed execution narrative
 belongs only in indexed history.
@@ -401,6 +402,7 @@ Current sequential migrations are:
 | 19 | native completion Bundles, criterion links/Finding snapshots, and Evidence JSON projection state |
 | 20 | verification Runner shadow storage and Bundle-v2 null-Runner tagged union |
 | 21 | verification Runner gate-basis tags using the existing schema-v20 structures |
+| 22 | retired Analyzer reservation cleanup in the existing Evidence/Bundle tables |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -413,10 +415,10 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v20 and
-treats v21 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v21 and
+treats v22 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v21.
+Viewer compatibility is independent and accepts source schemas v5-v22.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
@@ -785,9 +787,9 @@ v20-owned table, explicit index, trigger, or column is rejected before any
 database or sidecar write, migration backup, recovery copy/publication, Viewer
 publication, or managed-backup write. The canonical resolver, setup inspection/migration,
 Viewer source validator, and managed backup/recovery validator all use this
-same owned-inventory check. Complete v19 reaches migration 20 and then
-migration 21; complete v20 reaches migration 21; complete v21 takes validation-
-only reentry. Unrelated extra objects retain the migration-20 policy: an
+same owned-inventory check. Complete v19 reaches migrations 20, 21, and 22;
+complete v20 reaches 21 and 22; complete v21 reaches 22; exact v22 takes
+validation-only reentry. Unrelated extra objects retain the migration-20 policy: an
 unowned index/trigger attached to the Bundle table is removed
 only by a successful complete-v19 migration, while unrelated standalone
 objects remain unchanged. Migration-21 hybrid markers are recognized before
@@ -818,7 +820,7 @@ and native v2 Bundles. The manual branches create no Runner member or projection
 the Runner branch uses only its already-sanitized stored observation.
 
 `evidence_projection.py` selects the format from the validated source schema,
-never from caller input. For schemas v20-v21 it extends the v1 payload key set only
+never from caller input. For schemas v20-v22 it extends the v1 payload key set only
 with `verification_basis` and `runner_observation`. The former is the exact
 four-key object fixed by the specification; the latter is null for manual
 branches and populated only for the qualifying Runner branch. It
@@ -828,18 +830,81 @@ seals the sorted-key compact payload with
 exact bytes. Projection reconstructs and validates a stored v1 or v2 Bundle by
 its own tagged-union row without converting either format.
 
-The schema-v20/v21 index uses `taskgov-evidence-index-v2\0`, envelope
+The schema-v20-through-v22 index uses `taskgov-evidence-index-v2\0`, envelope
 `format_version=2`, and the prior entry key set plus
 `bundle_format_version`. The new field is null for legacy entries, 1 for a
 preserved v1 Bundle, and 2 for a native v2 Bundle. The index remains ordered
 and index-last; its other limits and publication behavior are unchanged.
 
+<a id="schema22-reservation-cleanup-design"></a>
+
+## Current Schema-v22 Reservation Cleanup Design
+
+`storage.py` sets the public schema target to 22 and composes the existing
+migration sequence through `_migrate_schema22_connection`. A complete source
+20 runs 21 then 22, source 21 runs 22, and fresh/older construction reaches the
+same final v22 objects and contiguous markers 1 through 22. Exact-v22 reentry
+opens a validation-only transaction and rolls it back without a write.
+
+Migration `22/evidence_reservation_cleanup` rebuilds exactly
+`evidence_references`, `criterion_evidence_links`, and
+`completion_evidence_bundles`. Their unchanged ordered business columns retain
+all valid rows and IDs. The 14 owned replacement objects comprise those tables,
+their indexes/triggers, and `trg_task_completion_cycles_evidence_basis_insert`;
+the full inventory remains 35 tables, 42 explicit indexes, and 59 triggers.
+Current DDL and enum/order dispatch remove only `derived_analysis` source and
+relation, `llm_derived` assurance, and `batch_analyzer` producer. Old version-
+specific definitions remain source-admission/compatibility owners.
+
+The helper requires no active transaction, `foreign_keys=ON`, and
+`legacy_alter_table=OFF`. It sets foreign keys off and legacy alter on before
+`BEGIN IMMEDIATE`, validates complete source 21, and rejects unowned attachments
+to those three tables and exact temporary-name collisions before DDL. Existing
+stored-source validation rejects retired-value rows without conversion or
+deletion. The only temporary names are `evidence_references_v21`,
+`criterion_evidence_links_v21`, and `completion_evidence_bundles_v21`.
+
+It snapshots all business tables on their original ordered columns and the
+SQL of objects outside the replacements; drops the coupled Evidence cycle
+guard; renames/recreates/copies the three tables; drops their old copies in
+reverse order; and restores the owned objects and cycle guard. It proves row
+and unrelated-object equality, exact owned structure, quick check, and foreign
+keys before inserting marker 22 as the last mutation. Full v22 validation and
+another preserved-row comparison follow before commit, so an admitted unrelated
+marker trigger cannot silently change business rows. Failure rolls back the
+whole logical transaction; `finally` restores and verifies both connection
+settings. Reentry validates attachments/temporary-name absence and never repairs.
+
+The Bundle CHECK retains source-19/v1 and source-20/21/v2 arms unchanged and adds
+source-22/v2 with the same three basis arms as source 21. The locked completion
+basis carries the validated physical source version into both payload and row;
+the native cycle guard requires source 22. Shared stored-row validation compares
+Bundle source with the observed container, including selected-history reads,
+so source 22 cannot be accepted in physical 21. Pure encoding remains
+source-version-aware and introduces no format or digest domain. Old sealed
+Bundle bytes/digests are never relabelled or resealed; index format 2 reports
+container 22 while referencing those unchanged files.
+
+Task/Receipt/lifecycle and Runner capability checks admit 22 under the unchanged
+schema-v21 protocol below. Current validation, setup/doctor, backup/recovery,
+resolver/relocation, and Viewer use their existing source-aware dispatch; no
+parallel reader or candidate runtime exists. Global stored-state validation
+remains global. Recovery defers only the existing Task-verification privacy/
+capacity rejection until structural Runner/Bundle checks complete. Viewer
+extends its same-transaction one-shot Task-batch proof to 22, remains snapshot
+v4, and discards Evidence/Runner details before its unchanged projection.
+Setup retains normal pre-migration backup and matched rollback; no new policy,
+config, process/Runner gate, Skill procedure, or public command is introduced.
+
 <a id="schema21-runner-gate-basis-design"></a>
 
 ## Schema-v21 Runner Gate-Basis Design
 
-This section is the complete implementation structure for schema-v21
-persistence, compatibility, and the qualifying Runner branch. The manual
+This section retains the exact schema-v21 migration/storage implementation and
+qualifying Runner protocol inherited by schema v22. Its source-21 Bundle and
+migration statements describe that supported predecessor; the
+[current v22 delta](#schema22-reservation-cleanup-design) owns current source
+identity, reservations, setup target, and consumer upper bounds. The manual
 Verification Receipt remains the explicit fallback.
 
 ### Migration Identity And Exact Owned Delta
@@ -1154,8 +1219,9 @@ Bundle members and sanitized projection, then discards all Runner-only fields;
 the public Viewer field/UI allow-list, CSP, text-only DOM rule, artifact cap,
 and generation behavior do not change.
 
-Setup creates v21, migrates complete v1-v20 sources, and treats v21
-as validation-only current state. Managed backup publication-retention suffixes
+At the schema-v21 boundary, setup creates v21, migrates complete v1-v20 sources,
+and treats v21 as validation-only state; current setup continues to v22 as above.
+Managed backup publication-retention suffixes
 remain `r<1-20>`; source-schema 21 admission does not change that independent
 retention field. All other filename, identity, locking, staging, validation,
 and publication rules are unchanged. A
@@ -1263,7 +1329,7 @@ structural head. It then calls the storage-owned exact Task-verification
 validator with that candidate's source schema. The validator returns normally
 or raises a sanitized internal privacy/capacity rejection; every other storage
 failure remains structural and set-fatal. The current implementation accepts
-at most 500 characters through schema v17 and 1,000 at schema v18-v21. The source
+at most 500 characters through schema v17 and 1,000 at schema v18-v22. The source
 schema is selected before migration or recovery publication; no recovery-only
 limit or migration laundering exists.
 
@@ -1398,7 +1464,7 @@ tgr1.<unpadded-base64url-canonical-json>.<sha256>
 Its exact payload binds version 1, project ID/scheme, current binding
 generation, distinct old/new 64-hex hashes, source layout, source schema, issue
 time, and expiry exactly 900 seconds later. A fixed-current source may be
-schema v1-v21; `legacy_projects_v1` is capped at the explicit v14 transition,
+schema v1-v22; `legacy_projects_v1` is capped at the explicit v14 transition,
 while ordinary legacy discovery remains v1-v13 plus that v14 shape. Canonical JSON uses
 sorted keys, compact separators, UTF-8, and `ensure_ascii=True`; the checksum
 is SHA-256 over ASCII `tgr1.<payload>` and is compared with
@@ -1558,7 +1624,7 @@ source-capacity failure remains candidate-local; every other Task fault is
 structural and set-fatal.
 
 Viewer supplies the source version returned by snapshot validation. For exact
-schema v18-v21, that validation completes the full Evidence Ledger and Task batch
+schema v18-v22, that validation completes the full Evidence Ledger and Task batch
 checks before issuing one private, one-shot batch proof bound to the same
 query-only connection and transaction, project, source version, exact sorted
 Task IDs/count, issuance data version, and a fixed nested savepoint held only
@@ -1824,9 +1890,9 @@ trusted caller/orchestrator is responsible for truthful attestation.
 
 The subsections below are the current implementation owner for Review
 provenance, schema-v18 capture, schema-v19 Bundle construction and projection,
-and their schema-v20/v21 Runner integration. They preserve legacy rows without
-inventing evidence, keep SQLite ownership in `storage.py`, and leave the
-canonical `derived_analysis` writer inactive.
+and their schema-v20-through-v22 Runner integration. They preserve legacy rows
+without inventing evidence, keep SQLite ownership in `storage.py`, and exclude
+the retired `derived_analysis` reservation from current schema v22.
 
 #### Capture And Projection Module Ownership
 
@@ -1939,7 +2005,7 @@ ID, digest, and time. One constant repository dispatch derives every required
 and null field and source projection; callers provide none. Current source
 kinds are manifest, Verification Receipt, Review Receipt, Review Finding,
 completion evidence, and gate-eligible Runner observation. The
-`derived_analysis` writer remains disabled. Reference creation shares the
+`derived_analysis` source is not admitted by current schema v22. Reference creation shares the
 source transaction. Its digest helper uses
 `taskgov-evidence-reference-v1\0` and excludes random ID/time; for Findings it
 also excludes mutable resolution fields. Validators recompute dispatch,
@@ -2110,9 +2176,9 @@ Schema v17 additionally stores internal verification basis version,
 expectation digest, and nullable Verification Receipt link. Every pre-existing
 cycle migrates as verification-basis version 0 with null digest/link. Every
 new native cycle uses version 1 and stores the domain-separated digest of its
-exact verification expectation. Through schema v20, and for the schema-v21
+exact verification expectation. Through schema v20, and for the schema-v21/v22
 `caller_attestation` arm, a trimmed-nonempty expectation links the qualifying
-pass/full Receipt. Schema-v21 `not_required` and `runner_observation` cycles
+pass/full Receipt. Schema-v21/v22 `not_required` and `runner_observation` cycles
 instead retain a null Receipt link and satisfy the current closed tagged union;
 migration does not rewrite legacy whitespace-only values.
 The sole partial `legacy_current_done` reopen bridge remains the only
@@ -2160,7 +2226,7 @@ explicitly writes coverage `complete`; the column default remains
 Both `task complete` and compatibility `task edit --status done` perform Git
 preflight outside SQLite and converge on one locked native capture:
 
-1. validate schema v21, identity/binding, optimistic Task/authority/target
+1. validate schema v22, identity/binding, optimistic Task/authority/target
    capture basis, Contract, sequential ordering, and evidence;
 2. reread Verification Receipts and review receipts/findings, evaluate the
    current verification and review gates, and select their deterministic
@@ -2224,10 +2290,10 @@ or value; `task show` and Viewer use this same formatter.
 
 Viewer batch history is grouped/windowed for at most 500 selected Tasks and 10
 cycles each, not one query per cycle. Snapshot v4 uses the identical wrapper.
-Source schemas v5-v14 synthesize empty/incomplete history; v15-v21 use stored
-rows. Sources v17-v21 validate linked Receipt ownership, basis, target, and
-pass/full qualification; v19-v21 also validate and discard Bundle linkage, and
-v20-v21 additionally validate the source-appropriate closed verification basis
+Source schemas v5-v14 synthesize empty/incomplete history; v15-v22 use stored
+rows. Sources v17-v22 validate linked Receipt ownership, basis, target, and
+pass/full qualification; v19-v22 also validate and discard Bundle linkage, and
+v20-v22 additionally validate the source-appropriate closed verification basis
 and Runner pointer.
 Neither public events nor Viewer disclose internal event-cycle
 or Verification Receipt IDs.
@@ -2236,11 +2302,14 @@ The only new stable error is
 `completion_history_inconsistent: stored completion history is inconsistent`.
 It exposes no IDs, counts, values, hashes, SQL, or paths.
 
-## Schema-v21 Manual Receipt Arm And Bundle Integration
+<a id="schema-v21-manual-receipt-arm-and-bundle-integration"></a>
+
+## Current Schema-v22 Manual Receipt Arm And Bundle Integration
 
 This section defines the manual Verification Receipt arm and its integration
 with the sole three-branch selector under
-[Schema-v21 Runner Gate-Basis Design](#schema21-runner-gate-basis-design). It
+[Schema-v21 Runner Gate-Basis Design](#schema21-runner-gate-basis-design),
+retained by [current schema v22](#schema22-reservation-cleanup-design). It
 does not rewrite the immutable v0.10.0 artifact or claim a later published
 artifact identity. Schema, parser, completion, Viewer compatibility, Skill
 guidance, package inventory, and tests form one supported boundary.
@@ -2288,7 +2357,7 @@ native cycle insertion is constrained to version 1 and stores the same domain-
 separated digest of its exact Task verification text, including empty text and
 preserved whitespace. The `caller_attestation` arm requires a linked Receipt;
 the `not_required` and `runner_observation` arms require a null Receipt link and
-are constrained by the closed schema-v21 verification-basis union. The Receipt ID
+are constrained by the shared schema-v21/v22 verification-basis union. The Receipt ID
 is a nullable foreign key; repository and projection validation additionally
 prove identical ownership, Contract, stored digest, target tuple, and
 `pass/full` qualification. Existing cycle immutability covers all three
@@ -2357,7 +2426,7 @@ Parser and common state errors retain their existing owners. The Receipt
 service owns one ordered validator matching the specification: normalized
 caller fields, Task existence, done/disallowed status, nonempty expectation,
 stored target structure/presence, expected generation, capture version, then
-the current schema-v21 Runner selector, then uniqueness. It is
+the current schema-v22 Runner selector, then uniqueness. It is
 used before and after the writer lock so a concurrent status, Contract,
 expectation, or target change cannot select a different semantic ordering or
 bind the row to new material. CLI formatting owns the exact three-line success
@@ -2488,15 +2557,16 @@ projection state plus cycle version/null fields without inventing a historical
 Bundle. Migration 20 adds the audit-only Runner-storage objects and Bundle-v2
 tagged union without inventing Runner or historical evidence. Migration 21
 widens only the frozen gate-basis discriminators without promoting audit
-history. Old binaries reject newer schemas normally; setup remains the sole
+history. Migration 22 removes retired Evidence reservations and adds the
+source-22/v2 Bundle arms while preserving sealed history. Old binaries reject newer schemas normally; setup remains the sole
 public migrator. The established reopen bridge remains the only
 post-migration writer of the exact version-0/null/null legacy shape.
 
-Viewer source compatibility accepts v5-v21, while snapshot v4 fields and UI
+Viewer source compatibility accepts v5-v22, while snapshot v4 fields and UI
 remain unchanged. Receipt writes are Viewer-ineligible. The existing bounded
 batch completion-history
 loader performs bounded joins for selected version-1 cycle Receipt links and
-v18+ subject/provenance/manifest/Reference relations plus the v19-v21 Bundle
+v18+ subject/provenance/manifest/Reference relations plus the v19-v22 Bundle
 discriminator and source-aware Runner basis, validates them, and
 discards every ledger field before snapshot formatting. There is no Receipt dataset,
 snapshot field, panel, filter, or detail, and no per-Task Receipt query. This
@@ -2506,13 +2576,13 @@ migrated.
 
 Focused tests reuse one matrix owner for result/coverage/current-binding gate
 cases and existing migration/completion/Task-show helpers. They cover all
-source schemas v1-v21, rollback/reentry, no legacy synthesis, exact target and
+source schemas v1-v22, rollback/reentry, no legacy synthesis, exact target and
 Contract invalidation, semantic verification edit, failure-generation reset,
 unique per-generation ownership, version-0 legacy exemption, version-1
 Receipt-link enforcement, the sole post-v17 legacy bridge, cycle-target
 reconstruction, concurrent target/edit drift and expected-generation
 rejection, read-only no-write, privacy rejection, byte/count bounds,
-Evidence/backup maintenance, Viewer v21 compatibility including valid/corrupt
+Evidence/backup maintenance, Viewer v22 compatibility including valid/corrupt
 link, Bundle-discriminator, source-appropriate verification-basis, and Runner-
 graph batch validation, parser/help/
 output, and unchanged unrelated projections. Test
@@ -2953,7 +3023,7 @@ command, output choice, browser launch, server, or browser-to-SQLite path.
 
 The repository selects complete rows for all project Tasks in list order and
 validates them as one source-schema-aware stored-Task/Contract batch before any
-Task, review, or history projection. Exact v18-v21 snapshot validation first
+Task, review, or history projection. Exact v18-v22 snapshot validation first
 validates the complete Task batch as part of the full Evidence Ledger, then the
 same-transaction list-order query consumes the private proof above instead of
 repeating scalar, privacy, and Contract validation. Sources v5-v17 and the
@@ -2968,10 +3038,10 @@ checkpoints, maintenance state, internal generation, event-cycle links,
 environment, and raw review material.
 
 Source schemas v5-v14 synthesize empty/incomplete completion history;
-v15-v21 use stored cycles, reading completion histories in batches of at most
-500 Task IDs. Sources v17-v21 validate version-1 cycle Receipt links; v19-v21
-also validate and discard Bundle linkage, and v20-v21 validate the source-
-appropriate closed verification basis and Runner graph. Source v21 validates
+v15-v22 use stored cycles, reading completion histories in batches of at most
+500 Task IDs. Sources v17-v22 validate version-1 cycle Receipt links; v19-v22
+also validate and discard Bundle linkage, and v20-v22 validate the source-
+appropriate closed verification basis and Runner graph. Sources v21 and v22 validate
 the complete tagged union before discarding every Runner field. Every snapshot
 reports its actual source schema and selects all
 project Tasks; 500 Tasks is the accepted performance fixture rather than a
@@ -3930,7 +4000,7 @@ creates no completion cycle or Bundle, advances neither Evidence nor Viewer
 generation, and never creates a Verification Receipt. For
 `gate_eligibility_version=0`, the Reference and link remain standalone audit
 history and are never a Bundle member, completion basis, or Evidence JSON
-source. For a schema-v21 `gate_eligibility_version=1` qualifying pass, later
+source. For a schema-v21/v22 `gate_eligibility_version=1` qualifying pass, later
 completion capture selects that exact stored observation, Reference, and link;
 `evidence_projection.py` reuses the existing Reference and link as Bundle
 members and emits only the sanitized projection in Bundle v2. The closed
@@ -3968,8 +4038,8 @@ specification cardinality table. Every observation has exactly one matching
 Reference/link and cleanup event; a cleanup-only event has a null terminal
 observation; every pending intent has neither; all other combinations fail.
 Schema v20 admits only `gate_eligibility_version=0`, Task marker `0`, and null
-completion-cycle/Bundle Runner pointers. Schema v21 retains that audit-only
-shape and additionally admits the closed version-`1`/marker-`2` shape; only an
+completion-cycle/Bundle Runner pointers. Schemas v21 and v22 retain that audit-only
+shape and additionally admit the closed version-`1`/marker-`2` shape; only an
 exact qualifying pass may bind its observation and the two pre-existing
 evidence identities into completion, while fallback keeps the manual Receipt
 basis and null Runner pointers. Viewer validates and discards Runner-only data.
@@ -3987,7 +4057,7 @@ a real consuming project or Git state. Tests cover:
 - all 21 parser leaves, removed commands/options, help, text/JSON/error/compact
   envelopes, and byte limits;
 - missing/old/too-new/invalid state with no creation or sidecars;
-- every v1-v21 migration, rollback, idempotency, required-object marker,
+- every v1-v22 migration, rollback, idempotency, required-object marker,
   realistic preservation fixture, quick check, and foreign keys;
 - task validation, ordering, pause/block/current/next, done/reopen,
   completion evidence, every review tier/target/receipt/finding, Contract,
@@ -4009,8 +4079,8 @@ a real consuming project or Git state. Tests cover:
   no-clobber publication, cleanup resume, and preservation of unrelated files;
 - backup publication/reconciliation/retention/recovery and every crash
   boundary;
-- Viewer v4 sources 5-21, completion-history bounds, version-1 Receipt-link,
-  v19-v21 Bundle-discriminator validation, and v20-v21 source-appropriate
+- Viewer v4 sources 5-22, completion-history bounds, version-1 Receipt-link,
+  v19-v22 Bundle-discriminator validation, and v20-v22 source-appropriate
   Runner-graph validation, 500-ID history batching,
   the accepted 500-Task performance fixture, 64-MiB artifact cap,
   generation/last-good behavior, strict config, timer/visibility, one-shot
@@ -4089,7 +4159,7 @@ The CLI retains 21 leaves and exposes the one explicit Plan action option on
 `task edit`; reading this section alone authorizes no config write, Task edit,
 process launch, target mutation, or external operation. Setup never creates the
 config, and the existing `review target set` parent service remains the sole
-Runner dispatch. Schema v21 and the current Runner, Evidence, Viewer, and
+Runner dispatch. Schema v22 and the current Runner, Evidence, Viewer, and
 completion graphs do not change.
 
 ### Separate Authoring Control Boundary

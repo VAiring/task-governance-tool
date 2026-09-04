@@ -109,7 +109,8 @@ class Schema21StorageTests(unittest.TestCase):
                     normalized_guard,
                 )
                 before = logical_database_digest(connection)
-                self.assertEqual(storage.apply_migrations(connection), ([], []))
+                with mock.patch.object(storage, "SCHEMA_VERSION", 21):
+                    self.assertEqual(storage.apply_migrations(connection), ([], []))
                 self.assertEqual(logical_database_digest(connection), before)
                 self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
                 self.assertEqual(
@@ -311,7 +312,7 @@ class Schema21StorageTests(unittest.TestCase):
                 connection.commit()
                 before = logical_database_digest(connection)
 
-                with self.assertRaises(storage.StorageError):
+                with mock.patch.object(storage, "SCHEMA_VERSION", 21), self.assertRaises(storage.StorageError):
                     storage.apply_migrations(connection)
 
                 self.assertEqual(logical_database_digest(connection), before)
@@ -346,7 +347,7 @@ class Schema21StorageTests(unittest.TestCase):
                 connection.commit()
                 before = logical_database_digest(connection)
 
-                with self.assertRaises(storage.StorageError) as caught:
+                with mock.patch.object(storage, "SCHEMA_VERSION", 21), self.assertRaises(storage.StorageError) as caught:
                     storage.apply_migrations(connection)
 
                 self.assertEqual(caught.exception.code, "project_state_unreadable")
@@ -375,7 +376,8 @@ class Schema21StorageTests(unittest.TestCase):
                 connection.commit()
                 before = logical_database_digest(connection)
 
-                self.assertEqual(storage.apply_migrations(connection), ([], []))
+                with mock.patch.object(storage, "SCHEMA_VERSION", 21):
+                    self.assertEqual(storage.apply_migrations(connection), ([], []))
 
                 self.assertEqual(logical_database_digest(connection), before)
                 self.assertEqual(storage.current_schema_version(connection), 21)
@@ -400,7 +402,7 @@ class Schema21StorageTests(unittest.TestCase):
                     connection.commit()
                     before = logical_database_digest(connection)
 
-                    with self.assertRaises(storage.StorageError) as caught:
+                    with mock.patch.object(storage, "SCHEMA_VERSION", 21), self.assertRaises(storage.StorageError) as caught:
                         storage.apply_migrations(connection)
 
                     self.assertEqual(caught.exception.code, "project_state_unreadable")

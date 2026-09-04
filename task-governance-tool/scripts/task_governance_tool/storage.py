@@ -28,7 +28,7 @@ from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 
 
 PROJECT_ID_HASH_LENGTH = 12
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 PRIVATE_SCHEMA20_VERSION = 20
 PRIVATE_SCHEMA20_MIGRATION_NAME = "verification_runner_shadow"
 PRIVATE_SCHEMA21_VERSION = 21
@@ -94,7 +94,6 @@ CRITERION_EVIDENCE_RELATIONS = {
     "review_assessment",
     "review_finding",
     "completion_basis",
-    "derived_analysis",
     "runner_observation",
 }
 COMPLETION_BUNDLE_MEMBER_KINDS = {
@@ -14835,13 +14834,24 @@ def apply_migrations(
             "migration_required",
             "database schema is inconsistent with its declared version",
         )
+    if version == PRIVATE_SCHEMA22_VERSION:
+        _migrate_schema22_connection(connection)
+        return [], []
     if version == PRIVATE_SCHEMA21_VERSION:
+        if SCHEMA_VERSION >= PRIVATE_SCHEMA22_VERSION:
+            migrated = _migrate_schema22_connection(connection)
+            return ([PRIVATE_SCHEMA22_VERSION] if migrated else []), []
         _migrate_schema21_connection(connection)
         return [], []
     if version == PRIVATE_SCHEMA20_VERSION:
         if SCHEMA_VERSION >= PRIVATE_SCHEMA21_VERSION:
-            migrated = _migrate_schema21_connection(connection)
-            return ([PRIVATE_SCHEMA21_VERSION] if migrated else []), []
+            applied = []
+            if _migrate_schema21_connection(connection):
+                applied.append(PRIVATE_SCHEMA21_VERSION)
+            if SCHEMA_VERSION >= PRIVATE_SCHEMA22_VERSION:
+                if _migrate_schema22_connection(connection):
+                    applied.append(PRIVATE_SCHEMA22_VERSION)
+            return applied, []
         _migrate_schema20_connection(
             connection,
             allow_native_bundle_v2_reentry=True,
@@ -14964,6 +14974,9 @@ def apply_migrations(
         if _migrate_schema21_connection(connection):
             applied.append(PRIVATE_SCHEMA21_VERSION)
         version = PRIVATE_SCHEMA21_VERSION
+    if SCHEMA_VERSION >= PRIVATE_SCHEMA22_VERSION and version < PRIVATE_SCHEMA22_VERSION:
+        if _migrate_schema22_connection(connection):
+            applied.append(PRIVATE_SCHEMA22_VERSION)
     return applied, warnings
 
 

@@ -332,7 +332,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 apply_completion_evidence_bundle_migration(connection)
                 self.assertEqual(
                     storage_service.apply_migrations(connection),
-                    ([20, 21], []),
+                    ([20, 21, 22], []),
                 )
                 task_id = str(
                     add_task(
@@ -469,7 +469,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     generated_at="2026-07-30T05:40:00Z",
                 ).snapshot
             self.assertEqual(snapshot["snapshot_version"], 4)
-            self.assertEqual(snapshot["source_schema_version"], 21)
+            self.assertEqual(snapshot["source_schema_version"], 22)
             self.assertEqual(
                 snapshot["tasks"][0]["completion_history"],
                 {
@@ -562,10 +562,10 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 15,
             )
             result = initialize_database(target)
-            self.assertEqual(result.migrations_applied, [16, 17, 18, 19, 20, 21])
-            self.assertEqual(result.schema_version, 21)
+            self.assertEqual(result.migrations_applied, [16, 17, 18, 19, 20, 21, 22])
+            self.assertEqual(result.schema_version, 22)
             with closing(connect_readonly(target.db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 21)
+                self.assertEqual(current_schema_version(connection), 22)
                 self.assertEqual(
                     connection.execute(
                         """

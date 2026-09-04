@@ -485,6 +485,101 @@ class EvidenceReaderRegressionTests(unittest.TestCase):
                     self.assertEqual(raised.exception.code, "source_invalid")
                 self.assertEqual(tree_snapshot(evidence), before)
 
+    def test_manual_diagnostic_quotation_policy_in_independent_bundle_read(self):
+        accepted_title = "Investigate failure: stderr: permission denied"
+        accepted_description = "Inspect result: stdout: no matching rows"
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = write_evidence_tree(Path(temporary))
+
+            def update_task_fields(payload):
+                payload["task"]["title"] = accepted_title
+                payload["task"]["description"] = accepted_description
+                refresh_inner_digests(payload)
+
+            entry = self._reseal_bundle(evidence, update_task_fields)
+            index = read_evidence_index(evidence)
+            before = tree_snapshot(evidence)
+            source = validate_evidence_source(index, entry)
+            task = source.source["payload"]["task"]
+            self.assertEqual(task["title"], accepted_title)
+            self.assertEqual(task["description"], accepted_description)
+            self.assertEqual(tree_snapshot(evidence), before)
+
+        legacy_benign_title = (
+            "Review: stderr: fix formatting: stdout: improve output"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = write_evidence_tree(Path(temporary))
+
+            def update_legacy_benign_title(payload):
+                payload["task"]["title"] = legacy_benign_title
+                refresh_inner_digests(payload)
+
+            entry = self._reseal_bundle(evidence, update_legacy_benign_title)
+            index = read_evidence_index(evidence)
+            before = tree_snapshot(evidence)
+            source = validate_evidence_source(index, entry)
+            self.assertEqual(
+                source.source["payload"]["task"]["title"],
+                legacy_benign_title,
+            )
+            self.assertEqual(tree_snapshot(evidence), before)
+
+        rejected = (
+            "stderr: permission denied",
+            ": stderr: permission denied",
+            "Investigate failure: stderr: ",
+            "Investigate failure: STDERR: permission denied",
+            "Investigate failure:stderr: permission denied",
+            "Investigate failure: stderr : permission denied",
+            "Investigate failure: stderr: first: stdout: second",
+            "token=synthetic-secret: stderr: permission denied",
+            "Investigate failure: stderr: token=synthetic-secret",
+            "Investigate failure: stderr: at render (app.js:12:34)",
+            "Investigate failure: stderr: raw log failure",
+            "Investigate failure: stderr: Environment PATH=synthetic",
+            "Investigate failure: stderr: diff --git a/a b/a",
+            "Investigate failure: stderr: stdout: nested output",
+            "Investigate failure: stderr: permission denied\nmore",
+            "Investigate failure: stderr: permission denied\x85more",
+            "Investigate failure: stderr: permission denied\u2028more",
+            "Investigate failure: stderr: permission denied\n",
+        )
+        for field in ("title", "description"):
+            for value in rejected:
+                with (
+                    self.subTest(field=field, value=repr(value)),
+                    tempfile.TemporaryDirectory() as temporary,
+                ):
+                    evidence = write_evidence_tree(Path(temporary))
+
+                    def update_task_field(payload):
+                        payload["task"][field] = value
+                        refresh_inner_digests(payload)
+
+                    entry = self._reseal_bundle(evidence, update_task_field)
+                    index = read_evidence_index(evidence)
+                    before = tree_snapshot(evidence)
+                    with self.assertRaises(EvidenceConsumerError) as raised:
+                        validate_evidence_source(index, entry)
+                    self.assertEqual(raised.exception.code, "source_invalid")
+                    self.assertEqual(tree_snapshot(evidence), before)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = write_evidence_tree(Path(temporary))
+
+            def update_strict_non_task_field(payload):
+                payload["review_receipts"][0]["summary"] = accepted_title
+                refresh_inner_digests(payload)
+
+            entry = self._reseal_bundle(evidence, update_strict_non_task_field)
+            index = read_evidence_index(evidence)
+            before = tree_snapshot(evidence)
+            with self.assertRaises(EvidenceConsumerError) as raised:
+                validate_evidence_source(index, entry)
+            self.assertEqual(raised.exception.code, "source_invalid")
+            self.assertEqual(tree_snapshot(evidence), before)
+
     def test_timestamp_routes_require_real_canonical_utc_seconds(self):
         def mutate_review_created_at(value: str):
             def mutate(payload) -> None:

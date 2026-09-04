@@ -379,6 +379,37 @@ BENIGN_TITLE_RAW_OUTPUT_PREFIXES = (
     "normalize ",
     "standardize ",
 )
+_MANUAL_DIAGNOSTIC_FIELDS = frozenset(("title", "description"))
+_MANUAL_DIAGNOSTIC_DELIMITERS = (": stderr: ", ": stdout: ")
+
+
+def _manual_diagnostic_quotation(
+    field: str,
+    value: str,
+) -> tuple[str, int] | None:
+    """Return the quoted body and outer heading offset for the exact form."""
+
+    if field not in _MANUAL_DIAGNOSTIC_FIELDS or value.splitlines() != [value]:
+        return None
+    delimiter_counts = tuple(
+        (delimiter, value.count(delimiter))
+        for delimiter in _MANUAL_DIAGNOSTIC_DELIMITERS
+    )
+    if sum(count for _, count in delimiter_counts) != 1:
+        return None
+    delimiter = next(
+        delimiter for delimiter, count in delimiter_counts if count == 1
+    )
+    context, quotation = value.split(delimiter, 1)
+    if not context.strip() or not quotation.strip():
+        return None
+    return quotation, value.index(delimiter) + 2
+
+
+def _has_single_manual_diagnostic_delimiter(field: str, value: str) -> bool:
+    return field in _MANUAL_DIAGNOSTIC_FIELDS and sum(
+        value.count(delimiter) for delimiter in _MANUAL_DIAGNOSTIC_DELIMITERS
+    ) == 1
 
 
 @dataclass
@@ -1180,7 +1211,18 @@ def ensure_string(field: str, value: Any, *, default: str = "") -> str:
     return value
 
 
-def _reject_private_or_raw_content_value(field: str, guard_value: str) -> None:
+def _reject_private_or_raw_content_value(
+    field: str,
+    guard_value: str,
+    *,
+    allow_manual_diagnostic_quotation: bool = True,
+    strict_raw_output: bool = False,
+) -> None:
+    quotation = (
+        _manual_diagnostic_quotation(field, guard_value)
+        if allow_manual_diagnostic_quotation
+        else None
+    )
     if COMBINED_PRIVACY_PATTERN.search(guard_value):
         raise validation_error(
             "privacy_rejected",
@@ -1190,12 +1232,24 @@ def _reject_private_or_raw_content_value(field: str, guard_value: str) -> None:
     if (
         contains_basic_auth_value(guard_value)
         or contains_bearer_token_value(field, guard_value)
-        or contains_raw_output_value(field, guard_value)
+        or _contains_raw_output_value(
+            field,
+            guard_value,
+            allow_manual_diagnostic_quotation=allow_manual_diagnostic_quotation,
+            strict_raw_output=strict_raw_output,
+        )
     ):
         raise validation_error(
             "privacy_rejected",
             f"{field} appears to contain a secret, raw log, or dump content",
             field,
+        )
+    if quotation is not None:
+        _reject_private_or_raw_content_value(
+            field,
+            quotation[0],
+            allow_manual_diagnostic_quotation=False,
+            strict_raw_output=True,
         )
 
 
@@ -1247,15 +1301,47 @@ def contains_bearer_token_value(field: str, value: str) -> bool:
     return False
 
 
-def contains_raw_output_value(field: str, value: str) -> bool:
-    if field in STRICT_RAW_OUTPUT_FIELDS:
-        return RAW_OUTPUT_VALUE_PATTERN.search(value) is not None
+def _contains_raw_output_value(
+    field: str,
+    value: str,
+    *,
+    allow_manual_diagnostic_quotation: bool,
+    strict_raw_output: bool,
+) -> bool:
+    quotation = (
+        _manual_diagnostic_quotation(field, value)
+        if allow_manual_diagnostic_quotation
+        else None
+    )
+    matches = tuple(RAW_OUTPUT_VALUE_PATTERN.finditer(value))
+    if quotation is not None:
+        _, expected_heading_offset = quotation
+        return (
+            len(matches) != 1
+            or matches[0].start(1) != expected_heading_offset
+        )
+    if (
+        allow_manual_diagnostic_quotation
+        and _has_single_manual_diagnostic_delimiter(field, value)
+    ):
+        return True
+    if strict_raw_output or field in STRICT_RAW_OUTPUT_FIELDS:
+        return bool(matches)
     if field == "title":
-        for match in RAW_OUTPUT_VALUE_PATTERN.finditer(value):
+        for match in matches:
             payload = match.group(2).strip().lower()
             if not payload.startswith(BENIGN_TITLE_RAW_OUTPUT_PREFIXES):
                 return True
     return False
+
+
+def contains_raw_output_value(field: str, value: str) -> bool:
+    return _contains_raw_output_value(
+        field,
+        value,
+        allow_manual_diagnostic_quotation=True,
+        strict_raw_output=False,
+    )
 
 
 def _validate_text(
@@ -1268,6 +1354,8 @@ def _validate_text(
     legacy_m19_7_stored: bool = False,
 ) -> str:
     text = ensure_string(field, value, default=default)
+    if required and _has_single_manual_diagnostic_delimiter(field, text):
+        _reject_private_or_raw_content_value(field, text)
     if required:
         text = text.strip()
         if not text:

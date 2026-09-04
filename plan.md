@@ -876,9 +876,10 @@ Setup/relocation/recovery, and Effort Advisory. None is a cleanup target here.
 Do not extend this work into a schema change, platform port, common security
 framework, new setting, LLM classifier, normal-loop call, or routine approval.
 
-TG-PMC.1 and TG-PMC.2 form lane `TG-PMC` at orders 10 and 20; the latter
-preserves the former's accepted cases. TG-PMC.3 and TG-RNC.1 are independently
-selectable optional-kind Tasks, not predecessors or final integration gates.
+TG-PMC.1, TG-PMC.2, and TG-PMC.4 form lane `TG-PMC` at orders 10, 20, and 30;
+each later implementation preserves the earlier accepted cases. TG-PMC.3 and
+TG-RNC.1 are independently selectable optional-kind Tasks, not predecessors or
+final integration gates.
 Each implementation unit includes its own affected documentation, tests, and
 package-manifest synchronization; do not postpone those to another unit.
 Use synthetic examples and isolated test state, not real private content or
@@ -966,57 +967,62 @@ Verification: check the examples and affected-field inventory against current
 validators; document-contract check and `git diff --check`; two independent
 reviews of scope, tradeoffs and achievable acceptance, not a new test harness.
 
-##### Pending Recommendation — Manual Diagnostic Quotations
+##### Active Contract — Manual Diagnostic Quotations
 
-This recommendation is not active behavior. Recommend an exception only for
-Task `title` and `description`, retaining their existing 200 and 4,000
-code-point limits. Use one plain-text form: `<context>: stderr: <quotation>`
-or `<context>: stdout: <quotation>`. The separators and lowercase stream
-labels are literal; context and quotation each contain non-whitespace text,
-with exactly one stream delimiter. The entire field must be one physical
-line, containing no line-boundary character recognized by `str.splitlines()`
-and no trailing line break. No quotation marks, code fences, introductory-verb
-allow-list, semantic classifier, setting, or per-use approval is required.
+TG-PMC.4 activates the user-approved two-field, single-line manual diagnostic
+quotation policy. Current behavior is owned by the specification's
+[Privacy, Safety, And Stable Errors](docs/specification.md#privacy-safety-and-stable-errors)
+and the design's
+[Privacy, Safety, And Failure Boundaries](docs/design.md#privacy-safety-and-failure-boundaries).
+Those owners define the exact form, privacy checks, consumer boundaries, and
+non-expansion rules; the execution contract below preserves this Task's scope,
+acceptance matrix, and gates without duplicating the active product contract.
 
-Proposed accepted examples are `Investigate failure: stderr: permission denied`
-and `Inspect result: stdout: no matching rows`. A bare `stderr: permission denied`
-does not qualify. Only that one inline stream heading receives the exception.
-Existing credential and dump detectors still inspect the complete original
-field and the extracted quotation body; the body receives no recursive
-quotation exception. This second view preserves line-anchored checks, such as
-stack frames, when text follows the inline heading. Detected credentials,
-another raw-output heading, log blocks, stack traces, environment dumps and
-raw/large diffs remain rejected. Rejected examples include
-`Investigate failure: stderr: token=synthetic-secret`,
-`Investigate failure: stderr: at render (app.js:12:34)`, and the useful example
-followed by a newline and more output. Inputs outside this form keep existing
-behavior, including valid ordinary multiline descriptions.
+<a id="tg-pmc-4"></a>
 
-One physical line prevents pasted multiline logs; existing field limits
-already bound storage, so no additional numeric quote cap is proposed.
-This admits useful diagnostic context, not proof that content is harmless,
-manually authored, or free of unidentified private data, paths or secrets.
-Even a single line may disclose sensitive information; the user must sanitize
-it before entry. This policy does not authorize automatic Runner capture or
-add content to Verification Receipts. Notes are excluded: `add_note` becomes
-a prefixed, potentially truncated `event_summary`, so admitting it would need
-a separate preservation policy beyond these two Task fields.
+#### TG-PMC.4 — Manual Diagnostic Quotation Implementation
 
-Future alignment belongs in the current privacy sections of the specification
-and design; `tasks.py`'s `contains_raw_output_value`, common guard, caller and
-stored-Task validation; `storage.py`'s authority-snapshot privacy mapping of
-`task_title`/`task_description` to `title`/`description`; and the Task-title
-check in `review_packet.py`. Completion sealing/readback and the independent
-`tests/evidence_reader_oracle.py` Bundle Task-field/privacy routes must apply
-the same policy without sharing the production matcher. Existing Task
-validation and completion/Evidence-reader tests own its later focused checks.
-Do not broaden other fields, rewrite old bytes, or change storage schemas.
+Input: the accepted manual diagnostic quotation policy above and the completed
+TG-PMC.1/TG-PMC.2 privacy corrections. Scope/output: activate the exact
+two-field, one-line form in the current privacy sections of the specification
+and design, `tasks.py`'s common caller/stored validation, the existing
+authority-snapshot and Review Packet consumer paths, and the independent
+Evidence reader policy. Add focused caller, stored-read,
+completion-to-Evidence, Review Packet, and independent-reader tests, and
+synchronize affected package manifest digests and the existing test-lane
+inventory if membership changes.
+Do not create a schema migration, a new configuration or mode, an automatic
+redactor, a semantic classifier, or a shared implementation dependency between
+the production matcher and independent test oracle.
 
-Remaining user decision: accept or revise this exact two-field, single-line,
-plain-text proposal. Runtime implementation requires later explicit Task
-registration. After that implementation installs the accepted rule in current
-owners and aligned validators/tests, replace this pending recommendation with
-a concise pointer. The other correction Tasks do not wait for adoption.
+Acceptance: the two accepted examples pass unchanged as Task `title` and
+`description` through caller validation, stored readback, Review Packet where
+applicable, and a representative completion-to-Evidence/oracle round trip. No
+other field gains this quotation exception: every field that currently treats
+raw-output headings strictly continues to reject the same text, while fields
+outside that strict set retain their existing behavior. Bare headings, multiple
+headings, and other malformed candidates receive no new quotation exception;
+pre-existing field-specific behavior, including the benign-title allowance,
+remains unchanged. Empty context or quotation, line boundaries, trailing line
+breaks, detected credentials, stack frames, log blocks, environment dumps, and
+raw/large diffs remain rejected in the governed title/description form. The full
+original field and extracted body are both checked, with no recursive quotation
+exception.
+Existing numeric metadata,
+fully redacted Bearer, ordinary multiline description, strict raw-output, and
+legacy-read cases remain valid. Current valid stored bytes and sealed Evidence
+bytes are not rewritten. Public CLI/JSON shape, error codes/messages, field
+limits, Verification Receipts, Runner capture, review/completion gates, and
+target-project mutation behavior are unchanged.
+
+Verification: run focused Task/privacy, stored consumer, Review Packet,
+completion-to-Evidence, and independent reader/oracle tests containing the
+complete accepted/rejected matrix; run the document contract, release contract,
+test-lane check when membership changes, and `git diff --check`. Use synthetic
+content and isolated test state. Do not add a full-suite, platform matrix,
+adversarial campaign, performance gate, live Runner, external CI dispatch, or
+new test framework to this unit. This privacy behavior change is Tier 2 and
+requires two independent exact-target reviews with no blocking findings.
 
 <a id="tg-rnc-1"></a>
 

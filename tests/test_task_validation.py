@@ -15,6 +15,7 @@ try:
     from task_governance_tool.tasks import (
         COMBINED_PRIVACY_PATTERN,
         PRIVACY_PATTERNS,
+        STRICT_RAW_OUTPUT_FIELDS,
         TASK_VERIFICATION_INPUT_LIMIT,
         TEXT_LIMITS,
         TaskValidationError,
@@ -22,7 +23,9 @@ try:
         validate_legacy_m19_7_stored_text,
         validate_event_summary,
         validate_stored_task_rows,
+        validate_task_edit_input,
         validate_task_input,
+        validate_text,
     )
     from task_governance_tool.storage import (
         StorageError,
@@ -602,6 +605,150 @@ class TaskValidationTests(unittest.TestCase):
                 self.assert_privacy_pattern_parity(title)
                 validated = validate_task_input(title=title)
                 self.assertEqual(validated["title"], title)
+
+    def test_manual_diagnostic_quotations_preserve_task_fields_and_stored_bytes(self):
+        values = (
+            "Investigate failure: stderr: permission denied",
+            "Inspect result: stdout: no matching rows",
+        )
+        for value in values:
+            with self.subTest(value=value):
+                validated = validate_task_input(title=value, description=value)
+                self.assertEqual(validated["title"], value)
+                self.assertEqual(validated["description"], value)
+                edited = validate_task_edit_input(title=value, description=value)
+                self.assertEqual(edited["title"], value)
+                self.assertEqual(edited["description"], value)
+
+                row = valid_stored_task_row(title=value, description=value)
+                original = dict(row)
+                validate_stored_task_rows(
+                    [row],
+                    source_schema_version=7,
+                    expected_project_id=row["project_id"],
+                )
+                self.assertEqual(row, original)
+
+    def test_manual_diagnostic_malformed_title_retains_prior_benign_allowance(self):
+        title = "Review: stderr: fix formatting: stdout: improve output"
+        validated = validate_task_input(title=title)
+        self.assertEqual(validated["title"], title)
+        edited = validate_task_edit_input(title=title)
+        self.assertEqual(edited["title"], title)
+
+        row = valid_stored_task_row(title=title)
+        original = dict(row)
+        validate_stored_task_rows(
+            [row],
+            source_schema_version=7,
+            expected_project_id=row["project_id"],
+        )
+        self.assertEqual(row, original)
+
+        self.assert_validation_error(
+            "privacy_rejected",
+            validate_task_input,
+            title="Task",
+            description=title,
+            field="description",
+        )
+
+    def test_manual_diagnostic_quotation_boundaries_fail_closed(self):
+        line_boundaries = (
+            "\n",
+            "\r",
+            "\r\n",
+            "\v",
+            "\f",
+            "\x1c",
+            "\x1d",
+            "\x1e",
+            "\x85",
+            "\u2028",
+            "\u2029",
+        )
+        rejected = (
+            "stderr: permission denied",
+            "stdout: no matching rows",
+            ": stderr: permission denied",
+            "   : stdout: no matching rows",
+            "Investigate failure: stderr: ",
+            "Inspect result: stdout:    ",
+            "Investigate failure: STDERR: permission denied",
+            "Investigate failure:stderr: permission denied",
+            "Investigate failure: stderr : permission denied",
+            "Investigate failure: stderr: permission denied: stdout: no matching rows",
+            "Investigate failure: stderr: Inner: stdout: no matching rows",
+            *(f"Investigate failure: stderr: permission denied{boundary}more" for boundary in line_boundaries),
+            *(f"Investigate failure: stderr: permission denied{boundary}" for boundary in line_boundaries),
+        )
+        for value in rejected:
+            for field in ("title", "description"):
+                with self.subTest(field=field, value=repr(value)):
+                    kwargs = {"title": "Task", field: value}
+                    if field == "title":
+                        kwargs = {"title": value}
+                    self.assert_validation_error(
+                        "privacy_rejected",
+                        validate_task_input,
+                        field=field,
+                        **kwargs,
+                    )
+
+                    row = valid_stored_task_row(**{field: value})
+                    with self.assertRaises(StorageError) as raised:
+                        validate_stored_task_rows(
+                            [row],
+                            source_schema_version=7,
+                            expected_project_id=row["project_id"],
+                        )
+                    self.assertEqual(
+                        raised.exception.code,
+                        "project_state_unreadable",
+                    )
+
+    def test_manual_diagnostic_quotation_keeps_other_privacy_boundaries(self):
+        value = "Investigate failure: stderr: permission denied"
+        for field in sorted(STRICT_RAW_OUTPUT_FIELDS - {"description"}):
+            with self.subTest(strict_field=field):
+                self.assert_validation_error(
+                    "privacy_rejected",
+                    validate_text,
+                    field,
+                    value,
+                    field=field,
+                )
+        self.assertEqual(validate_text("lane", value), value)
+
+        rejected = (
+            "token=synthetic-secret: stderr: permission denied",
+            "Investigate failure: stderr: token=synthetic-secret",
+            "Investigate failure: stderr: at render (app.js:12:34)",
+            "Investigate failure: stderr: raw log failure",
+            "Investigate failure: stderr: Environment PATH=synthetic",
+            "Investigate failure: stderr: diff --git a/a b/a",
+            "Investigate failure: stderr: stdout: nested output",
+        )
+        for value in rejected:
+            for field in ("title", "description"):
+                with self.subTest(field=field, value=value):
+                    kwargs = {"title": "Task", field: value}
+                    if field == "title":
+                        kwargs = {"title": value}
+                    self.assert_validation_error(
+                        "privacy_rejected",
+                        validate_task_input,
+                        field=field,
+                        **kwargs,
+                    )
+
+        ordinary_multiline = "Investigate the failure\nRecord the safe conclusion"
+        self.assertEqual(
+            validate_task_input(title="Task", description=ordinary_multiline)[
+                "description"
+            ],
+            ordinary_multiline,
+        )
 
     def test_privacy_patterns_allow_benign_task_wording(self):
         for title in (

@@ -39,7 +39,7 @@
     "scripts/task_governance_tool/state_resolver.py": "sha256:0e3ba8e3da79cb03782b11787000d0d3b6b85a59c85d60f443e36af86e7df92a",
     "scripts/task_governance_tool/state_transition.py": "sha256:665b11b1d11e718619da68b44d4011ecffca170e67c15af3cc99a80218ebc6eb",
     "scripts/task_governance_tool/storage.py": "sha256:a12a4b4c746999ff357083f459a4576882d9267749cdc7ac9560314dc3106e38",
-    "scripts/task_governance_tool/tasks.py": "sha256:cdf390bd89e13b06324bbb8f7d34763dac3ac0c05624a840fde45ad0a09d35d0",
+    "scripts/task_governance_tool/tasks.py": "sha256:1470beb4d880c9b134dbfe65fa15a58b0db194d74612949c4ad17c33274f44a0",
     "scripts/task_governance_tool/verification_receipts.py": "sha256:81f99d20b35f911ebad0b75a9170403182fade7f6fb8944662b3622e51633329",
     "scripts/task_governance_tool/verification_runner.py": "sha256:ee88fc6db8382eee22c05201fb695e485e80e7e633248b96f0212c7e4dd169d7",
     "scripts/task_governance_tool/verification_runner_git.py": "sha256:ddb6acb1352151018ab7358f79aa48ba1c74e843d793b612b2feff26a0443e48",

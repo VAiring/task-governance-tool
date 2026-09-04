@@ -223,6 +223,40 @@ _BUNDLE_BENIGN_TITLE_RAW_OUTPUT_PREFIXES = (
     "normalize ",
     "standardize ",
 )
+_BUNDLE_MANUAL_DIAGNOSTIC_FIELDS = frozenset(("title", "description"))
+_BUNDLE_MANUAL_DIAGNOSTIC_DELIMITERS = (": stderr: ", ": stdout: ")
+
+
+def _bundle_manual_diagnostic_quotation(
+    field: str,
+    value: str,
+) -> tuple[str, int] | None:
+    if (
+        field not in _BUNDLE_MANUAL_DIAGNOSTIC_FIELDS
+        or value.splitlines() != [value]
+    ):
+        return None
+    delimiter_counts = tuple(
+        (delimiter, value.count(delimiter))
+        for delimiter in _BUNDLE_MANUAL_DIAGNOSTIC_DELIMITERS
+    )
+    if sum(count for _, count in delimiter_counts) != 1:
+        return None
+    delimiter = next(
+        delimiter for delimiter, count in delimiter_counts if count == 1
+    )
+    context, quotation = value.split(delimiter, 1)
+    if not context.strip() or not quotation.strip():
+        return None
+    return quotation, value.index(delimiter) + 2
+
+
+def _bundle_has_single_manual_diagnostic_delimiter(field: str, value: str) -> bool:
+    return field in _BUNDLE_MANUAL_DIAGNOSTIC_FIELDS and sum(
+        value.count(delimiter)
+        for delimiter in _BUNDLE_MANUAL_DIAGNOSTIC_DELIMITERS
+    ) == 1
+
 
 _CRITERION_KIND_ORDER = {"acceptance": 0, "verification": 1}
 _RELATION_ORDER = {
@@ -571,7 +605,13 @@ def _utc_second(value: object, *, nullable: bool = False) -> str | None:
     return text
 
 
-def _privacy_guard(field: str, value: str) -> None:
+def _privacy_guard(
+    field: str,
+    value: str,
+    *,
+    allow_manual_diagnostic_quotation: bool = True,
+    strict_raw_output: bool = False,
+) -> None:
     """Reject private/raw content without importing the M22 producer stack."""
 
     guard_value = value
@@ -584,6 +624,11 @@ def _privacy_guard(field: str, value: str) -> None:
             '"taskgov_legacy_operation_sequence":1',
             guard_value,
         )
+    quotation = (
+        _bundle_manual_diagnostic_quotation(field, guard_value)
+        if allow_manual_diagnostic_quotation
+        else None
+    )
     if any(
         pattern.search(guard_value) is not None
         for pattern in _BUNDLE_PRIVACY_PATTERNS
@@ -598,10 +643,23 @@ def _privacy_guard(field: str, value: str) -> None:
             continue
         if b":" in decoded:
             _invalid()
-    raw_output = _BUNDLE_RAW_OUTPUT.search(guard_value)
-    if raw_output is not None and (
-        field != "title"
-        or not raw_output.group(2).strip().lower().startswith(
+    raw_outputs = tuple(_BUNDLE_RAW_OUTPUT.finditer(guard_value))
+    if quotation is not None:
+        _, expected_heading_offset = quotation
+        if (
+            len(raw_outputs) != 1
+            or raw_outputs[0].start(1) != expected_heading_offset
+        ):
+            _invalid()
+    elif (
+        allow_manual_diagnostic_quotation
+        and _bundle_has_single_manual_diagnostic_delimiter(field, guard_value)
+    ):
+        _invalid()
+    elif raw_outputs and (
+        strict_raw_output
+        or field != "title"
+        or not raw_outputs[0].group(2).strip().lower().startswith(
             _BUNDLE_BENIGN_TITLE_RAW_OUTPUT_PREFIXES
         )
     ):
@@ -630,6 +688,13 @@ def _privacy_guard(field: str, value: str) -> None:
             or (field != "title" and len(token) >= 20)
         ):
             _invalid()
+    if quotation is not None:
+        _privacy_guard(
+            field,
+            quotation[0],
+            allow_manual_diagnostic_quotation=False,
+            strict_raw_output=True,
+        )
 
 
 def _validate_bundle_privacy(

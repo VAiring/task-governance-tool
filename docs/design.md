@@ -3204,6 +3204,30 @@ still see the original input. The independent Evidence oracle implements the
 same policy separately. No sentinel replacement, automatic redactor, new mode,
 or stored-content rewrite is introduced.
 
+The Task `title`/`description` manual-diagnostic branch is field-gated beside
+the existing raw-output matcher. It recognizes exactly one case-sensitive
+literal `: stderr: ` or `: stdout: ` delimiter, nonblank context and body, and
+requires `value.splitlines() == [value]`; comparing the value itself, rather
+than only the returned element count, rejects trailing line breaks. A candidate
+with one literal delimiter but an empty side or a line boundary remains a
+privacy rejection. Bare, nonliteral, and multiple-delimiter candidates receive
+no new branch and retain the existing field-specific raw-output decision;
+therefore strict `description` still rejects them while `title` retains its
+pre-existing benign-wording allowance.
+
+The common guard applies every existing detector to the unchanged full value.
+For a valid form it admits only the raw-output match whose offset is the outer
+literal heading, then applies the guard to the extracted body with the manual
+branch disabled and raw-output handling forced strict. This makes an inline
+stack frame visible at the body boundary and prevents nested headings from
+using either the manual branch or the title wording allowance. Other fields
+retain their existing raw-output behavior. Stored Task validation, authority
+snapshot capture/read, and Review Packet preparation already route
+`task_title`/`task_description` through the `title`/`description` names and need
+no separate matcher or shape change. Completion Evidence retains the existing
+Task fields. The test-only Evidence reader implements the same decisions
+independently and does not import the production matcher.
+
 The ordinary matcher receives caller text unchanged. It rejects both
 `dispatch_authorization=<value>` and the JSON key
 `"dispatch_authorization":<value>`, including numeric values; no generic
@@ -3223,11 +3247,14 @@ dispatch, Git, network, or other external mutation. Compound credential/token
 content remains visible after substitution and fails closed.
 
 Stored or emitted data excludes secrets, cookies, provider bodies,
-authorization material, raw stdout/stderr, stack traces, environment dumps,
-full prompts/conversations, private reasoning, raw reviews, large diffs,
-unsafe paths, and OS/SQLite/Git exception detail. Review, Contract, handoff,
-checkpoint, completion, and history projections use explicit allow-lists and
-revalidate stored text before output.
+authorization material, automatically captured or free-standing raw
+stdout/stderr, stack traces, environment dumps, full prompts/conversations,
+private reasoning, raw reviews, large diffs, unsafe paths, and OS/SQLite/Git
+exception detail. The only stream-text exception is the validated manual Task
+quotation above, retained within existing Task title/description fields rather
+than a new stream field. Review, Contract, handoff, checkpoint, completion, and
+history projections use explicit allow-lists and revalidate stored text before
+output.
 
 Git subprocesses use fixed argument vectors, no shell, bounded timeout, safe
 environment, disabled optional locks/lazy fetching, and no target-project

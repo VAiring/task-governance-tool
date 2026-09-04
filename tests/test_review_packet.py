@@ -405,6 +405,41 @@ class ReviewPacketTests(unittest.TestCase):
                 },
             )
 
+    def test_manual_diagnostic_task_fields_pass_existing_packet_boundary(self):
+        title = "Investigate failure: stderr: permission denied"
+        description = "Inspect result: stdout: no matching rows"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            db = root / "taskgov.sqlite"
+            initialize_repo(repo)
+            initialize_taskgov_internal(repo=repo, db=db)
+            task_id = add_task(
+                db,
+                repo,
+                title=title,
+                description=description,
+            )
+            set_target(
+                db,
+                repo,
+                task_id,
+                kind="diff_fingerprint",
+                revision=FINGERPRINT_A,
+            )
+
+            before = file_snapshot(root)
+            packet_result = prepare(db, repo, task_id)
+            self.assertEqual(packet_result.returncode, 0, packet_result.stdout)
+            packet = json_payload(packet_result)["data"]
+            self.assertEqual(packet["task"]["title"], title)
+            self.assertNotIn("description", packet["task"])
+            self.assertEqual(file_snapshot(root), before)
+
+            text_result = prepare(db, repo, task_id, json_output=False)
+            self.assertEqual(text_result.returncode, 0, text_result.stdout)
+            self.assertIn(f'Task: {task_id} | "{title}"', text_result.stdout)
+
     def test_git_commit_root_and_merge_use_empty_tree_and_first_parent(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

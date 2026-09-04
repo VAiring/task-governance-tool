@@ -3062,9 +3062,12 @@ Taskgov stores only bounded sanitized summaries, legacy command labels, exit/dur
 status/time metadata, hashes, stable IDs, and explicit structured evidence.
 It never stores or emits API keys, credential/session tokens, cookies,
 authorization headers, raw provider bodies, private prompts, chat transcripts,
-large/raw diffs, raw stdout/stderr, full logs, stack traces, environment dumps,
-review reasoning/bodies, OS/SQLite exception detail, raw paths in identity
-metadata, expected/actual hash pairs, or rejected values.
+large/raw diffs, automatically captured or free-standing raw stdout/stderr,
+full logs, stack traces, environment dumps, review reasoning/bodies,
+OS/SQLite exception detail, raw paths in identity metadata, expected/actual
+hash pairs, or rejected values. The sole stream-text exception is the bounded,
+validated manual Task quotation defined below; it is not automatic capture or
+a separate output field.
 
 A native Verification Receipt stores only the fixed internal compatibility
 label, closed result, duration, coverage, tool-owned identity/time and
@@ -3119,6 +3122,36 @@ Other schemes, assignment forms, quoted JSON values and arbitrary placeholder
 words receive no new exemption. Every other detector still checks the entire
 original input, including content before and after the example. This recognizes
 already-redacted text; it performs no redaction and grants no whole-input bypass.
+
+Task `title` and `description` alone also accept one manual diagnostic
+quotation in exactly one of these forms: `<context>: stderr: <quotation>` or
+`<context>: stdout: <quotation>`. The delimiter, spaces, and lowercase stream
+label are literal. Context and quotation each contain non-whitespace text, and
+the complete value contains exactly one such delimiter. The complete value is
+one physical line: `str.splitlines()` must return exactly the unchanged value,
+so embedded or trailing line-boundary characters do not qualify. The existing
+200- and 4,000-code-point field limits remain unchanged.
+
+Every privacy detector still inspects the unchanged complete field. Only the
+one outer stream-heading match is admitted, after which the extracted
+quotation is checked again with strict raw-output handling and with this
+quotation exception disabled. A credential in the context or quotation, a
+stack frame visible only at the start of the extracted body, another
+raw-output heading, a log or environment dump, or a raw/large diff therefore
+still fails. A value with one literal delimiter but empty context or quotation,
+or with an embedded or trailing line boundary, remains rejected. Bare headings,
+multiple headings, and nonliteral delimiter variants receive no new exception
+and retain their prior field-specific behavior, including the existing
+benign-title wording allowance. Ordinary multiline descriptions and strict
+rejection in all other raw-output fields are likewise unchanged.
+
+The accepted examples are `Investigate failure: stderr: permission denied`
+and `Inspect result: stdout: no matching rows`. They are retained unchanged in
+Task storage and the existing completion Evidence shape. Review Packet keeps
+its existing shape: its Task title may contain the accepted form, while the
+validated description remains omitted. This policy adds no Runner capture,
+Verification Receipt content, setting, approval step, redaction, schema,
+public field, or target-project mutation.
 
 Normal and new caller input has no release- or project-specific privacy
 exception. Both the lowercase equality form

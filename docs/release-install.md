@@ -604,6 +604,11 @@ supplies that authorization.
 
 ## Current Candidate Summary
 
+The M23 Analyzer runtime is retired from the candidate package. Independent
+Evidence reading/validation remains test-only. Existing ignored analysis
+artifacts stay inert and untouched; packaged-core replacement preserves state
+and the three supported configuration files listed above.
+
 Version 0.13.0 is an unpublished local candidate. Schema v19 retains the
 schema-v18 capture ledger, subjects/provenance, retargeting, and 1,000-character
 capacity, then activates Bundle v1 and fixed Evidence JSON v1. Schema v20

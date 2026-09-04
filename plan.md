@@ -324,16 +324,17 @@ external CI, publication, target-project installation, or unrelated mutation.
 
 <a id="m23-retirement"></a>
 
-### Approved Pending M23 Retirement And Evidence Test Oracle
+### M23 Retirement And Evidence Test Oracle
 
 The approved outcome is to retire the M23 Analyzer subsystem and retain only
 its independent Evidence-reading/validation capability, necessary test helpers,
 and the small non-authority/compatibility boundary below. The retained reader
 belongs to repository tests, not the installable runtime. This section owns the
-pending static execution contracts; the Task database owns status and evidence.
-Registration does not start implementation. Until TG-M23R.10's atomic switch,
-the current Analyzer specification and design remain applicable to the existing
-runtime. Preparatory Tasks leave that runtime and its dedicated tests working.
+static execution contracts; the Task database owns status and evidence.
+TG-M23R.10 is the atomic runtime and active-authority retirement boundary.
+The preparatory contracts below retain the Analyzer only before that boundary;
+the current product excludes it and retains the test-only reader. Registration
+alone does not authorize implementation or Git operations.
 
 The retained capability checks Evidence index/Bundle file self-consistency,
 declared generation, versions, identities, canonical bytes/digests, relations,

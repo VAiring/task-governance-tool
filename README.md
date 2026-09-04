@@ -108,6 +108,11 @@ completion, and publishes Evidence index v2 with `bundle_format_version` null,
 Runner, Analyzer, network/model invocation, Viewer Evidence surface, new public
 leaf, or new normal-loop call.
 
+The M23 Analyzer runtime is retired. Independent Evidence reading/validation
+remains only in repository tests; no report or model runtime replaces it.
+Package updates preserve local state, including inert old analysis artifacts,
+and the supported configuration files described in `docs/release-install.md`.
+
 A binding mismatch is an exceptional relocation flow, not a normal Task-loop
 step. Normal commands and `doctor` never rebind state. Run
 `setup --read-only --json` to obtain a bounded `relocation_preview`, present

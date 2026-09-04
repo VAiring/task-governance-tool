@@ -236,36 +236,6 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
             )
             self.assertIsNone(payload["runner_observation"])
 
-            # TG-M23R.10 retires this separate Analyzer packet-only block.
-            from task_governance_tool.analysis_contracts import (
-                build_descriptor,
-                default_recipe,
-            )
-            from task_governance_tool.analysis_packet import build_analysis_packet
-            from task_governance_tool.evidence_consumer import (
-                read_evidence_index as analyzer_read_evidence_index,
-                validate_evidence_source as analyzer_validate_evidence_source,
-            )
-
-            before = tree_snapshot(target.resolved_evidence_root)
-            analyzer_index = analyzer_read_evidence_index(target.resolved_evidence_root)
-            analyzer_entry = next(
-                row for row in analyzer_index.entries if row["task_id"] == task_id
-            )
-            analyzer_source = analyzer_validate_evidence_source(
-                analyzer_index, analyzer_entry
-            )
-            descriptor = build_descriptor(
-                source_kind=analyzer_source.source_kind,
-                source_basis=analyzer_source.source_basis,
-                recipe=default_recipe(),
-            )
-            packet = build_analysis_packet(descriptor, analyzer_source)
-            self.assertEqual(descriptor["source_basis"], analyzer_source.source_basis)
-            self.assertEqual(packet.value["source_basis"], analyzer_source.source_basis)
-            self.assertEqual(packet.value["source"], analyzer_source.source)
-            self.assertEqual(tree_snapshot(target.resolved_evidence_root), before)
-
     def test_fresh_not_required_completion_reaches_independent_reader(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix=".tmp-m244b-not-required-reader-",

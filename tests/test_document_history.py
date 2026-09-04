@@ -522,6 +522,41 @@ class DocumentHistoryTests(unittest.TestCase):
         )
         self.assertEqual(index.count(f"]({pre_m22_relative})"), 1)
 
+    def test_m23_retirement_capture_preserves_exact_source_sections(self):
+        relative = "v0.13.0/m23-analyzer-retirement.md"
+        source_commit = "5c58f1038a5f7df46b393ec5fc5cf454fa38eb36"
+        data = (HISTORY_ROOT / relative).read_bytes()
+        self.assertIn(source_commit.encode("ascii"), data)
+        captured = data.split(b"````markdown\n")[1:]
+        sections = (
+            (
+                "docs/specification.md",
+                b"## Derived-Evidence Analyzer\n",
+                b"## Trusted-Local Verification Runner",
+            ),
+            (
+                "docs/design.md",
+                b'<a id="derived-evidence-analyzer-process-and-publication-boundary"></a>',
+                b"## Completion Cycle History",
+            ),
+        )
+        self.assertEqual(len(captured), len(sections))
+        for block, (path, start_marker, end_marker) in zip(captured, sections):
+            with self.subTest(path=path):
+                source = subprocess.run(
+                    ["git", "show", f"{source_commit}:{path}"],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(source.returncode, 0)
+                start = source.stdout.index(start_marker)
+                end = source.stdout.index(end_marker, start)
+                self.assertEqual(block.split(b"````\n", 1)[0], source.stdout[start:end])
+        index = (HISTORY_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertEqual(index.count(f"]({relative})"), 1)
+        self.assertIn(source_commit, index)
+
     def test_m23_authority_split_capture_preserves_exact_source_provenance(self):
         data = M23_AUTHORITY_SPLIT_CAPTURE.read_bytes()
         self.assertEqual(

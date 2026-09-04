@@ -392,3 +392,18 @@ contracts, their index, and the pre-normalization plan from source commit
 - Source path: `plan.md`
 - Immutable history:
   [v0.13.0/post-m24-completed-execution/plan.md](v0.13.0/post-m24-completed-execution/plan.md)
+
+## v0.13.0 M23 Analyzer Retirement Lineage
+
+- Immutable history:
+  [v0.13.0/m23-analyzer-retirement.md](v0.13.0/m23-analyzer-retirement.md)
+- Source commit: `5c58f1038a5f7df46b393ec5fc5cf454fa38eb36`
+- Capture unit: `TG-M23R.10`
+- Capture purpose: preserve the exact current Analyzer sections of
+  `docs/specification.md` and `docs/design.md` before their atomic runtime and
+  active-document retirement. No runtime code is archived.
+- Current replacements: [docs/authority.md](../authority.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), and [plan.md](../../plan.md).
+  Use the public CLI for live Task state and evidence. This capture is lineage
+  only and cannot fill a current authority gap or satisfy a gate.

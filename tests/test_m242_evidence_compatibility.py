@@ -189,47 +189,6 @@ class M242EvidenceCompatibilityTests(unittest.TestCase):
             self.assertIsNone(legacy_source.source)
             self.assertEqual(legacy_source.source_basis["entry"], legacy)
 
-            # Retire this existing Analyzer replay block at TG-M23R.10.
-            from task_governance_tool.analysis_contracts import (
-                build_descriptor,
-                default_recipe,
-                descriptor_replay_matches,
-            )
-            from task_governance_tool.evidence_consumer import (
-                read_evidence_index as read_analyzer_index,
-                revalidate_descriptor_source,
-                validate_evidence_source as validate_analyzer_source,
-            )
-
-            analyzer_index = read_analyzer_index(root)
-            analyzer_source = validate_analyzer_source(analyzer_index, native)
-
-            old_entry = dict(native)
-            old_entry.pop("bundle_format_version")
-            old_descriptor = build_descriptor(
-                source_kind="native_bundle",
-                source_basis={
-                    "project_id": bundle.payload["project_id"],
-                    "projection_generation": 7,
-                    "index_digest": "sha256:" + "7" * 64,
-                    "entry": old_entry,
-                },
-                recipe=default_recipe(),
-            )
-            current_descriptor = build_descriptor(
-                source_kind="native_bundle",
-                source_basis=analyzer_source.source_basis,
-                recipe=default_recipe(),
-            )
-            self.assertTrue(
-                descriptor_replay_matches(old_descriptor, current_descriptor)
-            )
-            replay = revalidate_descriptor_source(
-                analyzer_index,
-                old_descriptor,
-            )
-            self.assertEqual(replay.source_basis, old_descriptor["source_basis"])
-
 
 if __name__ == "__main__":
     unittest.main()

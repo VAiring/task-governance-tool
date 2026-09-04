@@ -6,9 +6,9 @@ The current unpublished candidate is v0.13.0 with SQLite schema v21, Viewer
 snapshot v4 accepting source schemas v5-v21, and 21 public command leaves. Its
 active implementation includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
-Bundles, deterministic Evidence JSON, the bounded offline/mock derived-evidence
-Analyzer, and the explicitly opted-in trusted-local verification Runner with a
-closed manual fallback. Schema v20 remains a supported migration source and
+Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
+verification Runner with a closed manual fallback. Schema v20 remains a
+supported migration source and
 audit-only Runner lineage; schema v21 is the current persistence and gate basis.
 M25 Select-Split-Merge-Register is active only in the Skill instruction layer.
 The Task database owns live state and evidence; completed execution narrative
@@ -2057,326 +2057,28 @@ output, and the existing receipt argv shape are allow-listed. The builder
 does not launch a reviewer, execute/import a receipt, store a packet, or
 include a diff, transcript, prompt, stdout/stderr, secret, or absolute path.
 
-<a id="derived-evidence-analyzer-process-and-publication-boundary"></a>
+## Test-Only Independent Evidence Reader
 
-## Derived-Evidence Analyzer Structure
+`tests/evidence_reader_oracle.py` owns the retained independent Evidence
+index/Bundle reader and validation core. `tests/evidence_reader_codec.py` owns
+its pure canonical JSON codec; `tests/evidence_test_support.py` owns reusable
+fixtures with a separate reference encoder. The oracle preserves the full
+selected index entry, including its Bundle-version discriminator, and the exact
+Bundle envelope or explicit legacy absence. Its existing regression and M24
+integration tests remain the consumers.
 
-The Analyzer uses only ignored `<canonical-package-state>/analysis/` state.
-`analysis_contracts.py` owns schema, canonical JSON, digests, identifiers, and
-limits. `evidence_consumer.py` independently validates the Evidence index and
-Bundle and imports neither `storage.py` nor `evidence_projection.py`.
-`analysis_packet.py` owns the memory-only packet. `analysis_outbox.py` owns the
-lease, descriptor, status, replay, and publication state. `analysis_validator.py`
-owns report validation; `analysis_renderer.py` owns the pure JSON-to-UTF-8/LF
-Markdown render. `codex_analysis_adapter.py` is the closed mock facade and owns
-the fixed prompt, output schema, and adapter validation boundary.
-`_analysis_windows_process.py` owns the closed process-safety state-machine
-oracle plus a read-only native capability preflight that always returns
-`policy_blocked`; `_analysis_win32.py` owns the typed Windows handle,
-private-tree, and publication primitives used by that boundary.
-`analysis_worker.py` exposes only internal/test `run_once(...)`; there is no
-caller-visible launch. The current implementation contains no native broker,
-provider, or child-process launch path and performs no live inference.
-`state_paths.py` and `state_resolver.py` supply fixed contained paths only.
-SQLite, `storage.py`, schema, setup, doctor, maintenance, CLI, Skill, and Task
-loop are unchanged by Analyzer execution.
+These test helpers import neither SQLite/storage nor the producing Evidence
+semantic validator. They may reuse the existing bounded physical-filesystem
+primitives in `state_paths.py`; independence does not require duplicate I/O or
+Windows infrastructure. They have no Analyzer descriptor, packet, report,
+outbox, process, model, or publication responsibility.
 
-The durable layout contains immutable `outbox` descriptors, atomically replaced
-`status` files, immutable paired `reports`/`rendered` outputs, one lease, and a
-private `tmp` tree. The outbox is selected in identifier order with a
-100,000-regular-file preflight. No Analyzer index or SQLite table exists.
-
-### Controller Interface, Lease, And Private Tree
-
-The core passes one bounded attempt input
-`(analysis_job_id,N,packet_digest,stdin_bytes,argv,E,cancel)` and, when
-publication is requested, exact validated report/Markdown bytes and digests.
-The process boundary returns only a bounded adapter outcome, duration, a sealed
-result or null, `tree_quiescent`, and `publish_ready`. It cannot add or
-reinterpret report content, evidence meaning, status fields, digests, retry
-eligibility, or a caller-visible launch.
-
-The controller/broker/target rules below are the closed offline/mock
-process-safety model and oracle exercised by the current implementation. They
-are not an active native launch path. A future native implementation would have
-to satisfy these same invariants under separate authority; the current native
-preflight stops at `policy_blocked` before an adapter attempt.
-
-Within that model, let C be the controller, B the fixed private one-shot broker,
-T the target, and J the per-attempt Job. S is `output-schema.json`, O is `output.json`, I and Q
-are sealed input/result pagefile mappings, and Vb/Vc are broker/controller
-events. Pagefile-backed IPC creates no taskgov file; it makes no claim about OS
-page, hibernation, or dump storage.
-
-`taskgov-analysis.lock` is no-follow and noninheritable. C holds byte 0 via
-`LockFileEx(...,LOCKFILE_EXCLUSIVE_LOCK|LOCKFILE_FAIL_IMMEDIATELY)` before root
-inspection, counting, input, or status open and through terminal publication or
-quarantine. Busy or uncertain acquisition returns deferred `interrupted` with
-no creation, inventory, or durable read/write. Parallel and read-only Analyzer
-sessions are unsupported. Final release is one `UnlockFileEx` then
-`CloseHandle`.
-
-Under the lease C creates and holds one absent-before-open
-`tmp/.taskgov-analysis-<8-lower-alnum>/` root per worker count or
-publication-eligible no-adapter result. Pre-existence fails before count or
-publication; identity, bytes, token, and old zero never prove freshness.
-Adapter leaf order is S, O, `report.json`, `report.md`: B holds S/O
-delete-on-close and C holds the reports. A core-authorized no-adapter result
-creates only held report files; S/O never exist, held enumeration proves the
-exact two report leaves and S/O absence, and C's ledger proves no broker,
-target, Job, restricted token, mapping, event, pipe, stdio, or worker handle was
-created. Those facts are the no-adapter-tree proof. Adapter success proves S/O
-absent; a failed proof closes them unread and quarantines the root.
-
-No-follow preflight requires one exact contained non-reparse directory identity
-and at most 32 entries. Existing roots are quarantine and are never traversed,
-read, changed, deleted, claimed, or reused. Entry 33, an unexpected name/type/
-identity, escape, overflow, or inspection failure stops. Only the current root
-may become `tree_quiescent`; while live it belongs to B. Each retry uses a fresh
-attempt number, root, Job, broker, mappings, events, schema/output, target,
-pipes, and workers. Run-wide controller DACL/thread freeze may be established
-once before attempt 1 but is revalidated before each broker receives I. No path,
-handle, process, Job, mapping, event, pipe, output, timestamp, or modification
-time is reused across attempts.
-
-### Held Files, Freshness, And Security Descriptors
-
-The exact Win32 handle aliases are:
-
-```text
-RD=FILE_READ_DATA  RA=FILE_READ_ATTRIBUTES  WD=FILE_WRITE_DATA
-DL=FILE_LIST_DIRECTORY  DA=FILE_ADD_FILE|FILE_ADD_SUBDIRECTORY
-CR=READ_CONTROL  SY=SYNCHRONIZE
-SR=FILE_SHARE_READ  SW=FILE_SHARE_WRITE  SD=FILE_SHARE_DELETE
-OI=FILE_OPEN_IF  X=FILE_FLAG_OPEN_REPARSE_POINT
-K=FILE_FLAG_BACKUP_SEMANTICS
-D=FILE_ATTRIBUTE_TEMPORARY|FILE_FLAG_DELETE_ON_CLOSE|X
-OP=(DELETE|RD|RA|SY,SW|SD,CREATE_NEW,D)
-OC=(WD|SY,SR|SD,OPEN_EXISTING,X)
-SP=(DELETE|RD|WD|RA|SY,SR|SD,CREATE_NEW,D)
-SC=(RD|RA|SY,SR|SW|SD,OPEN_EXISTING,X)
-TH=(CR|DELETE|RD|WD|RA|SY,0,CREATE_NEW,X)
-RH=(CR|DELETE|RD|RA|SY,0,OPEN_EXISTING,X)
-S0=(CR|DL|DA|RA|SY,SW,OI,K|X)
-R0=(CR|DELETE|DL|DA|RA|SY,0,OPEN_EXISTING,K|X)
-DP=(DL|DA|RA|SY,SW,OPEN_EXISTING,K|X)
-```
-
-S0 access is exactly `0x00120087`, share `0x2`, and exists only for the lease
-owner's atomic status compare-and-swap. It is acquired after the lease and held
-through that status session; SW authorizes no second session. Directory DELETE/
-share-delete, root/outbox/lease R0, RH, and controller handles otherwise remain
-unchanged. `DF=FileDispositionInfo.DeleteFile`.
-`AR=FILE_RENAME_INFORMATION(TRUE,held-S0,exact-basename)` and
-`NR=FILE_RENAME_INFORMATION(FALSE,held-DP,exact-basename)` each run once on a
-held TH through typed `NtSetInformationFile(...,FileRenameInformation)`. B owns
-O/S through OP/SP and T gets only OC/SC. Opens are no-follow and identity-bound;
-live tuples are never reclaimed.
-
-Let CU be the exact current primary `TokenUser` SID, RC be
-`WinRestrictedCodeSid=S-1-5-12`, OW be `OWNER RIGHTS=S-1-3-4`, FT be
-`FILE_TRAVERSE`, and WC/WO be write-DACL/write-owner. Root and report-temp
-security descriptors are protected, noninheriting, canonical, and contain no
-default, null, generic, or other ACE. Root DACL is exactly
-`DENY OW(WC|WO);ALLOW CU(R0.access);ALLOW RC(FT|RA)`; report-temp DACL is
-`DENY OW(WC|WO);ALLOW CU(TH.access)` with no RC ACE. O uses
-`DENY OW(WC|WO);ALLOW CU(OP.access|OC.access);ALLOW RC(OC.access)`; S and stdio
-retain their exact CU/RC dual allows plus the OW deny. T cannot list, add,
-reopen, rename, delete, or change report security or reach destination parents
-or durable data.
-
-B flushes and revalidates S before C atomically records attempt N and running.
-A crash consumes N, never a timestamp. O is one closed-code immutable mock
-fixture. Its held fresh handle plus `(analysis_job_id,N,packet_digest)` binds the
-only candidate result. Partial, replaced, late, wrong-attempt, wrong-packet, or
-post-read-changed output is `invalid_output`. Rejected bytes, stdout/stderr
-prefixes, prompts, packets, and provider bodies are discarded before terminal
-state and never enter reports, durable state, logs, or quarantine.
-
-### Optional Adapter And Windows Containment
-
-This subsection continues the closed offline/mock oracle. Present-tense process
-steps describe the invariants proved by the mock state machine, not operations
-performed by a native broker. The current code never calls a provider or
-creates B, T, or J.
-
-Within the oracle, the core's exact argv runs with absolute `lpApplicationName`, a digest-bound
-immutable isolated runtime/copy, a fresh empty non-Git cwd, and fresh private
-`CODEX_HOME`. Child environment E is a non-null double-NUL-terminated Unicode
-block containing exactly ordered `CODEX_HOME,PATH,PATHEXT,SystemRoot,TEMP,TMP`,
-with no duplicates, `=drive` entries, or other keys. Saved authentication,
-API-key variables, provider/network config, console, site, plugin, user config,
-rules, ambient cwd, and ambient DLL lookup are never reused. B performs no
-semantic parse and only bounded opaque copy. The stdin writer sends only the
-exact bounded frame; stdout/stderr are concurrently drained into separate
-65,536-byte memory prefixes and discarded. S is strict and private. Live mode
-is policy-blocked without separate containment/broker, immutable runtime/home,
-credential/parent-handle absence, and model/data/cost authority.
-
-Let `SDC=DELETE|READ_CONTROL|WRITE_DAC|WRITE_OWNER`, `PR=PROCESS_ALL_ACCESS`,
-`TR=THREAD_ALL_ACCESS`, `WR=WINSTA_ALL_ACCESS|SDC`,
-`DR=DESKTOP_ALL_ACCESS|SDC`, and
-`BP=SeChangeNotifyPrivilege|SeAssignPrimaryTokenPrivilege|
-SeIncreaseQuotaPrivilege`. A valid PR/TR bit must be documented by the minimum
-supported modern Windows SDK; mismatch is pre-count `policy_blocked`. `P(U)`
-means U gets `ACCESS_DENIED` for every PR/TR bit, their union, and
-`MAXIMUM_ALLOWED` on C and all C threads.
-
-C creates separate sibling primary tokens from its original token.
-`TT=CreateRestrictedToken(flags=0,DeletePrivileges=all-except-
-{SeChangeNotifyPrivilege},SidsToRestrict=[(RC,0)])` must have exactly that one
-privilege, exact restricted SID `[RC]`, restricted state, no `WRITE_RESTRICTED`,
-and inert OW. `BT=CreateRestrictedToken(C-original;flags=0;
-delete=all-except-BP;restrict=[])` must have exact BP, no restricted SIDs, and
-all other privileges permanently deleted and unaddable, including debug,
-ownership, backup, restore, and DACL bypass.
-
-Before B, C holds required self handles and one probe-thread handle. C process
-and every current C-thread DACL deny CU and OW all PR/TR, and `P(duplicate-user)`
-must pass. C closes the probe and creates no later thread. Its BT creation handle
-has exactly `TOKEN_ASSIGN_PRIMARY|TOKEN_DUPLICATE|TOKEN_QUERY`. Broker
-environment contains exactly ordered `SystemRoot,TEMP,TMP`, where TEMP/TMP name
-the fresh root, with no PATH, profile, config, proxy, credential, duplicate,
-drive, or other key.
-
-B is atomically launched suspended with `CreateProcessAsUserW(BT)`: absolute
-digest-bound immutable broker application, fixed arguments, fresh root cwd,
-broker environment, `bInheritHandles=TRUE`, flags
-`EXTENDED_STARTUPINFO_PRESENT|CREATE_SUSPENDED|CREATE_UNICODE_ENVIRONMENT|
-CREATE_NO_WINDOW`, and `STARTUPINFOEXW` with no std-handle flag and exactly
-`JOB_LIST=[J]` plus
-`HANDLE_LIST=[IB,QB,VbB,VcB,TTB]`. Those are fresh inheritable duplicates only
-for launch, with exact rights `SECTION_MAP_READ`, `SECTION_MAP_WRITE`,
-`EVENT_MODIFY_STATE`, `SYNCHRONIZE`, and
-`TOKEN_ASSIGN_PRIMARY|TOKEN_DUPLICATE|TOKEN_QUERY`; every original and unlisted
-handle is noninheritable. Attribute construction, inheritance, Job membership,
-and process/thread-handle noninheritance are proved before exactly one broker
-resume. Any uncertainty enters the abnormal Job path with no ambient fallback.
-B receives no Job, lease, controller process/thread, destination parent,
-durable file, stdio, console, or ambient handle and reproves BT plus `P(B)`
-before reading I.
-
-Before USER/GDI, window, hook, worker, or T, B creates a fresh noninheritable
-explicit-security station and desktop in this order:
-`CreateWindowStationW(NULL,CWF_CREATE_ONLY,...)`, `SetProcessWindowStation`,
-`CreateDesktopW(L"default",...,0,...,explicit-SD)`, `SetThreadDesktop`.
-`GetUserObjectInformationW` provides the returned `station\default` name. The
-private pair dual-allows CU and RC exact WR/DR; no original station/desktop or
-controller/broker process/thread/IPC/Job/lease/destination/durable object allows
-RC. C sets and queries exactly the Job UI limits for handles, clipboard,
-system/display settings, global atoms, desktop, and exit-Windows. B then creates
-its fixed workers and freezes thread/USER state. No later broker thread creates
-or receives a window, hook, clipboard, DDE, COM-STA, message queue, or other
-desktop IPC; the target desktop has no broker receiver. TT must be denied every
-PR/TR form on C, B, and all their threads and WR/DR on C's original station/
-desktop.
-
-T is created only by `CreateProcessAsUserW(TT)` with returned station/desktop,
-E, exact three stdio handles, `STARTF_USESTDHANDLES`, handle list, inheritance,
-and exact suspended Unicode/no-window flags. Non-breakaway Job membership is
-proved before exactly one target resume. T receives no broker, Job, IPC, token,
-lease, or durable handle and cannot open B through CU, OW, RC, a desktop
-receiver, or inherited handle.
-
-### Job, Workers, Termination, And Retry
-
-Each attempt creates one fresh unnamed Job. C is sole owner of its
-noninheritable kill-on-close/no-breakaway handle and opens no named/foreign Job.
-I/Q are unnamed nonexecutable pagefile mappings: I is controller-sealed and
-broker-readable; Q is broker-write/controller-read and contains only
-`version,state,analysis_job_id,N,packet_digest,length,digest,bytes`. Vb is
-broker-modify/controller-sync and Vc the inverse; T receives neither. Events
-provide synchronization, never child-tree proof.
-
-Attempt N is 1..2. Monotonic attempt/all/proof/final budgets are exactly
-120000/240000/5000/1000 ms; wall clock is untrusted. Retry requires proved
-cleanup and one of `unavailable|launch_failed|timeout|invalid_output`, occurs
-only after N=1, and is forbidden after cancel. Uncertainty before recording N
-is `policy_blocked`.
-
-C owns the lease, Job, broker process and primary-thread-until-resume, token
-creation handles/copies, mappings, events, and launch duplicates. B owns its
-station/desktop, target token/process/thread, pipes, worker thread handles, S/O,
-and Q write. T owns only stdio. C has no I/O worker and B has no Job, lease,
-destination-parent, or controller handle. Each owner closes its objects in the
-specified post-proof order.
-
-B owns exactly one bounded stdin writer and one bounded drain worker per stdout
-and stderr. Each holds only its pipe end, bounded buffer, and thread state and
-cannot write Q or access S/O. B owns all worker handles. On normal target signal
-B closes stdin and broker pipe ends in protocol order and joins all three within
-5,000 ms. Timeout, orphaned pipe, incomplete EOF, or unjoined thread is abnormal:
-B writes no terminal Q and C immediately enters the abnormal Job path. No
-worker survives B, a successful Q, or controller return.
-
-Success order is: T signals; B joins workers and closes every T handle; two Job
-queries prove `ActiveProcesses==1` with PID exactly `[B]`; B held-reads/caps O;
-B seals bound length/digest/opaque bytes into Q; B deletes/proves S/O absent;
-B signals terminal and exits. C accepts only terminal-valid Q, broker signal,
-Job zero, and stable zero/Q reread, then validates Q. No single exit, event,
-handle signal, or zero observation suffices.
-
-Timeout, cancellation, broker crash, worker hang, partial Q, or abnormal child
-state first latches the outcome, then calls `TerminateJobObject(J)` before
-waiting; no thread is terminated. C must prove broker signal and stable Job zero
-before reading Q, retrying, removing the root, unlocking, or returning. Without
-that proof all remain forbidden: the current tree is quarantine and C fail-fast
-holds lease and sole Job, with kill-on-close only as termination fallback.
-
-Only a proved abnormal path may leave Q unread, prove S/O absent, remove the
-root, close attempt ownership, and close J. A retry keeps the same lease while
-creating an entirely fresh attempt. Otherwise J closes before the final lease
-release. `tree_quiescent` means every required Job/process/worker/handle/file
-absence proof and ordered finalization succeeded; otherwise result digests are
-null and nothing is reused.
-
-### Atomic Report Publication And Recovery
-
-Before report temporaries or intent, C acquires and holds both noninheritable
-destination parents and proves canonical identity, containment, and same-volume
-placement. Failure changes no destination, status, or report tuple, preserves
-running, and returns deferred `interrupted`. C creates both temps with TH, sets
-delete disposition before writing, never uses delete-on-close, writes/flushes,
-held-rereads, and validates exact canonical bytes, privacy, bindings, digests,
-and caps.
-
-`publish_ready` requires valid held report/Markdown temps, both destination
-parents, a complete all-nonnull report tuple bound to those bytes, no other
-private leaf, and either adapter `tree_quiescent` with S/O closed/absent or the
-no-adapter proof with S/O never created. Intent order is JSON then Markdown.
-Promotion clears delete disposition and performs same-handle atomic NR through
-the held destination parent and exact basename. Replace, copy, pre-delete,
-reopen, or path fallback is forbidden. An absent final is completed; its held
-handle rechecks parent, name, identity, length, bytes, and digest. C removes and
-proves absence of the empty root, atomically records published, closes files,
-then destination parents, then releases the lease.
-
-On failure an unpromoted temp stays delete-disposed through last close and
-original-identity absence proof. A promoted same handle is reset delete-disposed,
-closed, and proved original-identity absent or foreign-replaced. The current
-root is removed only after its absence proof. Only after every matching rollback
-proof may the core atomically publish null report tuple with
-`failed/publication_failed`, close parents, and unlock. Uncertainty preserves
-running intent/root and returns `interrupted`; ambiguous status writes are
-reread under lease and rollback continues only while state remains running.
-
-A crash between clearing disposition and rename may leave only complete,
-intent-bound, privacy/cap-valid canonical report/Markdown; it is quarantine,
-never raw adapter output, provider data, prompt, packet, stdout/stderr, or
-rejected bytes. Recovery holds both destination parents and reads only
-descriptor, source, complete intent, and exact final destinations. It never
-reads, traverses, deletes, or reuses adapter output/quarantine and never changes
-worker or adapter counters.
-
-Missing means absent; present files open with RH. Any acquisition, type,
-identity, length, or cap uncertainty preserves running and changes nothing.
-Recovery memory-reads capped files, discards mismatch details, and rechecks held
-identity/length plus canonical JSON/bindings/digest or exact rerender. Two valid
-files complete publication under held handles and status reread. Otherwise only
-matching handles are delete-disposed, closed, and proved absent or foreign-
-replaced; foreign/mismatched files remain untouched and unexposed. A null-report
-publication failure or collision requires every rollback proof; parse-equivalent,
-reordered, reframed, or digest-only mismatch is `report_invalid` without retry.
+The installable package contains no M23 Analyzer or standalone Evidence-reader
+runtime. Analyzer-only path derivation is removed from `state_paths.py` and
+`state_resolver.py`; shared Evidence paths and filesystem primitives retain
+their existing owners and behavior. Old ignored analysis artifacts are left
+inert, with no cleanup or migration. There is no replacement runtime reader or
+reporting adapter.
 
 ## Completion Cycle History
 

@@ -6,9 +6,9 @@ The current unpublished candidate is v0.13.0 with SQLite schema v21, Viewer
 snapshot v4 accepting source schemas v5-v21, and 21 public command leaves.
 Its supported behavior includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
-Bundles, deterministic Evidence JSON, the bounded offline/mock derived-evidence
-Analyzer, and the explicitly opted-in trusted-local verification Runner with a
-closed manual fallback. Schema v20 remains a supported migration source and
+Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
+verification Runner with a closed manual fallback. Schema v20 remains a
+supported migration source and
 audit-only Runner lineage; only fresh schema-v21 gate-eligible evidence may
 satisfy the Runner branch. M25 Select-Split-Merge-Register is active only as
 Skill instruction-layer guidance. Completed execution narrative belongs only in
@@ -1401,7 +1401,7 @@ completion cycle, and closed assurance/producer/version. Git observation is
 `external_reference/external_system/1`. Callers cannot select or upgrade those
 classes. Migration synthesizes no historical Reference. Schema-v19 and
 schema-v20 criterion links, native Bundles, and Evidence JSON are active;
-the canonical Analyzer writer remains inactive. The schema-v20 Runner writer
+the canonical `derived_analysis` writer remains disabled. The schema-v20 Runner writer
 is active only for the audit graph defined below and remains
 ineligible for every verification and completion gate.
 
@@ -1795,8 +1795,9 @@ generation. `deterministically_derived` is a pure versioned derivation that
 cannot be stronger than its sources. `external_reference` retains an external
 identity without claiming its content, existence, authority, or semantics.
 `legacy_unknown` is irrecoverable absent origin; migration and projection must
-not fill or strengthen it. `llm_derived` is a non-authoritative cited Analyzer
-claim and never satisfies a verification, review, completion, or release gate.
+not fill or strengthen it. `llm_derived` is writer-disabled compatibility
+vocabulary for non-authoritative inference and never satisfies a verification,
+review, completion, or release gate.
 Producer values are labels, not authentication, signatures, process identity,
 independence, or authority.
 
@@ -3166,329 +3167,26 @@ state and evidence remain solely in the project-local Task database and are
 inspected through the public CLI. Current product, privacy, review, migration,
 and artifact requirements above do not depend on historical text.
 
-## Derived-Evidence Analyzer
+## Evidence Interpretation And Retired Analyzer Boundary
 
-The Analyzer is an offline-first, non-authoritative consumer of one validated
-Evidence index entry and, for native state, its sealed Bundle. It uses only the
-ignored `<canonical-package-state>/analysis/` tree: immutable
-`outbox/tg_analysis_job_<16-lower-hex>.json`, atomically replaced
-`status/tg_analysis_job_<16-lower-hex>.json`, and paired
-`reports/tg_analysis_report_<16-lower-hex>.json` and
-`rendered/tg_analysis_report_<16-lower-hex>.md`. The report pair is provisional
-only while a complete running intent exists and immutable after publication.
-There is no Analyzer index or SQLite table. The Analyzer changes no Task,
-Contract, Evidence Reference, criterion link, Bundle, gate, CLI, Skill, setup,
-doctor, maintenance, or Viewer state.
+Facts, caller declarations, LLM inference, and uncertainty are not
+interchangeable. Derived explanations do not satisfy verification, review,
+completion, or release gates and cannot upgrade the assurance of their sources.
 
-### Descriptor, Packet, Status, And Replay
+The M23 Analyzer runtime is retired. `derived_analysis`, `llm_derived`, and
+`batch_analyzer` remain writer-disabled compatibility vocabulary; unrelated
+`deterministically_derived` uses remain supported. Retirement changes no schema,
+durable row, Evidence format, canonical byte/digest rule, or Runner gate.
+Existing ignored `state/current/analysis/` artifacts remain untouched and inert;
+there is no cleanup, import, relocation, or repair path for them.
 
-Descriptor v1 has exactly
-`analysis_job_id,descriptor_version,source_kind,source_key,source_basis,recipe,
-recipe_digest,descriptor_digest`; version is `1` and source kind is
-`native_bundle|legacy_index_entry`. `source_basis` has exactly
-`project_id,projection_generation,index_digest,entry`, where `entry` has exactly
-`task_id,completion_cycle_id,cycle_ordinal,bundle_state,bundle_id,bundle_file,
-bundle_digest,file_digest,sealed_at`. Native values reproduce one validated
-index entry and Bundle. Legacy state is `legacy_unknown` and its last five entry
-values are null; no Bundle lookup or Receipt/provenance-shaped value is added.
-
-Let `C(v)` be the accepted Bundle/index canonical JSON without LF; durable bytes
-are `C(v)||LF`. Let `H(d,b)` be raw SHA-256 over NUL-free ASCII `d`, NUL, and
-`b`; `S(h)` be `sha256:` plus 64 lowercase hex; and `I(p,h)` be prefix `p` plus
-the first 16 hex. Digests within canonical JSON stay full 71-byte ASCII, named
-digests use `S` unless null, and no implicit framing exists.
-
-Native source identity is exactly
-`project_id,task_id,completion_cycle_id,cycle_ordinal,bundle_id,bundle_digest,
-file_digest`; legacy identity is exactly
-`project_id,task_id,completion_cycle_id,cycle_ordinal,bundle_state`.
-`source_key=S(H("taskgov-analysis-source-v1",C(identity)))`. Recipe is exactly
-`producer_version,report_schema_version,renderer_version,prompt_schema_version,
-inference_mode,declared_model_id`; mode is `offline|codex_optional`, offline
-model is null, and any relevant byte/behavior change increments the applicable
-positive version. `recipe_digest=S(H("taskgov-analysis-recipe-v1",C(recipe)))`.
-`analysis_job_id=I("tg_analysis_job_",H("taskgov-analysis-job-v1",
-ASCII(source_key)||NUL||ASCII(recipe_digest)))`; `descriptor_digest` covers the
-exact descriptor without that digest under `taskgov-analysis-descriptor-v1`.
-The fixed legacy vectors are:
-
-- `C(identity)={"bundle_state":"legacy_unknown","completion_cycle_id":"c","cycle_ordinal":1,"project_id":"p","task_id":"t"}` produces
-  `source_key=sha256:43de9c707c10c49ab1b3bc939975b058bbf9b79dfbd495324ecd5e2135581fbf`;
-- `C(recipe)={"declared_model_id":null,"inference_mode":"offline","producer_version":1,"prompt_schema_version":1,"renderer_version":1,"report_schema_version":1}` produces
-  `recipe_digest=sha256:8ac0a31a34894d0d759b7844b8f0d8b6999520374f34a73b45a2a4cff7b29f3d`.
-
-After independent source validation the ID is derived. An absent ID is created
-exclusively. An existing descriptor replays the original basis only when source
-key, recipe digest, project ID, and all nine entry fields match; it never binds
-a later index. Generation/index-digest drift alone neither rewrites nor
-collides. Any other content under the same derived ID is a collision and is
-rejected. `published|failed|cancelled` replays its immutable outcome with no
-attempt; only a changed source identity or recipe creates a new job.
-
-Packet v1 has exactly
-`packet_version,analysis_job_id,source_kind,source_basis,source`; version is 1.
-Native source is the exact independently validated Bundle envelope; legacy
-source is null and carries content only through `source_basis`. Native packet
-size is capped at 16,842,752 bytes and legacy at 16,384; overflow is
-`packet_too_large` and never truncates. Packet bytes remain memory-only, are
-framed directly to stdin, and are discarded after the attempt; `packet.json`
-is forbidden and only its digest may persist.
-
-`prompt_bytes` is fixed, nonempty, versioned, BOM-free UTF-8/LF with one final
-LF and no NUL. With `packet_bytes=C(packet)` and shortest positive ASCII-decimal
-lengths P/Q, stdin is exactly:
-
-```text
-ASCII("taskgov-analysis-stdin-v1")||LF||ASCII("prompt-length:")||P||LF||
-ASCII("packet-length:")||Q||LF||LF||prompt_bytes||packet_bytes||LF
-```
-
-The frame is capped at 262,144 bytes; overflow is `input_too_large` without
-launch. `prompt_digest=S(H("taskgov-analysis-prompt-v1",prompt_bytes))`;
-identical `packet_digest` and report `input_digest` are
-`S(H("taskgov-analysis-packet-v1",packet_bytes))`; and
-`accepted_output_digest=S(H("taskgov-analysis-output-v1",strict canonical
-output bytes))`, with no LF in any canonical input. A prompt/frame byte change
-increments `prompt_schema_version`.
-
-Status has exactly
-`analysis_job_id,state,worker_attempt_count,adapter_attempt_count,inference_state,
-fixed_code,duration_ms,packet_digest,accepted_output_digest,report_id,
-report_digest,render_digest`. State is
-`pending|running|published|failed|cancelled`; inference state is
-`disabled|policy_blocked|pending|running|succeeded|input_too_large|unavailable|
-launch_failed|timeout|output_too_large|invalid_output|failed|cancelled`.
-Counters are integers 0..2; duration is 0..600,000 and no greater than
-`300000 * worker_attempt_count`. Fixed code is null except failed
-`source_invalid|packet_too_large|report_invalid|publication_failed|interrupted`
-or cancelled `cancelled`. The three report fields are all null or all non-null.
-
-For the status matrix below, `PS` is exactly
-`policy_blocked|input_too_large|succeeded|unavailable|launch_failed|timeout|
-output_too_large|invalid_output|failed`.
-
-Offline uses adapter count 0, inference `disabled`, and null output digest.
-Optional execution uses adapter count 0 for `pending|policy_blocked|
-input_too_large`, 1..2 for `running|succeeded|unavailable|launch_failed|
-timeout|output_too_large|invalid_output|failed`, and 0..2 for `cancelled`.
-Output digest is non-null exactly for `succeeded`; optional `running` and all
-members of `PS` require a packet, while pending may omit
-one. The exact no-adapter results are `offline/disabled`,
-`codex_optional/policy_blocked`, and `codex_optional/input_too_large`; no other
-result may claim the no-adapter-tree proof or consume no adapter attempt.
-
-Pending has zero worker/duration and null code, digests, and report tuple; its
-offline/optional inference is `disabled|pending`. Every other state has worker
-count 1..2. Running has null code and required packet; offline inference is
-`disabled`, optional inference is `pending|running` or a member of `PS`, output
-follows the succeeded-only rule, and the report tuple is either
-all null or an all-nonnull intent made only after report/render validation and
-the required tree-quiescent/no-tree cleanup proof. Published requires packet,
-an all-nonnull report tuple, null code, and inference `disabled` or a member of
-`PS`. Failed source/packet has no packet/output/report and inference
-`disabled|pending`; failed report/publication has packet, no report, and
-inference `disabled` or a member of `PS`. An `interrupted` failure has
-`disabled|pending` without packet, `disabled` or a non-succeeded member of `PS`
-with packet but no output, and `succeeded` with packet and output. The
-optional adapter-count-zero/inference-`failed` combination is valid only for
-the exact pre-call reclaim terminal described below. Cancelled has no report,
-fixed code `cancelled`, optional inference `cancelled` with adapter count 0..2
-or offline `disabled` with adapter count 0, and a packet exactly when source
-validation completed. Other terminal states have no rerun, timestamp, or raw
-error field.
-
-Status replacement is atomic. Pending-to-running increments the worker count.
-The no-wait lease enforces the 100,000-file cap and identifier order and selects
-at most one pending/reclaimable job. A complete intent receives bounded,
-counter-neutral recovery. A no-intent running row with worker count below 2
-first uses a counter-only compare-and-swap; the optional exact pre-call reclaim
-terminal is running worker 2, adapter 0, inference pending, packet set, null
-output/report/code to failed worker 2, adapter 0, inference failed, fixed code
-`interrupted`, with every other field unchanged. Reclaim does not launch,
-increment the adapter, or touch output/quarantine. A worker attempt is capped at
-300,000 ms; expiry is `failed/interrupted`; adapter count increments before
-lookup/call and never exceeds 2.
-Descriptor publication precedes pending status. Under the lease, a valid
-descriptor with an absent exact status leaf exclusively creates pending once;
-reports are neither scanned nor used as replay input. A present status requires
-exact pairing. Invalid present descriptor or status structure stays unchanged.
-
-### Report, Claims, And Citations
-
-Report v1 is exact canonical no-extra-key JSON with envelope
-`report_schema_version,report_digest,payload`. Payload has exactly, in this
-order, `report_id,analysis_job_id,source_kind,source_key,recipe_digest,
-inference_state,structural_facts,trusted_caller_declarations,legacy_absence,
-llm_derived,omissions,uncertainties,declared_code_occurrences,citations,
-reproducibility`. Structural facts, trusted declarations, derived claims, and
-omissions/uncertainties never substitute for each other; rendering is a pure
-projection, not evidence.
-
-Fact kinds are exactly
-`bundle|task|contract|target|authority_snapshot|criterion|criterion_link|
-artifact_manifest|artifact_entry|evidence_reference|verification_receipt|
-review_receipt|review_provenance|finding_snapshot|completion_evidence|omission`.
-Declaration kinds are exactly
-`reviewer_class|model_state|declared_model_id|skill_state|declared_skill_id|
-declared_skill_version|profile|lens|context_relation|method`. A Fact is
-`fact_kind,value,citation_ids` and holds only a cited scalar, null, empty array,
-or atomic source row. A Declaration is
-`declaration_kind,value,citation_ids` and holds only a cited v1 scalar, null, or
-one ordered code. Native `legacy_absence` is null; legacy absence has exactly
-`state=legacy_unknown,receipt_detail=unavailable,
-provenance_detail=unavailable,citation_id`.
-
-Omission and uncertainty have `code,citation_ids`. Analyzer-only omissions are
-`claim_capacity_exceeded|render_capacity_exceeded|legacy_detail_unavailable|
-inference_unavailable`; uncertainties are
-`insufficient_basis|conflicting_basis|legacy_absence`. A derived claim has
-`tag,non_authoritative,text,citation_ids,uncertainty`, where uncertainty is
-exactly `none|insufficient_basis|conflicting_basis|legacy_absence`; an occurrence has
-`kind,code,bundle_id,review_receipt_id,review_provenance_id,citation_ids`, where
-kind is exactly `profile|lens|method`.
-Facts/declarations are capped at 16,384, citations/occurrences at 65,536,
-omissions/uncertainties at 4,096, and each non-citation has 1..8 valid citation
-IDs. Arrays sort by unsigned lexicographic canonical-JSON element bytes,
-shorter prefix first, and reject duplicates; citation IDs are unique ascending
-ASCII. Copied source-row arrays retain their source order.
-
-`reproducibility` has exactly
-`producer_version,declared_model_id,prompt_schema_version,prompt_digest,
-input_digest,accepted_output_digest,report_schema_version,renderer_version`.
-Offline model/prompt/output digests are null. These are deterministic or
-declared values, not authenticated model or actor identity.
-
-For native input the validator independently derives a required-pointer
-multiset exactly equal to all source facts, declarations, occurrences, and
-omissions; subsets fail. Bundle envelope and payload metadata map to `bundle`;
-Task, Contract, target, and authority snapshot map identically; plural
-collections map to singular kinds; each criterion, link, artifact entry,
-Reference, Finding snapshot, scalar, null, or empty collection is represented
-exactly once. Native v1 Review provenance makes ID/version/assurance/producer/
-digest mandatory facts, each scalar a declaration, and each profile/lens/method
-code a declaration plus occurrence. An empty provenance collection produces
-one `review_provenance` fact with value `[]` and no occurrence. Null provenance
-is allowed only for `not_required` and produces one fact with no Receipt
-declaration or occurrence. Every pointer, value, kind, identity, and
-cardinality derives only from the Bundle; projection or report overflow is
-`report_invalid`, never an omission.
-
-Report omissions are the canonical union of source omissions and recomputed
-runtime omissions. `legacy_detail_unavailable` exists exactly for legacy
-input, `inference_unavailable` exactly when optional publication does not end
-in `succeeded`, and a capacity code exists exactly when its corresponding
-suffix is removed. Source omissions remain present; runtime omissions cite the
-Bundle root or legacy basis. Uncertainties are the deduplicated legacy
-`legacy_absence` plus non-`none` uncertainties from retained claims; native
-offline analysis has none. An extra, missing, or substituted item is
-`report_invalid`.
-
-Native citations have exactly
-`citation_id,citation_kind,source_key,bundle_id,bundle_digest,file_digest,
-json_pointer,entity_id,entity_digest`. The RFC 6901 pointer resolves inside the
-Bundle. Identity/digest pairs use ID+digest exactly for
-`authority_snapshot|criterion|artifact_manifest|artifact_entry|
-evidence_reference|review_provenance|finding_snapshot`; Task, criterion link,
-Receipt, and completion evidence use ID+null; Bundle, Contract, target, and
-omission use null+null. An artifact entry uses
-its manifest pair plus ordinal; an empty collection or absent verification uses
-a null-identity Bundle citation; null `not_required` provenance uses the Review
-Receipt identity; and Receipt/completion facts also cite their Evidence
-Reference. Legacy output has empty facts/declarations/occurrences and one
-`legacy_index_entry` citation `L` with exactly
-`citation_id,citation_kind,source_key,project_id,projection_generation,
-index_digest,task_id,completion_cycle_id,cycle_ordinal`, copied from the
-validated basis, and `citation_kind=legacy_index_entry`. Its
-`legacy_absence.citation_id` and every legacy `citation_ids` value equal
-`L.citation_id`; it exposes no other citation, Receipt, provenance, v0, Bundle,
-or inferred value. For native input, the source, Bundle, and file bindings equal
-the descriptor and packet, the citation source key equals the descriptor source
-key, each ID resolves exactly once, and report items bind only through
-`citation_ids`. Citation IDs
-are `I("tg_analysis_citation_",H("taskgov-analysis-citation-v1",C(citation
-without citation_id)))`; same ID with different bytes fails.
-
-Derived items use tag `llm_derived/batch_analyzer/1`,
-`non_authoritative=true`, privacy-guarded UTF-8 text up to 1,000 bytes, 1..8
-citations, one closed uncertainty, and at most 2,048 items. Repetition across
-Receipts/Bundles is descriptive only; grouping never authenticates identity,
-proves competence/independence, scores quality/diversity, upgrades assurance,
-fills unknown/null/legacy data, or changes a gate.
-
-Adapter output has exactly
-`output_schema_version,analysis_job_id,source_key,recipe_digest,claims`; version
-is 1 and claims count is 0..2,048. Each claim has exactly
-`text,source_refs,uncertainty`, with nonempty privacy-guarded text up to 1,000
-bytes and 1..8 unique refs. Every ref has exactly `{kind,json_pointer}`. Native
-refs are nonempty required-projection RFC 6901 `native_pointer` values and
-cannot claim `legacy_absence`; legacy output has exactly one
-`{kind:legacy_basis,json_pointer:null}` ref. Claims sort by unsigned
-lexicographic canonical-JSON element bytes; source refs sort by kind
-`legacy_basis,native_pointer`, then null before string and unsigned UTF-8
-pointer bytes; duplicates fail. The validator maps refs to exact citation IDs
-and supplies IDs, tags, and non-authority markers; adapter text cannot supply
-facts or declarations. Output over 65,536 bytes is `output_too_large`; any
-schema, privacy, binding, ordering, duplicate, reference, or native/legacy
-violation is `invalid_output`. Rejected bytes have null digest and never enter
-a report or durable state.
-
-Packet ID, kind, and basis byte-match the descriptor, and
-`payload.analysis_job_id` equals the descriptor and status ID. Report ID, kind,
-source key, and recipe digest match the descriptor, while running-intent or published
-status IDs and digests match the exact report and render. Reproducibility
-versions/model match the recipe; input and accepted-output digests and
-inference state match status. Before intent, any binding mismatch atomically
-publishes terminal `failed/report_invalid` with null report fields and no
-report/render destination.
-
-Report JSON and Markdown are capped at 16,777,216 and 8,388,608 bytes. From
-sorted claims, retain the longest report-fitting prefix and add
-`claim_capacity_exceeded` iff a suffix is removed; then retain the longest
-report-plus-Markdown-fitting prefix and add `render_capacity_exceeded` iff more
-are removed. Partial source items or a non-fitting skeleton are
-`report_invalid`. Exact identities are
-`report_id=I("tg_analysis_report_",H("taskgov-analysis-report-id-v1",
-ASCII(source_key)||NUL||ASCII(recipe_digest)||NUL||ASCII(inference_state)||NUL||
-ASCII(accepted_output_digest or "offline-null")))`,
-`report_digest=S(H("taskgov-analysis-report-v1",C(payload)))`, and
-`render_digest=S(SHA-256(exact Markdown bytes))`. A report pair becomes visible
-only with the exact-byte `publish_ready` proof defined by the
-[Analyzer process and publication design](design.md#derived-evidence-analyzer-process-and-publication-boundary).
-
-Markdown v1 is `T||LF||LF||join(B1..B10,LF||LF)||LF`, where
-`T=ASCII("# Task Governance Analysis Report v1")` and each block is
-`UTF8("## "||NAME)||LF||LF||ASCII("    ")||C(VALUE)`. The exact name/value
-order is `Identity` to the object `report_schema_version,report_digest,
-report_id,analysis_job_id,source_kind,source_key,recipe_digest,inference_state`,
-then `Structural Facts`, `Trusted Caller Declarations`, `Legacy Absence`,
-`LLM Derived`, `Omissions`, `Uncertainties`, `Declared Code Occurrences`,
-`Citations`, and `Reproducibility` to their like-named payload values. Output is
-BOM-free UTF-8/LF with no tab, fence, HTML, link, prose, wrapping,
-normalization, Markdown escape, or data outside those four-space canonical JSON
-blocks. Only JSON escaping applies; layout/escaping changes increment
-`renderer_version`.
-
-### Offline And Optional Analysis
-
-Offline mode publishes the deterministic report and Markdown with zero model
-calls. Optional logical shell-free argv is exactly
-`codex exec --ephemeral --sandbox read-only --ignore-user-config --ignore-rules
---skip-git-repo-check --model <exact-approved-id> --output-schema
-<private-schema> -o <private-output> -`. Its output schema is strict
-`additionalProperties=false`; stdout/stderr are never report inputs. The
-process boundary uses a private cwd/home/environment, credential exclusion,
-immutable runtime identity, Windows token/Job/desktop/handle containment,
-attempt freshness, bounded timeout/cancel/tree termination, transient output
-disposal, and bounded worker joins as specified by the active design.
-
-No public CLI or Skill activates Analyzer execution. The implemented acceptance
-surface is credential-free offline/mock operation. Missing, launch, count, cap,
-nonzero-empty, expiry, cancellation, and invalid outcomes map only to
-`unavailable|launch_failed|interrupted|output_too_large|failed|timeout|
-cancelled|invalid_output`. Without separately approved provider credentials,
-data/model authority, proven isolation, non-tool-readable broker, and a
-pre-call spend ceiling, optional mode remains `policy_blocked`, makes zero live
-calls, incurs zero model cost, and stores no inference.
+Independent Evidence reading/validation is retained only in repository tests.
+It checks file self-consistency, declared generation, versions, identities,
+canonical bytes/digests, relations, and existing bounded semantics/privacy
+rules. It does not authenticate authors, prove source-code correctness, or
+establish freshness against SQLite. No runtime reader, report schema, renderer,
+citation-generation subsystem, or future Reporting adapter is retained. Any
+later non-test reader path requires a separate product decision.
 
 ## Trusted-Local Verification Runner
 

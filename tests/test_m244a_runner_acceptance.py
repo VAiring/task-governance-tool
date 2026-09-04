@@ -459,7 +459,7 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
                                    side_effect=owner.factory), \
                  mock.patch.object(service, "run_process_request",
                                    side_effect=process_create_failed):
-                routed = service.set_review_target_with_shadow_runner(
+                routed = service.set_review_target_with_optional_runner(
                     fixture.target, fixture.task_id, kind="git_snapshot")
             observation = fixture.generation(1)["observation"]
             self.assertEqual((observation.outcome, observation.reason,
@@ -518,7 +518,7 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
             ), mock.patch.object(
                 service, "run_process_request", side_effect=run_and_capture
             ):
-                routed = service.set_review_target_with_shadow_runner(
+                routed = service.set_review_target_with_optional_runner(
                     fixture.target, fixture.task_id, kind="git_snapshot"
                 )
 

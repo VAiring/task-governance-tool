@@ -1446,7 +1446,7 @@ def _run_intent_under_lock(
     return _routed_runner_target(intent.review, intent.resolution, observation)
 
 
-def set_review_target_with_shadow_runner(
+def set_review_target_with_optional_runner(
     target: DatabaseTarget,
     task_id: Any,
     *,
@@ -1550,5 +1550,5 @@ def set_review_target_with_shadow_runner(
 __all__ = [
     "VerificationRunnerServiceError",
     "select_current_verification_runner_basis",
-    "set_review_target_with_shadow_runner",
+    "set_review_target_with_optional_runner",
 ]

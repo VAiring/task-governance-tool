@@ -593,7 +593,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             )
             self.assertEqual(started.returncode, 0, started.stdout)
             with mock.patch.object(service, "_prepare_runner", return_value=None):
-                service.set_review_target_with_shadow_runner(
+                service.set_review_target_with_optional_runner(
                     fixture.target,
                     fixture.task_id,
                     kind="git_snapshot",

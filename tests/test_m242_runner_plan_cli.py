@@ -168,7 +168,7 @@ class RunnerPlanCliTests(unittest.TestCase):
                 ) as runner_selection,
                 mock.patch.object(
                     cli_service,
-                    "set_review_target_with_shadow_runner",
+                    "set_review_target_with_optional_runner",
                 ) as review_target,
             ):
                 code, stdout, stderr = invoke(

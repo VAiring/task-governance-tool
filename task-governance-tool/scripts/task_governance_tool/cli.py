@@ -121,7 +121,7 @@ from task_governance_tool.verification_receipts import (
 from task_governance_tool.verification_runner_service import (
     VerificationRunnerServiceError,
     select_current_verification_runner_basis,
-    set_review_target_with_shadow_runner,
+    set_review_target_with_optional_runner,
 )
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
@@ -3194,7 +3194,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
 
     try:
         if context.command == "review.target.set":
-            result = set_review_target_with_shadow_runner(
+            result = set_review_target_with_optional_runner(
                 target,
                 getattr(context.args, "task_id", ""),
                 kind=getattr(context.args, "kind", ""),

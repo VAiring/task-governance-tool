@@ -321,7 +321,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 "task_governance_tool.reviews.resolve_git_commit",
                 side_effect=AssertionError("Git resolution must not run"),
             ) as resolve_commit, self.assertRaises(ReviewEvidenceError) as raised:
-                service.set_review_target_with_shadow_runner(
+                service.set_review_target_with_optional_runner(
                     fixture.target, fixture.task_id, kind="git_commit"
                 )
 
@@ -453,7 +453,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     "resolve_verification_runner_plan",
                     return_value=fallback,
                 ):
-                    result = service.set_review_target_with_shadow_runner(
+                    result = service.set_review_target_with_optional_runner(
                         fixture.target,
                         fixture.task_id,
                         kind="git_snapshot",
@@ -486,7 +486,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 "observe_staged_runner_target",
                 side_effect=unsupported,
             ):
-                result = service.set_review_target_with_shadow_runner(
+                result = service.set_review_target_with_optional_runner(
                     fixture.target,
                     fixture.task_id,
                     kind="git_snapshot",
@@ -515,7 +515,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 side_effect=AssertionError("CLI opened an outer transaction"),
             ), mock.patch.object(
                 cli_module,
-                "set_review_target_with_shadow_runner",
+                "set_review_target_with_optional_runner",
                 return_value=review,
             ):
                 success = run_taskgov_internal(
@@ -552,7 +552,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
 
             with mock.patch.object(
                 cli_module,
-                "set_review_target_with_shadow_runner",
+                "set_review_target_with_optional_runner",
                 side_effect=service.VerificationRunnerServiceError(
                     "runner_state_invalid",
                     "verification runner state could not be changed safely",
@@ -618,7 +618,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             ), mock.patch.object(
                 service, "_persist_launch_intent", side_effect=t1
             ), mock.patch.object(service, "_run_intent_under_lock", side_effect=run):
-                result = service.set_review_target_with_shadow_runner(
+                result = service.set_review_target_with_optional_runner(
                     fixture.target,
                     fixture.task_id,
                     kind="git_snapshot",
@@ -657,7 +657,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     with self.assertRaises(
                         service.VerificationRunnerServiceError
                     ) as raised:
-                        service.set_review_target_with_shadow_runner(
+                        service.set_review_target_with_optional_runner(
                             fixture.target,
                             fixture.task_id,
                             kind="git_snapshot",
@@ -681,7 +681,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 "_persist_launch_intent",
                 side_effect=AssertionError("fallback reached T1 intent"),
             ):
-                result = service.set_review_target_with_shadow_runner(
+                result = service.set_review_target_with_optional_runner(
                     fixture.target,
                     fixture.task_id,
                     kind="git_snapshot",
@@ -729,7 +729,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     with self.assertRaises(
                         service.VerificationRunnerServiceError
                     ) as raised:
-                        service.set_review_target_with_shadow_runner(
+                        service.set_review_target_with_optional_runner(
                             fixture.target,
                             fixture.task_id,
                             kind="git_snapshot",
@@ -1317,7 +1317,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                         with self.assertRaises(
                             service.VerificationRunnerServiceError
                         ) as raised:
-                            service.set_review_target_with_shadow_runner(
+                            service.set_review_target_with_optional_runner(
                                 fixture.target,
                                 fixture.task_id,
                                 kind="git_snapshot",
@@ -1375,7 +1375,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 side_effect=failure,
             ):
                 with self.assertRaises(StorageError) as raised:
-                    service.set_review_target_with_shadow_runner(
+                    service.set_review_target_with_optional_runner(
                         fixture.target,
                         fixture.task_id,
                         kind="git_snapshot",
@@ -1435,7 +1435,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                         with self.assertRaises(
                             service.VerificationRunnerServiceError
                         ) as raised:
-                            service.set_review_target_with_shadow_runner(
+                            service.set_review_target_with_optional_runner(
                                 fixture.target,
                                 fixture.task_id,
                                 kind="git_snapshot",
@@ -1494,7 +1494,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 "_persist_launch_intent",
             ) as new_intent:
                 with self.assertRaises(StorageError) as raised:
-                    service.set_review_target_with_shadow_runner(
+                    service.set_review_target_with_optional_runner(
                         fixture.target,
                         fixture.task_id,
                         kind="git_snapshot",
@@ -1727,7 +1727,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 os.environ,
                 {credential_name: credential_value},
             ):
-                result = service.set_review_target_with_shadow_runner(
+                result = service.set_review_target_with_optional_runner(
                     fixture.target,
                     fixture.task_id,
                     kind="git_commit",

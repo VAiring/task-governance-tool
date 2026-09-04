@@ -1384,7 +1384,7 @@ def build_native_bundle_plan(
         "omissions": omissions,
         "project_id": cycle.project_id,
         "review_receipts": review_receipts,
-        "source_schema_version": SCHEMA_VERSION,
+        "source_schema_version": basis.source_schema_version,
         "target": {
             "kind": cycle.review_target_kind,
             "value": cycle.review_target_value,

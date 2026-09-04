@@ -702,8 +702,8 @@ rules and narrowed current vocabulary. Preserve old source-version validation.
 Output: validation of a schema-22 database containing retained source-19/20/21
 Bundles/history, including its existing storage-owned projection-basis capture,
 without a public schema switch. New source-22 payload validation is unit 4.
-During preparation, storage maps physical v22 only to the unchanged v21
-stored-Task field/privacy capabilities; its captured container identity stays
+Before unit 5 enables explicit v22 Task capabilities, storage maps physical v22
+to the unchanged v21 stored-Task field/privacy capabilities; its container identity stays
 22. This does not enable current Task lifecycle or Runner selection on v22.
 Selected history retains the source-19/v1 null verification-basis tag as
 non-Runner history; the subsequent Bundle validation still checks its sealed
@@ -774,6 +774,11 @@ repository paths to schema 22 and derive new Bundle source version from the
 actual database. Remove exact-21 assumptions only where they represent the
 same supported gate capability. Output: existing lifecycle and selector work
 on explicit v22 test databases while ordinary CLI remains on v21.
+Stored Task capabilities admit v22 directly, retiring unit 2's temporary
+v22-to-v21 field-validation bridge while preserving the older v20 bridge.
+The locked completion basis carries its validated physical schema version;
+both the native JSON payload and stored Bundle use that same value. No caller
+selects the version and no sealed historical Bundle is relabelled.
 Acceptance: focused tests cover manual Receipt, not-required, qualifying Runner
 pass, the existing fallback/blocking classifications, reopen/fresh targeting,
 and retained historical Runner evidence. Reuse current gate matrices and

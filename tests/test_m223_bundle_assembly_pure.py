@@ -289,6 +289,7 @@ class BundleAssemblyPureTests(unittest.TestCase):
             completion_cycle_id=CYCLE_ID,
         )
         basis = SimpleNamespace(
+            source_schema_version=21,
             task=dict(payload["task"]),
             authority_snapshot={
                 "authority_snapshot_id": payload["authority_snapshot"][

@@ -212,7 +212,10 @@ def stored_task_verification_limit(source_schema_version: int) -> int:
         isinstance(source_schema_version, bool)
         or not isinstance(source_schema_version, int)
         or source_schema_version < 1
-        or source_schema_version > SCHEMA_VERSION
+        or (
+            source_schema_version > SCHEMA_VERSION
+            and source_schema_version != PRIVATE_SCHEMA22_VERSION
+        )
     ):
         raise StorageError(
             "project_state_unreadable",
@@ -851,6 +854,7 @@ class EvidenceProjectionState:
 
 @dataclass(frozen=True)
 class NativeCompletionBundleBasis:
+    source_schema_version: int
     task: dict[str, Any]
     authority_snapshot: dict[str, Any]
     criteria: tuple[dict[str, Any], ...]
@@ -10062,12 +10066,13 @@ def insert_verification_receipt_locked(
     """Append one tool-owned Receipt against the exact locked Task basis."""
 
     _require_completion_cycle_writer(connection)
+    schema_version = current_schema_version(connection)
     if (
-        current_schema_version(connection) != SCHEMA_VERSION
-        or missing_migration_versions(connection, SCHEMA_VERSION)
+        schema_version not in {SCHEMA_VERSION, PRIVATE_SCHEMA22_VERSION}
+        or missing_migration_versions(connection, schema_version)
         or required_schema_objects_missing(
             connection,
-            schema_version=SCHEMA_VERSION,
+            schema_version=schema_version,
         )
     ):
         raise StorageError(
@@ -12451,10 +12456,11 @@ def insert_completion_cycle_locked(
 
 def _require_completion_capture_activation_locked(
     connection: sqlite3.Connection,
-) -> None:
+) -> int:
+    schema_version = current_schema_version(connection)
     if (
-        current_schema_version(connection) != SCHEMA_VERSION
-        or missing_migration_versions(connection, SCHEMA_VERSION)
+        schema_version not in {SCHEMA_VERSION, PRIVATE_SCHEMA22_VERSION}
+        or missing_migration_versions(connection, schema_version)
     ):
         raise StorageError(
             "migration_required",
@@ -12462,10 +12468,11 @@ def _require_completion_capture_activation_locked(
         )
     if required_schema_objects_missing(
         connection,
-        schema_version=SCHEMA_VERSION,
+        schema_version=schema_version,
     ):
         raise completion_history_inconsistent()
     _validate_completion_history_structure(connection)
+    return schema_version
 
 
 def allocate_native_completion_identity_locked(
@@ -12957,7 +12964,7 @@ def _match_current_done_completion_cycle_locked(
     if validate_structure:
         version = current_schema_version(connection)
         if (
-            version not in {15, 16, 17, 18, 19, 20, 21}
+            version not in {15, 16, 17, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
             or missing_migration_versions(connection, version)
             or schema_objects_inconsistent_with_version(connection, version)
         ):
@@ -18781,9 +18788,6 @@ def _validate_evidence_ledger_rows(
         if physical_schema_version == PRIVATE_SCHEMA20_VERSION
         else physical_schema_version
     )
-    if physical_schema_version == PRIVATE_SCHEMA22_VERSION:
-        # v22 changes Evidence DDL only; stored Task fields retain v21 rules.
-        source_schema_version = PRIVATE_SCHEMA21_VERSION
     try:
         task_validation = validate_stored_task_rows(
             task_rows,
@@ -20750,9 +20754,13 @@ def read_current_verification_runner_target_basis(
 ) -> dict[str, Any]:
     """Read the exact current target/authority basis used by Runner T1."""
 
+    schema_version = current_schema_version(connection)
     if (
-        current_schema_version(connection)
-        not in {PRIVATE_SCHEMA20_VERSION, PRIVATE_SCHEMA21_VERSION}
+        schema_version not in {
+            PRIVATE_SCHEMA20_VERSION,
+            PRIVATE_SCHEMA21_VERSION,
+            PRIVATE_SCHEMA22_VERSION,
+        }
         or type(project_id) is not str
         or not project_id
         or type(task_id) is not str
@@ -20825,7 +20833,9 @@ def read_current_verification_runner_target_basis(
         or task["review_target_runner_basis_version"] not in {0, 2}
         or (
             task["review_target_runner_basis_version"] == 2
-            and current_schema_version(connection) != PRIVATE_SCHEMA21_VERSION
+            and schema_version not in {
+                PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+            }
         )
         or manifest["target_kind"] != target_kind
         or manifest["target_value"] != target_value
@@ -20988,7 +20998,9 @@ def _read_current_verification_runner_gate_snapshot(
     """Return validated current Runner graph facts without selecting an outcome."""
 
     if (
-        current_schema_version(connection) != PRIVATE_SCHEMA21_VERSION
+        current_schema_version(connection) not in {
+            PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+        }
         or type(project_id) is not str
         or not project_id
         or type(task_id) is not str
@@ -22269,7 +22281,7 @@ def read_native_completion_bundle_basis_locked(
     """
 
     _require_evidence_writer(connection)
-    _require_completion_capture_activation_locked(connection)
+    source_schema_version = _require_completion_capture_activation_locked(connection)
     _validate_completion_cycle(cycle)
     if (
         cycle.project_id != project_id
@@ -22682,6 +22694,7 @@ def read_native_completion_bundle_basis_locked(
         raise evidence_ledger_inconsistent()
 
     return NativeCompletionBundleBasis(
+        source_schema_version=source_schema_version,
         task={
             "task_id": task_id,
             "title": snapshot["task_title"],

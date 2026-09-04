@@ -51,6 +51,7 @@ from task_governance_tool.ordering import (
     incomplete_predecessor_sql,
 )
 from task_governance_tool.storage import (
+    PRIVATE_SCHEMA22_VERSION,
     SCHEMA_VERSION,
     CompletionHistory,
     DatabaseTarget,
@@ -535,7 +536,10 @@ def stored_task_schema_capabilities(
 
     if (
         type(source_schema_version) is not int
-        or not 1 <= source_schema_version <= SCHEMA_VERSION
+        or (
+            not 1 <= source_schema_version <= SCHEMA_VERSION
+            and source_schema_version != PRIVATE_SCHEMA22_VERSION
+        )
     ):
         raise _stored_task_unreadable()
     try:
@@ -1108,7 +1112,9 @@ def validate_current_stored_task_rows(
         rows,
         connection=connection,
         source_schema_version=(
-            version if 1 <= version <= SCHEMA_VERSION else SCHEMA_VERSION
+            version
+            if 1 <= version <= SCHEMA_VERSION or version == PRIVATE_SCHEMA22_VERSION
+            else SCHEMA_VERSION
         ),
         expected_project_id=expected_project_id,
     )
@@ -4373,7 +4379,7 @@ def edit_task(
                 task_id=normalized_task_id,
                 completion_cycle_id=completion_identity.completion_cycle_id,
                 cycle_ordinal=completion_identity.saved_cycle_ordinal,
-                source_schema_version=SCHEMA_VERSION,
+                source_schema_version=bundle_basis.source_schema_version,
                 bundle_version=2,
                 contract_revision=cycle.contract_revision,
                 authority_snapshot_id=(

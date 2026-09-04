@@ -49,7 +49,7 @@ GIT_RECORD_BYTE_LIMIT = 1_048_576
 _FS_MONITOR_DISABLED = ("-c", "core.fsmonitor=false")
 
 
-@dataclass(frozen=True)
+@dataclass
 class GitSnapshotError(Exception):
     code: str
     message: str

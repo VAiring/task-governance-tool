@@ -94,7 +94,7 @@ def _merge_handle_cleanup_state(
     return "open" if "open" in {left, right} else "closed"
 
 
-@dataclass(frozen=True)
+@dataclass
 class VerificationRunnerRuntimeError(Exception):
     code: str
     message: str

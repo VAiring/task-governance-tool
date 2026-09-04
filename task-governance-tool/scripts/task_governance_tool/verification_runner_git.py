@@ -77,7 +77,7 @@ _GIT_RECORD_BYTE_LIMIT = ARTIFACT_PATH_BYTE_LIMIT + 80
 _COPY_CHUNK_BYTES = 64 * 1024
 
 
-@dataclass(frozen=True)
+@dataclass
 class VerificationRunnerGitError(Exception):
     """One sanitized failure at the Git target-material boundary."""
 

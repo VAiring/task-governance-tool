@@ -449,6 +449,42 @@ class EvidenceReaderRegressionTests(unittest.TestCase):
                     self.assertEqual(raised.exception.code, "source_invalid")
                 self.assertEqual(tree_snapshot(evidence), before)
 
+    def test_fully_redacted_bearer_policy_in_independent_bundle_read(self):
+        accepted = (
+            "Authorization: Bearer <redacted>",
+            "Example `authorization: bearer <redacted>`; token_count=1024",
+        )
+        rejected = (
+            "Authorization: Bearer <redacted>suffix",
+            "Authorization: Bearer <removed>",
+            "Authorization: Bearer <REDACTED>",
+            "Authorization: Basic <redacted>",
+            "Proxy-Authorization: Bearer <redacted>",
+            "token=<redacted>",
+            "Authorization: Bearer <redacted> token=synthetic-secret",
+            "token=synthetic-secret Authorization: Bearer <redacted>",
+            "Authorization: Bearer <redacted>\nTraceback (most recent call last)",
+        )
+        for value in (*accepted, *rejected):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as temporary:
+                evidence = write_evidence_tree(Path(temporary))
+
+                def update_description(payload):
+                    payload["task"]["description"] = value
+                    refresh_inner_digests(payload)
+
+                entry = self._reseal_bundle(evidence, update_description)
+                index = read_evidence_index(evidence)
+                before = tree_snapshot(evidence)
+                if value in accepted:
+                    source = validate_evidence_source(index, entry)
+                    self.assertEqual(source.source["payload"]["task"]["description"], value)
+                else:
+                    with self.assertRaises(EvidenceConsumerError) as raised:
+                        validate_evidence_source(index, entry)
+                    self.assertEqual(raised.exception.code, "source_invalid")
+                self.assertEqual(tree_snapshot(evidence), before)
+
     def test_timestamp_routes_require_real_canonical_utc_seconds(self):
         def mutate_review_created_at(value: str):
             def mutate(payload) -> None:

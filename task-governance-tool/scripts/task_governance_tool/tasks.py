@@ -193,7 +193,11 @@ LEGACY_M19_7_DISPATCH_JSON_PATTERN = re.compile(
 LEGACY_M19_7_DISPATCH_SENTINEL = "taskgov_legacy_operation_sequence"
 
 PRIVACY_PATTERNS = (
-    re.compile(r"Authorization\s*[:=]\s*\S+", re.IGNORECASE),
+    re.compile(
+        r"(?!(?<![\w.-])Authorization[ \t]*:[ \t]*Bearer[ \t]+(?-i:<redacted>)(?=$|[\s`;,)}\]]))"
+        r"Authorization\s*[:=]\s*\S+",
+        re.IGNORECASE,
+    ),
     re.compile(r"Authorization\s+(Basic|Bearer|Token|ApiKey)\s+\S+", re.IGNORECASE),
     re.compile(r"Authorization\s+(Basic|Bearer|Token|ApiKey)\s*[:=]\s*\S+", re.IGNORECASE),
     re.compile(r"\b(Set-)?Cookie\s*:", re.IGNORECASE),

@@ -299,6 +299,23 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
             )
             self.assertIsNone(payload["runner_observation"])
 
+    def test_fully_redacted_bearer_completion_preserves_original_example(self) -> None:
+        title = "Authorization: Bearer <redacted>"
+        with tempfile.TemporaryDirectory(prefix=".tmp-pmc2-redacted-reader-", dir=ROOT) as temporary:
+            install, target, task_id = _schema21_fixture._seed_completed_m21_fixture(
+                self, Path(temporary), source_schema_version=22, title=title,
+            )
+            shown = _schema21_fixture._installed_json(
+                self, install, "task", "show", task_id, "--read-only",
+            )
+            self.assertEqual(shown["data"]["task"]["status"], "done")
+            self.assertEqual(shown["data"]["task"]["title"], title)
+            source = self._assert_published_current22_source(target, task_id)
+            payload = source.source["payload"]
+            self.assertEqual(payload["task"]["title"].encode("utf-8"), title.encode("utf-8"))
+            self.assertEqual(payload["verification_basis"]["kind"], "caller_attestation")
+            self.assertIsNone(payload["runner_observation"])
+
     def test_fresh_runner_completion_reaches_independent_reader(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix=".tmp-m244b-runner-reader-",

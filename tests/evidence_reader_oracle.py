@@ -105,7 +105,11 @@ _LEGACY_DISPATCH_JSON = re.compile(
 )
 
 _BUNDLE_PRIVACY_PATTERNS = (
-    re.compile(r"Authorization\s*[:=]\s*\S+", re.IGNORECASE),
+    re.compile(
+        r"(?!(?<![\w.-])Authorization[ \t]*:[ \t]*Bearer[ \t]+(?-i:<redacted>)(?=$|[\s`;,)}\]]))"
+        r"Authorization\s*[:=]\s*\S+",
+        re.IGNORECASE,
+    ),
     re.compile(
         r"Authorization\s+(?:Basic|Bearer|Token|ApiKey)(?:\s*[:=])?\s+\S+",
         re.IGNORECASE,

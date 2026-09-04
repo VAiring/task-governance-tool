@@ -3197,6 +3197,13 @@ guard nor transforms stored bytes. The test-only Evidence reader independently
 implements the same policy without importing the production guard. Existing
 field limits, JSON scalar handling, legacy reads, and error mapping are unchanged.
 
+The authorization-assignment branch similarly excludes only the complete
+plain-text redacted Bearer example defined by the specification. Its lexical
+header/value boundaries are checked within that branch; all other detectors
+still see the original input. The independent Evidence oracle implements the
+same policy separately. No sentinel replacement, automatic redactor, new mode,
+or stored-content rewrite is introduced.
+
 The ordinary matcher receives caller text unchanged. It rejects both
 `dispatch_authorization=<value>` and the JSON key
 `"dispatch_authorization":<value>`, including numeric values; no generic

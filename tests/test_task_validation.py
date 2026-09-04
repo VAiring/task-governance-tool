@@ -783,6 +783,78 @@ class TaskValidationTests(unittest.TestCase):
                     )
                 self.assertEqual(caught.exception.code, "project_state_unreadable")
 
+    def test_fully_redacted_bearer_examples_preserve_caller_and_stored_text(self):
+        for value in (
+            "Authorization: Bearer <redacted>",
+            "authorization:\tbearer\t<redacted>",
+            "Authorization \t: \tBearer <redacted>",
+            "Example `Authorization: Bearer <redacted>`",
+            "Authorization: Bearer <redacted>, documented",
+            "Authorization: Bearer <redacted>; max_tokens=4096",
+            "(Authorization: Bearer <redacted>)",
+            "[Authorization: Bearer <redacted>]",
+            "{Authorization: Bearer <redacted>}",
+            "Authorization: Bearer <redacted>\nNonsecret explanation",
+        ):
+            with self.subTest(value=value):
+                self.assert_privacy_pattern_parity(value)
+                validated = validate_task_input(title=value, description=value, add_note=value)
+                self.assertEqual(validated["title"], value)
+                self.assertEqual(validated["description"], value)
+                self.assertEqual(validated["add_note"], value)
+                row = valid_stored_task_row(title=value, description=value)
+                original = dict(row)
+                validate_stored_task_rows(
+                    [row], source_schema_version=7, expected_project_id=row["project_id"]
+                )
+                self.assertEqual(row, original)
+
+    def test_redacted_bearer_boundaries_and_mixed_content_remain_rejected(self):
+        for value in (
+            "Authorization: Bearer <redacted>suffix",
+            "Authorization: Bearer prefix<redacted>",
+            "Authorization: Bearer <redacted>.<redacted>",
+            "Authorization: Bearer <redacted>.",
+            "Authorization: Bearer <redacted",
+            "Authorization: Bearer redacted>",
+            "Authorization: Bearer <REDACTED>",
+            "Authorization: Bearer <removed>",
+            "Authorization: Bearer removed",
+            "Authorization: Bearer<redacted>",
+            "Authorization: Bearer\n<redacted>",
+            "Authorization\n: Bearer <redacted>",
+            "Authorization:\u00a0Bearer <redacted>",
+            "Authorization=Bearer <redacted>",
+            "Authorization Bearer <redacted>",
+            "Authorization: Basic <redacted>",
+            "Authorization: Token <redacted>",
+            "Proxy-Authorization: Bearer <redacted>",
+            ".Authorization: Bearer <redacted>",
+            "_Authorization: Bearer <redacted>",
+            "\u03b1Authorization: Bearer <redacted>",
+            '"Authorization": "Bearer <redacted>"',
+            "token=<redacted>",
+            "Fix token=removed; Authorization: Bearer <redacted>",
+            "token=synthetic-secret Authorization: Bearer <redacted>",
+            "Authorization: Bearer <redacted> token=synthetic-secret",
+            "Authorization: Bearer <redacted>; Authorization: Bearer synthetic-secret",
+            "token=Authorization: Bearer <redacted>",
+            "Authorization: Bearer <redacted>\nTraceback (most recent call last)",
+            "Authorization: Bearer <redacted>\nstdout: synthetic output",
+        ):
+            with self.subTest(value=value):
+                self.assert_privacy_pattern_parity(value)
+                self.assert_validation_error(
+                    "privacy_rejected", validate_task_input,
+                    title="Task", description=value, field="description",
+                )
+                row = valid_stored_task_row(description=value)
+                with self.assertRaises(StorageError) as raised:
+                    validate_stored_task_rows(
+                        [row], source_schema_version=7, expected_project_id=row["project_id"]
+                    )
+                self.assertEqual(raised.exception.code, "project_state_unreadable")
+
     def test_legacy_m19_7_stored_guard_is_exact_and_preserves_original_bytes(self):
         accepted = (
             "dispatch_authorization=1",

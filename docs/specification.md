@@ -3107,6 +3107,19 @@ nonsecret scalar handling is unchanged. All other credential and dump checks
 still inspect the entire original input; recognized metadata never hides a
 separate credential or makes an ambiguous token/status assignment safe.
 
+The plain-text credential example `Authorization: Bearer <redacted>` is also
+accepted unchanged. Only the complete, case-sensitive literal `<redacted>`
+qualifies; the `Authorization` and `Bearer` words are case-insensitive.
+Spaces/tabs may surround the colon, and at least one space/tab separates
+`Bearer` from the placeholder. The header name must not be prefixed by a
+letter, digit, underscore, dot or hyphen. The placeholder ends at end-of-input,
+whitespace, a backtick, comma, semicolon or closing `)`, `]`, `}`; any other
+immediately appended content remains part of the value and is rejected.
+Other schemes, assignment forms, quoted JSON values and arbitrary placeholder
+words receive no new exemption. Every other detector still checks the entire
+original input, including content before and after the example. This recognizes
+already-redacted text; it performs no redaction and grants no whole-input bypass.
+
 Normal and new caller input has no release- or project-specific privacy
 exception. Both the lowercase equality form
 `dispatch_authorization=<value>` and a JSON

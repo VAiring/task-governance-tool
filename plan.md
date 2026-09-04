@@ -794,6 +794,14 @@ Scope: prepare source-schema-22 validation/dispatch in setup, doctor, backup,
 recovery, resolver/relocation, and Viewer helpers. Keep old source handling and
 the public migration target at 21 until unit 7.
 Output: isolated v22 consumer fixtures work through the existing boundaries.
+The public current/newer-schema guards remain at 21. Tests initialize 21 and
+privately migrate their disposable database before locally substituting only
+the needed consumer schema constants to exercise the prepared 22 dispatch.
+They do not replace validators or classifications, create another runtime or
+state path, or claim public activation; an unmodified public entry still
+rejects 22 until unit 7. Recovery retains the existing deferred Task-only
+verification rejection after structural checks, and Viewer reuses its exact
+validated-batch proof without changing snapshot v4 or current-artifact rules.
 Acceptance: representative schema-22 backup/recovery, read-only diagnosis,
 Viewer-v4, and relocation source-version tests pass with unchanged public
 fields, candidate-local versus set-fatal error handling, config preservation,

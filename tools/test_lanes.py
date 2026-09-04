@@ -113,6 +113,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m224_evidence_acceptance",
         "test_m22_evidence_ledger_storage",
         "test_m22_verification_subjects",
+        "test_m23s_schema22_consumers",
         "test_m23s_schema22_definitions",
         "test_m23s_schema22_lifecycle",
         "test_m23s_schema22_migration",

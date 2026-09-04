@@ -8602,6 +8602,43 @@ def validate_schema21_storage_for_recovery(
         raise task_rejection
 
 
+def validate_schema22_storage_for_recovery(
+    connection: sqlite3.Connection,
+    *,
+    _privacy_success_cache: set[tuple[str, str, str]] | None = None,
+) -> None:
+    """Validate v22 while retaining the existing Task-local recovery exception."""
+
+    marker = connection.execute(
+        "SELECT name FROM schema_migrations WHERE version = 22"
+    ).fetchone()
+    if (
+        current_schema_version(connection) != PRIVATE_SCHEMA22_VERSION
+        or missing_migration_versions(connection, PRIVATE_SCHEMA22_VERSION)
+        or marker is None
+        or str(marker["name"]) != PRIVATE_SCHEMA22_MIGRATION_NAME
+        or connection.execute(
+            "SELECT 1 FROM schema_migrations WHERE version > 22 LIMIT 1"
+        ).fetchone()
+        is not None
+    ):
+        raise _unreadable_project_state()
+    _validate_schema22_owned_contract(connection)
+    task_rejection: StoredTaskVerificationError | None = None
+    try:
+        validate_evidence_ledger_storage_for_recovery(
+            connection,
+            _privacy_success_cache=_privacy_success_cache,
+        )
+    except StoredTaskVerificationError as exc:
+        task_rejection = exc
+    _validated_verification_runner_references(connection)
+    validate_completion_cycle_storage(connection)
+    _schema20_integrity_checks(connection)
+    if task_rejection is not None:
+        raise task_rejection
+
+
 def _schema22_preserved_object_snapshot(
     connection: sqlite3.Connection,
 ) -> tuple[tuple[str, str, str, str], ...]:
@@ -23274,7 +23311,21 @@ def _validate_current_schema_contract(
     if missing_migration_versions(connection, version):
         raise _unreadable_project_state()
 
-    if version == PRIVATE_SCHEMA21_VERSION:
+    if version == PRIVATE_SCHEMA22_VERSION:
+        marker = connection.execute(
+            "SELECT name FROM schema_migrations WHERE version = 22"
+        ).fetchone()
+        if (
+            marker is None
+            or str(marker["name"]) != PRIVATE_SCHEMA22_MIGRATION_NAME
+            or connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version > 22 LIMIT 1"
+            ).fetchone()
+            is not None
+        ):
+            raise _unreadable_project_state()
+        _validate_schema22_owned_contract(connection)
+    elif version == PRIVATE_SCHEMA21_VERSION:
         marker = connection.execute(
             "SELECT name FROM schema_migrations WHERE version = 21"
         ).fetchone()
@@ -23309,7 +23360,7 @@ def _validate_current_schema_structure(
     version = _validate_current_schema_contract(connection)
     if version == PRIVATE_SCHEMA20_VERSION:
         validate_current_schema20_admitted_rows(connection)
-    elif version == PRIVATE_SCHEMA21_VERSION:
+    elif version in {PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
         validate_current_schema21_admitted_rows(connection)
     return version
 
@@ -24769,7 +24820,7 @@ def validate_snapshot_database_for_viewer(
     """Validate a Viewer source and issue one current Evidence Task proof."""
 
     version, task_rows = _validate_snapshot_database_state(connection, target)
-    if version not in {18, 19, 20, 21}:
+    if version not in {18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}:
         return ViewerSnapshotDatabaseValidation(source_schema_version=version)
     if task_rows is None:
         raise _unreadable_project_state()
@@ -24844,7 +24895,7 @@ def _consume_validated_viewer_task_batch(
         or query_only != 1
         or type(data_version) is not int
         or data_version != issuance.data_version
-        or source_schema_version not in {18, 19, 20, 21}
+        or source_schema_version not in {18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
         or issuance.source_schema_version != source_schema_version
         or type(project_id) is not str
         or not project_id
@@ -24958,6 +25009,8 @@ def read_setup_state(
             validate_current_schema20_admitted_rows(connection)
         elif version == PRIVATE_SCHEMA21_VERSION:
             validate_schema21_storage(connection)
+        elif version == PRIVATE_SCHEMA22_VERSION:
+            validate_schema22_storage(connection)
         from task_governance_tool.tasks import validate_stored_task_rows
 
         try:
@@ -25115,7 +25168,7 @@ def read_doctor_state(
         project_id=target.project.project_id,
     )
     return DoctorStorageState(
-        schema_version=SCHEMA_VERSION,
+        schema_version=setup_state.schema_version,
         project_code="ready" if maintenance.enabled else "setup_required",
         task_counts=count_tasks(connection, target.project.project_id),
         maintenance=maintenance,
@@ -25132,7 +25185,7 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
         with closing(connect_readonly(db_path)) as connection:
             version = current_schema_version(connection)
             if (
-                version not in {15, 16, 17, 18, 19, 20, 21}
+                version not in {15, 16, 17, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
                 or missing_migration_versions(connection, version)
                 or schema_objects_inconsistent_with_version(connection, version)
             ):
@@ -25155,7 +25208,7 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
                     "table": 35,
                     "trigger": 59,
                 }
-                if version in {20, 21}
+                if version in {20, 21, PRIVATE_SCHEMA22_VERSION}
                 else
                 {
                     "index": 32,

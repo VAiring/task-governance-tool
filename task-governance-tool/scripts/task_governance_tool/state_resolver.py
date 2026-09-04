@@ -58,6 +58,7 @@ from task_governance_tool.storage import (
     validate_schema18_19_storage_for_recovery,
     validate_schema20_storage_for_recovery,
     validate_schema21_storage_for_recovery,
+    validate_schema22_storage_for_recovery,
     validate_sqlite_integer_storage_class,
     validate_stored_task_verification,
 )
@@ -1017,7 +1018,9 @@ def _inspect_database(
         )
         if classify_recovery_content:
             try:
-                if version == 21:
+                if version == 22:
+                    validate_schema22_storage_for_recovery(connection)
+                elif version == 21:
                     validate_schema21_storage_for_recovery(connection)
                 elif version == 20:
                     validate_schema20_storage_for_recovery(connection)

@@ -55,6 +55,8 @@ from task_governance_tool.storage import (
     validate_schema18_19_storage_for_recovery,
     validate_schema21_storage,
     validate_schema21_storage_for_recovery,
+    validate_schema22_storage,
+    validate_schema22_storage_for_recovery,
     validate_schema20_storage,
     validate_schema20_storage_for_recovery,
     validate_migration_backup_metadata,
@@ -379,7 +381,12 @@ def _validate_publication_source(
     version = _validate_database(connection, target, expected_version)
     if version == SCHEMA_VERSION:
         validate_current_database(connection, target)
-    if version == 21:
+    if version == 22:
+        validate_schema22_storage(
+            connection,
+            _privacy_success_cache=privacy_success_cache,
+        )
+    elif version == 21:
         validate_schema21_storage(
             connection,
             _privacy_success_cache=privacy_success_cache,
@@ -402,7 +409,12 @@ def _recovery_content_valid(
     privacy_success_cache: set[tuple[str, str, str]] | None = None,
 ) -> bool:
     try:
-        if version == 21:
+        if version == 22:
+            validate_schema22_storage_for_recovery(
+                connection,
+                _privacy_success_cache=privacy_success_cache,
+            )
+        elif version == 21:
             validate_schema21_storage_for_recovery(
                 connection,
                 _privacy_success_cache=privacy_success_cache,

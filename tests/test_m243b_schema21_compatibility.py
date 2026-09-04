@@ -2249,7 +2249,7 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
                 self.assertEqual(len(projection.native_bundles), 2)
                 self.assertEqual(snapshot["source_schema_version"], 21)
 
-    def test_relocation_token_context_accepts_current_source21_only(self) -> None:
+    def test_relocation_token_context_retains_source21_and_admits_prepared22(self) -> None:
         values = {
             "project_id": "project-000000000000",
             "identity_scheme": "legacy_path_v1",
@@ -2262,8 +2262,12 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
             RelocationContext(**values, source_schema_version=21).source_schema_version,
             21,
         )
+        self.assertEqual(
+            RelocationContext(**values, source_schema_version=22).source_schema_version,
+            22,
+        )
         with self.assertRaises(RelocationTokenError):
-            RelocationContext(**values, source_schema_version=22)
+            RelocationContext(**values, source_schema_version=23)
 
 
 if __name__ == "__main__":

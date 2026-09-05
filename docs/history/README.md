@@ -428,3 +428,25 @@ contracts, their index, and the pre-normalization plan from source commit
   and [plan.md](../../plan.md#m25-select-split-merge-register). Use the public
   CLI for live Task state and evidence. This capture is lineage only and cannot
   fill a current authority gap or satisfy a gate.
+
+## v0.13.0 Runner Plan Execution Narrative Lineage
+
+### Completed Runner Plan authoring execution narrative
+
+- Immutable history:
+  [v0.13.0/runner-plan-execution-narrative.md](v0.13.0/runner-plan-execution-narrative.md)
+- Source path: `plan.md`
+- Source commit: `0a4ad29ce3f45d2057dacc0ecb5dd6ba95b314b3`
+- Capture unit: `TG-RMAP.3`
+- Capture purpose: preserve the complete TG-RPA.1 through TG-RPA.6 ordering,
+  responsibility allocation, activation, and one-time acceptance narrative
+  before reducing the active plan to the adopted decision and permission
+  boundary.
+- Current replacements:
+  [docs/specification.md](../specification.md#current-runner-plan-authoring-and-control-contract),
+  [docs/design.md](../design.md#current-runner-plan-authoring-and-control-design),
+  [AGENTS.md](../../AGENTS.md#target-project-safety),
+  [README.md](../../README.md#explicit-runner-plan-authoring), and
+  [plan.md](../../plan.md#runner-plan-authoring). Use the public CLI for live
+  Task state and evidence. This capture is lineage only and cannot fill a
+  current authority gap or satisfy a gate.

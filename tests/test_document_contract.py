@@ -34,7 +34,16 @@ FIXTURE_LINK_TARGETS = (
     "docs/releases/v0.12.0.md",
     "docs/releases/v0.13.0.md",
     "task-governance-tool/LICENSE",
+    "task-governance-tool/SKILL.md",
     "task-governance-tool/references/cli_contracts.md",
+    "task-governance-tool/references/task_workflow.md",
+    "task-governance-tool/scripts/task_governance_tool/tasks.py",
+    "task-governance-tool/scripts/task_governance_tool/verification_runner_service.py",
+    "tests/evidence_reader_oracle.py",
+    "tests/test_m242_runner_service.py",
+    "tests/test_python314_exception_reporting.py",
+    "tests/test_task_validation.py",
+    "tools/test_lanes.py",
 )
 class DocumentContractTests(unittest.TestCase):
     @classmethod

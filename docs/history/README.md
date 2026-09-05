@@ -498,3 +498,28 @@ contracts, their index, and the pre-normalization plan from source commit
   [Python 3.14 reporting regression](../../tests/test_python314_exception_reporting.py).
   Use the public CLI for live Task state and evidence. This capture is lineage
   only and cannot fill a current authority gap or satisfy a gate.
+
+## v0.13.0 Privacy Matcher And Runner Naming Plan Lineage
+
+### Completed Privacy matcher and Runner naming execution plan
+
+- Immutable history:
+  [v0.13.0/privacy-matcher-runner-naming-plan.md](v0.13.0/privacy-matcher-runner-naming-plan.md)
+- Source path: `plan.md`
+- Source commit: `9669adf5a4519ef6dce116dbeb57d35e51df026b`
+- Capture unit: `TG-RMAP.6`
+- Capture purpose: preserve the complete TG-PMC.1 through TG-PMC.4 policy and
+  implementation narrative, TG-RNC.1 execution contract, finite boundaries,
+  and one-time verification gates after the dependent Tasks completed.
+- Current replacements:
+  [privacy and stable-error contract](../specification.md#privacy-safety-and-stable-errors),
+  [privacy and failure-boundary design](../design.md#privacy-safety-and-failure-boundaries),
+  [trusted-local Runner contract](../specification.md#trusted-local-verification-runner),
+  [Runner parent-service design](../design.md#runner-parent-service-and-audit-graph),
+  [Task privacy implementation](../../task-governance-tool/scripts/task_governance_tool/tasks.py),
+  [independent Evidence privacy oracle](../../tests/evidence_reader_oracle.py),
+  [Runner parent-service implementation](../../task-governance-tool/scripts/task_governance_tool/verification_runner_service.py),
+  [privacy regressions](../../tests/test_task_validation.py), and
+  [Runner service regressions](../../tests/test_m242_runner_service.py).
+  Use the public CLI for live Task state and evidence. This capture is lineage
+  only and cannot fill a current authority gap or satisfy a gate.

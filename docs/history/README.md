@@ -407,3 +407,24 @@ contracts, their index, and the pre-normalization plan from source commit
   [docs/design.md](../design.md), and [plan.md](../../plan.md).
   Use the public CLI for live Task state and evidence. This capture is lineage
   only and cannot fill a current authority gap or satisfy a gate.
+
+## v0.13.0 M25 Execution Narrative Lineage
+
+### Completed M25 Select-Split-Merge-Register execution narrative
+
+- Immutable history:
+  [v0.13.0/m25-execution-narrative.md](v0.13.0/m25-execution-narrative.md)
+- Source path: `plan.md`
+- Source commit: `656bac13a95d78ff142c7df221169536256ac0e6`
+- Capture unit: `TG-RMAP.2`
+- Capture purpose: preserve the complete M25.1/M25.2 ordering, activation, and
+  accepted execution narrative before reducing the active plan to current
+  decisions and invariants.
+- Current replacements:
+  [docs/specification.md](../specification.md#current-m25-select-split-merge-register-contract),
+  [docs/design.md](../design.md#current-m25-select-split-merge-register-design),
+  [SKILL.md](../../task-governance-tool/SKILL.md),
+  [task_workflow.md](../../task-governance-tool/references/task_workflow.md),
+  and [plan.md](../../plan.md#m25-select-split-merge-register). Use the public
+  CLI for live Task state and evidence. This capture is lineage only and cannot
+  fill a current authority gap or satisfy a gate.

@@ -135,6 +135,12 @@ The product must not become:
 
 - Keep the skill's `SKILL.md` concise. Put long guidance, schemas, or examples
   into one-level skill package reference files and load them only when needed.
+- Roadmap proposal, authoring, persistence, versioning, and retirement are not
+  Task Skill capabilities. The Skill may consume an explicitly approved,
+  currently active repository roadmap routed by `docs/authority.md` as
+  authority for an explicit taskization event, but that event authorizes only
+  the bounded Task writes and does not authorize a roadmap or other governing-
+  document mutation.
 - The skill metadata description must clearly state when the skill should
   trigger.
 - Advertise only implemented triggers: task planning and state, current/next
@@ -361,6 +367,30 @@ The product must not become:
 - Prefer replacement or relocation over additive growth. Any temporary
   milestone note must identify its owner and retirement condition and must be
   removed or reduced to a durable invariant when that condition is met.
+- When an approved broad initiative needs a detailed multi-unit execution
+  plan, keep that plan in one initiative-scoped current or conditional contract
+  indexed by `docs/authority.md`; do not append unrelated initiatives to one
+  cumulative active or retired roadmap. `plan.md` remains limited to the
+  current decisions, open issues, cross-sequence gateways, and static contracts
+  it owns.
+- After successful Task registration, a separately authorized plan edit may
+  remove only duplicated volatile status, evidence, and redundant presentation
+  from an active plan. Until each Task is done or explicitly superseded, keep a
+  positive active repository owner and anchor for its purpose, exact scope,
+  acceptance, permission boundary, dependencies or ordering, and verification
+  and review gates. Also keep shared gateways and unresolved decisions while
+  any live Task depends on them. Task state and evidence remain available only
+  through the public CLI.
+- Retire an initiative plan only after every dependent Task is done or the user
+  has explicitly superseded or abandoned the unfinished initiative, its durable
+  behavior and structure have positive current owners, unresolved decisions or
+  gateways have been retained in their current owner, and no live Task depends
+  on the retiring anchors. Preserve the full retired plan as one immutable,
+  explicitly non-authoritative initiative capture indexed by
+  `docs/history/README.md`, then remove its active route and physical active
+  copy in the same reviewed authority transition. Meeting these retirement
+  conditions does not itself authorize the document, history, or routing
+  writes; the concrete transition still requires explicit authority.
 - An authority-layout transition must add and index its historical destination
   before switching affected active documents and routing, and the complete
   switch must land in one reviewed revision. Do not commit an intermediate
@@ -389,7 +419,12 @@ The product must not become:
 
 ## Execution Plan Before Substantial Implementation
 
-- Before broad implementation, create or update an implementation plan in the
+- Before broad implementation, first present a bounded, write-free execution-
+  plan proposal. Do not create, expand, or replace a persisted roadmap or
+  implementation plan until the user explicitly approves that plan's scope and
+  persistence. Authority to implement a broad outcome is not by itself
+  authority to persist speculative phases, follow-up work, or safety conditions.
+- After that approval, create or update the initiative-scoped plan in the
   static or conditional owner routed by `docs/authority.md`.
 - The execution plan should define:
   - milestones or phases
@@ -400,8 +435,11 @@ The product must not become:
   - verification gates
   - required review gates
   - completion criteria
-- Present the execution plan to the user and obtain approval before consuming a
-  multi-step implementation loop.
+- It must also identify its active owner and retirement condition. Do not mirror
+  live status or evidence that belongs to the public CLI.
+- Obtain approval for the resulting execution-unit set before consuming a
+  multi-step implementation loop. Approval to persist the plan and approval to
+  start its implementation may be given together when the user states both.
 - Narrow direct edits may proceed without a full execution plan when the user
   asks for a specific edit and it does not start broad implementation.
 

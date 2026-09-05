@@ -450,3 +450,26 @@ contracts, their index, and the pre-normalization plan from source commit
   [plan.md](../../plan.md#runner-plan-authoring). Use the public CLI for live
   Task state and evidence. This capture is lineage only and cannot fill a
   current authority gap or satisfy a gate.
+
+## v0.13.0 M23 Retirement Plan Lineage
+
+### Completed M23 Analyzer-retirement and schema-cleanup execution plan
+
+- Immutable history:
+  [v0.13.0/m23-retirement-plan.md](v0.13.0/m23-retirement-plan.md)
+- Source path: `plan.md`
+- Source commit: `94a2d91bbfa31b814a9045e88283d44672fbf966`
+- Capture unit: `TG-RMAP.4`
+- Capture purpose: preserve the complete TG-M23R.1 through TG-M23R.11 and
+  TG-M23S.1 through TG-M23S.8 sequence, responsibility boundaries,
+  acceptance, and activation narrative before removing its retired active
+  sections and anchors.
+- Current replacements:
+  [Evidence contract](../specification.md#current-schema-v22-verification-ledger-and-bundle-contract),
+  [persistence contract](../specification.md#current-schema-v22-persistence-contract),
+  [retired-Analyzer boundary](../specification.md#evidence-interpretation-and-retired-analyzer-boundary),
+  [schema cleanup design](../design.md#schema22-reservation-cleanup-design),
+  [independent reader design](../design.md#test-only-independent-evidence-reader),
+  and [plan.md](../../plan.md#current-evidence-bundle-json). Use the public CLI
+  for live Task state and evidence. This capture is lineage only and cannot
+  fill a current authority gap or satisfy a gate.

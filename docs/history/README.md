@@ -473,3 +473,28 @@ contracts, their index, and the pre-normalization plan from source commit
   and [plan.md](../../plan.md#current-evidence-bundle-json). Use the public CLI
   for live Task state and evidence. This capture is lineage only and cannot
   fill a current authority gap or satisfy a gate.
+
+## v0.13.0 Python 3.14 Exception Reporting Plan Lineage
+
+### Completed Python 3.14 exception-reporting execution plan
+
+- Immutable history:
+  [v0.13.0/python-314-exception-reporting-plan.md](v0.13.0/python-314-exception-reporting-plan.md)
+- Source path: `plan.md`
+- Source commit: `aebca33e8f33e97bc341ebc51ff6763ce414e708`
+- Capture unit: `TG-RMAP.5`
+- Capture purpose: preserve the exact final TG-PY314.1 through TG-PY314.3
+  sequence, finite exception inventory, compatibility boundary, and one-time
+  verification narrative after all three Tasks completed.
+- Current replacements:
+  [runtime and platform contract](../specification.md#package-runtime-and-generated-state),
+  [JSON and exit-status contract](../specification.md#json-text-limits-and-exit-status),
+  [privacy and stable-error contract](../specification.md#privacy-safety-and-stable-errors),
+  [runtime module design](../design.md#runtime-module-boundaries),
+  [independent Evidence reader design](../design.md#test-only-independent-evidence-reader),
+  [validation and CI design](../design.md#validation-and-test-design),
+  [test-lane policy](../../tools/test_lanes.py),
+  [development checks](../../README.md#development-checks), and
+  [Python 3.14 reporting regression](../../tests/test_python314_exception_reporting.py).
+  Use the public CLI for live Task state and evidence. This capture is lineage
+  only and cannot fill a current authority gap or satisfy a gate.

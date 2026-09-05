@@ -78,6 +78,90 @@ class RunnerWin32PureTests(unittest.TestCase):
         )
         self.assertNotIn("raw path detail", trace.assertion_message)
 
+    def test_prelaunch_path_trace_reports_only_closed_recheck_detail(self):
+        private_ancestor = "TG_PRIVATE_ANCESTOR_4ce4"
+        private_leaf = "TG_PRIVATE_LEAF_f429"
+        private_file_id = 987_654_321
+        expected_chain = (
+            (private_ancestor, 11, 12, 13, 14),
+            (private_leaf, 21, 22, 23, 24),
+        )
+        changed_chain = (
+            expected_chain[0],
+            (private_leaf, 21, private_file_id, 23, 24),
+        )
+        observations = tuple(
+            SimpleNamespace(
+                path=object(),
+                directory=True,
+                chain=expected_chain,
+            )
+            for _ in range(9)
+        )
+        admitted = SimpleNamespace(observations=observations, steps=())
+        reobserve_calls = 0
+
+        def observe(_path, *, directory):
+            nonlocal reobserve_calls
+            self.assertTrue(directory)
+            reobserve_calls += 1
+            return SimpleNamespace(
+                chain=expected_chain if reobserve_calls == 1 else changed_chain
+            )
+
+        fake_process = SimpleNamespace(
+            _admit_request=lambda _request: admitted,
+            _observe_physical_path=observe,
+        )
+
+        def ensure_same(observation):
+            current = fake_process._observe_physical_path(
+                observation.path,
+                directory=observation.directory,
+            )
+            if current.chain != observation.chain:
+                raise RuntimeError("TG_RAW_PATH_RECHECK_DETAIL_2db8")
+
+        fake_process._ensure_same_observation = ensure_same
+
+        class FakeJob:
+            def prove_configuration(self) -> None:
+                return None
+
+        class FakePipes:
+            def prove_before_create(self) -> None:
+                return None
+
+        fake_win32 = SimpleNamespace(
+            NativeJob=FakeJob,
+            StdioPipes=FakePipes,
+            create_suspended_child=lambda **_kwargs: None,
+        )
+
+        with trace_runner_prelaunch(fake_process, fake_win32) as trace:
+            fake_process._admit_request(None)
+            fake_process._ensure_same_observation(observations[5])
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TG_RAW_PATH_RECHECK_DETAIL_2db8",
+            ):
+                fake_process._ensure_same_observation(observations[5])
+
+        self.assertEqual(reobserve_calls, 2)
+        self.assertEqual(
+            trace.assertion_message,
+            "runner_prelaunch_phase=failed:path_recheck;"
+            "checkpoint=before_child_create;subject=scratch_tmp;"
+            "component=leaf;difference=file_id",
+        )
+        for private_value in (
+            private_ancestor,
+            private_leaf,
+            str(private_file_id),
+            "TG_RAW_PATH_RECHECK_DETAIL_2db8",
+        ):
+            self.assertNotIn(private_value, trace.assertion_message)
+
     def test_limit_validation_is_closed(self):
         self.assertEqual(
             win32.JobLimits(900, 900, 2048, 32),

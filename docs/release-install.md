@@ -590,14 +590,17 @@ generated-artifact exclusions. Validate the exact test partition with
 and upgrade/rollback acceptance, and `git diff --check` against that
 candidate's own exact identity.
 
-The current CI policy parallelizes all three base lanes on pushes to `main`
-for Python 3.12 and 3.14. Pull requests run the complete partition once on
-3.12 plus `fast` on 3.14. A release candidate requires an exact-ref
-manual `workflow_dispatch`: its matrix is monolithic `all` on both Python
-versions and the explicit `Full release-candidate gate` must succeed. The
-checker and lane runner are repository tooling, not installable `taskgov`
-commands or target-project writes. A prior v0.10.0 result, Task receipt,
-approval object, or historical gate never satisfies a future candidate.
+The current CI policy parallelizes all three base-lane jobs on pushes to
+`main` for Python 3.12 and 3.14. Pull requests run all three jobs on 3.12 plus
+`fast` on 3.14. After complete discovery and ownership validation, pull-request
+and push `release` selections defer only the two closed wall-clock qualifier
+identities; their deterministic functional and capacity coverage remains.
+A release candidate requires an exact-ref manual `workflow_dispatch`: its
+matrix is monolithic `all` on both Python versions with no qualifier deferral,
+and the explicit `Full release-candidate gate` must succeed. The checker and
+lane runner are repository tooling, not installable `taskgov` commands or
+target-project writes. A prior v0.10.0 result, Task receipt, approval object,
+or historical gate never satisfies a future candidate.
 
 Candidate validation checks this CI policy and wiring locally only. It does not invoke
 `workflow_dispatch`, contact GitHub, or satisfy a later externally authorized

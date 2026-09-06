@@ -586,6 +586,12 @@ CI consumes the same repository-only policy:
 | push to `main` | `fast`, `integration`, `release` | `fast`, `integration`, `release` |
 | manual `workflow_dispatch` | `all` | `all` |
 
+Every event first validates the complete standard discovery inventory and
+base-lane ownership. Pull-request and push `release` selections then defer only
+the two closed wall-clock qualifier identities while retaining their separate
+deterministic functional and capacity tests. Manual `workflow_dispatch`
+defers nothing.
+
 The manual matrix is the complete release-candidate gate; its aggregate
 job fails unless policy validation and both full-version jobs succeed.
 An `operation_sequence` value may correlate separately authorized candidate

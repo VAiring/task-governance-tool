@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
@@ -7,13 +8,16 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.test_lanes import (
     ALL_LANE,
     BASE_LANES,
     CI_POLICY,
     CI_PYTHON_VERSIONS,
+    DETERMINISTIC_PERFORMANCE_TEST_IDS,
     LANE_MODULES,
+    MANUAL_TIMING_QUALIFICATION_TEST_IDS,
     RELEASE_CANDIDATE_EVENT,
     TestLaneError,
     build_lane_plan,
@@ -22,6 +26,7 @@ from tools.test_lanes import (
     main as lane_main,
     validate_ci_policy,
     validate_ci_selection,
+    validate_ci_test_allocation,
 )
 
 
@@ -103,6 +108,18 @@ class TestLanePolicyTests(unittest.TestCase):
     def test_current_inventory_exactly_matches_standard_discovery(self):
         inventory = discover_tests(ROOT)
         standard_ids = standard_discovery_ids()
+        expected_functional = (
+            "test_backup_performance.BackupPerformanceTests."
+            "test_small_and_large_backup_only_functional_contract",
+            "test_backup_performance.BackupPerformanceTests."
+            "test_small_and_large_viewer_and_combined_functional_contract",
+        )
+        expected_qualification = (
+            "test_backup_performance.BackupPerformanceTests."
+            "test_small_and_large_backup_only_performance_contract",
+            "test_backup_performance.BackupPerformanceTests."
+            "test_small_and_large_viewer_and_combined_performance_contract",
+        )
 
         self.assertEqual(inventory.plan.test_ids, standard_ids)
         self.assertEqual(len(standard_ids), len(set(standard_ids)))
@@ -115,6 +132,172 @@ class TestLanePolicyTests(unittest.TestCase):
             dict(inventory.plan.module_owners)["test_test_lanes"],
             "release",
         )
+        self.assertEqual(
+            dict(inventory.plan.module_owners)["test_backup_performance"],
+            "release",
+        )
+        self.assertEqual(DETERMINISTIC_PERFORMANCE_TEST_IDS, expected_functional)
+        self.assertEqual(
+            MANUAL_TIMING_QUALIFICATION_TEST_IDS,
+            expected_qualification,
+        )
+        self.assertEqual(
+            tuple(
+                test_id
+                for test_id, module in zip(
+                    inventory.plan.test_ids,
+                    inventory.plan.test_modules,
+                    strict=True,
+                )
+                if module == "test_backup_performance"
+            ),
+            tuple(sorted((*expected_functional, *expected_qualification))),
+        )
+        validate_ci_test_allocation(inventory.plan)
+
+    def test_ci_event_selection_defers_only_manual_timing_qualification(self):
+        inventory = discover_tests(ROOT)
+        release_ids = inventory.plan.ids_for("release")
+        full_ids = inventory.plan.test_ids
+        qualification = frozenset(MANUAL_TIMING_QUALIFICATION_TEST_IDS)
+        expected_nonmanual = tuple(
+            test_id for test_id in release_ids if test_id not in qualification
+        )
+
+        self.assertEqual(inventory.ids_for("release"), release_ids)
+        self.assertTrue(
+            set(DETERMINISTIC_PERFORMANCE_TEST_IDS).issubset(release_ids)
+        )
+        self.assertTrue(qualification.issubset(release_ids))
+        for event in ("pull_request", "push"):
+            with self.subTest(event=event):
+                selected = inventory.ids_for("release", ci_event=event)
+                selected_suite = tuple(
+                    case.id()
+                    for case in flatten_suite(
+                        inventory.suite_for("release", ci_event=event)
+                    )
+                )
+                self.assertEqual(selected, expected_nonmanual)
+                self.assertEqual(selected_suite, expected_nonmanual)
+                self.assertEqual(set(release_ids) - set(selected), qualification)
+                self.assertTrue(
+                    set(DETERMINISTIC_PERFORMANCE_TEST_IDS).issubset(selected)
+                )
+
+        for version in CI_PYTHON_VERSIONS:
+            with self.subTest(event=RELEASE_CANDIDATE_EVENT, version=version):
+                observed_version = tuple(int(part) for part in version.split("."))
+                validate_ci_selection(
+                    event=RELEASE_CANDIDATE_EVENT,
+                    expected_python=version,
+                    lane=ALL_LANE,
+                    runtime_version=observed_version,
+                )
+                self.assertEqual(
+                    inventory.ids_for(
+                        ALL_LANE,
+                        ci_event=RELEASE_CANDIDATE_EVENT,
+                    ),
+                    full_ids,
+                )
+                self.assertTrue(qualification.issubset(full_ids))
+
+    def test_cli_event_wiring_executes_the_event_selected_suite(self):
+        inventory = discover_tests(ROOT)
+        runtime_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        self.assertIn(runtime_version, CI_PYTHON_VERSIONS)
+
+        for event, lane in (
+            ("push", "release"),
+            (RELEASE_CANDIDATE_EVENT, ALL_LANE),
+        ):
+            with self.subTest(event=event, lane=lane):
+                expected = inventory.ids_for(lane, ci_event=event)
+                observed: list[tuple[str, ...]] = []
+
+                def record_suite(suite: unittest.TestSuite):
+                    selected = tuple(
+                        case.id() for case in flatten_suite(suite)
+                    )
+                    observed.append(selected)
+                    result = mock.Mock()
+                    result.wasSuccessful.return_value = True
+                    result.testsRun = len(selected)
+                    return result
+
+                stderr = io.StringIO()
+                with mock.patch(
+                    "tools.test_lanes.unittest.TextTestRunner"
+                ) as runner:
+                    runner.return_value.run.side_effect = record_suite
+                    with mock.patch("sys.stderr", stderr):
+                        exit_code = lane_main(
+                            [
+                                "--repo",
+                                str(ROOT),
+                                "--lane",
+                                lane,
+                                "--ci-event",
+                                event,
+                                "--expected-python",
+                                runtime_version,
+                            ]
+                        )
+
+                self.assertEqual(exit_code, 0)
+                self.assertEqual(observed, [expected])
+                self.assertEqual(
+                    stderr.getvalue(),
+                    f"test lane: {lane} ({len(expected)} tests)\n",
+                )
+
+    def test_ci_test_allocation_fails_closed(self):
+        plan = discover_tests(ROOT).plan
+        invalid_groups = (
+            (
+                "missing",
+                DETERMINISTIC_PERFORMANCE_TEST_IDS,
+                MANUAL_TIMING_QUALIFICATION_TEST_IDS[:1],
+            ),
+            (
+                "extra",
+                DETERMINISTIC_PERFORMANCE_TEST_IDS,
+                (*MANUAL_TIMING_QUALIFICATION_TEST_IDS, "test_missing.Case.test_x"),
+            ),
+            (
+                "duplicate",
+                DETERMINISTIC_PERFORMANCE_TEST_IDS,
+                (
+                    MANUAL_TIMING_QUALIFICATION_TEST_IDS[0],
+                    MANUAL_TIMING_QUALIFICATION_TEST_IDS[0],
+                ),
+            ),
+            (
+                "overlap",
+                DETERMINISTIC_PERFORMANCE_TEST_IDS,
+                (
+                    DETERMINISTIC_PERFORMANCE_TEST_IDS[0],
+                    *MANUAL_TIMING_QUALIFICATION_TEST_IDS,
+                ),
+            ),
+            (
+                "renamed",
+                (DETERMINISTIC_PERFORMANCE_TEST_IDS[0] + "_renamed",),
+                MANUAL_TIMING_QUALIFICATION_TEST_IDS,
+            ),
+        )
+        for label, deterministic, qualification in invalid_groups:
+            with self.subTest(label=label):
+                assert_lane_error(
+                    self,
+                    "ci_test_allocation_invalid",
+                    lambda: validate_ci_test_allocation(
+                        plan,
+                        deterministic_ids=deterministic,
+                        qualification_ids=qualification,
+                    ),
+                )
 
     def test_each_lane_is_an_ordered_disjoint_subsequence(self):
         inventory = discover_tests(ROOT)

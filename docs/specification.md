@@ -2927,6 +2927,15 @@ overheads, eight command medians, and the maximum raw measured observation.
 Functional, count, byte, attempt, render, and call assertions remain separate
 hard failures and are never decided by the timing statistic.
 
+Repository pull-request and `main`-push CI validate the complete discovered
+inventory and base-lane ownership, then defer exactly the two closed wall-clock
+qualification test identities. They continue to execute the separate fixed-
+fixture functional and capacity assertions. The timing tests execute and block
+only in the explicit manual `workflow_dispatch` release-candidate route, whose
+Python 3.12 and 3.14 `all` jobs each retain the unchanged standard-discovery
+suite. This is event-aware test selection, not a skip, retry, threshold change,
+or fourth lane.
+
 ## Static Task Viewer
 
 The Viewer is a generated self-contained projection, never an authority.

@@ -34,6 +34,19 @@ CI_LANE_INVOCATION = (
     '--ci-event "${{ github.event_name }}" '
     '--expected-python "${{ matrix.python-version }}"'
 )
+PERFORMANCE_TEST_MODULE = "test_backup_performance"
+DETERMINISTIC_PERFORMANCE_TEST_IDS = (
+    "test_backup_performance.BackupPerformanceTests."
+    "test_small_and_large_backup_only_functional_contract",
+    "test_backup_performance.BackupPerformanceTests."
+    "test_small_and_large_viewer_and_combined_functional_contract",
+)
+MANUAL_TIMING_QUALIFICATION_TEST_IDS = (
+    "test_backup_performance.BackupPerformanceTests."
+    "test_small_and_large_backup_only_performance_contract",
+    "test_backup_performance.BackupPerformanceTests."
+    "test_small_and_large_viewer_and_combined_performance_contract",
+)
 
 
 # Module ownership is explicit. A new or removed discovered test module fails
@@ -239,10 +252,26 @@ class DiscoveredTests:
     cases: tuple[unittest.TestCase, ...]
     plan: LanePlan
 
-    def suite_for(self, lane: str) -> unittest.TestSuite:
-        if lane == ALL_LANE:
+    def ids_for(
+        self,
+        lane: str,
+        *,
+        ci_event: str | None = None,
+    ) -> tuple[str, ...]:
+        if ci_event is None:
+            return self.plan.ids_for(lane)
+        return ci_test_ids(self.plan, event=ci_event, lane=lane)
+
+    def suite_for(
+        self,
+        lane: str,
+        *,
+        ci_event: str | None = None,
+    ) -> unittest.TestSuite:
+        selected = self.ids_for(lane, ci_event=ci_event)
+        if selected == self.plan.test_ids:
             return self.suite
-        selected_ids = frozenset(self.plan.ids_for(lane))
+        selected_ids = frozenset(selected)
         return unittest.TestSuite(
             case for case in self.cases if case.id() in selected_ids
         )
@@ -333,6 +362,64 @@ def build_lane_plan(
     return plan
 
 
+def validate_ci_test_allocation(
+    plan: LanePlan,
+    *,
+    deterministic_ids: Sequence[str] = DETERMINISTIC_PERFORMANCE_TEST_IDS,
+    qualification_ids: Sequence[str] = MANUAL_TIMING_QUALIFICATION_TEST_IDS,
+) -> None:
+    """Fail closed around the one mixed functional/timing release module."""
+
+    deterministic = tuple(deterministic_ids)
+    qualification = tuple(qualification_ids)
+    groups = (deterministic, qualification)
+    if any(
+        not group
+        or group != tuple(sorted(group))
+        or len(group) != len(set(group))
+        for group in groups
+    ) or set(deterministic) & set(qualification):
+        raise TestLaneError("ci_test_allocation_invalid")
+
+    owners = dict(plan.module_owners)
+    expected = tuple(sorted((*deterministic, *qualification)))
+    observed = tuple(
+        test_id
+        for test_id, module in zip(
+            plan.test_ids,
+            plan.test_modules,
+            strict=True,
+        )
+        if module == PERFORMANCE_TEST_MODULE
+    )
+    if (
+        owners.get(PERFORMANCE_TEST_MODULE) != "release"
+        or observed != expected
+        or not set(expected).issubset(plan.ids_for("release"))
+    ):
+        raise TestLaneError("ci_test_allocation_invalid")
+
+
+def ci_test_ids(
+    plan: LanePlan,
+    *,
+    event: str,
+    lane: str,
+) -> tuple[str, ...]:
+    """Apply the event policy after complete discovery and lane validation."""
+
+    validate_ci_test_allocation(plan)
+    if event not in CI_POLICY:
+        raise TestLaneError("ci_event_invalid")
+    if lane not in {configured_lane for _version, configured_lane in CI_POLICY[event]}:
+        raise TestLaneError("ci_selection_invalid")
+    selected = plan.ids_for(lane)
+    if event == RELEASE_CANDIDATE_EVENT:
+        return selected
+    deferred = frozenset(MANUAL_TIMING_QUALIFICATION_TEST_IDS)
+    return tuple(test_id for test_id in selected if test_id not in deferred)
+
+
 def discover_tests(
     repo_root: Path,
     *,
@@ -363,6 +450,7 @@ def discover_tests(
     test_ids = tuple(case.id() for case in cases)
     test_modules = tuple(case.__class__.__module__ for case in cases)
     plan = build_lane_plan(test_ids, test_modules)
+    validate_ci_test_allocation(plan)
     return DiscoveredTests(suite=suite, cases=cases, plan=plan)
 
 
@@ -502,8 +590,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         lane = args.lane
         if lane is None:
             raise TestLaneError("test_lane_arguments_invalid")
-        suite = inventory.suite_for(lane)
-        expected_count = len(inventory.plan.ids_for(lane))
+        selected_ids = inventory.ids_for(lane, ci_event=args.ci_event)
+        suite = inventory.suite_for(lane, ci_event=args.ci_event)
+        expected_count = len(selected_ids)
         print(
             f"test lane: {lane} ({expected_count} tests)",
             file=sys.stderr,

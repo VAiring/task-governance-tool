@@ -117,9 +117,14 @@ gates. It is not the product contract, execution ledger, or evidence store:
   unchanged standard-discovery suite, not another maintained inventory.
   Missing, duplicate, unassigned, stale, or loader-failed test material stops
   before execution.
-- Pull requests run the complete partition on Python 3.12 and `fast` on 3.14;
-  pushes to `main` run every base lane on both versions; manual
+- Pull requests schedule all three base-lane jobs on Python 3.12 and `fast` on
+  3.14; pushes to `main` schedule every base lane on both versions; manual
   `workflow_dispatch` runs `all` on both versions.
+- Complete discovery and base-lane ownership are validated before event
+  selection. Pull-request and push release selections retain the two
+  deterministic backup/Viewer functional-capacity tests and defer only the two
+  closed wall-clock qualification identities. Manual `workflow_dispatch`
+  defers nothing, so both full-version `all` jobs execute the qualifiers.
 - A future release candidate requires the explicit aggregate manual gate after
   policy validation and both full-version jobs. This repository CI policy
   grants no push, dispatch, tag, Release, or other external mutation

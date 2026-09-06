@@ -179,8 +179,12 @@ module-level `fast`, `integration`, and `release` test manifest and the CI
 event/Python/lane matrix. It discovers with the same `unittest` start,
 top-level directory, and pattern as the prior full command, rejects loader
 errors, duplicate IDs, duplicate ownership, unassigned modules, and stale
-manifest modules, and preserves discovery order when filtering. `all` is a
-meta-lane over the unchanged standard suite, not a fourth maintained list.
+manifest modules, and preserves discovery order when filtering. Within the one
+mixed backup/Viewer performance module, a closed four-ID allocation identifies
+two deterministic functional/capacity tests and two manual wall-clock
+qualification tests. CI event filtering occurs only after the complete module
+manifest and this allocation validate. `all` is a meta-lane over the unchanged
+standard suite, not a fourth maintained list.
 The runner disables bytecode generation, performs no network or repository
 write, and is not an installable package module or public CLI leaf.
 
@@ -4159,13 +4163,20 @@ exactly one base lane:
 - `integration` covers setup, recovery, relocation publication, backup,
   Viewer, concurrency, consumer layouts, and normal migration; and
 - `release` covers legacy migration/recovery, upgrade and paired rollback,
-  performance, package/license, active documents, workflow policy, and
+  deterministic performance-fixture behavior/capacity, manual timing
+  qualification, package/license, active documents, workflow policy, and
   integrated release acceptance.
 
 Every run first validates the complete manifest. A base lane is an ordered
 filter of standard discovery, while `all` runs the original discovered suite
 in its original order. New `test*.py` modules therefore fail closed until
 classified; new methods in an owned module inherit that module's lane.
+The mixed backup/Viewer performance module is the only narrower allocation:
+its exact four discovered identities must equal the closed functional/capacity
+and manual-timing sets, or validation fails before execution. Local lane runs
+without a CI event retain the complete base lane. Pull-request and push
+selection remove only the two manual-timing identities; manual dispatch removes
+nothing.
 
 The retired LPAC module, mandatory native fixture, and dedicated route tests are
 absent from standard discovery. No such residue remains
@@ -4175,9 +4186,11 @@ implementation-shape-only assertion, disabled test, or new SKIP may stand in
 for a test that detects a current requirement or regression.
 
 CI obtains one compact include matrix from this same policy. Pull requests run
-all three base lanes on Python 3.12 and `fast` on 3.14. Pushes to `main` run
-all three base lanes independently on both versions. Manual
-`workflow_dispatch` runs monolithic `all` on both versions, and an
+all three base lanes on Python 3.12 and `fast` on 3.14; the release selection
+retains deterministic performance-fixture behavior/capacity but defers the two
+wall-clock qualifiers. Pushes to `main` run all three base lanes independently
+on both versions with the same exact deferral. Manual `workflow_dispatch` runs
+monolithic `all` on both versions without that deferral, and an
 `always()` aggregate job fails unless policy validation and the full matrix
 succeed. The workflow trigger remains limited to pull requests, pushes to
 `main`, and manual dispatch; a candidate gate cannot be replaced by a skipped
@@ -4187,19 +4200,20 @@ Tier-2 changes use two independent exact-target reviews. Tests hard-fail count,
 byte, subprocess, attempt, and render limits; performance budgets never justify
 loosening a deterministic bound or adding asynchronous architecture.
 
-The release-lane backup/Viewer performance module separates deterministic
-functional and capacity checks from timing classification. Each fixed fixture
-uses fresh database copies for one warm-up round and six measured rounds. The
-three-mode qualifier uses all six permutations once, while the two-mode
-qualifier repeats both orders equally. One local helper classifies the same-
-round paired enabled-minus-disabled overhead using the six-sample median, and
-the median observation at each command position against the mode-specific
-budgets: 10 seconds for backup-only and Viewer-only total overhead, 12 seconds
-for combined Viewer-plus-backup total overhead, and below 5 seconds for every
-command-position median. The helper emits only bounded numeric diagnostics.
-The warm-up is excluded from qualification; no
-functional, count, byte, attempt, render, or call failure is excluded or
-statistically masked.
+The release-lane backup/Viewer performance module separates two deterministic
+functional/capacity methods from two wall-clock qualification methods through
+the closed test-ID allocation above. Each fixed fixture uses fresh database
+copies for one warm-up round and six measured rounds. The three-mode qualifier
+uses all six permutations once, while the two-mode qualifier repeats both
+orders equally. One local helper classifies the same-round paired enabled-minus-
+disabled overhead using the six-sample median, and the median observation at
+each command position against the mode-specific budgets: 10 seconds for backup-
+only and Viewer-only total overhead, 12 seconds for combined Viewer-plus-backup
+total overhead, and below 5 seconds for every command-position median. The
+helper emits only bounded numeric diagnostics. The warm-up is excluded from
+qualification; no functional, count, byte, attempt, render, or call failure is
+excluded or statistically masked. Only the manual release-candidate jobs use
+the timing methods as blocking evidence.
 
 ## Current Runner Plan Authoring And Control Design
 

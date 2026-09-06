@@ -4,6 +4,7 @@ import dataclasses
 import importlib.util
 import inspect
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -11,6 +12,7 @@ import threading
 import unittest
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -428,6 +430,109 @@ class RunnerProcessPureTests(unittest.TestCase):
             with self.assertRaises(process.RunnerProcessError):
                 for observation in admitted.steps[0].observations:
                     process._ensure_same_observation(observation)
+
+    def test_path_recheck_ignores_only_non_reparse_windows_attributes(self):
+        path = Path("C:/runner/scratch/tmp")
+        common = {
+            "st_dev": 7,
+            "st_ino": 11,
+            "st_mode": 0o40755,
+        }
+        before = SimpleNamespace(**common, st_file_attributes=0x10)
+        after = SimpleNamespace(**common, st_file_attributes=0x30)
+
+        self.assertFalse(process._is_reparse(before))
+        self.assertFalse(process._is_reparse(after))
+        self.assertEqual(
+            process._path_component_identity(path, before),
+            process._path_component_identity(path, after),
+        )
+        baseline = process._PathObservation(
+            path,
+            True,
+            (process._path_component_identity(path, before),),
+        )
+        current = process._PathObservation(
+            path,
+            True,
+            (process._path_component_identity(path, after),),
+        )
+        with patch.object(
+            process,
+            "_observe_physical_path",
+            return_value=current,
+        ) as observe:
+            process._ensure_same_observation(baseline)
+        observe.assert_called_once_with(path, directory=True)
+
+        stable_entry = baseline.chain[0]
+        changed_entries = {
+            "normalized_path": (stable_entry[0] + "-other", *stable_entry[1:]),
+            "device_id": (stable_entry[0], stable_entry[1] + 1, *stable_entry[2:]),
+            "file_id": (*stable_entry[:2], stable_entry[2] + 1, stable_entry[3]),
+            "mode": (*stable_entry[:3], stable_entry[3] ^ stat.S_IWUSR),
+            "file_type": (
+                *stable_entry[:3],
+                stat.S_IFREG | stat.S_IMODE(stable_entry[3]),
+            ),
+        }
+        for difference, changed_entry in changed_entries.items():
+            with self.subTest(difference=difference), patch.object(
+                process,
+                "_observe_physical_path",
+                return_value=process._PathObservation(
+                    path,
+                    True,
+                    (changed_entry,),
+                ),
+            ), self.assertRaises(process.RunnerProcessError) as raised:
+                process._ensure_same_observation(baseline)
+            self.assertEqual(raised.exception.code, "process_boundary_unproved")
+
+        self.assertTrue(
+            process._is_reparse(
+                SimpleNamespace(
+                    **common,
+                    st_file_attributes=(
+                        before.st_file_attributes
+                        | process._FILE_ATTRIBUTE_REPARSE_POINT
+                    ),
+                )
+            )
+        )
+
+    def test_physical_path_observation_rejects_reparse_ancestor_and_leaf(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            ancestor = Path(temporary).resolve() / "ancestor"
+            ancestor.mkdir()
+            leaf = ancestor / "run.py"
+            leaf.write_text("raise SystemExit(0)\n", encoding="utf-8")
+            original_lstat = Path.lstat
+
+            for selected in (ancestor, leaf):
+                selected_key = os.path.normcase(str(selected))
+
+                def reparse_lstat(candidate, *, _selected_key=selected_key):
+                    details = original_lstat(candidate)
+                    if os.path.normcase(str(candidate)) != _selected_key:
+                        return details
+                    return SimpleNamespace(
+                        st_dev=details.st_dev,
+                        st_ino=details.st_ino,
+                        st_mode=details.st_mode,
+                        st_file_attributes=(
+                            int(getattr(details, "st_file_attributes", 0))
+                            | process._FILE_ATTRIBUTE_REPARSE_POINT
+                        ),
+                    )
+
+                with self.subTest(selected=selected.name), patch.object(
+                    Path,
+                    "lstat",
+                    new=reparse_lstat,
+                ), self.assertRaises(process.RunnerProcessError) as raised:
+                    process._observe_physical_path(leaf, directory=False)
+                self.assertEqual(raised.exception.code, "process_boundary_unproved")
 
     def test_result_pairing_proofs_and_privacy_are_closed(self):
         passed = _step_result(1)

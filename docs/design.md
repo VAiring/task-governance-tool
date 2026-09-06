@@ -3807,6 +3807,13 @@ through the complete process-adapter call and closes it on every exit. Failure
 to establish or retain the lease is a sanitized admission failure with no
 alternate executable. The process adapter consumes only the leased absolute
 path in the closed request and does not import the runtime-identity layer.
+Every process-adapter path observation separately rejects a symlink or reparse
+point and a resolved-path or file-type mismatch. Repeated-observation equality
+then compares only normalized path spelling, device ID, file ID, and full mode
+(including file type); non-reparse `st_file_attributes` bits are mutable
+metadata rather than physical identity and do not by themselves invalidate an
+otherwise unchanged path. This exclusion never masks the separately repeated
+reparse check.
 Each lease serializes executable access, context state, and native close with a
 private non-reentrant lock, so no two native close attempts overlap and access
 cannot observe an in-progress close. Context entry is single-depth; nested

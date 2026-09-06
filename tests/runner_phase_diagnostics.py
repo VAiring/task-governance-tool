@@ -38,7 +38,6 @@ _FIELD_DIFFERENCES = {
     1: "device_id",
     2: "file_id",
     3: "mode",
-    4: "file_attributes",
 }
 
 
@@ -57,8 +56,8 @@ def _closed_path_change(expected: Any, observed: Any) -> tuple[str, str] | None:
         if (
             type(old_entry) is not tuple
             or type(new_entry) is not tuple
-            or len(old_entry) != 5
-            or len(new_entry) != 5
+            or len(old_entry) != 4
+            or len(new_entry) != 4
         ):
             return ("unavailable", "structural_invariant")
         changes.extend(

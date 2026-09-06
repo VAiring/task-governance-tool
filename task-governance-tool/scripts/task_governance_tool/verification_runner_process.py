@@ -676,13 +676,27 @@ FIXED_BOOTSTRAP = (
 class _PathObservation:
     path: Path
     directory: bool
-    chain: tuple[tuple[str, int, int, int, int], ...]
+    chain: tuple[tuple[str, int, int, int], ...]
 
 
 def _is_reparse(details: os.stat_result) -> bool:
     return stat.S_ISLNK(details.st_mode) or bool(
         int(getattr(details, "st_file_attributes", 0))
         & _FILE_ATTRIBUTE_REPARSE_POINT
+    )
+
+
+def _path_component_identity(
+    path: Path,
+    details: os.stat_result,
+) -> tuple[str, int, int, int]:
+    """Return only stable object identity after the separate reparse check."""
+
+    return (
+        os.path.normcase(str(path)),
+        int(details.st_dev),
+        int(details.st_ino),
+        int(details.st_mode),
     )
 
 
@@ -697,7 +711,7 @@ def _observe_physical_path(
     if not parts:
         _fail("process_boundary_unproved")
     current = Path(parts[0])
-    chain: list[tuple[str, int, int, int, int]] = []
+    chain: list[tuple[str, int, int, int]] = []
     try:
         for part in (None, *parts[1:]):
             if part is not None:
@@ -705,15 +719,7 @@ def _observe_physical_path(
             details = current.lstat()
             if _is_reparse(details):
                 _fail("process_boundary_unproved")
-            chain.append(
-                (
-                    os.path.normcase(str(current)),
-                    int(details.st_dev),
-                    int(details.st_ino),
-                    int(details.st_mode),
-                    int(getattr(details, "st_file_attributes", 0)),
-                )
-            )
+            chain.append(_path_component_identity(current, details))
         final = path.lstat()
         resolved = path.resolve(strict=True)
     except RunnerProcessError:

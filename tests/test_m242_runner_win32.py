@@ -83,12 +83,12 @@ class RunnerWin32PureTests(unittest.TestCase):
         private_leaf = "TG_PRIVATE_LEAF_f429"
         private_file_id = 987_654_321
         expected_chain = (
-            (private_ancestor, 11, 12, 13, 14),
-            (private_leaf, 21, 22, 23, 24),
+            (private_ancestor, 11, 12, 13),
+            (private_leaf, 21, 22, 23),
         )
         changed_chain = (
             expected_chain[0],
-            (private_leaf, 21, private_file_id, 23, 24),
+            (private_leaf, 21, private_file_id, 23),
         )
         observations = tuple(
             SimpleNamespace(
@@ -161,6 +161,67 @@ class RunnerWin32PureTests(unittest.TestCase):
             "TG_RAW_PATH_RECHECK_DETAIL_2db8",
         ):
             self.assertNotIn(private_value, trace.assertion_message)
+
+    def test_prelaunch_path_trace_closes_reobserve_rejection_detail(self):
+        raw_detail = "TG_RAW_REOBSERVE_REJECTION_61a7"
+        observations = tuple(
+            SimpleNamespace(
+                path=object(),
+                directory=True,
+                chain=(("TG_PRIVATE_PATH_a481", 11, 12, 13),),
+            )
+            for _ in range(9)
+        )
+        observation = observations[5]
+        admitted = SimpleNamespace(
+            observations=observations,
+            steps=(),
+        )
+
+        def observe(_path, *, directory):
+            self.assertTrue(directory)
+            raise RuntimeError(raw_detail)
+
+        fake_process = SimpleNamespace(
+            _admit_request=lambda _request: admitted,
+            _observe_physical_path=observe,
+        )
+
+        def ensure_same(current):
+            fake_process._observe_physical_path(
+                current.path,
+                directory=current.directory,
+            )
+
+        fake_process._ensure_same_observation = ensure_same
+
+        class FakeJob:
+            def prove_configuration(self) -> None:
+                return None
+
+        class FakePipes:
+            def prove_before_create(self) -> None:
+                return None
+
+        fake_win32 = SimpleNamespace(
+            NativeJob=FakeJob,
+            StdioPipes=FakePipes,
+            create_suspended_child=lambda **_kwargs: None,
+        )
+
+        with trace_runner_prelaunch(fake_process, fake_win32) as trace:
+            fake_process._admit_request(None)
+            with self.assertRaisesRegex(RuntimeError, raw_detail):
+                fake_process._ensure_same_observation(observation)
+
+        self.assertEqual(
+            trace.assertion_message,
+            "runner_prelaunch_phase=failed:path_recheck;"
+            "checkpoint=before_resources;subject=scratch_tmp;"
+            "component=unavailable;difference=reobserve_rejected",
+        )
+        self.assertNotIn(raw_detail, trace.assertion_message)
+        self.assertNotIn("TG_PRIVATE_PATH_a481", trace.assertion_message)
 
     def test_limit_validation_is_closed(self):
         self.assertEqual(

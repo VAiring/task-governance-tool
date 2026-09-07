@@ -224,3 +224,209 @@ def verification_receipt_schema_statements() -> tuple[str, ...]:
         END
         """,
     )
+
+
+def _task_completion_cycle_verification_basis_v21_trigger_sql() -> str:
+    """Return the closed schema-v21 completion-basis insert guard."""
+
+    return """
+    CREATE TRIGGER trg_task_completion_cycles_verification_basis_insert
+    BEFORE INSERT ON task_completion_cycles
+    WHEN NOT (
+      (
+        NEW.verification_basis_version = 0
+        AND NEW.verification_expectation_digest IS NULL
+        AND NEW.verification_receipt_id IS NULL
+        AND NEW.verification_basis_kind IS NULL
+        AND NEW.verification_runner_observation_id IS NULL
+        AND NEW.origin = 'legacy_current_done'
+        AND NEW.completeness = 'partial'
+        AND EXISTS (
+          SELECT 1 FROM tasks AS task
+           WHERE task.project_id = NEW.project_id
+             AND task.task_id = NEW.task_id
+             AND task.status = 'done'
+             AND task.completion_history_coverage = 'legacy_unknown'
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM task_completion_cycles AS earlier
+           WHERE earlier.project_id = NEW.project_id
+             AND earlier.task_id = NEW.task_id
+        )
+      )
+      OR
+      (
+        NEW.verification_basis_version = 1
+        AND NEW.verification_expectation_digest IS NOT NULL
+        AND NEW.origin = 'native_done'
+        AND EXISTS (
+          SELECT 1 FROM tasks AS task
+           WHERE task.project_id = NEW.project_id
+             AND task.task_id = NEW.task_id
+             AND task.current_contract_revision = NEW.contract_revision
+             AND task.review_target_kind = NEW.review_target_kind
+             AND task.review_target_value = NEW.review_target_value
+             AND task.review_target_base_revision = NEW.review_target_base_revision
+             AND task.review_target_generation = NEW.review_target_generation
+             AND (
+               (
+                 task.review_target_runner_basis_version = 0
+                 AND NEW.verification_runner_observation_id IS NULL
+                 AND (
+                   (
+                     taskgov_verification_specified(task.verification) = 0
+                     AND NEW.verification_expectation = 'unspecified'
+                     AND NEW.verification_basis_kind = 'not_required'
+                     AND NEW.verification_receipt_id IS NULL
+                   )
+                   OR
+                   (
+                     taskgov_verification_specified(task.verification) = 1
+                     AND NEW.verification_expectation = 'specified'
+                     AND NEW.verification_basis_kind = 'caller_attestation'
+                     AND EXISTS (
+                       SELECT 1 FROM verification_receipts AS receipt
+                        WHERE receipt.verification_receipt_id =
+                              NEW.verification_receipt_id
+                          AND receipt.project_id = NEW.project_id
+                          AND receipt.task_id = NEW.task_id
+                          AND receipt.contract_revision = NEW.contract_revision
+                          AND receipt.verification_expectation_digest =
+                                NEW.verification_expectation_digest
+                          AND receipt.target_kind = NEW.review_target_kind
+                          AND receipt.target_value = NEW.review_target_value
+                          AND receipt.target_base_revision =
+                                NEW.review_target_base_revision
+                          AND receipt.target_generation =
+                                NEW.review_target_generation
+                          AND receipt.result = 'pass'
+                          AND receipt.scope_coverage = 'full'
+                     )
+                   )
+                 )
+               )
+               OR
+               (
+                 task.review_target_runner_basis_version = 2
+                 AND taskgov_verification_specified(task.verification) = 1
+                 AND NEW.verification_expectation = 'specified'
+                 AND EXISTS (
+                   SELECT 1
+                     FROM verification_runner_resolutions AS resolution
+                     JOIN verification_runner_attempts AS attempt
+                       ON attempt.project_id = resolution.project_id
+                      AND attempt.task_id = resolution.task_id
+                      AND attempt.target_generation = resolution.target_generation
+                      AND attempt.verification_runner_resolution_id =
+                            resolution.verification_runner_resolution_id
+                      AND attempt.gate_eligibility_version = 1
+                     JOIN verification_runner_observations AS observation
+                       ON observation.project_id = resolution.project_id
+                      AND observation.task_id = resolution.task_id
+                      AND observation.target_generation =
+                            resolution.target_generation
+                      AND observation.verification_runner_resolution_id =
+                            resolution.verification_runner_resolution_id
+                      AND observation.verification_runner_attempt_id =
+                            attempt.verification_runner_attempt_id
+                      AND observation.gate_eligibility_version = 1
+                     JOIN verification_runner_sandbox_events AS cleanup
+                       ON cleanup.project_id = observation.project_id
+                      AND cleanup.task_id = observation.task_id
+                      AND cleanup.target_generation = observation.target_generation
+                      AND cleanup.verification_runner_attempt_id =
+                            attempt.verification_runner_attempt_id
+                      AND cleanup.terminal_observation_id =
+                            observation.verification_runner_observation_id
+                     JOIN evidence_references AS reference
+                       ON reference.project_id = observation.project_id
+                      AND reference.task_id = observation.task_id
+                      AND reference.source_kind = 'runner_observation'
+                      AND reference.source_id =
+                            observation.verification_runner_observation_id
+                     JOIN criterion_evidence_links AS link
+                       ON link.project_id = reference.project_id
+                      AND link.task_id = reference.task_id
+                      AND link.evidence_reference_id =
+                            reference.evidence_reference_id
+                      AND link.criterion_id =
+                            resolution.verification_criterion_id
+                      AND link.relation = 'runner_observation'
+                    WHERE resolution.project_id = NEW.project_id
+                      AND resolution.task_id = NEW.task_id
+                      AND resolution.contract_revision = NEW.contract_revision
+                      AND resolution.verification_expectation_digest =
+                            NEW.verification_expectation_digest
+                      AND resolution.authority_snapshot_id =
+                            task.review_target_authority_snapshot_id
+                      AND resolution.verification_criterion_id =
+                            task.review_target_verification_criterion_id
+                      AND resolution.target_kind = NEW.review_target_kind
+                      AND resolution.target_value = NEW.review_target_value
+                      AND COALESCE(resolution.target_base_revision, '') =
+                            NEW.review_target_base_revision
+                      AND resolution.target_generation =
+                            NEW.review_target_generation
+                      AND resolution.artifact_manifest_id =
+                            task.review_target_artifact_manifest_id
+                      AND resolution.gate_eligibility_version = 1
+                      AND (
+                        (
+                          NEW.verification_basis_kind = 'caller_attestation'
+                          AND NEW.verification_runner_observation_id IS NULL
+                          AND observation.route = 'm21_fallback'
+                          AND observation.launch_state = 'no_launch'
+                          AND observation.outcome = 'blocked_prelaunch'
+                          AND observation.reason IN (
+                            'runtime_unavailable', 'process_setup_failed'
+                          )
+                          AND observation.complete_plan = 0
+                          AND NEW.verification_receipt_id IS NOT NULL
+                          AND EXISTS (
+                            SELECT 1 FROM verification_receipts AS receipt
+                             WHERE receipt.verification_receipt_id =
+                                   NEW.verification_receipt_id
+                               AND receipt.project_id = NEW.project_id
+                               AND receipt.task_id = NEW.task_id
+                               AND receipt.contract_revision =
+                                     NEW.contract_revision
+                               AND receipt.verification_expectation_digest =
+                                     NEW.verification_expectation_digest
+                               AND receipt.target_kind = NEW.review_target_kind
+                               AND receipt.target_value = NEW.review_target_value
+                               AND receipt.target_base_revision =
+                                     NEW.review_target_base_revision
+                               AND receipt.target_generation =
+                                     NEW.review_target_generation
+                               AND receipt.result = 'pass'
+                               AND receipt.scope_coverage = 'full'
+                          )
+                        )
+                        OR
+                        (
+                          NEW.verification_basis_kind = 'runner_observation'
+                          AND NEW.verification_receipt_id IS NULL
+                          AND NEW.verification_runner_observation_id =
+                                observation.verification_runner_observation_id
+                          AND observation.route = 'runner'
+                          AND observation.launch_state = 'launched'
+                          AND observation.outcome = 'pass'
+                          AND observation.reason IS NULL
+                          AND observation.complete_plan = 1
+                          AND observation.total_step_count =
+                                resolution.step_count
+                          AND observation.completed_step_count =
+                                resolution.step_count
+                          AND observation.failed_step_ordinal IS NULL
+                        )
+                      )
+                 )
+               )
+             )
+        )
+      )
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'invalid_completion_verification_basis');
+    END
+    """

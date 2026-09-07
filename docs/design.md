@@ -128,7 +128,8 @@ The implementation keeps these narrow ownership boundaries:
 - `schema_completion_cycles.py` owns the ordered completion-cycle SQL
   definitions; migration execution and transaction ownership stay in `storage.py`.
 - `schema_verification_receipts.py` owns the ordered Verification Receipt SQL
-  definitions; storage retains migrations, validation, and transaction ownership.
+  definitions and versioned completion Verification-basis guards; storage
+  retains migrations, validation, and transaction ownership.
 - `schema_evidence_ledger.py` owns the ordered Evidence Ledger capture SQL and
   its provenance trigger; storage retains validation and migration execution.
 - `schema_completion_evidence_bundles.py` owns the ordered Bundle SQL

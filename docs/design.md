@@ -3419,7 +3419,7 @@ Runner route; its Runner dispatch has only the `cli -> service` edge.
 | `repository` | `storage.py`, `tasks.py`, `contracts.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `evidence_publication.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema/Evidence compatibility stays repository-owned with no reverse edge. |
 | `target_plan` | `artifact_manifest.py`, `verification_runner_git.py`, `verification_runner_plan.py` | Parent-invoked exact target observation/materialization and fixed-plan decode/validation. | `repository`, `value_model` | No CLI policy, canonical database ownership, completion decision, trusted-code or verification-command launch, terminal publication, or cleanup acceptance. | Target/plan code is read-only until parent-owned materialization. |
 | `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The module is dependency-pure and has no compatibility shim consumer. |
-| `runtime_identity` | `verification_runner_runtime.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is physically absent. |
+| `runtime_identity` | `verification_runner_runtime.py`, `_verification_runner_executable_win32.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is physically absent. |
 | `lifecycle` | `verification_runner_lifecycle.py` | Parent-requested creation, inventory, quarantine, removal, and absence proof for the one owned private attempt tree. | none | No process start, Job/stdio/handle ownership, SQLite, Evidence, business gate, terminal publication, or final cleanup acceptance. | Profile/recovery alternatives are physically absent. |
 | `process_adapter` | `verification_runner_process.py` | Consume the closed request, establish the Job before trusted code, enforce process/resource/output/time bounds, drain and discard output, terminate and wait for process-tree zero, close handles, and return the closed result. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Candidate/AppContainer/profile/ACL branches and business-freshness callbacks are absent. |
 | `os_adapter` | `_verification_runner_win32.py` | Thin Windows Job, process, stdio, accounting, termination, wait, and handle primitives. | `value_model` | No parent policy, repository, persistence, gate, cleanup acceptance, LPAC/AppContainer/profile/ACL/ETW/registry-recovery module, or reverse import. | Only thin native primitives remain. |
@@ -3651,6 +3651,17 @@ case-insensitively unique keys `APPDATA`, `HOME`, `LOCALAPPDATA`,
 `scratch_root/tmp`; `SystemRoot` and `WINDIR` are the same parent-verified
 Windows directory; and the three `PYTHON*` values are exactly `"1"`. It has no
 additional or ambient key, and all path values satisfy `absolute_path`.
+
+Within `runtime_identity`, `verification_runner_runtime.py` owns manifest
+validation, `RunnerImplementationIdentity`, implementation digest, and the
+shared runtime error and handle-cleanup state. The Windows-specific
+`_verification_runner_executable_win32.py` owns `RunnerFixedExecutableLease`,
+its primary/probe slots and serialized state, native declarations, path and
+identity observations, rechecks, and handle release. It consumes the existing
+materialized/scratch roots, yields only the verified absolute executable path,
+and returns the existing cleanup state from `finalize_owner()`. The service
+still constructs the owner, holds its context through the process request, and
+performs final release and cleanup acceptance; no process-adapter edge changes.
 
 The process boundary fixes the package-runtime executable source to the operating-system
 image path of the current parent process. `sys.executable` is used only to

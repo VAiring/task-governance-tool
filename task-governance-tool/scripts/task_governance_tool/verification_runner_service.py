@@ -122,8 +122,10 @@ from task_governance_tool.verification_runner_process import (
     build_clean_environment,
     run_process_request,
 )
-from task_governance_tool.verification_runner_runtime import (
+from task_governance_tool._verification_runner_executable_win32 import (
     RunnerFixedExecutableLease,
+)
+from task_governance_tool.verification_runner_runtime import (
     RunnerImplementationIdentity,
     VerificationRunnerRuntimeError,
     capture_runner_implementation,

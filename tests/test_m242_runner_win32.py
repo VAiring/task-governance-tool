@@ -22,7 +22,9 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool import _verification_runner_win32 as win32  # noqa: E402
 from task_governance_tool import verification_runner_process as process  # noqa: E402
-from task_governance_tool import verification_runner_runtime as runtime  # noqa: E402
+from task_governance_tool import (  # noqa: E402
+    _verification_runner_executable_win32 as runtime,
+)
 from task_governance_tool.verification_runner import (  # noqa: E402
     RUNNER_CONTRACT_VERSION,
 )

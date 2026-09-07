@@ -19,6 +19,9 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import __version__  # noqa: E402
+from task_governance_tool import (  # noqa: E402
+    _verification_runner_executable_win32 as runtime_lease,
+)
 from task_governance_tool import verification_runner_runtime as runtime  # noqa: E402
 from task_governance_tool.self_status import (  # noqa: E402
     ReleaseManifestVerificationError,
@@ -26,7 +29,7 @@ from task_governance_tool.self_status import (  # noqa: E402
 )
 
 
-IDENTITY = runtime._RuntimeFileIdentity(1, 2, 3, 0, 4, 5, 6)
+IDENTITY = runtime_lease._RuntimeFileIdentity(1, 2, 3, 0, 4, 5, 6)
 
 
 def _write_minimal_manifest(root: Path) -> None:
@@ -56,8 +59,8 @@ def _attempt_roots(root: Path) -> tuple[Path, Path]:
     return target, scratch
 
 
-def _owner(handle: int | None = None) -> runtime.RunnerFixedExecutableLease:
-    owner = runtime.RunnerFixedExecutableLease(
+def _owner(handle: int | None = None) -> runtime_lease.RunnerFixedExecutableLease:
+    owner = runtime_lease.RunnerFixedExecutableLease(
         r"C:\private-attempt\target",
         r"C:\private-attempt\scratch",
     )
@@ -117,8 +120,8 @@ class RunnerRuntimeManifestTests(unittest.TestCase):
 
 class RunnerFixedExecutableOwnerTests(unittest.TestCase):
     def test_constructor_is_resource_free_and_sanitized(self):
-        with mock.patch.object(runtime, "_kernel32") as kernel, mock.patch.object(
-            runtime,
+        with mock.patch.object(runtime_lease, "_kernel32") as kernel, mock.patch.object(
+            runtime_lease,
             "_observe_physical_path",
         ) as observe:
             owner = _owner()
@@ -127,8 +130,8 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         kernel.assert_not_called()
         observe.assert_not_called()
         self.assertEqual(owner._state, "new")
-        self.assertEqual(owner._primary, runtime._OwnedRuntimeHandle())
-        self.assertEqual(owner._probe, runtime._OwnedRuntimeHandle())
+        self.assertEqual(owner._primary, runtime_lease._OwnedRuntimeHandle())
+        self.assertEqual(owner._probe, runtime_lease._OwnedRuntimeHandle())
         self.assertFalse(owner.closed)
         self.assertNotIn("private-attempt", representation)
 
@@ -139,18 +142,18 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         kernel.CreateFileW.return_value = 701
         kernel.GetHandleInformation.return_value = 1
 
-        def query_identity(handle: int) -> runtime._RuntimeFileIdentity:
+        def query_identity(handle: int) -> runtime_lease._RuntimeFileIdentity:
             self.assertEqual(handle, 701)
             self.assertEqual(owner._primary.handle, 701)
             self.assertEqual(owner._primary.phase, "open")
             return IDENTITY
 
         with mock.patch.object(
-            runtime,
+            runtime_lease,
             "_kernel32",
             return_value=kernel,
         ), mock.patch.object(
-            runtime,
+            runtime_lease,
             "_query_identity",
             side_effect=query_identity,
         ):
@@ -171,11 +174,11 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         kernel.CloseHandle.return_value = 1
 
         with mock.patch.object(
-            runtime,
+            runtime_lease,
             "_kernel32",
             return_value=kernel,
         ), mock.patch.object(
-            runtime,
+            runtime_lease,
             "_query_identity",
             side_effect=KeyboardInterrupt(),
         ):
@@ -197,7 +200,7 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         kernel = mock.Mock()
         kernel.CreateFileW.side_effect = KeyboardInterrupt()
 
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
+        with mock.patch.object(runtime_lease, "_kernel32", return_value=kernel):
             with self.assertRaises(KeyboardInterrupt):
                 with owner._lock:
                     owner._acquire_identity_locked(
@@ -222,28 +225,28 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
 
         kernel.GetModuleFileNameW.side_effect = get_module_filename
         with mock.patch.object(
-            runtime,
+            runtime_lease,
             "_kernel32",
             return_value=kernel,
         ), mock.patch.object(
-            runtime.sys,
+            runtime_lease.sys,
             "executable",
             str(declared),
         ), mock.patch.object(
-            runtime,
+            runtime_lease,
             "_observe_physical_path",
         ), mock.patch.object(
-            runtime.RunnerFixedExecutableLease,
+            runtime_lease.RunnerFixedExecutableLease,
             "_acquire_identity_locked",
             autospec=True,
             side_effect=(IDENTITY, IDENTITY),
         ) as acquire, mock.patch.object(
-            runtime.RunnerFixedExecutableLease,
+            runtime_lease.RunnerFixedExecutableLease,
             "_release_probe_locked",
             autospec=True,
             return_value="closed",
         ):
-            bound = runtime._bind_parent_process_executable(owner)
+            bound = runtime_lease._bind_parent_process_executable(owner)
 
         self.assertEqual(bound, (observed, IDENTITY))
         self.assertEqual(
@@ -256,7 +259,7 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         owner = _owner(703)
         kernel = mock.Mock()
         kernel.CloseHandle.side_effect = (0, 1)
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
+        with mock.patch.object(runtime_lease, "_kernel32", return_value=kernel):
             self.assertEqual(owner.finalize_owner(), "open")
             self.assertEqual(owner._primary.close_attempts, 1)
             self.assertEqual(owner.finalize_owner(), "closed")
@@ -270,7 +273,7 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         owner = _owner(704)
         kernel = mock.Mock()
         kernel.CloseHandle.side_effect = (0, 0, 1)
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
+        with mock.patch.object(runtime_lease, "_kernel32", return_value=kernel):
             self.assertEqual(owner.finalize_owner(), "open")
             self.assertEqual(owner.finalize_owner(), "open")
             self.assertEqual(owner.finalize_owner(), "open")
@@ -284,7 +287,7 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         kernel = mock.Mock()
         kernel.CloseHandle.return_value = 1
         with mock.patch.object(
-            runtime,
+            runtime_lease,
             "_kernel32",
             side_effect=(KeyboardInterrupt(), kernel),
         ) as resolve_kernel:
@@ -300,7 +303,7 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         kernel = mock.Mock()
         kernel.CloseHandle.side_effect = KeyboardInterrupt()
 
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
+        with mock.patch.object(runtime_lease, "_kernel32", return_value=kernel):
             self.assertEqual(owner.finalize_owner(), "uncertain")
             self.assertEqual(owner.finalize_owner(), "uncertain")
 
@@ -330,7 +333,7 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         owner._probe.phase = "uncertain"
         owner._state = "active"
 
-        with mock.patch.object(runtime, "_kernel32") as kernel:
+        with mock.patch.object(runtime_lease, "_kernel32") as kernel:
             with self.assertRaises(runtime.VerificationRunnerRuntimeError) as caught:
                 owner.close()
 
@@ -367,7 +370,7 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
 
         threads = (threading.Thread(target=finalize), threading.Thread(target=finalize))
         kernel.CloseHandle.side_effect = close_handle
-        with mock.patch.object(runtime, "_kernel32", return_value=kernel):
+        with mock.patch.object(runtime_lease, "_kernel32", return_value=kernel):
             for thread in threads:
                 thread.start()
             start.wait()
@@ -389,17 +392,17 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         kernel = mock.Mock()
         kernel.CloseHandle.return_value = 1
 
-        def bind(bound_owner: runtime.RunnerFixedExecutableLease) -> Path:
+        def bind(bound_owner: runtime_lease.RunnerFixedExecutableLease) -> Path:
             self.assertIs(bound_owner, owner)
             bound_owner._primary.handle = 708
             bound_owner._primary.phase = "open"
             return executable
 
         with mock.patch.object(
-            runtime,
+            runtime_lease,
             "_bind_fixed_package_runtime",
             side_effect=bind,
-        ), mock.patch.object(runtime, "_kernel32", return_value=kernel):
+        ), mock.patch.object(runtime_lease, "_kernel32", return_value=kernel):
             with owner as active_executable:
                 self.assertEqual(active_executable, executable)
                 self.assertEqual(owner.executable, executable)
@@ -434,16 +437,16 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         kernel = mock.Mock()
         kernel.CloseHandle.return_value = 1
 
-        def bind(bound_owner: runtime.RunnerFixedExecutableLease) -> Path:
+        def bind(bound_owner: runtime_lease.RunnerFixedExecutableLease) -> Path:
             bound_owner._primary.handle = 709
             bound_owner._primary.phase = "open"
             raise KeyboardInterrupt()
 
         with mock.patch.object(
-            runtime,
+            runtime_lease,
             "_bind_fixed_package_runtime",
             side_effect=bind,
-        ), mock.patch.object(runtime, "_kernel32", return_value=kernel):
+        ), mock.patch.object(runtime_lease, "_kernel32", return_value=kernel):
             with self.assertRaises(KeyboardInterrupt):
                 owner.__enter__()
 
@@ -455,16 +458,16 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         kernel = mock.Mock()
         kernel.CloseHandle.side_effect = KeyboardInterrupt()
 
-        def bind(bound_owner: runtime.RunnerFixedExecutableLease) -> Path:
+        def bind(bound_owner: runtime_lease.RunnerFixedExecutableLease) -> Path:
             bound_owner._primary.handle = 710
             bound_owner._primary.phase = "open"
             return Path(r"C:\Python\python.exe")
 
         with mock.patch.object(
-            runtime,
+            runtime_lease,
             "_bind_fixed_package_runtime",
             side_effect=bind,
-        ), mock.patch.object(runtime, "_kernel32", return_value=kernel):
+        ), mock.patch.object(runtime_lease, "_kernel32", return_value=kernel):
             with self.assertRaises(runtime.VerificationRunnerRuntimeError) as caught:
                 with owner:
                     pass
@@ -474,11 +477,11 @@ class RunnerFixedExecutableOwnerTests(unittest.TestCase):
         kernel.CloseHandle.assert_called_once()
 
     def test_invalid_geometry_fails_before_native_acquisition(self):
-        owner = runtime.RunnerFixedExecutableLease(
+        owner = runtime_lease.RunnerFixedExecutableLease(
             r"C:\private-attempt\target",
             r"C:\different-attempt\scratch",
         )
-        with mock.patch.object(runtime, "_kernel32") as kernel:
+        with mock.patch.object(runtime_lease, "_kernel32") as kernel:
             with self.assertRaises(runtime.VerificationRunnerRuntimeError):
                 with owner:
                     pass
@@ -492,7 +495,7 @@ class RunnerFixedExecutableWindowsTests(unittest.TestCase):
     def test_fixed_parent_runtime_ignores_path_and_holds_noninheritable_lease(self):
         with tempfile.TemporaryDirectory() as temporary:
             target, scratch = _attempt_roots(Path(temporary))
-            owner = runtime.RunnerFixedExecutableLease(target, scratch)
+            owner = runtime_lease.RunnerFixedExecutableLease(target, scratch)
             with mock.patch.dict(
                 os.environ,
                 {"PATH": str(Path(temporary) / "untrusted")},
@@ -504,12 +507,12 @@ class RunnerFixedExecutableWindowsTests(unittest.TestCase):
                     self.assertNotIn(str(executable), repr(owner))
                     flags = ctypes.c_uint32()
                     self.assertTrue(
-                        runtime._kernel32().GetHandleInformation(
+                        runtime_lease._kernel32().GetHandleInformation(
                             ctypes.c_void_p(owner._primary.handle),
                             ctypes.byref(flags),
                         )
                     )
-                    self.assertFalse(flags.value & runtime._HANDLE_FLAG_INHERIT)
+                    self.assertFalse(flags.value & runtime_lease._HANDLE_FLAG_INHERIT)
 
             self.assertTrue(owner.closed)
             self.assertEqual(owner.finalize_owner(), "closed")
@@ -526,7 +529,7 @@ class RunnerFixedExecutableWindowsTests(unittest.TestCase):
             owner = _owner()
             with owner._lock:
                 identity = owner._acquire_identity_locked("primary", executable)
-            self.assertIsInstance(identity, runtime._RuntimeFileIdentity)
+            self.assertIsInstance(identity, runtime_lease._RuntimeFileIdentity)
 
             try:
                 with self.assertRaises(OSError):
@@ -556,7 +559,7 @@ class RunnerFixedExecutableWindowsTests(unittest.TestCase):
             if created.returncode != 0:
                 self.skipTest("Windows junction creation unavailable")
             with self.assertRaises(runtime.VerificationRunnerRuntimeError):
-                runtime._observe_physical_path(
+                runtime_lease._observe_physical_path(
                     junction / "python.exe",
                     directory=False,
                 )

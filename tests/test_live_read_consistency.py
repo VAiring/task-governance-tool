@@ -27,6 +27,7 @@ from task_governance_tool.storage import (  # noqa: E402
     resolve_database_target,
     validate_operational_journal_state,
 )
+from task_governance_tool import sqlite_connection  # noqa: E402
 
 
 SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"
@@ -92,6 +93,51 @@ def insert_spill_tasks(
 
 
 class LiveReadConsistencyTests(unittest.TestCase):
+    def test_configured_connection_registers_existing_sql_functions(self):
+        with closing(sqlite_connection.connect(Path(":memory:"))) as connection:
+            self.assertIs(connection.row_factory, sqlite3.Row)
+            self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+            self.assertEqual(
+                connection.execute("SELECT taskgov_canonical_lane(?)", (" lane ",)).fetchone()[0],
+                "lane",
+            )
+            for value, expected in ((None, 0), (" \u3000", 0), ("focused checks", 1)):
+                self.assertEqual(
+                    connection.execute("SELECT taskgov_verification_specified(?)", (value,)).fetchone()[0],
+                    expected,
+                )
+
+    def test_existing_connector_does_not_create_missing_database(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "absent.sqlite"
+            with self.assertRaises(sqlite3.OperationalError):
+                sqlite_connection.connect_existing(missing)
+            self.assertFalse(missing.exists())
+            with self.assertRaises(StorageError) as caught:
+                sqlite_connection.connect_readonly(missing)
+            self.assertEqual(caught.exception.code, "db_not_initialized")
+            self.assertFalse(missing.exists())
+
+    def test_readonly_configuration_failure_closes_connection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "empty.sqlite"
+            db.touch()
+            for failure in (sqlite3.OperationalError("database is locked"), ValueError("test fault")):
+                with self.subTest(kind=type(failure).__name__):
+                    connection = mock.Mock()
+                    with (
+                        mock.patch.object(sqlite_connection.sqlite3, "connect", return_value=connection),
+                        mock.patch.object(sqlite_connection, "configure_connection", side_effect=failure),
+                    ):
+                        with self.assertRaises(StorageError if isinstance(failure, sqlite3.Error) else ValueError) as caught:
+                            sqlite_connection.connect_readonly(db)
+                    connection.close.assert_called_once_with()
+                    if isinstance(failure, sqlite3.Error):
+                        self.assertEqual(caught.exception.code, "database_busy")
+                        self.assertEqual(caught.exception.message, DATABASE_BUSY_MESSAGE)
+                    else:
+                        self.assertIs(caught.exception, failure)
+
     def test_common_read_connection_is_query_only_and_transactional(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = initialized_target(tmp)
@@ -158,7 +204,7 @@ class LiveReadConsistencyTests(unittest.TestCase):
                     sidecar = Path(str(target.db_path) + suffix)
                     sidecar.write_bytes(b"synthetic persistent sidecar")
                     with mock.patch(
-                        "task_governance_tool.storage.sqlite3.connect"
+                        "task_governance_tool.sqlite_connection.sqlite3.connect"
                     ) as sqlite_open:
                         with self.assertRaises(StorageError) as caught:
                             connect_readonly(target.db_path)
@@ -196,7 +242,7 @@ class LiveReadConsistencyTests(unittest.TestCase):
                     )
 
                     with mock.patch(
-                        "task_governance_tool.storage.sqlite3.connect"
+                        "task_governance_tool.sqlite_connection.sqlite3.connect"
                     ) as sqlite_open:
                         with self.assertRaises(StorageError) as caught:
                             connect_initialized_readonly(target)

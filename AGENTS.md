@@ -358,6 +358,12 @@ The product must not become:
 
 ## Documentation Maintenance
 
+- For new or substantially revised material, apply the responsibility-based
+  authoring guidance in [docs/artifact-authoring.md](docs/artifact-authoring.md).
+  This file remains the durable operating-rule owner and delegates authoring
+  detail to that guide. Its size suggestions are prospective heuristics, not
+  limits or a requirement to retrofit existing material. The current Source
+  Of Truth and Reread Rule continue to govern reading and escalation.
 - Keep this file limited to durable agent behavior, safety, authority routing,
   and workflow gates. Put product behavior, implementation detail, execution
   status, and decision history in their owning documents.

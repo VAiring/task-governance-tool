@@ -28,6 +28,16 @@ examples, and fixtures remain part of that selected read.
 The specification remains the product-behavior owner and the design remains
 the implementation-structure owner. No other route transfers either role.
 
+## Delegated Repository Operating Guides
+
+- [Artifact authoring](artifact-authoring.md)
+
+This is an authoring guide delegated by root `AGENTS.md`, which remains the
+durable repository operating-rule owner. It applies to new or substantially
+revised material and is not an independent product or implementation authority.
+The existing mandatory start set, selective reading, and full-read escalation
+rules remain unchanged.
+
 ## Non-Authoritative History
 
 - [Historical documentation index](history/README.md)

@@ -19,6 +19,7 @@ AUTHORITY = "docs/authority.md"
 DESIGN = "docs/design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
+ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
 
 CANONICAL_DOCS = (
     "AGENTS.md",
@@ -29,7 +30,7 @@ CANONICAL_DOCS = (
     "plan.md",
     HISTORY_INDEX,
 )
-METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL,)
+METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL, ARTIFACT_AUTHORING)
 
 # These sections are closed authority edges. Their prose and link order are not
 # part of the contract; the required destination set is.
@@ -39,6 +40,11 @@ ROUTE_SECTIONS = (
         AUTHORITY,
         "## Selective Current Authority",
         ("specification.md", "design.md", "../plan.md"),
+    ),
+    (
+        AUTHORITY,
+        "## Delegated Repository Operating Guides",
+        ("artifact-authoring.md",),
     ),
     (AUTHORITY, "## Non-Authoritative History", ("history/README.md",)),
 )
@@ -223,6 +229,7 @@ ROLE_TITLES = {
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
     HISTORY_INDEX: "# Historical Documentation Index",
     RELEASE_INSTALL: "# Release Candidate And Published Install Record",
+    ARTIFACT_AUTHORING: "# Artifact Authoring Guide",
 }
 HISTORY_MARKERS = (
     "NON-AUTHORITATIVE HISTORY",

@@ -26,7 +26,10 @@ EXPECTED_CANONICAL_DOCS = (
     "plan.md",
     "docs/history/README.md",
 )
-EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + ("docs/release-install.md",)
+EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
+    "docs/release-install.md",
+    "docs/artifact-authoring.md",
+)
 FIXTURE_LINK_TARGETS = (
     "LICENSE",
     "docs/releases/v0.10.0.md",
@@ -255,6 +258,11 @@ class DocumentContractTests(unittest.TestCase):
                 ),
                 (
                     contract.AUTHORITY,
+                    "## Delegated Repository Operating Guides",
+                    ("artifact-authoring.md",),
+                ),
+                (
+                    contract.AUTHORITY,
                     "## Non-Authoritative History",
                     ("history/README.md",),
                 ),
@@ -372,6 +380,35 @@ class DocumentContractTests(unittest.TestCase):
             self.assertIn(
                 "document_unavailable",
                 self.codes(contract.check_document_contract(root)),
+            )
+
+    def test_delegated_authoring_guide_route_and_links_are_checked(self):
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.AUTHORITY,
+                "[Artifact authoring](artifact-authoring.md)",
+                "Artifact authoring",
+            )
+            self.assertIn(
+                "authority_route", self.codes(contract.check_document_contract(root))
+            )
+
+        with self.fixture() as root:
+            root.joinpath("docs/artifact-authoring.md").unlink()
+            self.assertIn(
+                "document_unavailable",
+                self.codes(contract.check_document_contract(root)),
+            )
+
+        with self.fixture() as root:
+            self.append(
+                root,
+                "docs/artifact-authoring.md",
+                "\n[Missing owner section](authority.md#missing-owner)\n",
+            )
+            self.assertIn(
+                "link_anchor", self.codes(contract.check_document_contract(root))
             )
 
     def test_local_link_resolution_is_exact_and_regular_file_only(self):

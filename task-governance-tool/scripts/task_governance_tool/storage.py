@@ -29,6 +29,12 @@ from task_governance_tool.schema_completion_cycles import (
     completion_cycle_history_schema_statements,
 )
 from task_governance_tool.schema_completion_evidence_bundles import (
+    PRIVATE_SCHEMA20_VERSION,
+    PRIVATE_SCHEMA21_VERSION,
+    _bundle_v20_recreated_object_statements,
+    _completion_evidence_bundle_v20_table_sql,
+    _criterion_evidence_links_v20_matrix_trigger_sql,
+    _task_completion_cycle_evidence_basis_v21_trigger_sql,
     completion_evidence_bundle_schema_statements,
 )
 from task_governance_tool.schema_evidence_ledger import (
@@ -42,9 +48,7 @@ from task_governance_tool.schema_verification_receipts import (
 
 PROJECT_ID_HASH_LENGTH = 12
 SCHEMA_VERSION = 22
-PRIVATE_SCHEMA20_VERSION = 20
 PRIVATE_SCHEMA20_MIGRATION_NAME = "verification_runner_shadow"
-PRIVATE_SCHEMA21_VERSION = 21
 PRIVATE_SCHEMA21_MIGRATION_NAME = "verification_runner_gate_basis"
 PRIVATE_SCHEMA22_VERSION = 22
 PRIVATE_SCHEMA22_MIGRATION_NAME = "evidence_reservation_cleanup"
@@ -4281,127 +4285,6 @@ _R3A_SCHEMA20_COLUMN_ALTERS = (
 )
 
 
-def _completion_evidence_bundle_v20_table_sql(
-    table_name: str = "completion_evidence_bundles",
-    *,
-    schema_version: int = PRIVATE_SCHEMA20_VERSION,
-) -> str:
-    if re.fullmatch(r"[a-z][a-z0-9_]*", table_name) is None:
-        raise AssertionError("invalid private Bundle table name")
-    if schema_version not in {PRIVATE_SCHEMA20_VERSION, PRIVATE_SCHEMA21_VERSION}:
-        raise AssertionError("invalid private Bundle schema version")
-    basis_kinds = (
-        "'caller_attestation', 'not_required', 'runner_observation'"
-        if schema_version == PRIVATE_SCHEMA21_VERSION
-        else "'caller_attestation', 'not_required'"
-    )
-    source21_arms = (
-        """
-        OR
-        (source_schema_version = 21 AND bundle_version = 2
-          AND verification_basis_kind = 'caller_attestation'
-          AND verification_receipt_id IS NOT NULL
-          AND verification_runner_observation_id IS NULL)
-        OR
-        (source_schema_version = 21 AND bundle_version = 2
-          AND verification_basis_kind = 'not_required'
-          AND verification_receipt_id IS NULL
-          AND verification_runner_observation_id IS NULL)
-        OR
-        (source_schema_version = 21 AND bundle_version = 2
-          AND verification_basis_kind = 'runner_observation'
-          AND verification_receipt_id IS NULL
-          AND verification_runner_observation_id IS NOT NULL)
-        """
-        if schema_version == PRIVATE_SCHEMA21_VERSION
-        else ""
-    )
-    return f"""
-    CREATE TABLE {table_name} (
-      completion_evidence_bundle_id TEXT PRIMARY KEY CHECK (
-        length(completion_evidence_bundle_id) = 46
-        AND substr(completion_evidence_bundle_id, 1, 30) =
-              'tg_completion_evidence_bundle_'
-        AND substr(completion_evidence_bundle_id, 31)
-              NOT GLOB '*[^0-9a-f]*'
-      ),
-      project_id TEXT NOT NULL,
-      task_id TEXT NOT NULL,
-      completion_cycle_id TEXT NOT NULL,
-      cycle_ordinal INTEGER NOT NULL CHECK (cycle_ordinal > 0),
-      source_schema_version INTEGER NOT NULL,
-      bundle_version INTEGER NOT NULL,
-      contract_revision INTEGER NOT NULL CHECK (contract_revision >= 0),
-      authority_snapshot_id TEXT NOT NULL,
-      acceptance_criterion_id TEXT,
-      verification_criterion_id TEXT,
-      target_kind TEXT NOT NULL CHECK (target_kind IN (
-        'git_commit', 'diff_fingerprint', 'external_revision', 'git_snapshot'
-      )),
-      target_value TEXT NOT NULL CHECK (length(target_value) BETWEEN 1 AND 500),
-      target_base_revision TEXT NOT NULL CHECK (length(target_base_revision) <= 500),
-      target_generation INTEGER NOT NULL CHECK (target_generation > 0),
-      target_capture_version INTEGER NOT NULL CHECK (target_capture_version = 1),
-      artifact_manifest_id TEXT NOT NULL,
-      verification_receipt_id TEXT,
-      verification_basis_kind TEXT CHECK (
-        verification_basis_kind IS NULL
-        OR verification_basis_kind IN ({basis_kinds})
-      ),
-      verification_runner_observation_id TEXT,
-      omission_mask INTEGER NOT NULL CHECK (omission_mask BETWEEN 0 AND 15),
-      sealed_at TEXT NOT NULL,
-      bundle_digest TEXT NOT NULL CHECK (
-        length(bundle_digest) = 71
-        AND substr(bundle_digest, 1, 7) = 'sha256:'
-        AND substr(bundle_digest, 8) NOT GLOB '*[^0-9a-f]*'
-      ),
-      payload_size_bytes INTEGER NOT NULL CHECK (
-        payload_size_bytes BETWEEN 1 AND 16777216
-      ),
-      UNIQUE (project_id, task_id, completion_evidence_bundle_id),
-      UNIQUE (project_id, task_id, completion_cycle_id),
-      CHECK (
-        (source_schema_version = 19 AND bundle_version = 1
-          AND verification_basis_kind IS NULL
-          AND verification_runner_observation_id IS NULL)
-        OR
-        (source_schema_version = 20 AND bundle_version = 2
-          AND verification_basis_kind = 'caller_attestation'
-          AND verification_receipt_id IS NOT NULL
-          AND verification_runner_observation_id IS NULL)
-        OR
-        (source_schema_version = 20 AND bundle_version = 2
-          AND verification_basis_kind = 'not_required'
-          AND verification_receipt_id IS NULL
-          AND verification_runner_observation_id IS NULL)
-        {source21_arms}
-      ),
-      FOREIGN KEY (project_id, task_id) REFERENCES tasks(project_id, task_id),
-      FOREIGN KEY (project_id, task_id, authority_snapshot_id)
-        REFERENCES authority_snapshots(project_id, task_id, authority_snapshot_id),
-      FOREIGN KEY (project_id, task_id, acceptance_criterion_id)
-        REFERENCES contract_criteria(project_id, task_id, criterion_id),
-      FOREIGN KEY (project_id, task_id, verification_criterion_id)
-        REFERENCES contract_criteria(project_id, task_id, criterion_id),
-      FOREIGN KEY (project_id, task_id, artifact_manifest_id)
-        REFERENCES artifact_manifests(project_id, task_id, artifact_manifest_id),
-      FOREIGN KEY (verification_receipt_id)
-        REFERENCES verification_receipts(verification_receipt_id),
-      FOREIGN KEY (
-        project_id, task_id, target_generation,
-        verification_runner_observation_id
-      ) REFERENCES verification_runner_observations(
-        project_id, task_id, target_generation,
-        verification_runner_observation_id
-      ) ON UPDATE RESTRICT ON DELETE RESTRICT NOT DEFERRABLE,
-      FOREIGN KEY (completion_cycle_id)
-        REFERENCES task_completion_cycles(completion_cycle_id)
-        DEFERRABLE INITIALLY DEFERRED
-    )
-    """
-
-
 def _verification_runner_table_statements(
     *,
     schema_version: int = PRIVATE_SCHEMA20_VERSION,
@@ -4980,57 +4863,6 @@ def _verification_runner_trigger_statements(
     return tuple(result)
 
 
-def _criterion_evidence_links_v20_matrix_trigger_sql() -> str:
-    return """
-    CREATE TRIGGER trg_criterion_evidence_links_matrix_insert
-    BEFORE INSERT ON criterion_evidence_links
-    WHEN NOT EXISTS (
-      SELECT 1
-        FROM contract_criteria AS criterion
-        JOIN evidence_references AS reference
-          ON reference.project_id = criterion.project_id
-         AND reference.task_id = criterion.task_id
-       WHERE criterion.project_id = NEW.project_id
-         AND criterion.task_id = NEW.task_id
-         AND criterion.criterion_id = NEW.criterion_id
-         AND reference.evidence_reference_id = NEW.evidence_reference_id
-         AND reference.assurance_class = NEW.assurance_class
-         AND reference.producer_class = NEW.producer_class
-         AND reference.producer_version = NEW.producer_version
-         AND (
-           (NEW.relation = 'verification_attestation'
-             AND criterion.criterion_kind = 'verification'
-             AND reference.source_kind = 'verification_receipt')
-           OR
-           (NEW.relation = 'review_assessment'
-             AND criterion.criterion_kind = 'acceptance'
-             AND reference.source_kind = 'review_receipt')
-           OR
-           (NEW.relation = 'review_finding'
-             AND criterion.criterion_kind = 'acceptance'
-             AND reference.source_kind = 'review_finding')
-           OR
-           (NEW.relation = 'completion_basis'
-             AND criterion.criterion_kind = 'acceptance'
-             AND reference.source_kind IN (
-               'artifact_manifest', 'completion_evidence'
-             ))
-           OR
-           (NEW.relation = 'runner_observation'
-             AND criterion.criterion_kind = 'verification'
-             AND reference.source_kind = 'runner_observation'
-             AND reference.verification_criterion_id = NEW.criterion_id
-             AND NEW.assurance_class = 'machine_observed'
-             AND NEW.producer_class = 'verification_runner'
-             AND NEW.producer_version = 1)
-         )
-    )
-    BEGIN
-      SELECT RAISE(ABORT, 'invalid_criterion_evidence_link');
-    END
-    """
-
-
 def _verification_runner_shadow_schema_statements() -> tuple[str, ...]:
     return (
         *_R3A_SCHEMA20_COLUMN_ALTERS,
@@ -5082,63 +4914,6 @@ def _verification_runner_attempt_digest_projection(row: Any) -> dict[str, Any]:
         }
     except (KeyError, IndexError, TypeError) as exc:
         raise _unreadable_project_state() from exc
-
-
-def _bundle_v20_recreated_object_statements() -> tuple[str, ...]:
-    return (
-        """CREATE UNIQUE INDEX idx_completion_evidence_bundles_task_cycle
-             ON completion_evidence_bundles(
-               project_id, task_id, completion_cycle_id
-             )""",
-        """CREATE TRIGGER trg_completion_evidence_bundles_no_update
-             BEFORE UPDATE ON completion_evidence_bundles
-             BEGIN SELECT RAISE(ABORT, 'immutable_completion_evidence'); END""",
-        """CREATE TRIGGER trg_completion_evidence_bundles_no_delete
-             BEFORE DELETE ON completion_evidence_bundles
-             BEGIN SELECT RAISE(ABORT, 'immutable_completion_evidence'); END""",
-    )
-
-
-def _task_completion_cycle_evidence_basis_v21_trigger_sql() -> str:
-    """Return the schema-v21 same-cycle Bundle/tag relation guard."""
-
-    return """
-    CREATE TRIGGER trg_task_completion_cycles_evidence_basis_insert
-    BEFORE INSERT ON task_completion_cycles
-    WHEN NOT (
-      (
-        NEW.origin = 'legacy_current_done'
-        AND NEW.evidence_basis_version = 0
-        AND NEW.completion_evidence_bundle_id IS NULL
-      )
-      OR
-      (
-        NEW.origin = 'native_done'
-        AND NEW.evidence_basis_version = 1
-        AND NEW.completion_evidence_bundle_id IS NOT NULL
-        AND EXISTS (
-          SELECT 1 FROM completion_evidence_bundles AS bundle
-           WHERE bundle.project_id = NEW.project_id
-             AND bundle.task_id = NEW.task_id
-             AND bundle.completion_cycle_id = NEW.completion_cycle_id
-             AND bundle.cycle_ordinal = NEW.saved_cycle_ordinal
-             AND bundle.completion_evidence_bundle_id =
-                   NEW.completion_evidence_bundle_id
-             AND bundle.source_schema_version = 21
-             AND bundle.bundle_version = 2
-             AND bundle.verification_receipt_id IS
-                   NEW.verification_receipt_id
-             AND bundle.verification_basis_kind =
-                   NEW.verification_basis_kind
-             AND bundle.verification_runner_observation_id IS
-                   NEW.verification_runner_observation_id
-        )
-      )
-    )
-    BEGIN
-      SELECT RAISE(ABORT, 'invalid_completion_evidence_basis');
-    END
-    """
 
 
 def _rebuild_completion_evidence_bundle_v20(

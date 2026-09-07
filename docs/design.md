@@ -133,7 +133,9 @@ The implementation keeps these narrow ownership boundaries:
 - `schema_evidence_ledger.py` owns the ordered Evidence Ledger capture SQL and
   its provenance trigger; storage retains validation and migration execution.
 - `schema_completion_evidence_bundles.py` owns the ordered Bundle SQL
-  definitions; storage retains migration, sealing, and Bundle/cycle transactions.
+  definitions, versioned Bundle tables, criterion-link matrices, cycle
+  Evidence-basis guards, and their immutable predecessor schema tags; storage
+  retains migration, sealing, and Bundle/cycle transactions.
 - `task_values.py` owns shared Task scalar/text/privacy validation, its
   constants, and the existing `TaskValidationError` type. Task, Contract,
   Review, and storage consumers import these values directly.

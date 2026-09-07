@@ -153,6 +153,12 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
     """
 
     from task_governance_tool import storage
+    from task_governance_tool.schema_completion_evidence_bundles import (
+        PRIVATE_SCHEMA20_VERSION,
+        _bundle_v20_recreated_object_statements,
+        _completion_evidence_bundle_v20_table_sql,
+        _criterion_evidence_links_v20_matrix_trigger_sql,
+    )
 
     marker = connection.execute(
         "SELECT 1 FROM schema_migrations WHERE version = 21"
@@ -224,7 +230,7 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
             )
 
         runner_tables = storage._verification_runner_table_statements(
-            schema_version=storage.PRIVATE_SCHEMA20_VERSION,
+            schema_version=PRIVATE_SCHEMA20_VERSION,
         )
         for statement in runner_tables[:3]:
             connection.execute(statement)
@@ -232,8 +238,8 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
             if storage._schema20_statement_identity(statement)[0] == "table":
                 connection.execute(statement)
         connection.execute(
-            storage._completion_evidence_bundle_v20_table_sql(
-                schema_version=storage.PRIVATE_SCHEMA20_VERSION,
+            _completion_evidence_bundle_v20_table_sql(
+                schema_version=PRIVATE_SCHEMA20_VERSION,
             )
         )
         copy_order = (
@@ -270,18 +276,18 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
             if table_name in rebuilt_tables:
                 connection.execute(statement)
         for statement in storage._verification_runner_trigger_statements(
-            schema_version=storage.PRIVATE_SCHEMA20_VERSION,
+            schema_version=PRIVATE_SCHEMA20_VERSION,
         ):
             _kind, _name, table_name = storage._schema20_statement_identity(statement)
             if table_name in rebuilt_tables:
                 connection.execute(statement)
-        for statement in storage._bundle_v20_recreated_object_statements():
+        for statement in _bundle_v20_recreated_object_statements():
             connection.execute(statement)
         for statement in evidence_statements:
             if storage._schema20_statement_identity(statement)[0] != "table":
                 connection.execute(statement)
         if evidence_tables:
-            connection.execute(storage._criterion_evidence_links_v20_matrix_trigger_sql())
+            connection.execute(_criterion_evidence_links_v20_matrix_trigger_sql())
         v20_cycle_guards = (
             next(
                 statement

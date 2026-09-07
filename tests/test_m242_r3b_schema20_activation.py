@@ -20,6 +20,9 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool import cli as cli_module  # noqa: E402
 from task_governance_tool import storage  # noqa: E402
+from task_governance_tool.schema_completion_evidence_bundles import (  # noqa: E402
+    _criterion_evidence_links_v20_matrix_trigger_sql,
+)
 from task_governance_tool import verification_runner  # noqa: E402
 from task_governance_tool.backup import (  # noqa: E402
     discover_managed_backup_metadata,
@@ -386,7 +389,7 @@ def _inject_v20_marker(path: Path, marker: str) -> None:
                 "DROP TRIGGER trg_criterion_evidence_links_matrix_insert"
             )
             connection.execute(
-                storage._criterion_evidence_links_v20_matrix_trigger_sql()
+                _criterion_evidence_links_v20_matrix_trigger_sql()
             )
         else:
             raise AssertionError("unknown hybrid marker fixture")

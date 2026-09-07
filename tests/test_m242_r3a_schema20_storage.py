@@ -18,6 +18,9 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import storage
+from task_governance_tool.schema_completion_evidence_bundles import (
+    _completion_evidence_bundle_v20_table_sql,
+)
 from task_governance_tool.verification_runner import (
     resolution_idempotency_digest,
     verification_runner_attempt_digest,
@@ -1877,7 +1880,7 @@ class R3ASchema20StorageTests(unittest.TestCase):
     def test_bundle_tagged_union_keeps_runner_pointer_null(self) -> None:
         with closing(sqlite3.connect(":memory:")) as connection:
             connection.execute("PRAGMA foreign_keys = OFF")
-            connection.execute(storage._completion_evidence_bundle_v20_table_sql())
+            connection.execute(_completion_evidence_bundle_v20_table_sql())
             base: dict[str, object] = {
                 "completion_evidence_bundle_id": (
                     "tg_completion_evidence_bundle_" + "1" * 16

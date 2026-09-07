@@ -16,8 +16,8 @@ from task_governance_tool import completion_history_projection as projection  # 
 from task_governance_tool.cli import (  # noqa: E402
     CommandContext,
     handle_task_show,
-    task_show_text,
 )
+from task_governance_tool.cli_text import task_show_text  # noqa: E402
 from task_governance_tool.completion_history_projection import (  # noqa: E402
     COMPLETION_HISTORY_MAX_BYTES,
     COMPLETION_HISTORY_MAX_CYCLE_BYTES,

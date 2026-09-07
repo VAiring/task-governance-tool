@@ -30,6 +30,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool import _verification_runner_win32 as runner_win32  # noqa: E402
 from task_governance_tool import cli as cli_module  # noqa: E402
+from task_governance_tool.cli_text import review_text  # noqa: E402
 from task_governance_tool import verification_runner_process as runner_process  # noqa: E402
 from task_governance_tool import verification_runner_service as service  # noqa: E402
 from task_governance_tool.artifact_manifest import (  # noqa: E402
@@ -539,8 +540,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertEqual(success_data["verification_route"], "receipt_required")
             self.assertIsNone(success_data["blocking_code"])
             self.assertEqual(
-                cli_module.review_text("review.target.set", success_data),
-                cli_module.review_text(
+                review_text("review.target.set", success_data),
+                review_text(
                     "review.target.set",
                     {
                         "task": review.task,

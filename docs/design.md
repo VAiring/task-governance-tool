@@ -103,7 +103,11 @@ The implementation keeps these narrow ownership boundaries:
 - `cli_parser.py` owns public parser construction, common options, and
   sanitized parser error types.
 - `cli.py` preprocesses lexical root options, uses that parser, orchestrates
-  state and maintenance, dispatches services, and formats bounded JSON or text.
+  state and maintenance, dispatches services, and emits bounded JSON or text.
+- `cli_text.py` formats the existing Task, completion-check, Handoff, Review,
+  and Verification Receipt human text from supplied projections. It does not
+  select Tasks or perform operations; Review Packet rendering stays in
+  `review_packet.py`.
 - `compact.py` owns compact task projections and final byte caps.
 - `project_scope.py` validates the governed root, physical package layout,
   self-host exception, containment, and effective Git-ignore preflight.

@@ -140,6 +140,17 @@ gates. It is not the product contract, execution ledger, or evidence store:
   smallest realistic process, cleanup, privacy, migration, compatibility, and
   package test sets required by the active specification and design.
 
+<a id="responsibility-based-modularization"></a>
+
+### Responsibility-Based Modularization Direction
+
+The user-approved whole-initiative direction is recorded in the
+[modularization roadmap](docs/modularization-roadmap.md#modularization-roadmap).
+It owns the finite decomposition scope, exclusions, broad sequence, and finish
+conditions. Current product/design owners and existing third-wave Task
+Contracts remain unchanged. Recording the direction authorizes neither later
+Task registration nor implementation; live progress remains in the public CLI.
+
 ### Release Vocabulary And Legacy Read Boundary
 
 - New caller input uses `operation_sequence=<positive canonical integer>` only

@@ -28,6 +28,7 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/runner-plan-authoring-specification.md",
     "docs/runner-plan-authoring-design.md",
     "plan.md",
+    "docs/modularization-roadmap.md",
     "docs/history/README.md",
 )
 EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
@@ -206,9 +207,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v7_is_closed(self):
+    def test_registry_v8_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v7",
+            "schema": "taskgov-document-authority-v8",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -221,7 +222,7 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/runner-plan-authoring-design.md",
             ],
             "mixed_execution": [],
-            "conditional": [],
+            "conditional": ["docs/modularization-roadmap.md"],
             "history_index": "docs/history/README.md",
         }
         with self.fixture() as root:
@@ -231,7 +232,7 @@ class DocumentContractTests(unittest.TestCase):
             self.assertTrue(contract.check_document_contract(root).ok)
 
         mutations = (
-            ("old_schema", lambda value: value.__setitem__("schema", "taskgov-document-authority-v6")),
+            ("old_schema", lambda value: value.__setitem__("schema", "taskgov-document-authority-v7")),
             (
                 "execution_route",
                 lambda value: value["mixed_execution"].append(
@@ -243,6 +244,7 @@ class DocumentContractTests(unittest.TestCase):
                 lambda value: value["conditional"].append("docs/conditional.md"),
             ),
             ("missing_owner", lambda value: value["current"].pop()),
+            ("missing_conditional_owner", lambda value: value["conditional"].pop()),
             ("unknown_key", lambda value: value.__setitem__("unknown", [])),
         )
         for name, mutate in mutations:
@@ -281,6 +283,24 @@ class DocumentContractTests(unittest.TestCase):
                     "authority_route", self.codes(contract.check_document_contract(root))
                 )
 
+    def test_modularization_roadmap_route_and_live_state_are_checked(self):
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.AUTHORITY,
+                "](modularization-roadmap.md)",
+                "](design.md)",
+            )
+            self.assertIn(
+                "authority_route", self.codes(contract.check_document_contract(root))
+            )
+
+        with self.fixture() as root:
+            self.append(root, "docs/modularization-roadmap.md", "\nstatus: in_progress\n")
+            self.assertIn(
+                "volatile_state", self.codes(contract.check_document_contract(root))
+            )
+
     def test_active_route_sections_links_and_anchors_fail_closed(self):
         self.assertEqual(
             contract.ROUTE_SECTIONS,
@@ -316,6 +336,11 @@ class DocumentContractTests(unittest.TestCase):
                     contract.DESIGN,
                     "## Current Runner Plan Authoring And Control Design",
                     ("runner-plan-authoring-design.md",),
+                ),
+                (
+                    contract.AUTHORITY,
+                    "## Conditional Initiative Roadmaps",
+                    ("modularization-roadmap.md",),
                 ),
                 (
                     contract.AUTHORITY,

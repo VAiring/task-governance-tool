@@ -48,6 +48,15 @@ These are the current owners of the delegated authoring/control detail. Shared
 Plan values, target admission, Task Contract, and maintenance rules remain in
 the specification and design and are linked directly from the detail.
 
+## Conditional Initiative Roadmaps
+
+- [Responsibility-based modularization](modularization-roadmap.md)
+
+This is the approved planning direction for the named initiative, not current
+product behavior or an authorization to start later execution units. Read it
+for explicitly authorized initiative planning/taskization or work whose exact
+Task Contract selects it. Existing third-wave contracts are unchanged.
+
 ## Delegated Repository Operating Guides
 
 - [Artifact authoring](artifact-authoring.md)
@@ -74,6 +83,7 @@ current gate.
 | Supported product behavior, public CLI/JSON, persistence, privacy, setup, Viewer, or current gate | Exact section in `docs/specification.md`; Viewer detail in `docs/viewer-specification.md`; Runner Plan authoring detail in `docs/runner-plan-authoring-specification.md` |
 | Module ownership, storage/process boundary, migration mechanics, or test architecture | Exact section in `docs/design.md`; Viewer detail in `docs/viewer-design.md`; Runner Plan authoring detail in `docs/runner-plan-authoring-design.md` |
 | Current decision, open issue, cross-sequence gateway, or static contract | Exact section in `plan.md` |
+| Authorized modularization planning or a Task selecting that initiative | `docs/modularization-roadmap.md`; existing product/design owners and exact Task Contract still apply |
 | Published artifact, install, upgrade, tag, or Release identity | `docs/release-install.md` |
 | Live status, blocker, target, evidence, review, or completion history | Public CLI and live Task Contract; no Git-document mirror |
 | Historical lineage or retired evidence | `docs/history/README.md`, only after naming the exceptional reason |
@@ -106,11 +116,11 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v7",
+  "schema": "taskgov-document-authority-v8",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md"],
   "mixed_execution": [],
-  "conditional": [],
+  "conditional": ["docs/modularization-roadmap.md"],
   "history_index": "docs/history/README.md"
 }
 ```

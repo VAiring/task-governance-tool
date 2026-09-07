@@ -24,6 +24,7 @@ RUNNER_PLAN_AUTHORING_DESIGN = "docs/runner-plan-authoring-design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
+MODULARIZATION_ROADMAP = "docs/modularization-roadmap.md"
 
 CANONICAL_DOCS = (
     "AGENTS.md",
@@ -36,6 +37,7 @@ CANONICAL_DOCS = (
     RUNNER_PLAN_AUTHORING_SPECIFICATION,
     RUNNER_PLAN_AUTHORING_DESIGN,
     "plan.md",
+    MODULARIZATION_ROADMAP,
     HISTORY_INDEX,
 )
 METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL, ARTIFACT_AUTHORING)
@@ -77,6 +79,11 @@ ROUTE_SECTIONS = (
     ),
     (
         AUTHORITY,
+        "## Conditional Initiative Roadmaps",
+        ("modularization-roadmap.md",),
+    ),
+    (
+        AUTHORITY,
         "## Delegated Repository Operating Guides",
         ("artifact-authoring.md",),
     ),
@@ -87,6 +94,7 @@ TRIGGER_ROUTE_OWNER_TOKENS = (
     ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION),
     ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN),
     ("plan.md",),
+    (MODULARIZATION_ROADMAP,),
     ("docs/release-install.md",),
     (),
     ("docs/history/README.md",),
@@ -265,6 +273,7 @@ ROLE_TITLES = {
     RUNNER_PLAN_AUTHORING_SPECIFICATION: "# Runner Plan Authoring And Control Specification",
     RUNNER_PLAN_AUTHORING_DESIGN: "# Runner Plan Authoring And Control Design",
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
+    MODULARIZATION_ROADMAP: "# Responsibility-Based Modularization Roadmap",
     HISTORY_INDEX: "# Historical Documentation Index",
     RELEASE_INSTALL: "# Release Candidate And Published Install Record",
     ARTIFACT_AUTHORING: "# Artifact Authoring Guide",
@@ -909,7 +918,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v7",
+        "schema": "taskgov-document-authority-v8",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -917,7 +926,7 @@ def _expected_registry() -> dict[str, object]:
             RUNNER_PLAN_AUTHORING_SPECIFICATION, RUNNER_PLAN_AUTHORING_DESIGN,
         ],
         "mixed_execution": [],
-        "conditional": [],
+        "conditional": [MODULARIZATION_ROADMAP],
         "history_index": HISTORY_INDEX,
     }
 

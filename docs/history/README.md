@@ -539,3 +539,22 @@ contracts, their index, and the pre-normalization plan from source commit
   remain routed by [docs/authority.md](../authority.md).
   Use the public CLI for live Task state and evidence. This capture is lineage
   only and cannot fill a current authority gap or satisfy a gate.
+
+## v0.13.0 Runner Plan Authoring Section Split Lineage
+
+- Immutable history:
+  [v0.13.0/runner-plan-authoring-section-split.md](v0.13.0/runner-plan-authoring-section-split.md)
+- Source sections:
+  `docs/specification.md#current-runner-plan-authoring-and-control-contract` and
+  `docs/design.md#current-runner-plan-authoring-and-control-design`
+- Source commit: `aed16ab456d7074f2647b102c14e894430ff7bc2`
+- Capture unit: `TG-ARCH.13`
+- Capture purpose: preserve only the complete Runner Plan authoring/control
+  specification and design sections before their responsibility-based split.
+- Current replacements:
+  [Runner Plan authoring specification](../runner-plan-authoring-specification.md)
+  and [Runner Plan authoring design](../runner-plan-authoring-design.md).
+  The unchanged common contracts remain routed by
+  [docs/authority.md](../authority.md). Use the public CLI for live Task state
+  and evidence. This capture is lineage only and cannot fill a current authority
+  gap or satisfy a gate.

@@ -240,9 +240,9 @@ The adopted decision keeps bounded Runner Plan authoring active only through the
 existing `task edit <task-id> --runner-plan-action
 replace|rebind|detach|disable` option; `replace` alone consumes the strict
 `RunnerPlanDraftV1`. The current
-[specification](docs/specification.md#current-runner-plan-authoring-and-control-contract)
+[specification](docs/runner-plan-authoring-specification.md#current-runner-plan-authoring-and-control-contract)
 owns behavior, the current
-[design](docs/design.md#current-runner-plan-authoring-and-control-design) owns
+[design](docs/runner-plan-authoring-design.md#current-runner-plan-authoring-and-control-design) owns
 implementation structure, [AGENTS.md](AGENTS.md#target-project-safety) owns the
 durable mutation boundary, and the
 [README](README.md#explicit-runner-plan-authoring) owns operator opt-in guidance.

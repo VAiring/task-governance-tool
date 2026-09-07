@@ -19,6 +19,8 @@ AUTHORITY = "docs/authority.md"
 DESIGN = "docs/design.md"
 VIEWER_SPECIFICATION = "docs/viewer-specification.md"
 VIEWER_DESIGN = "docs/viewer-design.md"
+RUNNER_PLAN_AUTHORING_SPECIFICATION = "docs/runner-plan-authoring-specification.md"
+RUNNER_PLAN_AUTHORING_DESIGN = "docs/runner-plan-authoring-design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
@@ -31,6 +33,8 @@ CANONICAL_DOCS = (
     DESIGN,
     VIEWER_SPECIFICATION,
     VIEWER_DESIGN,
+    RUNNER_PLAN_AUTHORING_SPECIFICATION,
+    RUNNER_PLAN_AUTHORING_DESIGN,
     "plan.md",
     HISTORY_INDEX,
 )
@@ -58,6 +62,21 @@ ROUTE_SECTIONS = (
     (DESIGN, "## Static Viewer", ("viewer-design.md",)),
     (
         AUTHORITY,
+        "## Runner Plan Authoring Detail Authority",
+        ("runner-plan-authoring-specification.md", "runner-plan-authoring-design.md"),
+    ),
+    (
+        "docs/specification.md",
+        "## Current Runner Plan Authoring And Control Contract",
+        ("runner-plan-authoring-specification.md",),
+    ),
+    (
+        DESIGN,
+        "## Current Runner Plan Authoring And Control Design",
+        ("runner-plan-authoring-design.md",),
+    ),
+    (
+        AUTHORITY,
         "## Delegated Repository Operating Guides",
         ("artifact-authoring.md",),
     ),
@@ -65,8 +84,8 @@ ROUTE_SECTIONS = (
 )
 
 TRIGGER_ROUTE_OWNER_TOKENS = (
-    ("docs/specification.md", VIEWER_SPECIFICATION),
-    ("docs/design.md", VIEWER_DESIGN),
+    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION),
+    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN),
     ("plan.md",),
     ("docs/release-install.md",),
     (),
@@ -243,6 +262,8 @@ ROLE_TITLES = {
     "docs/design.md": "# task-governance-tool Current Implementation Design",
     VIEWER_SPECIFICATION: "# Static Task Viewer Specification",
     VIEWER_DESIGN: "# Static Viewer Implementation Design",
+    RUNNER_PLAN_AUTHORING_SPECIFICATION: "# Runner Plan Authoring And Control Specification",
+    RUNNER_PLAN_AUTHORING_DESIGN: "# Runner Plan Authoring And Control Design",
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
     HISTORY_INDEX: "# Historical Documentation Index",
     RELEASE_INSTALL: "# Release Candidate And Published Install Record",
@@ -888,11 +909,12 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v6",
+        "schema": "taskgov-document-authority-v7",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
             VIEWER_SPECIFICATION, VIEWER_DESIGN,
+            RUNNER_PLAN_AUTHORING_SPECIFICATION, RUNNER_PLAN_AUTHORING_DESIGN,
         ],
         "mixed_execution": [],
         "conditional": [],

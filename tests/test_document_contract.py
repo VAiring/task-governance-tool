@@ -25,6 +25,8 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/design.md",
     "docs/viewer-specification.md",
     "docs/viewer-design.md",
+    "docs/runner-plan-authoring-specification.md",
+    "docs/runner-plan-authoring-design.md",
     "plan.md",
     "docs/history/README.md",
 )
@@ -204,9 +206,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v6_is_closed(self):
+    def test_registry_v7_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v6",
+            "schema": "taskgov-document-authority-v7",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -215,6 +217,8 @@ class DocumentContractTests(unittest.TestCase):
             "current": [
                 "docs/specification.md", "docs/design.md", "plan.md",
                 "docs/viewer-specification.md", "docs/viewer-design.md",
+                "docs/runner-plan-authoring-specification.md",
+                "docs/runner-plan-authoring-design.md",
             ],
             "mixed_execution": [],
             "conditional": [],
@@ -227,7 +231,7 @@ class DocumentContractTests(unittest.TestCase):
             self.assertTrue(contract.check_document_contract(root).ok)
 
         mutations = (
-            ("old_schema", lambda value: value.__setitem__("schema", "taskgov-document-authority-v5")),
+            ("old_schema", lambda value: value.__setitem__("schema", "taskgov-document-authority-v6")),
             (
                 "execution_route",
                 lambda value: value["mixed_execution"].append(
@@ -264,6 +268,19 @@ class DocumentContractTests(unittest.TestCase):
                     "authority_route", self.codes(contract.check_document_contract(root))
                 )
 
+    def test_runner_plan_authoring_detail_routes_are_required(self):
+        for source, destination in (
+            (contract.AUTHORITY, "runner-plan-authoring-specification.md"),
+            (contract.AUTHORITY, "runner-plan-authoring-design.md"),
+            ("docs/specification.md", "runner-plan-authoring-specification.md"),
+            (contract.DESIGN, "runner-plan-authoring-design.md"),
+        ):
+            with self.subTest(source=source, destination=destination), self.fixture() as root:
+                self.replace(root, source, f"]({destination})", "](design.md)")
+                self.assertIn(
+                    "authority_route", self.codes(contract.check_document_contract(root))
+                )
+
     def test_active_route_sections_links_and_anchors_fail_closed(self):
         self.assertEqual(
             contract.ROUTE_SECTIONS,
@@ -285,6 +302,21 @@ class DocumentContractTests(unittest.TestCase):
                     ("viewer-specification.md",),
                 ),
                 (contract.DESIGN, "## Static Viewer", ("viewer-design.md",)),
+                (
+                    contract.AUTHORITY,
+                    "## Runner Plan Authoring Detail Authority",
+                    ("runner-plan-authoring-specification.md", "runner-plan-authoring-design.md"),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Current Runner Plan Authoring And Control Contract",
+                    ("runner-plan-authoring-specification.md",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Current Runner Plan Authoring And Control Design",
+                    ("runner-plan-authoring-design.md",),
+                ),
                 (
                     contract.AUTHORITY,
                     "## Delegated Repository Operating Guides",

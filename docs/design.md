@@ -123,6 +123,8 @@ The implementation keeps these narrow ownership boundaries:
   definitions; migration execution and transaction ownership stay in `storage.py`.
 - `schema_verification_receipts.py` owns the ordered Verification Receipt SQL
   definitions; storage retains migrations, validation, and transaction ownership.
+- `schema_evidence_ledger.py` owns the ordered Evidence Ledger capture SQL and
+  its provenance trigger; storage retains validation and migration execution.
 - `tasks.py`, `ordering.py`, and `selection.py` own task validation, lifecycle,
   current/list projections, the source-schema-aware stored Task row/batch
   and Contract-relationship validator, the shared sequential predecessor

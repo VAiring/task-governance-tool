@@ -29,6 +29,8 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/runner-plan-authoring-design.md",
     "docs/task-operation-specification.md",
     "docs/task-operation-design.md",
+    "docs/runner-execution-specification.md",
+    "docs/runner-execution-design.md",
     "plan.md",
     "docs/modularization-roadmap.md",
     "docs/history/README.md",
@@ -209,9 +211,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v9_is_closed(self):
+    def test_registry_v10_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v9",
+            "schema": "taskgov-document-authority-v10",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -224,6 +226,8 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/runner-plan-authoring-design.md",
                 "docs/task-operation-specification.md",
                 "docs/task-operation-design.md",
+                "docs/runner-execution-specification.md",
+                "docs/runner-execution-design.md",
             ],
             "mixed_execution": [],
             "conditional": ["docs/modularization-roadmap.md"],
@@ -296,6 +300,26 @@ class DocumentContractTests(unittest.TestCase):
         ):
             with self.subTest(source=source, destination=destination), self.fixture() as root:
                 self.replace(root, source, f"]({destination})", "](design.md)")
+                self.assertIn(
+                    "authority_route", self.codes(contract.check_document_contract(root))
+                )
+
+    def test_runner_execution_detail_routes_are_required(self):
+        for source, destination in (
+            (contract.AUTHORITY, "runner-execution-specification.md"),
+            (contract.AUTHORITY, "runner-execution-design.md"),
+            ("docs/specification.md", "runner-execution-specification.md#trusted-local-verification-runner"),
+            (contract.DESIGN, "runner-execution-design.md#trusted-local-runner-architecture"),
+            (contract.DESIGN, "runner-execution-design.md#runner-parent-service-and-audit-graph"),
+        ):
+            with self.subTest(source=source, destination=destination), self.fixture() as root:
+                if source == contract.DESIGN:
+                    old_link = f"[Runner execution design]({destination})"
+                    new_link = "[Runner execution design](design.md)"
+                else:
+                    old_link = f"]({destination})"
+                    new_link = "](design.md)"
+                self.replace(root, source, old_link, new_link)
                 self.assertIn(
                     "authority_route", self.codes(contract.check_document_contract(root))
                 )
@@ -413,6 +437,26 @@ class DocumentContractTests(unittest.TestCase):
                     contract.DESIGN,
                     "## Current M25 Select-Split-Merge-Register Design",
                     ("task-operation-design.md#current-m25-select-split-merge-register-design",),
+                ),
+                (
+                    contract.AUTHORITY,
+                    "## Runner Execution Detail Authority",
+                    ("runner-execution-specification.md", "runner-execution-design.md"),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Trusted-Local Verification Runner",
+                    ("runner-execution-specification.md#trusted-local-verification-runner",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Trusted-Local Runner Architecture",
+                    ("runner-execution-design.md#trusted-local-runner-architecture",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Runner Parent Service And Audit Graph",
+                    ("runner-execution-design.md#runner-parent-service-and-audit-graph",),
                 ),
                 (
                     contract.AUTHORITY,

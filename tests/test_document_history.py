@@ -745,6 +745,50 @@ class DocumentHistoryTests(unittest.TestCase):
                 end = source.stdout.index(end_marker, start)
                 self.assertEqual(block.split(b"````\n", 1)[0], source.stdout[start:end])
 
+    def test_runner_execution_split_capture_preserves_exact_source_sections(self):
+        relative = "v0.13.0/runner-execution-section-split.md"
+        source_commit = "8319b794c37dd8345b78510f5b80371ef537ebb7"
+        data = (HISTORY_ROOT / relative).read_bytes()
+        prefix = data.split(b"````markdown\n", 1)[0]
+        self.assertIn(b"NON-AUTHORITATIVE HISTORY", prefix)
+        self.assertIn(source_commit.encode("ascii"), prefix)
+        captured = data.split(b"````markdown\n")[1:]
+        sections = (
+            (
+                "docs/specification.md",
+                b"## Trusted-Local Verification Runner\n",
+                b"## Current Runner Plan Authoring And Control Contract",
+                "runner-execution-specification.md",
+            ),
+            (
+                "docs/design.md",
+                b'<a id="trusted-local-runner-architecture"></a>\n',
+                b"## Validation And Test Design",
+                "runner-execution-design.md",
+            ),
+        )
+        self.assertEqual(len(captured), len(sections))
+        index = (HISTORY_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertEqual(index.count(f"]({relative})"), 1)
+        self.assertIn(source_commit, index)
+        for block, (path, start_marker, end_marker, replacement) in zip(
+            captured, sections
+        ):
+            with self.subTest(path=path):
+                self.assertIn(path.encode("ascii"), prefix)
+                self.assertIn(f"](../../{replacement})".encode("ascii"), prefix)
+                self.assertIn(f"](../{replacement})", index)
+                source = subprocess.run(
+                    ["git", "show", f"{source_commit}:{path}"],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(source.returncode, 0)
+                start = source.stdout.index(start_marker)
+                end = source.stdout.index(end_marker, start)
+                self.assertEqual(block.split(b"````\n", 1)[0], source.stdout[start:end])
+
     def test_m23_authority_split_capture_preserves_exact_source_provenance(self):
         data = M23_AUTHORITY_SPLIT_CAPTURE.read_bytes()
         self.assertEqual(

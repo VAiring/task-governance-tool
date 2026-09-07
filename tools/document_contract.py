@@ -23,6 +23,8 @@ RUNNER_PLAN_AUTHORING_SPECIFICATION = "docs/runner-plan-authoring-specification.
 RUNNER_PLAN_AUTHORING_DESIGN = "docs/runner-plan-authoring-design.md"
 TASK_OPERATION_SPECIFICATION = "docs/task-operation-specification.md"
 TASK_OPERATION_DESIGN = "docs/task-operation-design.md"
+RUNNER_EXECUTION_SPECIFICATION = "docs/runner-execution-specification.md"
+RUNNER_EXECUTION_DESIGN = "docs/runner-execution-design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
@@ -40,6 +42,8 @@ CANONICAL_DOCS = (
     RUNNER_PLAN_AUTHORING_DESIGN,
     TASK_OPERATION_SPECIFICATION,
     TASK_OPERATION_DESIGN,
+    RUNNER_EXECUTION_SPECIFICATION,
+    RUNNER_EXECUTION_DESIGN,
     "plan.md",
     MODULARIZATION_ROADMAP,
     HISTORY_INDEX,
@@ -143,6 +147,26 @@ ROUTE_SECTIONS = (
     ),
     (
         AUTHORITY,
+        "## Runner Execution Detail Authority",
+        ("runner-execution-specification.md", "runner-execution-design.md"),
+    ),
+    (
+        "docs/specification.md",
+        "## Trusted-Local Verification Runner",
+        ("runner-execution-specification.md#trusted-local-verification-runner",),
+    ),
+    (
+        DESIGN,
+        "## Trusted-Local Runner Architecture",
+        ("runner-execution-design.md#trusted-local-runner-architecture",),
+    ),
+    (
+        DESIGN,
+        "## Runner Parent Service And Audit Graph",
+        ("runner-execution-design.md#runner-parent-service-and-audit-graph",),
+    ),
+    (
+        AUTHORITY,
         "## Conditional Initiative Roadmaps",
         ("modularization-roadmap.md",),
     ),
@@ -155,8 +179,8 @@ ROUTE_SECTIONS = (
 )
 
 TRIGGER_ROUTE_OWNER_TOKENS = (
-    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION),
-    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN),
+    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION, RUNNER_EXECUTION_SPECIFICATION),
+    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN, RUNNER_EXECUTION_DESIGN),
     ("plan.md",),
     (MODULARIZATION_ROADMAP,),
     ("docs/release-install.md",),
@@ -338,6 +362,8 @@ ROLE_TITLES = {
     RUNNER_PLAN_AUTHORING_DESIGN: "# Runner Plan Authoring And Control Design",
     TASK_OPERATION_SPECIFICATION: "# Task Operation Specification",
     TASK_OPERATION_DESIGN: "# Task Operation Implementation Design",
+    RUNNER_EXECUTION_SPECIFICATION: "# Runner Execution Specification",
+    RUNNER_EXECUTION_DESIGN: "# Runner Execution Implementation Design",
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
     MODULARIZATION_ROADMAP: "# Responsibility-Based Modularization Roadmap",
     HISTORY_INDEX: "# Historical Documentation Index",
@@ -984,13 +1010,14 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v9",
+        "schema": "taskgov-document-authority-v10",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
             VIEWER_SPECIFICATION, VIEWER_DESIGN,
             RUNNER_PLAN_AUTHORING_SPECIFICATION, RUNNER_PLAN_AUTHORING_DESIGN,
             TASK_OPERATION_SPECIFICATION, TASK_OPERATION_DESIGN,
+            RUNNER_EXECUTION_SPECIFICATION, RUNNER_EXECUTION_DESIGN,
         ],
         "mixed_execution": [],
         "conditional": [MODULARIZATION_ROADMAP],

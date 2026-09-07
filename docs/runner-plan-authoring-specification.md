@@ -4,7 +4,7 @@ This document owns the current Runner Plan authoring/control behavior delegated
 by the [product specification](specification.md#current-runner-plan-authoring-and-control-contract).
 Implementation structure belongs in the
 [Runner Plan authoring design](runner-plan-authoring-design.md).
-The shared [Plan values and target admission](specification.md#eligibility-plan-and-materialization),
+The shared [Plan values and target admission](runner-execution-specification.md#eligibility-plan-and-materialization),
 [Task Contract](task-operation-specification.md#task-contract), and
 [maintenance](specification.md#same-process-maintenance) contracts remain at
 their existing owners.

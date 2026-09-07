@@ -578,3 +578,22 @@ contracts, their index, and the pre-normalization plan from source commit
   [docs/authority.md](../authority.md). Use the public CLI for live Task state
   and evidence. This capture is lineage only and cannot fill a current authority
   gap or satisfy a gate.
+
+## v0.13.0 Runner Execution Section Split Lineage
+
+- Immutable history:
+  [v0.13.0/runner-execution-section-split.md](v0.13.0/runner-execution-section-split.md)
+- Source sections: `Trusted-Local Verification Runner` in `docs/specification.md`,
+  and the explicit `trusted-local-runner-architecture` alias through the complete
+  `Runner Parent Service And Audit Graph` section in `docs/design.md`.
+- Source commit: `8319b794c37dd8345b78510f5b80371ef537ebb7`
+- Capture unit: `TG-MOD.11`
+- Capture purpose: preserve only the complete relocated Runner execution sections;
+  Runner Plan authoring/control and global validation/test design retain their owners.
+- Current replacements:
+  [Runner execution specification](../runner-execution-specification.md)
+  and [Runner execution design](../runner-execution-design.md).
+  The unchanged common contracts remain routed by
+  [docs/authority.md](../authority.md). Use the public CLI for live Task state
+  and evidence. This capture is lineage only and cannot fill a current authority
+  gap or satisfy a gate.

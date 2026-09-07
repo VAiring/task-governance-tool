@@ -4,7 +4,7 @@ This document owns the current Runner Plan authoring/control implementation
 structure delegated by the [implementation design](design.md#current-runner-plan-authoring-and-control-design),
 for the behavior in the
 [Runner Plan authoring specification](runner-plan-authoring-specification.md).
-The shared [Plan values and target admission](design.md#target-plan-implementation),
+The shared [Plan values and target admission](runner-execution-design.md#target-plan-implementation),
 [Task Contract revisions](task-operation-design.md#immutable-task-contract-revisions), and
 [post-commit coordinator](design.md#post-commit-coordinator) remain at their
 existing owners.

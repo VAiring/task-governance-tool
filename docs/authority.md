@@ -27,8 +27,17 @@ contracts. Read the coupled code, schemas, tests, configuration, examples, and
 fixtures. These routes are a starting set, not a maximum: follow concrete
 dependencies that reveal further impact under AGENTS.md's Reread Rule.
 
-The specification remains the product-behavior owner and the design remains
-the implementation-structure owner. No other route transfers either role.
+The specification and design retain their product and implementation roles.
+Their Viewer sections delegate only the corresponding detail below; product
+and implementation ownership remain distinct.
+
+## Viewer Detail Authority
+
+- [Viewer product behavior](viewer-specification.md)
+- [Viewer implementation structure](viewer-design.md)
+
+These are the current owners of the delegated Viewer detail. Shared contracts
+remain in the specification and design and are linked directly from the detail.
 
 ## Delegated Repository Operating Guides
 
@@ -53,8 +62,8 @@ current gate.
 
 | Trigger | Required selective route |
 |---|---|
-| Supported product behavior, public CLI/JSON, persistence, privacy, setup, Viewer, or current gate | Exact section in `docs/specification.md` |
-| Module ownership, storage/process boundary, migration mechanics, or test architecture | Exact section in `docs/design.md` |
+| Supported product behavior, public CLI/JSON, persistence, privacy, setup, Viewer, or current gate | Exact section in `docs/specification.md`; Viewer detail in `docs/viewer-specification.md` |
+| Module ownership, storage/process boundary, migration mechanics, or test architecture | Exact section in `docs/design.md`; Viewer detail in `docs/viewer-design.md` |
 | Current decision, open issue, cross-sequence gateway, or static contract | Exact section in `plan.md` |
 | Published artifact, install, upgrade, tag, or Release identity | `docs/release-install.md` |
 | Live status, blocker, target, evidence, review, or completion history | Public CLI and live Task Contract; no Git-document mirror |
@@ -90,7 +99,7 @@ enforced meaning.
 {
   "schema": "taskgov-document-authority-v6",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
-  "current": ["docs/specification.md", "docs/design.md", "plan.md"],
+  "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md"],
   "mixed_execution": [],
   "conditional": [],
   "history_index": "docs/history/README.md"

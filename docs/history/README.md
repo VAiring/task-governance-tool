@@ -523,3 +523,19 @@ contracts, their index, and the pre-normalization plan from source commit
   [Runner service regressions](../../tests/test_m242_runner_service.py).
   Use the public CLI for live Task state and evidence. This capture is lineage
   only and cannot fill a current authority gap or satisfy a gate.
+
+## v0.13.0 Viewer Section Split Lineage
+
+- Immutable history:
+  [v0.13.0/viewer-section-split.md](v0.13.0/viewer-section-split.md)
+- Source sections: `docs/specification.md#static-task-viewer` and
+  `docs/design.md#static-viewer`
+- Source commit: `5d0c41203ee550728ac4f2a0d1f8fdb055b13a65`
+- Capture unit: `TG-SPLIT.1`
+- Capture purpose: preserve only the complete Viewer specification and design
+  sections before their responsibility-based document split.
+- Current replacements: [Viewer specification](../viewer-specification.md)
+  and [Viewer design](../viewer-design.md). The unchanged common contracts
+  remain routed by [docs/authority.md](../authority.md).
+  Use the public CLI for live Task state and evidence. This capture is lineage
+  only and cannot fill a current authority gap or satisfy a gate.

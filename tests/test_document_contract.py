@@ -23,6 +23,8 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/authority.md",
     "docs/specification.md",
     "docs/design.md",
+    "docs/viewer-specification.md",
+    "docs/viewer-design.md",
     "plan.md",
     "docs/history/README.md",
 )
@@ -210,7 +212,10 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/authority.md",
                 "live_task_contract",
             ],
-            "current": ["docs/specification.md", "docs/design.md", "plan.md"],
+            "current": [
+                "docs/specification.md", "docs/design.md", "plan.md",
+                "docs/viewer-specification.md", "docs/viewer-design.md",
+            ],
             "mixed_execution": [],
             "conditional": [],
             "history_index": "docs/history/README.md",
@@ -246,6 +251,19 @@ class DocumentContractTests(unittest.TestCase):
                     self.codes(contract.check_document_contract(root)),
                 )
 
+    def test_viewer_detail_routes_are_required(self):
+        for source, destination in (
+            (contract.AUTHORITY, "viewer-specification.md"),
+            (contract.AUTHORITY, "viewer-design.md"),
+            ("docs/specification.md", "viewer-specification.md"),
+            (contract.DESIGN, "viewer-design.md"),
+        ):
+            with self.subTest(source=source, destination=destination), self.fixture() as root:
+                self.replace(root, source, f"]({destination})", "](design.md)")
+                self.assertIn(
+                    "authority_route", self.codes(contract.check_document_contract(root))
+                )
+
     def test_active_route_sections_links_and_anchors_fail_closed(self):
         self.assertEqual(
             contract.ROUTE_SECTIONS,
@@ -256,6 +274,17 @@ class DocumentContractTests(unittest.TestCase):
                     "## Selective Current Authority",
                     ("specification.md", "design.md", "../plan.md"),
                 ),
+                (
+                    contract.AUTHORITY,
+                    "## Viewer Detail Authority",
+                    ("viewer-specification.md", "viewer-design.md"),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Static Task Viewer",
+                    ("viewer-specification.md",),
+                ),
+                (contract.DESIGN, "## Static Viewer", ("viewer-design.md",)),
                 (
                     contract.AUTHORITY,
                     "## Delegated Repository Operating Guides",

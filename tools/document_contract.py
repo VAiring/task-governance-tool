@@ -17,6 +17,8 @@ sys.dont_write_bytecode = True
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
 AUTHORITY = "docs/authority.md"
 DESIGN = "docs/design.md"
+VIEWER_SPECIFICATION = "docs/viewer-specification.md"
+VIEWER_DESIGN = "docs/viewer-design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
@@ -27,6 +29,8 @@ CANONICAL_DOCS = (
     AUTHORITY,
     "docs/specification.md",
     DESIGN,
+    VIEWER_SPECIFICATION,
+    VIEWER_DESIGN,
     "plan.md",
     HISTORY_INDEX,
 )
@@ -43,6 +47,17 @@ ROUTE_SECTIONS = (
     ),
     (
         AUTHORITY,
+        "## Viewer Detail Authority",
+        ("viewer-specification.md", "viewer-design.md"),
+    ),
+    (
+        "docs/specification.md",
+        "## Static Task Viewer",
+        ("viewer-specification.md",),
+    ),
+    (DESIGN, "## Static Viewer", ("viewer-design.md",)),
+    (
+        AUTHORITY,
         "## Delegated Repository Operating Guides",
         ("artifact-authoring.md",),
     ),
@@ -50,8 +65,8 @@ ROUTE_SECTIONS = (
 )
 
 TRIGGER_ROUTE_OWNER_TOKENS = (
-    ("docs/specification.md",),
-    ("docs/design.md",),
+    ("docs/specification.md", VIEWER_SPECIFICATION),
+    ("docs/design.md", VIEWER_DESIGN),
     ("plan.md",),
     ("docs/release-install.md",),
     (),
@@ -226,6 +241,8 @@ ROLE_TITLES = {
     AUTHORITY: "# Repository Authority Index",
     "docs/specification.md": "# task-governance-tool Current Product Specification",
     "docs/design.md": "# task-governance-tool Current Implementation Design",
+    VIEWER_SPECIFICATION: "# Static Task Viewer Specification",
+    VIEWER_DESIGN: "# Static Viewer Implementation Design",
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
     HISTORY_INDEX: "# Historical Documentation Index",
     RELEASE_INSTALL: "# Release Candidate And Published Install Record",
@@ -873,7 +890,10 @@ def _expected_registry() -> dict[str, object]:
     return {
         "schema": "taskgov-document-authority-v6",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
-        "current": ["docs/specification.md", "docs/design.md", "plan.md"],
+        "current": [
+            "docs/specification.md", "docs/design.md", "plan.md",
+            VIEWER_SPECIFICATION, VIEWER_DESIGN,
+        ],
         "mixed_execution": [],
         "conditional": [],
         "history_index": HISTORY_INDEX,

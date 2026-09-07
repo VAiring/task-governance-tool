@@ -16,11 +16,13 @@ from task_governance_tool.state_resolver import (
     resolve_project_state,
     resolve_setup_project_state,
 )
+from task_governance_tool.project_binding_repository import (
+    compare_and_swap_project_binding,
+)
 from task_governance_tool.storage import (
     DatabaseTarget,
     MigrationBackupMetadata,
     ProjectIdentity,
-    compare_and_swap_project_binding,
     project_identity,
     read_managed_backup_repository,
 )

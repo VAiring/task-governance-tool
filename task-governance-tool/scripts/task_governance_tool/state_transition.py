@@ -45,11 +45,13 @@ from task_governance_tool.state_paths import (
     rmdir_if_empty,
     unlink_validated_file,
 )
+from task_governance_tool.project_binding_repository import (
+    validate_cleanup_inventory,
+    validate_identity_project_id,
+)
 from task_governance_tool.storage import (
     LOWER_HEX_64_PATTERN,
     StorageError,
-    validate_cleanup_inventory,
-    validate_identity_project_id,
 )
 from task_governance_tool.windows_no_replace import rename_no_replace
 

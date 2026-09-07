@@ -28,10 +28,12 @@ SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
+from task_governance_tool.project_binding_repository import (
+    validate_identity_project_id,
+)
 from task_governance_tool.storage import (  # noqa: E402
     SCHEMA_VERSION,
     VIEWER_MIN_SOURCE_SCHEMA_VERSION,
-    validate_identity_project_id,
 )
 from task_governance_tool.viewer import (  # noqa: E402
     SNAPSHOT_VERSION,

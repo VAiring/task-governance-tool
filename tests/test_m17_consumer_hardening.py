@@ -28,12 +28,14 @@ from task_governance_tool import storage as storage_service
 from task_governance_tool import viewer as viewer_writer
 from task_governance_tool import viewer_maintenance as viewer_service
 from task_governance_tool.state_resolver import resolve_project_state
+from task_governance_tool.project_binding_repository import (
+    compare_and_swap_project_binding,
+)
 from task_governance_tool.storage import (
     DatabaseTarget,
     ProjectIdentity,
     StorageError,
     begin_initialized_write,
-    compare_and_swap_project_binding,
     connect,
     connect_initialized,
     apply_viewer_maintenance_migration,

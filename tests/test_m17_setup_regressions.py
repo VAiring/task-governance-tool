@@ -34,10 +34,12 @@ from task_governance_tool.state_transition import (
     StateTransitionError,
     cleanup_roots,
 )
+from task_governance_tool.project_binding_repository import (
+    compare_and_swap_project_binding,
+)
 from task_governance_tool.storage import (
     DatabaseTarget,
     ProjectIdentity,
-    compare_and_swap_project_binding,
     connect,
     current_schema_version,
 )

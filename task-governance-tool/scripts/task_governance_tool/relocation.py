@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from task_governance_tool.storage import validate_identity_project_id
+from task_governance_tool.project_binding_repository import (
+    validate_identity_project_id,
+)
 
 
 TOKEN_PREFIX = "tgr1"

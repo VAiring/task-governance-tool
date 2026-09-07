@@ -28,6 +28,10 @@ from task_governance_tool.state_paths import (
     EVIDENCE_MAX_BUNDLE_FILES,
     evidence_relative_file_kind,
 )
+from task_governance_tool.project_binding_repository import (
+    read_project_binding_state,
+    validate_identity_project_id,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget,
@@ -42,14 +46,12 @@ from task_governance_tool.storage import (
     is_sqlite_busy_or_locked,
     missing_migration_versions,
     normalized_path_for_hash,
-    read_project_binding_state,
     read_doctor_state,
     read_project_maintenance,
     read_viewer_maintenance,
     sanitize_project_display_name,
     schema_objects_inconsistent_with_version,
     table_exists,
-    validate_identity_project_id,
     validate_current_database_binding,
     validate_current_database_structure,
     validate_lower_hex_64,

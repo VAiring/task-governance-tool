@@ -18,6 +18,11 @@ SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
+from task_governance_tool.project_binding_repository import (
+    compare_and_swap_project_binding,
+    read_project_binding_history,
+    read_project_binding_state,
+)
 from task_governance_tool.storage import (  # noqa: E402
     SCHEMA_VERSION,
     SQLITE_INT64_MAX,
@@ -39,15 +44,12 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_task_checkpoints_migration,
     apply_task_contract_migration,
     apply_viewer_maintenance_migration,
-    compare_and_swap_project_binding,
     connect,
     current_schema_version,
     ensure_project_meta,
     initialize_database,
     initialize_uuid_database,
     project_identity,
-    read_project_binding_history,
-    read_project_binding_state,
     required_schema_objects_missing,
     schema_objects_inconsistent_with_version,
 )
@@ -1418,7 +1420,7 @@ class ProjectIdentityBindingTests(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "task_governance_tool.storage.read_project_binding_state",
+                        "task_governance_tool.project_binding_repository.read_project_binding_state",
                     return_value=maximum_binding,
                 ),
                 self.assertRaises(StorageError) as raised,

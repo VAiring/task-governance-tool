@@ -14,15 +14,17 @@ from tests.m14_test_support import SOURCE_SCRIPTS_ROOT
 if str(SOURCE_SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_SCRIPTS_ROOT))
 
+from task_governance_tool.project_binding_repository import (
+    clear_legacy_cleanup_pending,
+    read_project_binding_state,
+    set_legacy_cleanup_pending,
+)
 from task_governance_tool.storage import (  # noqa: E402
     DatabaseTarget,
     StorageError,
-    clear_legacy_cleanup_pending,
     connect_readonly,
     initialize_database,
     project_identity,
-    read_project_binding_state,
-    set_legacy_cleanup_pending,
 )
 
 

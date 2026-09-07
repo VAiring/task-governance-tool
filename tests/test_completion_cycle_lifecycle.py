@@ -364,6 +364,66 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                 cycles[combined["task_id"]]["completion_cycle_id"],
             )
 
+    def test_priority_plus_done_seals_native_cycle_and_keeps_event_shape(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, db = root / "repo", root / "taskgov.sqlite"
+            repo.mkdir()
+            initialize_taskgov_internal(repo=repo, db=db)
+            task = add_task(db, repo, "Priority and completion", tier=0)
+            seed_review_evidence(db, task["task_id"])
+            args = completion_args(
+                db,
+                repo,
+                task["task_id"],
+                command="task.edit",
+            )
+            args[-1:-1] = ["--priority", "high"]
+
+            result, payload = run_json(*args)
+
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(payload["command"], "task.edit")
+            data = payload["data"]
+            self.assertEqual(data["task"]["status"], "done")
+            self.assertEqual(data["task"]["priority"], "high")
+            self.assertEqual(data["task"]["title"], task["title"])
+            self.assertTrue({"priority", "status"}.issubset(data["changed_fields"]))
+            self.assertEqual(data["event"]["event_type"], "task_updated")
+            self.assertNotIn("completion_cycle_id", data["event"])
+
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                cycles = connection.execute(
+                    "SELECT * FROM task_completion_cycles WHERE task_id = ?",
+                    (task["task_id"],),
+                ).fetchall()
+                bundles = connection.execute(
+                    "SELECT completion_cycle_id, completion_evidence_bundle_id "
+                    "FROM completion_evidence_bundles WHERE task_id = ?",
+                    (task["task_id"],),
+                ).fetchall()
+                linked_events = connection.execute(
+                    "SELECT completion_cycle_id, event_type FROM task_events "
+                    "WHERE task_id = ? AND completion_cycle_id IS NOT NULL",
+                    (task["task_id"],),
+                ).fetchall()
+            self.assertEqual(len(cycles), 1)
+            self.assertEqual(len(bundles), 1)
+            self.assertEqual(len(linked_events), 1)
+            cycle = cycles[0]
+            self.assertEqual(cycle["origin"], "native_done")
+            self.assertEqual(cycle["completeness"], "complete")
+            self.assertEqual(cycle["completion_evidence_kind"], "commit_not_required")
+            self.assertEqual(cycle["verification_basis_kind"], "not_required")
+            self.assertEqual(bundles[0]["completion_cycle_id"], cycle["completion_cycle_id"])
+            self.assertEqual(
+                bundles[0]["completion_evidence_bundle_id"],
+                cycle["completion_evidence_bundle_id"],
+            )
+            self.assertEqual(linked_events[0]["completion_cycle_id"], cycle["completion_cycle_id"])
+            self.assertEqual(linked_events[0]["event_type"], "task_updated")
+
     def test_independent_basis_beats_fallback_and_tier2_can_use_fallback(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

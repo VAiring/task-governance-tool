@@ -2264,6 +2264,14 @@ explicitly writes coverage `complete`; the column default remains
 Both `task complete` and compatibility `task edit --status done` perform Git
 preflight outside SQLite and converge on one locked native capture:
 
+Within `tasks.py`, `_seal_native_completion_locked` accepts the caller-owned
+connection, project and Task identity, proposed-done Task, completion time,
+and already-selected Runner basis. It seals the current gates, References,
+Bundle and cycle, returning the cycle ID without opening or committing a
+transaction. `edit_task` retains the outer savepoint, ordering checks, Task
+update, lane recheck, event and rollback; `completion_workflow` retains
+preflight orchestration outside the writer.
+
 1. validate schema v22, identity/binding, optimistic Task/authority/target
    capture basis, Contract, sequential ordering, and evidence;
 2. reread Verification Receipts and review receipts/findings, evaluate the

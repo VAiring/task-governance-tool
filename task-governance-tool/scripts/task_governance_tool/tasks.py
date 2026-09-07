@@ -2376,6 +2376,361 @@ def reopen_done_task(
     return EditTaskResult(task=task, changed_fields=changed_fields, event=event)
 
 
+def _seal_native_completion_locked(
+    connection: sqlite3.Connection,
+    *,
+    project: ProjectIdentity,
+    task_id: str,
+    proposed_done: dict[str, Any],
+    recorded_at: str,
+    runner_selection: VerificationRunnerGateSelection | None,
+) -> str:
+    """Seal current native evidence inside the caller's writer and savepoint.
+
+    Return the persisted cycle ID. Task update, event, commit, and rollback
+    remain owned by the caller; Runner basis has already been selected.
+    """
+    if (
+        int(proposed_done["review_target_generation"]) > 0
+        and str(proposed_done["review_target_kind"])
+        and str(proposed_done["review_target_value"])
+        and int(proposed_done.get("review_target_capture_version", 0)) != 1
+    ):
+        raise validation_error(
+            "evidence_basis_stale",
+            "current evidence basis must be captured again",
+        )
+    from task_governance_tool.verification_receipts import (
+        enforce_verification_gate,
+        verification_expectation_digest,
+    )
+
+    verification_gate = enforce_verification_gate(
+        connection,
+        task=proposed_done,
+        runner_selection=runner_selection,
+    )
+    enforce_done_review_gate(
+        connection,
+        proposed_done,
+        status_was_provided=True,
+    )
+    exact_verification_digest = verification_expectation_digest(
+        str(proposed_done["verification"])
+    )
+    qualifying_verification_receipt_id = (
+        verification_gate.qualifying_receipt_id
+        if str(proposed_done["verification"]).strip()
+        else None
+    )
+    subject_authority_snapshot_id = (
+        str(proposed_done["review_target_authority_snapshot_id"])
+        if str(proposed_done["verification"]).strip()
+        else None
+    )
+    subject_verification_criterion_id = (
+        str(proposed_done["review_target_verification_criterion_id"])
+        if str(proposed_done["verification"]).strip()
+        else None
+    )
+    completion_identity = allocate_native_completion_identity_locked(
+        connection,
+        project_id=project.project_id,
+        task_id=task_id,
+    )
+    cycle = prepare_native_completion_cycle_locked(
+        connection,
+        project_id=project.project_id,
+        task_id=task_id,
+        task_projection=proposed_done,
+        recorded_at=recorded_at,
+        verification_expectation_digest=exact_verification_digest,
+        verification_receipt_id=qualifying_verification_receipt_id,
+        verification_subject_basis_version=1,
+        subject_authority_snapshot_id=subject_authority_snapshot_id,
+        subject_verification_criterion_id=(
+            subject_verification_criterion_id
+        ),
+        verification_basis_kind=(
+            verification_gate.verification_basis_kind
+        ),
+        verification_runner_observation_id=(
+            verification_gate.verification_runner_observation_id
+        ),
+        completion_identity=completion_identity,
+    )
+    completion_cycle_id = cycle.completion_cycle_id
+    completion_binding = TargetCaptureBinding(
+        target_kind=str(proposed_done["review_target_kind"]),
+        target_value=str(proposed_done["review_target_value"]),
+        target_base_revision=str(
+            proposed_done["review_target_base_revision"]
+        ),
+        target_generation=int(
+            proposed_done["review_target_generation"]
+        ),
+        authority_snapshot_id=str(
+            proposed_done["review_target_authority_snapshot_id"]
+        ),
+        acceptance_criterion_id=(
+            str(
+                proposed_done[
+                    "review_target_acceptance_criterion_id"
+                ]
+            )
+            if proposed_done[
+                "review_target_acceptance_criterion_id"
+            ]
+            is not None
+            else None
+        ),
+        verification_criterion_id=(
+            str(
+                proposed_done[
+                    "review_target_verification_criterion_id"
+                ]
+            )
+            if proposed_done[
+                "review_target_verification_criterion_id"
+            ]
+            is not None
+            else None
+        ),
+    )
+    completion_source = EvidenceSource(
+        source_kind="completion_evidence",
+        source_state=str(cycle.completion_evidence_kind),
+        source_id=cycle.completion_cycle_id,
+        source_projection={
+            "completion_cycle_id": cycle.completion_cycle_id,
+            "completed_at": cycle.completed_at,
+            "completion_evidence_kind": (
+                cycle.completion_evidence_kind
+            ),
+            "completion_evidence_revision": (
+                cycle.completion_evidence_revision
+            ),
+            "completion_evidence_reason": (
+                cycle.completion_evidence_reason
+            ),
+            "external_revision_approved": int(
+                cycle.external_revision_approved
+            ),
+            "completion_commit_required": int(
+                cycle.completion_commit_required
+            ),
+            "completion_commit_hash": cycle.completion_commit_hash,
+        },
+    )
+    completion_reference = build_evidence_reference(
+        source=completion_source,
+        project_id=project.project_id,
+        task_id=task_id,
+        contract_revision=cycle.contract_revision,
+        binding=completion_binding,
+        completion_cycle_id=cycle.completion_cycle_id,
+    )
+    completion_reference_row = {
+            "evidence_reference_id": (
+                f"tg_evidence_reference_{secrets.token_hex(8)}"
+            ),
+            "project_id": project.project_id,
+            "task_id": task_id,
+            "source_kind": completion_source.source_kind,
+            "source_state": completion_source.source_state,
+            "source_id": completion_source.source_id,
+            "assurance_class": (
+                completion_reference.attribution.assurance_class
+            ),
+            "producer_class": (
+                completion_reference.attribution.producer_class
+            ),
+            "producer_version": (
+                completion_reference.attribution.producer_version
+            ),
+            "contract_revision": cycle.contract_revision,
+            "authority_snapshot_id": (
+                completion_binding.authority_snapshot_id
+            ),
+            "acceptance_criterion_id": (
+                completion_binding.acceptance_criterion_id
+            ),
+            "verification_criterion_id": (
+                completion_binding.verification_criterion_id
+            ),
+            "target_kind": completion_binding.target_kind,
+            "target_value": completion_binding.target_value,
+            "target_base_revision": (
+                completion_binding.target_base_revision
+            ),
+            "target_generation": (
+                completion_binding.target_generation
+            ),
+            "completion_cycle_id": cycle.completion_cycle_id,
+            "digest": completion_reference.digest,
+            "created_at": recorded_at,
+        }
+    bundle_basis = read_native_completion_bundle_basis_locked(
+        connection,
+        project_id=project.project_id,
+        task_id=task_id,
+        cycle=cycle,
+        completion_reference=completion_reference_row,
+    )
+    persist_evidence_reference_locked(
+        connection,
+        reference=completion_reference_row,
+    )
+    try:
+        link_count = required_native_bundle_link_count(
+            basis=bundle_basis,
+            cycle=cycle,
+        )
+        bundle_plan = build_native_bundle_plan(
+            basis=bundle_basis,
+            cycle=cycle,
+            completion_identity=completion_identity,
+            criterion_link_ids=tuple(
+                "tg_criterion_evidence_link_"
+                + secrets.token_hex(8)
+                for _ in range(link_count)
+            ),
+            sealed_at=recorded_at,
+        )
+    except EvidenceProjectionError as exc:
+        if exc.code == "evidence_bundle_too_large":
+            raise TaskValidationError(
+                code=exc.code,
+                message=exc.message,
+            ) from exc
+        raise StorageError(exc.code, exc.message) from exc
+    prepared_links = tuple(
+        PreparedCriterionEvidenceLink(**link)
+        for link in bundle_plan.storage_links
+    )
+    prepared_members = tuple(
+        [
+            PreparedCompletionBundleMember(
+                project_id=project.project_id,
+                task_id=task_id,
+                completion_evidence_bundle_id=(
+                    completion_identity.completion_evidence_bundle_id
+                ),
+                member_kind="criterion_link",
+                ordinal=ordinal,
+                criterion_evidence_link_id=(
+                    link.criterion_evidence_link_id
+                ),
+                evidence_reference_id=None,
+            )
+            for ordinal, link in enumerate(prepared_links)
+        ]
+        + [
+            PreparedCompletionBundleMember(
+                project_id=project.project_id,
+                task_id=task_id,
+                completion_evidence_bundle_id=(
+                    completion_identity.completion_evidence_bundle_id
+                ),
+                member_kind="evidence_reference",
+                ordinal=ordinal,
+                criterion_evidence_link_id=None,
+                evidence_reference_id=reference_id,
+            )
+            for ordinal, reference_id in enumerate(
+                bundle_plan.reference_ids
+            )
+        ]
+    )
+    prepared_findings = tuple(
+        PreparedCompletionFindingSnapshot(
+            project_id=project.project_id,
+            task_id=task_id,
+            completion_evidence_bundle_id=(
+                completion_identity.completion_evidence_bundle_id
+            ),
+            ordinal=ordinal,
+            **snapshot,
+        )
+        for ordinal, snapshot in enumerate(
+            bundle_plan.finding_snapshots
+        )
+    )
+    prepared_bundle = PreparedCompletionEvidenceBundle(
+        completion_evidence_bundle_id=(
+            completion_identity.completion_evidence_bundle_id
+        ),
+        project_id=project.project_id,
+        task_id=task_id,
+        completion_cycle_id=completion_identity.completion_cycle_id,
+        cycle_ordinal=completion_identity.saved_cycle_ordinal,
+        source_schema_version=bundle_basis.source_schema_version,
+        bundle_version=2,
+        contract_revision=cycle.contract_revision,
+        authority_snapshot_id=(
+            completion_binding.authority_snapshot_id
+        ),
+        acceptance_criterion_id=(
+            completion_binding.acceptance_criterion_id
+        ),
+        verification_criterion_id=(
+            completion_binding.verification_criterion_id
+        ),
+        target_kind=completion_binding.target_kind,
+        target_value=completion_binding.target_value,
+        target_base_revision=(
+            completion_binding.target_base_revision
+        ),
+        target_generation=completion_binding.target_generation,
+        target_capture_version=1,
+        artifact_manifest_id=(
+            str(proposed_done["review_target_artifact_manifest_id"])
+        ),
+        verification_receipt_id=(
+            qualifying_verification_receipt_id
+        ),
+        verification_basis_kind=cycle.verification_basis_kind,
+        verification_runner_observation_id=(
+            cycle.verification_runner_observation_id
+        ),
+        omission_mask=bundle_plan.omission_mask,
+        sealed_at=recorded_at,
+        bundle_digest=bundle_plan.artifact.bundle_digest,
+        payload_size_bytes=len(bundle_plan.artifact.payload_bytes),
+        criterion_links=prepared_links,
+        members=prepared_members,
+        finding_snapshots=prepared_findings,
+    )
+    persisted_cycle = insert_native_completion_cycle_locked(
+        connection,
+        project_id=project.project_id,
+        task_id=task_id,
+        task_projection=proposed_done,
+        recorded_at=recorded_at,
+        verification_expectation_digest=exact_verification_digest,
+        verification_receipt_id=(
+            qualifying_verification_receipt_id
+        ),
+        verification_subject_basis_version=1,
+        subject_authority_snapshot_id=(
+            subject_authority_snapshot_id
+        ),
+        subject_verification_criterion_id=(
+            subject_verification_criterion_id
+        ),
+        verification_basis_kind=cycle.verification_basis_kind,
+        verification_runner_observation_id=(
+            cycle.verification_runner_observation_id
+        ),
+        completion_identity=completion_identity,
+        prepared_cycle=cycle,
+        completion_bundle=prepared_bundle,
+    )
+    if persisted_cycle != cycle:
+        raise completion_history_inconsistent()
+    return completion_cycle_id
+
+
 def edit_task(
     connection: sqlite3.Connection,
     project: ProjectIdentity,
@@ -2933,348 +3288,18 @@ def edit_task(
                 lane_metadata_changed=lane_metadata_changed,
                 advanced_transition=advanced_transition,
             )
-            if (
-                int(proposed_done["review_target_generation"]) > 0
-                and str(proposed_done["review_target_kind"])
-                and str(proposed_done["review_target_value"])
-                and int(proposed_done.get("review_target_capture_version", 0)) != 1
-            ):
-                raise validation_error(
-                    "evidence_basis_stale",
-                    "current evidence basis must be captured again",
-                )
-            from task_governance_tool.verification_receipts import (
-                enforce_verification_gate,
-                verification_expectation_digest,
-            )
-
-            verification_gate = enforce_verification_gate(
+            completion_cycle_id = _seal_native_completion_locked(
                 connection,
-                task=proposed_done,
+                project=project,
+                task_id=normalized_task_id,
+                proposed_done=proposed_done,
+                recorded_at=now,
                 runner_selection=(
                     completion_plan.basis.runner_selection
                     if completion_plan is not None
                     else compatibility_runner_selection
                 ),
             )
-            enforce_done_review_gate(
-                connection,
-                proposed_done,
-                status_was_provided=True,
-            )
-            exact_verification_digest = verification_expectation_digest(
-                str(proposed_done["verification"])
-            )
-            qualifying_verification_receipt_id = (
-                verification_gate.qualifying_receipt_id
-                if str(proposed_done["verification"]).strip()
-                else None
-            )
-            subject_authority_snapshot_id = (
-                str(proposed_done["review_target_authority_snapshot_id"])
-                if str(proposed_done["verification"]).strip()
-                else None
-            )
-            subject_verification_criterion_id = (
-                str(proposed_done["review_target_verification_criterion_id"])
-                if str(proposed_done["verification"]).strip()
-                else None
-            )
-            completion_identity = allocate_native_completion_identity_locked(
-                connection,
-                project_id=project.project_id,
-                task_id=normalized_task_id,
-            )
-            cycle = prepare_native_completion_cycle_locked(
-                connection,
-                project_id=project.project_id,
-                task_id=normalized_task_id,
-                task_projection=proposed_done,
-                recorded_at=now,
-                verification_expectation_digest=exact_verification_digest,
-                verification_receipt_id=qualifying_verification_receipt_id,
-                verification_subject_basis_version=1,
-                subject_authority_snapshot_id=subject_authority_snapshot_id,
-                subject_verification_criterion_id=(
-                    subject_verification_criterion_id
-                ),
-                verification_basis_kind=(
-                    verification_gate.verification_basis_kind
-                ),
-                verification_runner_observation_id=(
-                    verification_gate.verification_runner_observation_id
-                ),
-                completion_identity=completion_identity,
-            )
-            completion_cycle_id = cycle.completion_cycle_id
-            completion_binding = TargetCaptureBinding(
-                target_kind=str(proposed_done["review_target_kind"]),
-                target_value=str(proposed_done["review_target_value"]),
-                target_base_revision=str(
-                    proposed_done["review_target_base_revision"]
-                ),
-                target_generation=int(
-                    proposed_done["review_target_generation"]
-                ),
-                authority_snapshot_id=str(
-                    proposed_done["review_target_authority_snapshot_id"]
-                ),
-                acceptance_criterion_id=(
-                    str(
-                        proposed_done[
-                            "review_target_acceptance_criterion_id"
-                        ]
-                    )
-                    if proposed_done[
-                        "review_target_acceptance_criterion_id"
-                    ]
-                    is not None
-                    else None
-                ),
-                verification_criterion_id=(
-                    str(
-                        proposed_done[
-                            "review_target_verification_criterion_id"
-                        ]
-                    )
-                    if proposed_done[
-                        "review_target_verification_criterion_id"
-                    ]
-                    is not None
-                    else None
-                ),
-            )
-            completion_source = EvidenceSource(
-                source_kind="completion_evidence",
-                source_state=str(cycle.completion_evidence_kind),
-                source_id=cycle.completion_cycle_id,
-                source_projection={
-                    "completion_cycle_id": cycle.completion_cycle_id,
-                    "completed_at": cycle.completed_at,
-                    "completion_evidence_kind": (
-                        cycle.completion_evidence_kind
-                    ),
-                    "completion_evidence_revision": (
-                        cycle.completion_evidence_revision
-                    ),
-                    "completion_evidence_reason": (
-                        cycle.completion_evidence_reason
-                    ),
-                    "external_revision_approved": int(
-                        cycle.external_revision_approved
-                    ),
-                    "completion_commit_required": int(
-                        cycle.completion_commit_required
-                    ),
-                    "completion_commit_hash": cycle.completion_commit_hash,
-                },
-            )
-            completion_reference = build_evidence_reference(
-                source=completion_source,
-                project_id=project.project_id,
-                task_id=normalized_task_id,
-                contract_revision=cycle.contract_revision,
-                binding=completion_binding,
-                completion_cycle_id=cycle.completion_cycle_id,
-            )
-            completion_reference_row = {
-                    "evidence_reference_id": (
-                        f"tg_evidence_reference_{secrets.token_hex(8)}"
-                    ),
-                    "project_id": project.project_id,
-                    "task_id": normalized_task_id,
-                    "source_kind": completion_source.source_kind,
-                    "source_state": completion_source.source_state,
-                    "source_id": completion_source.source_id,
-                    "assurance_class": (
-                        completion_reference.attribution.assurance_class
-                    ),
-                    "producer_class": (
-                        completion_reference.attribution.producer_class
-                    ),
-                    "producer_version": (
-                        completion_reference.attribution.producer_version
-                    ),
-                    "contract_revision": cycle.contract_revision,
-                    "authority_snapshot_id": (
-                        completion_binding.authority_snapshot_id
-                    ),
-                    "acceptance_criterion_id": (
-                        completion_binding.acceptance_criterion_id
-                    ),
-                    "verification_criterion_id": (
-                        completion_binding.verification_criterion_id
-                    ),
-                    "target_kind": completion_binding.target_kind,
-                    "target_value": completion_binding.target_value,
-                    "target_base_revision": (
-                        completion_binding.target_base_revision
-                    ),
-                    "target_generation": (
-                        completion_binding.target_generation
-                    ),
-                    "completion_cycle_id": cycle.completion_cycle_id,
-                    "digest": completion_reference.digest,
-                    "created_at": now,
-                }
-            bundle_basis = read_native_completion_bundle_basis_locked(
-                connection,
-                project_id=project.project_id,
-                task_id=normalized_task_id,
-                cycle=cycle,
-                completion_reference=completion_reference_row,
-            )
-            persist_evidence_reference_locked(
-                connection,
-                reference=completion_reference_row,
-            )
-            try:
-                link_count = required_native_bundle_link_count(
-                    basis=bundle_basis,
-                    cycle=cycle,
-                )
-                bundle_plan = build_native_bundle_plan(
-                    basis=bundle_basis,
-                    cycle=cycle,
-                    completion_identity=completion_identity,
-                    criterion_link_ids=tuple(
-                        "tg_criterion_evidence_link_"
-                        + secrets.token_hex(8)
-                        for _ in range(link_count)
-                    ),
-                    sealed_at=now,
-                )
-            except EvidenceProjectionError as exc:
-                if exc.code == "evidence_bundle_too_large":
-                    raise TaskValidationError(
-                        code=exc.code,
-                        message=exc.message,
-                    ) from exc
-                raise StorageError(exc.code, exc.message) from exc
-            prepared_links = tuple(
-                PreparedCriterionEvidenceLink(**link)
-                for link in bundle_plan.storage_links
-            )
-            prepared_members = tuple(
-                [
-                    PreparedCompletionBundleMember(
-                        project_id=project.project_id,
-                        task_id=normalized_task_id,
-                        completion_evidence_bundle_id=(
-                            completion_identity.completion_evidence_bundle_id
-                        ),
-                        member_kind="criterion_link",
-                        ordinal=ordinal,
-                        criterion_evidence_link_id=(
-                            link.criterion_evidence_link_id
-                        ),
-                        evidence_reference_id=None,
-                    )
-                    for ordinal, link in enumerate(prepared_links)
-                ]
-                + [
-                    PreparedCompletionBundleMember(
-                        project_id=project.project_id,
-                        task_id=normalized_task_id,
-                        completion_evidence_bundle_id=(
-                            completion_identity.completion_evidence_bundle_id
-                        ),
-                        member_kind="evidence_reference",
-                        ordinal=ordinal,
-                        criterion_evidence_link_id=None,
-                        evidence_reference_id=reference_id,
-                    )
-                    for ordinal, reference_id in enumerate(
-                        bundle_plan.reference_ids
-                    )
-                ]
-            )
-            prepared_findings = tuple(
-                PreparedCompletionFindingSnapshot(
-                    project_id=project.project_id,
-                    task_id=normalized_task_id,
-                    completion_evidence_bundle_id=(
-                        completion_identity.completion_evidence_bundle_id
-                    ),
-                    ordinal=ordinal,
-                    **snapshot,
-                )
-                for ordinal, snapshot in enumerate(
-                    bundle_plan.finding_snapshots
-                )
-            )
-            prepared_bundle = PreparedCompletionEvidenceBundle(
-                completion_evidence_bundle_id=(
-                    completion_identity.completion_evidence_bundle_id
-                ),
-                project_id=project.project_id,
-                task_id=normalized_task_id,
-                completion_cycle_id=completion_identity.completion_cycle_id,
-                cycle_ordinal=completion_identity.saved_cycle_ordinal,
-                source_schema_version=bundle_basis.source_schema_version,
-                bundle_version=2,
-                contract_revision=cycle.contract_revision,
-                authority_snapshot_id=(
-                    completion_binding.authority_snapshot_id
-                ),
-                acceptance_criterion_id=(
-                    completion_binding.acceptance_criterion_id
-                ),
-                verification_criterion_id=(
-                    completion_binding.verification_criterion_id
-                ),
-                target_kind=completion_binding.target_kind,
-                target_value=completion_binding.target_value,
-                target_base_revision=(
-                    completion_binding.target_base_revision
-                ),
-                target_generation=completion_binding.target_generation,
-                target_capture_version=1,
-                artifact_manifest_id=(
-                    str(proposed_done["review_target_artifact_manifest_id"])
-                ),
-                verification_receipt_id=(
-                    qualifying_verification_receipt_id
-                ),
-                verification_basis_kind=cycle.verification_basis_kind,
-                verification_runner_observation_id=(
-                    cycle.verification_runner_observation_id
-                ),
-                omission_mask=bundle_plan.omission_mask,
-                sealed_at=now,
-                bundle_digest=bundle_plan.artifact.bundle_digest,
-                payload_size_bytes=len(bundle_plan.artifact.payload_bytes),
-                criterion_links=prepared_links,
-                members=prepared_members,
-                finding_snapshots=prepared_findings,
-            )
-            persisted_cycle = insert_native_completion_cycle_locked(
-                connection,
-                project_id=project.project_id,
-                task_id=normalized_task_id,
-                task_projection=proposed_done,
-                recorded_at=now,
-                verification_expectation_digest=exact_verification_digest,
-                verification_receipt_id=(
-                    qualifying_verification_receipt_id
-                ),
-                verification_subject_basis_version=1,
-                subject_authority_snapshot_id=(
-                    subject_authority_snapshot_id
-                ),
-                subject_verification_criterion_id=(
-                    subject_verification_criterion_id
-                ),
-                verification_basis_kind=cycle.verification_basis_kind,
-                verification_runner_observation_id=(
-                    cycle.verification_runner_observation_id
-                ),
-                completion_identity=completion_identity,
-                prepared_cycle=cycle,
-                completion_bundle=prepared_bundle,
-            )
-            if persisted_cycle != cycle:
-                raise completion_history_inconsistent()
 
         update_task_row(
             connection,

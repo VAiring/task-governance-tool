@@ -159,6 +159,12 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
         _completion_evidence_bundle_v20_table_sql,
         _criterion_evidence_links_v20_matrix_trigger_sql,
     )
+    from task_governance_tool.schema_verification_runner import (
+        _normalized_schema_sql,
+        _verification_runner_index_statements,
+        _verification_runner_table_statements,
+        _verification_runner_trigger_statements,
+    )
 
     marker = connection.execute(
         "SELECT 1 FROM schema_migrations WHERE version = 21"
@@ -197,7 +203,7 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
             *storage.evidence_ledger_capture_schema_statements(),
             *storage.completion_evidence_bundle_schema_statements(),
         )
-        if storage._normalized_schema_sql(statement).startswith("CREATE ")
+        if _normalized_schema_sql(statement).startswith("CREATE ")
         and storage._schema20_statement_identity(statement)[2] in evidence_tables
         and storage._schema20_statement_identity(statement)[1]
         != "trg_criterion_evidence_links_matrix_insert"
@@ -229,7 +235,7 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
                 f'ALTER TABLE "{table_name}" RENAME TO "{temporary_name}"'
             )
 
-        runner_tables = storage._verification_runner_table_statements(
+        runner_tables = _verification_runner_table_statements(
             schema_version=PRIVATE_SCHEMA20_VERSION,
         )
         for statement in runner_tables[:3]:
@@ -271,11 +277,11 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
         ):
             connection.execute(f'DROP TABLE "{temporary_name}"')
 
-        for statement in storage._verification_runner_index_statements():
+        for statement in _verification_runner_index_statements():
             _kind, _name, table_name = storage._schema20_statement_identity(statement)
             if table_name in rebuilt_tables:
                 connection.execute(statement)
-        for statement in storage._verification_runner_trigger_statements(
+        for statement in _verification_runner_trigger_statements(
             schema_version=PRIVATE_SCHEMA20_VERSION,
         ):
             _kind, _name, table_name = storage._schema20_statement_identity(statement)

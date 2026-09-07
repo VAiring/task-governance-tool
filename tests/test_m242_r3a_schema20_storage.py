@@ -21,6 +21,9 @@ from task_governance_tool import storage
 from task_governance_tool.schema_completion_evidence_bundles import (
     _completion_evidence_bundle_v20_table_sql,
 )
+from task_governance_tool.schema_verification_runner import (
+    _R3A_SCHEMA20_RUNNER_TABLES,
+)
 from task_governance_tool.verification_runner import (
     resolution_idempotency_digest,
     verification_runner_attempt_digest,
@@ -1481,7 +1484,7 @@ class R3ASchema20StorageTests(unittest.TestCase):
                             f'SELECT COUNT(*) FROM "{table_name}"'
                         ).fetchone()[0]
                     )
-                    for table_name in storage._R3A_SCHEMA20_RUNNER_TABLES
+                    for table_name in _R3A_SCHEMA20_RUNNER_TABLES
                 ),
                 0,
             )
